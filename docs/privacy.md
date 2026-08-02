@@ -1,6 +1,6 @@
 # Privacy & Usage Data
 
-OpenUsage can share **anonymous** usage data to help us understand how the app is used and catch problems. It is on by default and you can turn it off any time in **Settings → Privacy → Share Anonymous Usage**.
+OpenUsage can share **anonymous** usage data to help understand how the app is used and catch problems. It is off by default; opt in any time in **Settings → Privacy → Share Anonymous Usage**.
 
 ## What is shared
 
@@ -58,6 +58,6 @@ toggle controls PostHog events.
 - Counts are rolled up locally and sent as daily summaries, so the app's normal 5-minute refresh never turns into a flood of network calls.
 - Your choice and the anonymous ID are stored separately from the rest of the app's settings, so settings migrations and updates do not re-enable sharing or change your ID.
 
-## Turning it off
+## Controlling sharing
 
-Open **Settings → Privacy** and switch **Share Anonymous Usage** off. Sharing stops immediately and nothing further is sent.
+Open **Settings → Privacy** and switch **Share Anonymous Usage** on to opt in. Switching it off stops sharing immediately.

@@ -116,6 +116,8 @@ UI 지향 형태를 반환하고, `/v1/limits`는 데이터를 안정적인 리�
 | Copilot | `premiumCredits`, `extraUsage`, `orgCredits`, `orgSpend`, `chat`, `completions` |
 | Devin | `daily`, `weekly`, `extraUsageBalance` |
 | Grok | `weekly` |
+| Kimi | `session`, `weekly` |
+| Kiro | `credits` |
 | OpenCode | `session`, `weekly`, `monthly` |
 | OpenRouter | `credits`, `balance`, `keyLimit` |
 | Z.ai | `session`, `weekly`, `webSearches` |

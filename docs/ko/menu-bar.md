@@ -11,7 +11,7 @@
 
 각 행의 우클릭 메뉴에서 또는 Customize에서 지표 옆에 있는 별표 버튼을 눌러 별표를 지정할 수 있습니다.
 
-- 첫 실행 시 앱은 기본 별표 세트를 지정합니다(Antigravity Session/Weekly, Claude Session/Weekly, Codex Session/Weekly, Cursor Auto Usage/API Usage, Copilot Credits, OpenRouter Credits, Z.ai Session/Weekly). 그래서 바로 스트립에 숫자가 표시됩니다. 언제든 바꿀 수 있고, 프로바이더의 Reset은 해당 프로바이더의 기본값을, Reset All은 전체 기본 세트를 복원합니다. 스트립에는 켜져 있는 프로바이더만 표시됩니다. 새로 설치한 앱은 Mac에서 감지된 프로바이더만 켜므로([대시보드 § 첫 실행](dashboard.md#첫-실행) 참조), 사용하지 않는 도구가 메뉴 막대를 차지하지 않습니다.
+- 첫 실행 시 앱은 기본 별표 세트를 지정합니다(Antigravity Session/Weekly, Claude Weekly, Codex Weekly, Cursor Auto Usage/API Usage, Copilot Credits, Kimi Weekly, Kiro Credits, OpenRouter Credits, Z.ai Session/Weekly). 그래서 바로 스트립에 숫자가 표시됩니다. 언제든 바꿀 수 있고, 프로바이더의 Reset은 해당 프로바이더의 기본값을, Reset All은 전체 기본 세트를 복원합니다. 스트립에는 켜져 있는 프로바이더만 표시됩니다. 새로 설치한 앱은 Mac에서 감지된 프로바이더만 켜므로([대시보드 § 첫 실행](dashboard.md#첫-실행) 참조), 사용하지 않는 도구가 메뉴 막대를 차지하지 않습니다.
 - 별표는 **프로바이더당 최대 2개**입니다.
 - 별표를 더 지정할 수 없는 경우에도 버튼은 비활성화되지 않습니다. 누르면 버튼이 흔들리고
   Customize 하단에 이유를 알려 주는 임시 안내 배지가 표시됩니다(예: "Up to 2 stars per provider"(프로바이더당 최대 2개)).
@@ -25,7 +25,7 @@ Settings → Appearance → Icon Style:
 
 ## 화면 공유 중 사용량 숨기기
 
-Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값은 끔)를 켜면, 화면이 공유되거나 녹화되는 동안(Zoom/Meet/Teams 공유, 화면 녹화, macOS 화면 공유 등) 스트립이 OpenUsage 아이콘과 워드마크로 바뀝니다. 토큰 수와 지출이 공유 상대에게 보이지 않게 하는 기능입니다. 캡처가 끝나는 즉시 별표 지표가 돌아옵니다. 직접 시작한 화면 녹화도 같은 방식으로 처리됩니다.
+Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값은 켬)는 화면이 공유되거나 녹화되는 동안(Zoom/Meet/Teams 공유, 화면 녹화, macOS 화면 공유 등) 스트립을 OpenUsage 아이콘과 워드마크로 바꿉니다. 토큰 수와 지출이 공유 상대에게 보이지 않게 하는 기능입니다. 캡처가 끝나는 즉시 별표 지표가 돌아옵니다. 직접 시작한 화면 녹화도 같은 방식으로 처리됩니다.
 
 화면 캡처 감지는 macOS가 제공하는 "앱이 화면을 캡처 중" 신호를 사용합니다. 메뉴 막대의
 캡처 표시기를 켜는 것과 같은 신호이며, 신호가 바뀌는 즉시 확인하고 이 설정이 켜져 있는 동안

@@ -4,7 +4,7 @@ The popover that opens from the menu bar icon. Providers are sections; each sect
 
 ## First launch
 
-A fresh install doesn't turn on every provider OpenUsage knows about. It starts with Claude, Codex, and Cursor, then quickly checks which providers have credentials available on your Mac (existing local logins, saved API keys, or supported environment variables — nothing is sent anywhere) and switches to exactly that set. If nothing is found, the Claude/Codex/Cursor starter set stays. A one-time card at the top of the dashboard explains this and points to **Customize**, where you can turn any provider on or off; the card stays until you close it with its ✕ button.
+A fresh install doesn't turn on every provider OpenUsage knows about. It starts with Claude, Codex, and Kimi, then quickly checks which providers have credentials available on your Mac (existing local logins, saved API keys, or supported environment variables — nothing is sent anywhere) and switches to exactly that set. If nothing is found, the Claude/Codex/Kimi starter set stays. A one-time card at the top of the dashboard explains this and points to **Customize**, where you can turn any provider on or off; the card stays until you close it with its ✕ button.
 
 This full detection only happens on a brand-new install. Updates never change the providers you already have on or off — but when an update ships a provider you've never seen, the same local check runs once for just that provider and turns it on only if you actually have the tool. See [Which Providers Are On](provider-enablement.md) for the full lifecycle.
 
@@ -77,7 +77,7 @@ A provider's **detail** has a back button and provider-specific Reset control in
 
 Drag-reorder also works directly on the dashboard — drag a row within its provider, drag it across the caret boundary while the card is open, or drag a provider header to reorder sections. On a Force Touch trackpad you'll feel a light tap each time the dragged item snaps into a new slot.
 
-The default reset layout keeps each provider's core quota meters and Usage Trend always visible, then tucks balances, reset details, and spend-history rows on demand. Optional detail rows like Claude Sonnet and Cursor Requests/Credits stay off by default, but start on demand if you enable them.
+The default reset layout mirrors this fork's owner setup: Claude keeps Session, Weekly, and Fable always visible; Codex keeps Session and Weekly; Kimi keeps Session and Weekly. Claude and Codex Usage Trend plus optional limits, reset details, and spend-history rows start on demand. Optional rows remain available even when they start off.
 
 Made a change you didn't mean to? Press **⌘Z** to undo — it works anywhere in the popover (the dashboard and Customize alike) and steps back through your recent customization changes one at a time: hiding or showing a metric, reordering metrics or whole providers, starring or unstarring, and moving a metric across the divider all undo. Each step restores the exact previous arrangement. Undo is per-session (it starts fresh after a relaunch), and resetting clears it.
 
