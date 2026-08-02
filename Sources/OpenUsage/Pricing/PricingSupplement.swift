@@ -7,7 +7,7 @@ import Foundation
 struct PricingSupplement: Sendable {
     /// Models priced directly by the supplement (highest-precedence source).
     let pricing: [String: ModelRates]
-    /// Base-model -> fast-variant multiplier, for `-fast` slugs whose catalogs carry no `fast` field.
+    /// Base-model multiplier for fast variants and request-level fast signals.
     let fastMultipliers: [String: Double]
     let aliasRules: [AliasRule]
     let updatedAt: String?
@@ -76,7 +76,9 @@ extension PricingSupplement {
                 outputPerMillion: entry.outputPerMillion,
                 cacheWritePerMillion: entry.cacheWritePerMillion ?? entry.inputPerMillion,
                 cacheReadPerMillion: entry.cacheReadPerMillion ?? entry.inputPerMillion * 0.1,
-                cacheReadIsExplicit: entry.cacheReadPerMillion != nil
+                cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
+                // Preserve request-level fast signals such as Claude's `speed` field.
+                fastMultiplier: file.fastMultipliers?[model] ?? 1
             )
         }
         var rules: [AliasRule] = []
