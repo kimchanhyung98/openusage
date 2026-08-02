@@ -13,6 +13,7 @@ final class FirstRunSeederTests: XCTestCase {
             stub("claude", hasCredentials: true),
             stub("codex", hasCredentials: false),
             stub("cursor", hasCredentials: false),
+            stub("kimi", hasCredentials: false),
             stub("grok", hasCredentials: true)
         ]
 
@@ -22,11 +23,11 @@ final class FirstRunSeederTests: XCTestCase {
         )
 
         // Before the probe finishes: the fallback set, synchronously — never a flash of all providers.
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
         XCTAssertTrue(onboarding.isCustomizeHintPending)
         // Every provider shipping today is baselined as "seen", so `NewProviderSeeder` only ever
         // probes providers added in a later release.
-        XCTAssertEqual(enablement.knownIDs, ["claude", "codex", "cursor", "grok"])
+        XCTAssertEqual(enablement.knownIDs, ["claude", "codex", "cursor", "grok", "kimi"])
 
         await task?.value
         XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
@@ -35,7 +36,7 @@ final class FirstRunSeederTests: XCTestCase {
     func testNothingDetectedKeepsFallback() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("none"))
         let onboarding = OnboardingStore(defaults: makeDefaults("none-onboarding"))
-        let providers = ["claude", "codex", "cursor", "grok"].map { stub($0, hasCredentials: false) }
+        let providers = ["claude", "codex", "kimi", "grok"].map { stub($0, hasCredentials: false) }
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: providers,
@@ -43,7 +44,7 @@ final class FirstRunSeederTests: XCTestCase {
         )
         await task?.value
 
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
     }
 
     func testExistingInstallIsNeverSeeded() async {
@@ -82,7 +83,7 @@ final class FirstRunSeederTests: XCTestCase {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("toggle-wins"))
         let onboarding = OnboardingStore(defaults: makeDefaults("toggle-wins-onboarding"))
         let providers = [stub("claude", hasCredentials: true), stub("codex", hasCredentials: false),
-                         stub("cursor", hasCredentials: false), stub("devin", hasCredentials: true)]
+                         stub("kimi", hasCredentials: false), stub("devin", hasCredentials: true)]
 
         let task = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: true, providers: providers,
@@ -92,7 +93,7 @@ final class FirstRunSeederTests: XCTestCase {
         enablement.setEnabled(false, for: "codex")
         await task?.value
 
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "kimi"])
     }
 
     // MARK: - Reset All reseed
@@ -106,13 +107,14 @@ final class FirstRunSeederTests: XCTestCase {
             stub("claude", hasCredentials: true),
             stub("codex", hasCredentials: false),
             stub("cursor", hasCredentials: false),
+            stub("kimi", hasCredentials: false),
             stub("grok", hasCredentials: true)
         ]
 
         let task = FirstRunSeeder.reseed(providers: providers, enablement: enablement)
 
         // Snaps to the fallback synchronously so the dashboard reflects the reset immediately.
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
 
         await task.value
         XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
@@ -121,25 +123,25 @@ final class FirstRunSeederTests: XCTestCase {
     func testReseedKeepsFallbackWhenNothingDetected() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("reseed-none"))
         enablement.seedEnabledProviders(["grok"])
-        let providers = ["claude", "codex", "cursor", "grok"].map { stub($0, hasCredentials: false) }
+        let providers = ["claude", "codex", "kimi", "grok"].map { stub($0, hasCredentials: false) }
 
         let task = FirstRunSeeder.reseed(providers: providers, enablement: enablement)
         await task.value
 
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
     }
 
     func testReseedUserToggleDuringDetectionWins() async {
         let enablement = ProviderEnablementStore(defaults: makeDefaults("reseed-toggle"))
         let providers = [stub("claude", hasCredentials: true), stub("codex", hasCredentials: false),
-                         stub("cursor", hasCredentials: false), stub("devin", hasCredentials: true)]
+                         stub("kimi", hasCredentials: false), stub("devin", hasCredentials: true)]
 
         let task = FirstRunSeeder.reseed(providers: providers, enablement: enablement)
         // The user flips a toggle while the probe is still running: their arrangement must survive.
         enablement.setEnabled(false, for: "codex")
         await task.value
 
-        XCTAssertEqual(enablement.enabledIDs, ["claude", "cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "kimi"])
     }
 
     // MARK: - Concurrent detection

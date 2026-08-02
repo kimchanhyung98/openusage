@@ -135,6 +135,52 @@ extension GrokUsageError: CategorizedError {
     }
 }
 
+extension KimiAuthError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .notLoggedIn: .notLoggedIn
+        case .credentialsUnreadable, .credentialLockUnavailable,
+             .credentialLockCompromised, .credentialSaveFailed: .credentialAccess
+        case .credentialsInvalid, .unsupportedConfiguration: .authInvalid
+        case .authExpired, .refreshRejected: .authExpired
+        case .refreshResponseInvalid: .decoding
+        }
+    }
+}
+
+extension KimiUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .connectionFailed: .network
+        case .requestFailed(let status): ErrorCategory.http(status)
+        case .invalidResponse: .decoding
+        case .quotaUnavailable: .notAvailable
+        }
+    }
+}
+
+extension KiroAuthError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .notLoggedIn: .notLoggedIn
+        case .credentialsUnreadable: .credentialAccess
+        case .credentialsInvalid, .missingProfile: .authInvalid
+        case .authExpired: .authExpired
+        }
+    }
+}
+
+extension KiroUsageError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .connectionFailed: .network
+        case .requestFailed(let status): ErrorCategory.http(status)
+        case .invalidResponse: .decoding
+        case .quotaUnavailable: .notAvailable
+        }
+    }
+}
+
 extension DevinAuthError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {

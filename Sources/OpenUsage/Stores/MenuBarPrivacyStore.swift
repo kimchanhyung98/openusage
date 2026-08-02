@@ -20,7 +20,7 @@ final class MenuBarPrivacyStore {
     /// cheap window-server call.
     static let pollInterval: Duration = .seconds(3)
 
-    /// The persisted preference (default off). Stored here rather than as a view-local `@AppStorage`
+    /// The persisted preference (default on). Stored here rather than as a view-local `@AppStorage`
     /// so the AppKit strip renderer honors exactly the value the Settings toggle writes. Toggling it
     /// starts/stops the capture monitoring, so the off state costs nothing.
     var hideUsageWhileScreenSharing: Bool {
@@ -57,7 +57,7 @@ final class MenuBarPrivacyStore {
         self.defaults = defaults
         self.probe = probe
         self.installChangeNotifications = installChangeNotifications
-        self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key)
+        self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key, default: true)
         // `didSet` doesn't fire during init; arm monitoring for a persisted-on launch directly.
         if hideUsageWhileScreenSharing {
             startMonitoring()

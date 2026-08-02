@@ -10,7 +10,7 @@ final class MenuBarPinTests: XCTestCase {
         let store = makeStore("default")
         XCTAssertTrue(store.pinnedMetricIDs.isEmpty)
         XCTAssertTrue(store.pinnedGroups.isEmpty)
-        XCTAssertEqual(store.menuBarStyle, .text)
+        XCTAssertEqual(store.menuBarStyle, .bars)
     }
 
     func testPinUnpinPersistsAcrossReload() {

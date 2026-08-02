@@ -14,7 +14,7 @@ final class WidgetMeterStyleTests: XCTestCase {
             suite: "percent"
         )
 
-        XCTAssertEqual(store.meterStyle, .remaining) // empty suite default
+        store.meterStyle = .remaining
         let remaining = store.data(for: descriptor)
         XCTAssertEqual(remaining.valueText, "20%")
         XCTAssertEqual(remaining.boundedHeadline, "20% left")
@@ -37,6 +37,7 @@ final class WidgetMeterStyleTests: XCTestCase {
             suite: "dollars"
         )
 
+        store.meterStyle = .remaining
         let remaining = store.data(for: descriptor)
         XCTAssertEqual(remaining.valueText, "$20.00")
         XCTAssertEqual(remaining.boundedHeadline, "$20.00 left")
@@ -59,6 +60,7 @@ final class WidgetMeterStyleTests: XCTestCase {
             suite: "count"
         )
 
+        store.meterStyle = .remaining
         let remaining = store.data(for: descriptor)
         XCTAssertEqual(remaining.valueText, "680")
         XCTAssertEqual(remaining.boundedHeadline, "680 left")
@@ -100,7 +102,7 @@ final class WidgetMeterStyleTests: XCTestCase {
             suite: "override"
         )
 
-        XCTAssertEqual(store.meterStyle, .remaining)
+        store.meterStyle = .remaining
         XCTAssertEqual(store.data(for: descriptor).displayMode, .remaining)
         XCTAssertEqual(store.data(for: descriptor).valueText, "20%")
 
@@ -175,9 +177,11 @@ final class WidgetMeterStyleTests: XCTestCase {
         XCTAssertEqual(used.displayedValue, remaining.displayedValue)
     }
 
-    func testMeterStyleDefaultsToRemainingWithEmptySuite() {
+    func testUsageDisplayDefaultsMatchForkPreferences() {
         let store = makeEmptyStore(makeUserDefaults("default"))
-        XCTAssertEqual(store.meterStyle, .remaining)
+        XCTAssertEqual(store.meterStyle, .used)
+        XCTAssertEqual(store.resetDisplayMode, .absolute)
+        XCTAssertTrue(store.alwaysShowPacing)
     }
 
     func testMeterStylePersistsAcrossStoreInstances() {
@@ -187,12 +191,25 @@ final class WidgetMeterStyleTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = makeEmptyStore(defaults)
-        XCTAssertEqual(store.meterStyle, .remaining)
+        XCTAssertEqual(store.meterStyle, .used)
 
-        store.meterStyle = .used // triggers didSet -> persists
+        store.meterStyle = .remaining // triggers didSet -> persists
 
         let reloaded = makeEmptyStore(defaults)
-        XCTAssertEqual(reloaded.meterStyle, .used)
+        XCTAssertEqual(reloaded.meterStyle, .remaining)
+    }
+
+    func testExplicitUsageDisplayChoicesOverrideForkDefaults() {
+        let defaults = makeUserDefaults("explicit")
+        defaults.set(WidgetDisplayMode.remaining.rawValue, forKey: "meterStyle")
+        defaults.set(ResetDisplayMode.relative.rawValue, forKey: "resetDisplayMode")
+        defaults.set(false, forKey: "alwaysShowPacing")
+
+        let store = makeEmptyStore(defaults)
+
+        XCTAssertEqual(store.meterStyle, .remaining)
+        XCTAssertEqual(store.resetDisplayMode, .relative)
+        XCTAssertFalse(store.alwaysShowPacing)
     }
 
     // MARK: - Helpers

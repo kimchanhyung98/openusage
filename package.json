@@ -1,0 +1,13 @@
+{
+  "name": "openusage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenUsage development hooks",
+  "author": "robinebers",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
+  }
+}

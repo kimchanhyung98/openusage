@@ -28,7 +28,7 @@ final class LayoutPersistence {
     func loadExpandedMetrics() -> [String]? { defaults.stringArray(forKey: keys.expandedMetrics) }
     func loadExpandOnEnable() -> [String]? { defaults.stringArray(forKey: keys.expandOnEnable) }
     func loadExpandedProviders() -> [String]? { defaults.stringArray(forKey: keys.expandedProviders) }
-    func loadMenuBarStyle() -> MenuBarStyle { defaults.enumValue(forKey: keys.menuBarStyle, default: .text) }
+    func loadMenuBarStyle() -> MenuBarStyle { defaults.enumValue(forKey: keys.menuBarStyle, default: .bars) }
 
     func savePlaced(_ value: [PlacedWidget]) { encode(value, forKey: keys.placed) }
     func saveProviderOrder(_ value: [String]) { encode(value, forKey: keys.providerOrder) }

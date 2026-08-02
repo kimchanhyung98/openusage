@@ -28,15 +28,17 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         )
     }
 
-    func testDefaultsOffAndNotConcealing() {
+    func testDefaultsOnAndConcealsActiveCapture() {
         let store = makeStore("default", captured: { true })
-        XCTAssertFalse(store.hideUsageWhileScreenSharing)
-        XCTAssertFalse(store.screenIsCaptured)
-        XCTAssertFalse(store.concealUsage)
+        XCTAssertTrue(store.hideUsageWhileScreenSharing)
+        XCTAssertTrue(store.screenIsCaptured)
+        XCTAssertTrue(store.concealUsage)
     }
 
     func testCaptureAloneDoesNotConceal() {
-        let store = makeStore("captureOnly", captured: { true })
+        let defaults = makeDefaults("captureOnly")
+        defaults.set(false, forKey: MenuBarPrivacyStore.key)
+        let store = makeStore("captureOnly", defaults: defaults, captured: { true })
         store.refreshCaptureState()
         XCTAssertFalse(store.concealUsage, "A capture with the setting off must not conceal")
     }
@@ -82,15 +84,14 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         XCTAssertFalse(store.concealUsage)
     }
 
-    func testSettingPersistsAcrossStores() {
+    func testExplicitOffPersistsAcrossStores() {
         let defaults = makeDefaults("persist")
-        makeStore("persistFirst", defaults: defaults, captured: { true }).hideUsageWhileScreenSharing = true
+        makeStore("persistFirst", defaults: defaults, captured: { true }).hideUsageWhileScreenSharing = false
 
-        // A fresh store on the same defaults reads the saved value and arms monitoring right away
-        // (the persisted-on launch path, which bypasses `didSet`).
+        // A fresh store on the same defaults must honor the saved opt-out over the default-on fallback.
         let relaunched = makeStore("persistSecond", defaults: defaults, captured: { true })
-        XCTAssertTrue(relaunched.hideUsageWhileScreenSharing)
-        XCTAssertTrue(relaunched.concealUsage)
+        XCTAssertFalse(relaunched.hideUsageWhileScreenSharing)
+        XCTAssertFalse(relaunched.concealUsage)
     }
 
     func testStaleNotificationAfterDisableCannotReconceal() {

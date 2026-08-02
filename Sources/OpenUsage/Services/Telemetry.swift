@@ -31,20 +31,20 @@ enum TelemetryConfig {
 @MainActor
 protocol TelemetrySink: AnyObject {
     func capture(_ event: String, _ properties: [String: Any])
-    /// Mirror the user's opt-out choice onto the underlying SDK at runtime.
+    /// Mirror the user's sharing choice onto the underlying SDK at runtime.
     func setEnabled(_ enabled: Bool)
     func flush()
 }
 
-/// Anonymous, opt-out PostHog sink. No `identify()`/`group()`/`alias()`, `personProfiles = .never`,
+/// Anonymous, opt-in PostHog sink. No `identify()`/`group()`/`alias()`, `personProfiles = .never`,
 /// and only IDs/counts/enums are ever sent — never the free-form error message (the file log's
 /// `LogRedaction` does not cover a network transport). When no real project token is configured the
 /// sink is inert (the app still builds and the toggle still works), so dev builds never phone home.
 @MainActor
 final class PostHogTelemetrySink: TelemetrySink {
-    /// Crash / uncaught-exception autocapture is gated on the SAME opt-out as usage telemetry, decided
-    /// here so the opt-out contract is unit-testable without touching the `PostHogSDK.shared` singleton.
-    /// Gating *install* (not just sending) on the opt-out means an opted-out launch installs no signal/
+    /// Crash / uncaught-exception autocapture is gated on the SAME choice as usage telemetry, decided
+    /// here so the contract is unit-testable without touching the `PostHogSDK.shared` singleton.
+    /// Gating *install* (not just sending) means a disabled launch installs no signal/
     /// exception handler and writes no crash report to disk — honoring privacy.md's "nothing while off".
     nonisolated static func errorAutocaptureEnabled(telemetryEnabled: Bool) -> Bool { telemetryEnabled }
 
@@ -67,7 +67,7 @@ final class PostHogTelemetrySink: TelemetrySink {
         config.captureScreenViews = false
         // Start in the user's chosen state before any event can fire.
         config.optOut = !enabled
-        // Crash / uncaught-exception autocapture, gated on the SAME opt-out (anonymous `$exception`
+        // Crash / uncaught-exception autocapture, gated on the SAME sharing choice (anonymous `$exception`
         // events, sent on the NEXT launch after a crash). It captures Mach exceptions, POSIX signals,
         // and uncaught NSExceptions; Swift traps may surface as a bare `SIGTRAP` without the message —
         // the symbolicated stack (dSYMs uploaded from release.yml) is what makes them actionable.

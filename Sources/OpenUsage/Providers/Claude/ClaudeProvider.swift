@@ -58,18 +58,18 @@ final class ClaudeProvider: ProviderRuntime {
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
                 .exportingLimit("weekly", unit: "percent"),
-            .percent(id: "\(provider.id).sonnet", provider: provider, title: "Sonnet")
-                .exportingLimit("sonnet", unit: "percent"),
             .percent(id: "\(provider.id).fable", provider: provider, title: "Fable")
                 .exportingLimit("fable", unit: "percent"),
-            .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage", metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
-                .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
                     sourceNote: "From your Claude usage history (estimated)"
-                )
+                ),
+            .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage", metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
+                .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
+            .percent(id: "\(provider.id).sonnet", provider: provider, title: "Sonnet")
+                .exportingLimit("sonnet", unit: "percent")
         ] + WidgetDescriptor.spendTiles(provider: provider)
     }
 

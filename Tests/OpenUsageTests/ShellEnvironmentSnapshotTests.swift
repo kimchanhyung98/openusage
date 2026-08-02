@@ -50,6 +50,76 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot?.values, ["CLAUDE_CONFIG_DIR": "~/.claude-work"])
     }
 
+    func testShellSnapshotCapturesAllKimiIdentityKeys() {
+        let stdout = [
+            "__OPENUSAGE_ENV_BEGIN__",
+            "KIMI_CODE_HOME=/tmp/kimi-home",
+            "KIMI_CODE_BASE_URL=https://api.kimi.example",
+            "KIMI_CODE_OAUTH_HOST=https://code-auth.kimi.example",
+            "KIMI_OAUTH_HOST=https://auth.kimi.example",
+            "KIMI_DISABLE_OAUTH_LOCK=1",
+            "PATH=/usr/bin",
+            "__OPENUSAGE_ENV_END__",
+        ].joined(separator: "\0")
+        let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
+        XCTAssertTrue(shellEnvironment.ensureCapturedForTesting())
+
+        let snapshot = ShellEnvironmentSnapshot.current(shellEnvironment: shellEnvironment)
+
+        XCTAssertEqual(snapshot?.values, [
+            "KIMI_CODE_HOME": "/tmp/kimi-home",
+            "KIMI_CODE_BASE_URL": "https://api.kimi.example",
+            "KIMI_CODE_OAUTH_HOST": "https://code-auth.kimi.example",
+            "KIMI_OAUTH_HOST": "https://auth.kimi.example",
+            "KIMI_DISABLE_OAUTH_LOCK": "1",
+        ])
+    }
+
+    func testSnapshotPredatingKimiKeysDoesNotPinThemAsAbsent() throws {
+        let defaults = makeScratchDefaults()
+        let oldSnapshot = LegacyShellEnvironmentSnapshot(
+            values: ["CODEX_HOME": "/tmp/codex-home"],
+            capturedAt: Date(timeIntervalSince1970: 1_752_800_000)
+        )
+        defaults.set(
+            try JSONEncoder().encode(oldSnapshot),
+            forKey: ShellEnvironmentSnapshotStore.previousStorageKey
+        )
+        let store = ShellEnvironmentSnapshotStore(defaults: defaults)
+        let stdout = [
+            "__OPENUSAGE_ENV_BEGIN__", "KIMI_CODE_HOME=/tmp/kimi-live", "PATH=/usr/bin", "__OPENUSAGE_ENV_END__",
+        ].joined(separator: "\0")
+        let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
+        XCTAssertTrue(shellEnvironment.ensureCapturedForTesting())
+        let reader = ProcessEnvironmentReader(
+            processEnvironment: [:],
+            shellEnvironment: shellEnvironment,
+            launchSnapshot: { store.load() }
+        )
+
+        let snapshot = try XCTUnwrap(store.load())
+        XCTAssertEqual(snapshot.pinnedKeys, Set(ShellEnvironmentSnapshot.legacyCapturedKeys))
+        XCTAssertNotNil(defaults.data(forKey: ShellEnvironmentSnapshotStore.storageKey))
+        XCTAssertNil(defaults.data(forKey: ShellEnvironmentSnapshotStore.previousStorageKey))
+        XCTAssertEqual(reader.value(for: "CODEX_HOME"), "/tmp/codex-home")
+        XCTAssertEqual(reader.value(for: "KIMI_CODE_HOME"), "/tmp/kimi-live")
+    }
+
+    func testSavingV2SnapshotRemovesV1Snapshot() {
+        let defaults = makeScratchDefaults()
+        defaults.set(Data("old snapshot".utf8), forKey: ShellEnvironmentSnapshotStore.previousStorageKey)
+        let store = ShellEnvironmentSnapshotStore(defaults: defaults)
+        let snapshot = ShellEnvironmentSnapshot(
+            values: ["KIMI_CODE_HOME": "/tmp/kimi-home"],
+            capturedAt: Date(timeIntervalSince1970: 1_752_800_000)
+        )
+
+        store.save(snapshot)
+
+        XCTAssertEqual(store.load(), snapshot)
+        XCTAssertNil(defaults.data(forKey: ShellEnvironmentSnapshotStore.previousStorageKey))
+    }
+
     func testRefreshTaskPersistsSnapshotAfterCapture() async {
         let defaults = makeScratchDefaults()
         let store = ShellEnvironmentSnapshotStore(defaults: defaults)
@@ -145,6 +215,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         return defaults
     }
+}
+
+private struct LegacyShellEnvironmentSnapshot: Codable {
+    var values: [String: String]
+    var capturedAt: Date
 }
 
 private final class FixedRunner: ProcessRunning, @unchecked Sendable {

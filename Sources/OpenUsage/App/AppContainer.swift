@@ -21,7 +21,7 @@ final class AppContainer {
     /// Quota pace notification preferences (three independent triggers). Drives the Settings section
     /// and is read by `WidgetDataStore.evaluateNotifications`.
     let notificationSettings: NotificationSettingsStore
-    /// Anonymous, opt-out usage telemetry (daily rollups). Exposed so Settings can toggle it and the
+    /// Anonymous, opt-in usage telemetry (daily rollups). Exposed so Settings can toggle it and the
     /// app-termination hook can flush any queued events.
     let telemetry: TelemetryRecorder
     /// Source of truth for the popover's transparency: the persisted Increase Transparency toggle, the
@@ -105,7 +105,7 @@ final class AppContainer {
             dataStore?.providerEnablementDidChange()
             iCloudSync?.scheduleWrite()
         }
-        // Fresh installs start minimal: seed the enabled-provider list (Claude/Codex/Cursor right away,
+        // Fresh installs start minimal: seed the enabled-provider list (Claude/Codex/Kimi right away,
         // then the detected set once the local credential probe finishes). No-op on every later launch.
         let onboarding = OnboardingStore()
         self.seedTask = FirstRunSeeder.seedIfNeeded(
@@ -173,8 +173,8 @@ final class AppContainer {
             )
         }
 
-        // Anonymous, opt-out usage telemetry (two daily-rollup events). Its state lives in a dedicated
-        // UserDefaults suite, kept separate from app settings so the user's opt-out choice and the
+        // Anonymous, opt-in usage telemetry (two daily-rollup events). Its state lives in a dedicated
+        // UserDefaults suite, kept separate from app settings so the user's sharing choice and the
         // install id stay independent of any settings change. The snapshot closure reads the live
         // layout/enablement so `app_daily_active` always reflects the current configuration.
         let telemetryStore = TelemetryStore()

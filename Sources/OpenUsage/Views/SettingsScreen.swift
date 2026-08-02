@@ -18,7 +18,7 @@ struct SettingsScreen: View {
     @State private var commandLineTool = CommandLineToolInstaller()
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
-    @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.auto
+    @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.fallback
     @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
     @AppStorage(LogLevelSetting.key) private var logLevel = LogLevelSetting.fallback
     /// Surfaced under the Advanced rows when copying the path or revealing the file fails.
@@ -133,8 +133,7 @@ struct SettingsScreen: View {
                 row("Reset Times") {
                     picker($store.resetDisplayMode, options: ResetDisplayMode.allCases, label: \.label)
                 }
-                // Off (default) leaves pacing on yellow and red only. On also surfaces projection
-                // and the even-pace tick on blue rows.
+                // On (default) surfaces projection and the even-pace tick on blue rows too.
                 row("Always Show Pacing") {
                     Toggle("", isOn: $store.alwaysShowPacing)
                         .settingsSwitchStyle()
