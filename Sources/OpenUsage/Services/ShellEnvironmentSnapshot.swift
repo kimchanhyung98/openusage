@@ -17,10 +17,42 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
         "KIMI_DISABLE_OAUTH_LOCK",
     ]
 
-    /// Captured values. A key absent here was verifiably NOT exported at capture time — that absence
-    /// is a cached fact too: the reader stops here, so an absent key reads as "no override".
+    /// Keys present in the v1 snapshot format, before Kimi-specific identity settings were added.
+    static let legacyCapturedKeys = [
+        "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME",
+        "USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH",
+        "CLAUDE_LOCAL_OAUTH_API_BASE", "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+    ]
+
+    /// Captured values. An absent pinned key was verifiably NOT exported at capture time, so it reads
+    /// as "no override" for the process lifetime.
     var values: [String: String]
     var capturedAt: Date
+    var pinnedKeys: Set<String>
+
+    init(
+        values: [String: String],
+        capturedAt: Date,
+        pinnedKeys: Set<String> = Set(Self.capturedKeys)
+    ) {
+        self.values = values
+        self.capturedAt = capturedAt
+        self.pinnedKeys = pinnedKeys
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case values
+        case capturedAt
+        case pinnedKeys
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        values = try container.decode([String: String].self, forKey: .values)
+        capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+        pinnedKeys = try container.decodeIfPresent(Set<String>.self, forKey: .pinnedKeys)
+            ?? Set(Self.capturedKeys)
+    }
 
     /// Values for every captured key as the (warm) login-shell layer reports them, or `nil` when the
     /// capture failed — a real login shell always exports PATH/HOME, so an empty capture means the
@@ -58,13 +90,29 @@ final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
     }
 
     func load() -> ShellEnvironmentSnapshot? {
-        guard let data = defaults.data(forKey: Self.storageKey) else { return nil }
-        guard let snapshot = try? JSONDecoder().decode(ShellEnvironmentSnapshot.self, from: data) else {
-            AppLog.warn(.config, "shell-environment snapshot was undecodable; discarding it")
-            defaults.removeObject(forKey: Self.storageKey)
+        if let data = defaults.data(forKey: Self.storageKey) {
+            guard let snapshot = try? JSONDecoder().decode(ShellEnvironmentSnapshot.self, from: data) else {
+                AppLog.warn(.config, "shell-environment snapshot was undecodable; discarding it")
+                defaults.removeObject(forKey: Self.storageKey)
+                return nil
+            }
+            return snapshot
+        }
+
+        guard let data = defaults.data(forKey: Self.previousStorageKey) else { return nil }
+        guard let previous = try? JSONDecoder().decode(ShellEnvironmentSnapshot.self, from: data) else {
+            AppLog.warn(.config, "legacy shell-environment snapshot was undecodable; discarding it")
+            defaults.removeObject(forKey: Self.previousStorageKey)
             return nil
         }
-        return snapshot
+
+        let migrated = ShellEnvironmentSnapshot(
+            values: previous.values,
+            capturedAt: previous.capturedAt,
+            pinnedKeys: Set(ShellEnvironmentSnapshot.legacyCapturedKeys)
+        )
+        save(migrated)
+        return migrated
     }
 
     func save(_ snapshot: ShellEnvironmentSnapshot) {

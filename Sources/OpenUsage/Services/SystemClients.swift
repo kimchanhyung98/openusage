@@ -29,7 +29,10 @@ struct ProcessEnvironmentReader: EnvironmentReading {
         // usage fetched from the freshly captured one, mis-stamping the shared snapshot cache. A
         // changed export applies from the next launch (the snapshot refresh task persists and logs
         // it). Every other key reads the live capture as before.
-        if Self.identityKeys.contains(name), let snapshot = launchSnapshot() {
+        if Self.identityKeys.contains(name),
+           let snapshot = launchSnapshot(),
+           snapshot.pinnedKeys.contains(name)
+        {
             return snapshot.values[name]?.nilIfEmpty
         }
         return shellEnvironment.value(for: name)
