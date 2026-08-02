@@ -62,9 +62,7 @@ final class KimiCredentialLockTests: XCTestCase {
         let handle = try await lock.acquire(target: fixture.target)
         let before = try modificationTimestamp(fixture.lockURL)
 
-        try await Task.sleep(nanoseconds: 40_000_000)
-
-        let after = try modificationTimestamp(fixture.lockURL)
+        let after = try await waitForHeartbeat(after: before, at: fixture.lockURL)
         XCTAssertGreaterThan(after, before)
         let handleIsValid = await handle.isValid()
         XCTAssertTrue(handleIsValid)
@@ -82,7 +80,7 @@ final class KimiCredentialLockTests: XCTestCase {
             try await Task.sleep(nanoseconds: 40_000_000)
         }
 
-        let after = try modificationTimestamp(fixture.lockURL)
+        let after = try await waitForHeartbeat(after: before, at: fixture.lockURL)
         XCTAssertGreaterThan(after, before)
         let handleIsValid = await handle.isValid()
         XCTAssertTrue(handleIsValid)
@@ -261,9 +259,21 @@ final class KimiCredentialLockTests: XCTestCase {
         return Int64(info.st_mtimespec.tv_sec) * 1_000_000_000
             + Int64(info.st_mtimespec.tv_nsec)
     }
+
+    private func waitForHeartbeat(after before: Int64, at url: URL) async throws -> Int64 {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(1))
+        while clock.now < deadline {
+            let timestamp = try modificationTimestamp(url)
+            if timestamp > before { return timestamp }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw KimiLockTestError.heartbeatNotObserved
+    }
 }
 
 private enum KimiLockTestError: Error {
     case operationExecuted
     case statFailed
+    case heartbeatNotObserved
 }
