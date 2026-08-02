@@ -75,14 +75,14 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         ])
     }
 
-    func testSnapshotPredatingKimiKeysDoesNotPinThemAsAbsent() {
+    func testSnapshotPredatingKimiKeysDoesNotPinThemAsAbsent() throws {
         let defaults = makeScratchDefaults()
-        let oldSnapshot = ShellEnvironmentSnapshot(
+        let oldSnapshot = LegacyShellEnvironmentSnapshot(
             values: ["CODEX_HOME": "/tmp/codex-home"],
             capturedAt: Date(timeIntervalSince1970: 1_752_800_000)
         )
         defaults.set(
-            try! JSONEncoder().encode(oldSnapshot),
+            try JSONEncoder().encode(oldSnapshot),
             forKey: ShellEnvironmentSnapshotStore.previousStorageKey
         )
         let store = ShellEnvironmentSnapshotStore(defaults: defaults)
@@ -97,7 +97,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
             launchSnapshot: { store.load() }
         )
 
-        XCTAssertNil(store.load())
+        let snapshot = try XCTUnwrap(store.load())
+        XCTAssertEqual(snapshot.pinnedKeys, Set(ShellEnvironmentSnapshot.legacyCapturedKeys))
+        XCTAssertNotNil(defaults.data(forKey: ShellEnvironmentSnapshotStore.storageKey))
+        XCTAssertNil(defaults.data(forKey: ShellEnvironmentSnapshotStore.previousStorageKey))
+        XCTAssertEqual(reader.value(for: "CODEX_HOME"), "/tmp/codex-home")
         XCTAssertEqual(reader.value(for: "KIMI_CODE_HOME"), "/tmp/kimi-live")
     }
 
@@ -211,6 +215,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
         return defaults
     }
+}
+
+private struct LegacyShellEnvironmentSnapshot: Codable {
+    var values: [String: String]
+    var capturedAt: Date
 }
 
 private final class FixedRunner: ProcessRunning, @unchecked Sendable {
