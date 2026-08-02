@@ -100,11 +100,11 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertFalse(store.isPinned("cursor.usage"), "undo reverses a pin")
 
         // Unpin a default-pinned metric, then undo → back to pinned.
-        XCTAssertTrue(store.isPinned("claude.session"))
-        store.setPinned(false, for: "claude.session")
-        XCTAssertFalse(store.isPinned("claude.session"))
+        XCTAssertTrue(store.isPinned("claude.weekly"))
+        store.setPinned(false, for: "claude.weekly")
+        XCTAssertFalse(store.isPinned("claude.weekly"))
         XCTAssertTrue(store.undo())
-        XCTAssertTrue(store.isPinned("claude.session"), "undo reverses an unpin")
+        XCTAssertTrue(store.isPinned("claude.weekly"), "undo reverses an unpin")
     }
 
     func testUndoReversesExpandedMove() {
@@ -638,13 +638,13 @@ final class LayoutStoreTests: XCTestCase {
         let store = LayoutStore(registry: registry, defaults: makeDefaults("FreshCustomizeOrder"), storageKey: "layout")
 
         XCTAssertEqual(store.orderedSupportedMetrics(for: "claude").map(\.id), [
-            "claude.session", "claude.weekly", "claude.sonnet", "claude.fable", "claude.extra",
-            "claude.trend", "claude.today", "claude.yesterday", "claude.last30"
+            "claude.session", "claude.weekly", "claude.fable", "claude.trend", "claude.extra",
+            "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "codex").map(\.id), [
-            "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly",
-            "codex.credits", "codex.rateLimitResets",
-            "codex.trend", "codex.today", "codex.yesterday", "codex.last30"
+            "codex.session", "codex.weekly", "codex.trend", "codex.rateLimitResets",
+            "codex.spark", "codex.sparkWeekly", "codex.credits",
+            "codex.today", "codex.yesterday", "codex.last30"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "devin").map(\.id), [
             "devin.daily", "devin.weekly", "devin.extra"
@@ -671,10 +671,10 @@ final class LayoutStoreTests: XCTestCase {
         let store = LayoutStore(registry: registry, defaults: makeDefaults("RecommendedDefaults"), storageKey: "layout")
 
         XCTAssertEqual(Set(store.placed.map(\.descriptorID)), Set([
-            "claude.session", "claude.weekly", "claude.trend",
-            "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
-            "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
-            "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+            "claude.session", "claude.weekly", "claude.fable", "claude.trend",
+            "claude.today", "claude.yesterday",
+            "codex.session", "codex.weekly", "codex.trend", "codex.rateLimitResets",
+            "codex.today", "codex.yesterday",
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
             "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
@@ -682,7 +682,13 @@ final class LayoutStoreTests: XCTestCase {
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.trend",
             "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
         ]))
+        XCTAssertFalse(store.isMetricEnabled("claude.extra"))
         XCTAssertFalse(store.isMetricEnabled("claude.sonnet"))
+        XCTAssertFalse(store.isMetricEnabled("claude.last30"))
+        XCTAssertFalse(store.isMetricEnabled("codex.spark"))
+        XCTAssertFalse(store.isMetricEnabled("codex.sparkWeekly"))
+        XCTAssertFalse(store.isMetricEnabled("codex.credits"))
+        XCTAssertFalse(store.isMetricEnabled("codex.last30"))
         XCTAssertFalse(store.isMetricEnabled("cursor.requests"))
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
@@ -693,15 +699,15 @@ final class LayoutStoreTests: XCTestCase {
             ($0.provider.id, $0.expandedMetrics.map(\.id))
         })
 
-        // Claude's core meters (Session, Weekly, Extra, Usage Trend) stay primary; spend-history rows
-        // go below the caret — the same "core above, history below" shape as the other providers.
-        XCTAssertEqual(primaryByProvider["claude"], ["claude.session", "claude.weekly", "claude.extra", "claude.trend"])
-        XCTAssertEqual(expandedByProvider["claude"], ["claude.sonnet", "claude.fable", "claude.today", "claude.yesterday", "claude.last30"])
-        XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly", "codex.trend"])
-        // Spark (the optional model-specific limits) leads the On Demand section, before credits.
+        XCTAssertEqual(primaryByProvider["claude"], ["claude.session", "claude.weekly", "claude.fable"])
+        XCTAssertEqual(expandedByProvider["claude"], [
+            "claude.trend", "claude.extra", "claude.sonnet",
+            "claude.today", "claude.yesterday", "claude.last30"
+        ])
+        XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly"])
         XCTAssertEqual(expandedByProvider["codex"], [
-            "codex.spark", "codex.sparkWeekly",
-            "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30"
+            "codex.trend", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
+            "codex.credits", "codex.today", "codex.yesterday", "codex.last30"
         ])
         XCTAssertEqual(primaryByProvider["devin"], ["devin.daily", "devin.weekly"])
         XCTAssertEqual(expandedByProvider["devin"], ["devin.extra"])
@@ -716,6 +722,32 @@ final class LayoutStoreTests: XCTestCase {
             "cursor.onDemand", "cursor.requests", "cursor.credits",
             "cursor.today", "cursor.yesterday", "cursor.last30"
         ])
+    }
+
+    func testSavedCustomizationWinsOverChangedForkDefaults() throws {
+        let defaults = makeDefaults("SavedCustomization")
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        persistence.savePlaced([
+            PlacedWidget(descriptorID: "claude.session"),
+            PlacedWidget(descriptorID: "claude.weekly")
+        ])
+        persistence.saveMetricOrder(["claude": ["claude.weekly", "claude.session"]])
+        persistence.saveSeededDefaults(Set(DefaultLayout.metricIDs))
+        persistence.savePins([])
+        persistence.saveExpandedMetrics(["claude.weekly"])
+
+        let store = LayoutStore(
+            registry: WidgetRegistry.from([ClaudeProvider()]),
+            defaults: defaults,
+            storageKey: "layout"
+        )
+
+        XCTAssertEqual(store.placed.map(\.descriptorID), ["claude.weekly", "claude.session"])
+        XCTAssertEqual(Array(store.orderedSupportedMetrics(for: "claude").map(\.id).prefix(2)), [
+            "claude.weekly", "claude.session"
+        ])
+        XCTAssertTrue(store.pinnedMetricIDs.isEmpty)
+        XCTAssertEqual(store.expandedMetricIDs, ["claude.weekly"])
     }
 
     func testMetricOrderPersistsWhileMetricIsDisabled() {

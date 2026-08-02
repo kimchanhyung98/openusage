@@ -31,6 +31,7 @@ final class WidgetDataStoreTests: XCTestCase {
         // Hermetic: pin the meter style via an isolated suite so a persisted `.used` in `.standard`
         // can't flip the expected "remaining" output.
         let store = WidgetDataStore(registry: registry, providers: [runtime], defaults: makeUserDefaults("resolve-progress"))
+        store.meterStyle = .remaining
 
         await store.refreshAll()
         let data = store.data(for: descriptor)
@@ -617,6 +618,7 @@ final class WidgetDataStoreTests: XCTestCase {
             cache: cache,
             defaults: makeUserDefaults("fresh-cache-meter")
         )
+        store.meterStyle = .remaining
 
         await store.refreshAll()
 
@@ -662,6 +664,7 @@ final class WidgetDataStoreTests: XCTestCase {
             cache: cache,
             defaults: makeUserDefaults("expired-cache-meter")
         )
+        store.meterStyle = .remaining
 
         await store.refreshAll()
 

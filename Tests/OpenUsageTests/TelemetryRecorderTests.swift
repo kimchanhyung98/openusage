@@ -137,6 +137,15 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertEqual(first, second)
     }
 
+    func testTelemetryDefaultsOffAndExplicitOptInPersists() {
+        let defaults = makeDefaults("default-off")
+        let store = TelemetryStore(defaults: defaults)
+        XCTAssertFalse(store.enabled)
+
+        store.enabled = true
+        XCTAssertTrue(TelemetryStore(defaults: defaults).enabled)
+    }
+
     // MARK: - Helpers
 
     /// Local noon on 2026-06-`d`, matching the recorder's local-calendar day boundary.
@@ -147,7 +156,9 @@ final class TelemetryRecorderTests: XCTestCase {
     }
 
     private func makeStore(_ name: String) -> TelemetryStore {
-        TelemetryStore(defaults: makeDefaults(name))
+        let defaults = makeDefaults(name)
+        defaults.set(true, forKey: "enabled")
+        return TelemetryStore(defaults: defaults)
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {
