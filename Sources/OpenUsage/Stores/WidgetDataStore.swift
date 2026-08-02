@@ -97,20 +97,20 @@ final class WidgetDataStore {
     private(set) var remoteOnlySpend: [(provider: Provider, snapshot: ProviderSnapshot)] = []
 
     /// Global meter style: whether every bounded tile (and the menu-bar value) renders as "used" or
-    /// "left/remaining". Persisted so the choice survives relaunch; defaults to `.remaining`.
+    /// "left/remaining". Persisted so the choice survives relaunch; defaults to `.used`.
     var meterStyle: WidgetDisplayMode {
         didSet { defaults.set(meterStyle.rawValue, forKey: Self.meterStyleKey) }
     }
 
     /// Global reset-countdown format: relative ("Resets in 4d 17h") or absolute ("Resets tomorrow at
-    /// 9:00 AM"). Persisted across relaunch; defaults to `.relative`. Toggled by clicking a reset label.
+    /// 9:00 AM"). Persisted across relaunch; defaults to `.absolute`. Toggled by clicking a reset label.
     var resetDisplayMode: ResetDisplayMode {
         didSet { defaults.set(resetDisplayMode.rawValue, forKey: Self.resetDisplayModeKey) }
     }
 
     /// Global "always show pacing" opt-in: when on, on-track rows surface their pace projection (the
     /// blue/healthy row gains its "~N% left at reset" copy + an even-pace tick, the amber tick switches
-    /// to the same even-pace line). Persisted across relaunch; defaults to `false` (every row unchanged).
+    /// to the same even-pace line). Persisted across relaunch; defaults to `true`.
     var alwaysShowPacing: Bool {
         didSet { defaults.set(alwaysShowPacing, forKey: Self.alwaysShowPacingKey) }
     }
@@ -147,9 +147,9 @@ final class WidgetDataStore {
             }
         self.providerIdentityKeys = providerIdentityKeys
         self.resolveDisplayName = resolveDisplayName
-        self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .remaining)
-        self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .relative)
-        self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey)
+        self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
+        self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
+        self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey, default: true)
         // Stale-while-revalidate: load whatever was cached (expired included) so the menu bar and
         // dashboard show last-known values immediately at launch instead of "—"; the refresh loop
         // replaces them as soon as fresh data lands.

@@ -10,9 +10,11 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
     /// Identity-relevant, non-secret configuration variables. Secrets (API keys, tokens) must never
     /// be added here — the snapshot lives in UserDefaults as plain text.
     static let capturedKeys = [
-        "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME",
+        "CLAUDE_CONFIG_DIR", "CODEX_HOME", "KIMI_CODE_HOME", "XDG_CONFIG_HOME",
         "USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH",
         "CLAUDE_LOCAL_OAUTH_API_BASE", "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+        "KIMI_CODE_BASE_URL", "KIMI_CODE_OAUTH_HOST", "KIMI_OAUTH_HOST",
+        "KIMI_DISABLE_OAUTH_LOCK",
     ]
 
     /// Captured values. A key absent here was verifiably NOT exported at capture time — that absence
@@ -36,10 +38,11 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-/// UserDefaults persistence for the snapshot (`openusage.shellEnvSnapshot.v1`). A class so the
+/// UserDefaults persistence for the snapshot (`openusage.shellEnvSnapshot.v2`). A class so the
 /// post-launch refresh task can carry it across actors; UserDefaults itself is thread-safe.
 final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
-    static let storageKey = "openusage.shellEnvSnapshot.v1"
+    static let storageKey = "openusage.shellEnvSnapshot.v2"
+    static let previousStorageKey = "openusage.shellEnvSnapshot.v1"
 
     /// The snapshot as it existed at process start, decoded once and memoized (a `static let` is
     /// thread-safe lazy). `ProcessEnvironmentReader` consults this on every identity-key read, so it
@@ -70,6 +73,7 @@ final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
             return
         }
         defaults.set(data, forKey: Self.storageKey)
+        defaults.removeObject(forKey: Self.previousStorageKey)
     }
 
     /// Wait (off-main, bounded by the capture's own subprocess timeout) for the login-shell capture

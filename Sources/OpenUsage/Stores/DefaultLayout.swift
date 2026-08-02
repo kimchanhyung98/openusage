@@ -1,7 +1,7 @@
 import Foundation
 
-/// Metrics enabled on first launch. Core quota meters and trends stay visible above the fold, while
-/// balances, reset details, and spend-history rows are enabled but tucked behind each provider's caret.
+/// Metrics enabled on first launch. The personal-fork defaults mirror the owner's saved Customize
+/// layout; rows omitted here remain available to enable from the provider detail screen.
 /// `LayoutStore` filters this to whatever the active registry actually knows, so registries that don't
 /// define an ID (e.g. the test fixtures) silently ignore it. The provider-section order isn't seeded
 /// here: an empty saved order reconciles to plain registry order in `LayoutStore`.
@@ -9,11 +9,11 @@ enum DefaultLayout {
     static let metricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
 
-        "claude.session", "claude.weekly", "claude.trend",
-        "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
+        "claude.session", "claude.weekly", "claude.fable", "claude.trend",
+        "claude.today", "claude.yesterday",
 
-        "codex.session", "codex.weekly", "codex.spark", "codex.sparkWeekly", "codex.trend",
-        "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+        "codex.session", "codex.weekly", "codex.trend", "codex.rateLimitResets",
+        "codex.today", "codex.yesterday",
 
         "cursor.usage", "cursor.auto", "cursor.api", "cursor.trend",
         "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30",
@@ -25,6 +25,10 @@ enum DefaultLayout {
 
         "grok.weekly", "grok.trend",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
+
+        "kimi.session", "kimi.weekly",
+
+        "kiro.credits",
 
         "opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend",
         "opencode.today", "opencode.yesterday", "opencode.last30",
@@ -55,15 +59,15 @@ enum DefaultLayout {
     ]
 
     /// Metrics pinned to the menu bar on first launch, so the app shows real numbers out of the box
-    /// instead of a lone icon. Two per provider for Antigravity, Claude, Codex, and Cursor — the
-    /// per-provider cap (`LayoutStore.maxPinsPerProvider`). Filtered to the active
-    /// registry by `LayoutStore`, like `metricIDs`.
+    /// instead of a lone icon. Filtered to the active registry by `LayoutStore`, like `metricIDs`.
     static let pinnedMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly",
-        "claude.session", "claude.weekly",
-        "codex.session", "codex.weekly",
+        "claude.weekly",
+        "codex.weekly",
         "cursor.auto", "cursor.api",
         "copilot.premium",
+        "kimi.weekly",
+        "kiro.credits",
         "openrouter.credits",
         "zai.session", "zai.weekly"
     ]
@@ -96,13 +100,14 @@ enum DefaultLayout {
         // Antigravity: the Gemini pool pair (5h + weekly) stays above the fold; the non-Gemini
         // (Claude) pool pair sits below the caret.
         "antigravity.claude", "antigravity.claudeWeekly",
-        // Claude's core meters (Session, Weekly, Extra, Usage Trend) stay above the fold; spend-history
-        // rows sit below the caret. Matches every other provider's "core above, history below" shape.
-        "claude.sonnet", "claude.fable", "claude.today", "claude.yesterday", "claude.last30",
-        // Codex's core Session/Weekly meters and Usage Trend stay above the fold; Spark (the optional
-        // model-specific limits), credits, reset details, and spend rows sit below the caret.
-        "codex.spark", "codex.sparkWeekly",
-        "codex.credits", "codex.rateLimitResets", "codex.today", "codex.yesterday", "codex.last30",
+        // Claude: Session, Weekly, and Fable stay above the fold. Usage Trend, optional limits,
+        // Extra Usage, and spend-history rows sit below the caret.
+        "claude.trend", "claude.extra", "claude.sonnet",
+        "claude.today", "claude.yesterday", "claude.last30",
+        // Codex: Session and Weekly stay above the fold. Usage Trend, reset details, optional Spark
+        // limits, Extra Usage, and spend-history rows sit below the caret.
+        "codex.trend", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
+        "codex.credits", "codex.today", "codex.yesterday", "codex.last30",
         "cursor.onDemand", "cursor.requests", "cursor.credits",
         "cursor.today", "cursor.yesterday", "cursor.last30",
         // Copilot: Credits (the metered premium pool) + Extra Usage stay above the fold; the org

@@ -8,7 +8,7 @@ enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
     case twentyFourHour = "24h"
 
     static let key = "timeFormat"
-    static var fallback: TimeFormatSetting { .auto }
+    static var fallback: TimeFormatSetting { .twentyFourHour }
 
     // `current` (the user's current choice, read live) comes from `UserDefaultsBacked`.
 

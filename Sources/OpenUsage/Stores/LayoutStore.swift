@@ -97,7 +97,7 @@ final class LayoutStore {
     /// back onto the stack (an undo must not be recorded as a new, separately-undoable action).
     private var isApplyingUndo = false
 
-    /// Menu-bar display style (Text strip vs. compact Bars). Persisted; defaults to `.text`.
+    /// Menu-bar display style (Text strip vs. compact Bars). Persisted; defaults to `.bars`.
     var menuBarStyle: MenuBarStyle {
         didSet { persistence.saveMenuBarStyle(menuBarStyle) }
     }

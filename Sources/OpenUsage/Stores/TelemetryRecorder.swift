@@ -39,7 +39,7 @@ final class TelemetryRecorder {
 
     var isEnabled: Bool { store.enabled }
 
-    /// Toggle the user's opt-out choice: persist it (in the beta-wipe-proof store) and mirror it onto
+    /// Persist the user's sharing choice (in the beta-wipe-proof store) and mirror it onto
     /// the SDK. A no-op when unchanged.
     func setEnabled(_ enabled: Bool) {
         guard store.enabled != enabled else { return }

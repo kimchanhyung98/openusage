@@ -39,6 +39,8 @@ enum ProviderCatalog {
             CopilotProvider(defaults: defaults),
             DevinProvider(),
             GrokProvider(),
+            KimiProvider(),
+            KiroProvider(),
             OpenCodeProvider(),
             OpenRouterProvider(),
             ZAIProvider()

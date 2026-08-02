@@ -38,24 +38,23 @@ final class CodexProvider: ProviderRuntime {
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "codex.weekly", provider: provider, title: "Weekly")
                 .exportingLimit("weekly", unit: "percent"),
+            .usageTrend(provider: provider)
+                .exportingHistory(
+                    scope: .machineLocal,
+                    estimatedCost: true,
+                    sourceNote: "From your Codex logs (estimated)"
+                ),
+            .values(id: "codex.rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
+                .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
             // Model-specific Spark limits (GPT-5.3-Codex-Spark), parsed from `additional_rate_limits`.
-            // Declared right after Weekly so they group with the core rate-limit meters; seeded On
-            // Demand (below the caret) and unpinned in `DefaultLayout`.
+            // Seeded On Demand (below the caret), disabled, and unpinned in `DefaultLayout`.
             .percent(id: "codex.spark", provider: provider, title: "Spark")
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: "codex.sparkWeekly", provider: provider, title: "Spark Weekly")
                 .exportingLimit("sparkWeekly", unit: "percent"),
             .combined(id: "codex.credits", provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))
-                .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars)),
-            .values(id: "codex.rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
-                .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
-            .usageTrend(provider: provider)
-                .exportingHistory(
-                    scope: .machineLocal,
-                    estimatedCost: true,
-                    sourceNote: "From your Codex logs (estimated)"
-                )
+                .exportingLimit("creditValue", kind: .balance, unit: "usd", source: .value(kind: .dollars))
         ] + WidgetDescriptor.spendTiles(provider: provider)
     }
 

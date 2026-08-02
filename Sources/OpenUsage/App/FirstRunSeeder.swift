@@ -6,14 +6,14 @@ import Foundation
 /// Two steps, both on the first launch only (existing installs keep their all-on legacy default and
 /// are never touched):
 /// 1. **Synchronously** switch `ProviderEnablementStore` into enabled-list mode with the established
-///    fallback set (Claude, Codex, Cursor), so the dashboard and menu bar never flash all providers.
+///    fallback set (Claude, Codex, Kimi), so the dashboard and menu bar never flash all providers.
 /// 2. **Asynchronously** probe every provider's `hasLocalCredentials()` (local files/keychain only, no
 ///    network) and replace the fallback with exactly the detected set — unless nothing was detected
 ///    (keep the fallback) or the user already touched the toggles while the probe ran (their choice wins).
 @MainActor
 enum FirstRunSeeder {
-    /// The established providers (see AGENTS.md "## Providers"), shown when detection finds nothing.
-    static let fallbackProviderIDs: Set<String> = ["claude", "codex", "cursor"]
+    /// The personal fork's preferred providers, shown when detection finds nothing.
+    static let fallbackProviderIDs: Set<String> = ["claude", "codex", "kimi"]
 
     /// Returns the detection task (for tests to await), or `nil` when no seeding happened. The
     /// `enabledIDs == nil` guard makes seeding idempotent: an already-seeded store (e.g. an unbundled
@@ -36,7 +36,7 @@ enum FirstRunSeeder {
 
     /// Re-runs first-launch detection on demand for the Customize "Reset All" action. Unlike first-run
     /// and update-time seeding, this is a deliberate user reset, so it *does* overwrite the current
-    /// on/off choices: it snaps the enabled set to the Claude/Codex/Cursor fallback synchronously (so the
+    /// on/off choices: it snaps the enabled set to the Claude/Codex/Kimi fallback synchronously (so the
     /// dashboard reflects the reset without waiting on the probe), then replaces it with exactly the
     /// providers detected on this machine once the local credential probe finishes — keeping the fallback
     /// when nothing is detected. A toggle the user flips during the (brief, local-only) probe still wins.
