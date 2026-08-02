@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 @testable import OpenUsage
@@ -59,11 +60,11 @@ final class KimiCredentialLockTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let lock = KimiCredentialLock(configuration: configuration(heartbeatInterval: 0.01))
         let handle = try await lock.acquire(target: fixture.target)
-        let before = try modificationDate(fixture.lockURL)
+        let before = try modificationTimestamp(fixture.lockURL)
 
         try await Task.sleep(nanoseconds: 40_000_000)
 
-        let after = try modificationDate(fixture.lockURL)
+        let after = try modificationTimestamp(fixture.lockURL)
         XCTAssertGreaterThan(after, before)
         let handleIsValid = await handle.isValid()
         XCTAssertTrue(handleIsValid)
@@ -75,13 +76,13 @@ final class KimiCredentialLockTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let lock = KimiCredentialLock(configuration: configuration(heartbeatInterval: 0.01))
         let handle = try await lock.acquire(target: fixture.target)
-        let before = try modificationDate(fixture.lockURL)
+        let before = try modificationTimestamp(fixture.lockURL)
 
         try await handle.performWhileValid {
             try await Task.sleep(nanoseconds: 40_000_000)
         }
 
-        let after = try modificationDate(fixture.lockURL)
+        let after = try modificationTimestamp(fixture.lockURL)
         XCTAssertGreaterThan(after, before)
         let handleIsValid = await handle.isValid()
         XCTAssertTrue(handleIsValid)
@@ -252,13 +253,17 @@ final class KimiCredentialLockTests: XCTestCase {
         )
     }
 
-    private func modificationDate(_ url: URL) throws -> Date {
-        try XCTUnwrap(
-            FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
-        )
+    private func modificationTimestamp(_ url: URL) throws -> Int64 {
+        var info = stat()
+        guard Darwin.lstat(url.path, &info) == 0 else {
+            throw KimiLockTestError.statFailed
+        }
+        return Int64(info.st_mtimespec.tv_sec) * 1_000_000_000
+            + Int64(info.st_mtimespec.tv_nsec)
     }
 }
 
 private enum KimiLockTestError: Error {
     case operationExecuted
+    case statFailed
 }
