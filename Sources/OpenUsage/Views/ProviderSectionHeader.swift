@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Shared provider section header used by the dashboard and its lifted provider-reorder preview.
 /// The provider mark and name lead, followed by the optional plan badge. Dashboard callers supply a
-/// screenshot-copy action, revealed at the trailing edge while the header is hovered. Callers can also
-/// supply an optional `warning` — the latest refresh error, rendered as a small amber
+/// screenshot-copy action, revealed while the header is hovered, followed by the optional usage-only
+/// account selector at the trailing edge. Callers can also supply an optional `warning` — the latest
+/// refresh error, rendered as a small amber
 /// triangle beside the name whose hover tooltip carries the message (e.g. "Not logged in. Run `codex`
 /// to authenticate."). The
 /// optional `staleness` is the dashboard-only hint that the values shown are an aged snapshot still
@@ -24,6 +25,8 @@ struct ProviderSectionHeader: View {
     /// Dashboard-only screenshot action. The reorder preview omits it, while Customize uses its own
     /// row type and is unaffected by this header.
     var onCopyScreenshot: (() -> Bool)?
+    /// UI-only account selector preview. Production account selection is intentionally not connected yet.
+    var accountSwitcher: AccountSwitcherMockPreview?
 
     /// Header type and icon track the density setting like the rows do, so Compact shrinks the
     /// whole section anatomy — not just the rows under it.
@@ -41,7 +44,8 @@ struct ProviderSectionHeader: View {
         warning: String? = nil,
         refreshing: Bool = false,
         staleness: StalenessHint? = nil,
-        onCopyScreenshot: (() -> Bool)? = nil
+        onCopyScreenshot: (() -> Bool)? = nil,
+        accountSwitcher: AccountSwitcherMockPreview? = nil
     ) {
         self.provider = provider
         self.plan = plan
@@ -49,6 +53,7 @@ struct ProviderSectionHeader: View {
         self.refreshing = refreshing
         self.staleness = staleness
         self.onCopyScreenshot = onCopyScreenshot
+        self.accountSwitcher = accountSwitcher
     }
 
     var body: some View {
@@ -103,6 +108,9 @@ struct ProviderSectionHeader: View {
                     isRevealed: isHovered,
                     action: onCopyScreenshot
                 )
+            }
+            if let accountSwitcher {
+                AccountSwitcherPreviewMenu(preview: accountSwitcher)
             }
         }
         .padding(.leading, 2)
