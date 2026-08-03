@@ -43,7 +43,7 @@ struct ReorderLiftPreview: View {
     // The previews are deliberately the same views the live screens render (shared row/card
     // builders); reading the density here lets the header→card spacing track the live sections too,
     // so a lifted provider block matches its source block in every density.
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
         preview

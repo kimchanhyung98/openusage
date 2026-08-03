@@ -12,6 +12,7 @@ enum DensitySetting: String, Hashable, Sendable, CaseIterable {
     case compact
 
     static let key = "density"
+    static let defaultValue: Self = .compact
 
     var label: String {
         switch self {

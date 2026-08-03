@@ -29,7 +29,7 @@ iCloud를 사용할 수 없음, 읽는 중, 쓰는 중, 파일 형식 오류 같
 |---|---|---|
 | Icon Style(아이콘 스타일) | Text / Bars | 별표한 지표를 메뉴 막대에 렌더링하는 방식입니다. 기본값은 Bars입니다. [메뉴 막대](menu-bar.md)를 참조하세요. |
 | Theme(테마) | System / Light / Dark | 팝오버에 적용되는 앱 전체 화면 모양 재정의입니다. |
-| Density (밀도) | Default / Compact | Default는 여백이 넉넉하고 Compact는 정보를 더 촘촘히 보여 줍니다. Compact에서는 글자가 한 단계 작아지고, 행과 프로바이더 섹션 사이가 좁아지며, Customize / Settings 행도 함께 줄어듭니다. 두 모드 모두 연속된 한 줄 지표(Today / Yesterday / …) 사이가 붙고 Compact에서 더 촘촘해집니다. |
+| Density (밀도) | Default / Compact | 새로 설치하면 Compact가 기본값입니다. Default는 여백이 넉넉하고 Compact는 정보를 더 촘촘히 보여 줍니다. Compact에서는 글자가 한 단계 작아지고, 행과 프로바이더 섹션 사이가 좁아지며, Customize / Settings 행도 함께 줄어듭니다. 두 모드 모두 연속된 한 줄 지표(Today / Yesterday / …) 사이가 붙고 Compact에서 더 촘촘해집니다. |
 | Time Format(시간 형식) | Auto / 12-hour / 24-hour | 정확한 시각을 표시하는 방식입니다(예: "Resets today at 6:38 PM"(오늘 오후 6:38에 리셋) 대 "18:38"). 기본값은 24-hour이며 Auto는 시스템을 따릅니다. |
 | Increase Transparency (투명도 높이기) | 끄기 / 켜기 | 끄기(기본값)는 팝오버를 불투명한 패널로 유지합니다. 켜면 팝오버가 반투명해져 데스크톱이 비쳐 보이지만, 숫자와 Options 컨트롤은 적응형 반투명 표면 위에서 읽기 쉽게 유지됩니다. macOS 손쉬운 사용 설정인 **Reduce Transparency**(투명도 감소)나 **Increase Contrast**(대비 증가)가 켜져 있으면 자동으로 일시 중지되며, 그 이유를 안내합니다. |
 

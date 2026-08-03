@@ -13,7 +13,7 @@ struct DashboardContentView: View {
     @Binding var reorderLift: ReorderLift?
     @Binding var scrollPosition: ScrollPosition
 
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
 
     var body: some View {
