@@ -1,6 +1,13 @@
 import XCTest
 @testable import OpenUsage
 
+private func localNoon(_ day: String) -> Date {
+    let parts = day.split(separator: "-").compactMap { Int($0) }
+    return Calendar.current.date(
+        from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)
+    )!
+}
+
 final class CodexAuthStoreTests: XCTestCase {
     func testParsesHexEncodedAuthPayload() {
         let raw = #"{"tokens":{"access_token":"token"},"last_refresh":"2026-01-01T00:00:00.000Z"}"#
@@ -410,7 +417,7 @@ final class CodexUsageMapperTests: XCTestCase {
         SpendTileMapper.appendTokenUsage(
             usage,
             to: &lines,
-            now: makeDate("2026-02-20T16:00:00.000Z")
+            now: localNoon("2026-02-20")
         )
 
         XCTAssertEqual(values(lines, "Today"),
@@ -432,7 +439,7 @@ final class CodexUsageMapperTests: XCTestCase {
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-02-19", totalTokens: 0, costUSD: nil)]),
             to: &lines,
-            now: makeDate("2026-02-20T16:00:00.000Z")
+            now: localNoon("2026-02-20")
         )
 
         XCTAssertTrue(lines.isEmpty, "an all-zero window appends no spend tiles")
@@ -445,7 +452,7 @@ final class CodexUsageMapperTests: XCTestCase {
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-02-20", totalTokens: 1_200_000, costUSD: nil)]),
             to: &lines,
-            now: makeDate("2026-02-20T16:00:00.000Z")
+            now: localNoon("2026-02-20")
         )
 
         XCTAssertEqual(values(lines, "Today"), [MetricValue(number: 1_200_000, kind: .count, label: "tokens")])
@@ -646,23 +653,22 @@ final class CodexUsageMapperTests: XCTestCase {
         }
         return values
     }
-
-    private func makeDate(_ value: String) -> Date {
-        OpenUsageISO8601.date(from: value)!
-    }
 }
 
 @MainActor
 final class CodexProviderTests: XCTestCase {
     func testNoUsageDataBadgeIsDroppedWhenLocalLogsHaveSpend() async throws {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = localNoon("2026-02-20")
+        let turnStart = now.addingTimeInterval(-2 * 3600)
         // The live usage API returns nothing mappable (empty body -> no metric lines)...
         let httpClient = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
         let home = try CodexLogFixture.makeHome(files: [
             "sessions/rollout-1.jsonl": [
-                CodexLogFixture.turnContext(timestamp: "2026-02-20T14:00:00.000Z", model: "gpt-5.2"),
+                CodexLogFixture.turnContext(
+                    timestamp: OpenUsageISO8601.string(from: turnStart), model: "gpt-5.2"
+                ),
                 CodexLogFixture.tokenCount(
-                    timestamp: "2026-02-20T14:01:00.000Z",
+                    timestamp: OpenUsageISO8601.string(from: turnStart.addingTimeInterval(60)),
                     last: CodexLogFixture.usage(input: 100, output: 50)
                 )
             ].joined(separator: "\n")
