@@ -10,7 +10,7 @@ struct ModelUsageDetail: View {
     let breakdown: ModelUsageBreakdown
     var onHoverChange: (Bool) -> Void
 
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     private static let width: CGFloat = 280
 

@@ -5,6 +5,10 @@ import XCTest
 /// point. A tweak that accidentally inverts or equalizes a pair would make Density "do nothing"
 /// again without any compile error.
 final class DensitySettingTests: XCTestCase {
+    func testCompactIsTheDefaultDensity() {
+        XCTAssertEqual(DensitySetting.defaultValue, .compact)
+    }
+
     func testCompactIsTighterOnEveryDimension() {
         let spacing: [(String, KeyPath<DensitySetting, CGFloat>)] = [
             ("barRowPadding", \.barRowPadding),

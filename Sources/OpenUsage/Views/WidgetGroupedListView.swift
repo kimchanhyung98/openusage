@@ -23,7 +23,7 @@ struct WidgetGroupedListView: View {
     /// The card the "Rename…" alert is currently editing; `nil` when the alert is closed.
     @State private var renameCardID: String?
     @State private var renameDraft = ""
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
         // Provider-section spacing is noticeably wider than the in-card row rhythm (so groups

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ICloudSyncSettingsSection: View {
     @Bindable var sync: ICloudUsageSyncStore
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {

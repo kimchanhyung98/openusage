@@ -13,7 +13,7 @@ struct CustomizeProviderListView: View {
     let rowFrames: [String: CGRect]
 
     @State private var activeProviderID: String?
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.regular
+    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     private var orderedRows: [ProviderRow] { layout.customizeProviderRows }
 
