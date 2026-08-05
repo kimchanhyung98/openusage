@@ -22,6 +22,6 @@ OpenUsage는 Mac 앱에서 널리 사용하는 업데이트 프레임워크인 [
 ## 업데이트 출처
 
 업데이트 빌드는 OpenUsage의 GitHub 릴리스에 게시되고, 사용 가능한 버전 목록("appcast")은
-`https://robinebers.github.io/openusage/appcast.xml`에서 제공됩니다. 각 다운로드는 Apple 공증과
+`https://openusage.chanhyung.kim/appcast.xml`에서 제공됩니다. 각 다운로드는 Apple 공증과
 OpenUsage 자체 서명으로 이중 검증되며, 어느 쪽이든 일치하지 않으면 앱이 거부합니다. 이 기능은
 공식 서명 릴리스 빌드에서만 제공되고 로컬 개발자 빌드에는 없습니다.
