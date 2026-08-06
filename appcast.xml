@@ -1,0 +1,14 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>OpenUsage</title>
+        <item>
+            <title>0.8.2</title>
+            <pubDate>Thu, 06 Aug 2026 08:32:12 +0000</pubDate>
+            <sparkle:version>528</sparkle:version>
+            <sparkle:shortVersionString>0.8.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/v0.8.2/OpenUsage-0.8.2.dmg" length="21151197" type="application/octet-stream" sparkle:edSignature="o1t0ZDNas9GMqhozigJ7Bn3ZDi00Fi3x1HcTk1rp8AQCwffU1vrN9loGx+lKAwdstYsitTrhFPyqpPI9OJwHCA=="/>
+        </item>
+    </channel>
+</rss>
