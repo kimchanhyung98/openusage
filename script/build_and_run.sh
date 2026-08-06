@@ -25,8 +25,8 @@ APP_DISPLAY="OpenUsage"                 # user-facing app name
 BUNDLE_ID="${BUNDLE_ID:-com.kimchanhyung98.openusage.dev}"
 ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
-APP_VERSION="0.8.0"
-APP_BUILD="0.8.0"
+APP_VERSION="0.8.2"
+APP_BUILD="0.8.2"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"

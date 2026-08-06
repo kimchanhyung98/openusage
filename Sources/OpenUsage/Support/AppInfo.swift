@@ -7,6 +7,6 @@ import Foundation
 /// fallback covers runs outside the packaged app (e.g. `swift run`, where there is no Info.plist).
 enum AppInfo {
     static var version: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.8.0-dev"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.8.2-dev"
     }
 }
