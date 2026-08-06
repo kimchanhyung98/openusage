@@ -159,6 +159,7 @@ jobs:
           name: OpenUsage ${{ steps.meta.outputs.version }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
           files: dist/OpenUsage-${{ steps.meta.outputs.version }}.dmg
+          generate_release_notes: true
 
       - name: Generate appcast with Sparkle
         env:
