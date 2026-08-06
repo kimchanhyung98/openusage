@@ -16,6 +16,7 @@ appcast.xml
 *.certSigningRequest
 *.mobileprovision
 *.provisionprofile
+.swiftpm/
 
 # Distribution / packaging
 .Python
