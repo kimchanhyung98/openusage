@@ -3,21 +3,21 @@ import XCTest
 
 final class ProvisioningProfileScriptTests: XCTestCase {
     func testProfileMatcherAcceptsBareAndMatchingTeamPrefixedUbiquityIdentifiers() throws {
-        XCTAssertTrue(try matches(containerID: "iCloud.com.robinebers.openusage.dev"))
-        XCTAssertTrue(try matches(containerID: "TEAM123.iCloud.com.robinebers.openusage.dev"))
+        XCTAssertTrue(try matches(containerID: "iCloud.com.kimchanhyung98.openusage.dev"))
+        XCTAssertTrue(try matches(containerID: "TEAM123.iCloud.com.kimchanhyung98.openusage.dev"))
     }
 
     func testProfileMatcherRejectsWrongTeamBundleAndContainerIdentifiers() throws {
-        XCTAssertFalse(try matches(containerID: "OTHERTEAM.iCloud.com.robinebers.openusage.dev"))
+        XCTAssertFalse(try matches(containerID: "OTHERTEAM.iCloud.com.kimchanhyung98.openusage.dev"))
         XCTAssertFalse(try matches(
-            applicationID: "TEAM123.com.robinebers.some-other-app",
-            containerID: "TEAM123.iCloud.com.robinebers.openusage.dev"
+            applicationID: "TEAM123.com.kimchanhyung98.some-other-app",
+            containerID: "TEAM123.iCloud.com.kimchanhyung98.openusage.dev"
         ))
-        XCTAssertFalse(try matches(containerID: "TEAM123.iCloud.com.robinebers.openusage"))
+        XCTAssertFalse(try matches(containerID: "TEAM123.iCloud.com.kimchanhyung98.openusage"))
     }
 
     private func matches(
-        applicationID: String = "TEAM123.com.robinebers.openusage.dev",
+        applicationID: String = "TEAM123.com.kimchanhyung98.openusage.dev",
         containerID: String
     ) throws -> Bool {
         let script = URL(fileURLWithPath: #filePath)
@@ -35,8 +35,8 @@ final class ProvisioningProfileScriptTests: XCTestCase {
             script.path,
             applicationID,
             containerID,
-            "com.robinebers.openusage.dev",
-            "iCloud.com.robinebers.openusage.dev"
+            "com.kimchanhyung98.openusage.dev",
+            "iCloud.com.kimchanhyung98.openusage.dev"
         ]
         try process.run()
         process.waitUntilExit()

@@ -5,9 +5,9 @@ set -euo pipefail
 # to /Applications. The dev build:
 #   - is signed with a stable Apple Development identity, so keychain/permission grants stick across
 #     rebuilds (macOS keys those to the signing identity + bundle id, not the install location);
-#   - uses its own bundle id (com.robinebers.openusage.dev), so it never touches the real installed
+#   - uses its own bundle id (com.kimchanhyung98.openusage.dev), so it never touches the real installed
 #     app's settings or keychain. To run against the real app's data instead, set BUNDLE_ID to
-#     com.robinebers.openusage below;
+#     com.kimchanhyung98.openusage below;
 #   - ships no Sparkle feed, so it never checks for or installs updates (test updates with a real
 #     signed + notarized release build — that's the only honest way).
 #
@@ -22,8 +22,8 @@ CONFIG="${CONFIG:-release}"
 
 TARGET_NAME="OpenUsage"                 # SwiftPM target / binary name
 APP_DISPLAY="OpenUsage"                 # user-facing app name
-BUNDLE_ID="${BUNDLE_ID:-com.robinebers.openusage.dev}"
-ICLOUD_CONTAINER_ID="iCloud.com.robinebers.openusage.dev"
+BUNDLE_ID="${BUNDLE_ID:-com.kimchanhyung98.openusage.dev}"
+ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
 APP_VERSION="0.8.0"
 APP_BUILD="0.8.0"
@@ -148,7 +148,7 @@ cat >"$INFO_PLIST" <<PLIST
   <true/>
   <key>NSUbiquitousContainers</key>
   <dict>
-    <key>iCloud.com.robinebers.openusage.dev</key>
+    <key>$ICLOUD_CONTAINER_ID</key>
     <dict>
       <key>NSUbiquitousContainerIsDocumentScopePublic</key>
       <false/>
