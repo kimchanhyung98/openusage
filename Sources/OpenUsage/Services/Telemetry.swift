@@ -13,7 +13,7 @@ enum TelemetryConfig {
     /// The project token baked into the build. Replace `phc_REPLACE_ME` with the real US-region
     /// `phc_…` key (safe to commit — it's a client write-only key), or leave it and set
     /// `OPENUSAGE_POSTHOG_TOKEN` at runtime for local testing.
-    private static let bakedToken = "phc_vGEqXEpQNwViyKnMNWvmKWpv8XxMT3yaeYi6gfidr4nf"
+    private static let bakedToken = "phc_tRD4fSrpb2bgA3xYLqCkLsZ9YSGQckuKNB5BBnRm7DCL"
 
     static var token: String {
         let env = ProcessInfo.processInfo.environment["OPENUSAGE_POSTHOG_TOKEN"]?

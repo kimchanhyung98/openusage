@@ -159,18 +159,7 @@ jobs:
           name: OpenUsage ${{ steps.meta.outputs.version }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
           files: dist/OpenUsage-${{ steps.meta.outputs.version }}.dmg
-
-      - name: Preserve Tauri updater manifest on stable releases
-        if: steps.meta.outputs.channel == 'stable'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.meta.outputs.tag }}
-        run: |
-          # Older Tauri builds fetch releases/latest/download/latest.json. Every stable Swift release
-          # becomes GitHub "Latest", so carry the final Tauri manifest forward on each stable release.
-          tmpdir="$(mktemp -d)"
-          gh release download v0.6.28 --pattern latest.json --dir "$tmpdir"
-          gh release upload "$TAG" "$tmpdir/latest.json" --clobber
+          generate_release_notes: true
 
       - name: Generate appcast with Sparkle
         env:
