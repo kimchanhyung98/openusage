@@ -93,8 +93,8 @@ jobs:
           # versions and the OTHER channel's items are preserved (verified: items whose archive isn't in
           # the folder keep their original enclosure URLs untouched).
           mkdir -p feed
-          # Distinguish "no gh-pages yet" (first release -> fresh feed) from "couldn't read it"
-          # (transient failure). Only start fresh when the branch genuinely doesn't exist; otherwise
+          # Distinguish "nothing published yet" (fresh feed) from "couldn't read it" (transient
+          # failure). Only start fresh when there is genuinely no appcast to carry forward; otherwise
           # abort so a network blip can't replace the live feed's full history with a single item.
           set +e
           git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
@@ -102,9 +102,16 @@ jobs:
           set -e
           if [ "$rc" -eq 0 ]; then
             git fetch origin gh-pages
-            git show origin/gh-pages:appcast.xml > feed/appcast.xml \
-              || { echo "gh-pages exists but appcast.xml is unreadable — aborting to protect the feed." >&2; exit 1; }
-            echo "Loaded existing appcast from gh-pages."
+            # gh-pages can exist without an appcast: pricing-supplement.yml publishes to the same
+            # branch, so the first release finds the branch already created. An absent appcast.xml is
+            # that case, not a failure — but a present-yet-unreadable one still aborts.
+            if git cat-file -e origin/gh-pages:appcast.xml 2>/dev/null; then
+              git show origin/gh-pages:appcast.xml > feed/appcast.xml \
+                || { echo "gh-pages has appcast.xml but it could not be read — aborting to protect the feed." >&2; exit 1; }
+              echo "Loaded existing appcast from gh-pages."
+            else
+              echo "gh-pages exists but carries no appcast.xml yet — starting a fresh feed."
+            fi
           elif [ "$rc" -eq 2 ]; then
             echo "No gh-pages branch yet — starting a fresh feed."
           else
@@ -152,18 +159,7 @@ jobs:
           name: OpenUsage ${{ steps.meta.outputs.version }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
           files: dist/OpenUsage-${{ steps.meta.outputs.version }}.dmg
-
-      - name: Preserve Tauri updater manifest on stable releases
-        if: steps.meta.outputs.channel == 'stable'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.meta.outputs.tag }}
-        run: |
-          # Older Tauri builds fetch releases/latest/download/latest.json. Every stable Swift release
-          # becomes GitHub "Latest", so carry the final Tauri manifest forward on each stable release.
-          tmpdir="$(mktemp -d)"
-          gh release download v0.6.28 --pattern latest.json --dir "$tmpdir"
-          gh release upload "$TAG" "$tmpdir/latest.json" --clobber
+          generate_release_notes: true
 
       - name: Generate appcast with Sparkle
         env:
@@ -220,3 +216,5 @@ jobs:
           # gh-pages also hosts pricing_supplement.json (see pricing-supplement.yml). Without
           # keep_files, publishing the appcast would delete it from the branch.
           keep_files: true
+          # The feed is served from the custom domain, so gh-pages must carry its CNAME.
+          cname: openusage.chanhyung.kim

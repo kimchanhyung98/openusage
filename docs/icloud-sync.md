@@ -51,8 +51,8 @@ Malformed files are ignored and reported in Settings and the app log.
 Apple requires the iCloud container assignment to be present in the provisioning profile embedded in
 the app. OpenUsage uses separate resources so development builds cannot write production history:
 
-- `com.robinebers.openusage.dev` uses `iCloud.com.robinebers.openusage.dev`.
-- `com.robinebers.openusage` uses `iCloud.com.robinebers.openusage`.
+- `com.kimchanhyung98.openusage.dev` uses `iCloud.com.kimchanhyung98.openusage.dev`.
+- `com.kimchanhyung98.openusage` uses `iCloud.com.kimchanhyung98.openusage`.
 
 Create a `MAC_APP_DEVELOPMENT` profile that includes every registered development Mac and a
 `MAC_APP_DIRECT` profile for releases. Install the development profile on each included Mac. The

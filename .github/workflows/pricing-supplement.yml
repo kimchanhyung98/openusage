@@ -69,3 +69,5 @@ jobs:
           publish_branch: gh-pages
           publish_dir: ./public
           keep_files: true
+          # The feed is served from the custom domain, so gh-pages must carry its CNAME.
+          cname: openusage.chanhyung.kim

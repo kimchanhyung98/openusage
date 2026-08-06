@@ -54,8 +54,8 @@ Apple은 앱에 임베딩된 프로비저닝 프로파일에 iCloud 컨테이너
 요구합니다. OpenUsage는 개발 빌드가 프로덕션 히스토리를 쓸 수 없도록 별도의 리소스를
 사용합니다:
 
-- `com.robinebers.openusage.dev`는 `iCloud.com.robinebers.openusage.dev`를 사용합니다.
-- `com.robinebers.openusage`는 `iCloud.com.robinebers.openusage`를 사용합니다.
+- `com.kimchanhyung98.openusage.dev`는 `iCloud.com.kimchanhyung98.openusage.dev`를 사용합니다.
+- `com.kimchanhyung98.openusage`는 `iCloud.com.kimchanhyung98.openusage`를 사용합니다.
 
 등록된 모든 개발 Mac을 포함하는 `MAC_APP_DEVELOPMENT` 프로파일과 릴리스용
 `MAC_APP_DIRECT` 프로파일을 생성하세요. 포함된 각 Mac에 개발 프로파일을 설치하세요.
