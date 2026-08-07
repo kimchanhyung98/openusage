@@ -33,6 +33,26 @@ final class AccountShellInstallerTests: XCTestCase {
         }
     }
 
+    func testInstallWritesThroughAnRcFileSymlink() throws {
+        let home = try makeHome()
+        let dotfiles = home.appendingPathComponent("dotfiles")
+        try FileManager.default.createDirectory(at: dotfiles, withIntermediateDirectories: true)
+        let real = dotfiles.appendingPathComponent("zshrc")
+        try Data("# my dotfiles\n".utf8).write(to: real)
+        let link = home.appendingPathComponent(".zshrc")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        try AccountShellInstaller.install(family: "claude", shell: .zsh, homeDirectory: home)
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: link.path)
+        XCTAssertEqual(attributes[.type] as? FileAttributeType, .typeSymbolicLink,
+                       "the dotfiles symlink must survive the install")
+        let contents = try String(contentsOf: real, encoding: .utf8)
+        XCTAssertTrue(contents.contains("# my dotfiles"), "existing dotfile content is preserved")
+        XCTAssertTrue(contents.contains(">>> OpenUsage claude account switching >>>"),
+                      "the marker block lands in the real file behind the link")
+    }
+
     func testFishWrapperLandsInTheUserConfigFile() throws {
         let home = try makeHome()
 

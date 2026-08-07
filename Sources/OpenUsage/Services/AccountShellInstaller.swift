@@ -84,6 +84,9 @@ enum AccountShellInstaller {
     }
 
     private static func replace(_ source: String, for family: String, at url: URL, fileManager: FileManager) throws {
+        // The rc file may be a symlink into a dotfiles repo; the atomic write below would replace
+        // the link itself with a regular file, so resolve it and write to the real file.
+        let url = fileManager.fileExists(atPath: url.path) ? url.resolvingSymlinksInPath() : url
         let start = "# >>> OpenUsage \(family) account switching >>>"
         let end = "# <<< OpenUsage \(family) account switching <<<"
         let existing = fileManager.fileExists(atPath: url.path)
