@@ -12,6 +12,11 @@ limits, raw logs, or provider responses. Cursor's history is already account-wid
 is never added across Macs. Disabling a provider immediately removes its peer contributions from the
 combined view and omits it from this Mac's next iCloud write, while its local cached snapshot remains.
 
+Managed account names, selected terminal/dashboard accounts, sign-in readiness, and Keychain authentication snapshots stay on this Mac and are never included.
+A discovered configuration home whose logs belong to one proven account keeps an opaque identity for cross-Mac matching.
+Managed `~/.claude` and `~/.codex` histories can contain sessions from several switched accounts.
+They therefore sync only as a provider-family total and are not assigned to the currently selected managed account.
+
 OpenUsage combines the valid files in memory and rebuilds Today, Yesterday, Last 30 Days, Usage Trend,
 unknown-model warnings, and model breakdowns. The same combined spend rows feed the dashboard, Total
 Spend, menu-bar pins, share cards, and the local HTTP API. Both `/v1/usage` and `/v1/limits` read the
@@ -26,10 +31,11 @@ receive it, especially while offline. Downloaded changes reload immediately when
 
 ## Multiple accounts across Macs
 
-Histories match by **account**, not by card name. Each Mac's file records which account every card
-belongs to (an opaque account/organization identifier — never an email), so the same account merges into
-the same card everywhere, even when one Mac shows it as the main card and another as an extra account
-card.
+Histories from an account-pinned configuration home match by **account**, not by card name.
+Each Mac's file records which account every such card belongs to using an opaque account/organization identifier, never an email.
+The same account therefore merges into the same card everywhere, even when one Mac shows it as the main card and another as an extra account card.
+A managed shared-home family total is the exception.
+It has no profile identity and merges with the same bare provider family on peers.
 
 An account you use on another Mac but have no login for here doesn't become a card: it appears as its
 own slice in **Total Spend**, named by its account code ("claude@ab12cd34") — so the number at the top

@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 /// The outcome of a reset-credit claim, as the resets popover renders it — the consume endpoint's four
 /// `code` values collapsed to what the user needs to know (`reset` and `already_redeemed` are both
@@ -243,18 +242,5 @@ final class CodexResetClaimService {
             return Date(timeIntervalSince1970: seconds)
         }
         return nil
-    }
-}
-
-/// Hands the claim service to the resets popover through the environment: `nil` (the default — previews,
-/// share-card renders, reorder previews) renders the timeline read-only with no "Use" affordance.
-private struct CodexResetClaimServiceKey: EnvironmentKey {
-    static let defaultValue: CodexResetClaimService? = nil
-}
-
-extension EnvironmentValues {
-    var codexResetClaim: CodexResetClaimService? {
-        get { self[CodexResetClaimServiceKey.self] }
-        set { self[CodexResetClaimServiceKey.self] = newValue }
     }
 }

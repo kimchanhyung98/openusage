@@ -70,6 +70,7 @@ struct SettingsScreen: View {
                         .hoverTooltip("Open OpenUsage from anywhere")
                 }
             }
+            AccountsSettingsSection()
             ICloudSyncSettingsSection(sync: container.iCloudSync)
             section("Appearance") {
                 row("Icon Style") {

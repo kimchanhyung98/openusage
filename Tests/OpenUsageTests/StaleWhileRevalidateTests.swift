@@ -308,6 +308,222 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertEqual(cache.loadSnapshots(providerIDs: [provider.id])[provider.id]?.plan, "Last good")
     }
 
+    func testAccountSelectionRefreshWaitsForAnInFlightProviderRefresh() async throws {
+        let provider = Self.testProvider
+        let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
+        let runtime = BlockingProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Alpha", used: 55, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: makeUserDefaults("account-selection-race"), storageKey: "snapshots")
+        )
+
+        runtime.blockNextRefresh = true
+        let inFlight = Task { await store.refresh(providerID: provider.id, force: true) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !runtime.isWaiting, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        guard runtime.isWaiting else {
+            inFlight.cancel()
+            return XCTFail("the initial refresh did not enter the in-flight state")
+        }
+
+        let selected = Task {
+            await store.refreshAfterAccountSelection(
+                providerID: provider.id,
+                maxAttempts: 20,
+                retryDelay: .milliseconds(1)
+            )
+        }
+        try? await Task.sleep(for: .milliseconds(5))
+        runtime.resume()
+        _ = await inFlight.value
+        await selected.value
+
+        XCTAssertEqual(runtime.refreshCount, 2, "the selected account must receive its own refresh after the overlap clears")
+        XCTAssertEqual(store.data(for: descriptor).used, 55)
+    }
+
+    /// A managed switch keeps the bare card id while changing the account behind it. The previous
+    /// account's in-memory snapshot must not survive the catalog swap — and the persisted cache,
+    /// stamped by the old account, must not repaint it either.
+    func testReplacingCatalogWithANewIdentityClearsTheSameCardsState() async {
+        let provider = Self.testProvider
+        let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
+        let cache = ProviderSnapshotCache(userDefaults: makeUserDefaults("identity-swap-purge"), storageKey: "snapshots")
+        let runtime = MutableProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Alpha", used: 40, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            cache: cache,
+            providerIdentityKeys: [provider.id: "acct-a"]
+        )
+        _ = await store.refresh(providerID: provider.id, force: true)
+        XCTAssertEqual(store.data(for: descriptor).used, 40)
+
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            identityKeys: [provider.id: "acct-b"]
+        )
+
+        XCTAssertNil(store.localSnapshots[provider.id],
+                     "the previous account's snapshot must not survive behind the unchanged card id")
+        XCTAssertFalse(store.data(for: descriptor).hasData,
+                       "the persisted cache, stamped by the old account, must not repaint either")
+    }
+
+    /// A fetch that started under the previous account and finishes after the switch must be
+    /// discarded: publishing it would show the old account's data under the new one, and stamping
+    /// it would carry the new identity — falsely legitimizing it for every later stamp check.
+    func testAFetchFinishingAfterACatalogSwapIsDiscardedAndNotStamped() async throws {
+        let provider = Self.testProvider
+        let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
+        let cache = ProviderSnapshotCache(userDefaults: makeUserDefaults("mid-fetch-swap"), storageKey: "snapshots")
+        let oldRuntime = BlockingProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Alpha", used: 11, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [oldRuntime],
+            cache: cache,
+            providerIdentityKeys: [provider.id: "acct-a"]
+        )
+
+        oldRuntime.blockNextRefresh = true
+        let inFlight = Task { await store.refresh(providerID: provider.id, force: true) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !oldRuntime.isWaiting, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        guard oldRuntime.isWaiting else {
+            inFlight.cancel()
+            return XCTFail("the old account's refresh did not enter the in-flight state")
+        }
+
+        let newRuntime = MutableProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
+        )
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [newRuntime],
+            identityKeys: [provider.id: "acct-b"]
+        )
+        oldRuntime.resume()
+        let outcome = await inFlight.value
+
+        guard case .skipped = outcome else {
+            return XCTFail("a fetch crossing a catalog swap must be discarded, got \(outcome)")
+        }
+        XCTAssertNil(store.localSnapshots[provider.id], "the old account's late result must not publish")
+        XCTAssertTrue(cache.loadSnapshots(providerIDs: [provider.id]).isEmpty,
+                      "the late result must never be stamped with the new account's identity")
+    }
+
+    /// When the new account's first fetch fails, the card must show that failure — not stand the
+    /// previous account's values in behind the unchanged card id.
+    func testNewAccountFetchFailureShowsAnErrorInsteadOfTheOldAccountsData() async {
+        let provider = Self.testProvider
+        let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
+        let cache = ProviderSnapshotCache(userDefaults: makeUserDefaults("new-account-failure"), storageKey: "snapshots")
+        let runtime = MutableProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Alpha", used: 40, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            cache: cache,
+            providerIdentityKeys: [provider.id: "acct-a"]
+        )
+        _ = await store.refresh(providerID: provider.id, force: true)
+        XCTAssertEqual(store.data(for: descriptor).used, 40)
+
+        runtime.snapshot = ProviderSnapshot.error(provider: provider, message: "Not signed in")
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            identityKeys: [provider.id: "acct-b"]
+        )
+        let outcome = await store.refresh(providerID: provider.id, force: true)
+
+        guard case .failed = outcome else {
+            return XCTFail("expected the new account's refresh to fail, got \(outcome)")
+        }
+        XCTAssertEqual(store.errorMessage(for: provider.id), "Not signed in")
+        XCTAssertFalse(store.data(for: descriptor).hasData,
+                       "the previous account's values must not stand in for the failed new account")
+    }
+
+    func testReplacingProviderCatalogMakesANewAccountCardRefreshableWithoutRestart() async {
+        let defaultProvider = Self.testProvider
+        let defaultDescriptor = Self.descriptor(defaultProvider, id: "test.alpha", metric: "Alpha")
+        let accountProvider = Provider(id: "codex@work", displayName: "Codex — Work", icon: .providerMark("codex"))
+        let accountDescriptor = Self.descriptor(accountProvider, id: "codex@work.weekly", metric: "Weekly")
+        let defaultRuntime = MutableProviderRuntime(
+            provider: defaultProvider,
+            descriptors: [defaultDescriptor],
+            snapshot: ProviderSnapshot(providerID: defaultProvider.id, displayName: defaultProvider.displayName, lines: [])
+        )
+        let accountRuntime = MutableProviderRuntime(
+            provider: accountProvider,
+            descriptors: [accountDescriptor],
+            snapshot: ProviderSnapshot(
+                providerID: accountProvider.id,
+                displayName: accountProvider.displayName,
+                lines: [.progress(label: "Weekly", used: 43, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [defaultProvider], descriptors: [defaultDescriptor]),
+            providers: [defaultRuntime],
+            cache: ProviderSnapshotCache(userDefaults: makeUserDefaults("runtime-account-card"), storageKey: "snapshots")
+        )
+
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(
+                providers: [defaultProvider, accountProvider],
+                descriptors: [defaultDescriptor, accountDescriptor]
+            ),
+            providers: [defaultRuntime, accountRuntime],
+            identityKeys: [accountProvider.id: "work"]
+        )
+        await store.refreshAfterAccountSelection(providerID: accountProvider.id, maxAttempts: 1)
+
+        XCTAssertEqual(store.knownProviderIDs, [defaultProvider.id, accountProvider.id])
+        XCTAssertEqual(store.data(for: accountDescriptor).used, 43)
+    }
+
     func testCompletedEmptyHistoryStillClearsLastGoodHistory() async throws {
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
@@ -419,6 +635,7 @@ private final class BlockingProviderRuntime: ProviderRuntime {
     var snapshot: ProviderSnapshot
     var blockNextRefresh = false
     private(set) var isWaiting = false
+    private(set) var refreshCount = 0
     private var continuation: CheckedContinuation<Void, Never>?
 
     init(provider: Provider, descriptors: [WidgetDescriptor], snapshot: ProviderSnapshot) {
@@ -428,6 +645,7 @@ private final class BlockingProviderRuntime: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        refreshCount += 1
         if blockNextRefresh {
             blockNextRefresh = false
             isWaiting = true

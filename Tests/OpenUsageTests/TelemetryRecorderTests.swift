@@ -129,6 +129,35 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertFalse(store.enabled, "opt-out must persist")
     }
 
+    func testConfigSnapshotCollapsesAccountCardsToTheirFamily() {
+        let providerIDs = [
+            "claude", "claude@ab12cd34", "claude@profile-p1", "codex", "codex@profile-p2", "cursor",
+        ]
+        let providerIDForMetric: (String) -> String? = { metricID in
+            providerIDs.first { metricID.hasPrefix("\($0).") && $0.contains("@") }
+                ?? metricID.split(separator: ".").first.map(String.init)
+        }
+
+        let snapshot = TelemetryConfigSnapshot.collapsingAccountCards(
+            enabledProviders: providerIDs,
+            enabledMetricIDs: [
+                "claude.session", "claude@ab12cd34.session", "claude@profile-p1.weekly",
+                "codex@profile-p2.session", "cursor.usage",
+            ],
+            pinnedMetricIDs: ["claude@ab12cd34.weekly"],
+            expandedMetricIDs: ["codex@profile-p2.trend"],
+            menuBarStyle: "strip",
+            providerIDForMetric: providerIDForMetric
+        )
+
+        XCTAssertEqual(snapshot.enabledProviders, ["claude", "codex", "cursor"],
+                       "account card ids and their count must never reach telemetry")
+        XCTAssertEqual(snapshot.enabledMetricIDs,
+                       ["claude.session", "claude.weekly", "codex.session", "cursor.usage"])
+        XCTAssertEqual(snapshot.pinnedMetricIDs, ["claude.weekly"])
+        XCTAssertEqual(snapshot.expandedMetricIDs, ["codex.trend"])
+    }
+
     func testInstallIDIsStableAcrossStoreInstances() {
         let defaults = makeDefaults("install-id")
         let first = TelemetryStore(defaults: defaults).installID

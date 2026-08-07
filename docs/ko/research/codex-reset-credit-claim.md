@@ -1,9 +1,9 @@
 # Codex 레이트 리밋 초기화 크레딧: 사용 방식
 
 Codex "reset credit" 사용 흐름을 조사하고 실계정에서 검증한 기록(2026-07-12)입니다.
-OpenUsage는 이미 이 크레딧을 표시하고 있습니다(Codex 프로바이더의 "Resets" 표면). 이
-문서는 앱에서 크레딧을 *사용하려면* 무엇이 필요한지 정리한 것입니다. 아직 구현은 없습니다
-— 프로토콜 참조 문서입니다.
+이 문서는 앱 내 클레임을 추가하기 위한 프로토콜 참조로 시작되었습니다.
+OpenUsage는 현재 [Codex 프로바이더 안내](/docs/ko/providers/codex.md#팝오버에서-재설정-사용하기)에 설명된 2단계 클릭과 카드별 클레임 흐름을 구현했습니다.
+아래 엔드포인트 세부 정보는 그 구현의 프로토콜 참조입니다.
 
 출처: 오픈소스 Codex CLI(`openai/codex`, `codex-rs/backend-client/src/client/rate_limit_resets.rs`,
 `codex-rs/tui/src/chatwidget/reset_credits.rs`, `codex-rs/tui/src/chatwidget/usage.rs`,
@@ -23,10 +23,12 @@ Codex 레이트 리밋 기간이 즉시 초기화됩니다. 유료 요금제에�
 엔터프라이즈/대체 베이스 URL용 `PathStyle::CodexApi` 변형(`/wham/...` 대신 `/api/codex/...`)도
 있지만, OpenUsage는 ChatGPT 스타일을 사용합니다.
 
-모든 호출에 포함되는 헤더(OpenUsage의 Codex 사용량 클라이언트가 이미 보내는 것과 동일):
+모든 호출에 포함되는 헤더:
 
 - `Authorization: Bearer <access_token>`(`~/.codex/auth.json`의 ChatGPT OAuth 액세스 토큰)
 - `ChatGPT-Account-Id: <account_id>`(같은 파일에서)
+- `OpenAI-Beta: codex-1`과 `originator: Codex Desktop` — 리셋 크레딧 엔드포인트가 기대하는
+  Codex 데스크톱 클라이언트 헤더이며, OpenUsage의 일반 사용량 조회는 보내지 않습니다
 - POST에는 `Content-Type: application/json`
 
 ### 목록 조회 (OpenUsage에 이미 구현됨)
@@ -121,19 +123,17 @@ consume 응답의 `credit` 객체는 CLI 자체 구조체가 디코딩하는 것
   사용된 크레딧은 목록에 더 이상 나타나지 않습니다. 리셋은 `additional_rate_limits` 항목의
   윈도우도 0으로 만들었습니다(모델별 리밋은 이미 0%였으므로 이는 확증이 아닌 시사점입니다).
 
-## OpenUsage 구현 참고 사항 (구현 시)
+## OpenUsage가 채택한 구현 참고 사항
 
-- 클레임은 OpenUsage가 이미 통신하는 인프라에 대한 단일 POST입니다. 인증, 헤더, 계정 id 처리는
-  `CodexUsageClient`의 기존 호출과 동일합니다.
-- `redeem_request_id` UUID는 **사용자에게 클레임 UI가 표시될 때**(크레딧별로) 발급하고,
-  상호작용 동안 유지하며, 재시도 시 재사용합니다 — 이것이 CLI의 이중 소모 방지 장치이며
-  정확히 그대로 따라야 합니다.
-- 항상 명시적 `credit_id`를 전달합니다. 기본 선택은 만료가 가장 임박한 사용 가능 크레딧으로
-  합니다(CLI의 정렬 순서).
-- `already_redeemed`는 성공으로 처리하고, `nothing_to_reset`은 정보성 메시지로 표시합니다
-  (크레딧은 소모되지 *않음*). `credit_id`와 함께 `no_credit`이 오면 목록을 새로 고칩니다 —
-  크레딧이 경쟁으로 소진된 것입니다.
-- 이는 되돌릴 수 없고 사용자에게 보이는 희소한 지급분의 소모입니다 — UI는 반드시 명시적이고
-  신중한 사용자 액션이어야 하며(CLI는 피커 + 확인 흐름 사용) 절대 자동이어서는 안 됩니다.
-- 클레임 성공 후 사용량 + 크레딧 목록을 즉시 새로 고칩니다. 두 윈도우가 0%로 떨어지고 개수가
-  감소하므로 위젯에 바로 반영되어야 합니다.
+- 구현된 클레임은 OpenUsage가 이미 통신하는 인프라에 대한 단일 POST입니다.
+  인증, 헤더, 계정 id 처리는 `CodexUsageClient`의 기존 호출과 동일합니다.
+- OpenUsage는 `redeem_request_id` UUID를 **사용자에게 클레임 UI가 표시될 때** 크레딧별로 발급합니다.
+  상호작용 동안 UUID를 유지하며, 재시도 시 재사용합니다 — CLI와 같은 이중 소모 방지 장치입니다.
+- 항상 명시적 `credit_id`를 전달합니다.
+  사용자가 타임라인에서 특정 크레딧을 직접 고르며(만료 임박 순 정렬, CLI와 같은 순서),
+  클레임은 그 크레딧의 id만 대상으로 하고 클레임 시점의 새 목록과 다시 대조합니다.
+- `already_redeemed`는 성공으로 처리하고, `nothing_to_reset`은 크레딧이 소모되지 않으므로 정보성 메시지로 표시합니다.
+  `credit_id`와 함께 `no_credit`이 오면 크레딧이 경쟁으로 소진된 것이므로 목록을 새로 고칩니다.
+- 이는 되돌릴 수 없고 사용자에게 보이는 희소한 지급분의 소모이므로, UI는 명시적 확인 뒤에 두고 절대 자동으로 클레임하지 않습니다.
+- 클레임 성공 후 OpenUsage는 사용량과 크레딧 목록을 즉시 새로 고칩니다.
+  두 윈도우가 0%로 떨어지고 개수가 감소하므로 위젯에 바로 반영되어야 합니다.

@@ -24,6 +24,16 @@ struct ProviderSectionHeader: View {
     /// Dashboard-only screenshot action. The reorder preview omits it, while Customize uses its own
     /// row type and is unaffected by this header.
     var onCopyScreenshot: (() -> Bool)?
+    /// Managed account choices. The selector changes only the dashboard's usage view.
+    var accountOptions: [AccountUsageOption] = []
+    var selectedAccountID: String?
+    var onSelectAccount: ((String) -> Void)?
+    /// True only for a card attached to a Settings-managed profile. Independently discovered
+    /// config-directory cards keep their existing account-derived titles.
+    var usesManagedAccountTitle = false
+    /// Registered account profiles for this provider family. This can exceed the number of runtime
+    /// cards when the selected account is running in the shared configuration home.
+    var managedProfileCount = 0
 
     /// Header type and icon track the density setting like the rows do, so Compact shrinks the
     /// whole section anatomy — not just the rows under it.
@@ -41,7 +51,12 @@ struct ProviderSectionHeader: View {
         warning: String? = nil,
         refreshing: Bool = false,
         staleness: StalenessHint? = nil,
-        onCopyScreenshot: (() -> Bool)? = nil
+        onCopyScreenshot: (() -> Bool)? = nil,
+        accountOptions: [AccountUsageOption] = [],
+        selectedAccountID: String? = nil,
+        onSelectAccount: ((String) -> Void)? = nil,
+        usesManagedAccountTitle: Bool = false,
+        managedProfileCount: Int = 0
     ) {
         self.provider = provider
         self.plan = plan
@@ -49,6 +64,11 @@ struct ProviderSectionHeader: View {
         self.refreshing = refreshing
         self.staleness = staleness
         self.onCopyScreenshot = onCopyScreenshot
+        self.accountOptions = accountOptions
+        self.selectedAccountID = selectedAccountID
+        self.onSelectAccount = onSelectAccount
+        self.usesManagedAccountTitle = usesManagedAccountTitle
+        self.managedProfileCount = managedProfileCount
     }
 
     var body: some View {
@@ -64,7 +84,11 @@ struct ProviderSectionHeader: View {
                 // Name + plan keep their width and stay on one line; under width pressure (a long plan
                 // name like "Super Grok Heavy") the lower-priority stale tag truncates first instead of
                 // wrapping the name to a second line.
-                Text(container.displayName(for: provider))
+                Text(Self.headerTitle(
+                    for: provider,
+                    resolvedDisplayName: container.displayName(for: provider),
+                    usesManagedAccountTitle: usesManagedAccountTitle
+                ))
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -104,12 +128,91 @@ struct ProviderSectionHeader: View {
                     action: onCopyScreenshot
                 )
             }
+            if Self.shouldShowAccountPicker(
+                managedProfileCount: managedProfileCount,
+                runtimeOptionCount: accountOptions.count
+            ),
+               let selectedAccountID,
+               let onSelectAccount {
+                AccountUsagePicker(
+                    options: accountOptions,
+                    selectedID: selectedAccountID,
+                    onSelect: onSelectAccount
+                )
+            }
         }
         .padding(.leading, 2)
         .padding(.trailing, 4)
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+    }
+}
+
+extension ProviderSectionHeader {
+    static func shouldShowAccountPicker(managedProfileCount: Int, runtimeOptionCount: Int) -> Bool {
+        managedProfileCount > 1 && runtimeOptionCount > 0
+    }
+
+    /// Settings-managed cards are alternate views of one provider and share its family title.
+    /// Independently discovered cards preserve the account-derived title they had before managed
+    /// switching existed.
+    static func headerTitle(
+        for provider: Provider,
+        resolvedDisplayName: String,
+        usesManagedAccountTitle: Bool
+    ) -> String {
+        guard usesManagedAccountTitle else { return resolvedDisplayName }
+        let family = ProviderAccountID.family(of: provider.id)
+        return ProviderAccountID.families.contains(family) ? family.capitalized : resolvedDisplayName
+    }
+}
+
+/// A compact, always-visible managed-account selector.
+struct AccountUsageOption: Identifiable, Hashable {
+    let id: String
+    let title: String
+}
+
+private struct AccountUsagePicker: View {
+    let options: [AccountUsageOption]
+    let selectedID: String
+    let onSelect: (String) -> Void
+
+    private var selectedTitle: String {
+        options.first(where: { $0.id == selectedID })?.title ?? "Account"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(options) { option in
+                Button {
+                    onSelect(option.id)
+                } label: {
+                    if option.id == selectedID {
+                        Label(option.title, systemImage: "checkmark")
+                    } else {
+                        Text(option.title)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Text(selectedTitle)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: true, vertical: false)
+        .accessibilityLabel("Usage Account")
+        .accessibilityValue(selectedTitle)
     }
 }
 

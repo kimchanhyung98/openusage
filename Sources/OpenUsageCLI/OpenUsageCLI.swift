@@ -21,6 +21,10 @@ struct OpenUsageCLI {
             guard let defaults = UserDefaults(suiteName: app.bundleIdentifier) else {
                 throw CLIError.appDefaultsUnavailable
             }
+            if let account = arguments.account {
+                let code = try AccountCommandRunner(defaults: defaults).run(account)
+                exit(code)
+            }
             let result = try await UsageReader(userDefaults: defaults).read(
                 providerID: arguments.providerID,
                 force: arguments.force
@@ -35,6 +39,13 @@ struct OpenUsageCLI {
             fail("\(message)\nRun 'openusage --help' for usage.", code: 2)
         } catch CLIError.appDefaultsUnavailable {
             fail("Could not open the OpenUsage settings domain.", code: 4)
+        } catch let error as AccountProfileError {
+            switch error {
+            case .registryUnreadable:
+                fail(accountErrorMessage(error), code: 4)
+            default:
+                fail(accountErrorMessage(error), code: 2)
+            }
         } catch UsageReaderError.unknownProvider(let providerID) {
             fail("Unknown provider: \(providerID)", code: 2)
         } catch {
@@ -53,6 +64,7 @@ struct OpenUsageCLI {
 
     private static let help = """
     Usage: openusage [provider] [--force]
+           openusage account <command> ...
 
     Read limits through OpenUsage's shared five-minute cache and exit. Output is always JSON.
 
@@ -60,5 +72,9 @@ struct OpenUsageCLI {
       --force      Refresh even when the shared cache is still fresh
       -v, --version
       -h, --help
+
+    Account commands (read-only; manage and switch accounts in OpenUsage Settings):
+      account list [claude|codex] [--json]
+      account current [claude|codex]
     """
 }

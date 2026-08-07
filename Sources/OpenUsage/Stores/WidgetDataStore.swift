@@ -12,8 +12,8 @@ struct StalenessHint: Equatable {
 @MainActor
 @Observable
 final class WidgetDataStore {
-    private let registry: WidgetRegistry
-    private let providersByID: [String: ProviderRuntime]
+    private var registry: WidgetRegistry
+    private var providersByID: [String: ProviderRuntime]
     private let cache: ProviderSnapshotCache
     private let defaults: UserDefaults
     /// Whether a provider is currently enabled. Injected so the store consults the single
@@ -35,7 +35,8 @@ final class WidgetDataStore {
     /// `ProviderAccountAssembly`. Drives the snapshot cache's account stamp: writes record the
     /// producer, and launch loads only paint an entry whose stamp matches. A card absent here has an
     /// unresolved identity this launch (or isn't account-aware) — its cache behaves as it always did.
-    private let providerIdentityKeys: [String: String]
+    private var providerIdentityKeys: [String: String]
+    private var familyTotalHistoryCardIDs: Set<String>
     /// The live card title for a card id, `nil` for non-account providers — the account-registry
     /// name resolver, injected by `AppContainer` so notification titles carry renames. `nil`
     /// (tests, the one-shot CLI) falls back to the baked derived name.
@@ -128,6 +129,7 @@ final class WidgetDataStore {
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
         postNotification: (@MainActor (String, String, String, String) async -> Bool)? = nil,
         providerIdentityKeys: [String: String] = [:],
+        familyTotalHistoryCardIDs: Set<String> = [],
         resolveDisplayName: (@MainActor (String) -> String?)? = nil
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
@@ -146,6 +148,7 @@ final class WidgetDataStore {
                 await AppNotifications.shared.post(idPrefix: idPrefix, title: title, subtitle: subtitle, body: body)
             }
         self.providerIdentityKeys = providerIdentityKeys
+        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
@@ -205,6 +208,75 @@ final class WidgetDataStore {
         if refreshed > 0 { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
     }
+
+    /// The account switch changes the menu-bar pins before its selected card necessarily has a
+    /// snapshot. A periodic refresh can already own that card at this instant; wait for it to finish
+    /// and run the user-requested fetch instead of dropping the refresh and leaving the strip stale
+    /// until the next cadence.
+    func refreshAfterAccountSelection(
+        providerID: String,
+        maxAttempts: Int = 45,
+        retryDelay: Duration = .seconds(1)
+    ) async {
+        precondition(maxAttempts > 0)
+        for attempt in 0..<maxAttempts {
+            switch await refresh(providerID: providerID, force: true) {
+            case .refreshed, .cacheHit, .backedOff, .failed:
+                return
+            case .skipped:
+                guard attempt < maxAttempts - 1 else { break }
+                AppLog.info(.refresh, "account selection waiting out an in-flight refresh for \(providerID) (attempt \(attempt + 1))")
+                try? await Task.sleep(for: retryDelay)
+            }
+        }
+        AppLog.error(.refresh, "account selection refresh kept being skipped for \(providerID); waiting for the next cycle")
+    }
+
+    /// Bumped on every catalog replacement; `refresh` captures it at fetch start and discards a
+    /// result whose catalog changed mid-fetch, so a fetch started under one account can never be
+    /// published — or stamped — under the identity installed after it began.
+    private var catalogGeneration = 0
+
+    /// Replaces the catalog after Settings discovers a signed-in account. The object itself stays
+    /// stable, so views and the status item immediately observe the new registry without restarting
+    /// the menu-bar process.
+    func replaceProviderCatalog(
+        registry: WidgetRegistry,
+        providers: [ProviderRuntime],
+        identityKeys: [String: String],
+        familyTotalHistoryCardIDs: Set<String> = []
+    ) {
+        let liveIDs = Set(registry.providers.map(\.id))
+        // A managed switch keeps the bare claude/codex card ids alive while changing the account
+        // behind them. State produced for the previous identity — snapshot, error, and failure
+        // backoff alike — must not carry over. Mirrors `hasStaleAccountStamp`: a card whose new
+        // identity is known and differs from the previous one starts empty.
+        let previousIdentityKeys = providerIdentityKeys
+        func keepsState(_ cardID: String) -> Bool {
+            guard liveIDs.contains(cardID) else { return false }
+            guard let newKey = identityKeys[cardID] else { return true }
+            return previousIdentityKeys[cardID] == newKey
+        }
+        catalogGeneration += 1
+        self.registry = registry
+        self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
+        self.providerIdentityKeys = identityKeys
+        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
+        localSnapshots = localSnapshots.filter { keepsState($0.key) }
+        providerErrors = providerErrors.filter { keepsState($0.key) }
+        failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
+
+        let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
+            !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
+        }
+        for (cardID, snapshot) in cached where localSnapshots[cardID] == nil {
+            localSnapshots[cardID] = snapshot
+        }
+        rebuildRenderedSnapshots()
+    }
+
+    var knownProviderIDs: [String] { registry.providers.map(\.id) }
+    var limitDescriptorsByProvider: [String: [WidgetDescriptor]] { registry.limitDescriptorsByProvider }
 
     /// Evaluate every visible, enabled metric for a quota pace milestone and post a notification for any
     /// that just crossed one. Driven from the periodic loop *after* `refreshAll`, so it catches pace
@@ -295,6 +367,7 @@ final class WidgetDataStore {
         }
         refreshingProviderIDs.insert(providerID)
         defer { refreshingProviderIDs.remove(providerID) }
+        let boundGeneration = catalogGeneration
         let start = monotonicNow()
         var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
             await provider.refresh()
@@ -303,6 +376,14 @@ final class WidgetDataStore {
         // publish that potentially partial snapshot; keep the last-good state exactly as it was.
         guard !Task.isCancelled else {
             AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
+            return .skipped
+        }
+        // The catalog changed while this fetch ran: the card id may now name a different account,
+        // so publishing this result would show the old account's data under the new one — and the
+        // stamp written below would carry the NEW identity, falsely legitimizing it for every later
+        // stamp check. Discard; the switch path force-refreshes the selected card itself.
+        guard catalogGeneration == boundGeneration else {
+            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
             return .skipped
         }
         let durationMs = durationMilliseconds(since: start)
@@ -399,7 +480,11 @@ final class WidgetDataStore {
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
             if let history = localSnapshots[providerID]?.usageHistory {
                 providers[providerID] = history
-                if let identity = providerIdentityKeys[providerID] {
+                // A managed shared-home history mixes sessions from every switched account, so it
+                // syncs as a family total WITHOUT the selected profile's identity — a stamp would
+                // make peers re-attribute the whole total to whichever account is selected now.
+                if let identity = providerIdentityKeys[providerID],
+                   !familyTotalHistoryCardIDs.contains(providerID) {
                     identities[providerID] = identity
                 }
             }
@@ -555,6 +640,8 @@ final class WidgetDataStore {
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
+        // The row's own card identity — per-card actions (the Codex reset-claim router) key on it.
+        result.providerID = descriptor.providerID
         return result
     }
 

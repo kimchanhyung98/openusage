@@ -107,4 +107,21 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         )
         XCTAssertEqual(withoutOverride.run().findings.map(\.identityKey), ["acct-main"])
     }
+
+    func testScansRegisteredHomesOutsideTheAmbientCandidateShape() throws {
+        let discovery = makeDiscovery(
+            files: [
+                "/Users/dev/accounts/claude-work/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-5"}}"#,
+                "/Users/dev/accounts/claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-5"}}"#,
+            ]
+        )
+
+        let result = discovery.run(
+            additionalDirectories: [URL(fileURLWithPath: "/Users/dev/accounts/claude-work")]
+        )
+
+        let finding = try XCTUnwrap(result.findings.first)
+        XCTAssertEqual(finding.identityKey, "acct-5")
+        XCTAssertEqual(finding.anchorPath, "/Users/dev/accounts/claude-work")
+    }
 }

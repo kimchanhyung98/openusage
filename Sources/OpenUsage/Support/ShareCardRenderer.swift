@@ -36,13 +36,12 @@ enum ShareCardRenderer {
     /// Returns `true` only when the PNG actually landed on the pasteboard, so callers can gate a success
     /// confirmation on it (and not claim "copied" when nothing was written).
     @discardableResult
-    static func copyToPasteboard(_ image: NSImage) -> Bool {
+    static func copyToPasteboard(_ image: NSImage, pasteboard: NSPasteboard = .general) -> Bool {
         guard let png = pngData(from: image) else {
             AppLog.error(.lifecycle, "share card: failed to encode PNG for clipboard")
             NSSound.beep()
             return false
         }
-        let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         guard pasteboard.setData(png, forType: .png) else {
             AppLog.error(.lifecycle, "share card: pasteboard rejected the PNG")

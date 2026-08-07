@@ -672,6 +672,35 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(store.data(for: descriptor).valueText, "20%")
     }
 
+    /// `data(for:)` stamps the row's own card id on both branches (resolved metric and no-data
+    /// fallback) — per-card actions like the Codex reset-claim router key on it.
+    func testDataForStampsTheProviderIDOnBothBranches() async {
+        let provider = Provider(id: "codex@ab12cd34", displayName: "Codex — Work", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor(
+            id: "codex@ab12cd34.session",
+            providerID: provider.id,
+            metricLabel: "Session",
+            sample: WidgetData(title: "Session", icon: provider.icon, kind: .percent, used: 0, limit: 100)
+        )
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Session", used: 42, limit: 100, format: .percent)]
+            )
+        )
+        let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
+        let store = WidgetDataStore(registry: registry, providers: [runtime], defaults: makeUserDefaults("provider-id-stamp"))
+
+        // No-data branch (no snapshot yet): the sample carries the stamp too.
+        XCTAssertEqual(store.data(for: descriptor).providerID, provider.id)
+
+        await store.refreshAll()
+        XCTAssertEqual(store.data(for: descriptor).providerID, provider.id)
+    }
+
     private func makeUserDefaults(_ name: String) -> UserDefaults {
         let suiteName = "OpenUsageTests.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

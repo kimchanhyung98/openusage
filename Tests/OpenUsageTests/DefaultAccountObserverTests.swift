@@ -46,6 +46,21 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
+    func testClaudeExplicitDefaultHomeReadsIdentityInsideTheConfigDir() {
+        let observer = makeObserver(
+            environment: ["CLAUDE_CONFIG_DIR": "/Users/dev/.claude"],
+            files: [
+                "/Users/dev/.claude.json": claudeStateJSON(uuid: "STALE", email: "stale@example.com"),
+                "/Users/dev/.claude/.claude.json": claudeStateJSON(),
+            ]
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
+        )
+    }
+
     func testClaudeIdentityIsOrgScoped() {
         let observer = makeObserver(files: [
             "/Users/dev/.claude.json": claudeStateJSON(orgUuid: "ORG-9", orgName: "Sunstory"),
@@ -68,6 +83,61 @@ final class DefaultAccountObserverTests: XCTestCase {
         XCTAssertEqual(
             observer.observeClaude(),
             .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/claude-work")
+        )
+    }
+
+    func testManagedClaudePinIgnoresAnAmbientConfigDirOverride() {
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "~/claude-work"]),
+            files: FakeFiles([
+                "/Users/dev/claude-work/.claude.json": claudeStateJSON(uuid: "OTHER", email: "other@example.com"),
+                "/Users/dev/.claude.json": claudeStateJSON(),
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        // The switch transaction owns `~/.claude`; the observer must describe that home, not the
+        // ambient override — otherwise the app would manage one account while observing another.
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
+        )
+    }
+
+    func testManagedClaudePinRequiresBothStateFilesToAgree() {
+        // Mirrors the switcher's rule: plain runs update `~/.claude.json`, wrapper runs update the
+        // state inside the home — a disagreement means the identity is ambiguous, never a guess.
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": claudeStateJSON(),
+                "/Users/dev/.claude/.claude.json": claudeStateJSON(uuid: "OTHER", email: "other@example.com"),
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .unresolved(reason: "shared home state files name different accounts")
+        )
+    }
+
+    func testManagedClaudePinResolvesFromTheInnerStateFileAlone() {
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles(["/Users/dev/.claude/.claude.json": claudeStateJSON()]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
         )
     }
 
@@ -226,4 +296,5 @@ private final class ThrowingKeychain: KeychainAccessing, @unchecked Sendable {
     struct Unavailable: Error {}
     func readGenericPassword(service: String) throws -> String? { throw Unavailable() }
     func writeGenericPassword(service: String, value: String) throws { throw Unavailable() }
+    func deleteGenericPassword(service: String) throws { throw Unavailable() }
 }

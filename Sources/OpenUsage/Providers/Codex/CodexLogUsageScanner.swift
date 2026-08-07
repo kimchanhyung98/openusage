@@ -42,6 +42,15 @@ actor CodexLogUsageScanner {
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Event>
+    /// Scoped provider instances pass their stable parse-source identity here, so distinct account
+    /// cards never share cache records over disjoint homes (mirror of `ClaudeLogUsageScanner`).
+    private let cacheIdentityOverride: String?
+    /// Extra account cards pin the scan to exactly their managed home, replacing the standard
+    /// resolution (`CODEX_HOME`, `~/.codex`) entirely — another account's rollouts must never bleed
+    /// into a scoped card. `nil` keeps the standard walk byte-identical.
+    private let rootsOverride: [URL]?
+    /// Same-account managed homes are folded into the default card as additional history roots.
+    private let additionalRoots: [URL]
 
     /// One turn's token usage, normalized from a `token_count` line (deltas already applied).
     /// `isFast` records whether the session was on the fast/priority service tier when the turn
@@ -71,21 +80,38 @@ actor CodexLogUsageScanner {
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
-        incrementalScanner: IncrementalJSONLScanner<Event>? = nil
+        incrementalScanner: IncrementalJSONLScanner<Event>? = nil,
+        cacheIdentityOverride: String? = nil,
+        rootsOverride: [URL]? = nil,
+        additionalRoots: [URL] = []
     ) {
+        precondition(cacheIdentityOverride?.isEmpty != true)
+        // A scoped root set must carry its own parse-source identity, or its cache records would
+        // collide with the default card's under the standard identity.
+        precondition(rootsOverride == nil || cacheIdentityOverride != nil)
         self.environment = environment
         self.homeDirectory = homeDirectory
         self.scanner = incrementalScanner ?? Self.sharedScanner
+        self.cacheIdentityOverride = cacheIdentityOverride
+        self.rootsOverride = rootsOverride
+        self.additionalRoots = additionalRoots
     }
 
     /// Scan the last `daysBack` days of Codex rollouts. Returns `nil` when no Codex home or no
     /// session files exist (the spend tiles then render "No data").
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
-        let homes = codexHomes()
+        let homes = rootsOverride ?? codexHomes() + additionalRoots
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
-        let identityPaths = Set(homes.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
-            .sorted()
-        let identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
+        // A scoped card uses its stable per-card identity; the standard walk keys the cache by the
+        // resolved home set (see `ClaudeLogUsageScanner.parseCacheIdentity` for the why).
+        let identity: String
+        if let cacheIdentityOverride {
+            identity = cacheIdentityOverride
+        } else {
+            let identityPaths = Set(homes.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+                .sorted()
+            identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
+        }
         let files = Self.sessionFiles(homes: homes)
         guard !files.isEmpty else {
             _ = await scanner.items(

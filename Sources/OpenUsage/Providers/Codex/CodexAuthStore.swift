@@ -30,6 +30,7 @@ struct CodexAuthState: Hashable, Sendable {
     enum Source: Hashable, Sendable {
         case file(path: String)
         case keychain
+        case accountSnapshot(profileID: String)
     }
 
     var auth: CodexAuth
@@ -81,6 +82,19 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
     }
 }
 
+/// Which login a `CodexAuthStore` is allowed to see. `.standard` is the default card — byte-identical
+/// to the store's historical behavior (`CODEX_HOME`, the default home list, the shared keychain item).
+/// `.home` backs a managed-profile account card and deliberately has no keychain, environment, or
+/// default-home fallback: the card can only ever read the one login it was created for. (Mirror of
+/// `ClaudeCredentialScope`.)
+enum CodexCredentialScope: Hashable, Sendable {
+    case standard
+    /// One registered launch-profile home; only `<path>/auth.json` is ever read.
+    case home(path: String)
+    /// A saved account-switching credential, used only for a dashboard usage card.
+    case accountSnapshot(profileID: String)
+}
+
 struct CodexAuthStore: Sendable {
     static let keychainService = "Codex Auth"
     /// Refresh once the access token is within this window of its JWT `exp` — the same 5-minute slack
@@ -93,21 +107,27 @@ struct CodexAuthStore: Sendable {
     var files: TextFileAccessing
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
+    let scope: CodexCredentialScope
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
+        scope: CodexCredentialScope = .standard,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
+        self.scope = scope
         self.now = now
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
-        authPaths().compactMap { loadAuth(at: $0) }
+        if case .accountSnapshot(let profileID) = scope {
+            return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
+        }
+        return authPaths().compactMap { loadAuth(at: $0) }
     }
 
     /// Reads the credential from a single on-disk auth file — the targeted counterpart to
@@ -126,6 +146,10 @@ struct CodexAuthStore: Sendable {
     }
 
     func loadKeychainAuth() -> CodexAuthState? {
+        // A scoped card never touches the shared "Codex Auth" item — that login belongs to another
+        // card, and merely reading it could raise a Keychain prompt for a credential this card must
+        // never use.
+        guard case .standard = scope else { return nil }
         guard let value = try? keychain.readGenericPassword(service: Self.keychainService),
               let auth = Self.parseAuth(value),
               Self.hasTokenLikeAuth(auth)
@@ -148,6 +172,12 @@ struct CodexAuthStore: Sendable {
             try files.writeText(path, text)
         case .keychain:
             try keychain.writeGenericPassword(service: Self.keychainService, value: text)
+        case .accountSnapshot(let profileID):
+            try AccountCredentialVault(keychain: keychain).replaceCredential(
+                text,
+                family: "codex",
+                profileID: profileID
+            )
         }
     }
 
@@ -181,10 +211,31 @@ struct CodexAuthStore: Sendable {
     }
 
     func authPaths() -> [String] {
+        // A scoped card reads exactly its own home — never the environment override or the default
+        // home list, both of which belong to the default card's login.
+        if case .home(let path) = scope {
+            return [joinPath(path, Self.authFile)]
+        }
+        if case .accountSnapshot = scope {
+            return []
+        }
         if let codexHome = codexHome() {
             return [joinPath(codexHome, Self.authFile)]
         }
         return Self.defaultAuthHomes.map { joinPath($0, Self.authFile) }
+    }
+
+    func loadAccountSnapshot(profileID: String) -> CodexAuthState? {
+        guard let entry = try? AccountCredentialVault(keychain: keychain).load(
+            family: "codex",
+            profileID: profileID
+        ),
+        let auth = Self.parseAuth(entry.credential),
+        Self.hasTokenLikeAuth(auth)
+        else {
+            return nil
+        }
+        return CodexAuthState(auth: auth, source: .accountSnapshot(profileID: profileID))
     }
 
     func codexHome() -> String? {
@@ -217,4 +268,3 @@ private extension CodexAuthState.Source {
         return false
     }
 }
-

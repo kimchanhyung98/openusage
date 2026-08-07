@@ -25,11 +25,38 @@ Today / Yesterday / Last 30 Days are computed **locally**: OpenUsage reads the C
 
 For supported GPT-5.4, GPT-5.5, and GPT-5.6 models, requests above 272k input tokens use OpenAI's long-context rates for the whole request. Cached input uses the published cache-read discount when the pricing source provides one; otherwise it is estimated at the full input rate. Fast/priority estimates use each model's published Codex multiplier (for example, GPT-5.5 uses 2.5×); model names ending in `-fast` are normalized to their unscaled base rate before that multiplier is applied once.
 
+## Multiple accounts
+
+Register additional Codex accounts in [**Settings → Accounts**](/docs/settings.md).
+The first account imports your current sign-in from `~/.codex/auth.json`, legacy `~/.config/codex/auth.json`, or the `Codex Auth` Keychain item without a new login.
+An additional account signs in through the official flow inside an app-owned workspace, so the active login is never disturbed.
+Selecting an account keeps the shared Codex configuration home in place and replaces only its `auth.json`.
+The existing `config.toml`, skills, and session history stay shared.
+While accounts are managed and the shared `auth.json` exists, that file is the card's only credential source.
+A switch writes the file, and file-mode Codex logins keep it fresh.
+This prevents a stale `Codex Auth` Keychain item from answering for another account.
+Each account's authentication snapshot is stored in the macOS Keychain.
+An inactive account's card reads its limits from that snapshot.
+Spend tiles aggregate the shared home's session logs as one family total.
+Past logs are never attributed to a specific account.
+An inactive snapshot card therefore has no account-specific local logs, so its spend and trend rows can show **No data**.
+
+The provider card keeps the title **Codex**.
+The dashboard account selector lists only accounts registered in Settings, shows the account name, and changes only which account's usage is shown.
+It never changes the account a new Codex session uses.
+When a card shows the reset credits row, its **Use** action always claims with that card's own login and never another account's.
+Inactive account cards appear in the [local API](/docs/local-http-api.md) under ids like `codex@profile-…`.
+Requesting `codex` through the one-shot [CLI](/docs/cli.md) or local API returns every currently assembled Codex card.
+Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
+
 ## Troubleshooting
 
-- **"Not logged in"** — run `codex` and sign in, then refresh.
+- **"Not logged in"** — for a managed account, use **Settings → Accounts → Manage… → Sign In Again**.
+  Otherwise, run `codex`, sign in, and refresh.
 - **API-key-only setups** can't read subscription usage — sign in with your ChatGPT account instead.
-- **Spend tiles show "No data"** — OpenUsage found no Codex session logs in the last 30 days. If your Codex home lives somewhere custom, set `CODEX_HOME` so both the Codex CLI and OpenUsage look in the same place.
+- **Spend tiles show "No data"** — OpenUsage found no Codex session logs in the last 30 days.
+  Outside managed account switching, set `CODEX_HOME` when your Codex home is custom so the CLI and OpenUsage look in the same place.
+  Managed terminal switching uses the shared `~/.codex` home.
 
 ## Under the hood
 

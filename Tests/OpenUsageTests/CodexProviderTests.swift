@@ -1,11 +1,14 @@
 import XCTest
 @testable import OpenUsage
 
+/// Local-calendar noon on a `yyyy-MM-dd` day. Day-bucket fixtures (`Today`/`Yesterday`) compare
+/// entry date strings against `dayKey(now)` on the machine's own calendar, so the fixture `now`
+/// must be a LOCAL time on that day — a UTC `Z` timestamp lands on the next local day in KST.
 private func localNoon(_ day: String) -> Date {
     let parts = day.split(separator: "-").compactMap { Int($0) }
-    return Calendar.current.date(
-        from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)
-    )!
+    return Calendar.current.date(from: DateComponents(
+        year: parts[0], month: parts[1], day: parts[2], hour: 12
+    ))!
 }
 
 final class CodexAuthStoreTests: XCTestCase {

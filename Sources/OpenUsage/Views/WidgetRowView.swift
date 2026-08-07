@@ -26,8 +26,8 @@ struct WidgetRowView: View {
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @State private var modelHover = HoverPopoverState()
-    /// Backs the resets popover's claim flow; `nil` outside the live dashboard (previews, share
-    /// renders), which renders the timeline read-only.
+    /// Routes the resets popover's claim flow to this row's own card; `nil` outside the live
+    /// dashboard (previews, share renders), which renders the timeline read-only.
     @Environment(\.codexResetClaim) private var codexResetClaim
     /// Party easter egg: fill meter bars with the party gradient instead of the severity color. Off by
     /// default everywhere else.
@@ -373,14 +373,17 @@ struct WidgetRowView: View {
                         count: data.resetCreditCount, expiries: data.expiriesAt,
                         onHoverChange: { inside in modelHover.detailHover(inside) },
                         onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // Rows with reset expiries are Codex-only today, so the Codex claim service is
-                        // the right backing; absent from the environment (previews, share renders) the
-                        // timeline is read-only.
-                        claim: codexResetClaim.map { service in
-                            { expiry, redeemRequestID in
-                                await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
+                        // Rows with reset expiries are Codex-only today. The claim runs through THIS
+                        // row's card service, so an irreversible claim spends the same account's
+                        // credential the card shows; absent from the environment (previews, share
+                        // renders) — or unstamped (no provider id) — the timeline is read-only.
+                        claim: codexResetClaim
+                            .flatMap { router in data.providerID.flatMap { router.service(for: $0) } }
+                            .map { service in
+                                { expiry, redeemRequestID in
+                                    await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
+                                }
                             }
-                        }
                     )
                 }
             }

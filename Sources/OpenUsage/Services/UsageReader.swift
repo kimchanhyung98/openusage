@@ -41,7 +41,9 @@ public struct UsageReader {
         // account so cached snapshots are guarded — and refreshed ones stamped — with the correct
         // account, and finds the extra Claude cards the catalog must build (the CLI must know the
         // same card set as the app, or family matching would answer differently between the two).
-        // Skipped when a test injects its own providers — they have no real homes to read.
+        // Snapshot cards are app-only: their credentials live in app-created Keychain items the
+        // one-shot CLI must not touch. Skipped when a test injects its own providers — they have no
+        // real homes to read.
         //
         // Warm the login-shell capture FIRST (off-main, one bounded subprocess). Identity-relevant
         // keys are pinned to the persisted shell-environment snapshot, but a CLI spawned without the
@@ -60,7 +62,9 @@ public struct UsageReader {
         let providers = providersOverride ?? ProviderCatalog.make(
             defaults: defaults,
             claudeCards: accountAssembly.claudeCards,
-            defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots
+            defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
+            codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
+            claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
         )
         let registry = WidgetRegistry.from(providers)
         let knownIDs = Set(registry.providers.map(\.id))

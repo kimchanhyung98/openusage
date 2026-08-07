@@ -130,6 +130,61 @@ final class PeerHistoryIdentityTests: XCTestCase {
         XCTAssertNoThrow(try document.validate())
     }
 
+    /// A managed shared-home history mixes sessions from every switched account, so the bare card
+    /// exports as a family total WITHOUT the selected profile's identity — while an account-pinned
+    /// discovery card keeps its identity for cross-Mac matching.
+    func testManagedFamilyTotalExportsWithoutTheSelectedProfilesIdentity() {
+        let registry = makeRegistry()
+        let cache = scratchCache()
+        cache.store(
+            snapshot(providerID: "claude", history: history(day: "2026-07-16", tokens: 10, cost: 1)),
+            producedByIdentityKey: maxKey
+        )
+        cache.store(
+            snapshot(providerID: "claude@f15456b0", history: history(day: "2026-07-16", tokens: 20, cost: 2)),
+            producedByIdentityKey: teamKey
+        )
+        let dataStore = WidgetDataStore(
+            registry: registry,
+            providers: [],
+            cache: cache,
+            defaults: makeScratchDefaults("FamilyTotalDoc"),
+            providerIdentityKeys: ["claude": maxKey, "claude@f15456b0": teamKey],
+            familyTotalHistoryCardIDs: ["claude"]
+        )
+
+        let document = dataStore.localHistoryDocument(deviceID: "dev", deviceName: "This Mac")
+        XCTAssertNotNil(document.providers["claude"], "the family total itself still syncs")
+        XCTAssertNil(document.identities?["claude"],
+                     "the managed family total must not be attributed to the selected account")
+        XCTAssertEqual(document.identities?["claude@f15456b0"], teamKey,
+                       "an account-pinned discovery card keeps its identity mapping")
+        XCTAssertNoThrow(try document.validate())
+    }
+
+    /// The peer side of the family total: a bare-card history without an identity merges into this
+    /// Mac's bare family card — never into a specific account's remote-only Total Spend slice, no
+    /// matter which account is selected here.
+    func testPeerFamilyTotalWithoutIdentityMergesIntoTheBareFamilyCard() {
+        let doc = makeDocument(
+            deviceName: "Mac mini",
+            providers: [
+                "claude": history(day: "2026-07-16", tokens: 10, cost: 1),
+                "claude@ab12cd34": history(day: "2026-07-16", tokens: 20, cost: 2),
+            ],
+            identities: ["claude@ab12cd34": teamKey]
+        )
+        let remapped = PeerHistoryRemapper.remap(
+            documents: [doc],
+            localIdentityByCardID: ["claude": maxKey]
+        )
+
+        XCTAssertTrue(remapped.histories.contains { $0.cardID == "claude" },
+                      "the family total stays on the bare family card")
+        XCTAssertFalse(remapped.remoteOnly.contains { $0.family == "claude" && $0.identityKey == maxKey },
+                       "the total is never re-attributed to the locally selected account")
+    }
+
     func testRemoteOnlyAccountFeedsTotalSpend() {
         let registry = makeRegistry()
         let dataStore = WidgetDataStore(

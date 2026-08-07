@@ -12,6 +12,52 @@ Settings lives inside the popover — there is no separate window. Open it from 
 
 **Upgrading from the legacy (pre-0.7) edition:** the old edition managed start-on-login with its own launcher file, which an in-place update left behind. That leftover could start the app a second time at every login and showed up in System Settings → Login Items under the signing company's name ("SUNSTORY LLC") instead of OpenUsage. The app now removes it automatically on launch — only when the file verifiably points at OpenUsage itself — so login starts exactly one copy, controlled by the Launch at Login toggle above.
 
+## Accounts
+
+The Accounts section manages Claude and Codex accounts.
+An account is a named record of one provider sign-in — there are no folders to pick and no paths to edit.
+Your existing `~/.claude` and `~/.codex` configuration (MCP settings, memory, plugins, skills, and session history) always stays in place.
+Switching accounts replaces only the sign-in that new terminal sessions use.
+
+- The add (+) button opens the Add Account flow.
+  If you are already signed in and no account is registered yet, the current sign-in is imported directly — no new browser login.
+  Otherwise, the official Claude or Codex sign-in opens.
+  An additional account signs in inside a private workspace owned by OpenUsage, so your current account and open terminals keep working while you sign in.
+  A cancelled or failed sign-in registers nothing.
+- Each account's authentication is kept as a private snapshot in the macOS Keychain.
+  The row badge reads **Ready** while that saved sign-in still proves its account, and **Sign-In Needed** otherwise.
+- With two or more accounts for one provider, each row gains a toggle that picks the account new terminal sessions use.
+  Switching asks for confirmation.
+  Approval keeps the one shared Claude or Codex configuration home and replaces only its authentication with the selected account.
+  The result is verified, and the previous sign-in is restored if anything fails.
+  Approval also installs or updates a small `claude`/`codex` function in your login shell's startup file (zsh or fish), so new terminal sessions follow the switch.
+  Switching requires a zsh or fish login shell; with another login shell the switch stops with an error and nothing is changed.
+  See the [CLI](/docs/cli.md) page for details; the `openusage` command-line tool is not required.
+  A toggle is enabled only while its row is **Ready**.
+  While any registered accounts remain, one account stays selected even if it later needs sign-in.
+  Readiness controls only whether that row can be switched to.
+  Already-running sessions are never changed.
+- Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
+  The dashboard's account selector lists only Settings-registered accounts and picks which account's usage the managed provider card shows.
+  Existing Claude accounts discovered from separate configuration directories remain separate cards unless they prove the same identity as a registered account.
+  A confirmed Settings switch moves the dashboard selector and the provider's menu-bar pins to that same account once.
+  Changing the dashboard selector later is view-only and never runs another terminal switch.
+  An inactive account's usage is read from its private Keychain snapshot.
+  When that snapshot's token expires, the refreshed token is saved back into the same snapshot — never into the shared home or the active account.
+- **Manage…** renames an account, re-runs the official sign-in when the account's session expires, and removes the account.
+  The account name is the only editable field.
+  **Sign In Again** replaces the saved snapshot only when the fresh sign-in proves the same account.
+  A different account is refused with a hint to add it separately.
+  Removing deletes the account's OpenUsage sign-in workspace first, then its Keychain snapshot, and finally unregisters the record.
+  Your `~/.claude` and `~/.codex` data is never touched.
+  If either deletion fails, the account stays registered so you can retry.
+  A workspace failure also leaves the snapshot ready for switching.
+  The selected account can't be removed while another account exists; switch first.
+- Adding, renaming, re-signing, or removing an account updates the dashboard selector and card titles immediately.
+  Restarting OpenUsage is not required.
+- If the saved account registry cannot be decoded or validated, OpenUsage leaves the original data untouched.
+  It shows an error in Accounts and blocks account changes instead of replacing the registry with an empty list.
+
 ## iCloud Sync
 
 **Sync Across Macs** is off by default. Turning it on shares normalized OpenUsage history through the

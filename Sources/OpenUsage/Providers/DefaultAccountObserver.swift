@@ -20,17 +20,29 @@ struct DefaultAccountObserver: Sendable {
     var files: TextFileAccessing
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
+    /// Managed account switching owns `~/.claude` as the Shared Runtime Home, so the observer must
+    /// resolve identity from that home even when an ambient `CLAUDE_CONFIG_DIR` names another
+    /// directory — otherwise the app would manage one account while observing a different one.
+    var pinsClaudeSharedHome: Bool
+    /// Managed account switching pins the Codex provider to the shared `~/.codex/auth.json`, so the
+    /// observer must resolve identity from that same file — the keychain item and the legacy
+    /// `~/.config/codex` home can no longer produce the next snapshot and must not blur it.
+    var pinsCodexSharedHome: Bool
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
-        homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser }
+        homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
+        pinsClaudeSharedHome: Bool = false,
+        pinsCodexSharedHome: Bool = false
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
         self.homeDirectory = homeDirectory
+        self.pinsClaudeSharedHome = pinsClaudeSharedHome
+        self.pinsCodexSharedHome = pinsCodexSharedHome
     }
 
     /// Expand a leading `~` against the injected home so tests never touch the real one.
@@ -74,38 +86,55 @@ struct DefaultAccountObserver: Sendable {
     /// when exported, else `~/.claude`. A comma-separated list can't be assigned one identity.
     func observeClaude() -> Outcome {
         var configDir = "~/.claude"
-        if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
+        var hasConfigDirOverride = false
+        if !pinsClaudeSharedHome,
+           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             guard !raw.contains(",") else {
                 return .unresolved(reason: "CLAUDE_CONFIG_DIR is a comma-separated list")
             }
             configDir = raw
+            hasConfigDirOverride = true
         }
         let anchor = expandTilde(configDir)
-        // The identity file sits inside a custom config dir, but next to (not inside) the default
-        // `~/.claude` — Claude Code keeps the default's state at `~/.claude.json`.
-        let identityPath = anchor == expandTilde("~/.claude")
-            ? expandTilde("~/.claude.json")
-            : anchor + "/.claude.json"
-        let text: String?
-        do {
-            text = try files.readTextIfPresent(identityPath)
-        } catch {
-            return .unresolved(reason: "identity file unreadable: \(error.localizedDescription)")
+        // Without an override Claude keeps the default state next to `~/.claude`. Once
+        // CLAUDE_CONFIG_DIR is explicit — even when it names that same directory — Claude reads the
+        // state inside the directory, just like every other custom config home. Pinned mode mirrors
+        // the switcher's two-file rule: plain runs update `~/.claude.json`, wrapper runs (explicit
+        // CLAUDE_CONFIG_DIR) update the state inside the home — identity holds only when they agree.
+        let identityPaths: [String] = pinsClaudeSharedHome
+            ? [expandTilde("~/.claude.json"), anchor + "/.claude.json"]
+            : [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
+        var namedAccounts: [(key: String, label: String?)] = []
+        var sawStateFile = false
+        for identityPath in identityPaths {
+            let text: String?
+            do {
+                text = try files.readTextIfPresent(identityPath)
+            } catch {
+                return .unresolved(reason: "identity file unreadable: \(error.localizedDescription)")
+            }
+            guard let text else { continue }
+            sawStateFile = true
+            guard let parsed = try? JSONDecoder().decode(ClaudeStateFile.self, from: Data(text.utf8)),
+                  let account = parsed.oauthAccount,
+                  let key = Self.claudeIdentityKey(account)
+            else { continue }
+            namedAccounts.append((key, Self.claudeIdentityLabel(account)))
         }
-        guard let text else {
-            // No state file. A credential file without it can't be attributed; no footprint = absent.
-            return files.exists(anchor + "/.credentials.json")
-                ? .unresolved(reason: "credentials present but no identity file")
-                : .absent
+        if let first = namedAccounts.first {
+            guard namedAccounts.allSatisfy({ $0.key == first.key }) else {
+                return .unresolved(reason: "shared home state files name different accounts")
+            }
+            return .resolved(identityKey: first.key, label: first.label, anchor: anchor)
         }
-        guard let parsed = try? JSONDecoder().decode(ClaudeStateFile.self, from: Data(text.utf8)),
-              let account = parsed.oauthAccount,
-              let key = Self.claudeIdentityKey(account)
-        else {
+        if sawStateFile {
             return .unresolved(reason: "identity file present but names no account")
         }
-        return .resolved(identityKey: key, label: Self.claudeIdentityLabel(account), anchor: anchor)
+        // No state file. A credential file without it can't be attributed; no footprint = absent.
+        return files.exists(anchor + "/.credentials.json")
+            ? .unresolved(reason: "credentials present but no identity file")
+            : .absent
     }
 
     // MARK: - Codex
@@ -118,7 +147,9 @@ struct DefaultAccountObserver: Sendable {
     /// name its account (and keyring-mode logins, whose secret we never read here) stays unresolved.
     func observeCodex() -> Outcome {
         let homes: [String]
-        if let raw = environment.value(for: "CODEX_HOME")?
+        if pinsCodexSharedHome {
+            homes = ["~/.codex"]
+        } else if let raw = environment.value(for: "CODEX_HOME")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             homes = [raw]
         } else {
@@ -133,8 +164,11 @@ struct DefaultAccountObserver: Sendable {
         // keyring-mode identities properly. Only a definite "no item" clears the family for file
         // identity: a failed probe (`nil` — locked keychain, denied) is treated the same as
         // "item present", because resolving from the file while the fallback is possible is the
-        // exact wrong-account stamp this rule exists to prevent.
-        if keychain.genericPasswordExists(service: CodexAuthStore.keychainService) != false {
+        // exact wrong-account stamp this rule exists to prevent. In managed-switching mode the
+        // provider is pinned to the shared auth file, so the fallback doesn't exist and the probe
+        // is skipped.
+        if !pinsCodexSharedHome,
+           keychain.genericPasswordExists(service: CodexAuthStore.keychainService) != false {
             return .unresolved(reason: "keychain credential present or unverifiable — identity unresolved this launch")
         }
 
@@ -151,22 +185,32 @@ struct DefaultAccountObserver: Sendable {
             }
             guard let text else { continue }
             sawFootprint = true
-            guard let auth = CodexAuthStore.parseAuth(text),
-                  auth.tokens?.accessToken?.nilIfEmpty != nil
-            else { continue }
-            let payload = auth.tokens?.idToken.flatMap { ProviderParse.jwtPayload($0) }
-            let email = (payload?["email"] as? String)?.nilIfEmpty
-            if let accountID = auth.tokens?.accountID?
-                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-                return .resolved(identityKey: accountID.lowercased(), label: email, anchor: anchor)
-            }
-            if let claimID = Self.chatGPTAccountID(inIDTokenPayload: payload) {
-                return .resolved(identityKey: claimID.lowercased(), label: email, anchor: anchor)
+            if let (identityKey, label) = Self.codexFileIdentity(authText: text) {
+                return .resolved(identityKey: identityKey, label: label, anchor: anchor)
             }
         }
         return sawFootprint
             ? .unresolved(reason: "credentials present but no account identity")
             : .absent
+    }
+
+    /// The strict Codex file identity: `tokens.account_id`, else the id_token's ChatGPT account
+    /// claim. The single Codex identity rule — the observer, the switch transaction, and the
+    /// import/migration readers all resolve through here so an auth file is never attributed two
+    /// ways.
+    static func codexFileIdentity(authText: String) -> (identityKey: String, label: String?)? {
+        guard let auth = CodexAuthStore.parseAuth(authText),
+              auth.tokens?.accessToken?.nilIfEmpty != nil else { return nil }
+        let payload = auth.tokens?.idToken.flatMap { ProviderParse.jwtPayload($0) }
+        let email = (payload?["email"] as? String)?.nilIfEmpty
+        if let accountID = auth.tokens?.accountID?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            return (accountID.lowercased(), email)
+        }
+        if let claimID = chatGPTAccountID(inIDTokenPayload: payload) {
+            return (claimID.lowercased(), email)
+        }
+        return nil
     }
 
     /// The account id inside a Codex id_token: `chatgpt_account_id` under the
@@ -177,5 +221,9 @@ struct DefaultAccountObserver: Sendable {
         let authClaim = payload["https://api.openai.com/auth"] as? [String: Any]
         let raw = (authClaim?["chatgpt_account_id"] ?? payload["chatgpt_account_id"]) as? String
         return raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+
+    private func canonicalPath(_ path: String) -> String {
+        URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
     }
 }
