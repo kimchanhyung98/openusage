@@ -213,12 +213,13 @@ final class AppContainer {
                     guard let providerID = layout.registry.descriptor(id: metricID)?.providerID else { return false }
                     return enablement.isEnabled(providerID)
                 }
-                return TelemetryConfigSnapshot(
-                enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
+                return TelemetryConfigSnapshot.collapsingAccountCards(
+                    enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
                     enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
                     pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
                     expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
-                    menuBarStyle: layout.menuBarStyle.rawValue
+                    menuBarStyle: layout.menuBarStyle.rawValue,
+                    providerIDForMetric: { layout.registry.descriptor(id: $0)?.providerID }
                 )
             }
         )

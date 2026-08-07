@@ -8,6 +8,36 @@ struct TelemetryConfigSnapshot: Sendable {
     let pinnedMetricIDs: [String]
     let expandedMetricIDs: [String]
     let menuBarStyle: String
+
+    /// Telemetry is anonymous: account cards carry identity-derived ids (`claude@ab12cd34`,
+    /// `codex@profile-…`) and their count is per-user, so every reported id collapses to its family.
+    static func collapsingAccountCards(
+        enabledProviders: [String],
+        enabledMetricIDs: [String],
+        pinnedMetricIDs: [String],
+        expandedMetricIDs: [String],
+        menuBarStyle: String,
+        providerIDForMetric: (String) -> String?
+    ) -> TelemetryConfigSnapshot {
+        func dedupe(_ ids: [String]) -> [String] {
+            var seen = Set<String>()
+            return ids.filter { seen.insert($0).inserted }
+        }
+        func familyMetricID(_ metricID: String) -> String {
+            guard let providerID = providerIDForMetric(metricID),
+                  ProviderAccountID.isAccountCard(providerID),
+                  metricID.hasPrefix("\(providerID).")
+            else { return metricID }
+            return "\(ProviderAccountID.family(of: providerID))\(metricID.dropFirst(providerID.count))"
+        }
+        return TelemetryConfigSnapshot(
+            enabledProviders: dedupe(enabledProviders.map(ProviderAccountID.family(of:))),
+            enabledMetricIDs: dedupe(enabledMetricIDs.map(familyMetricID)),
+            pinnedMetricIDs: dedupe(pinnedMetricIDs.map(familyMetricID)),
+            expandedMetricIDs: dedupe(expandedMetricIDs.map(familyMetricID)),
+            menuBarStyle: menuBarStyle
+        )
+    }
 }
 
 /// Turns raw refresh outcomes into the two daily-rollup events, enforcing "at most one event per day"
