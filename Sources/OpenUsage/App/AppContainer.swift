@@ -119,6 +119,7 @@ final class AppContainer {
             orderedDescriptors: { [layout] in layout.visiblePlaced.compactMap { layout.descriptor(for: $0) } },
             notificationSettings: { notificationSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
+            familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
@@ -319,7 +320,8 @@ final class AppContainer {
         dataStore.replaceProviderCatalog(
             registry: nextRegistry,
             providers: nextProviders,
-            identityKeys: assembly.identityKeysByCard
+            identityKeys: assembly.identityKeysByCard,
+            familyTotalHistoryCardIDs: assembly.familyTotalHistoryCardIDs
         )
 
         for providerID in addedIDs.sorted() {

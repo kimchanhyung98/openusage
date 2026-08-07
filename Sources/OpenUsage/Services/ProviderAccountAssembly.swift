@@ -41,6 +41,10 @@ struct ProviderAccountAssembly {
     /// Inactive managed profiles whose credentials live in OpenUsage's private Keychain snapshots.
     /// These are dashboard-only usage cards; they never redirect a terminal.
     var snapshotCards: [AccountUsageSnapshotCard] = []
+    /// Bare family card ids whose local history is a managed shared-home total: sessions from
+    /// several switched accounts share those logs, so the history syncs as a family total and must
+    /// never be attributed to the currently selected profile's identity.
+    var familyTotalHistoryCardIDs: Set<String> = []
     /// Explicit profile ownership for snapshot cards, whose synthetic provider ids cannot be
     /// derived from a configuration-home path.
     var profileIDsByCard: [String: String] = [:]
@@ -294,6 +298,7 @@ struct ProviderAccountAssembly {
             claudeCards: claudeCards,
             defaultClaudeExtraLogRoots: defaultClaudeExtraLogRoots,
             snapshotCards: snapshotCards,
+            familyTotalHistoryCardIDs: Set(managedProfiles.filter { !$0.isArchived }.map(\.family)),
             profileIDsByCard: profileIDsByCard,
             codexSharedAuthHome: codexSharedAuthHome,
             claudeManagedSwitchActive: claudeManagedSwitchActive

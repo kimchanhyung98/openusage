@@ -36,6 +36,7 @@ final class WidgetDataStore {
     /// producer, and launch loads only paint an entry whose stamp matches. A card absent here has an
     /// unresolved identity this launch (or isn't account-aware) — its cache behaves as it always did.
     private var providerIdentityKeys: [String: String]
+    private var familyTotalHistoryCardIDs: Set<String>
     /// The live card title for a card id, `nil` for non-account providers — the account-registry
     /// name resolver, injected by `AppContainer` so notification titles carry renames. `nil`
     /// (tests, the one-shot CLI) falls back to the baked derived name.
@@ -128,6 +129,7 @@ final class WidgetDataStore {
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
         postNotification: (@MainActor (String, String, String, String) async -> Bool)? = nil,
         providerIdentityKeys: [String: String] = [:],
+        familyTotalHistoryCardIDs: Set<String> = [],
         resolveDisplayName: (@MainActor (String) -> String?)? = nil
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
@@ -146,6 +148,7 @@ final class WidgetDataStore {
                 await AppNotifications.shared.post(idPrefix: idPrefix, title: title, subtitle: subtitle, body: body)
             }
         self.providerIdentityKeys = providerIdentityKeys
+        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
@@ -240,7 +243,8 @@ final class WidgetDataStore {
     func replaceProviderCatalog(
         registry: WidgetRegistry,
         providers: [ProviderRuntime],
-        identityKeys: [String: String]
+        identityKeys: [String: String],
+        familyTotalHistoryCardIDs: Set<String> = []
     ) {
         let liveIDs = Set(registry.providers.map(\.id))
         // A managed switch keeps the bare claude/codex card ids alive while changing the account
@@ -257,6 +261,7 @@ final class WidgetDataStore {
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
+        self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         localSnapshots = localSnapshots.filter { keepsState($0.key) }
         providerErrors = providerErrors.filter { keepsState($0.key) }
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
@@ -475,7 +480,11 @@ final class WidgetDataStore {
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
             if let history = localSnapshots[providerID]?.usageHistory {
                 providers[providerID] = history
-                if let identity = providerIdentityKeys[providerID] {
+                // A managed shared-home history mixes sessions from every switched account, so it
+                // syncs as a family total WITHOUT the selected profile's identity — a stamp would
+                // make peers re-attribute the whole total to whichever account is selected now.
+                if let identity = providerIdentityKeys[providerID],
+                   !familyTotalHistoryCardIDs.contains(providerID) {
                     identities[providerID] = identity
                 }
             }
