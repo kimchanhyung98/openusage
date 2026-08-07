@@ -19,6 +19,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
         case file
         case keychainCurrentUser(service: String)
         case keychainLegacy(service: String)
+        case accountSnapshot(profileID: String)
         case desktop
         case environment
 
@@ -28,6 +29,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
             case .file: "file"
             case .keychainCurrentUser: "keychainCurrentUser"
             case .keychainLegacy: "keychainLegacy"
+            case .accountSnapshot: "accountSnapshot"
             case .desktop: "desktop"
             case .environment: "environment"
             }
@@ -164,6 +166,9 @@ enum ClaudeCredentialScope: Hashable, Sendable {
     /// One extra `CLAUDE_CONFIG_DIR` home. `keychainLiteral` is the literal string whose hash names
     /// the keychain item (Claude Code hashes the env value as typed — `~/…` vs absolute differ).
     case configDir(path: String, keychainLiteral: String)
+    /// A saved account-switching credential. This is strictly read-only to terminal state: token
+    /// rotation persists back to the same private snapshot rather than the shared Claude home.
+    case accountSnapshot(profileID: String)
 }
 
 struct ClaudeAuthStore: Sendable {
@@ -263,6 +268,10 @@ struct ClaudeAuthStore: Sendable {
             return keychainServiceCandidates().contains {
                 keychain.genericPasswordExists(service: $0) == true
             }
+        case .accountSnapshot(let profileID):
+            return keychain.genericPasswordExists(
+                service: AccountCredentialVault.service(family: "claude", profileID: profileID)
+            ) == true
         }
     }
 
@@ -326,6 +335,12 @@ struct ClaudeAuthStore: Sendable {
             try keychain.writeGenericPasswordForCurrentUser(service: service, value: text)
         case .keychainLegacy(let service):
             try keychain.writeGenericPassword(service: service, value: text)
+        case .accountSnapshot(let profileID):
+            try AccountCredentialVault(keychain: keychain).replaceCredential(
+                text,
+                family: "claude",
+                profileID: profileID
+            )
         case .desktop:
             return false
         case .environment:
@@ -459,6 +474,8 @@ struct ClaudeAuthStore: Sendable {
                 return ["\(base)-\(hashSuffix(configDir))", base]
             }
             return [base]
+        case .accountSnapshot:
+            return []
         }
     }
 
@@ -475,6 +492,9 @@ struct ClaudeAuthStore: Sendable {
     /// later expiry (the #738 regression from ranking purely by expiry). The source kind (never the
     /// token) is logged so a "locked out" report can be diagnosed from which source was chosen.
     private func orderedStoredCandidates() -> [ClaudeCredentialState] {
+        if case .accountSnapshot(let profileID) = scope {
+            return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
+        }
         var candidates: [ClaudeCredentialState] = []
         if let keychain = loadKeychainCredentials() { candidates.append(keychain) }
         if let file = loadFileCredentials() { candidates.append(file) }
@@ -519,6 +539,25 @@ struct ClaudeAuthStore: Sendable {
             AppLog.debug(.keychain, "read miss service=\(service)")
         }
         return nil
+    }
+
+    private func loadAccountSnapshot(profileID: String) -> ClaudeCredentialState? {
+        guard let entry = try? AccountCredentialVault(keychain: keychain).load(
+            family: "claude",
+            profileID: profileID
+        ),
+        let parsed = Self.parseCredentials(entry.credential),
+        let oauth = parsed.claudeAiOauth,
+        oauth.accessToken?.isEmpty == false
+        else {
+            return nil
+        }
+        return ClaudeCredentialState(
+            oauth: oauth,
+            source: .accountSnapshot(profileID: profileID),
+            fullData: parsed,
+            inferenceOnly: false
+        )
     }
 
     /// Parse one keychain hit into a credential state, or `nil` if it's absent / malformed / tokenless.

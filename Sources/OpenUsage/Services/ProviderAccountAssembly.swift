@@ -20,30 +20,50 @@ struct ClaudeAccountCard: Equatable, Sendable {
 }
 
 /// The launch-time account pass: read which account is signed in at each family's default home,
-/// scan for extra Claude logins in custom config dirs, reconcile the account registry, and expose
-/// what the rest of launch consumes — the per-card identity map (snapshot-cache account stamp) and
-/// the extra-card build plan (`ProviderCatalog`). Runs once per launch (app) or per invocation
-/// (one-shot CLI); a mid-run swap is caught on the next launch.
+/// scan for extra Claude logins in custom config dirs, reconcile the account registry, import the
+/// first managed profile when none exists yet, and expose what the rest of launch consumes — the
+/// per-card identity map (snapshot-cache account stamp) and the extra-card build plan
+/// (`ProviderCatalog`). Runs once per launch (app) or per invocation (one-shot CLI); a mid-run swap
+/// is caught on the next launch.
 @MainActor
 struct ProviderAccountAssembly {
     /// Card id → the account identity signed in there this launch. A card whose identity didn't
     /// resolve is absent.
     let identityKeysByCard: [String: String]
+    /// Family → the canonical home backing its bare/default card this launch. This comes from the
+    /// same observer result as `identityKeysByCard`, rather than assuming a conventional dot-dir.
+    var defaultHomePathsByFamily: [String: String] = [:]
     /// Extra Claude account cards found on this computer this launch, in stable id order.
     var claudeCards: [ClaudeAccountCard] = []
     /// Same-account custom config dirs discovered for the DEFAULT card's login: extra spend-log
     /// roots for the default scanner, never extra credentials.
     var defaultClaudeExtraLogRoots: [URL] = []
+    /// Inactive managed profiles whose credentials live in OpenUsage's private Keychain snapshots.
+    /// These are dashboard-only usage cards; they never redirect a terminal.
+    var snapshotCards: [AccountUsageSnapshotCard] = []
+    /// Explicit profile ownership for snapshot cards, whose synthetic provider ids cannot be
+    /// derived from a configuration-home path.
+    var profileIDsByCard: [String: String] = [:]
+    /// Set while managed Codex switching is active: the shared `~/.codex` home whose `auth.json`
+    /// the default Codex card must treat as its only credential source, so a stale `Codex Auth`
+    /// Keychain item can never fall back to another account.
+    var codexSharedAuthHome: String?
+    /// True while managed Claude profiles exist: the default Claude card must not fall back to the
+    /// Claude Desktop login, which can belong to a different account than the one switched into
+    /// the shared home — an auth failure must surface as re-login, never as another account's usage.
+    var claudeManagedSwitchActive: Bool = false
 
     /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
     /// exports, so the pass leans on the login-shell layers), false for the one-shot CLI (a terminal
     /// launch's process environment already carries the user's exports). The app passes its own
     /// `accountsStore` so the registry the pass reconciles is the same instance the UI observes for
-    /// renames; the CLI omits it and gets a throwaway.
+    /// renames; the CLI omits it and gets a throwaway. `accountProfiles` likewise. First-account
+    /// import is an explicit Settings action and never runs during this launch-time read pass.
     static func make(
         defaults: UserDefaults = .standard,
         accountsStore: ProviderAccountsStore? = nil,
-        waitsForLoginShell: Bool
+        waitsForLoginShell: Bool,
+        accountProfiles: AccountProfilesStore? = nil
     ) -> ProviderAccountAssembly {
         // The identity read needs the login shell's exports (CLAUDE_CONFIG_DIR/CODEX_HOME name the
         // default homes), and it reads them through the very same reader the provider auth stores
@@ -67,14 +87,35 @@ struct ProviderAccountAssembly {
         if families.count < ProviderAccountID.families.count {
             AppLog.info(.config, "account identity read skipped for \(ProviderAccountID.families.subtracting(families).sorted().joined(separator: ", ")): login shell cold and no shell-environment snapshot exists yet")
         }
-        guard !families.isEmpty else {
-            return ProviderAccountAssembly(identityKeysByCard: [:])
-        }
+        let profileStore = accountProfiles ?? AccountProfilesStore(defaults: defaults)
+
+        // Managed Codex switching pins the provider AND the identity read to the shared
+        // `~/.codex/auth.json` — the file the switch transaction owns. Gated on that file actually
+        // existing: a legacy `~/.config/codex`-only login with an imported profile must keep
+        // resolving through the historical source list until a switch (or the CLI itself) writes
+        // the shared auth file.
+        let sharedCodexAuthFile = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/auth.json").path
+        let codexManaged = families.contains("codex")
+            && !profileStore.profiles(family: "codex").isEmpty
+            && FileManager.default.fileExists(atPath: sharedCodexAuthFile)
+        let managedProfiles = profileStore.profiles
+        let snapshotProfileIDs = Set(managedProfiles.compactMap { profile in
+            AccountCredentialVault().contains(profile: profile) ? profile.id : nil
+        })
         return make(
-            observer: DefaultAccountObserver(),
+            observer: DefaultAccountObserver(pinsCodexSharedHome: codexManaged),
             accountsStore: accountsStore ?? ProviderAccountsStore(defaults: defaults),
             families: families,
-            claudeDiscovery: ClaudeConfigDirDiscovery()
+            claudeDiscovery: ClaudeConfigDirDiscovery(),
+            accountProfiles: profileStore,
+            managedProfiles: managedProfiles,
+            snapshotProfileIDs: snapshotProfileIDs,
+            codexSharedAuthHome: codexManaged
+                ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
+                : nil,
+            claudeManagedSwitchActive: families.contains("claude")
+                && !profileStore.profiles(family: "claude").isEmpty
         )
     }
 
@@ -95,9 +136,15 @@ struct ProviderAccountAssembly {
         observer: DefaultAccountObserver,
         accountsStore: ProviderAccountsStore,
         families: Set<String> = ProviderAccountID.families,
-        claudeDiscovery: ClaudeConfigDirDiscovery? = nil
+        claudeDiscovery: ClaudeConfigDirDiscovery? = nil,
+        accountProfiles: AccountProfilesStore? = nil,
+        managedProfiles: [AccountProfile] = [],
+        snapshotProfileIDs: Set<String> = [],
+        codexSharedAuthHome: String? = nil,
+        claudeManagedSwitchActive: Bool = false
     ) -> ProviderAccountAssembly {
         var identityKeys: [String: String] = [:]
+        var defaultHomePaths: [String: String] = [:]
         var observations: [ProviderAccountsStore.AccountObservation] = []
 
         let outcomes: [(family: String, outcome: DefaultAccountObserver.Outcome)] = [
@@ -110,6 +157,7 @@ struct ProviderAccountAssembly {
             switch outcome {
             case .resolved(let identityKey, let label, let anchor):
                 identityKeys[family] = identityKey
+                defaultHomePaths[family] = anchor
                 observations.append(ProviderAccountsStore.AccountObservation(
                     family: family,
                     identityKey: identityKey,
@@ -210,10 +258,37 @@ struct ProviderAccountAssembly {
         }
         claudeCards.sort { $0.id < $1.id }
 
+        // Inactive managed profiles render as snapshot cards — read-only usage backed by their
+        // Keychain snapshot. A profile whose account is already visible through a home-backed card
+        // this launch (the default home, or an ambient config dir) never gets a duplicate.
+        let preferredProfileIDs = Dictionary(uniqueKeysWithValues: ProviderAccountID.families.compactMap { family in
+            accountProfiles?.preferredProfileID(family: family).map { (family, $0) }
+        })
+        let observedIdentityKeys = Set(identityKeys.values)
+        let snapshotCards = AccountUsageCardPlanner.snapshotCards(
+            profiles: managedProfiles,
+            preferredProfileIDs: preferredProfileIDs,
+            availableSnapshotProfileIDs: snapshotProfileIDs
+        ).filter { card in
+            guard let profile = managedProfiles.first(where: { $0.id == card.profileID }) else { return false }
+            return !observedIdentityKeys.contains(profile.identityKey)
+        }
+        let profileIDsByCard = Dictionary(uniqueKeysWithValues: snapshotCards.map { ($0.id, $0.profileID) })
+        for card in snapshotCards {
+            if let profile = managedProfiles.first(where: { $0.id == card.profileID }) {
+                identityKeys[card.id] = profile.identityKey
+            }
+        }
+
         return ProviderAccountAssembly(
             identityKeysByCard: identityKeys,
+            defaultHomePathsByFamily: defaultHomePaths,
             claudeCards: claudeCards,
-            defaultClaudeExtraLogRoots: defaultClaudeExtraLogRoots
+            defaultClaudeExtraLogRoots: defaultClaudeExtraLogRoots,
+            snapshotCards: snapshotCards,
+            profileIDsByCard: profileIDsByCard,
+            codexSharedAuthHome: codexSharedAuthHome,
+            claudeManagedSwitchActive: claudeManagedSwitchActive
         )
     }
 }

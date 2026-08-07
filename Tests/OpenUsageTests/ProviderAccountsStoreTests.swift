@@ -66,6 +66,38 @@ final class ProviderAccountsStoreTests: XCTestCase {
         XCTAssertEqual(store.defaultBadgeHolder(family: "codex")?.identityKey, "acct-c")
     }
 
+    func testReconcileMovesOnlyTheObservedSourceEdge() {
+        let store = ProviderAccountsStore(defaults: makeScratchDefaults())
+        store.reconcile(with: [
+            ProviderAccountsStore.AccountObservation(
+                family: "codex",
+                identityKey: "acct-a",
+                label: nil,
+                sources: [
+                    ProviderAccountSource(kind: .managedProfile, anchor: "/Users/dev/.codex-alpha", holdsDefaultSource: false),
+                    ProviderAccountSource(kind: .configDir, anchor: "/Users/dev/.codex-side", holdsDefaultSource: false),
+                ]
+            ),
+        ])
+
+        store.reconcile(with: [
+            ProviderAccountsStore.AccountObservation(
+                family: "codex",
+                identityKey: "acct-b",
+                label: nil,
+                sources: [
+                    ProviderAccountSource(kind: .managedProfile, anchor: "/Users/dev/.codex-alpha", holdsDefaultSource: false),
+                ]
+            ),
+        ])
+
+        let old = store.records.first { $0.identityKey == "acct-a" }
+        XCTAssertEqual(old?.sources.map(\.kind), [.configDir])
+        XCTAssertEqual(old?.sources.first?.anchor, "/Users/dev/.codex-side")
+        let new = store.records.first { $0.identityKey == "acct-b" }
+        XCTAssertEqual(new?.sources.first?.anchor, "/Users/dev/.codex-alpha")
+    }
+
     func testReconcileUpdatesLabelButKeepsItWhenObservationHasNone() {
         let store = ProviderAccountsStore(defaults: makeScratchDefaults())
         store.reconcile(with: [defaultHomeObservation(family: "claude", identityKey: "acct-a", label: "a@example.com")])

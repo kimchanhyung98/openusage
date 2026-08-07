@@ -58,22 +58,42 @@ struct ClaudeConfigDirDiscovery {
         self.now = now
     }
 
-    func run() -> Result {
+    func run(additionalDirectories: [URL] = []) -> Result {
         let started = now()
         var result = Result()
         let excluded = Set(defaultClaudeConfigDirs().map(canonical))
+        var visited: Set<String> = []
 
-        for candidate in candidateDirectories() {
+        // Registered homes are exact account handles and take priority over the bounded ambient
+        // scan. A user may edit a profile to any directory inside their home, not only a dot-dir or
+        // a direct ~/.config child; those homes must still bind to a card within this launch budget.
+        for candidate in additionalDirectories + candidateDirectories() {
             if now().timeIntervalSince(started) > timeBudget {
                 result.notes.append("claude config-dir scan hit its \(Int(timeBudget * 1000))ms budget; finishing with partial results")
                 break
             }
-            guard !excluded.contains(canonical(candidate.path)) else { continue }
+            let canonicalPath = canonical(candidate.path)
+            guard visited.insert(canonicalPath).inserted,
+                  !excluded.contains(canonicalPath) else { continue }
             if let finding = claudeCandidate(at: candidate, notes: &result.notes) {
                 result.findings.append(finding)
             }
         }
         return result
+    }
+
+    /// Identity + credential read of one EXACT config dir — the managed-profile sign-in probe.
+    /// Same strict validation as the launch scan (`claudeCandidate`), minus candidate gating and
+    /// the time budget; the decision trail still lands in the log so a "sign-in not detected"
+    /// report is diagnosable. Callers route default-home paths to `DefaultAccountObserver`
+    /// instead — this always reads the state file INSIDE the dir.
+    func inspect(configDir url: URL) -> Finding? {
+        var notes: [String] = []
+        let finding = claudeCandidate(at: url, notes: &notes)
+        for note in notes {
+            AppLog.debug(.config, note)
+        }
+        return finding
     }
 
     // MARK: - Candidates

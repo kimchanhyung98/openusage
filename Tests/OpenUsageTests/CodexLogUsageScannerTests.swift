@@ -954,4 +954,118 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
         XCTAssertGreaterThan(today?.costUSD ?? 0, 0)
     }
+
+    // MARK: - Scoped roots (account cards)
+
+    /// A scoped scanner — an account card's — reads exactly its override roots: never the
+    /// `CODEX_HOME` env resolution, never the default home, so another account's rollouts can't
+    /// bleed into the card.
+    func testRootsOverridePinsTheScanToTheOverrideHome() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let envHome = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-env.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 999, output: 999), model: "gpt-5.2"
+            ),
+        ])
+        let cardHome = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-card.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 100, output: 50), model: "gpt-5.2"
+            ),
+        ])
+        let scanner = CodexLogUsageScanner(
+            environment: FakeEnvironment(["CODEX_HOME": envHome.path]),
+            homeDirectory: { envHome },
+            incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
+            cacheIdentityOverride: "codex-account:codex@test",
+            rootsOverride: [cardHome]
+        )
+
+        let scan = await scanner.scan(pricing: fixedRates())
+
+        XCTAssertEqual(scan?.series.daily.reduce(0) { $0 + $1.totalTokens }, 150)
+    }
+
+    /// An override home with no rollouts scans as "no data" even when the env home is full.
+    func testRootsOverrideWithEmptyHomeReturnsNil() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let envHome = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-env.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 100, output: 50), model: "gpt-5.2"
+            ),
+        ])
+        let emptyHome = try CodexLogFixture.makeHome()
+        let scanner = CodexLogUsageScanner(
+            environment: FakeEnvironment(["CODEX_HOME": envHome.path]),
+            homeDirectory: { envHome },
+            incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
+            cacheIdentityOverride: "codex-account:codex@test",
+            rootsOverride: [emptyHome]
+        )
+
+        let scan = await scanner.scan(pricing: fixedRates())
+
+        XCTAssertNil(scan)
+    }
+
+    /// The default card may fold a same-account managed home into its history. Extra roots are
+    /// additive; a scoped account card still uses `rootsOverride` instead.
+    func testAdditionalRootsMergeIntoTheDefaultScan() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let defaultHome = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-default.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 100, output: 50), model: "gpt-5.2"
+            ),
+        ])
+        let managedHome = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-managed.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 40, output: 10), model: "gpt-5.2"
+            ),
+        ])
+        let scanner = CodexLogUsageScanner(
+            environment: FakeEnvironment(["CODEX_HOME": defaultHome.path]),
+            homeDirectory: { defaultHome },
+            incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
+            additionalRoots: [managedHome]
+        )
+
+        let scan = await scanner.scan(pricing: fixedRates())
+
+        XCTAssertEqual(scan?.series.daily.reduce(0) { $0 + $1.totalTokens }, 200)
+    }
+
+    /// Two account cards sharing one process-wide parse cache must not share records: the per-card
+    /// `cacheIdentityOverride` is the cache key, so card A's rollouts never surface in card B's
+    /// scan (and vice versa) even when both cards scan back to back.
+    func testPerCardCacheIdentitiesKeepScansSeparate() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let homeA = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-a.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 100, output: 50), model: "gpt-5.2"
+            ),
+        ])
+        let homeB = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-b.jsonl": CodexLogFixture.tokenCount(
+                timestamp: day, last: CodexLogFixture.usage(input: 999, output: 999), model: "gpt-5.2"
+            ),
+        ])
+        let shared = IncrementalJSONLScanner<CodexLogUsageScanner.Event>()
+        let cardA = CodexLogUsageScanner(
+            environment: FakeEnvironment([:]),
+            incrementalScanner: shared,
+            cacheIdentityOverride: "codex-account:codex@a",
+            rootsOverride: [homeA]
+        )
+        let cardB = CodexLogUsageScanner(
+            environment: FakeEnvironment([:]),
+            incrementalScanner: shared,
+            cacheIdentityOverride: "codex-account:codex@b",
+            rootsOverride: [homeB]
+        )
+
+        let scanA = await cardA.scan(pricing: fixedRates())
+        let scanB = await cardB.scan(pricing: fixedRates())
+
+        XCTAssertEqual(scanA?.series.daily.reduce(0) { $0 + $1.totalTokens }, 150, "card A sees only its own home")
+        XCTAssertEqual(scanB?.series.daily.reduce(0) { $0 + $1.totalTokens }, 1998, "card B sees only its own home")
+    }
 }

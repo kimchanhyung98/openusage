@@ -36,14 +36,17 @@ enum ProviderAccountID {
 
 /// One place an account is signed in. "Default" is a badge on a source (`holdsDefaultSource`), never
 /// a key: it marks who currently occupies the default home, and it never drives ids or sort order —
-/// a swap re-points source edges, cards don't move. Phase 1 only observes the default home; later
-/// phases add config dirs, cswap vault slots, Codex homes, and Desktop logins as more kinds.
+/// a swap re-points source edges, cards don't move. Kinds shipped so far: the default home, Claude
+/// config dirs, and managed launch-profile homes; later phases add cswap vault slots and Desktop
+/// logins as more kinds.
 struct ProviderAccountSource: Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
         /// The provider's standard home for this machine (`~/.claude`, `~/.codex`, env override).
         case defaultHome
         /// A custom Claude config dir (a `CLAUDE_CONFIG_DIR` home kept besides the default).
         case configDir
+        /// A registered launch-profile home (an `AccountProfilesStore` managed home).
+        case managedProfile
     }
 
     var kind: Kind
@@ -142,14 +145,16 @@ final class ProviderAccountsStore {
     /// Merges this launch's observations into the persisted set. Phase 1 semantics: an observation
     /// updates its account's label and sources, or creates the record; the first account of a family
     /// gets the bare family id, a later one mints `family@<hash8>`. Records never move or vanish here
-    /// — an account that went unobserved (logged out, unreadable identity) is simply left as it was,
-    /// except that a newly observed default-home holder takes the default badge off every sibling.
+    /// — an account that went unobserved (logged out, unreadable identity) is simply left as it was.
+    /// When a source is observed under a different identity, however, that exact source edge is
+    /// moved off sibling records so a re-login cannot leave a stale path-to-account connection.
     @discardableResult
     func reconcile(with observations: [AccountObservation]) -> [ProviderAccountRecord] {
         var updated = records
         var changed = false
 
         for observation in observations {
+            let observedSourceKeys = Set(observation.sources.compactMap(Self.sourceKey))
             let index = updated.firstIndex {
                 $0.family == observation.family && $0.identityKey == observation.identityKey
             }
@@ -171,6 +176,26 @@ final class ProviderAccountsStore {
                     sources: observation.sources
                 ))
                 changed = true
+            }
+
+            // A profile home can be re-authenticated as another account. Move only source edges
+            // observed at this launch; an unreadable or absent source must remain untouched so a
+            // transient probe failure cannot erase its last known account association.
+            if !observedSourceKeys.isEmpty {
+                for index in updated.indices
+                where updated[index].family == observation.family
+                    && updated[index].identityKey != observation.identityKey
+                    && !updated[index].removedTombstone
+                {
+                    let filtered = updated[index].sources.filter { source in
+                        guard let key = Self.sourceKey(source) else { return true }
+                        return !observedSourceKeys.contains(key)
+                    }
+                    if filtered != updated[index].sources {
+                        updated[index].sources = filtered
+                        changed = true
+                    }
+                }
             }
 
             // The default badge is exclusive per family: when this observation holds it, strip it
@@ -196,6 +221,15 @@ final class ProviderAccountsStore {
             persist()
         }
         return records
+    }
+
+    /// Source anchors are canonical paths at the observation boundary. The source kind is part of
+    /// the key so a default home and a managed profile that happen to share a path cannot move one
+    /// another's edge. Unanchored future source kinds are left untouched until they have a stable
+    /// identity for matching.
+    private static func sourceKey(_ source: ProviderAccountSource) -> String? {
+        guard let anchor = source.anchor?.nilIfEmpty else { return nil }
+        return "\(source.kind.rawValue)\u{1F}\(anchor)"
     }
 
     /// The resolved card title for a card id, or `nil` when the card has no account record (a

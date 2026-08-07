@@ -46,6 +46,21 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
+    func testClaudeExplicitDefaultHomeReadsIdentityInsideTheConfigDir() {
+        let observer = makeObserver(
+            environment: ["CLAUDE_CONFIG_DIR": "/Users/dev/.claude"],
+            files: [
+                "/Users/dev/.claude.json": claudeStateJSON(uuid: "STALE", email: "stale@example.com"),
+                "/Users/dev/.claude/.claude.json": claudeStateJSON(),
+            ]
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
+        )
+    }
+
     func testClaudeIdentityIsOrgScoped() {
         let observer = makeObserver(files: [
             "/Users/dev/.claude.json": claudeStateJSON(orgUuid: "ORG-9", orgName: "Sunstory"),
@@ -226,4 +241,5 @@ private final class ThrowingKeychain: KeychainAccessing, @unchecked Sendable {
     struct Unavailable: Error {}
     func readGenericPassword(service: String) throws -> String? { throw Unavailable() }
     func writeGenericPassword(service: String, value: String) throws { throw Unavailable() }
+    func deleteGenericPassword(service: String) throws { throw Unavailable() }
 }

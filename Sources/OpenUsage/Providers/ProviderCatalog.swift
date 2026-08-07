@@ -6,13 +6,19 @@ import Foundation
 enum ProviderCatalog {
     /// `claudeCards` carries the extra Claude account cards found by the launch account pass
     /// (`ProviderAccountAssembly`). Each becomes an ordinary runtime inserted right after the default
-    /// Claude card, with credentials and usage logs pinned to exactly its own config dir. The empty
-    /// default keeps the historical single-card set for focused tests and callers that intentionally
-    /// skip the account pass.
+    /// Claude card, with credentials and usage logs pinned to exactly its own config dir.
+    /// `snapshotCards` are inactive managed profiles rendered read-only from their Keychain
+    /// snapshots. `codexSharedAuthHome`, set while managed Codex switching is active, pins the
+    /// default Codex card to the shared `auth.json` the switch transaction owns — a stale
+    /// `Codex Auth` Keychain item must never fall back to another account. The empty defaults keep
+    /// the historical single-card set for focused tests and callers that skip the account pass.
     static func make(
         defaults: UserDefaults = .standard,
         claudeCards: [ClaudeAccountCard] = [],
-        defaultClaudeExtraLogRoots: [URL] = []
+        defaultClaudeExtraLogRoots: [URL] = [],
+        snapshotCards: [AccountUsageSnapshotCard] = [],
+        codexSharedAuthHome: String? = nil,
+        claudeManagedSwitchActive: Bool = false
     ) -> [ProviderRuntime] {
         // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
         // then every other provider alphabetically by display name. Account cards slot in right after
@@ -25,15 +31,29 @@ enum ProviderCatalog {
         runtimes.append(ClaudeProvider(
             // Once extra Claude cards exist, an unpinned Desktop fallback could borrow a login that
             // belongs to one of them — fetching that account's usage onto the default card. Desktop
-            // returns as its own properly-pinned source kind in Phase 3.
-            authStore: ClaudeAuthStore(allowsDesktopFallback: claudeCards.isEmpty),
-            logUsageScanner: ClaudeLogUsageScanner(additionalRoots: defaultClaudeExtraLogRoots)
+            // returns as its own properly-pinned source kind in Phase 3. The same rule applies while
+            // managed switching is active: the Desktop login can be a different account than the one
+            // switched into the shared home, and an auth failure must surface as re-login rather
+            // than another account's usage.
+            authStore: ClaudeAuthStore(
+                allowsDesktopFallback: claudeCards.isEmpty && !claudeManagedSwitchActive
+            ),
+            logUsageScanner: ClaudeLogUsageScanner(additionalRoots: defaultClaudeExtraLogRoots),
+            includePiUsage: claudeCards.isEmpty
         ))
         for card in claudeCards {
             runtimes.append(claudeAccountRuntime(card: card))
         }
+        for card in snapshotCards where card.family == "claude" {
+            runtimes.append(claudeSnapshotRuntime(card: card))
+        }
+        runtimes.append(CodexProvider(
+            authStore: codexSharedAuthHome.map { CodexAuthStore(scope: .home(path: $0)) } ?? CodexAuthStore()
+        ))
+        for card in snapshotCards where card.family == "codex" {
+            runtimes.append(codexSnapshotRuntime(card: card))
+        }
         runtimes += [
-            CodexProvider(),
             CursorProvider(),
             AntigravityProvider(),
             CopilotProvider(defaults: defaults),
@@ -60,7 +80,32 @@ enum ProviderCatalog {
             logUsageScanner: ClaudeLogUsageScanner(
                 cacheIdentityOverride: "claude-account:\(card.id)",
                 rootsOverride: [URL(fileURLWithPath: card.configDirPath)] + card.extraLogRoots
-            )
+            ),
+            includePiUsage: false
+        )
+    }
+
+    private static func claudeSnapshotRuntime(card: AccountUsageSnapshotCard) -> ClaudeProvider {
+        ClaudeProvider(
+            provider: ClaudeProvider.makeProvider(id: card.id, displayName: "Claude"),
+            authStore: ClaudeAuthStore(scope: .accountSnapshot(profileID: card.profileID)),
+            logUsageScanner: ClaudeLogUsageScanner(
+                cacheIdentityOverride: "claude-snapshot:\(card.profileID)",
+                rootsOverride: []
+            ),
+            includePiUsage: false
+        )
+    }
+
+    private static func codexSnapshotRuntime(card: AccountUsageSnapshotCard) -> CodexProvider {
+        CodexProvider(
+            provider: CodexProvider.makeProvider(id: card.id, displayName: "Codex"),
+            authStore: CodexAuthStore(scope: .accountSnapshot(profileID: card.profileID)),
+            logUsageScanner: CodexLogUsageScanner(
+                cacheIdentityOverride: "codex-snapshot:\(card.profileID)",
+                rootsOverride: []
+            ),
+            includePiUsage: false
         )
     }
 }
