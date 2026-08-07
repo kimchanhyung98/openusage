@@ -30,11 +30,39 @@ Today / Yesterday / Last 30 Days는 **로컬에서** 계산됩니다: OpenUsage�
 (예: GPT-5.5는 2.5×). `-fast`로 끝나는 모델 이름은 배율을 적용하기 전에 스케일이 적용되지 않은
 기본 요율로 정규화합니다.
 
+## 여러 계정
+
+추가 Codex 계정은 [**Settings → Accounts**(설정 → 계정)](/docs/ko/settings.md)에서 등록하세요.
+첫 계정은 `~/.codex/auth.json`, legacy `~/.config/codex/auth.json`, `Codex Auth` Keychain 항목 중 현재 로그인을 새 로그인 없이 가져옵니다.
+추가 계정은 앱 소유 작업 공간 안에서 공식 로그인 절차로 로그인하므로 활성 로그인은 방해받지 않습니다.
+계정을 선택해도 공유 Codex 설정 홈은 유지하고 `auth.json`만 교체합니다.
+기존 `config.toml`, 스킬, 세션 기록은 공유됩니다.
+계정이 관리되고 공유 `auth.json`이 존재하는 동안에는 이 파일이 카드의 유일한 credential 출처입니다.
+전환이 파일을 쓰고 file 모드 Codex 로그인이 이를 최신으로 유지합니다.
+따라서 오래된 `Codex Auth` Keychain 항목이 다른 계정을 대신 답할 수 없습니다.
+각 계정의 인증 스냅샷은 macOS Keychain에 보관됩니다.
+비활성 계정의 카드는 그 스냅샷에서 한도를 읽습니다.
+지출 타일은 공유 홈의 세션 로그를 하나의 family 합계로 집계합니다.
+과거 로그는 특정 계정에 귀속하지 않습니다.
+따라서 비활성 스냅샷 카드에는 계정별 로컬 로그가 없고 지출 및 추세 행이 **No data**로 표시될 수 있습니다.
+
+프로바이더 카드의 제목은 **Codex**로 고정됩니다.
+대시보드의 계정 선택기에는 Settings에 등록된 계정만 나오며 계정 이름을 보여 주고 어느 계정의 사용량을 표시할지만 바꿉니다.
+새 Codex 세션이 사용할 계정은 바꾸지 않습니다.
+카드에 재설정 크레딧 행이 표시될 때 **Use**(사용)는 항상 그 카드의 로그인으로만 크레딧을 사용합니다.
+다른 계정의 크레딧은 사용하지 않습니다.
+비활성 계정의 카드는 [로컬 API](/docs/ko/local-http-api.md)에서 `codex@profile-…` 같은 id로 나타납니다.
+원샷 [CLI](/docs/ko/cli.md) 또는 로컬 API에서 `codex`를 요청하면 현재 조립된 모든 Codex 카드가 반환됩니다.
+계정을 추가·이름 변경·재로그인·제거하면 대시보드가 즉시 갱신됩니다.
+
 ## 문제 해결
 
-- **"Not logged in"** — `codex`를 실행해 로그인한 다음 새로 고침하세요.
+- **"Not logged in"** — 관리형 계정은 **Settings → Accounts → Manage… → Sign In Again**을 사용하세요.
+  그 외에는 `codex`를 실행해 로그인한 다음 새로 고침하세요.
 - **API 키만 사용하는 설정**은 구독 사용량을 읽을 수 없습니다 — 대신 ChatGPT 계정으로 로그인하세요.
-- **지출 타일에 "No data"가 표시됨** — OpenUsage가 지난 30일 동안의 Codex 세션 로그를 찾지 못했습니다. Codex 홈이 커스텀 위치에 있다면 `CODEX_HOME`을 설정해 Codex CLI와 OpenUsage가 같은 곳을 보게 하세요.
+- **지출 타일에 "No data"가 표시됨** — OpenUsage가 지난 30일 동안의 Codex 세션 로그를 찾지 못했습니다.
+  관리형 계정 전환을 사용하지 않는 경우 Codex 홈이 커스텀 위치에 있다면 `CODEX_HOME`을 설정해 Codex CLI와 OpenUsage가 같은 곳을 보게 하세요.
+  관리형 터미널 전환은 공유 `~/.codex` 홈을 사용합니다.
 
 ## 내부 동작
 
