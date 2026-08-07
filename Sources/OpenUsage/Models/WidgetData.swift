@@ -87,6 +87,11 @@ struct WidgetData: Hashable {
     var isChart: Bool = false
     var chartPoints: [MetricChartPoint] = []
     var chartNote: String?
+    /// The provider (card) this row's data came from, stamped by `WidgetDataStore.data(for:)` — a
+    /// row's only handle on its own card identity, which per-card actions (the Codex reset-claim
+    /// router) key on. `nil` in direct fixtures (previews, share renders), where those actions stay
+    /// inert.
+    var providerID: String?
 
     var isBounded: Bool { limit != nil }
 
