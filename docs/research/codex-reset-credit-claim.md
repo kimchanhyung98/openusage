@@ -1,9 +1,9 @@
 # Codex Rate-Limit Reset Credits: How Claiming Works
 
 Research + live verification of the Codex "reset credit" claim flow, done 2026-07-12.
-OpenUsage already lists these credits (the "Resets" surface on the Codex provider); this
-documents what it would take to *claim* one from the app. No implementation yet — this is
-the protocol reference.
+This started as the protocol reference for adding in-app claims.
+OpenUsage now implements the two-click, per-card claim flow described in the [Codex provider guide](/docs/providers/codex.md#using-a-reset-from-the-popover).
+The endpoint details below remain the protocol reference for that implementation.
 
 Sources: the open-source Codex CLI (`openai/codex`, `codex-rs/backend-client/src/client/rate_limit_resets.rs`,
 `codex-rs/tui/src/chatwidget/reset_credits.rs`, `codex-rs/tui/src/chatwidget/usage.rs`,
@@ -23,10 +23,12 @@ Both live under the ChatGPT backend base URL (`https://chatgpt.com/backend-api`)
 also has a `PathStyle::CodexApi` variant (`/api/codex/...` instead of `/wham/...`) for
 enterprise/alternative base URLs; OpenUsage uses the ChatGPT style.
 
-Headers on every call (identical to what OpenUsage's Codex usage client already sends):
+Headers on every call:
 
 - `Authorization: Bearer <access_token>` (the ChatGPT OAuth access token from `~/.codex/auth.json`)
 - `ChatGPT-Account-Id: <account_id>` (from the same file)
+- `OpenAI-Beta: codex-1` and `originator: Codex Desktop` — the reset-credit endpoints expect the
+  Codex desktop client headers; OpenUsage's plain usage fetch does not send them
 - `Content-Type: application/json` on the POST
 
 ### List (already implemented in OpenUsage)
@@ -123,20 +125,17 @@ soonest-expiring one, only if it expired within 4 h, explicit `credit_id`).
   the `additional_rate_limits` entry (the model-specific limit was already 0%, so this is
   suggestive, not proven).
 
-## Implementation notes for OpenUsage (when we build it)
+## Implementation notes adopted by OpenUsage
 
-- The claim is a single POST on infrastructure OpenUsage already talks to; auth, headers,
-  and account id handling are identical to `CodexUsageClient`'s existing calls.
-- Mint the `redeem_request_id` UUID **when the user is shown the claim affordance** (per
-  credit), persist it for the duration of the interaction, and reuse it on retry — that is
-  the CLI's double-spend protection and we should copy it exactly.
-- Always pass an explicit `credit_id`; default the selection to the soonest-expiring
-  available credit (the CLI's sort order).
-- Treat `already_redeemed` as success; surface `nothing_to_reset` as an informational
-  message (credit is *not* lost); on `no_credit` with a `credit_id`, refresh the list —
-  the credit raced away.
-- This is an irreversible, user-visible spend of a scarce grant — the UI must be an
-  explicit, deliberate user action (the CLI uses a picker + confirmation flow), never
-  automatic.
-- After a successful claim, refresh usage + the credit list immediately: both windows drop
-  to 0% and the count decrements, which the widgets should reflect right away.
+- The current claim implementation is a single POST on infrastructure OpenUsage already talks to.
+  Authentication, headers, and account id handling are identical to `CodexUsageClient`'s existing calls.
+- OpenUsage mints the `redeem_request_id` UUID **when the user is shown the claim affordance** for each credit.
+  It keeps the UUID for the duration of the interaction and reuses it on retry — the same double-spend protection as the CLI.
+- It always passes an explicit `credit_id`.
+  The user picks a specific credit in the timeline (ordered soonest-expiring first, the CLI's sort
+  order), and the claim targets exactly that credit's id, re-matched against a fresh list at claim time.
+- It treats `already_redeemed` as success and surfaces `nothing_to_reset` as an informational message because the credit is not lost.
+  On `no_credit` with a `credit_id`, it refreshes the list because the credit raced away.
+- This is an irreversible, user-visible spend of a scarce grant, so the UI keeps it behind an explicit confirmation and never claims automatically.
+- After a successful claim, OpenUsage refreshes usage and the credit list immediately.
+  Both windows drop to 0% and the count decrements, which the widgets should reflect right away.

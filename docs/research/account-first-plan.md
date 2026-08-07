@@ -5,10 +5,13 @@ The execution plan for multi-account Claude/Codex support, replacing the closed 
 Those branches stay alive as **cherry-pick material** — most of their auth-store scoping, discovery
 internals, swap timeline, iCloud remapping, and ~4k test lines port into the phases below.
 
+> Managed account switching in **Settings → Accounts** was implemented on top of this plan's record model; [Settings](/docs/settings.md) and [CLI](/docs/cli.md) document the current behavior.
+> Managed accounts have a Remove action that deletes only OpenUsage's snapshot and workspace, while unmanaged discovered cards still follow the no-Remove rule below.
+
 ## Why the restart
 
 PR #1014 keyed the default card by *location* (the default home) and every extra account by
-*identity*. Review traced nearly every P1 bug to that split: the default card's identity is mutable,
+*identity*. Review traced nearly every high-priority bug to that split: the default card's identity is mutable,
 so the branch accreted ~1.5–2k lines of guard machinery (same-account folds, duplicate suppression,
 launch gating, history withholding) defending a structural flaw — guards its own follow-up plan
 would then delete. Since none of it ever shipped, no user has state that needs the staged
@@ -79,7 +82,7 @@ tests land in-slice (repo policy). Estimated source LOC excludes tests.
   duplicate cards are structurally impossible.
 - New account → new record → new card named by account label ("Claude — Sunstory"), falling back
   to the short-hash id; user rename in the card's context menu and in Customize. Cards seed
-  enabled; layout seeded from `DefaultLayout.translatedForInstances` (pins never seeded). A card
+  enabled; layout seeded from `DefaultLayout.translatedForAccountCards` (pins never seeded). A card
   renders only while one of its sources is still found on this computer.
 - Scoped `ClaudeAuthStore` (per-config-dir keychain names), per-account spend from each home's logs.
 - iCloud identity routing: `PeerHistoryRemapper`, account-identity matching, v1-peer histories to a
@@ -120,9 +123,9 @@ tests land in-slice (repo policy). Estimated source LOC excludes tests.
 
 - **5a:** `CODEX_HOME` candidate scan with the strict identity rule — `tokens.account_id` or the
   id_token's ChatGPT account claim; a credential file that can't name its account never becomes a
-  card (port `93e741e`). Scoped auth stores, per-identity log-root grouping, and the
-  `CodexResetClaimRouter` (port `b6be1b1`) so every account's row claims its own reset credits from
-  day one.
+  card (port `93e741e`). Scoped auth stores and per-identity log-root grouping. The per-card
+  `CodexResetClaimRouter` already landed with the managed-account layer, so every account's row
+  claims its own reset credits from day one.
 - **5b (separate if needed):** keyring-mode homes — an unverified keyring source claims no account
   until the one-time post-launch account-scoped read binds it (`CodexHomeIdentityCache`). The
   nichest slice; keeping it out of 5a keeps 5a simple.
@@ -146,12 +149,15 @@ tests land in-slice (repo policy). Estimated source LOC excludes tests.
    retained and reattach if the login reappears). Unwanted cards are handled by the existing
    per-provider disable. Tombstones stay schema-only until a later phase needs true removal.
 
-## Verification
+## Release verification for the managed-account layer
 
-- Per phase: `swift build` + full `swift test`; new suites land with their phase.
-- Live: `script/build_and_run.sh`, then `~/Library/Logs/OpenUsage/OpenUsage.log` — discovery trail,
-  identity resolution, and (Phase 1+) account-registry lines.
-- Beta release per phase via the release-swift skill; soak before the next phase merges.
-- CLI/API: `openusage claude` (alias) and `openusage claude@<hash>` (direct);
-  `curl 127.0.0.1:6736/v1/usage/claude` echoes the requested id.
-- iCloud: two-machine check once Phase 2 lands (migrated writer + old reader and inverse).
+- Run `swift build` and the full `swift test` suite.
+  Include the account registry, credential transaction, workspace, shell installer, dashboard-selection, and per-card claim regressions.
+- Verify that unmanaged config-dir cards still render independently with zero or one managed profile.
+  Verify that two or more managed profiles collapse only their own cards into the selector.
+- Run `script/build_and_run.sh`, then inspect `~/Library/Logs/OpenUsage/OpenUsage.log` for account registry, identity, switch, rollback, and refresh failures.
+- Exercise both Claude and Codex live: import the first account, add a second account, switch, start a fresh terminal session, view an inactive account, re-sign in, and remove it.
+  Verify that an expired credential either refreshes or fails without replacing the selected account.
+- Verify the read-only account CLI plus the existing card CLI/API ids and response shapes.
+- Repeat the two-Mac iCloud compatibility check before release.
+  Managed account metadata and credentials remain local, while synced usage history must keep working with older readers.

@@ -24,9 +24,10 @@ providers, turns it into a `WidgetRegistry`, creates the stores, starts the peri
 starts the local HTTP API. Everything else receives what it needs from here rather than reaching for
 globals, which keeps the pieces testable in isolation.
 
-The `openusage` executable imports the same module. A normal invocation reads `ProviderSnapshotCache`
-and exits; `--force` constructs the canonical `ProviderCatalog` and calls `WidgetDataStore`'s forced
-refresh path before reading. Providers annotate the scalar resources they export through the stable
+The `openusage` executable imports the same module. Every invocation constructs the canonical
+`ProviderCatalog` (including the launch account pass) and refreshes missing or stale entries through
+`WidgetDataStore` before reading `ProviderSnapshotCache`; `--force` only bypasses the five-minute
+freshness gate. Providers annotate the scalar resources they export through the stable
 limits contract; the CLI and `/v1/limits` share one serializer over those same normalized snapshots.
 It never launches the GUI or duplicates provider, auth, pricing, or mapping logic.
 
@@ -45,12 +46,23 @@ Because every provider produces the same normalized `MetricLine` shapes, the UI 
 way and doesn't need to know provider-specific details. To add one, see
 [Adding a provider](adding-a-provider.md).
 
-Claude, Codex, and pi share `IncrementalJSONLScanner` for local JSONL history. Its per-file parsed events
-are cached by path, size, and modification time in a versioned Application Support store, partitioned by
-provider/home identity. Provider instances reading the same home share one scanner actor, which avoids
-duplicate parsing across cards; the disk store provides the reuse across process launches. Scans drop
-source-file records as their modification dates leave the requested history window, while aggregation and
-pricing still run on every refresh from the cached events.
+Claude, Codex, and pi share `IncrementalJSONLScanner` for local JSONL history.
+Its per-file parsed events are cached by path, size, and modification time in a versioned Application Support store partitioned by provider/home identity.
+Provider instances reading the same home share one scanner actor, which avoids duplicate parsing across cards.
+The disk store provides reuse across process launches.
+Scans drop source-file records as their modification dates leave the requested history window.
+Aggregation and pricing still run on every refresh from the cached events.
+The launch account pass assembles extra Claude account cards, their log roots, and read-only snapshot cards for inactive managed accounts.
+Settings account actions repeat that pass, so cards follow account changes without a relaunch.
+The dashboard selector collapses only cards mapped to managed profiles.
+Unrelated discovered config-dir cards remain independent.
+Shared pi logs cannot identify which Claude login produced them, so they are omitted while Claude has split account cards rather than assigned to the wrong account.
+When a config dir is re-authenticated as a different account, reconciliation moves that source edge to the new identity while retaining the old record and its history.
+
+Credential/cache identity and iCloud history attribution are separate.
+A managed bare Claude/Codex runtime can have one current authentication identity while its shared-home logs contain sessions from several switched accounts.
+That history is exported as a family total without the selected profile's identity.
+Discovery cards whose log roots are pinned to one proven account keep identity-keyed history.
 
 ## Stores
 
@@ -62,6 +74,13 @@ The UI reads from a few observable stores:
 - `LayoutStore` — which metrics are shown, the provider/metric order, and which metrics are starred for the
   menu bar.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
+- `ProviderAccountsStore` — the account-first registry for stable card ids, per-account sources, and renames for Claude/Codex sign-ins.
+  `AccountProfilesStore` stores the managed account records and the selected account for each family.
+  Each record contains a stable id, a provider-proven account identity, and an editable account name.
+  The `openusage account` CLI reads the same records through the shared defaults domain.
+  Account credentials live in per-account Keychain snapshots.
+  Official re-logins run in an app-owned sign-in workspace under Application Support, never in the shared configuration homes.
+  The managed-account model — registry, Keychain snapshots, sign-in workspaces, and the switch transaction — is family-neutral, so account switching for additional providers extends the same mechanism instead of adding a parallel one.
 - `ICloudUsageSyncStore` — one coordinated, atomic history file per Mac, iCloud metadata notifications,
   and the visible device/error state. File access is injected for lifecycle and failure tests.
 

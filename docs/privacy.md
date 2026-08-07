@@ -33,6 +33,21 @@ Claude Desktop access is strictly read-only. OpenUsage may ask macOS for permiss
 `Claude Safe Storage` Keychain item so it can decrypt Desktop's current access token. It never uses
 Desktop's rotating refresh token and never modifies Desktop's config, cookies, or Keychain data.
 
+Managed account switching ([**Settings → Accounts**](/docs/settings.md)) keeps one authentication snapshot per account in your macOS Keychain under a service name that starts with `OpenUsage Account Authentication`.
+This snapshot lets OpenUsage restore the previous sign-in when you switch back.
+Each snapshot holds that account's own credential file contents, stays private to your macOS login Keychain, and is never sent anywhere.
+Official sign-ins for additional accounts run in an app-owned workspace under `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/`.
+Workspace directories use `0700`, and credential files use `0600`.
+Removing an account deletes that workspace first and then its Keychain snapshot.
+If either deletion fails, the account remains registered so you can retry.
+Your `~/.claude` and `~/.codex` data is never moved or deleted.
+A confirmed switch also updates a small `claude`/`codex` function in `~/.zshrc` or `~/.config/fish/config.fish`.
+The function is wrapped in `>>> OpenUsage` comment markers, and deleting that marked block removes it.
+
+Managed account names, selected-account state, sign-in readiness, and authentication snapshots are local to this Mac and are not included in iCloud Sync.
+Only normalized usage history is eligible for iCloud.
+Shared managed-home history is synced as a provider-family total, not under the currently selected account.
+
 ## Other network requests
 
 Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages). These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the Share Anonymous Usage setting. The spend tiles are computed from local CLI logs entirely on your Mac; no log data ever leaves it.
