@@ -160,7 +160,9 @@ struct WidgetGroupedListView: View {
             onSelectAccount: isManagedAccountGroup ? family.map { family in
                 { providerID in
                     selectUsageAccount(providerID, for: family)
-                    Task { await dataStore.refresh(providerID: providerID, force: true) }
+                    // A periodic refresh may already own this card; plain `refresh` would be
+                    // skipped and leave the picked account stale until the next cycle.
+                    Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
                 }
             } : nil,
             usesManagedAccountTitle: isManagedAccountGroup,
