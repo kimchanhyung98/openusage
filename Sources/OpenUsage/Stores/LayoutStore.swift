@@ -102,11 +102,14 @@ final class LayoutStore {
         didSet { persistence.saveMenuBarStyle(menuBarStyle) }
     }
 
-    let registry: WidgetRegistry
+    private(set) var registry: WidgetRegistry
     private let persistence: LayoutPersistence
-    private let defaultMetricIDs: [String]
+    private let baseDefaultMetricIDs: [String]
+    private let migrationBaselineMetricIDs: [String]
+    private let baseDefaultExpandedMetricIDs: [String]
+    private var defaultMetricIDs: [String]
     private let defaultPinnedMetricIDs: [String]
-    private let defaultExpandedMetricIDs: [String]
+    private var defaultExpandedMetricIDs: [String]
     var defaultExpandedOnEnableIDs: Set<String>
     let isProviderEnabled: @MainActor (String) -> Bool
 
@@ -125,6 +128,9 @@ final class LayoutStore {
         self.persistence = persistence
         // Extra account cards seed their family's default metric set (and caret split); pins and the
         // migration baseline are deliberately never translated (see `translatedForAccountCards`).
+        self.baseDefaultMetricIDs = defaultMetricIDs
+        self.migrationBaselineMetricIDs = migrationBaselineMetricIDs
+        self.baseDefaultExpandedMetricIDs = defaultExpandedMetricIDs
         let registryProviderIDs = registry.providers.map(\.id)
         let translatedMetricIDs = DefaultLayout.translatedForAccountCards(defaultMetricIDs, providerIDs: registryProviderIDs)
         let translatedExpandedIDs = DefaultLayout.translatedForAccountCards(defaultExpandedMetricIDs, providerIDs: registryProviderIDs)
@@ -156,6 +162,53 @@ final class LayoutStore {
         if initial.shouldPersistExpanded { persistExpanded() }
         if let seededDefaults = initial.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
         syncPlacedOrder(persistChanges: initial.shouldPersistPlaced)
+    }
+
+    /// Reconciles a newly discovered account card into the existing layout. Reloading through the
+    /// same bootstrap path as launch preserves stored choices and seeds only the new account's
+    /// family defaults, while the long-lived store instance keeps the current popover connected.
+    func replaceRegistry(_ registry: WidgetRegistry) {
+        guard registry.providers != self.registry.providers || registry.descriptors != self.registry.descriptors else {
+            return
+        }
+        self.registry = registry
+        let providerIDs = registry.providers.map(\.id)
+        let translatedMetricIDs = DefaultLayout.translatedForAccountCards(
+            baseDefaultMetricIDs,
+            providerIDs: providerIDs
+        )
+        let translatedExpandedIDs = DefaultLayout.translatedForAccountCards(
+            baseDefaultExpandedMetricIDs,
+            providerIDs: providerIDs
+        )
+        defaultMetricIDs = translatedMetricIDs
+        defaultExpandedMetricIDs = translatedExpandedIDs
+
+        let reloaded = LayoutBootstrap.load(
+            registry: registry,
+            persistence: persistence,
+            defaults: LayoutDefaultSet(
+                metricIDs: translatedMetricIDs,
+                migrationBaselineMetricIDs: migrationBaselineMetricIDs,
+                pinnedMetricIDs: defaultPinnedMetricIDs,
+                expandedMetricIDs: translatedExpandedIDs
+            )
+        )
+        placed = reloaded.placed
+        providerOrder = reloaded.providerOrder
+        metricOrderByProvider = reloaded.metricOrderByProvider
+        pinnedMetricIDs = reloaded.pinnedMetricIDs
+        expandedMetricIDs = reloaded.expandedMetricIDs
+        expandedProviderIDs = reloaded.expandedProviderIDs
+        defaultExpandedOnEnableIDs = reloaded.defaultExpandedOnEnableIDs
+        menuBarStyle = reloaded.menuBarStyle
+        undoHistory.clear()
+        cancelDrag()
+
+        if reloaded.shouldPersistExpandOnEnable { persistExpandOnEnable() }
+        if reloaded.shouldPersistExpanded { persistExpanded() }
+        if let seededDefaults = reloaded.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
+        syncPlacedOrder(persistChanges: reloaded.shouldPersistPlaced)
     }
 
     func isProviderExpanded(_ providerID: String) -> Bool {
@@ -347,6 +400,51 @@ final class LayoutStore {
 
     func togglePin(_ descriptorID: String) {
         setPinned(!isPinned(descriptorID), for: descriptorID)
+    }
+
+    /// Re-targets a managed account family's existing menu-bar stars to the selected account card.
+    /// This is an account-switch action, not a dashboard-picker action: the selected card receives
+    /// the same metric kinds, capped to the normal per-provider menu-bar limit.
+    func retargetMenuBarPins(for family: String, to providerID: String) {
+        guard ProviderAccountID.family(of: providerID) == family,
+              registry.provider(id: providerID) != nil else {
+            return
+        }
+
+        let familyPins = pinnedMetricIDs.filter { descriptorID in
+            guard let descriptor = registry.descriptor(id: descriptorID) else { return false }
+            return ProviderAccountID.family(of: descriptor.providerID) == family
+        }
+        guard !familyPins.isEmpty else { return }
+
+        let pinnedMetricKinds = Set(familyPins.compactMap { descriptorID in
+            registry.descriptor(id: descriptorID).flatMap(Self.accountMetricKind)
+        })
+        let selectedPins = Set(
+            metricOrder(for: providerID)
+                .filter { descriptorID in
+                    guard let descriptor = registry.descriptor(id: descriptorID), descriptor.pinnable,
+                          let kind = Self.accountMetricKind(descriptor) else {
+                        return false
+                    }
+                    return pinnedMetricKinds.contains(kind)
+                }
+                .prefix(Self.maxPinsPerProvider)
+        )
+
+        var updatedPins = pinnedMetricIDs
+        updatedPins.subtract(familyPins)
+        updatedPins.formUnion(selectedPins)
+        guard updatedPins != pinnedMetricIDs else { return }
+
+        pinnedMetricIDs = updatedPins
+        persistPins()
+    }
+
+    private static func accountMetricKind(_ descriptor: WidgetDescriptor) -> String? {
+        let prefix = descriptor.providerID + "."
+        guard descriptor.id.hasPrefix(prefix) else { return nil }
+        return String(descriptor.id.dropFirst(prefix.count))
     }
 
     func persistPins() {

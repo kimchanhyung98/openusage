@@ -308,6 +308,90 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertEqual(cache.loadSnapshots(providerIDs: [provider.id])[provider.id]?.plan, "Last good")
     }
 
+    func testAccountSelectionRefreshWaitsForAnInFlightProviderRefresh() async throws {
+        let provider = Self.testProvider
+        let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
+        let runtime = BlockingProviderRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Alpha", used: 55, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: makeUserDefaults("account-selection-race"), storageKey: "snapshots")
+        )
+
+        runtime.blockNextRefresh = true
+        let inFlight = Task { await store.refresh(providerID: provider.id, force: true) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !runtime.isWaiting, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        guard runtime.isWaiting else {
+            inFlight.cancel()
+            return XCTFail("the initial refresh did not enter the in-flight state")
+        }
+
+        let selected = Task {
+            await store.refreshAfterAccountSelection(
+                providerID: provider.id,
+                maxAttempts: 20,
+                retryDelay: .milliseconds(1)
+            )
+        }
+        try? await Task.sleep(for: .milliseconds(5))
+        runtime.resume()
+        _ = await inFlight.value
+        await selected.value
+
+        XCTAssertEqual(runtime.refreshCount, 2, "the selected account must receive its own refresh after the overlap clears")
+        XCTAssertEqual(store.data(for: descriptor).used, 55)
+    }
+
+    func testReplacingProviderCatalogMakesANewAccountCardRefreshableWithoutRestart() async {
+        let defaultProvider = Self.testProvider
+        let defaultDescriptor = Self.descriptor(defaultProvider, id: "test.alpha", metric: "Alpha")
+        let accountProvider = Provider(id: "codex@work", displayName: "Codex — Work", icon: .providerMark("codex"))
+        let accountDescriptor = Self.descriptor(accountProvider, id: "codex@work.weekly", metric: "Weekly")
+        let defaultRuntime = MutableProviderRuntime(
+            provider: defaultProvider,
+            descriptors: [defaultDescriptor],
+            snapshot: ProviderSnapshot(providerID: defaultProvider.id, displayName: defaultProvider.displayName, lines: [])
+        )
+        let accountRuntime = MutableProviderRuntime(
+            provider: accountProvider,
+            descriptors: [accountDescriptor],
+            snapshot: ProviderSnapshot(
+                providerID: accountProvider.id,
+                displayName: accountProvider.displayName,
+                lines: [.progress(label: "Weekly", used: 43, limit: 100, format: .percent)]
+            )
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [defaultProvider], descriptors: [defaultDescriptor]),
+            providers: [defaultRuntime],
+            cache: ProviderSnapshotCache(userDefaults: makeUserDefaults("runtime-account-card"), storageKey: "snapshots")
+        )
+
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(
+                providers: [defaultProvider, accountProvider],
+                descriptors: [defaultDescriptor, accountDescriptor]
+            ),
+            providers: [defaultRuntime, accountRuntime],
+            identityKeys: [accountProvider.id: "work"]
+        )
+        await store.refreshAfterAccountSelection(providerID: accountProvider.id, maxAttempts: 1)
+
+        XCTAssertEqual(store.knownProviderIDs, [defaultProvider.id, accountProvider.id])
+        XCTAssertEqual(store.data(for: accountDescriptor).used, 43)
+    }
+
     func testCompletedEmptyHistoryStillClearsLastGoodHistory() async throws {
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
@@ -419,6 +503,7 @@ private final class BlockingProviderRuntime: ProviderRuntime {
     var snapshot: ProviderSnapshot
     var blockNextRefresh = false
     private(set) var isWaiting = false
+    private(set) var refreshCount = 0
     private var continuation: CheckedContinuation<Void, Never>?
 
     init(provider: Provider, descriptors: [WidgetDescriptor], snapshot: ProviderSnapshot) {
@@ -428,6 +513,7 @@ private final class BlockingProviderRuntime: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        refreshCount += 1
         if blockNextRefresh {
             blockNextRefresh = false
             isWaiting = true

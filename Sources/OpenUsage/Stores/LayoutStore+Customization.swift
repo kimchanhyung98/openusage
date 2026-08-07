@@ -94,7 +94,7 @@ extension LayoutStore {
     /// detail — unlike the enabled-provider reorder list exposed by `customizeGroups`, which filters them
     /// out. Each row carries the enablement flag and total metric count shown by the list.
     var customizeProviderRows: [ProviderRow] {
-        orderedProviders().map { provider in
+        orderedProviders().filter { !ProviderAccountID.isAccountCard($0.id) }.map { provider in
             ProviderRow(
                 provider: provider,
                 isEnabled: isProviderEnabled(provider.id),
