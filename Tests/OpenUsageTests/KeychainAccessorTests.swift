@@ -39,12 +39,41 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(try accessor.readGenericPassword(service: "Test"), "secret-token")
     }
 
+    /// Returns queued results in order — drives the accessor's repeat-until-not-found delete loop.
+    private final class SequenceRunner: ProcessRunning, @unchecked Sendable {
+        private var results: [ProcessResult]
+        private(set) var callCount = 0
+
+        init(results: [ProcessResult]) {
+            self.results = results
+        }
+
+        func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+            callCount += 1
+            return results.isEmpty ? ProcessResult(exitCode: 44, stdout: "", stderr: "") : results.removeFirst()
+        }
+    }
+
     func testDeletingAMissingItemSucceeds() throws {
         let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
             result: ProcessResult(exitCode: 44, stdout: "", stderr: "The specified item could not be found in the keychain.")
         ))
 
         XCTAssertNoThrow(try accessor.deleteGenericPassword(service: "Test"))
+    }
+
+    func testDeleteRepeatsUntilEveryItemForTheServiceIsGone() throws {
+        // A service can hold both an account-scoped and an unscoped item; `security` removes one
+        // per call, so a single delete would leave a removed account's token behind.
+        let runner = SequenceRunner(results: [
+            ProcessResult(exitCode: 0, stdout: "", stderr: ""),
+            ProcessResult(exitCode: 0, stdout: "", stderr: ""),
+            ProcessResult(exitCode: 44, stdout: "", stderr: "The specified item could not be found in the keychain."),
+        ])
+        let accessor = SecurityKeychainAccessor(processRunner: runner)
+
+        XCTAssertNoThrow(try accessor.deleteGenericPassword(service: "Test"))
+        XCTAssertEqual(runner.callCount, 3, "deletion keeps going until not-found proves the service is empty")
     }
 
     func testDeleteFailureIsReported() {

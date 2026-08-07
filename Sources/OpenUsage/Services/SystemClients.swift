@@ -333,17 +333,24 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func deleteGenericPassword(service: String) throws {
-        let result = try processRunner.run(
-            executable: "/usr/bin/security",
-            arguments: ["delete-generic-password", "-s", service],
-            environment: [:],
-            timeout: 5
-        )
-        guard !result.succeeded, result.exitCode != Self.itemNotFoundExitCode else { return }
-        // NEVER the service name: account-vault services embed profile ids, and the spec keeps
-        // Keychain service names out of logs entirely.
-        AppLog.warn(.keychain, "keychain delete failed (exit \(result.exitCode))")
-        throw KeychainError.deleteFailed("exit \(result.exitCode)")
+        // One `security` call removes one matching item, and a service can hold both an
+        // account-scoped and an unscoped item — repeat until not-found so neither survives.
+        for _ in 0..<8 {
+            let result = try processRunner.run(
+                executable: "/usr/bin/security",
+                arguments: ["delete-generic-password", "-s", service],
+                environment: [:],
+                timeout: 5
+            )
+            if result.exitCode == Self.itemNotFoundExitCode { return }
+            if result.succeeded { continue }
+            // NEVER the service name: account-vault services embed profile ids, and the spec keeps
+            // Keychain service names out of logs entirely.
+            AppLog.warn(.keychain, "keychain delete failed (exit \(result.exitCode))")
+            throw KeychainError.deleteFailed("exit \(result.exitCode)")
+        }
+        AppLog.warn(.keychain, "keychain delete did not converge")
+        throw KeychainError.deleteFailed("did not converge")
     }
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
