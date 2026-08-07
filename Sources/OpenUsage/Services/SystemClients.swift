@@ -227,6 +227,7 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 protocol KeychainAccessing: Sendable {
     func readGenericPassword(service: String) throws -> String?
     func writeGenericPassword(service: String, value: String) throws
+    func deleteGenericPassword(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
     /// Read a generic password scoped to an explicit account (`-a`). Used when another app stored the
@@ -331,6 +332,20 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         try writePassword(["add-generic-password", "-U", "-s", service, "-w", value])
     }
 
+    func deleteGenericPassword(service: String) throws {
+        let result = try processRunner.run(
+            executable: "/usr/bin/security",
+            arguments: ["delete-generic-password", "-s", service],
+            environment: [:],
+            timeout: 5
+        )
+        guard !result.succeeded, result.exitCode != Self.itemNotFoundExitCode else { return }
+        // NEVER the service name: account-vault services embed profile ids, and the spec keeps
+        // Keychain service names out of logs entirely.
+        AppLog.warn(.keychain, "keychain delete failed (exit \(result.exitCode))")
+        throw KeychainError.deleteFailed("exit \(result.exitCode)")
+    }
+
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
         try writePassword(["add-generic-password", "-U", "-a", currentUserAccount(), "-s", service, "-w", value])
     }
@@ -356,6 +371,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 enum KeychainError: Error, LocalizedError {
     case writeFailed(String)
     case readFailed(String)
+    case deleteFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -363,6 +379,8 @@ enum KeychainError: Error, LocalizedError {
             return message.isEmpty ? "Keychain write failed." : message
         case .readFailed(let message):
             return message.isEmpty ? "Keychain read failed." : message
+        case .deleteFailed(let message):
+            return message.isEmpty ? "Keychain delete failed." : message
         }
     }
 }

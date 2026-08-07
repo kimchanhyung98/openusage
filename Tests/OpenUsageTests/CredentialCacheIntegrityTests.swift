@@ -269,6 +269,7 @@ private struct FailingAntigravityKeychain: KeychainAccessing {
     }
 
     func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws { throw FailingAntigravityKeychainError.unreadable }
 }
 
 private enum FailingAntigravityKeychainError: Error {

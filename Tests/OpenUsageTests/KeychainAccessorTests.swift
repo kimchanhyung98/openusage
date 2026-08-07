@@ -38,4 +38,24 @@ final class KeychainAccessorTests: XCTestCase {
         ))
         XCTAssertEqual(try accessor.readGenericPassword(service: "Test"), "secret-token")
     }
+
+    func testDeletingAMissingItemSucceeds() throws {
+        let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
+            result: ProcessResult(exitCode: 44, stdout: "", stderr: "The specified item could not be found in the keychain.")
+        ))
+
+        XCTAssertNoThrow(try accessor.deleteGenericPassword(service: "Test"))
+    }
+
+    func testDeleteFailureIsReported() {
+        let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
+            result: ProcessResult(exitCode: 51, stdout: "", stderr: "User interaction is not allowed.")
+        ))
+
+        XCTAssertThrowsError(try accessor.deleteGenericPassword(service: "Test")) { error in
+            guard case KeychainError.deleteFailed = error else {
+                return XCTFail("expected KeychainError.deleteFailed, got \(error)")
+            }
+        }
+    }
 }
