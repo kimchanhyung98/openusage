@@ -21,7 +21,7 @@ final class CodexResetClaimRouter {
     ) {
         self.servicesByCard = [:]
         self.refreshAfterClaim = refreshAfterClaim
-        register(providers: providers)
+        reconfigure(providers: providers)
     }
 
     /// The claim service for one card, or `nil` for a card with no Codex runtime (unknown id, or a
@@ -30,18 +30,20 @@ final class CodexResetClaimRouter {
         servicesByCard[cardID]
     }
 
-    /// Account cards can be discovered after the menu-bar process has launched. Add their scoped
-    /// claim service to the existing router so the freshly rendered card has the same reset action.
-    func register(providers: [CodexProvider]) {
+    /// Rebuilds the routing table for the current catalog. A managed switch can rescope the bare
+    /// `codex` runtime without changing its card id, so every runtime gets a fresh service over its
+    /// own store/client — replacing whatever an earlier runtime left under the same id — and a card
+    /// that left the catalog loses its service instead of staying claimable with stale credentials.
+    func reconfigure(providers: [CodexProvider]) {
         let refreshAfterClaim = refreshAfterClaim
-        for provider in providers where servicesByCard[provider.provider.id] == nil {
+        servicesByCard = Dictionary(uniqueKeysWithValues: providers.map { provider in
             let cardID = provider.provider.id
-            servicesByCard[cardID] = CodexResetClaimService(
+            return (cardID, CodexResetClaimService(
                 authStore: provider.authStore,
                 usageClient: provider.usageClient,
                 refreshAfterClaim: { await refreshAfterClaim(cardID) }
-            )
-        }
+            ))
+        })
     }
 }
 

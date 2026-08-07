@@ -40,7 +40,7 @@ final class AppContainer {
     /// usage client, so an irreversible claim always spends the same account's credential the card
     /// shows. `nil` only if the Codex provider were ever removed from the registry. Injected into the
     /// view tree via `\.codexResetClaim`.
-    let codexResetClaim: CodexResetClaimRouter?
+    let codexResetClaim: CodexResetClaimRouter
     /// The account registry the launch pass reconciled. The UI observes it live: a rename
     /// (`customLabel`) re-titles the card everywhere without a relaunch.
     let accounts: ProviderAccountsStore
@@ -163,7 +163,7 @@ final class AppContainer {
         // refresh already owns the provider — and that in-flight probe may carry *pre-claim* usage —
         // so retry until this refresh actually runs (bounded; the racing probe finishes in seconds).
         let codexProviders = providers.compactMap { $0 as? CodexProvider }
-        self.codexResetClaim = codexProviders.isEmpty ? nil : CodexResetClaimRouter(
+        self.codexResetClaim = CodexResetClaimRouter(
             providers: codexProviders,
             refreshAfterClaim: { [weak dataStore] providerID in
                 // The bound must outlast the provider's slowest refresh: usage fetch (10s timeout)
@@ -329,12 +329,7 @@ final class AppContainer {
                 enablement.setEnabled(true, for: providerID)
             }
         }
-        if let codexResetClaim {
-            codexResetClaim.register(providers: nextProviders.compactMap { runtime in
-                guard addedIDs.contains(runtime.provider.id) else { return nil }
-                return runtime as? CodexProvider
-            })
-        }
+        codexResetClaim.reconfigure(providers: nextProviders.compactMap { $0 as? CodexProvider })
         for providerID in addedIDs where enablement.isEnabled(providerID) {
             Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
         }

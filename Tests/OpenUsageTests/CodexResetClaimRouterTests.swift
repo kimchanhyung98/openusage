@@ -68,6 +68,19 @@ final class CodexResetClaimRouterTests: XCTestCase {
         )
     }
 
+    /// The bare card after the first managed switch: same `codex` id, `.home`-pinned to the shared home.
+    private func makeSharedHomeProvider(home: String, token: String, http: RoutingHTTPClient) -> CodexProvider {
+        CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment([:]),
+                files: FakeFiles(["\(home)/auth.json": Self.auth(token: token, accountID: "acct-shared")]),
+                keychain: FakeKeychain(),
+                scope: .home(path: home)
+            ),
+            usageClient: CodexUsageClient(http: http)
+        )
+    }
+
     func testRouterHandsEachCardItsOwnCredentialAndRefresh() async throws {
         let http = makeHTTP()
         let refreshes = Recorder()
@@ -100,6 +113,51 @@ final class CodexResetClaimRouterTests: XCTestCase {
         )
         XCTAssertEqual(refreshes.values, ["codex", "codex@ab12cd34"],
                        "a successful claim refreshes the card it was tapped on")
+    }
+
+    /// The first managed Codex switch rescopes the bare `codex` runtime from the historical
+    /// `.standard` store to the shared-home pin without changing the card id. The rebuilt router
+    /// must claim with the NEW runtime's credential — the old service's sources include another
+    /// account's env-override home and the shared keychain fallback.
+    func testReconfigureReplacesTheServiceOfARescopedBareCard() async throws {
+        let http = makeHTTP()
+        let router = CodexResetClaimRouter(
+            providers: [makeDefaultProvider(home: "/tmp/codex-old", token: "token-old", http: http)],
+            refreshAfterClaim: { _ in }
+        )
+
+        router.reconfigure(providers: [
+            makeSharedHomeProvider(home: "/tmp/codex-shared", token: "token-new", http: http),
+        ])
+
+        let service = try XCTUnwrap(router.service(for: "codex"))
+        let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1")
+
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(
+            Set(http.requests.compactMap { $0.headers["Authorization"] }),
+            ["Bearer token-new"],
+            "the rescoped card lists and consumes with the new runtime's credential only"
+        )
+    }
+
+    func testReconfigureDropsCardsThatLeftTheCatalog() {
+        let http = makeHTTP()
+        let router = CodexResetClaimRouter(
+            providers: [
+                makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
+                makeCardProvider(cardID: "codex@ab12cd34", home: "/tmp/codex-work", token: "token-work", http: http),
+            ],
+            refreshAfterClaim: { _ in }
+        )
+
+        router.reconfigure(providers: [
+            makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
+        ])
+
+        XCTAssertNil(router.service(for: "codex@ab12cd34"),
+                     "a card that left the catalog is no longer claimable")
+        XCTAssertNotNil(router.service(for: "codex"))
     }
 
     func testUnknownCardHasNoService() {
