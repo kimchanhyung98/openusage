@@ -99,29 +99,42 @@ struct DefaultAccountObserver: Sendable {
         let anchor = expandTilde(configDir)
         // Without an override Claude keeps the default state next to `~/.claude`. Once
         // CLAUDE_CONFIG_DIR is explicit — even when it names that same directory — Claude reads the
-        // state inside the directory, just like every other custom config home.
-        let identityPath = hasConfigDirOverride
-            ? anchor + "/.claude.json"
-            : expandTilde("~/.claude.json")
-        let text: String?
-        do {
-            text = try files.readTextIfPresent(identityPath)
-        } catch {
-            return .unresolved(reason: "identity file unreadable: \(error.localizedDescription)")
+        // state inside the directory, just like every other custom config home. Pinned mode mirrors
+        // the switcher's two-file rule: plain runs update `~/.claude.json`, wrapper runs (explicit
+        // CLAUDE_CONFIG_DIR) update the state inside the home — identity holds only when they agree.
+        let identityPaths: [String] = pinsClaudeSharedHome
+            ? [expandTilde("~/.claude.json"), anchor + "/.claude.json"]
+            : [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
+        var namedAccounts: [(key: String, label: String?)] = []
+        var sawStateFile = false
+        for identityPath in identityPaths {
+            let text: String?
+            do {
+                text = try files.readTextIfPresent(identityPath)
+            } catch {
+                return .unresolved(reason: "identity file unreadable: \(error.localizedDescription)")
+            }
+            guard let text else { continue }
+            sawStateFile = true
+            guard let parsed = try? JSONDecoder().decode(ClaudeStateFile.self, from: Data(text.utf8)),
+                  let account = parsed.oauthAccount,
+                  let key = Self.claudeIdentityKey(account)
+            else { continue }
+            namedAccounts.append((key, Self.claudeIdentityLabel(account)))
         }
-        guard let text else {
-            // No state file. A credential file without it can't be attributed; no footprint = absent.
-            return files.exists(anchor + "/.credentials.json")
-                ? .unresolved(reason: "credentials present but no identity file")
-                : .absent
+        if let first = namedAccounts.first {
+            guard namedAccounts.allSatisfy({ $0.key == first.key }) else {
+                return .unresolved(reason: "shared home state files name different accounts")
+            }
+            return .resolved(identityKey: first.key, label: first.label, anchor: anchor)
         }
-        guard let parsed = try? JSONDecoder().decode(ClaudeStateFile.self, from: Data(text.utf8)),
-              let account = parsed.oauthAccount,
-              let key = Self.claudeIdentityKey(account)
-        else {
+        if sawStateFile {
             return .unresolved(reason: "identity file present but names no account")
         }
-        return .resolved(identityKey: key, label: Self.claudeIdentityLabel(account), anchor: anchor)
+        // No state file. A credential file without it can't be attributed; no footprint = absent.
+        return files.exists(anchor + "/.credentials.json")
+            ? .unresolved(reason: "credentials present but no identity file")
+            : .absent
     }
 
     // MARK: - Codex

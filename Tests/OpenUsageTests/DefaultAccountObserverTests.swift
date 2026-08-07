@@ -106,6 +106,41 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
+    func testManagedClaudePinRequiresBothStateFilesToAgree() {
+        // Mirrors the switcher's rule: plain runs update `~/.claude.json`, wrapper runs update the
+        // state inside the home — a disagreement means the identity is ambiguous, never a guess.
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": claudeStateJSON(),
+                "/Users/dev/.claude/.claude.json": claudeStateJSON(uuid: "OTHER", email: "other@example.com"),
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .unresolved(reason: "shared home state files name different accounts")
+        )
+    }
+
+    func testManagedClaudePinResolvesFromTheInnerStateFileAlone() {
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles(["/Users/dev/.claude/.claude.json": claudeStateJSON()]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
+        )
+    }
+
     func testClaudeCommaListConfigDirIsUnresolved() {
         // `ClaudeAuthStore` treats the env value as ONE credential path; a scanner-style comma list
         // cannot be assigned a single account identity.
