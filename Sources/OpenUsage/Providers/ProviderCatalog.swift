@@ -35,10 +35,17 @@ enum ProviderCatalog {
             // managed switching is active: the Desktop login can be a different account than the one
             // switched into the shared home, and an auth failure must surface as re-login rather
             // than another account's usage.
+            // While managed switching is active the switch transaction owns `~/.claude`, so the
+            // card's credential reads and spend scan pin there too — an ambient CLAUDE_CONFIG_DIR
+            // must not point the bare card at a different home than the one being managed.
             authStore: ClaudeAuthStore(
-                allowsDesktopFallback: claudeCards.isEmpty && !claudeManagedSwitchActive
+                allowsDesktopFallback: claudeCards.isEmpty && !claudeManagedSwitchActive,
+                pinsSharedHome: claudeManagedSwitchActive
             ),
-            logUsageScanner: ClaudeLogUsageScanner(additionalRoots: defaultClaudeExtraLogRoots),
+            logUsageScanner: ClaudeLogUsageScanner(
+                additionalRoots: defaultClaudeExtraLogRoots,
+                pinsSharedHome: claudeManagedSwitchActive
+            ),
             includePiUsage: claudeCards.isEmpty
         ))
         for card in claudeCards {

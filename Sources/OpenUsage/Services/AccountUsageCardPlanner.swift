@@ -11,18 +11,25 @@ struct AccountUsageSnapshotCard: Equatable, Sendable {
 
 enum AccountUsageCardPlanner {
     /// One snapshot card per inactive profile with a saved credential. The selected profile renders
-    /// through the family's shared-home runtime instead, so it never gets a duplicate card.
+    /// through the family's shared-home runtime instead — but only while that home actually serves
+    /// it: when the home's observed account is a different identity (an external re-login), the
+    /// selected profile gets a snapshot card too, or it would vanish from the dashboard entirely.
     static func snapshotCards(
         profiles: [AccountProfile],
         preferredProfileIDs: [String: String],
-        availableSnapshotProfileIDs: Set<String>
+        availableSnapshotProfileIDs: Set<String>,
+        sharedHomeIdentityKeys: [String: String] = [:]
     ) -> [AccountUsageSnapshotCard] {
         profiles.compactMap { profile in
             guard !profile.isArchived,
-                  preferredProfileIDs[profile.family] != profile.id,
                   availableSnapshotProfileIDs.contains(profile.id)
             else {
                 return nil
+            }
+            if preferredProfileIDs[profile.family] == profile.id {
+                guard let observed = sharedHomeIdentityKeys[profile.family],
+                      observed != profile.identityKey
+                else { return nil }
             }
             return AccountUsageSnapshotCard(
                 id: cardID(family: profile.family, profileID: profile.id),

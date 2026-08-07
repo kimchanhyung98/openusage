@@ -99,12 +99,20 @@ struct ProviderAccountAssembly {
         let codexManaged = families.contains("codex")
             && !profileStore.profiles(family: "codex").isEmpty
             && FileManager.default.fileExists(atPath: sharedCodexAuthFile)
+        // Managed Claude switching owns `~/.claude`: pin the identity read to that home (the
+        // catalog pins the bare runtime the same way) so an ambient CLAUDE_CONFIG_DIR can't make
+        // the app manage one account while observing another.
+        let claudeManaged = families.contains("claude")
+            && !profileStore.profiles(family: "claude").isEmpty
         let managedProfiles = profileStore.profiles
         let snapshotProfileIDs = Set(managedProfiles.compactMap { profile in
             AccountCredentialVault().contains(profile: profile) ? profile.id : nil
         })
         return make(
-            observer: DefaultAccountObserver(pinsCodexSharedHome: codexManaged),
+            observer: DefaultAccountObserver(
+                pinsClaudeSharedHome: claudeManaged,
+                pinsCodexSharedHome: codexManaged
+            ),
             accountsStore: accountsStore ?? ProviderAccountsStore(defaults: defaults),
             families: families,
             claudeDiscovery: ClaudeConfigDirDiscovery(),
@@ -114,8 +122,7 @@ struct ProviderAccountAssembly {
             codexSharedAuthHome: codexManaged
                 ? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
                 : nil,
-            claudeManagedSwitchActive: families.contains("claude")
-                && !profileStore.profiles(family: "claude").isEmpty
+            claudeManagedSwitchActive: claudeManaged
         )
     }
 
@@ -268,7 +275,8 @@ struct ProviderAccountAssembly {
         let snapshotCards = AccountUsageCardPlanner.snapshotCards(
             profiles: managedProfiles,
             preferredProfileIDs: preferredProfileIDs,
-            availableSnapshotProfileIDs: snapshotProfileIDs
+            availableSnapshotProfileIDs: snapshotProfileIDs,
+            sharedHomeIdentityKeys: identityKeys
         ).filter { card in
             guard let profile = managedProfiles.first(where: { $0.id == card.profileID }) else { return false }
             return !observedIdentityKeys.contains(profile.identityKey)

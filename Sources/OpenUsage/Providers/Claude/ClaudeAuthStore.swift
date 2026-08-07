@@ -191,6 +191,11 @@ struct ClaudeAuthStore: Sendable {
     /// because the Desktop login could belong to any of them — borrowing it unpinned could fetch one
     /// account's usage onto another account's card. Desktop-backed cards return properly in Phase 3.
     let allowsDesktopFallback: Bool
+    /// Managed switching owns `~/.claude` as the Shared Runtime Home. The bare card's `.standard`
+    /// store must then read exactly that home — base keychain service and
+    /// `~/.claude/.credentials.json` — even when an ambient `CLAUDE_CONFIG_DIR` names another
+    /// directory, so the card always shows the account the switch transaction installed.
+    let pinsSharedHome: Bool
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -199,6 +204,7 @@ struct ClaudeAuthStore: Sendable {
         desktop: ClaudeDesktopAuthStore? = nil,
         scope: ClaudeCredentialScope = .standard,
         allowsDesktopFallback: Bool = true,
+        pinsSharedHome: Bool = false,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.environment = environment
@@ -207,6 +213,7 @@ struct ClaudeAuthStore: Sendable {
         self.desktop = desktop ?? ClaudeDesktopAuthStore(files: files, now: now)
         self.scope = scope
         self.allowsDesktopFallback = allowsDesktopFallback
+        self.pinsSharedHome = pinsSharedHome
         self.now = now
     }
 
@@ -378,7 +385,7 @@ struct ClaudeAuthStore: Sendable {
     }
 
     func claudeHomeOverride() -> String? {
-        envText("CLAUDE_CONFIG_DIR")
+        pinsSharedHome ? nil : envText("CLAUDE_CONFIG_DIR")
     }
 
     // Resolved OAuth endpoint strings before URL validation. The suffix is derived from the same
@@ -583,7 +590,7 @@ struct ClaudeAuthStore: Sendable {
         if case .configDir(let path, _) = scope {
             return "\(path)/\(Self.credentialFileName)"
         }
-        return "\(envText("CLAUDE_CONFIG_DIR") ?? Self.defaultClaudeHome)/\(Self.credentialFileName)"
+        return "\(claudeHomeOverride() ?? Self.defaultClaudeHome)/\(Self.credentialFileName)"
     }
 
     private func envText(_ name: String) -> String? {

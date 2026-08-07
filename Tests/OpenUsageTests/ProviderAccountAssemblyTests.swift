@@ -367,7 +367,9 @@ final class ProviderAccountAssemblyTests: XCTestCase {
     }
 
     /// A profile whose account is already visible through a home-backed card this launch (here:
-    /// the default home) must not render a duplicate snapshot card.
+    /// the default home) must not render a duplicate snapshot card. The SELECTED profile is the
+    /// mirror case: the shared home serves a different account, so without its own snapshot card it
+    /// would vanish from the dashboard entirely.
     func testSnapshotCardIsSuppressedWhenTheAccountAlreadyHasAHomeBackedCard() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
@@ -384,9 +386,10 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             snapshotProfileIDs: [personal.id, work.id]
         )
 
-        XCTAssertTrue(
-            assembly.snapshotCards.isEmpty,
-            "the inactive profile's account is the observed default login — a snapshot card would render it twice"
+        XCTAssertEqual(
+            assembly.snapshotCards.map(\.profileID),
+            [work.id],
+            "the inactive profile's account is the observed default login (no duplicate card), while the selected profile — unserved by the shared home — keeps its own card"
         )
     }
 

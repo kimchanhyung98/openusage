@@ -31,6 +31,32 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
         XCTAssertEqual(load.desktopStatus, .notChecked, "a config-dir card never consults Desktop")
     }
 
+    /// The `.standard` store under managed switching: `pinsSharedHome` must make it read exactly
+    /// the shared `~/.claude` home — base keychain service and `~/.claude/.credentials.json` — even
+    /// when an ambient `CLAUDE_CONFIG_DIR` names another account's directory.
+    func testPinnedStandardStoreIgnoresAnAmbientConfigDirOverride() {
+        let pinned = ClaudeAuthStore(
+            environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/Users/dev/.claude-work"]),
+            files: FakeFiles([
+                "~/.claude/.credentials.json": #"{"claudeAiOauth": {"accessToken": "shared-at"}}"#,
+                "/Users/dev/.claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "other-at"}}"#,
+            ]),
+            keychain: ServiceKeychain(),
+            pinsSharedHome: true
+        )
+        let overrideFree = ClaudeAuthStore(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([:]),
+            keychain: ServiceKeychain()
+        )
+
+        XCTAssertNil(pinned.claudeHomeOverride())
+        XCTAssertEqual(pinned.keychainServiceCandidates(), overrideFree.keychainServiceCandidates(),
+                       "the pinned store reads the base service, never the override-scoped item")
+        XCTAssertEqual(pinned.loadCredentialSet().candidates.map(\.oauth.accessToken), ["shared-at"],
+                       "credentials come from the shared home, not the ambient override directory")
+    }
+
     func testScopedStoreNeverInheritsTheAmbientEnvironmentToken() {
         let store = ClaudeAuthStore(
             environment: FakeEnvironment(["CLAUDE_CODE_OAUTH_TOKEN": "ambient-token"]),

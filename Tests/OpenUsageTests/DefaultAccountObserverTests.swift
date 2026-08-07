@@ -86,6 +86,26 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
+    func testManagedClaudePinIgnoresAnAmbientConfigDirOverride() {
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "~/claude-work"]),
+            files: FakeFiles([
+                "/Users/dev/claude-work/.claude.json": claudeStateJSON(uuid: "OTHER", email: "other@example.com"),
+                "/Users/dev/.claude.json": claudeStateJSON(),
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { [home] in home },
+            pinsClaudeSharedHome: true
+        )
+
+        // The switch transaction owns `~/.claude`; the observer must describe that home, not the
+        // ambient override — otherwise the app would manage one account while observing another.
+        XCTAssertEqual(
+            observer.observeClaude(),
+            .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
+        )
+    }
+
     func testClaudeCommaListConfigDirIsUnresolved() {
         // `ClaudeAuthStore` treats the env value as ONE credential path; a scanner-style comma list
         // cannot be assigned a single account identity.

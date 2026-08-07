@@ -20,6 +20,10 @@ struct DefaultAccountObserver: Sendable {
     var files: TextFileAccessing
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
+    /// Managed account switching owns `~/.claude` as the Shared Runtime Home, so the observer must
+    /// resolve identity from that home even when an ambient `CLAUDE_CONFIG_DIR` names another
+    /// directory — otherwise the app would manage one account while observing a different one.
+    var pinsClaudeSharedHome: Bool
     /// Managed account switching pins the Codex provider to the shared `~/.codex/auth.json`, so the
     /// observer must resolve identity from that same file — the keychain item and the legacy
     /// `~/.config/codex` home can no longer produce the next snapshot and must not blur it.
@@ -30,12 +34,14 @@ struct DefaultAccountObserver: Sendable {
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
+        pinsClaudeSharedHome: Bool = false,
         pinsCodexSharedHome: Bool = false
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
         self.homeDirectory = homeDirectory
+        self.pinsClaudeSharedHome = pinsClaudeSharedHome
         self.pinsCodexSharedHome = pinsCodexSharedHome
     }
 
@@ -81,7 +87,8 @@ struct DefaultAccountObserver: Sendable {
     func observeClaude() -> Outcome {
         var configDir = "~/.claude"
         var hasConfigDirOverride = false
-        if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
+        if !pinsClaudeSharedHome,
+           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
             guard !raw.contains(",") else {
                 return .unresolved(reason: "CLAUDE_CONFIG_DIR is a comma-separated list")

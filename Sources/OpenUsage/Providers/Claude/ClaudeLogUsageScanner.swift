@@ -33,6 +33,9 @@ actor ClaudeLogUsageScanner {
     /// Same-account custom config dirs appended to the DEFAULT card's standard roots, so spend the
     /// user's own login produced in a side home still counts on its card.
     private let additionalRoots: [URL]
+    /// Managed switching owns `~/.claude`; the default card's scan must then ignore an ambient
+    /// `CLAUDE_CONFIG_DIR` and walk the shared home exactly like an override-free machine.
+    nonisolated let pinsSharedHome: Bool
 
     /// One parsed usage line. Token buckets are pre-normalized into `TokenBreakdown`; dedup fields
     /// ride along so the global dedup pass can run over cached entries.
@@ -66,7 +69,8 @@ actor ClaudeLogUsageScanner {
         incrementalScanner: IncrementalJSONLScanner<Entry>? = nil,
         cacheIdentityOverride: String? = nil,
         rootsOverride: [URL]? = nil,
-        additionalRoots: [URL] = []
+        additionalRoots: [URL] = [],
+        pinsSharedHome: Bool = false
     ) {
         precondition(cacheIdentityOverride?.isEmpty != true)
         // A scoped root set must carry its own parse-source identity, or its cache records would
@@ -78,6 +82,7 @@ actor ClaudeLogUsageScanner {
         self.cacheIdentityOverride = cacheIdentityOverride
         self.rootsOverride = rootsOverride
         self.additionalRoots = additionalRoots
+        self.pinsSharedHome = pinsSharedHome
     }
 
     /// Scan the last `daysBack` days of Claude logs. Returns `nil` when no Claude data directory or
@@ -119,7 +124,8 @@ actor ClaudeLogUsageScanner {
         if let cacheIdentityOverride { return cacheIdentityOverride }
         let home = homeDirectory().resolvingSymlinksInPath().path
         let configuredRoots: [URL]
-        if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
+        if !pinsSharedHome,
+           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty
         {
@@ -171,7 +177,8 @@ actor ClaudeLogUsageScanner {
             return roots
         }
 
-        if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if !pinsSharedHome,
+           let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
             for part in raw.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
                 var url = URL(fileURLWithPath: expandHome(part))

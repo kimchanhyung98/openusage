@@ -60,6 +60,21 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(unmanaged?.authStore.scope, .standard)
     }
 
+    func testManagedSwitchingPinsTheDefaultClaudeCardToTheSharedHome() {
+        let pinned = ProviderCatalog.make(claudeManagedSwitchActive: true)
+            .compactMap { $0 as? ClaudeProvider }
+            .first { $0.provider.id == "claude" }
+        XCTAssertEqual(pinned?.authStore.pinsSharedHome, true)
+        XCTAssertEqual(pinned?.logUsageScanner.pinsSharedHome, true)
+        XCTAssertEqual(pinned?.authStore.allowsDesktopFallback, false)
+
+        let unmanaged = ProviderCatalog.make()
+            .compactMap { $0 as? ClaudeProvider }
+            .first { $0.provider.id == "claude" }
+        XCTAssertEqual(unmanaged?.authStore.pinsSharedHome, false)
+        XCTAssertEqual(unmanaged?.logUsageScanner.pinsSharedHome, false)
+    }
+
     func testSplitClaudeCardsDisableUnscopedPiUsage() {
         let card = ClaudeAccountCard(
             id: "claude@ab12cd34",

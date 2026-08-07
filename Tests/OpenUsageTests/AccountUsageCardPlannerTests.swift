@@ -32,6 +32,38 @@ final class AccountUsageCardPlannerTests: XCTestCase {
         ).isEmpty)
     }
 
+    func testSelectedProfileGetsASnapshotCardWhenTheSharedHomeServesAnotherAccount() {
+        let personal = profile(id: "personal", family: "claude")
+
+        XCTAssertEqual(
+            AccountUsageCardPlanner.snapshotCards(
+                profiles: [personal],
+                preferredProfileIDs: ["claude": personal.id],
+                availableSnapshotProfileIDs: [personal.id],
+                sharedHomeIdentityKeys: ["claude": "identity-someone-else"]
+            ),
+            [
+                AccountUsageSnapshotCard(
+                    id: "claude@profile-personal",
+                    profileID: personal.id,
+                    family: "claude"
+                )
+            ],
+            "without a card the selected profile would vanish while the home shows another account"
+        )
+    }
+
+    func testSelectedProfileStaysCardFreeWhileTheSharedHomeServesIt() {
+        let personal = profile(id: "personal", family: "claude")
+
+        XCTAssertTrue(AccountUsageCardPlanner.snapshotCards(
+            profiles: [personal],
+            preferredProfileIDs: ["claude": personal.id],
+            availableSnapshotProfileIDs: [personal.id],
+            sharedHomeIdentityKeys: ["claude": personal.identityKey]
+        ).isEmpty)
+    }
+
     func testInactiveProfileWithoutSavedCredentialsIsUnavailable() {
         let personal = profile(id: "personal", family: "claude")
         let work = profile(id: "work", family: "claude")
