@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class AppContainer {
-    let registry: WidgetRegistry
+    private(set) var registry: WidgetRegistry
     let layout: LayoutStore
     let dataStore: WidgetDataStore
     /// Opt-in private iCloud document sync for additive machine-local daily history.
@@ -36,16 +36,25 @@ final class AppContainer {
     /// `FirstRunSeeder` on a fresh install, so existing installs never see the card.
     let onboarding: OnboardingStore
     /// Claims Codex rate-limit reset credits from the resets popover (the app's only provider-API
-    /// write). Shares the Codex provider's auth store and usage client; `nil` only if the Codex
-    /// provider were ever removed from the registry. Injected into the view tree via
-    /// `\.codexResetClaim`.
-    let codexResetClaim: CodexResetClaimService?
+    /// write), routed per card: every Codex card's claim runs through that card's own auth store and
+    /// usage client, so an irreversible claim always spends the same account's credential the card
+    /// shows. `nil` only if the Codex provider were ever removed from the registry. Injected into the
+    /// view tree via `\.codexResetClaim`.
+    let codexResetClaim: CodexResetClaimRouter?
     /// The account registry the launch pass reconciled. The UI observes it live: a rename
     /// (`customLabel`) re-titles the card everywhere without a relaunch.
     let accounts: ProviderAccountsStore
+    /// The managed launch-profile registry (`AccountProfilesStore`) the launch account pass scanned.
+    /// Kept as the single shared instance so the Settings account UI reads (and reloads) the same
+    /// state the pass used.
+    let accountProfiles: AccountProfilesStore
+    /// Card id → managed profile id for cards that were assembled from a registered launch home.
+    /// The mapping is stable across label edits, so the dashboard can select the same Personal/Work
+    /// profile that Settings uses without making profile labels card IDs.
+    private var accountProfileIDsByCardID: [String: String]
     /// The provider runtimes, kept so on-demand credential detection (the Customize "Reset All" reseed)
     /// can re-probe `hasLocalCredentials()` the same way first-run seeding does.
-    private let providers: [ProviderRuntime]
+    private var providers: [ProviderRuntime]
     /// Read-only usage API on 127.0.0.1:6736 for other local apps (silently off when the port is taken).
     private let localAPI: LocalUsageServer
     // A `let` of a `Sendable` `Task` is implicitly nonisolated, so the nonisolated `deinit` can cancel it.
@@ -72,13 +81,28 @@ final class AppContainer {
         // The launch account pass: which account is signed in at each family's default home, plus
         // the config-dir scan for extra Claude logins. Feeds the snapshot cache's account stamp,
         // reconciles the account registry, and hands the catalog its extra-card build plan.
+        // `accountProfiles` is created here (before the pass) so the pass and the Settings account
+        // UI share one instance.
         let accounts = ProviderAccountsStore()
-        let accountAssembly = ProviderAccountAssembly.make(accountsStore: accounts, waitsForLoginShell: true)
+        let accountProfiles = AccountProfilesStore()
+        let accountAssembly = ProviderAccountAssembly.make(
+            accountsStore: accounts,
+            waitsForLoginShell: true,
+            accountProfiles: accountProfiles
+        )
         self.accounts = accounts
+        self.accountProfiles = accountProfiles
+        self.accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
+            assembly: accountAssembly,
+            profiles: accountProfiles
+        )
 
         let providers = ProviderCatalog.make(
             claudeCards: accountAssembly.claudeCards,
-            defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots
+            defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
+            snapshotCards: accountAssembly.snapshotCards,
+            codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
+            claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
         )
         let registry = WidgetRegistry.from(providers)
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
@@ -131,47 +155,46 @@ final class AppContainer {
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
 
-        // The resets popover's claim service, sharing the Codex provider's credential loading and HTTP
-        // client so the claim's auth can't drift from the provider's. A successful claim forces a Codex
-        // refresh so the meters and credit count reconcile before the popover shows its result. The
-        // forced refresh returns `.skipped` when another refresh already owns the provider — and that
-        // in-flight probe may carry *pre-claim* usage — so retry until this refresh actually runs
-        // (bounded; the racing probe finishes in seconds).
-        self.codexResetClaim = providers.compactMap { $0 as? CodexProvider }.first.map { codex in
-            CodexResetClaimService(
-                authStore: codex.authStore,
-                usageClient: codex.usageClient,
-                refreshAfterClaim: { [weak dataStore] in
-                    // The bound must outlast the provider's slowest refresh: usage fetch (10s timeout)
-                    // + token refresh (15s) + usage retry (10s) + reset-credit fetch (10s) ≈ 45s. The
-                    // common race (the periodic timer's probe) clears in a couple of seconds; the
-                    // pathological one keeps the popover's honest "Resetting…" up rather than showing
-                    // a success banner over pre-claim meters. A `.failed` probe is retried a few times
-                    // too — a transient flake right after the claim must not strand pre-claim meters
-                    // behind a success banner — before giving up loudly (the provider error already
-                    // shows on the card, so the staleness isn't silent).
-                    var failures = 0
-                    for attempt in 0..<45 {
-                        guard let dataStore else { return }
-                        switch await dataStore.refresh(providerID: codex.provider.id, force: true) {
-                        case .refreshed, .cacheHit, .backedOff:
+        // The resets popover's claim router: one claim service per Codex card, each sharing ITS card's
+        // credential loading and HTTP client so a claim's auth can't drift from the provider it was
+        // tapped on — an irreversible claim must spend the same account's credential the card shows.
+        // A successful claim forces a refresh of that card so the meters and credit count reconcile
+        // before the popover shows its result. The forced refresh returns `.skipped` when another
+        // refresh already owns the provider — and that in-flight probe may carry *pre-claim* usage —
+        // so retry until this refresh actually runs (bounded; the racing probe finishes in seconds).
+        let codexProviders = providers.compactMap { $0 as? CodexProvider }
+        self.codexResetClaim = codexProviders.isEmpty ? nil : CodexResetClaimRouter(
+            providers: codexProviders,
+            refreshAfterClaim: { [weak dataStore] providerID in
+                // The bound must outlast the provider's slowest refresh: usage fetch (10s timeout)
+                // + token refresh (15s) + usage retry (10s) + reset-credit fetch (10s) ≈ 45s. The
+                // common race (the periodic timer's probe) clears in a couple of seconds; the
+                // pathological one keeps the popover's honest "Resetting…" up rather than showing
+                // a success banner over pre-claim meters. A `.failed` probe is retried a few times
+                // too — a transient flake right after the claim must not strand pre-claim meters
+                // behind a success banner — before giving up loudly (the provider error already
+                // shows on the card, so the staleness isn't silent).
+                var failures = 0
+                for attempt in 0..<45 {
+                    guard let dataStore else { return }
+                    switch await dataStore.refresh(providerID: providerID, force: true) {
+                    case .refreshed, .cacheHit, .backedOff:
+                        return
+                    case .failed:
+                        failures += 1
+                        guard failures < 3 else {
+                            AppLog.error(LogTag.plugin("codex"), "post-claim refresh failed \(failures) times; meters may lag until the next cycle")
                             return
-                        case .failed:
-                            failures += 1
-                            guard failures < 3 else {
-                                AppLog.error(LogTag.plugin("codex"), "post-claim refresh failed \(failures) times; meters may lag until the next cycle")
-                                return
-                            }
-                            try? await Task.sleep(for: .seconds(2))
-                        case .skipped:
-                            AppLog.info(LogTag.plugin("codex"), "post-claim refresh waiting out an in-flight refresh (attempt \(attempt + 1))")
-                            try? await Task.sleep(for: .seconds(1))
                         }
+                        try? await Task.sleep(for: .seconds(2))
+                    case .skipped:
+                        AppLog.info(LogTag.plugin("codex"), "post-claim refresh waiting out an in-flight refresh (attempt \(attempt + 1))")
+                        try? await Task.sleep(for: .seconds(1))
                     }
-                    AppLog.error(LogTag.plugin("codex"), "post-claim refresh kept being skipped; meters may lag until the next cycle")
                 }
-            )
-        }
+                AppLog.error(LogTag.plugin("codex"), "post-claim refresh kept being skipped; meters may lag until the next cycle")
+            }
+        )
 
         // Anonymous, opt-in usage telemetry (two daily-rollup events). Its state lives in a dedicated
         // UserDefaults suite, kept separate from app settings so the user's sharing choice and the
@@ -181,16 +204,16 @@ final class AppContainer {
         let telemetry = TelemetryRecorder(
             sink: PostHogTelemetrySink(enabled: telemetryStore.enabled),
             store: telemetryStore,
-            snapshot: { [registry, enablement, layout] in
+            snapshot: { [enablement, layout, dataStore] in
                 // Report the *active* configuration: a metric whose provider is turned off is hidden
                 // from the dashboard and menu bar, so exclude it here too — keeping the metric arrays
                 // consistent with `enabledProviders` (which is also enablement-filtered).
                 let providerOn: (String) -> Bool = { metricID in
-                    guard let providerID = registry.descriptor(id: metricID)?.providerID else { return false }
+                    guard let providerID = layout.registry.descriptor(id: metricID)?.providerID else { return false }
                     return enablement.isEnabled(providerID)
                 }
                 return TelemetryConfigSnapshot(
-                    enabledProviders: registry.providers.map(\.id).filter { enablement.isEnabled($0) },
+                enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
                     enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
                     pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
                     expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
@@ -207,9 +230,9 @@ final class AppContainer {
         self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore, accounts] in
             LocalUsageAPI.State(
                 enabledOrderedIDs: layout.orderedProviderIDs().filter { enablement.isEnabled($0) },
-                knownIDs: Set(registry.providers.map(\.id)),
+                knownIDs: Set(dataStore.knownProviderIDs),
                 snapshots: dataStore.snapshots,
-                limitDescriptors: registry.limitDescriptorsByProvider,
+                limitDescriptors: dataStore.limitDescriptorsByProvider,
                 errors: dataStore.providerErrors
             )
             // API output is human-read too: resolve card titles at respond time so renames show,
@@ -240,6 +263,96 @@ final class AppContainer {
         accounts.resolvedDisplayName(cardID: provider.id) ?? provider.displayName
     }
 
+    /// The managed profile label for a usage card, if that card is backed by a managed profile.
+    func accountProfileLabel(for cardID: String) -> String? {
+        guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
+        return accountProfiles.profile(id: profileID)?.label
+    }
+
+    /// The visible account card backed by a family's currently selected managed profile.
+    func preferredAccountCardID(for family: String, among cardIDs: [String]) -> String? {
+        guard let profileID = accountProfiles.preferredProfileID(family: family) else { return nil }
+        return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
+    }
+
+    /// A successful Settings account switch updates both account-derived usage surfaces once: the
+    /// dashboard selector and the selected family's menu-bar stars. Later dashboard picker changes
+    /// stay view-only and never run the terminal switch or alter menu-bar stars again.
+    func syncDashboardUsageAccount(to profile: AccountProfile) {
+        guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
+            family: profile.family,
+            availableCardIDs: registry.providers.map(\.id)
+        ) else {
+            return
+        }
+        layout.retargetMenuBarPins(for: profile.family, to: cardID)
+        Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
+    }
+
+    /// Adds or removes account-scoped provider cards immediately after Settings changes a managed
+    /// profile. The root stores remain stable, so the already-open dashboard and status item pick up
+    /// the new registry without a process restart.
+    func refreshAccountCatalog() {
+        let assembly = ProviderAccountAssembly.make(
+            accountsStore: accounts,
+            waitsForLoginShell: true,
+            accountProfiles: accountProfiles
+        )
+        let nextProviders = ProviderCatalog.make(
+            claudeCards: assembly.claudeCards,
+            defaultClaudeExtraLogRoots: assembly.defaultClaudeExtraLogRoots,
+            snapshotCards: assembly.snapshotCards,
+            codexSharedAuthHome: assembly.codexSharedAuthHome,
+            claudeManagedSwitchActive: assembly.claudeManagedSwitchActive
+        )
+        let nextRegistry = WidgetRegistry.from(nextProviders)
+        let previousIDs = Set(registry.providers.map(\.id))
+        let addedIDs = Set(nextRegistry.providers.map(\.id)).subtracting(previousIDs)
+
+        registry = nextRegistry
+        providers = nextProviders
+        accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
+            assembly: assembly,
+            profiles: accountProfiles
+        )
+        layout.replaceRegistry(nextRegistry)
+        dataStore.replaceProviderCatalog(
+            registry: nextRegistry,
+            providers: nextProviders,
+            identityKeys: assembly.identityKeysByCard
+        )
+
+        for providerID in addedIDs.sorted() {
+            _ = enablement.registerKnownProviders([providerID])
+            let family = ProviderAccountID.family(of: providerID)
+            if ProviderAccountID.families.contains(family), enablement.isEnabled(family) {
+                enablement.setEnabled(true, for: providerID)
+            }
+        }
+        if let codexResetClaim {
+            codexResetClaim.register(providers: nextProviders.compactMap { runtime in
+                guard addedIDs.contains(runtime.provider.id) else { return nil }
+                return runtime as? CodexProvider
+            })
+        }
+        for providerID in addedIDs where enablement.isEnabled(providerID) {
+            Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
+        }
+    }
+
+    /// Account-specific runtimes are alternate views of one provider. The Customize master toggle
+    /// therefore always enables or disables every account card in that provider family together.
+    func setProviderEnabled(_ enabled: Bool, for providerID: String) {
+        let family = ProviderAccountID.family(of: providerID)
+        if ProviderAccountID.families.contains(family) {
+            for provider in providers where ProviderAccountID.family(of: provider.provider.id) == family {
+                enablement.setEnabled(enabled, for: provider.provider.id)
+            }
+        } else {
+            enablement.setEnabled(enabled, for: providerID)
+        }
+    }
+
     /// Whether the card has an account record a rename can attach to (accounts-model families only,
     /// and only once the account's identity has been observed at least once).
     func canRename(_ providerID: String) -> Bool {
@@ -252,6 +365,33 @@ final class AppContainer {
     @discardableResult
     func reseedEnabledProviders() -> Task<Void, Never> {
         FirstRunSeeder.reseed(providers: providers, enablement: enablement)
+    }
+
+    static func accountProfileIDsByCardID(
+        assembly: ProviderAccountAssembly,
+        profiles: AccountProfilesStore
+    ) -> [String: String] {
+        // Profiles map to cards by identity, never by path. The selected profile answers for the
+        // bare family card (the shared-home runtime carries its authentication); every inactive
+        // profile owns its snapshot card. A card whose account matches a managed profile's identity
+        // — the ambient config-dir case — attaches by that identity too.
+        var result = assembly.profileIDsByCard
+        for family in AccountProfilesStore.supportedFamilies {
+            guard let selected = profiles.preferredProfile(family: family) else { continue }
+            if let observed = assembly.identityKeysByCard[family], observed != selected.identityKey {
+                // Someone signed the shared home into a different account outside OpenUsage; the
+                // bare card shows that login, so the selected profile must not claim its label.
+                continue
+            }
+            result[family] = selected.id
+        }
+        for card in assembly.claudeCards {
+            guard let identityKey = assembly.identityKeysByCard[card.id],
+                  let profile = profiles.profiles(family: "claude").first(where: { $0.identityKey == identityKey })
+            else { continue }
+            result[card.id] = profile.id
+        }
+        return result
     }
 
     /// Drives live updates: refresh on launch, then again every refresh interval. Each pass honors the

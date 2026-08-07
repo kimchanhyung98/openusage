@@ -24,18 +24,20 @@ struct WidgetGroupedListView: View {
     @State private var renameCardID: String?
     @State private var renameDraft = ""
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
+    @AppStorage(DashboardUsageAccountSelection.claudeKey) private var selectedClaudeUsageAccountID = ""
+    @AppStorage(DashboardUsageAccountSelection.codexKey) private var selectedCodexUsageAccountID = ""
 
     var body: some View {
         // Provider-section spacing is noticeably wider than the in-card row rhythm (so groups
         // still read as groups); the exact step comes from the density setting.
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            ForEach(layout.displayGroups) { group in
+            ForEach(dashboardGroups) { group in
                 section(group)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
-        .animation(Motion.spring, value: layout.displayGroups.map(\.provider.id))
+        .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
         .alert("Rename Card", isPresented: isRenamePresented) {
             TextField("Name", text: $renameDraft)
             Button("Rename") {
@@ -57,6 +59,69 @@ struct WidgetGroupedListView: View {
         )
     }
 
+    private var dashboardGroups: [ProviderGroup] {
+        let groups = layout.displayGroups
+        var visibleIDs = groups.map(\.provider.id)
+        for family in accountFamilies {
+            let managedGroups = managedAccountGroups(for: family, in: groups)
+            let selected = managedGroups.isEmpty
+                ? nil
+                : selectedAccountID(for: family, groups: managedGroups)
+            visibleIDs = DashboardUsageAccountSelection.visibleCardIDs(
+                orderedCardIDs: visibleIDs,
+                managedCardIDs: Set(managedGroups.map(\.provider.id)),
+                selectedManagedCardID: selected
+            )
+        }
+        let visible = Set(visibleIDs)
+        return groups.filter { visible.contains($0.provider.id) }
+    }
+
+    private let accountFamilies = ["claude", "codex"]
+
+    private func accountFamily(for providerID: String) -> String? {
+        let family = ProviderAccountID.family(of: providerID)
+        return accountFamilies.contains(family) ? family : nil
+    }
+
+    private func managedAccountGroups(for family: String, in groups: [ProviderGroup]) -> [ProviderGroup] {
+        let familyGroups = groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
+        return familyGroups.filter { container.accountProfileLabel(for: $0.provider.id) != nil }
+    }
+
+    private func selectedAccountID(for family: String, groups: [ProviderGroup]) -> String {
+        let storedID = storedUsageAccountID(for: family)
+        if groups.contains(where: { $0.provider.id == storedID }) {
+            return storedID
+        }
+        if let selected = container.preferredAccountCardID(
+            for: family,
+            among: groups.map(\.provider.id)
+        ) {
+            return selected
+        }
+        if let defaultGroup = groups.first(where: { $0.provider.id == family }) {
+            return defaultGroup.provider.id
+        }
+        return groups[0].provider.id
+    }
+
+    private func storedUsageAccountID(for family: String) -> String {
+        switch family {
+        case "claude": selectedClaudeUsageAccountID
+        case "codex": selectedCodexUsageAccountID
+        default: ""
+        }
+    }
+
+    private func selectUsageAccount(_ providerID: String, for family: String) {
+        switch family {
+        case "claude": selectedClaudeUsageAccountID = providerID
+        case "codex": selectedCodexUsageAccountID = providerID
+        default: break
+        }
+    }
+
     private func section(_ group: ProviderGroup) -> some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             header(group)
@@ -67,14 +132,39 @@ struct WidgetGroupedListView: View {
     }
 
     private func header(_ group: ProviderGroup) -> some View {
-        ProviderSectionHeader(
+        let allGroups = layout.displayGroups
+        let family = accountFamily(for: group.provider.id)
+        let familyGroups = family.map { self.managedAccountGroups(for: $0, in: allGroups) } ?? []
+        let isManagedAccountGroup = familyGroups.contains { $0.provider.id == group.provider.id }
+        let managedProfileCount = isManagedAccountGroup
+            ? family.map { container.accountProfiles.profiles(family: $0).count } ?? 0
+            : 0
+        let options = isManagedAccountGroup ? familyGroups.map {
+            AccountUsageOption(
+                id: $0.provider.id,
+                title: container.accountProfileLabel(for: $0.provider.id)
+                    ?? container.displayName(for: $0.provider)
+            )
+        } : []
+        return ProviderSectionHeader(
             provider: group.provider,
             plan: dataStore.plan(for: group.provider.id),
             warning: dataStore.headerNotice(for: group.provider.id),
             refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id),
             staleness: dataStore.stalenessHint(for: group.provider.id),
             onCopyScreenshot: { shareCard(group) },
-            accountSwitcher: AccountSwitcherDesignData.preview(for: group.provider.id)
+            accountOptions: options,
+            selectedAccountID: isManagedAccountGroup
+                ? family.map { selectedAccountID(for: $0, groups: familyGroups) }
+                : nil,
+            onSelectAccount: isManagedAccountGroup ? family.map { family in
+                { providerID in
+                    selectUsageAccount(providerID, for: family)
+                    Task { await dataStore.refresh(providerID: providerID, force: true) }
+                }
+            } : nil,
+            usesManagedAccountTitle: isManagedAccountGroup,
+            managedProfileCount: managedProfileCount
         )
         // Keep the provider mark and hover-revealed copy control aligned with the card's content edges.
         .padding(.horizontal, 8)
@@ -84,7 +174,7 @@ struct WidgetGroupedListView: View {
             // Hides the whole provider section (the Customize provider list brings it back). Mirrors
             // the per-metric "Hide" but one level up, so the verb order reads the same on a header as a row.
             Button("Hide \(name)") {
-                container.enablement.setEnabled(false, for: group.provider.id)
+                container.setProviderEnabled(false, for: group.provider.id)
             }
             Divider()
             Button("Refresh \(name)") {

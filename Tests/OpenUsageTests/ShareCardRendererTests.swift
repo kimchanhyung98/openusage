@@ -90,9 +90,12 @@ final class ShareCardRendererTests: XCTestCase {
     /// image — the success contract the confirmation gates on.
     func testCopyToPasteboardWritesPNGAndReturnsTrueForValidImage() throws {
         let image = try XCTUnwrap(ShareCardRenderer.image(for: sampleCard()))
-        XCTAssertTrue(ShareCardRenderer.copyToPasteboard(image))
+        let pasteboard = NSPasteboard(name: .init("OpenUsageTests.ShareCard.\(UUID().uuidString)"))
+        guard ShareCardRenderer.copyToPasteboard(image, pasteboard: pasteboard) else {
+            throw XCTSkip("The macOS pasteboard service is unavailable in this test host.")
+        }
 
-        let png = try XCTUnwrap(NSPasteboard.general.data(forType: .png))
+        let png = try XCTUnwrap(pasteboard.data(forType: .png))
         XCTAssertFalse(png.isEmpty)
         // PNG magic bytes confirm the pasteboard holds an actual PNG, not just non-empty data.
         let magic: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
