@@ -5,8 +5,13 @@ struct CLIArguments: Equatable, Sendable {
     var force = false
     var showHelp = false
     var showVersion = false
+    var account: AccountCommand?
 
     static func parse(_ arguments: [String]) throws -> CLIArguments {
+        // The `account` namespace is reserved: as the first token it switches grammars entirely.
+        if arguments.first == "account" {
+            return CLIArguments(account: try AccountCommand.parse(Array(arguments.dropFirst())))
+        }
         var parsed = CLIArguments()
         for argument in arguments {
             switch argument {
