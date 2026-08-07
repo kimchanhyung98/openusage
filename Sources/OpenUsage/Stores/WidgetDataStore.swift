@@ -229,6 +229,11 @@ final class WidgetDataStore {
         AppLog.error(.refresh, "account selection refresh kept being skipped for \(providerID); waiting for the next cycle")
     }
 
+    /// Bumped on every catalog replacement; `refresh` captures it at fetch start and discards a
+    /// result whose catalog changed mid-fetch, so a fetch started under one account can never be
+    /// published — or stamped — under the identity installed after it began.
+    private var catalogGeneration = 0
+
     /// Replaces the catalog after Settings discovers a signed-in account. The object itself stays
     /// stable, so views and the status item immediately observe the new registry without restarting
     /// the menu-bar process.
@@ -238,12 +243,23 @@ final class WidgetDataStore {
         identityKeys: [String: String]
     ) {
         let liveIDs = Set(registry.providers.map(\.id))
+        // A managed switch keeps the bare claude/codex card ids alive while changing the account
+        // behind them. State produced for the previous identity — snapshot, error, and failure
+        // backoff alike — must not carry over. Mirrors `hasStaleAccountStamp`: a card whose new
+        // identity is known and differs from the previous one starts empty.
+        let previousIdentityKeys = providerIdentityKeys
+        func keepsState(_ cardID: String) -> Bool {
+            guard liveIDs.contains(cardID) else { return false }
+            guard let newKey = identityKeys[cardID] else { return true }
+            return previousIdentityKeys[cardID] == newKey
+        }
+        catalogGeneration += 1
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
-        localSnapshots = localSnapshots.filter { liveIDs.contains($0.key) }
-        providerErrors = providerErrors.filter { liveIDs.contains($0.key) }
-        failureRetryAfter = failureRetryAfter.filter { liveIDs.contains($0.key) }
+        localSnapshots = localSnapshots.filter { keepsState($0.key) }
+        providerErrors = providerErrors.filter { keepsState($0.key) }
+        failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
             !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
@@ -346,6 +362,7 @@ final class WidgetDataStore {
         }
         refreshingProviderIDs.insert(providerID)
         defer { refreshingProviderIDs.remove(providerID) }
+        let boundGeneration = catalogGeneration
         let start = monotonicNow()
         var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
             await provider.refresh()
@@ -354,6 +371,14 @@ final class WidgetDataStore {
         // publish that potentially partial snapshot; keep the last-good state exactly as it was.
         guard !Task.isCancelled else {
             AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
+            return .skipped
+        }
+        // The catalog changed while this fetch ran: the card id may now name a different account,
+        // so publishing this result would show the old account's data under the new one — and the
+        // stamp written below would carry the NEW identity, falsely legitimizing it for every later
+        // stamp check. Discard; the switch path force-refreshes the selected card itself.
+        guard catalogGeneration == boundGeneration else {
+            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
             return .skipped
         }
         let durationMs = durationMilliseconds(since: start)
