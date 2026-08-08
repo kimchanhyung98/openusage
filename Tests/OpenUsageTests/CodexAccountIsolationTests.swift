@@ -1,10 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Scoped Codex auth isolation (mirror of `ClaudeAccountIsolationTests`): a `.home`-scoped store —
-/// the backing of every managed-profile account card — reads only its own home's `auth.json`. Never
-/// the shared "Codex Auth" keychain item, never `CODEX_HOME`, never the default home list: one
-/// card's credential can never leak into another card's refresh.
 @MainActor
 final class CodexAccountIsolationTests: XCTestCase {
     private func auth(token: String, accountID: String = "acct-1") -> String {
@@ -38,7 +34,7 @@ final class CodexAccountIsolationTests: XCTestCase {
     func testScopedStoreIgnoresCodexHomeEnvAndDefaultHomes() {
         let files = FakeFiles([
             "/tmp/codex-env/auth.json": auth(token: "env-token"),
-            // The standard resolution's literal tilde paths, as `authPaths()` builds them.
+            // `authPaths()`가 만드는 표준 해석의 tilde 리터럴 경로와 동일
             "~/.config/codex/auth.json": auth(token: "default-token"),
             "~/.codex/auth.json": auth(token: "default-token"),
             "/tmp/codex-a/auth.json": auth(token: "token-a"),
@@ -68,7 +64,6 @@ final class CodexAccountIsolationTests: XCTestCase {
         XCTAssertTrue(store.loadAuthCandidates().isEmpty)
     }
 
-    /// Control: the default card keeps its historical keychain fallback.
     func testStandardStoreKeepsTheKeychainFallback() {
         let keychain = ServiceKeychain(values: [
             CodexAuthStore.keychainService: auth(token: "keychain-token"),
@@ -78,8 +73,6 @@ final class CodexAccountIsolationTests: XCTestCase {
         XCTAssertEqual(store.loadKeychainAuth()?.auth.tokens?.accessToken, "keychain-token")
     }
 
-    /// The first-run/new-provider credential probe is scope-aware through the same gating: another
-    /// home's file and the shared keychain item don't count as the scoped card's footprint.
     func testScopedProviderCredentialFootprintIsLimitedToItsHome() async {
         let keychain = ServiceKeychain(values: [
             CodexAuthStore.keychainService: auth(token: "keychain-token"),
@@ -97,8 +90,6 @@ final class CodexAccountIsolationTests: XCTestCase {
         XCTAssertTrue(present)
     }
 
-    /// End to end: a scoped provider's refresh authenticates with its own home's token even while a
-    /// different login sits in the shared keychain item.
     func testScopedProviderRefreshAuthenticatesWithItsOwnCredential() async {
         let keychain = ServiceKeychain(values: [
             CodexAuthStore.keychainService: auth(token: "keychain-token"),
@@ -119,7 +110,7 @@ final class CodexAccountIsolationTests: XCTestCase {
                     """.utf8)
                 )
             }
-            // The best-effort reset-credit fetch may fail without affecting the refresh.
+            // best-effort reset-credit fetch 실패는 refresh에 영향 없음
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
         let provider = CodexProvider(
@@ -140,9 +131,6 @@ final class CodexAccountIsolationTests: XCTestCase {
         XCTAssertEqual(usageRequests.count, 1)
     }
 
-    /// Token write-back stays scoped: `save` rewrites the very file the auth was loaded from —
-    /// never the shared keychain item, never another home. A rotated refresh token landing
-    /// anywhere else would desync the card from its own login.
     func testScopedSaveWritesBackToTheSameFile() throws {
         let keychain = ServiceKeychain(values: [
             CodexAuthStore.keychainService: auth(token: "keychain-token"),

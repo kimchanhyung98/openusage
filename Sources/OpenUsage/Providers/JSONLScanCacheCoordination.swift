@@ -1,7 +1,6 @@
 import Foundation
 
-/// One scanner-wide I/O budget shared by every provider/home identity. Without this pool, eight parse
-/// tasks per identity can multiply into dozens of simultaneous reads during multi-account launch.
+/// 모든 provider/home identity가 공유하는 scanner 전역 I/O budget — 없으면 identity당 8개 parse task가 multi-account launch에서 수십 개 동시 read로 불어남.
 actor JSONLParsePermitPool {
     private struct Waiter {
         var id: UUID
@@ -51,8 +50,7 @@ actor JSONLParsePermitPool {
 }
 
 enum PersistentJSONLScanCaches {
-    /// A one-shot CLI has no run loop to outlive the debounce, so it explicitly drains every local-log
-    /// parser before returning. Scanners without pending work return immediately.
+    /// one-shot CLI는 debounce를 넘길 run loop이 없어 종료 전 모든 로컬 로그 parser를 명시적으로 drain. pending 없는 scanner는 즉시 반환.
     static func flushPendingWrites() async {
         await ClaudeLogUsageScanner.flushPersistentCacheWrites()
         await CodexLogUsageScanner.flushPersistentCacheWrites()

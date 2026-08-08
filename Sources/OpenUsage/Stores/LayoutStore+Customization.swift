@@ -21,18 +21,15 @@ extension LayoutStore {
             && placed.contains { $0.descriptorID == descriptorID }
     }
 
-    /// Whether any enabled provider ships the local spend tiles — the capability gate for the
-    /// Total Spend card. Keyed off the registry's descriptors, not off refreshed data, so the card
-    /// can show its "No spend data" state on a fresh morning instead of vanishing.
+    /// Total Spend 카드의 capability gate — local spend tile을 제공하는 enabled provider 존재 여부.
+    /// registry descriptor 기준(refresh 데이터 무관)이라 데이터 없는 아침에도 "No spend data" 상태로 표시.
     var hasSpendCapableProvider: Bool {
         !spendCapableProviders.isEmpty
     }
 
-    /// Enabled providers that ship the local spend tiles (`WidgetDescriptor.spendTiles`), in the
-    /// user's provider order — the exact set the Total Spend card aggregates. Deliberately *not*
-    /// `displayGroups`: a provider whose every metric is hidden in Customize still spends money and
-    /// must still count, and look-alike dollar rows from other providers (OpenRouter's API-spend
-    /// "Today") must not.
+    /// local spend tile(`WidgetDescriptor.spendTiles`)을 제공하는 enabled provider(사용자 provider 순서) —
+    /// Total Spend가 집계하는 정확한 집합. `displayGroups`가 아닌 이유: metric을 전부 숨긴 provider도
+    /// 지출은 계속되므로 포함, 타 provider의 유사 dollar 행(OpenRouter API-spend "Today")은 제외.
     var spendCapableProviders: [Provider] {
         let capableIDs = Set(registry.descriptors.filter(\.isSpendTile).map(\.providerID))
         return orderedProviders().filter { capableIDs.contains($0.id) && isProviderEnabled($0.id) }
@@ -40,8 +37,7 @@ extension LayoutStore {
 
     // MARK: - Provider grouping
 
-    /// Known providers in the user's saved order, with any not-yet-seen provider appended in registry order
-    /// so a newly added provider still shows up.
+    /// 저장된 순서의 known provider + 아직 못 본 provider는 registry 순서로 append — 신규 provider도 표시.
     func orderedProviderIDs() -> [String] {
         registry.orderedProviderIDs(savedOrder: providerOrder)
     }
@@ -50,9 +46,8 @@ extension LayoutStore {
         orderedProviderIDs().compactMap { registry.provider(id: $0) }
     }
 
-    /// Enabled (and provider-enabled) widgets grouped by provider, in the user's provider order, each
-    /// provider's metrics kept in the provider's custom metric order. Drives the grouped dashboard list; providers with
-    /// no visible metric are dropped so the dashboard only shows groups that have something to show.
+    /// provider별로 묶인 enabled widget(사용자 provider 순서·custom metric 순서) — grouped dashboard
+    /// 목록 구동, visible metric 없는 provider는 제외.
     var displayGroups: [ProviderGroup] {
         orderedProviders().compactMap { provider in
             let widgetsByDescriptor = Dictionary(
@@ -65,8 +60,7 @@ extension LayoutStore {
             guard !widgets.isEmpty else { return nil }
             let alwaysShown = widgets.filter { !expandedMetricIDs.contains($0.descriptorID) }
             let expanded = widgets.filter { expandedMetricIDs.contains($0.descriptorID) }
-            // A provider whose only enabled metrics are all marked expanded would otherwise render an
-            // empty card with a caret — promote them to always-shown so the card always has rows.
+            // enabled metric이 전부 expanded인 provider는 빈 카드+caret이 되므로 always-shown으로 승격.
             if alwaysShown.isEmpty {
                 return ProviderGroup(provider: provider, alwaysShownWidgets: expanded, expandedWidgets: [])
             }
@@ -74,8 +68,8 @@ extension LayoutStore {
         }
     }
 
-    /// Every enabled provider with *all* the metrics it supports, in its saved metric order. Enabled and
-    /// disabled rows stay in-place; the switch only controls visibility.
+    /// enabled provider 전체와 각자가 지원하는 *모든* metric(저장된 metric 순서) — enabled/disabled 행
+    /// 자리 유지, switch는 가시성만 제어.
     var customizeGroups: [ProviderMetrics] {
         orderedProviders().compactMap { provider in
             guard isProviderEnabled(provider.id) else { return nil }
@@ -89,10 +83,8 @@ extension LayoutStore {
         }
     }
 
-    /// The L1 Customize list: every known provider in the user's saved order, regardless of enablement.
-    /// Disabled providers appear here (greyed in the UI) so the user can re-enable them or open their
-    /// detail — unlike the enabled-provider reorder list exposed by `customizeGroups`, which filters them
-    /// out. Each row carries the enablement flag and total metric count shown by the list.
+    /// L1 Customize 목록 — enablement 무관 모든 known provider(사용자 순서). disabled provider도 포함해
+    /// 재활성·detail 진입 가능(`customizeGroups`와 달리 미필터); 행에 enablement flag와 metric 수 포함.
     var customizeProviderRows: [ProviderRow] {
         orderedProviders().filter { !ProviderAccountID.isAccountCard($0.id) }.map { provider in
             ProviderRow(
@@ -103,16 +95,13 @@ extension LayoutStore {
         }
     }
 
-    /// Total metrics a provider supports — the L1 row's badge number. Registry descriptor count,
-    /// independent of how many the user has enabled.
+    /// provider가 지원하는 metric 총수 — L1 행 badge 숫자, enabled 수와 무관한 registry descriptor count.
     func metricCount(for providerID: String) -> Int {
         registry.descriptors(for: providerID).count
     }
 
-    /// The L2 Customize detail for one provider: every metric it supports, split across the
-    /// "Always Visible" / "On Demand" divider, in its saved metric order. Available even when the
-    /// provider is disabled so L2 can render dimmed-but-editable. nil for an unknown provider or one
-    /// with no metrics — the per-provider slice of `customizeGroups` without the enablement guard.
+    /// 한 provider의 L2 Customize detail — "Always Visible"/"On Demand" divider로 분할된 전체 metric.
+    /// disabled provider에도 제공(dimmed-but-editable 렌더); 미지 provider·metric 없음이면 nil.
     func customizeDetail(for providerID: String) -> ProviderMetrics? {
         guard let provider = registry.provider(id: providerID) else { return nil }
         let metrics = orderedSupportedMetrics(for: providerID)
@@ -124,7 +113,7 @@ extension LayoutStore {
         )
     }
 
-    /// A provider's supported metrics in custom order, independent of whether each metric is enabled.
+    /// custom 순서의 지원 metric — 각 metric의 enabled 여부와 무관.
     func orderedSupportedMetrics(for providerID: String) -> [WidgetDescriptor] {
         metricOrder(for: providerID).compactMap { registry.descriptor(id: $0) }
     }
@@ -136,13 +125,12 @@ extension LayoutStore {
             + ordered.filter { expandedMetricIDs.contains($0) }
     }
 
-    /// Pinned metrics grouped by provider, in the user's Customize order (provider order, then each
-    /// provider's metric order). A temporarily disabled provider is excluded from the rendered groups
-    /// but keeps its pins. Drives the menu-bar strip.
+    /// provider별로 묶인 pin된 metric(Customize 순서) — 일시 disabled provider는 렌더 그룹에서 빠지되
+    /// pin은 유지. 메뉴바 strip 구동.
     var pinnedGroups: [ProviderMetrics] {
         orderedProviders().compactMap { provider in
             guard isProviderEnabled(provider.id) else { return nil }
-            // Keep the strip order matching Customize: always-shown pins first, then expanded ones.
+            // strip 순서를 Customize와 일치 — always-shown pin 먼저, expanded pin 다음.
             let metrics = orderedSupportedMetrics(for: provider.id).filter { pinnedMetricIDs.contains($0.id) }
             return metrics.isEmpty ? nil : ProviderMetrics(
                 provider: provider,
@@ -152,18 +140,15 @@ extension LayoutStore {
         }
     }
 
-    /// Reorder whole providers when `dragged`'s header is dropped onto `target`'s. Works on the currently
-    /// shown (enabled) provider order; disabled providers keep their relative tail position.
-    /// Returns whether the order actually changed — the drag gestures key haptics off it.
+    /// provider header drag drop으로 provider 전체 reorder — 현재 표시 중(enabled) 순서 기준.
+    /// 반환값은 실제 변경 여부(drag gesture의 haptics 키).
     @discardableResult
     func reorderProvider(dragged: String, target: String) -> Bool {
         recordingUndoStep {
             let shown = customizeGroups.map(\.provider.id)
             guard let next = Self.reordered(shown, dragged: dragged, target: target) else { return false }
-            // Reorder only the visible slots in the raw persisted sequence. Unknown ids may be
-            // account cards absent from this launch's registry, and disabled providers are hidden
-            // from `customizeGroups`; both keep their exact positions while the visible ids move
-            // around them.
+            // persist된 raw 순서에서 visible slot만 재배열 — unknown id(이 launch registry에 없는 account
+            // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible id만 그 사이를 이동.
             let shownSet = Set(shown)
             var replacements = next.makeIterator()
             var rebuilt: [String] = []
@@ -185,14 +170,9 @@ extension LayoutStore {
         }
     }
 
-    /// Reorder metrics within one provider when `dragged` is dropped onto `target` (both descriptor ids of
-    /// that provider). Operates on the provider's full metric order so disabled metrics keep their place too.
-    ///
-    /// Dropping onto a row in the *other* section moves `dragged` between Always Visible and On Demand:
-    /// its On Demand membership follows the target's, so dragging a metric under an On Demand one tucks it
-    /// away too (and vice versa). The stored order is rebuilt in those two sections, so it always matches
-    /// the partitioned layout the UI draws. Returns whether anything actually changed —
-    /// the drag gestures key haptics off it.
+    /// 한 provider 내 metric reorder(둘 다 그 provider의 descriptor id) — 전체 metric 순서에서 동작해
+    /// disabled metric도 자리 유지. 다른 section의 행에 drop하면 dragged의 On Demand membership이 target을
+    /// 따라감; 저장 순서는 두 section 분할로 재구성. 반환값은 실제 변경 여부(haptics 키).
     @discardableResult
     func reorderMetric(dragged: String, target: String, in providerID: String) -> Bool {
         recordingUndoStep { reorderMetricImpl(dragged: dragged, target: target, in: providerID) }
@@ -211,14 +191,12 @@ extension LayoutStore {
             expanded.remove(dragged)
         }
 
-        // Landing a metric in the always-shown section is an explicit placement, so it consumes its
-        // expand-on-enable default — otherwise enabling it later would tuck it back below the caret,
-        // overriding this drag.
+        // always-shown section 착지는 명시적 배치 — expand-on-enable default 소비(이후 enable이 caret
+        // 아래로 되돌려 이 drag를 override하는 것 방지).
         let consumedExpandOnEnable = !expanded.contains(dragged)
             && defaultExpandedOnEnableIDs.remove(dragged) != nil
 
-        // Lay the provider out the way it renders — Always Visible rows, then On Demand rows — keeping each
-        // section in its current order, then drop `dragged` next to `target` within that combined sequence.
+        // 렌더 순서(Always Visible → On Demand)대로 배열 후 그 결합 sequence 안에서 target 옆에 dragged 삽입.
         let partitioned = ordered.filter { !expanded.contains($0) } + ordered.filter { expanded.contains($0) }
         guard let next = Self.reordered(partitioned, dragged: dragged, target: target) else {
             guard membershipChanged || consumedExpandOnEnable else { return false }
@@ -239,10 +217,8 @@ extension LayoutStore {
         return true
     }
 
-    /// Apply a provider metric order that includes one visual divider sentinel. Metrics before the
-    /// sentinel become Always Visible; metrics after it become On Demand. This is the clean drag
-    /// model for Customize: the divider participates in target geometry like a row, but persistence
-    /// remains metric-only.
+    /// divider sentinel 하나를 포함한 provider metric 순서 적용 — sentinel 앞은 Always Visible, 뒤는
+    /// On Demand. divider는 drag target geometry에만 참여, persistence는 metric-only.
     @discardableResult
     func applyMetricDividerOrder(_ orderedIDsWithDivider: [String], dragged: String, dividerID: String, in providerID: String) -> Bool {
         recordingUndoStep {
@@ -273,8 +249,8 @@ extension LayoutStore {
             }
         }
 
-        // Dashboard rows only render enabled metrics. Merge disabled rows back into their previous
-        // sections so a dashboard drag does not push hidden Customize rows to the end.
+        // dashboard 행은 enabled metric만 렌더 — disabled 행을 이전 section에 merge해 dashboard drag가
+        // 숨은 Customize 행을 끝으로 밀지 않도록 유지.
         let desiredAlwaysShown = Set(alwaysShown)
         let desiredExpanded = Set(expanded)
         let previousAlwaysShown = validIDs.filter { !expandedMetricIDs.contains($0) && !desiredExpanded.contains($0) }
@@ -286,11 +262,8 @@ extension LayoutStore {
         let providerExpanded = Set(expanded)
         let providerIDs = Set(validIDs)
         let nextExpanded = expandedMetricIDs.subtracting(providerIDs).union(providerExpanded)
-        // Only the dragged metric's expand-on-enable entry is consumed — an explicit placement.
-        // Clearing every metric in the list (the old `subtracting(seen)`) also cleared disabled
-        // optional metrics that `metricOrderWithDivider` includes by default but the user never moved,
-        // so they lost their below-caret default. Matches `reorderMetric`, which consumes only the
-        // dragged id.
+        // dragged metric의 expand-on-enable entry만 소비(명시적 배치) — 목록 전체 clear는 사용자가 옮기지
+        // 않은 disabled optional metric의 below-caret default까지 소실. `reorderMetric`과 동일 규칙.
         var nextDefaultExpandedOnEnableIDs = defaultExpandedOnEnableIDs
         let consumedExpandOnEnable = nextDefaultExpandedOnEnableIDs.remove(dragged) != nil
         guard metricOrderByProvider[providerID] != nextOrder || expandedMetricIDs != nextExpanded || consumedExpandOnEnable else {
@@ -343,9 +316,8 @@ extension LayoutStore {
         return result
     }
 
-    /// Pure reorder: remove `dragged`, reinsert it adjacent to `target` (after it when moving down, before
-    /// it when moving up). Returns nil when either id is missing or they're identical. Mirrors the proven
-    /// macOS drag-reorder math from crafcat7/Peakmon (Apache-2.0).
+    /// 순수 reorder — `dragged` 제거 후 `target` 인접에 재삽입(아래로 이동 시 뒤, 위로 이동 시 앞).
+    /// id 누락·동일이면 nil. crafcat7/Peakmon(Apache-2.0)의 검증된 macOS drag-reorder 로직 이식.
     static func reordered(_ ids: [String], dragged: String, target: String) -> [String]? {
         guard dragged != target,
               let from = ids.firstIndex(of: dragged),

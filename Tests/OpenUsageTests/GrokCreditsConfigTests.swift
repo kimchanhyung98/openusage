@@ -15,8 +15,7 @@ final class GrokCreditsConfigDecoderTests: XCTestCase {
     }
 
     func testAbsentPercentDecodesAsZero() throws {
-        // proto-JSON drops zero-valued fields: a fresh weekly period omits `creditUsagePercent`
-        // entirely. That's a genuine 0%, never a schema-change error.
+        // proto-JSON은 0 값 필드를 생략 — `creditUsagePercent` 부재는 실제 0%, schema 변경 아님
         let config = try GrokCreditsConfigDecoder.decode(
             responseBody: GrokCreditsFixtures.responseBody(percent: nil)
         )
@@ -39,8 +38,7 @@ final class GrokCreditsConfigDecoderTests: XCTestCase {
     }
 
     func testRejectsNonNumericPercent() {
-        // A present but non-numeric percent is a schema change, not a 0 — clamping it to a
-        // believable "0% used" would hide the drift.
+        // 존재하지만 비숫자인 percent는 schema 변경 — 0으로 clamp하면 drift 은닉
         XCTAssertThrowsError(
             try GrokCreditsConfigDecoder.decode(responseBody: GrokCreditsFixtures.responseBody(percent: "high"))
         ) { error in
@@ -59,7 +57,7 @@ final class GrokCreditsConfigDecoderTests: XCTestCase {
     }
 
     func testRejectsMissingConfigFields() {
-        // A well-formed JSON body lacking the fields we map is a schema change, not a blank.
+        // 매핑 대상 필드가 없는 정상 JSON도 blank가 아니라 schema 변경
         for body in ["{}", #"{"config":{}}"#, #"{"config":{"currentPeriod":{}}}"#, "not json"] {
             XCTAssertThrowsError(
                 try GrokCreditsConfigDecoder.decode(responseBody: Data(body.utf8)),
@@ -110,8 +108,7 @@ final class GrokCreditsConfigMapperTests: XCTestCase {
     }
 
     func testNonWeeklyPeriodMapsToNoWeeklyLine() throws {
-        // An account still on monthly-only billing has no weekly pool; the tile must read "No data"
-        // rather than mislabel a monthly percent as weekly. The badge still renders.
+        // monthly-only 계정은 weekly pool 없음 — monthly percent를 weekly로 오표기하지 않고 "No data"
         let mapped = try GrokUsageMapper.mapCreditsConfig(HTTPResponse(
             statusCode: 200, headers: [:],
             body: GrokCreditsFixtures.responseBody(periodType: "USAGE_PERIOD_TYPE_MONTHLY")

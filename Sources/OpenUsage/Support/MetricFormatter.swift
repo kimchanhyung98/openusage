@@ -1,53 +1,40 @@
 import Foundation
 
-/// The single place a number becomes display text. Every surface — popover rows, the menu-bar strip,
-/// and hover details — formats through here, so a value can never read one way in the tray and another
-/// in the popover, and there is exactly one definition of "compact" (12.9K / 3.4M / 1.2B).
-///
-/// This replaces the scattered number→string logic that used to live in `WidgetData.format`, the
-/// menu bar's `compactValue`, and the providers' own `formatTokens` / credit-label builders.
+/// 숫자가 표시 텍스트가 되는 유일한 지점 — 모든 surface(popover row, menu-bar strip, hover 상세)가 여기로 포맷.
+/// 같은 값이 tray와 popover에서 다르게 읽힐 수 없고, "compact"(12.9K / 3.4M / 1.2B) 정의도 하나.
 enum MetricFormatter {
-    /// Three surfaces, three needs:
-    /// - `.tray` — the menu-bar strip: shortest. Whole dollars under $1,000, abbreviated above; counts abbreviated.
-    /// - `.row` — the popover row: abbreviated like the tray, but money keeps cents / two decimals ("$2.06K", "$40.76").
-    /// - `.full` — tooltips and bounded headlines: every digit, grouped ("$2,059.07", "56,904,995").
+    /// surface별 스타일:
+    /// `.tray`는 최단형(정수 달러·축약), `.row`는 축약하되 돈은 소수 두 자리 유지, `.full`은 전체 자릿수 그룹화.
     enum Style {
         case tray
         case row
         case full
     }
 
-    /// Pinned to en_US so USD-denominated values render identically regardless of system locale, which
-    /// matches the menu bar's long-standing behavior.
+    /// 시스템 locale과 무관하게 USD 값이 동일하게 렌더되도록 en_US 고정.
     private static let locale = Locale(identifier: "en_US")
 
-    /// A bare number in the given kind and style (no unit label).
+    /// 지정 kind·style의 단위 라벨 없는 숫자.
     static func number(_ value: Double, kind: MetricKind, style: Style) -> String {
         switch kind {
         case .percent:
-            // Percent is a bounded 0...100 domain, so clamp defensively: a bad sample (a provider
-            // reporting a negative or >100 utilization) can never print "-5%" or "105%" on any
-            // surface that formats through here. Over-limit is conveyed by the meter's spent state
-            // and color (see `WidgetData.meterState`), not by an out-of-range headline number.
+            // percent는 0...100 bounded 도메인이라 방어적 clamp — 초과분은 meter 상태·색으로 전달, 범위 밖 숫자로는 미표기.
             return "\(Int(ProviderParse.clampPercent(value).rounded()))%"
         case .dollars:
-            // Tray and row abbreviate four figures and up ("$1.2M", "$2.1K") so neither carries
-            // "$2,059.07"; the full form (tooltips/headlines) always keeps grouped cents.
+            // tray·row는 네 자리 이상 축약("$1.2M", "$2.1K"); full은 항상 그룹화된 센트 유지.
             if abs(value) >= 1000, style != .full {
                 return "$" + value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale))
             }
             switch style {
             case .tray:
-                // Shortest below $1k: whole dollars ("$130").
+                // $1k 미만 최단형: 정수 달러("$130").
                 return "$" + value.formatted(.number.precision(.fractionLength(0)).locale(locale))
             case .row, .full:
-                // Full cents below $1k; the row's token-count neighbor stays readable.
+                // $1k 미만은 전체 센트 유지.
                 return Formatters.currency(value, fractionDigits: 2)
             }
         case .count:
-            // Tray and row abbreviate at the thousands (token counts run into the billions); the full
-            // form keeps every digit for the tooltip. Below 1,000 keeps up to one decimal either way, so
-            // a fractional balance (e.g. 820.6) survives.
+            // tray·row는 천 단위부터 축약, full은 전체 자릿수; 1,000 미만은 소수 한 자리까지 유지해 분수 잔액 보존.
             if style != .full, abs(value) >= 1000 {
                 return value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale))
             }
@@ -55,22 +42,19 @@ enum MetricFormatter {
         }
     }
 
-    /// A value with its unit label appended, e.g. "772 credits". Token, dollar, and percent values
-    /// carry no label and render bare ("56.9M", "$4.08", "95%") — those rows show no unit, by design.
+    /// 단위 라벨이 붙은 값(예: "772 credits"). token·dollar·percent 값은 의도적으로 라벨 없이 bare 렌더("56.9M", "$4.08", "95%").
     static func string(for value: MetricValue, style: Style) -> String {
         let text = number(value.number, kind: value.kind, style: style)
         guard let label = value.label, !label.isEmpty else { return text }
         return "\(text) \(label)"
     }
 
-    /// Dollars per million tokens for legends and tooltips — dollar formatting plus a fixed `/MTok`
-    /// suffix so those one-line surfaces never drift.
+    /// legend·tooltip용 dollars per million tokens — dollar 포맷 + 고정 `/MTok` suffix.
     static func costPerMtok(_ value: Double, style: Style) -> String {
         number(value, kind: .dollars, style: style) + "/MTok"
     }
 
-    /// The Total Spend ring's two-line center: a short primary on top and a quiet unit underneath so
-    /// Cost/MTok doesn't cram `/MTok` into the hole. Shared by the live card and the share PNG.
+    /// Total Spend ring 중앙 두 줄 — 짧은 primary 위, unit 아래. live 카드와 share PNG가 공유.
     struct TotalSpendRingCenter: Equatable {
         let primary: String
         let unit: String
@@ -79,17 +63,17 @@ enum MetricFormatter {
     static func totalSpendRingCenter(_ value: Double, metric: TotalSpendMetric) -> TotalSpendRingCenter {
         switch metric {
         case .cost:
-            // Keep the `$` — unit line still says "dollars" for clarity in the hole.
+            // `$` 유지 — unit 줄은 명확성을 위해 "dollars" 표기.
             return TotalSpendRingCenter(primary: number(value, kind: .dollars, style: .tray), unit: "dollars")
         case .tokens:
             return tokenRingCenter(value)
         case .costPerMtok:
-            // `$1.37` with two decimals under 1k; abbreviated above. Unit line is `MTok`.
+            // $1k 미만 소수 두 자리, 이상 축약; unit 줄은 `MTok`.
             return TotalSpendRingCenter(primary: costPerMtokRingPrimary(value), unit: "MTok")
         }
     }
 
-    /// Dollar-rate figure for the Cost/MTok hole — `$` plus two decimals under 1k, abbreviated above.
+    /// Cost/MTok hole용 달러 수치 — `$` + $1k 미만 소수 두 자리, 이상 축약.
     private static func costPerMtokRingPrimary(_ value: Double) -> String {
         if abs(value) >= 1000 {
             return "$" + value.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)).locale(locale))
@@ -97,8 +81,7 @@ enum MetricFormatter {
         return Formatters.currency(value, fractionDigits: 2)
     }
 
-    /// Token totals put the magnitude word on the second line (`461.8` / `million`) so the hole
-    /// stays short even when the total runs past a billion.
+    /// token 총량은 크기 단어를 둘째 줄에 배치(`461.8` / `million`) — 10억을 넘어도 hole이 짧게 유지됨.
     private static func tokenRingCenter(_ value: Double) -> TotalSpendRingCenter {
         let magnitude = abs(value)
         if magnitude >= 1_000_000_000 {

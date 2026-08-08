@@ -1,26 +1,18 @@
 import SwiftUI
 
-/// The per-provider API-key card shown in a provider's Customize detail. A status dot + Edit/Add
-/// button expands the native macOS key field with a clear button and an eye beside it: read-only by default,
-/// showing a muted source hint; the eye reveals the real key; "Override With a Custom Key" flips the
-/// same field to editable for a new key; a leading clear button clears a saved/override key.
-///
-/// A saved key writes to the config file the auth store already reads, and config > env — so "save" is
-/// also "override the env key", and clearing a saved override falls back to the env key or to none.
-/// After any change the card clears the provider's failure backoff and forces a refresh so the
-/// dashboard updates immediately.
+/// 프로바이더 Customize 상세의 API-key 카드 — 상태 dot + Add/Edit 확장 에디터.
+/// 저장 키는 auth store가 읽는 config 파일에 기록, config > env — 저장은 곧 env 키 override.
+/// 저장/삭제 후 실패 backoff 해제 + 강제 refresh로 대시보드 즉시 갱신.
 struct APIKeysSection: View {
     let provider: any APIKeyManaging
     @Environment(WidgetDataStore.self) private var dataStore
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
-    /// Whether the key editor is expanded.
     @State private var isOpen = false
-    /// Live status, seeded on appear and re-read after each save/clear so the collapsed row's status
-    /// dot stays truthful without re-reading files on every render.
+    /// 표시용 상태 캐시 — appear 시 seed, save/clear 후 재조회 (렌더마다 파일 미접근).
     @State private var status: APIKeyStatus = .notSet
 
-    // Transient editor state. Reset when the editor opens or a save/clear commits.
+    // 일시적 에디터 상태 — 에디터 열림·save/clear 시 리셋
     @State private var revealDisplay = false
     @State private var revealInput = false
     @State private var overrideChecked = false
@@ -44,8 +36,7 @@ struct APIKeysSection: View {
                 }
             }
             .cardSurface()
-            // Clip the recessed editor block to the card's rounded corners so its flush rectangle
-            // background can't poke out of the card's rounded bottom.
+            // recessed 에디터 배경이 카드 라운드 모서리를 벗어나지 않도록 클리핑
             .clipShape(Theme.cardShape)
         }
         .onAppear { status = provider.apiKeyStatus }
@@ -70,8 +61,7 @@ struct APIKeysSection: View {
         .padding(.vertical, density.controlRowPadding)
     }
 
-    /// The dot is binary, never a palette: red when no key is set, green when a key is usable (from
-    /// the environment, saved, or overriding the env). It's the row's only status signal.
+    /// 이진 상태 dot — 키 없음 red, 사용 가능 green.
     private var statusDot: some View {
         let color = status == .notSet ? Color(nsColor: .systemRed) : Color(nsColor: .systemGreen)
         return Circle().fill(color).frame(width: 6, height: 6)
@@ -83,11 +73,11 @@ struct APIKeysSection: View {
     private var editorBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             if status == .notSet {
-                // No key anywhere: the field is editable from the start.
+                // 키 전무: 처음부터 편집 가능
                 keyField(editable: true)
                 primaryButton("Save", disabled: !hasInput) { save() }
             } else if status == .fromEnvironment {
-                // Env key, no custom key yet: read-only until "Override" is checked, then editable.
+                // env 키만 존재: "Override" 체크 후 편집 가능
                 keyField(editable: overrideChecked)
                 if overrideChecked {
                     HStack(spacing: 8) {
@@ -100,9 +90,7 @@ struct APIKeysSection: View {
                         .font(.caption)
                 }
             } else {
-                // saved / overrideActive: a custom key is already set, so the override checkbox is
-                // hidden. The field's clear (x) removes it — falling back to env (the checkbox
-                // re-appears) or to none (the notSet editor takes over).
+                // saved/overrideActive: 커스텀 키 존재 — clear 시 env 키 또는 미설정으로 폴백
                 keyField(editable: false)
             }
             if let actionError {
@@ -115,14 +103,12 @@ struct APIKeysSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Rectangle().fill(.fill.quinary))
         .onChange(of: overrideChecked) { _, isOn in
-            // Flipping into override mode starts a fresh entry; flipping back drops the draft.
+            // override 진입 시 새 입력 시작, 해제 시 draft 폐기
             if isOn { input = ""; revealInput = false }
         }
     }
 
-    /// The single field, in read-only or editable mode. Read-only shows a muted source hint (or the
-    /// revealed key once the eye is clicked) and carries a leading clear button when a saved key can
-    /// be cleared; editable binds to `input` for a new key.
+    /// 단일 필드 — read-only(소스 힌트/공개 키 표시)와 editable(`input` 바인딩) 모드.
     @ViewBuilder
     private func keyField(editable: Bool) -> some View {
         if editable {
@@ -138,8 +124,7 @@ struct APIKeysSection: View {
         } else {
             let hint = sourceHint
             let display = revealDisplay ? (revealedKey ?? hint) : hint
-            // Only a saved (config-file) key can be cleared here — an env-only key can't be deleted
-            // from the app. Clearing an override falls back to the env key.
+            // 저장(config) 키만 앱에서 삭제 가능 — env 전용 키는 삭제 불가, override 삭제는 env 폴백
             let onClear: (() -> Void)? = (status == .saved || status == .overrideActive)
                 ? { remove() }
                 : nil
@@ -155,8 +140,6 @@ struct APIKeysSection: View {
         }
     }
 
-    /// The muted hint shown in the read-only field — the one piece of source info that survives the
-    /// declutter, living inside the field instead of as a label beside it.
     private var sourceHint: String {
         switch status {
         case .fromEnvironment: "From Your Environment"
@@ -239,9 +222,7 @@ struct APIKeysSection: View {
         }
     }
 
-    /// Clear any failure backoff so the wake refresh actually probes the provider, then force a
-    /// refresh so the dashboard shows the new key's data immediately instead of waiting for the next
-    /// 5-minute pass. No-op for the refresh if the provider is disabled — the key is still saved.
+    /// 실패 backoff 해제 + 강제 refresh로 새 키 데이터 즉시 반영. 비활성 프로바이더면 refresh만 no-op.
     private func triggerRefresh() {
         let id = provider.provider.id
         dataStore.clearFailureBackoff(for: id)
@@ -249,11 +230,8 @@ struct APIKeysSection: View {
     }
 }
 
-/// The API-key input: the native macOS bordered text field with a leading clear button (optional)
-/// and a trailing eye toggle right beside it. Read-only mode is a disabled native field showing a
-/// source hint or the revealed key (genuinely non-editable); the eye + clear stay clickable because
-/// they're siblings, not inside the disabled field. Editable mode binds to `text`, and the eye swaps
-/// Secure/Text visibility. No custom background, border, or padding — just the system field.
+/// API-key 입력 필드 — 네이티브 bordered 필드 + 선행 clear(선택) + 후행 eye 토글.
+/// read-only는 비활성 네이티브 필드 — eye·clear는 필드 밖 sibling이라 클릭 가능 유지.
 private struct APIKeyField: View {
     @Binding var text: String
     var placeholder: String
@@ -283,7 +261,6 @@ private struct APIKeyField: View {
         }
     }
 
-    /// A small borderless inline icon button beside the field — the clear (x) and the eye.
     private func fieldIcon(_ symbol: String, action: @escaping () -> Void, label: String) -> some View {
         Button(action: action) {
             Image(systemName: symbol)

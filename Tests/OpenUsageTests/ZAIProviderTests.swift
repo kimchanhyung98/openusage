@@ -2,9 +2,7 @@ import XCTest
 @testable import OpenUsage
 
 // MARK: - Sample payloads
-/// Mirrors the undocumented Z.ai internal-API shapes the legacy Tauri plugin relied on, captured in
-/// `docs/providers/zai.md`. These endpoints are not in Z.ai's public API reference but are stable in
-/// practice (used by Z.ai's own subscription UI).
+// Z.ai 자체 구독 UI에서 쓰는 비공개 API 응답 형태 고정.
 
 private let quotaBothLimitsJSON = #"""
 {
@@ -83,7 +81,6 @@ private func data(_ json: String) -> Data {
 
 final class ZAIAuthStoreTests: XCTestCase {
     func testPrefersConfigFileOverEnvironment() {
-        // Config file wins so editing it to rotate the key isn't shadowed by a stale env value.
         let store = ZAIAuthStore(
             files: FakeFiles([ZAIAuthStore.configPaths[0]: #"{"apiKey":"zai-file"}"#]),
             environment: FakeEnvironment(["ZAI_API_KEY": "zai-env"])
@@ -106,7 +103,6 @@ final class ZAIAuthStoreTests: XCTestCase {
     }
 
     func testAcceptsLegacyGLMEnvName() {
-        // GLM_API_KEY is the older Zhipu name some users still export.
         let store = ZAIAuthStore(
             files: FakeFiles(),
             environment: FakeEnvironment(["GLM_API_KEY": "glm-env"])
@@ -116,7 +112,6 @@ final class ZAIAuthStoreTests: XCTestCase {
     }
 
     func testZAIKeyNameBeatsGLMKeyName() {
-        // ZAI_API_KEY is primary; GLM_API_KEY only the fallback.
         let store = ZAIAuthStore(
             files: FakeFiles(),
             environment: FakeEnvironment(["ZAI_API_KEY": "zai", "GLM_API_KEY": "glm"])
@@ -230,8 +225,6 @@ final class ZAIAuthStoreTests: XCTestCase {
     }
 
     func testDeleteAPIKeyClearsAllConfigPaths() throws {
-        // A key in the alternate config path must also be cleared, or it resurfaces after the primary
-        // file is deleted and the Settings "clear" appears not to work.
         let files = FakeFiles([
             ZAIAuthStore.configPaths[0]: #"{"apiKey":"zai-primary"}"#,
             ZAIAuthStore.configPaths[1]: "zai-alt"
@@ -259,11 +252,10 @@ final class ZAIUsageMapperTests: XCTestCase {
         XCTAssertEqual(session.limit, 100)
         XCTAssertEqual(session.format, .percent)
         XCTAssertEqual(session.periodDurationMs, 5 * 60 * 60 * 1000)
-        // nextResetTime is epoch ms 1770648402389
+        // fixture의 nextResetTime은 epoch millisecond
         let resetsInterval = try XCTUnwrap(session.resetsAt?.timeIntervalSince1970)
         XCTAssertEqual(resetsInterval, 1770648402.389, accuracy: 0.1)
 
-        // The second TOKENS_LIMIT (unit: 6, weeks) maps to the Weekly meter.
         let weekly = try XCTUnwrap(progress(mapped.lines, "Weekly"))
         XCTAssertEqual(weekly.used, 40, accuracy: 0.001)
         XCTAssertEqual(weekly.limit, 100)
@@ -278,8 +270,7 @@ final class ZAIUsageMapperTests: XCTestCase {
     }
 
     func testMeterWindowsFollowThePayloadNotTheHistoricConstants() throws {
-        // The meters carry the payload-computed window, not hardcoded 5h/7d — a 3-hour session window
-        // and a 3-day "weekly" window (unit 4 = days, multi-day → the Weekly meter) must plumb through.
+        // unit 4·number 3은 3일 window를 나타내는 fixture
         let divergentJSON = #"""
         {
           "code": 200,
@@ -317,18 +308,15 @@ final class ZAIUsageMapperTests: XCTestCase {
 
     func testEmptyLimitsYieldNoUsageData() throws {
         let mapped = try ZAIUsageMapper.map(quotaBody: data(#"{"data":{"limits":[]}}"#), subscriptionBody: nil)
-        // No usable limits → the shared "No usage data" placeholder, not a blank tile.
         XCTAssertTrue(mapped.lines.contains { $0.label == "Status" })
     }
 
     func testDetectsNoCodingPlanBody() {
-        // A valid key on an account with no GLM Coding Plan: the live quota endpoint answers 2xx with
-        // `success:false` / "…coding plan" (captured verbatim from the real API).
+        // coding plan 없는 계정에서 캡처한 2xx·`success:false` fixture
         XCTAssertTrue(ZAIUsageMapper.isNoCodingPlan(data(#"{"code":500,"msg":"当前用户不存在coding plan","success":false}"#)))
     }
 
     func testIsNoCodingPlanFalseForUsableOrUnrelatedBodies() {
-        // A real quota payload and an unrelated business failure are both not "no coding plan".
         XCTAssertFalse(ZAIUsageMapper.isNoCodingPlan(data(quotaBothLimitsJSON)))
         XCTAssertFalse(ZAIUsageMapper.isNoCodingPlan(data(#"{"code":500,"msg":"internal error","success":false}"#)))
     }
@@ -343,7 +331,6 @@ final class ZAIUsageMapperTests: XCTestCase {
     }
 
     func testWeeklyOnlyWhenSessionAbsent() throws {
-        // A single weekly TOKENS_LIMIT (no session entry) still maps the Weekly meter.
         let body = data(#"""
         {"data":{"limits":[{"type":"TOKENS_LIMIT","unit":6,"number":1,"percentage":25}]}}
         """#)
@@ -387,8 +374,6 @@ final class ZAIProviderTests: XCTestCase {
     }
 
     func testRefreshSurvivesSubscriptionFailure() async {
-        // The subscription endpoint is best-effort (plan name only) — a failure there must not blank
-        // out the quota meters.
         let provider = ZAIProvider(
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
@@ -465,8 +450,6 @@ final class ZAIProviderTests: XCTestCase {
     }
 
     func testRefreshWithoutCodingPlanReportsNotAvailable() async {
-        // A valid key whose account has no GLM Coding Plan: the quota endpoint answers a 2xx with
-        // `success:false`. Surface a clear (non-malfunction) error so the header explains the empty card.
         let provider = ZAIProvider(
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
@@ -509,7 +492,6 @@ final class ZAIProviderTests: XCTestCase {
         let provider = ZAIProvider()
         XCTAssertEqual(provider.provider.id, "zai")
         XCTAssertEqual(provider.provider.displayName, "Z.ai")
-        // Console + API Keys quick links render in the card's expanded area.
         XCTAssertEqual(provider.provider.visibleLinks.count, 2)
     }
 

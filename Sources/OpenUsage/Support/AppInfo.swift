@@ -1,10 +1,7 @@
 import Foundation
 
-/// Single source of truth for the app's version, shown in the dashboard footer and the About settings
-/// tab. `CFBundleShortVersionString` carries the full version including any pre-release suffix
-/// (e.g. `0.7.0-beta.2`), baked into the bundle by `script/build_and_run.sh` (dev) and
-/// `script/release.sh` (release). It is the same string Sparkle shows in its update prompt. The
-/// fallback covers runs outside the packaged app (e.g. `swift run`, where there is no Info.plist).
+/// 대시보드 footer와 About 탭에 표시되는 앱 버전의 단일 소스.
+/// `CFBundleShortVersionString`은 pre-release suffix까지 포함한 전체 버전; fallback은 Info.plist가 없는 실행(`swift run`) 대비.
 enum AppInfo {
     static var version: String {
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.9.0-dev"

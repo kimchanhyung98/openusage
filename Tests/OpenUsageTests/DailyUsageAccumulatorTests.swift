@@ -1,18 +1,15 @@
 import XCTest
 @testable import OpenUsage
 
-/// Direct pins for the shared accumulate-then-assemble contract behind the Claude/Codex/Grok scanners
-/// (the class of drift behind the ccusage false-zero fix): one `dayKey` spelling, newest-first day
-/// order, per-model accumulation, always-priced days, and unknown models isolated from the series.
 final class DailyUsageAccumulatorTests: XCTestCase {
     func testDayKeyUsesInjectedCalendarAndZeroPads() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
-        // 2024-03-07 23:30 UTC — pads month and day to two digits.
+        // 2024-03-07 23:30 UTC — month·day 두 자리 zero pad 확인
         let date = calendar.date(from: DateComponents(year: 2024, month: 3, day: 7, hour: 23, minute: 30))!
         XCTAssertEqual(DailyUsageAccumulator.dayKey(from: date, calendar: calendar), "2024-03-07")
 
-        // The key is local-calendar: one instant, two time zones, two different days.
+        // key는 local-calendar 기준 — 동일 시점이 time zone에 따라 다른 날짜
         var tokyo = Calendar(identifier: .gregorian)
         tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
         XCTAssertEqual(DailyUsageAccumulator.dayKey(from: date, calendar: tokyo), "2024-03-08")
@@ -28,7 +25,7 @@ final class DailyUsageAccumulatorTests: XCTestCase {
         let scan = accumulator.build()
         XCTAssertEqual(scan.series.daily.map(\.date), ["2024-06-03", "2024-06-01"])
         XCTAssertEqual(scan.series.daily.map(\.totalTokens), [50, 310])
-        // Every counted day is priced — a real cost, never nil-by-omission.
+        // 집계된 날은 항상 가격 산정 — 생략에 의한 nil 금지
         XCTAssertEqual(scan.series.daily[1].costUSD ?? -1, 3.1, accuracy: 0.0001)
 
         let june1 = scan.modelUsage?.daily.first { $0.date == "2024-06-01" }
@@ -43,8 +40,7 @@ final class DailyUsageAccumulatorTests: XCTestCase {
         accumulator.addUnknownModel(day: "2024-06-02", model: "mystery-model")
 
         let scan = accumulator.build()
-        // A day with only unpriceable usage never enters the series or the model breakdown — it
-        // surfaces solely through the warning-triangle set.
+        // 가격 산정 불가 usage만 있는 날은 series·model breakdown 미포함 — warning triangle로만 노출
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertEqual(scan.modelUsage?.daily.isEmpty, true)
         XCTAssertEqual(scan.unknownModelsByDay, ["2024-06-02": ["mystery-model"]])

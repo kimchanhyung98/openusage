@@ -1,103 +1,71 @@
 import SwiftUI
 import Observation
 
-/// Mutable layout: which widgets are enabled, provider order, and each provider's metric order.
-/// `placed` is the enabled set (with stable widget ids); `metricOrderByProvider` is the user's custom order.
+/// Mutable 레이아웃 상태 — enabled widget 집합(`placed`), provider 순서, provider별 custom metric 순서.
 @MainActor
 @Observable
 final class LayoutStore {
-    // Swift's private access is file-scoped. Members shared with `LayoutStore+Customization.swift`
-    // stay module-internal below; implementation details used only here remain private.
+    // Swift의 private은 file-scope — `LayoutStore+Customization.swift`와 공유하는 멤버는 module-internal 유지.
     var placed: [PlacedWidget]
 
-    /// In-popover navigation (screen, Customize master/detail, screen-switch slide). Its own store so
-    /// screen routing isn't tangled with layout state; the `screen`/`isEditing`/`customizeProviderID`/
-    /// `screenSlide*` surface below forwards to it, so existing call sites are unchanged. Private so the
-    /// forwarding surface stays the ONLY spelling — two live paths to the same state invites drift.
+    /// In-popover navigation 전담 store — 아래 forwarding 표면이 유일한 접근 경로(같은 상태로 가는 두 경로 방지).
     private let navigation = PopoverNavigationStore()
 
-    /// Which in-popover screen is showing. Drives the footer buttons, the Esc handler, and the
-    /// popover-closed reset alike.
+    /// 현재 표시 중인 in-popover screen — footer 버튼·Esc handler·popover-close reset 공용.
     var screen: PopoverScreen {
         get { navigation.screen }
         set { navigation.screen = newValue }
     }
-    /// The screen being left plus a per-switch counter, for DashboardView's horizontal slide.
+    /// DashboardView 수평 slide용 — 떠나는 screen과 per-switch counter.
     var screenSlideFrom: PopoverScreen { navigation.screenSlideFrom }
     var screenSlideID: Int { navigation.screenSlideID }
-    /// Whether the Customize screen is showing — a bridge over `screen` for edit-mode call sites.
     var isEditing: Bool {
         get { navigation.isEditing }
         set { navigation.isEditing = newValue }
     }
-    /// The provider whose Customize detail (L2) is showing (nil shows the L1 list).
     var customizeProviderID: String? {
         get { navigation.customizeProviderID }
         set { navigation.customizeProviderID = newValue }
     }
-    /// Placed widget being drag-reordered (transient). `PlacedWidget.id`, never persisted.
     var draggingID: UUID?
-    /// Persisted provider display order (provider IDs). Drives both the dashboard groups and the
-    /// Customize sections, so the user can drag whole providers into the order they want.
+    /// Persist되는 provider 표시 순서(provider id) — dashboard group과 Customize section 공용.
     var providerOrder: [String]
-    /// Persisted metric order within each provider. Toggle switches do not mutate this, so turning a metric on
-    /// or off never makes rows jump around in Customize.
+    /// Persist되는 provider별 metric 순서 — toggle이 이를 바꾸지 않아 on/off로 행이 이동하지 않음.
     var metricOrderByProvider: [String: [String]]
 
-    /// Descriptor ids pinned to the menu bar. Membership only — display order is derived from the
-    /// provider + metric order above, so pins follow the same sequence shown in Customize. Capped via
-    /// `canPin` to at most `maxPinsPerProvider` per provider (the strip stacks a provider's values in pairs).
+    /// 메뉴바 pin된 descriptor id — membership만 저장, 표시 순서는 provider+metric 순서에서 파생.
+    /// `canPin`으로 provider당 최대 `maxPinsPerProvider`개 제한(strip이 값을 pair로 쌓는 구조).
     private(set) var pinnedMetricIDs: Set<String>
 
-    /// Descriptor ids that sit below the per-provider "Shown on expand" divider: the dashboard hides
-    /// them behind a caret until the user taps it, and Customize lists them under the divider.
-    /// Membership only — the sequence within each section follows the provider's metric order, like
-    /// pins. A metric keeps its membership while disabled, so re-enabling restores its section.
+    /// per-provider "Shown on expand" divider 아래의 descriptor id — membership만 저장, section 내 순서는
+    /// metric 순서를 따름. disabled 동안에도 membership 유지 — 재활성화 시 원래 section 복원.
     var expandedMetricIDs: Set<String>
 
-    /// Provider IDs whose dashboard cards are currently opened with their expanded metrics visible.
-    /// Unlike hover and drag state, this is a user preference: if someone likes Codex open, it should
-    /// stay open across popover closes and app restarts.
+    /// expanded metric을 펼쳐 둔 provider — 사용자 preference라 popover 닫힘·앱 재시작에도 유지.
     private(set) var expandedProviderIDs: Set<String>
 
-    /// The three transient popover pills, each an auto-clearing `TransientNotice` (was three copy-pasted
-    /// value+trigger+clearTask machines). The public `pinLimitNotice`/`shareConfirmation`/
-    /// `customizationNotice` surface below forwards to these, so call sites are unchanged.
     private let pinNotice = TransientNotice<String?>(clearedValue: nil, timeout: .seconds(3))
     private let shareNotice = TransientNotice<Bool>(clearedValue: false, timeout: .seconds(2.5))
     private let customizeNotice = TransientNotice<CustomizationNoticeContent?>(clearedValue: nil, timeout: .seconds(2.5))
 
-    /// Transient explanation for a denied pin attempt; the popover footer renders it in place of the pin
-    /// counter. Set by `notePinDenied`, auto-cleared a few seconds later.
     var pinLimitNotice: String? { pinNotice.value }
-    /// Bumped on every denied pin click so the footer notice plays its deny shake each time.
     var pinNoticeShakeTrigger: Int { pinNotice.trigger }
 
-    /// Transient "Copied to clipboard" confirmation for the floating pill above the footer.
     var shareConfirmation: Bool { shareNotice.value }
-    /// Bumped on every successful share so the pill replays its pop-in even on a repeat copy.
     var shareConfirmationTrigger: Int { shareNotice.trigger }
 
-    /// Transient in-Customize notice (e.g. "Starred for menu bar", or the orange cap denial).
     var customizationNotice: String? { customizeNotice.value?.message }
-    /// The notice's tone: `.positive` (green checkmark) or `.notice` (orange denial). Falls back to
-    /// `.positive` once cleared (tone is only read while `customizationNotice` is non-nil, so the
-    /// snap-back is unobservable — message and tone now clear atomically, which the old split state
-    /// machine couldn't guarantee).
+    /// notice tone(.positive/.notice) — clear 후 .positive 폴백(메시지·tone이 원자적으로 clear되어 snap-back 비관측).
     var customizationNoticeTone: CustomizationNoticeTone { customizeNotice.value?.tone ?? .positive }
-    /// Bumped on every present so the pill replays its pop-in even when the same notice repeats.
     var customizationNoticeTrigger: Int { customizeNotice.trigger }
 
-    /// Bounded, app-wide undo stack for layout customization (remove/add a metric, reorder metrics or
-    /// providers, pin/unpin, move across the expand caret). UI-only state (not persisted): undo is a
-    /// within-session affordance, so a relaunch starts fresh. Each entry is a pre-change `LayoutSnapshot`;
-    /// `undo()` pops and restores one.
+    /// 레이아웃 customization용 bounded 앱 전역 undo stack — 비persist(세션 내 affordance),
+    /// entry는 변경 전 `LayoutSnapshot`, `undo()`가 pop·복원.
     private var undoHistory = LayoutUndoHistory()
-    /// True while `undo()` is replaying a snapshot, so the mutations it triggers don't push themselves
-    /// back onto the stack (an undo must not be recorded as a new, separately-undoable action).
+    /// `undo()` replay 중 flag — replay가 유발한 mutation의 stack 재기록 차단(undo는 새 undoable action이 아님).
     private var isApplyingUndo = false
 
-    /// Menu-bar display style (Text strip vs. compact Bars). Persisted; defaults to `.bars`.
+    /// 메뉴바 표시 스타일(Text strip/Bars) — persist, 기본 .bars.
     var menuBarStyle: MenuBarStyle {
         didSet { persistence.saveMenuBarStyle(menuBarStyle) }
     }
@@ -126,8 +94,8 @@ final class LayoutStore {
         self.registry = registry
         let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
         self.persistence = persistence
-        // Extra account cards seed their family's default metric set (and caret split); pins and the
-        // migration baseline are deliberately never translated (see `translatedForAccountCards`).
+        // extra account 카드는 family의 default metric set(과 caret split)을 seed — pin과 migration
+        // baseline은 의도적으로 미번역(`translatedForAccountCards` 참고).
         self.baseDefaultMetricIDs = defaultMetricIDs
         self.migrationBaselineMetricIDs = migrationBaselineMetricIDs
         self.baseDefaultExpandedMetricIDs = defaultExpandedMetricIDs
@@ -164,9 +132,8 @@ final class LayoutStore {
         syncPlacedOrder(persistChanges: initial.shouldPersistPlaced)
     }
 
-    /// Reconciles a newly discovered account card into the existing layout. Reloading through the
-    /// same bootstrap path as launch preserves stored choices and seeds only the new account's
-    /// family defaults, while the long-lived store instance keeps the current popover connected.
+    /// 새로 발견된 account 카드를 기존 레이아웃에 reconcile — launch와 같은 bootstrap 경로로 재로드해
+    /// 저장된 선택은 보존하고 새 account의 family default만 seed; store 객체는 유지되어 popover 연결 지속.
     func replaceRegistry(_ registry: WidgetRegistry) {
         guard registry.providers != self.registry.providers || registry.descriptors != self.registry.descriptors else {
             return
@@ -230,8 +197,7 @@ final class LayoutStore {
 
     // MARK: - Customize mutations
 
-    /// Toggle a metric on (add to the placed list) or off (remove it). The single seam the Customize
-    /// switches drive, so on/off goes through the same add/remove path the rest of the app uses.
+    /// metric on/off toggle — Customize 스위치가 구동하는 단일 seam, 앱의 add/remove 경로와 공유.
     func setMetricEnabled(_ descriptorID: String, _ enabled: Bool) {
         recordingUndoStep {
             if enabled {
@@ -247,13 +213,11 @@ final class LayoutStore {
         }
     }
 
-    // MARK: - Undo (#603)
+    // MARK: - Undo
 
-    /// Whether there's at least one customization step to walk back. Drives the Customize Undo button's
-    /// presence and the app-wide ⌘Z handler's no-op guard.
+    /// undo 가능 여부 — Customize Undo 버튼 표시와 앱 전역 ⌘Z handler의 no-op guard 구동.
     var canUndo: Bool { undoHistory.canUndo }
 
-    /// A snapshot of the current undoable layout state.
     private func currentSnapshot() -> LayoutSnapshot {
         LayoutSnapshot(
             placed: placed,
@@ -265,14 +229,10 @@ final class LayoutStore {
         )
     }
 
-    /// Run a user-facing layout mutation, recording one undo step for it. Snapshots state before the
-    /// change and pushes that snapshot only if the change actually altered the layout — so a no-op
-    /// action (toggling an already-on metric, dropping a row back where it started) doesn't pollute the
-    /// stack with empty steps. Re-entrant calls (a mutation built from smaller ones) and undo replay
-    /// itself coalesce into the single outer step via `isApplyingUndo`.
+    /// 사용자 레이아웃 mutation을 undo step 1개로 기록하며 실행 — 실제 변경이 있을 때만 사전 snapshot을
+    /// push(no-op action은 빈 step 미기록). 재진입 호출과 undo replay는 `isApplyingUndo`로 외부 단일 step에 coalesce.
     func recordingUndoStep<T>(_ body: () -> T) -> T {
-        // Already inside an undoable scope (or replaying an undo): just run — the outer scope owns the
-        // single recorded step, and undo must never record itself.
+        // 이미 undoable scope 내부(또는 undo replay 중) — 바깥 scope가 단일 step을 소유, undo는 자신을 기록하지 않음.
         guard !isApplyingUndo else { return body() }
         let before = currentSnapshot()
         isApplyingUndo = true
@@ -284,9 +244,7 @@ final class LayoutStore {
         return result
     }
 
-    /// Walk back the most recent customization step, restoring the layout to its state just before that
-    /// action. A no-op (returns `false`) when there's nothing to undo. Repeated calls step further back.
-    /// Available app-wide (dashboard context menus and Customize alike), not just on one screen.
+    /// 최근 customization step 롤백 — 없으면 false. 반복 호출로 계속 후퇴; 앱 전역에서 사용 가능.
     @discardableResult
     func undo() -> Bool {
         guard let snapshot = undoHistory.popLast() else { return false }
@@ -296,9 +254,8 @@ final class LayoutStore {
         return true
     }
 
-    /// Restore every undoable field from a snapshot and persist the result. Called by `undo()`.
-    /// Provider card expand/collapse (`expandedProviderIDs`) is deliberately excluded: it's transient
-    /// view state, not a layout edit, so undo must not rewind caret toggles done between steps.
+    /// snapshot의 undoable 필드 전체 복원·persist — `undo()`가 호출. `expandedProviderIDs`는 transient
+    /// view 상태라 의도적으로 제외(step 사이의 caret toggle은 rewind하지 않음).
     private func restore(_ snapshot: LayoutSnapshot) {
         cancelDrag()
         placed = snapshot.placed
@@ -317,8 +274,7 @@ final class LayoutStore {
 
     // MARK: - Menu bar pins
 
-    /// Per-provider cap is a rendering constraint — the Text strip stacks a provider's values two to a
-    /// column, so a third would not fit the menu bar height.
+    /// provider별 pin 상한 — Text strip이 provider 값을 2개씩 한 column에 쌓는 렌더링 제약.
     static let maxPinsPerProvider = 2
 
     func isPinned(_ descriptorID: String) -> Bool {
@@ -329,8 +285,7 @@ final class LayoutStore {
         pinnedMetricIDs.count { registry.descriptor(id: $0)?.providerID == providerID }
     }
 
-    /// Whether `descriptorID` can be newly pinned without breaking a cap. Already-pinned ids return
-    /// `true`, so the toggle stays active for unpinning.
+    /// cap을 깨지 않고 새로 pin 가능한지 — 이미 pin된 id는 true(unpin toggle 유지).
     func canPin(_ descriptorID: String) -> Bool {
         if pinnedMetricIDs.contains(descriptorID) { return true }
         guard let descriptor = registry.descriptor(id: descriptorID), descriptor.pinnable else { return false }
@@ -338,8 +293,7 @@ final class LayoutStore {
         return true
     }
 
-    /// Why `descriptorID` can't be pinned right now, or `nil` when it can. The single source for the
-    /// pin button's tooltip and the denied-click feedback, so both always state the same rule.
+    /// 지금 pin 불가한 사유(가능하면 nil) — pin 버튼 tooltip과 거부 클릭 피드백의 단일 source.
     func pinDenialReason(_ descriptorID: String) -> String? {
         guard !canPin(descriptorID) else { return nil }
         if let providerID = registry.descriptor(id: descriptorID)?.providerID,
@@ -349,43 +303,37 @@ final class LayoutStore {
         return nil
     }
 
-    /// Record a denied pin attempt so the footer can explain the cap (shown for a few seconds,
-    /// with a deny shake on every attempt).
+    /// 거부된 pin 시도 기록 — footer가 cap을 설명(수 초 표시 + 매 시도 deny shake).
     func notePinDenied(_ descriptorID: String) {
         guard let reason = pinDenialReason(descriptorID) else { return }
         pinNotice.present(reason)
     }
 
-    /// Record a successful "Share Screenshot" copy so the floating "Copied to clipboard" pill can
-    /// confirm it. Shown for a couple of seconds then cleared — the success-side counterpart to
-    /// `notePinDenied`'s transient denial notice, with the same lifecycle.
+    /// "Share Screenshot" copy 성공 기록 — floating "Copied to clipboard" pill 표시.
+    /// `notePinDenied`의 성공측 대응, 동일 lifecycle.
     func presentShareConfirmation() {
         shareNotice.present(true)
     }
 
-    /// Clear any showing "Copied to clipboard" confirmation and cancel its auto-clear task. Called when
-    /// the popover closes so a pill mid-countdown can't reappear stale on the next open — the timer is
-    /// otherwise the only clearer, and the layout store outlives the popover.
+    /// 표시 중인 확인 pill 해제·auto-clear task 취소 — popover 닫힘 시 호출, layout store가 popover보다
+    /// 오래 살아 다음 open에 카운트다운 중이던 pill이 stale 재등장하는 것 방지.
     func clearShareConfirmation() {
         shareNotice.clear()
     }
 
-    /// Show a transient in-Customize pill (the floating confirmation above the Customize content).
-    /// `tone` picks the green success style or the orange denial style. Auto-clears after a couple of
-    /// seconds; also cleared on popover close via `clearCustomizationNotice`.
+    /// transient in-Customize pill 표시 — `tone`은 green success/orange denial 스타일 선택.
+    /// 수 초 후 auto-clear; popover 닫힘 시에는 `clearCustomizationNotice`로 clear.
     func presentCustomizationNotice(_ message: String, tone: CustomizationNoticeTone = .positive) {
         customizeNotice.present(CustomizationNoticeContent(message: message, tone: tone))
     }
 
-    /// Clear any showing Customize pill and cancel its auto-clear task. Called when the popover closes
-    /// so a pill mid-countdown can't reappear stale on the next open.
+    /// 표시 중인 Customize pill 해제·auto-clear task 취소 — 다음 open에 stale 재등장 방지.
     func clearCustomizationNotice() {
         customizeNotice.clear()
     }
 
-    /// Pin or unpin a metric for the menu bar. Pinning is a no-op when it would exceed a cap, so callers
-    /// can gate the control on `canPin` and trust this never over-pins. Undoable like the other layout
-    /// actions — the no-op guards mean a denied or redundant pin records no step.
+    /// 메뉴바 pin/unpin — cap 초과 pin은 no-op이라 `canPin`으로 gate한 호출자는 over-pin 불가.
+    /// 다른 레이아웃 action처럼 undoable — no-op guard 덕에 거부·중복 pin은 step 미기록.
     func setPinned(_ pinned: Bool, for descriptorID: String) {
         recordingUndoStep {
             if pinned {
@@ -402,9 +350,8 @@ final class LayoutStore {
         setPinned(!isPinned(descriptorID), for: descriptorID)
     }
 
-    /// Re-targets a managed account family's existing menu-bar stars to the selected account card.
-    /// This is an account-switch action, not a dashboard-picker action: the selected card receives
-    /// the same metric kinds, capped to the normal per-provider menu-bar limit.
+    /// managed account family의 기존 메뉴바 star를 선택된 카드로 re-target — account-switch 전용 action
+    /// (dashboard-picker 아님), 같은 metric kind를 per-provider 상한 내로 이전.
     func retargetMenuBarPins(for family: String, to providerID: String) {
         guard ProviderAccountID.family(of: providerID) == family,
               registry.provider(id: providerID) != nil else {
@@ -482,8 +429,7 @@ final class LayoutStore {
 
     func resetToDefault() {
         cancelDrag()
-        // Reset is its own deliberate action, not an undoable layout edit; the recorded snapshots
-        // describe the pre-reset layout, so the undo stack is dropped wholesale here.
+        // reset은 그 자체로 deliberate action — pre-reset 레이아웃을 가리키는 undo stack 전체 폐기.
         undoHistory.clear()
         placed = defaultMetricIDs
             .filter { registry.descriptor(id: $0) != nil }
@@ -504,36 +450,30 @@ final class LayoutStore {
         persist()
     }
 
-    /// Reset a single provider's customization to default — its enabled metrics, metric order, pins,
-    /// and expanded (caret) membership — while leaving every other provider, and the overall provider
-    /// order, untouched. The per-provider counterpart to `resetToDefault` ("Reset all providers"): same
-    /// per-provider effect, scoped to one `providerID` instead of the whole layout. No-op for an
-    /// unknown provider.
+    /// 한 provider의 customization만 default로 reset(enabled metric·metric 순서·pin·caret membership) —
+    /// 다른 provider와 전체 provider 순서는 유지. `resetToDefault`의 per-provider 대응; 미지 provider는 no-op.
     func resetProvider(_ providerID: String) {
         guard registry.provider(id: providerID) != nil else { return }
         cancelDrag()
-        // A reset is its own action, not an undoable edit. Snapshots are whole-layout, so there's no
-        // per-provider trim to do — clear the stack so undo can't restore into the pre-reset layout.
+        // reset은 undoable edit이 아님 — snapshot이 whole-layout이라 per-provider trim 대신 stack 전체 clear.
         undoHistory.clear()
 
-        // This provider's descriptor universe — the membership sets below are all scoped to it.
+        // 이 provider의 descriptor 전집 — 아래 membership set들의 scope.
         let owned = Set(registry.descriptors(for: providerID).map(\.id))
         func defaults(_ ids: [String]) -> [String] {
             ids.filter { owned.contains($0) && registry.descriptor(id: $0) != nil }
         }
 
-        // Enabled metrics: drop this provider's placed widgets, re-seed its default-on set. Other
-        // providers' widgets keep their identity and position; `syncPlacedOrder` re-sorts the whole
-        // list by provider + metric order at the end.
+        // enabled metric: 이 provider의 placed 제거 후 default-on set 재seed — 타 provider widget은
+        // identity·위치 유지, 마지막 `syncPlacedOrder`가 전체를 provider+metric 순서로 재정렬.
         placed = placed.filter { !owned.contains($0.descriptorID) }
             + defaults(defaultMetricIDs).map { PlacedWidget(descriptorID: $0) }
 
-        // Metric order back to registry order for this provider only.
+        // metric 순서는 이 provider만 registry 순서로 복귀.
         metricOrderByProvider[providerID] = registry.descriptors(for: providerID).map(\.id)
         persistMetricOrder()
 
-        // Pins, expanded membership, and the default-expanded-on-enable carry: swap this provider's
-        // entries for its defaults, leaving the rest of each set intact.
+        // pin·expanded·expand-on-enable carry: 이 provider entry만 default로 교체, 나머지 set 유지.
         pinnedMetricIDs.subtract(owned)
         pinnedMetricIDs.formUnion(defaults(defaultPinnedMetricIDs))
         persistPins()
@@ -544,12 +484,12 @@ final class LayoutStore {
         persistExpanded()
         persistExpandOnEnable()
 
-        // Default is a collapsed card.
+        // default는 collapsed 카드.
         if expandedProviderIDs.remove(providerID) != nil {
             persistExpandedProviders()
         }
 
-        syncPlacedOrder() // persists `placed`
+        syncPlacedOrder() // `placed` persist 포함
     }
 
     func cancelDrag() {

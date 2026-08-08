@@ -1,14 +1,8 @@
 import SwiftUI
 
-/// The dashboard display: one inset group per provider (System Settings style). A provider's icon + name
-/// sits above a rounded container holding its metric rows, so heterogeneous metric sets read as belonging
-/// to their provider. Rows are the shared `WidgetRowView`, fed by the same `WidgetDataStore` the menu bar
-/// uses.
-///
-/// Reordering works here directly (no Customize needed): drag any metric row to reorder it within its
-/// provider, or drag a provider's header line to reorder whole providers. Customize stays the discoverable,
-/// obvious place to do the same plus toggle metrics on/off. Both surfaces use the same local gesture/geometry
-/// helper so they work inside the menu-bar popover without a system drag/drop session.
+/// Dashboard 본문 — provider별 inset group(System Settings 스타일), 헤더 아래 rounded 카드에 metric 행 배치.
+/// 재정렬은 여기서 직접 가능(metric 행/provider 헤더 drag) — Customize와 동일한 로컬 gesture/geometry helper를
+/// 공유해 system drag/drop 세션 없이 popover 안에서 동작.
 struct WidgetGroupedListView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
@@ -20,7 +14,7 @@ struct WidgetGroupedListView: View {
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
-    /// The card the "Rename…" alert is currently editing; `nil` when the alert is closed.
+    /// "Rename…" alert가 편집 중인 카드 — alert가 닫히면 `nil`.
     @State private var renameCardID: String?
     @State private var renameDraft = ""
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
@@ -28,8 +22,6 @@ struct WidgetGroupedListView: View {
     @AppStorage(DashboardUsageAccountSelection.codexKey) private var selectedCodexUsageAccountID = ""
 
     var body: some View {
-        // Provider-section spacing is noticeably wider than the in-card row rhythm (so groups
-        // still read as groups); the exact step comes from the density setting.
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
             ForEach(dashboardGroups) { group in
                 section(group)
@@ -42,7 +34,7 @@ struct WidgetGroupedListView: View {
             TextField("Name", text: $renameDraft)
             Button("Rename") {
                 if let renameCardID {
-                    // A cleared field resets the card back to its derived name.
+                    // 빈 필드는 카드를 derived name으로 복원.
                     container.accounts.rename(cardID: renameCardID, to: renameDraft)
                 }
             }
@@ -160,21 +152,19 @@ struct WidgetGroupedListView: View {
             onSelectAccount: isManagedAccountGroup ? family.map { family in
                 { providerID in
                     selectUsageAccount(providerID, for: family)
-                    // A periodic refresh may already own this card; plain `refresh` would be
-                    // skipped and leave the picked account stale until the next cycle.
+                    // periodic refresh가 이 카드를 이미 소유했을 수 있음 — plain `refresh`는 skip되어
+                    // 선택 계정이 다음 주기까지 stale.
                     Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
                 }
             } : nil,
             usesManagedAccountTitle: isManagedAccountGroup,
             managedProfileCount: managedProfileCount
         )
-        // Keep the provider mark and hover-revealed copy control aligned with the card's content edges.
         .padding(.horizontal, 8)
         .highPriorityGesture(providerDragGesture(for: group))
         .contextMenu {
             let name = container.displayName(for: group.provider)
-            // Hides the whole provider section (the Customize provider list brings it back). Mirrors
-            // the per-metric "Hide" but one level up, so the verb order reads the same on a header as a row.
+            // provider section 전체 숨김(Customize provider 리스트에서 복구) — per-metric "Hide"의 상위 버전.
             Button("Hide \(name)") {
                 container.setProviderEnabled(false, for: group.provider.id)
             }
@@ -182,13 +172,11 @@ struct WidgetGroupedListView: View {
             Button("Refresh \(name)") {
                 Task { await dataStore.refresh(providerID: group.provider.id, force: true) }
             }
-            // Renaming needs an account record to write to, so it only shows on account-model cards
-            // whose identity has been observed at least once.
+            // rename은 기록할 account record가 필요 — identity가 한 번이라도 관측된 account-model 카드에만 표시.
             if container.canRename(group.provider.id) {
                 Button("Rename…") {
-                    // Seed with the STORED rename (empty when none), not the derived title —
-                    // confirming an untouched field must stay "no rename", not freeze the derived
-                    // name into a custom label that future account-label updates can't refresh.
+                    // derived title이 아닌 저장된 rename(없으면 빈 값)으로 seed — 미수정 확인이 "no rename"으로
+                    // 남아야 이후 account-label 업데이트가 반영됨.
                     renameDraft = container.accounts.records
                         .first { $0.id == group.provider.id }?.customLabel ?? ""
                     renameCardID = group.provider.id
@@ -202,12 +190,8 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// Renders the provider's branded share card and copies the PNG to the clipboard. The appearance is
-    /// taken from the popover's own `colorScheme` — this view is hosted in the popover panel, whose
-    /// appearance is `AppearanceSetting.current` (explicit for Light/Dark, the menu bar for System) — so
-    /// the export matches the card on screen instead of guessing from `NSApp.effectiveAppearance`. The
-    /// same render path backs the footer's "Share Screenshot" submenu, which reaches it without a
-    /// right-click.
+    /// provider의 branded share card를 렌더링해 PNG를 clipboard에 복사 — appearance는 popover 자신의
+    /// `colorScheme`을 사용해 화면의 카드와 일치.
     private func shareCard(_ group: ProviderGroup) -> Bool {
         ShareCardRenderer.share(
             group: group,
@@ -218,9 +202,8 @@ struct WidgetGroupedListView: View {
         )
     }
 
-    /// A row's placed widget paired with its resolved descriptor + data, so each `dataStore.data(for:)`
-    /// is computed once per render and reused by both the condensing rule and the row. Keyed off the
-    /// `PlacedWidget` so `ForEach` identity stays exactly what it was before this was precomputed.
+    /// 행의 widget + 해석된 descriptor/data 묶음 — `dataStore.data(for:)`를 렌더당 1회만 계산해
+    /// condensing 규칙과 행이 공유. `ForEach` identity는 `PlacedWidget` 기준 유지.
     private struct ResolvedRow: Identifiable {
         let widget: PlacedWidget
         let descriptor: WidgetDescriptor
@@ -231,9 +214,7 @@ struct WidgetGroupedListView: View {
     private enum DashboardMetricCardRow: Identifiable {
         case metric(ResolvedRow)
         case divider
-        /// #596: the provider's quick-link buttons (Status / Console / Dashboard ...), pinned at the
-        /// bottom of the collapsible expanded section. They collapse with the caret — part of the
-        /// expander, not always-visible chrome.
+        /// provider quick-link 버튼들(#596) — caret과 함께 접히는 expander의 일부.
         case links([ProviderLink])
 
         var id: String {
@@ -249,15 +230,12 @@ struct WidgetGroupedListView: View {
     }
 
     private func container(_ group: ProviderGroup) -> some View {
-        // Resolve each row's descriptor + data exactly once per render, then reuse it for both the
-        // neighbor-aware condensing rule and the row itself — `dataStore.data(for:)` used to be
-        // recomputed several times per row (twice per adjacent pair plus once in `row`).
+        // 행별 descriptor + data를 렌더당 1회 해석해 condensing 규칙과 행이 재사용.
         let providerID = group.provider.id
         let isExpanded = layout.isProviderExpanded(providerID)
         let alwaysRows = resolvedRows(group.alwaysShownWidgets)
         let expandedRows = resolvedRows(group.expandedWidgets)
-        // The caret separates Always Visible and On Demand rows, so text-row condensing should not
-        // bridge across it. Each side tightens only against rows on the same side of the separator.
+        // caret이 Always Visible/On Demand를 가르므로 text-row condensing은 caret을 넘지 않음 — 같은 쪽 행끼리만 tighten.
         let condensedIDs = visibleCondensedTextRowIDs(alwaysRows: alwaysRows, expandedRows: isExpanded ? expandedRows : [])
         let cardRows = metricCardRows(
             alwaysRows: alwaysRows,
@@ -266,11 +244,10 @@ struct WidgetGroupedListView: View {
             isExpanded: isExpanded,
             links: group.provider.visibleLinks
         )
-        // Same card builder the lifted preview uses, so the floating chip can't drift from the live card.
+        // lifted preview와 동일한 card builder — floating chip이 live 카드와 어긋나지 않음.
         return DashboardMetricCard {
-            // One stable list keeps the drag-owning metric row alive when it crosses the caret boundary.
-            // Separate always-shown/expanded loops can tear that source view down before `onEnded` fires,
-            // leaving the lift overlay visible until another drag forces a reset.
+            // 하나의 안정된 리스트로 drag 중인 행을 caret 경계 너머에서도 유지 — 분리 loop면 `onEnded` 전에
+            // 해체되어 lift overlay가 잔존.
             ForEach(cardRows) { cardRow in
                 switch cardRow {
                 case .metric(let entry):
@@ -299,10 +276,7 @@ struct WidgetGroupedListView: View {
         isExpanded: Bool,
         links: [ProviderLink]
     ) -> [DashboardMetricCardRow] {
-        // #596: provider quick-link buttons live INSIDE the collapsible expanded section, pinned at its
-        // bottom, so collapsing the caret hides them along with the expanded metrics — they're part of
-        // the expander, not always-visible chrome. The caret shows for any provider with expanded
-        // content (metrics OR links), so a links-only provider still gets a caret to reveal its buttons.
+        // quick-link 버튼은 접히는 expanded section 안 최하단(#596) — links만 있는 provider도 caret을 얻음.
         let hasLinks = !links.isEmpty
         let hasExpandedContent = hasExpandedMetrics || hasLinks
         return alwaysRows.map(DashboardMetricCardRow.metric)
@@ -311,8 +285,7 @@ struct WidgetGroupedListView: View {
             + (isExpanded && hasLinks ? [.links(links)] : [])
     }
 
-    /// The centered caret at the bottom of a provider card that reveals or hides its On Demand metrics
-    /// and quick links. Rendered whenever the provider has either kind of expanded content.
+    /// 카드 하단 중앙 caret — On Demand metric과 quick link를 펼치고 접음.
     private func expandToggle(providerID: String, isExpanded: Bool) -> some View {
         Button {
             withAnimation(Motion.spring) {
@@ -341,11 +314,8 @@ struct WidgetGroupedListView: View {
         condensedTextRowIDs(alwaysRows).union(condensedTextRowIDs(expandedRows))
     }
 
-    /// Neighbor-aware rule (shared with the share-card export via `WidgetData.condensedTextRowOffsets`):
-    /// IDs of text-only rows sitting directly under another text-only row. Rows can't see their
-    /// neighbors, so the list computes the pairs; Compact density pulls these rows up so a run of
-    /// one-liners reads as one cluster. Called per segment (always-shown / expanded), so the expand
-    /// caret is never crossed.
+    /// 이웃 인식 규칙(share-card export와 공유) — 다른 text-only 행 바로 아래의 text-only 행 ID들.
+    /// segment별 호출이라 expand caret을 넘지 않음.
     private func condensedTextRowIDs(_ rows: [ResolvedRow]) -> Set<String> {
         let offsets = WidgetData.condensedTextRowOffsets(in: rows.map(\.data))
         return Set(offsets.map { rows[$0].descriptor.id })
@@ -367,9 +337,7 @@ struct WidgetGroupedListView: View {
             .reorderFrame(id: descriptor.id, in: .named(reorderSpaceName))
     }
 
-    /// Desktop-native management for a single metric: hide it, pin/unpin it, refresh its provider, or jump
-    /// into Customize — without a trip through Customize first. Hide leads (the most-reached-for verb), then
-    /// star, then a divider before the two provider-/app-level actions.
+    /// 단일 metric의 context menu — Hide, star, provider refresh, Customize 진입.
     @ViewBuilder
     private func rowMenu(_ descriptor: WidgetDescriptor, providerID: String) -> some View {
         Button("Hide") {
@@ -397,7 +365,7 @@ struct WidgetGroupedListView: View {
         }
     }
 
-    /// From the dashboard, jump straight into this provider's Customize metrics (L2), not the provider list.
+    /// dashboard에서 해당 provider의 Customize metric(L2)으로 직행 — provider 리스트를 거치지 않음.
     private func openCustomize(for providerID: String) {
         withAnimation(Motion.modeSwitch) {
             layout.customizeProviderID = providerID
@@ -450,9 +418,7 @@ struct WidgetGroupedListView: View {
             return []
         }
         let alwaysShown = group.alwaysShownWidgets.compactMap { layout.descriptor(for: $0)?.id }
-        // The caret is a drop target whenever the expanded section is open — including a links-only
-        // section (buttons but no expanded metrics), so a metric can be dragged past the caret to tuck
-        // it below the fold even when only buttons are showing there.
+        // caret은 expanded section이 열려 있으면(links-only 포함) drop target — metric을 caret 아래로 끌어 내릴 수 있음.
         let hasExpandedContent = group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty
         guard hasExpandedContent, layout.isProviderExpanded(providerID) else { return alwaysShown }
         let expanded = group.expandedWidgets.compactMap { layout.descriptor(for: $0)?.id }
@@ -460,8 +426,7 @@ struct WidgetGroupedListView: View {
     }
 
     private func makeProviderLift(for group: ProviderGroup, value: DragGesture.Value) -> ReorderLift? {
-        // The floating preview should match what the card shows: only the always-shown rows unless this
-        // provider's caret is currently open.
+        // floating preview는 카드 표시와 일치 — caret이 열려 있지 않으면 always-shown 행만.
         let visibleWidgets = layout.isProviderExpanded(group.provider.id) ? group.widgets : group.alwaysShownWidgets
         let rows = visibleWidgets.compactMap { widget -> WidgetData? in
             guard let descriptor = layout.descriptor(for: widget) else { return nil }

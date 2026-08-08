@@ -1,13 +1,8 @@
 import Foundation
 
-/// Builds daily token/cost estimates for Grok from the Grok CLI's local log.
-///
-/// Like the Claude/Codex scanners but simpler: Grok's token data lives in a single global
-/// append-only log, `~/.grok/logs/unified.jsonl`, on `shell.turn.inference_done` lines.
-/// Those lines carry token counts but no model id, so the scanner attributes each row to a model by
-/// tracking the "current model" per CLI process (`pid`) from the model-change events the CLI also
-/// logs. The output is the same `DailyUsageSeries` shape the Claude/Codex spend tiles consume, so it
-/// flows straight through `SpendTileMapper`.
+/// Grok CLI의 로컬 로그에서 일별 token/cost 추정치 생성.
+/// token 행(`shell.turn.inference_done`)에 model id가 없어 CLI process(`pid`)별 current model 추적으로 귀속.
+/// 출력은 Claude/Codex spend tile과 동일한 `DailyUsageSeries` 형태로 `SpendTileMapper`에 그대로 연결.
 struct GrokLogUsageScanner: Sendable {
     var files: TextFileAccessing
     var environment: EnvironmentReading
@@ -29,7 +24,7 @@ struct GrokLogUsageScanner: Sendable {
         )
     }
 
-    /// `~/.grok/logs/unified.jsonl`, or `$GROK_HOME/logs/unified.jsonl` when that env var is set.
+    /// `~/.grok/logs/unified.jsonl` — `$GROK_HOME` 설정 시 `$GROK_HOME/logs/unified.jsonl`.
     var logPath: String {
         if let raw = environment.value(for: "GROK_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
@@ -38,12 +33,9 @@ struct GrokLogUsageScanner: Sendable {
         return homeDirectory().appendingPathComponent(".grok/logs/unified.jsonl").path
     }
 
-    /// Scan the last `daysBack` days of the log. Returns `nil` when the log is missing/unreadable (the
-    /// spend tiles then render "No data"); returns an empty `daily` when the log exists but has no
-    /// usable token rows in the window.
-    ///
-    /// `async` and nonisolated (this is a plain `Sendable` struct, not `@MainActor`), so the whole-file
-    /// read + parse runs off the main actor when a `@MainActor` provider `await`s it.
+    /// 로그의 최근 `daysBack`일 스캔.
+    /// 로그 부재·읽기 실패 시 `nil`(spend tile은 "No data" 렌더링), 존재하나 window 내 유효 행이 없으면 빈 `daily`.
+    /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let path = logPath
         guard files.exists(path) else {
@@ -61,17 +53,15 @@ struct GrokLogUsageScanner: Sendable {
         return Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now), pricing: pricing)
     }
 
-    /// Single chronological pass over the append-only log. Model-carrying events update a per-`pid`
-    /// "current model" (tracked regardless of date, so a session straddling the `since` boundary stays
-    /// attributed); each in-window `inference_done` row is priced against its `pid`'s current model and
-    /// bucketed by local calendar day.
+    /// append-only 로그에 대한 시간순 단일 pass.
+    /// model 이벤트는 날짜와 무관하게 `pid`별 current model 갱신 — `since` 경계에 걸친 session도 귀속 유지.
+    /// window 내 `inference_done` 행은 해당 `pid`의 current model로 가격 산정 후 로컬 달력일로 bucket 분류.
     static func parse(_ text: String, since: Date, pricing: ModelPricing) -> LogUsageScan {
         var modelByPID: [Int: String] = [:]
         var accumulator = DailyUsageAccumulator()
 
         text.enumerateLines { line, _ in
-            // Cheap pre-filter before JSON parsing: only model-carrying events and token rows matter
-            // (token rows contain "inference_done"; every model event's `msg` contains "model").
+            // JSON parse 전 저비용 pre-filter — token 행은 "inference_done", 모든 model 이벤트의 `msg`는 "model" 포함
             guard line.contains("inference_done") || line.contains("model") else { return }
             guard let data = line.data(using: .utf8),
                   let object = ProviderParse.jsonObject(data),
@@ -94,7 +84,7 @@ struct GrokLogUsageScanner: Sendable {
 
             let completion = Int(ProviderParse.number(ctx["completion_tokens"]) ?? 0)
             let reasoning = Int(ProviderParse.number(ctx["reasoning_tokens"]) ?? 0)
-            // `cached_prompt_tokens` is a subset of `prompt_tokens`, so total counts prompt once.
+            // `cached_prompt_tokens`는 `prompt_tokens`의 부분집합 — total에서 prompt는 1회만 집계
             let cached = min(ProviderParse.number(ctx["cached_prompt_tokens"]) ?? 0, promptTokens)
             let cacheRead = Int(cached)
             let inputNoCache = Int(max(0, promptTokens - cached))
@@ -103,12 +93,8 @@ struct GrokLogUsageScanner: Sendable {
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
             let totalTokens = Int(promptTokens) + output
 
-            // Grok's token rows lack a model id; attribute via the row's process. Rows that can't be
-            // priced (no attributable model, or a model no source can price) are excluded from every
-            // displayed total — tokens, dollars, the trend, and the model breakdown — because mixing
-            // measured tokens with unpriceable ones makes the figures incoherent. An unknown model's
-            // name lands in `unknownModelsByDay` (the tile's warning triangle), the only place
-            // unpriceable usage surfaces; unattributed rows have no name to warn about.
+            // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
+            // 가격 없는 model 이름만 `unknownModelsByDay`(warning triangle)로 노출, 미귀속 행은 알릴 이름 자체가 없음
             guard let model = pid.flatMap({ modelByPID[$0] }) else { return }
             let tokenBreakdown = TokenBreakdown(input: inputNoCache, cacheRead: cacheRead, output: output)
             guard let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown) else {
@@ -123,8 +109,8 @@ struct GrokLogUsageScanner: Sendable {
         return accumulator.build()
     }
 
-    /// The model id carried by a model-change event, or `nil` for any other line. The Grok CLI signals
-    /// the active model through several event shapes, all keyed by `pid`.
+    /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
+    /// Grok CLI는 여러 이벤트 shape로 active model을 알림 — 모두 `pid` 기준.
     private static func modelID(msg: String, ctx: [String: Any]) -> String? {
         let raw: Any?
         switch msg {

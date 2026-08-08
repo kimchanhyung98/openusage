@@ -69,11 +69,8 @@ enum ClaudeDesktopCredentialError: Error, Sendable {
     case decryptionFailed(Int32)
 }
 
-/// Reads Claude Desktop's Electron OAuth cache as an externally owned, read-only credential source.
-///
-/// The refresh token is deliberately never decoded into `ClaudeOAuth`: Anthropic rotates refresh
-/// tokens, so using one here would invalidate Claude Desktop's copy. OpenUsage only borrows a currently
-/// valid access token and waits for Desktop to renew it.
+/// Claude Desktop의 Electron OAuth 캐시를 외부 소유 read-only credential source로 조회.
+/// refresh token은 의도적으로 미사용 — rotation 시 Desktop 사본이 무효화되므로 유효한 access token만 차용.
 struct ClaudeDesktopAuthStore: Sendable {
     private static let configRelativePath = "Library/Application Support/Claude/config.json"
     private static let cookieRelativePaths = [
@@ -110,7 +107,7 @@ struct ClaudeDesktopAuthStore: Sendable {
         self.keyCache = keyCache
     }
 
-    /// Cheap, prompt-free evidence for first-run detection. The real refresh still decrypts and validates.
+    /// first-run 감지용 저비용·prompt 없는 흔적 확인 — 실제 refresh에서 복호화·검증 수행.
     func hasCredentialMaterial() -> Bool {
         let configPath = path(Self.configRelativePath)
         guard let text = try? files.readTextIfPresent(configPath),
@@ -277,9 +274,8 @@ struct ClaudeDesktopAuthStore: Sendable {
         return .notFound
     }
 
-    /// The OAuth client ID Claude's production login (Claude Code / Desktop) mints full-scope tokens
-    /// under. Desktop's cache can hold several entries for one org — partial-scope leftovers from older
-    /// logins included — and this client is how Desktop itself resolves the active login.
+    /// Claude 프로덕션 로그인(Code/Desktop)이 full-scope 토큰을 발급받는 OAuth client ID —
+    /// Desktop 자신이 활성 로그인을 판별하는 기준.
     private static let productionClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private static let inferenceScope = "user:inference"
 
@@ -289,10 +285,8 @@ struct ClaudeDesktopAuthStore: Sendable {
         var scopes: [String]
         var expiresAt: Double
 
-        /// Selection order mirrors Desktop's own resolution instead of raw expiry: production client
-        /// with full scopes first, then any full-scope entry over bare `user:profile` leftovers, then
-        /// scope richness, with expiry only as the final tiebreak. A stale wrong-tier token with a
-        /// longer TTL must not outrank the current login.
+        /// Desktop 자체 해석과 동일한 선택 순서 — 프로덕션 client + full scope 우선, 만료는 최종 tiebreak.
+        /// TTL 긴 stale 토큰이 현재 로그인을 앞서면 안 됨.
         var rank: (Int, Int, Int, Double) {
             let hasFullScope = scopes.contains(ClaudeDesktopAuthStore.usageScope)
                 && scopes.contains(ClaudeDesktopAuthStore.inferenceScope)

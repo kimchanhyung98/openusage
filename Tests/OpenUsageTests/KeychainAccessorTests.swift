@@ -2,8 +2,7 @@ import XCTest
 @testable import OpenUsage
 
 final class KeychainAccessorTests: XCTestCase {
-    /// Returns a fixed `ProcessResult` for any invocation — lets us drive the accessor's exit-code
-    /// handling without a real `security` subprocess.
+    /// 모든 호출에 고정 `ProcessResult` 반환 — 실제 `security` subprocess 없이 exit-code 처리 검증
     private struct StubRunner: ProcessRunning {
         let result: ProcessResult
         func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
@@ -12,7 +11,7 @@ final class KeychainAccessorTests: XCTestCase {
     }
 
     func testItemNotFoundExitReturnsNil() throws {
-        // Exit 44 (errSecItemNotFound) is the legitimate "no credential stored" case → nil.
+        // exit 44(errSecItemNotFound)는 정상적인 "credential 없음" → nil
         let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
             result: ProcessResult(exitCode: 44, stdout: "", stderr: "The specified item could not be found in the keychain.")
         ))
@@ -20,8 +19,7 @@ final class KeychainAccessorTests: XCTestCase {
     }
 
     func testNonItemNotFoundFailureThrowsReadFailed() {
-        // A non-44 non-zero exit (locked keychain / access denied / cancelled unlock) must throw, not
-        // collapse into the same nil as "no credential" — otherwise it gets mislabeled "not signed in".
+        // 44 외 non-zero exit(locked keychain 등)는 throw — nil로 축약되면 "not signed in"으로 오표시
         let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
             result: ProcessResult(exitCode: 51, stdout: "", stderr: "User interaction is not allowed.")
         ))
@@ -39,7 +37,7 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(try accessor.readGenericPassword(service: "Test"), "secret-token")
     }
 
-    /// Returns queued results in order — drives the accessor's repeat-until-not-found delete loop.
+    /// 큐에 담긴 결과를 순서대로 반환 — repeat-until-not-found delete loop 구동용
     private final class SequenceRunner: ProcessRunning, @unchecked Sendable {
         private var results: [ProcessResult]
         private(set) var callCount = 0
@@ -63,8 +61,7 @@ final class KeychainAccessorTests: XCTestCase {
     }
 
     func testDeleteRepeatsUntilEveryItemForTheServiceIsGone() throws {
-        // A service can hold both an account-scoped and an unscoped item; `security` removes one
-        // per call, so a single delete would leave a removed account's token behind.
+        // 한 service에 account-scoped·unscoped item 공존 가능하고 `security`는 호출당 1개만 삭제
         let runner = SequenceRunner(results: [
             ProcessResult(exitCode: 0, stdout: "", stderr: ""),
             ProcessResult(exitCode: 0, stdout: "", stderr: ""),

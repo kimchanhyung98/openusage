@@ -2,59 +2,52 @@ import CryptoKit
 import Foundation
 import Observation
 
-/// Card-id helpers for the account-first model. The account occupying a family's default home when
-/// first observed keeps the bare family id (`claude`, `codex`) as its permanent record id — that is
-/// what makes existing installs migrate by doing nothing. Any later account of the same family mints
-/// `family@<hash8>` from its identity key.
+/// account-first model의 card-id 헬퍼. family의 default home을 처음 점유한 account가 bare family id
+/// (`claude`, `codex`)를 영구 record id로 보유 — 기존 설치가 아무것도 안 하고 migration되는 근거.
+/// 이후 같은 family의 account는 identity key에서 `family@<hash8>` 발급.
 enum ProviderAccountID {
-    /// The family ids that participate in the account-first model.
     static let families: Set<String> = ["claude", "codex"]
 
-    /// `claude@ab12cd34` — a stable, non-reversible id derived from the account's identity key.
+    /// `claude@ab12cd34` — account identity key에서 파생한 stable·비가역 id.
     static func make(family: String, identityKey: String) -> String {
         "\(family)@\(hash8(identityKey))"
     }
 
-    /// The 8-hex-char identity digest card ids are built from, exposed for other identity-derived
-    /// ids (the iCloud remote-only pseudo providers).
+    /// card id를 구성하는 8-hex identity digest — 다른 identity 파생 id(iCloud remote-only pseudo provider)에도 공개.
     static func hash8(_ identityKey: String) -> String {
         let digest = SHA256.hash(data: Data(identityKey.lowercased().utf8))
         return digest.prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The family a card id belongs to: `claude@ab12cd34` → `claude`, bare ids map to themselves.
+    /// card id의 family — `claude@ab12cd34` → `claude`, bare id는 자기 자신.
     static func family(of cardID: String) -> String {
         cardID.firstIndex(of: "@").map { String(cardID[..<$0]) } ?? cardID
     }
 
-    /// Whether a card id names an extra account card (`claude@ab12cd34`) rather than a bare
-    /// provider id.
+    /// extra account 카드 id(`claude@ab12cd34`) 여부 — bare provider id와 구분.
     static func isAccountCard(_ cardID: String) -> Bool {
         cardID.contains("@")
     }
 }
 
-/// One place an account is signed in. "Default" is a badge on a source (`holdsDefaultSource`), never
-/// a key: it marks who currently occupies the default home, and it never drives ids or sort order —
-/// a swap re-points source edges, cards don't move. Kinds shipped so far: the default home, Claude
-/// config dirs, and managed launch-profile homes; later phases add cswap vault slots and Desktop
-/// logins as more kinds.
+/// account가 로그인돼 있는 한 곳. "Default"는 source의 badge(`holdsDefaultSource`)일 뿐 key가 아님 —
+/// id·정렬 순서를 결정하지 않으며, swap은 source edge만 재연결(카드는 이동하지 않음).
 struct ProviderAccountSource: Codable, Equatable, Sendable {
     enum Kind: String, Codable, Sendable {
-        /// The provider's standard home for this machine (`~/.claude`, `~/.codex`, env override).
+        /// 이 머신의 provider 표준 home(`~/.claude`, `~/.codex`, env override).
         case defaultHome
-        /// A custom Claude config dir (a `CLAUDE_CONFIG_DIR` home kept besides the default).
+        /// custom Claude config dir(default 옆에 유지되는 `CLAUDE_CONFIG_DIR` home).
         case configDir
-        /// A registered launch-profile home (an `AccountProfilesStore` managed home).
+        /// 등록된 launch-profile home(`AccountProfilesStore` managed home).
         case managedProfile
     }
 
     var kind: Kind
-    /// Canonical home path the source was observed at.
+    /// source가 관찰된 canonical home 경로.
     var anchor: String?
     var holdsDefaultSource: Bool
-    /// `configDir` only: the literal string whose hash names the source's keychain item (Claude Code
-    /// hashes `CLAUDE_CONFIG_DIR` exactly as typed, so `~/x` and its absolute spelling differ).
+    /// `configDir` 전용 — source의 keychain item 이름을 만드는 hash의 원본 literal(Claude Code는
+    /// `CLAUDE_CONFIG_DIR`을 입력된 그대로 hash — `~/x`와 절대경로 표기는 별개).
     var keychainLiteral: String?
 
     init(kind: Kind, anchor: String?, holdsDefaultSource: Bool, keychainLiteral: String? = nil) {
@@ -65,31 +58,26 @@ struct ProviderAccountSource: Codable, Equatable, Sendable {
     }
 }
 
-/// An account as the account-first model sees it: opaque identity key, stable record id minted at
-/// creation, and the sources currently attaching to it.
+/// account-first model이 보는 account — 불투명 identity key, 생성 시 발급된 stable record id, 현재 연결된 source들.
 struct ProviderAccountRecord: Codable, Equatable, Sendable {
-    /// Stable id minted when the account is first seen; never re-derived. The first account observed
-    /// at a family's default home gets the bare family id.
+    /// 처음 관찰될 때 발급되는 stable id — 재파생 금지. family default home에서 처음 관찰된 account는 bare family id.
     var id: String
     var family: String
     var identityKey: String
     var label: String?
-    /// A user-chosen card name (Rename in the card's context menu / Customize). Wins over `label`
-    /// and the id-derived fallback; never touched by reconciliation.
+    /// 사용자 지정 카드 이름(카드 context menu/Customize의 Rename) — `label`·id 파생 폴백에 우선, reconciliation 불가침.
     var customLabel: String?
     var sources: [ProviderAccountSource]
-    /// Set by a future "Remove Account…". A tombstoned account is never resurrected by rescans.
+    /// 향후 "Remove Account…"가 설정 — tombstone된 account는 rescan으로 부활하지 않음.
     var removedTombstone: Bool = false
 
-    /// The name a card carries without a rename: the stock family name for the bare card, a
-    /// "Claude — <org or email>" derived from the account label for an extra card, or the record id
-    /// itself when the account has no label (owner decision 2: short-hash fallback, one rename away
-    /// from good). Never contains `customLabel` — this is what gets baked into the launch
-    /// `Provider`, and baking a rename there is how stale-name bugs are born.
+    /// rename 없는 카드의 기본 이름 — bare 카드는 family명, extra 카드는 account label 파생
+    /// "Claude — <org|email>", label 없으면 record id 폴백. `customLabel`은 절대 미포함 —
+    /// launch `Provider`에 bake되는 값이라 rename을 넣는 순간 stale-name 버그.
     var derivedDisplayName: String {
         guard ProviderAccountID.isAccountCard(id) else { return family.capitalized }
         guard let label = label?.nilIfEmpty else { return id }
-        // Labels are our own "email (Org Name)" format — prefer the org for a short card title.
+        // label은 자체 "email (Org Name)" 형식 — 짧은 카드 title로 org 우선.
         if label.hasSuffix(")"), let open = label.lastIndex(of: "(") {
             let org = label[label.index(after: open)..<label.index(before: label.endIndex)]
                 .trimmingCharacters(in: .whitespaces)
@@ -98,19 +86,16 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
         return "\(family.capitalized) — \(label)"
     }
 
-    /// THE name resolver — the single place a rename becomes a card title. Everything that shows a
-    /// card name to a human resolves through this at render time (directly or via
-    /// `AppContainer.displayName(for:)`); `Provider.displayName` only ever carries the derived
-    /// default.
+    /// THE name resolver — rename이 카드 title이 되는 유일한 지점. 카드 이름 표시는 전부 render 시점에
+    /// 여기로 해석(직접 또는 `AppContainer.displayName(for:)`); `Provider.displayName`은 derived 기본값만 보유.
     var resolvedDisplayName: String {
         customLabel?.nilIfEmpty ?? derivedDisplayName
     }
 }
 
-/// The account-first registry (`openusage.providerAccounts.v1`). Reconciled at every launch from the
-/// default-home identity reads and the config-dir scan; authoritative from day one — there is no
-/// parallel card model to drift from. Extra account cards render straight from these records, and
-/// the UI observes it live for renames (`customLabel`).
+/// account-first registry(`openusage.providerAccounts.v1`) — 매 launch에 default-home identity 읽기와
+/// config-dir scan에서 reconcile. 시작부터 authoritative(drift할 병행 카드 모델 없음); extra account
+/// 카드는 이 record에서 직접 렌더, rename(`customLabel`)은 UI가 live 관찰.
 @MainActor
 @Observable
 final class ProviderAccountsStore {
@@ -133,8 +118,8 @@ final class ProviderAccountsStore {
         }
     }
 
-    /// One account observed this launch, before reconciliation assigns (or re-finds) its record id.
-    /// (Named to avoid colliding with the `Observation` module the `@Observable` macro expands into.)
+    /// 이번 launch에 관찰된 account 1건 — reconciliation이 record id를 배정(또는 재발견)하기 전 상태.
+    /// (`@Observable` macro가 확장하는 `Observation` module과의 이름 충돌 회피용 명명.)
     struct AccountObservation {
         var family: String
         var identityKey: String
@@ -142,12 +127,10 @@ final class ProviderAccountsStore {
         var sources: [ProviderAccountSource]
     }
 
-    /// Merges this launch's observations into the persisted set. Phase 1 semantics: an observation
-    /// updates its account's label and sources, or creates the record; the first account of a family
-    /// gets the bare family id, a later one mints `family@<hash8>`. Records never move or vanish here
-    /// — an account that went unobserved (logged out, unreadable identity) is simply left as it was.
-    /// When a source is observed under a different identity, however, that exact source edge is
-    /// moved off sibling records so a re-login cannot leave a stale path-to-account connection.
+    /// 이번 launch의 관찰을 persist 집합에 merge — label·sources 갱신 또는 record 생성; family의 첫 account는
+    /// bare family id, 이후는 `family@<hash8>`. record는 여기서 이동·소멸하지 않음 — 미관찰 account(로그아웃,
+    /// identity 읽기 실패)는 그대로 유지. 단 같은 source가 다른 identity로 관찰되면 그 source edge만
+    /// sibling record에서 제거 — 재로그인이 stale path-to-account 연결을 남기지 않도록.
     @discardableResult
     func reconcile(with observations: [AccountObservation]) -> [ProviderAccountRecord] {
         var updated = records
@@ -178,9 +161,8 @@ final class ProviderAccountsStore {
                 changed = true
             }
 
-            // A profile home can be re-authenticated as another account. Move only source edges
-            // observed at this launch; an unreadable or absent source must remain untouched so a
-            // transient probe failure cannot erase its last known account association.
+            // profile home은 다른 account로 재인증 가능 — 이번 launch에 관찰된 source edge만 이동.
+            // 미관찰·읽기 실패 source는 유지 — 일시적 probe 실패가 마지막 account 연결을 지우지 않도록.
             if !observedSourceKeys.isEmpty {
                 for index in updated.indices
                 where updated[index].family == observation.family
@@ -198,8 +180,8 @@ final class ProviderAccountsStore {
                 }
             }
 
-            // The default badge is exclusive per family: when this observation holds it, strip it
-            // from every sibling record (the account that swapped out no longer answers the bare id).
+            // default badge는 family당 단독 — 이 관찰이 보유하면 sibling 전부에서 제거
+            // (swap-out된 account는 더 이상 bare id에 응답하지 않음).
             if observation.sources.contains(where: \.holdsDefaultSource) {
                 for index in updated.indices
                 where updated[index].family == observation.family
@@ -223,29 +205,26 @@ final class ProviderAccountsStore {
         return records
     }
 
-    /// Source anchors are canonical paths at the observation boundary. The source kind is part of
-    /// the key so a default home and a managed profile that happen to share a path cannot move one
-    /// another's edge. Unanchored future source kinds are left untouched until they have a stable
-    /// identity for matching.
+    /// source 매칭 key — anchor는 관찰 경계에서 canonical 경로, kind 포함이라 경로가 우연히 같은 default
+    /// home과 managed profile이 서로의 edge를 이동시키지 못함. anchor 없는 future source kind는 매칭
+    /// identity가 생길 때까지 불가침.
     private static func sourceKey(_ source: ProviderAccountSource) -> String? {
         guard let anchor = source.anchor?.nilIfEmpty else { return nil }
         return "\(source.kind.rawValue)\u{1F}\(anchor)"
     }
 
-    /// The resolved card title for a card id, or `nil` when the card has no account record (a
-    /// non-account provider keeps its static `Provider.displayName`). The lookup half of the one
-    /// name resolver — see `ProviderAccountRecord.resolvedDisplayName`.
+    /// card id의 resolved 카드 title — account record 없으면 nil(비계정 provider는 정적 `Provider.displayName` 유지).
+    /// 단일 name resolver의 lookup 절반 — `ProviderAccountRecord.resolvedDisplayName` 참고.
     func resolvedDisplayName(cardID: String) -> String? {
         records.first { $0.id == cardID }?.resolvedDisplayName
     }
 
-    /// Card id → resolved title for every record — the map the CLI/API boundary applies to its
-    /// snapshots (`LocalUsageAPI.State.resolvingDisplayNames`).
+    /// 전 record의 card id → resolved title map — CLI/API boundary가 snapshot에 적용(`LocalUsageAPI.State.resolvingDisplayNames`).
     var resolvedDisplayNamesByCardID: [String: String] {
         Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.resolvedDisplayName) })
     }
 
-    /// Stores a user rename for a card; `nil` or blank clears it back to the derived name.
+    /// 카드 rename 저장 — nil·공백은 derived 이름으로 복귀.
     func rename(cardID: String, to name: String?) {
         guard let index = records.firstIndex(where: { $0.id == cardID }) else { return }
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -254,7 +233,6 @@ final class ProviderAccountsStore {
         persist()
     }
 
-    /// The record currently holding a family's default badge, if any.
     func defaultBadgeHolder(family: String) -> ProviderAccountRecord? {
         records.first { record in
             record.family == family
@@ -263,11 +241,9 @@ final class ProviderAccountsStore {
         }
     }
 
-    /// The bare family id when free (the migration-killing rule: the first account observed at the
-    /// default home IS the existing card), else an identity-derived `family@<hash8>` id. Only an
-    /// account observed at the family's DEFAULT home may claim the bare id — that id's runtime reads
-    /// the default home, so handing it to a custom-config-dir account would point the existing card
-    /// at a login it can't read.
+    /// bare family id가 비어 있으면 그것(migration-killing 규칙: default home에서 처음 관찰된 account가 기존
+    /// 카드 그 자체), 아니면 identity 파생 `family@<hash8>`. bare id는 default home 관찰 account만 획득 —
+    /// 그 id의 runtime은 default home을 읽으므로 custom-config-dir account에 주면 기존 카드가 못 읽는 로그인을 가리킴.
     private static func availableID(for observation: AccountObservation, in records: [ProviderAccountRecord]) -> String {
         let observedAtDefaultHome = observation.sources.contains { $0.kind == .defaultHome }
         if observedAtDefaultHome, !records.contains(where: { $0.id == observation.family }) {
@@ -275,7 +251,7 @@ final class ProviderAccountsStore {
         }
         let derived = ProviderAccountID.make(family: observation.family, identityKey: observation.identityKey)
         guard records.contains(where: { $0.id == derived }) else { return derived }
-        // A hash-prefix collision between two distinct identities of one family; salt until free.
+        // 한 family의 두 identity 간 hash-prefix 충돌 — 빌 때까지 salt.
         var attempt = 0
         while true {
             let salted = ProviderAccountID.make(

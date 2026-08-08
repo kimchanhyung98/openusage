@@ -1,7 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The Go cap meters: correct caps, dollar format, resets, and periods.
 final class OpenCodeUsageMapperTests: XCTestCase {
     func testMeterLinesCarryCapsFormatsResetsAndPeriods() {
         let reset = OpenUsageISO8601.date(from: "2026-07-12T13:30:00.000Z")!

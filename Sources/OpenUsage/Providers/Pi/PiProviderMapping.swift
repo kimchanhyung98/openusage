@@ -1,19 +1,10 @@
 import Foundation
 
-/// Maps a pi session log's `provider` field to the OpenUsage provider whose card its usage belongs on.
-/// Pi is a BYO-key agent that drives other providers' models, so its usage is attributed back to the
-/// underlying provider (a Claude sub used inside pi lands on the Claude card) rather than shown on a
-/// card of its own.
-///
-/// Only providers OpenUsage already has a card for are listed. Pi providers with no OpenUsage
-/// equivalent are intentionally absent and left for future work:
-/// - `nvidia-nim` — no OpenUsage card.
-///
-/// Mapped here but not yet consumed (only Claude and Codex read the pi slice today; the rest have no
-/// local usage-trend card to fold into, or use a different spend path): `cursor` (Cursor's trend is
-/// built from its CSV export), `zai`/`zhipu`, `google-antigravity`, `github-copilot`.
+/// pi session 로그의 `provider` 필드를 usage가 귀속될 OpenUsage provider 카드로 매핑.
+/// pi는 다른 provider 모델을 구동하는 BYO-key agent — usage는 자체 카드가 아닌 기반 provider(pi 안의 Claude sub는 Claude 카드)로 귀속.
+/// OpenUsage 카드가 있는 provider만 나열(`nvidia-nim` 등은 의도적 부재). 매핑만 되고 아직 미소비: `cursor`(CSV 기반 trend), `zai`/`zhipu`, `google-antigravity`, `github-copilot` — 현재 pi slice는 Claude·Codex만 읽음.
 enum PiProviderMapping {
-    /// pi `provider` value → OpenUsage `Provider.id`.
+    /// pi `provider` 값 → OpenUsage `Provider.id`.
     static let providerToCard: [String: String] = [
         "anthropic": "claude",
         "claude-agent-sdk": "claude",
@@ -25,7 +16,6 @@ enum PiProviderMapping {
         "github-copilot": "copilot"
     ]
 
-    /// The OpenUsage card id for a pi provider, or nil when pi used a provider OpenUsage doesn't track.
     static func cardID(forPiProvider provider: String) -> String? {
         providerToCard[provider]
     }

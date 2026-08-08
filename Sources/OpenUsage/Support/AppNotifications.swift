@@ -2,23 +2,17 @@ import AppKit
 import Foundation
 import UserNotifications
 
-/// The single entry point for posting macOS user notifications. Quota alerts go through `post`;
-/// authorization is requested when the user first enables a trigger (all default off), while `post`
-/// also checks authorization before delivery.
-///
-/// Authorization is memoized in one `Task<Bool, Never>`: the first caller reads the current settings,
-/// short-circuits an already-authorized or already-denied state, and otherwise requests it; every later
-/// caller awaits the same task rather than re-prompting. The class is the notification-center delegate so
-/// banners still show while the app is frontmost (a menu-bar accessory usually is).
+/// macOS 사용자 알림 게시의 단일 진입점.
+/// authorization은 `Task<Bool, Never>` 하나로 memoize — 최초 호출만 요청하고 이후 호출은 같은 task를 await.
+/// notification-center delegate를 겸해 앱이 frontmost일 때도 배너 표시.
 @MainActor
 final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AppNotifications()
 
-    /// Injectable so tests can supply a fake center and assert what got scheduled. Production returns
-    /// the system `current()` center.
+    /// 테스트에서 fake center 주입용; production은 시스템 `current()` 반환.
     private let centerProvider: @Sendable () -> UNUserNotificationCenter
 
-    /// Memoized authorization request — created on first use, awaited by everyone after.
+    /// memoize된 authorization 요청 — 최초 사용 시 생성, 이후 호출은 모두 await.
     private var authorizationTask: Task<Bool, Never>?
 
     init(centerProvider: @escaping @Sendable () -> UNUserNotificationCenter = { UNUserNotificationCenter.current() }) {
@@ -26,31 +20,25 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         super.init()
     }
 
-    /// True while running inside the XCTest harness, so a unit test never actually schedules a system
-    /// notification or trips the authorization prompt. (No XCTest symbol is linked into the app target,
-    /// so this is a runtime class lookup.)
+    /// XCTest harness 실행 여부 — 단위 테스트가 실제 알림 예약이나 authorization prompt를 유발하지 않게 하는 가드.
+    /// 앱 타깃에 XCTest 심벌이 링크되지 않으므로 runtime class lookup 사용.
     static var isRunningUnderTests: Bool {
         NSClassFromString("XCTestCase") != nil
     }
 
-    /// Make this object the delegate at launch so banners can display while the app is frontmost. A
-    /// no-op under tests; authorization remains on demand.
+    /// 앱이 frontmost여도 배너가 표시되도록 launch 시 delegate 등록. 테스트에서는 no-op.
     func registerAsDelegate() {
         guard !Self.isRunningUnderTests else { return }
         centerProvider().delegate = self
     }
 
-    /// Request notification authorization. Called when the first trigger is enabled and from the
-    /// Settings "Allow Notifications" button when permission is still not determined. Memoized, so
-    /// repeated calls don't re-prompt — macOS won't re-show the banner once the user has answered anyway.
+    /// 알림 authorization 요청. memoize되어 반복 호출해도 재프롬프트 없음.
     @discardableResult
     func requestAuthorization() -> Task<Bool, Never> {
         ensureAuthorization()
     }
 
-    /// Open System Settings → Notifications so the user can re-enable alerts for OpenUsage after a
-    /// macOS-level denial (the app can't re-prompt once the system has cached a decision). No-op under
-    /// tests.
+    /// macOS 수준 거부 후 사용자가 재허용할 수 있도록 System Settings → Notifications 열기. 테스트에서는 no-op.
     func openSystemNotificationsSettings() {
         guard !Self.isRunningUnderTests else { return }
         if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
@@ -58,20 +46,13 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Post one immediate notification. `idPrefix` names the source (e.g. a metric key) for the log line;
-    /// the actual identifier is made unique so repeated alerts on the same metric don't coalesce. `title`
-    /// is the alert headline, `subtitle` carries provider + metric, and `body` is the verdict. Returns
-    /// whether it was actually delivered — false under tests, when not authorized, or when scheduling
-    /// errors, so the caller can leave the milestone un-marked and retry. A cached denial is re-checked
-    /// live so a user re-enabling notifications in System Settings doesn't have to restart the app to
-    /// receive alerts.
+    /// 즉시 알림 1건 게시. identifier는 매번 고유해 같은 metric의 반복 알림이 coalesce되지 않음.
+    /// 실제 전달 여부 반환(테스트·미허가·예약 실패 시 false) — 호출자가 milestone을 미기록으로 남기고 재시도 가능.
     func post(idPrefix: String, title: String, subtitle: String, body: String, soundEnabled: Bool = true) async -> Bool {
         guard !Self.isRunningUnderTests else { return false }
         var authorized = await ensureAuthorization().value
         if !authorized {
-            // A cached denial may be stale — the user can re-enable notifications in System Settings
-            // at any time. Re-read the live status; if it's now authorized, refresh the cache and
-            // proceed instead of skipping delivery until an app restart.
+            // 캐시된 거부는 stale일 수 있으므로 live 상태 재확인 — System Settings 재허용이 재시작 없이 반영됨.
             let status = await centerProvider().notificationSettings().authorizationStatus
             switch status {
             case .authorized, .provisional, .ephemeral:
@@ -86,9 +67,7 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         content.title = title
         content.subtitle = subtitle
         content.body = body
-        // Group all OpenUsage alerts into one stacked thread so simultaneous alerts (e.g. a metric
-        // that fires two milestones at once) collapse into a single banner with a "N more" summary
-        // instead of separate banners.
+        // 동시 알림이 개별 배너 대신 "N more" 요약 하나로 묶이도록 단일 thread로 그룹화.
         content.threadIdentifier = "openusage"
         if soundEnabled { content.sound = .default }
         let id = "openusage-\(idPrefix)-\(UUID().uuidString)"
@@ -105,8 +84,8 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - Authorization
 
-    /// The shared authorization task, created on first call. Reads current settings, short-circuits a
-    /// resolved (authorized/denied) state, and otherwise requests alert + sound permission.
+    /// 최초 호출 시 생성되는 공유 authorization task. 확정 상태(authorized/denied)는 short-circuit,
+    /// notDetermined일 때만 alert + sound 권한 요청.
     private func ensureAuthorization() -> Task<Bool, Never> {
         if let authorizationTask { return authorizationTask }
         let center = centerProvider()
@@ -135,8 +114,7 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         return task
     }
 
-    /// Current authorization status, for the Settings screen's denied-permission notice. Returns
-    /// `.notDetermined` under tests.
+    /// Settings 화면의 거부 안내용 현재 authorization 상태. 테스트에서는 `.notDetermined` 반환.
     func authorizationStatus() async -> UNAuthorizationStatus {
         guard !Self.isRunningUnderTests else { return .notDetermined }
         return await centerProvider().notificationSettings().authorizationStatus
@@ -144,8 +122,7 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: - UNUserNotificationCenterDelegate
 
-    /// Show the banner (and play sound) even when the app is frontmost — a menu-bar accessory is
-    /// effectively always frontmost, so without this the user would never see the alert.
+    /// 앱이 frontmost여도 배너·사운드 표시 — menu-bar accessory는 사실상 항상 frontmost.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -154,7 +131,7 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// Tapping a pace alert opens the menu-bar popover so the user lands on the dashboard.
+    /// pace 알림 탭 시 menu-bar popover 열기.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,

@@ -69,8 +69,7 @@ final class DevinUsageMapperTests: XCTestCase {
 
         let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
 
-        // A present balance of zero is a real, measured value → 0, not "No data" (that's reserved
-        // for the field being absent entirely).
+        // 존재하는 0 balance는 실측값 → 0, "No data"는 필드 부재에만 사용
         XCTAssertEqual(dollars(mapped.lines, "Extra usage balance"), 0)
     }
 
@@ -87,8 +86,7 @@ final class DevinUsageMapperTests: XCTestCase {
         let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
 
         XCTAssertNil(progress(mapped.lines, "Daily quota"))
-        // The hidden daily quota fills the missing Weekly row and is still flipped from "remaining"
-        // to "used": 30% remaining -> 70% used (not passed through raw as 30).
+        // hidden daily quota가 Weekly row를 채우며 remaining→used 반전 (30% remaining → 70% used)
         XCTAssertEqual(progress(mapped.lines, "Weekly quota")?.used, 70)
         XCTAssertEqual(try XCTUnwrap(dollars(mapped.lines, "Extra usage balance")), 964.22, accuracy: 0.0001)
     }
@@ -112,7 +110,7 @@ final class DevinUsageMapperTests: XCTestCase {
         return (used, limit, resetsAt, periodDurationMs)
     }
 
-    /// The first dollar value's raw number on a `.values` line (the shape extra-usage balance now uses).
+    /// `.values` line의 첫 dollar 값 raw number
     private func dollars(_ lines: [MetricLine], _ label: String) -> Double? {
         guard case .values(_, let values, _, _, _, _) = lines.first(where: { $0.label == label }) else {
             return nil
@@ -191,8 +189,7 @@ final class DevinProviderTests: XCTestCase {
 
         XCTAssertEqual(snapshot.lines.first?.label, "Error")
         XCTAssertEqual(errorText(snapshot.lines), DevinAuthError.notLoggedIn.localizedDescription)
-        // The final fallback must carry a real telemetry category (regression: it once used the
-        // message-only factory, leaving errorCategory nil so failures bucketed as `other`).
+        // 회귀 방지: message-only factory 사용으로 errorCategory가 nil이 되어 `other`로 분류되던 문제
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
     }
 

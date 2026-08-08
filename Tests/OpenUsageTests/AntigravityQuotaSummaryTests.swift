@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the `RetrieveUserQuotaSummary` support added by the merged-pools + weekly-limits fix:
-/// the lenient summary parser and the "a parsed summary is authoritative — even empty — and never
-/// falls through to the legacy per-model endpoints" control flow on both transports.
 final class AntigravityQuotaSummaryTests: XCTestCase {
 
     // MARK: - Helpers
@@ -23,7 +20,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         return periodMs
     }
 
-    /// All four buckets, in scrambled group order, with the shapes seen in live probes.
+    /// 네 bucket 전부, group 순서 섞임 — live probe에서 관측된 형태
     private let fullGroupsJSON = """
     "groups":[
       {"displayName":"Claude and other models","buckets":[
@@ -55,8 +52,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testBucketWithoutRemainingFractionDropsItsLineOnly() {
-        // Never fabricate 0% or 100% from an absent fraction (a real-world third-party parser
-        // regression came from defaulting to "full") — the bucket's line just drops.
+        // 부재 fraction에서 0%/100% 조작 금지 ("full" 기본값 회귀) — 해당 bucket 라인만 drop
         let json = """
         {"groups":[{"buckets":[
           {"bucketId":"gemini-5h","resetTime":"2026-07-02T16:00:00Z"},
@@ -69,8 +65,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testMalformedBucketDoesNotVoidTheEnvelope() {
-        // One garbage element (not an object) and one wrong-typed fraction must not fail the whole
-        // summary into the legacy fallback — the valid bucket survives.
+        // garbage 요소·잘못된 타입 fraction이 summary 전체를 legacy fallback으로 보내지 않음 — 유효 bucket 생존
         let json = """
         {"groups":[{"buckets":[
           "junk",
@@ -92,8 +87,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testUnknownOrAbsentBucketIDIsSkippedNeverPooledByDisplayName() {
-        // A future bucket (gemini-image-5h) and an id-less bucket must never join a pool via their
-        // displayName — only the exact known bucketIds bind.
+        // 미래 bucket(gemini-image-5h)·id 없는 bucket은 displayName으로 pool 합류 금지 — 알려진 bucketId만 바인딩
         let json = """
         {"groups":[{"buckets":[
           {"bucketId":"gemini-image-5h","displayName":"Session","window":"5h","remainingFraction":0.1},
@@ -107,7 +101,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testWeeklyOnlyAndSessionOnlyShapes() {
-        // Free tier may lack the 5h buckets; Ultra may lack the weekly ones. Both are valid summaries.
+        // free tier는 5h bucket 부재 가능, Ultra는 weekly 부재 가능 — 둘 다 유효한 summary
         let weeklyOnly = """
         {"response":{"groups":[{"buckets":[
           {"bucketId":"gemini-weekly","remainingFraction":0.8},
@@ -136,8 +130,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 
     func testEmptyGroupsParseAsAuthoritativeEmptySummary() {
-        // Non-nil-but-empty means "the summary answered and there are no usable buckets" — the caller
-        // must stop there, never fall into the legacy chain that fabricates 100%-used.
+        // 비nil 빈 배열 = "summary 응답, 사용 가능한 bucket 없음" — 100%-used를 조작하는 legacy 체인 진입 금지
         XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"groups":[]}"#.utf8)), [])
         XCTAssertEqual(AntigravityUsageMapper.parseQuotaSummary(Data(#"{"response":{"groups":[]}}"#.utf8)), [])
     }
@@ -152,7 +145,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let summaryLines = AntigravityUsageMapper.parseQuotaSummary(Data("{\(fullGroupsJSON)}".utf8)) ?? []
         XCTAssertEqual(Set(summaryLines.map(\.label)), descriptorLabels)
 
-        // The legacy path emits the two 5h pool labels — a strict subset of the descriptors.
+        // legacy 경로는 5h pool 라벨 2개만 방출 — descriptor의 진부분집합
         let legacyLabels = Set(AntigravityUsageMapper.buildLines([
             AntigravityModelConfig(label: "Gemini 3 Pro", modelID: "a", remainingFraction: 1, resetTime: nil),
             AntigravityModelConfig(label: "Claude Opus", modelID: "b", remainingFraction: 1, resetTime: nil)
@@ -180,7 +173,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let routing = RoutingHTTPClient { request in
             let path = request.url.path
             if path.contains("retrieveUserQuotaSummary") {
-                // The remote endpoint returns the payload bare (no "response" wrapper).
+                // remote endpoint는 payload를 bare로 반환 ("response" wrapper 없음)
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data("{\(groupsJSON)}".utf8))
             }
             if path.contains("loadCodeAssist") {
@@ -200,10 +193,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
 
     @MainActor
     func testCloudCodeAuthoritativeEmptySummarySkipsLegacyChain() async {
-        // A 200 summary with zero usable buckets is still the answer: the provider must return a
-        // non-error snapshot with empty lines ("No data" rows) — even when the plan lookup fails —
-        // and must never call fetchAvailableModels / retrieveUserQuota, which would fabricate
-        // 100%-used meters from missing quota info.
+        // bucket 0개인 200 summary도 답 — 빈 라인의 정상 snapshot 반환, fetchAvailableModels/retrieveUserQuota 호출 금지
         let routing = RoutingHTTPClient { request in
             if request.url.path.contains("retrieveUserQuotaSummary") {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"groups":[]}"#.utf8))
@@ -237,7 +227,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let routing = RoutingHTTPClient { request in
             let path = request.url.path
             if path.hasSuffix("/RetrieveUserQuotaSummary") {
-                // The LS wraps the payload in {"response": ...}.
+                // LS는 payload를 {"response": ...}로 감쌈
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data("{\"response\":{\(groupsJSON)}}".utf8))
             }
             if path.hasSuffix("/GetUserStatus") {
@@ -254,7 +244,7 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         let provider = makeLSProvider(routing: routing)
 
         let snapshot = await provider.refresh()
-        // Summary values win — not the single 1%-used line the legacy GetUserStatus configs would pool to.
+        // summary 값이 승 — legacy GetUserStatus config가 pool할 1%-used 단일 라인 아님
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
         XCTAssertEqual(snapshot.lines.map { used($0) }, [25, 10, 60, 0])
         XCTAssertEqual(snapshot.plan, "Pro")
@@ -276,14 +266,13 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         XCTAssertTrue(snapshot.lines.isEmpty)
         XCTAssertNil(snapshot.plan)
         XCTAssertFalse(routing.requests.contains { $0.url.path.hasSuffix("/GetCommandModelConfigs") })
-        // The authoritative answer stops the probe on the first endpoint: no other LS port, and
-        // never the Cloud Code fallback.
+        // authoritative 답이 첫 endpoint에서 probe 중단 — 다른 LS port·Cloud Code fallback 없음
         XCTAssertTrue(routing.requests.allSatisfy { $0.url.host == "127.0.0.1" && $0.url.port == 52168 })
     }
 
     @MainActor
     func testLSSummary404FallsBackToLegacyMergedPools() async {
-        // Builds without the RPC 404 it; the legacy GetUserStatus flow stays the source (5h-only).
+        // RPC 없는 빌드는 404 — legacy GetUserStatus 흐름이 source 유지 (5h 전용)
         let routing = RoutingHTTPClient { request in
             let path = request.url.path
             if path.hasSuffix("/RetrieveUserQuotaSummary") {
@@ -310,16 +299,14 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     }
 }
 
-/// Returns empty output for every subprocess, so language-server discovery finds nothing and the
-/// provider deterministically exercises the Cloud Code path.
+/// 모든 subprocess에 빈 출력 반환 — LS discovery가 아무것도 못 찾아 Cloud Code 경로를 결정적으로 검증
 private struct NoProcessRunner: ProcessRunning {
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         ProcessResult(exitCode: 0, stdout: "", stderr: "")
     }
 }
 
-/// Fakes a running Antigravity `language_server` (pid 4276, one listening port 52168) so provider
-/// tests exercise the LS probe without real subprocesses.
+/// 실행 중인 Antigravity `language_server`(pid 4276, listening port 52168) fake — 실제 subprocess 없이 LS probe 검증
 private struct FakeLSProcessRunner: ProcessRunning {
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         if executable.hasSuffix("/ps") {

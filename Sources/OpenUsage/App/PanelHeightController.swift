@@ -1,8 +1,7 @@
 import AppKit
 
-/// Owns the menu-bar panel's placement and content-driven height changes. The status-item controller
-/// still owns panel creation and show/hide; this type owns only the height boundary between SwiftUI and
-/// AppKit.
+/// 메뉴 바 panel의 배치와 content 기반 높이 변경 담당.
+/// panel 생성·show/hide는 status-item controller 소유 — 이 타입은 SwiftUI–AppKit 높이 경계만 담당.
 @MainActor
 final class PanelHeightController {
     static let panelWidth: CGFloat = 320
@@ -27,8 +26,7 @@ final class PanelHeightController {
         self.currentScreen = currentScreen
     }
 
-    /// Installs the two narrow callbacks SwiftUI uses: apply one animated frame and clamp a target to
-    /// the available display height.
+    /// SwiftUI가 쓰는 두 callback 설치: 애니메이션 frame 적용, 표시 가능 높이로 clamp.
     func installBridge() {
         MenuBarPopover.applyHeight = { [weak self] height in
             self?.applyMorphHeight(height)
@@ -38,9 +36,8 @@ final class PanelHeightController {
         }
     }
 
-    /// Clears the previous session, captures the display, and opens at the remembered guess. This must
-    /// happen before SwiftUI sees the popover as shown, because that signal immediately asks the clamp
-    /// hook for this display's real maximum height.
+    /// 이전 세션 정리, display 캡처, 기억된 높이로 open.
+    /// SwiftUI가 popover 표시를 인지하기 전 실행 필수 — 그 신호가 즉시 clamp hook에 실제 최대 높이 질의.
     func prepareForOpening(below buttonRect: NSRect) {
         morphSettleTask?.cancel()
         isMorphing = false
@@ -64,13 +61,13 @@ final class PanelHeightController {
         panel.invalidateShadow()
     }
 
-    /// Saves before the caller changes screens or orders the panel out.
+    /// screen 전환·panel order-out 전 높이 저장.
     func saveBeforeClosing() {
         guard panel.isVisible else { return }
         saveHeight(panel.frame.height, for: currentScreen())
     }
 
-    /// Clears all opening-session state after the panel is ordered out.
+    /// panel order-out 후 opening 세션 상태 초기화.
     func finishClosing() {
         anchorTopLeft = nil
         anchorScreen = nil
@@ -135,7 +132,7 @@ final class PanelHeightController {
     }
 }
 
-/// Pure panel geometry, kept separate so display clamping can be tested without opening a window.
+/// 순수 panel geometry — window 없이 display clamp 테스트 가능하도록 분리.
 enum PanelGeometry {
     static let topGap: CGFloat = 4
     static let screenMargin: CGFloat = 8

@@ -80,9 +80,8 @@ struct GrokAuthStore: Sendable {
     }
 
     func save(_ state: GrokAuthState) throws {
-        // Refuse to overwrite a present-but-unreadable/corrupt auth.json by rebuilding it from
-        // in-memory state — that would silently drop OTHER accounts' entries. A genuinely absent file
-        // (first write) is seeded from in-memory state instead.
+        // 존재하지만 손상·비가독인 auth.json을 in-memory state로 재구성해 덮어쓰기 금지 — 다른 계정 entry가 소실됨
+        // 파일이 아예 없는 최초 쓰기만 in-memory state로 seed
         var authObject: [String: Any]
         if files.exists(Self.authPath) {
             guard let existingText = try? files.readText(Self.authPath),
@@ -178,8 +177,7 @@ struct GrokAuthStore: Sendable {
     }
 
     private static func jsonObject(from auth: [String: GrokAuthEntry]) throws -> [String: Any] {
-        // Throw rather than returning `[:]` on failure: an empty base would make save() write a file
-        // containing only the current entry, destroying every other account's credentials.
+        // 실패 시 `[:]` 반환 대신 throw — 빈 base면 save()가 현재 entry만 남긴 파일을 써서 다른 계정 credential이 파괴됨
         let data = try JSONEncoder().encode(auth)
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw GrokAuthError.invalidAuth

@@ -1,12 +1,7 @@
 import AppKit
 
-/// Presents the standard macOS About panel for the footer menu's "About OpenUsage" item.
-///
-/// As a menu-bar accessory app, OpenUsage is not the active app while the popover is showing, so the
-/// app is activated first — otherwise the panel would open behind whatever app currently owns the
-/// foreground. The panel pulls the app icon, name, and version (`CFBundleShortVersionString` — the
-/// same string `AppInfo.version` surfaces in the footer) straight from the bundle; we only supply the
-/// credits line, naming the maintainers and linking the GitHub repo.
+/// Footer 메뉴 "About OpenUsage" 항목용 표준 macOS About 패널 표시.
+/// menu-bar accessory 특성상 앱을 먼저 activate하지 않으면 패널이 전면 앱 뒤에 열림.
 enum AboutPanel {
     @MainActor
     static func present() {
@@ -14,8 +9,7 @@ enum AboutPanel {
         NSApplication.shared.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
-    /// Centered, secondary-styled credits with the same two links as the rest of the app: the author's
-    /// page and the GitHub repo. The standard panel renders `.link`-attributed runs as clickable.
+    /// 가운데 정렬 secondary 스타일 credits. 표준 패널은 `.link` attribute run을 클릭 가능하게 렌더링함.
     private static var credits: NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .center

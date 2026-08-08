@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the menu-bar pin model on `LayoutStore`: the ≤2-per-provider rendering cap, denial
-/// reasons/notices, order derivation from the Customize order,
-/// disabled-provider handling, and persistence across relaunch.
 @MainActor
 final class MenuBarPinTests: XCTestCase {
     func testNoPinsByDefault() {
@@ -38,7 +35,7 @@ final class MenuBarPinTests: XCTestCase {
         XCTAssertFalse(store.isPinned("a.m3"))
         XCTAssertEqual(store.pinnedCount(forProvider: "a"), 2)
 
-        // An already-pinned id stays pinnable so its toggle can still unpin it.
+        // 이미 pin된 id는 unpin 토글이 가능하도록 pinnable 유지
         XCTAssertTrue(store.canPin("a.m1"))
     }
 
@@ -63,8 +60,7 @@ final class MenuBarPinTests: XCTestCase {
 
         XCTAssertNil(store.pinDenialReason("b.m1"))
 
-        // A denied click surfaces the reason as the transient footer notice and bumps the shake
-        // trigger every time, so repeat clicks re-shake even while the text is unchanged.
+        // 거부 클릭은 footer notice 표시 + 매번 shake trigger 증가 — 동일 문구에서도 재shake
         XCTAssertNil(store.pinLimitNotice)
         XCTAssertEqual(store.pinNoticeShakeTrigger, 0)
         store.notePinDenied("a.m3")
@@ -86,7 +82,7 @@ final class MenuBarPinTests: XCTestCase {
 
     func testPinnedGroupsFollowCustomizeOrder() {
         let store = makeStore("order")
-        // Pin out of order; expect provider order (a before b) and metric order (m1 before m2).
+        // 순서 뒤섞어 pin — 결과는 provider 순서(a→b)와 metric 순서(m1→m2)
         store.setPinned(true, for: "b.m2")
         store.setPinned(true, for: "a.m2")
         store.setPinned(true, for: "a.m1")
@@ -106,7 +102,7 @@ final class MenuBarPinTests: XCTestCase {
         store.setPinned(true, for: "b.m1")
 
         XCTAssertEqual(store.pinnedGroups.map(\.provider.id), ["b"])
-        XCTAssertTrue(store.isPinned("a.m1"))  // membership preserved while hidden
+        XCTAssertTrue(store.isPinned("a.m1"))  // 숨겨진 동안에도 membership 유지
     }
 
     func testResetToDefaultClearsPins() {
@@ -140,7 +136,7 @@ final class MenuBarPinTests: XCTestCase {
         LayoutStore(registry: makeRegistry(), defaults: makeDefaults(name), storageKey: "layout")
     }
 
-    /// Four providers (a, b, c, d), each with three percent metrics m1/m2/m3, in registry order.
+    /// provider 4개(a~d) × percent metric 3개(m1~m3), registry 순서 고정
     private func makeRegistry() -> WidgetRegistry {
         let providers = ["a", "b", "c", "d"].map { id in
             Provider(id: id, displayName: id.uppercased(), icon: .providerMark("cursor"))

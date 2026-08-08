@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// The Add Account flow. Pressing **Add Account** is the consent to start: with a signed-in
-/// default and no registered profile the current login is imported without any re-login; otherwise
-/// the official provider login runs — in the profile's app-owned Sign-In Workspace for an
-/// additional account, or against the Shared Runtime Home for the very first one. No paths, no
-/// copyable commands, no verification step.
+/// Add Account 흐름 — **Add Account** 클릭이 시작 동의. 첫 계정이고 signed-in 기본 로그인이 있으면 re-login 없이
+/// import, 아니면 공식 provider 로그인 실행: 추가 계정은 app 소유 Sign-In Workspace에서, 첫 계정은
+/// Shared Runtime Home 대상.
 struct AccountAddSheet: View {
     let initialFamily: String
     let onCompleted: () -> Void
@@ -110,7 +108,7 @@ struct AccountAddSheet: View {
         let family = family
         let importer = AccountCredentialImporter()
 
-        // A signed-in default with no registered profile imports directly — no re-login.
+        // 등록 profile 없는 signed-in 기본 계정은 re-login 없이 직접 import.
         if isFirstAccount {
             do {
                 if let profile = try importer.importDefaultAccount(family: family, into: store) {
@@ -124,8 +122,7 @@ struct AccountAddSheet: View {
             }
         }
 
-        // No current login (first account) → official login into the Shared Runtime Home.
-        // Additional account → official login scoped to a fresh Sign-In Workspace.
+        // 첫 계정 → Shared Runtime Home으로 공식 로그인; 추가 계정 → 새 Sign-In Workspace 범위의 공식 로그인.
         let profileID = isFirstAccount ? nil : UUID().uuidString
         signInTask = Task {
             do {
@@ -155,8 +152,7 @@ struct AccountAddSheet: View {
                         phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
                         return
                     }
-                    // The new profile is registered but NOT selected: switching stays an explicit
-                    // toggle so an add can never silently change what new terminals use.
+                    // 새 profile은 등록만 하고 선택하지 않음 — add가 새 터미널의 사용 계정을 조용히 바꾸지 않게 보장.
                     _ = try importer.register(
                         credential,
                         family: family,
@@ -198,9 +194,8 @@ struct AccountAddSheet: View {
     }
 }
 
-/// The Manage sheet for one registered account: rename, re-run the official sign-in in the
-/// profile's own workspace, or remove. Only the Account Name is editable — provider, identity, and
-/// storage stay internal.
+/// 등록된 계정 하나의 Manage sheet — rename, 자기 workspace에서 공식 sign-in 재실행, 제거.
+/// Account Name만 편집 가능 — provider, identity, storage는 내부 유지.
 struct AccountProfileManagementSheet: View {
     let profile: AccountProfile
     let signInState: AccountSignInProbe.State
@@ -314,10 +309,8 @@ struct AccountProfileManagementSheet: View {
         }
     }
 
-    /// Official re-login in this profile's own Sign-In Workspace. The snapshot is replaced only
-    /// when the fresh credential proves the SAME account; a different identity changes nothing and
-    /// asks for a separate Add instead. Re-signing the active profile also refreshes the Shared
-    /// Runtime Home so new terminals pick the new credential up immediately.
+    /// profile 자신의 Sign-In Workspace에서 공식 re-login. snapshot은 새 credential이 같은 계정을 증명할 때만
+    /// 교체 — 다른 identity는 아무것도 바꾸지 않음. active profile의 re-sign-in은 Shared Runtime Home도 갱신.
     private func signInAgain() {
         isSigningIn = true
         actionError = nil
@@ -339,19 +332,17 @@ struct AccountProfileManagementSheet: View {
                 )
                 onChanged()
             } catch is CancellationError {
-                // Cancelled sheet close — nothing was changed.
+                // sheet close로 취소됨 — 변경 없음.
             } catch {
                 actionError = error.localizedDescription
             }
         }
     }
 
-    /// Removal order is fixed: app-owned workspace first, then Keychain snapshot, then the registry
-    /// tombstone. A failure at any step keeps the profile registered for a retry, and the shared
-    /// homes are never touched.
+    /// 제거 순서 고정: app 소유 workspace → Keychain snapshot → registry tombstone.
+    /// 어느 단계의 실패든 profile은 등록 유지(재시도 가능), shared home은 불변.
     private func removeAccount() {
-        // The selected profile can't be removed while another profile exists — switch first, so a
-        // switchable family never loses the row that answers for its active authentication.
+        // 다른 profile이 존재하는 동안 선택된 profile은 제거 불가 — 먼저 전환 필요.
         if store.preferredProfileID(family: profile.family) == profile.id,
            store.profiles(family: profile.family).count > 1 {
             actionError = AccountProfileError.removeSelectedProfile.userMessage

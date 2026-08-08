@@ -1,7 +1,7 @@
 import Foundation
 
-/// Private Keychain storage for the authentication snapshots used by account switching. It is an
-/// implementation detail of the app: profile metadata, logs, and UI state never contain the value.
+/// 계정 전환에 쓰이는 인증 snapshot의 전용 Keychain 저장소 — 앱 구현 세부사항.
+/// profile metadata·로그·UI 상태에 값 포함 금지.
 struct AccountCredentialVault {
     struct Entry: Codable, Equatable, Sendable {
         var credential: String
@@ -27,9 +27,7 @@ struct AccountCredentialVault {
         let value = try keychain.readGenericPasswordForCurrentUser(service: service)
             ?? keychain.readGenericPassword(service: service)
         guard let value else { return nil }
-        // `security find-generic-password -w` prints hex for non-ASCII payloads (an org name in the
-        // Claude oauthAccount is enough), so the read needs the same fallback the provider auth
-        // stores use.
+        // `security find-generic-password -w`는 non-ASCII payload를 hex로 출력 — provider auth store와 동일한 fallback 필요.
         guard let entry = ProviderParse.decodeJSONWithHexFallback(value, as: Entry.self) else {
             throw AccountCredentialVaultError.missingEntry
         }

@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the global meter-style setting: one switch (`WidgetDataStore.meterStyle`) flips every bounded
-/// tile between "used" and "left/remaining", overrides any per-descriptor sample mode, leaves unbounded
-/// tiles untouched, and persists across launches.
 @MainActor
 final class WidgetMeterStyleTests: XCTestCase {
     func testMeterStyleFlipsBoundedPercentTile() async {
@@ -76,7 +73,6 @@ final class WidgetMeterStyleTests: XCTestCase {
     }
 
     func testBoundedHeadlineWordFlipsSymmetricallyWithMeterStyle() async {
-        // The same tile must carry the mode word in BOTH modes (regression: "Used" mode had dropped it).
         let (store, descriptor) = await makeRefreshedStore(
             format: .percent,
             used: 80,
@@ -92,8 +88,6 @@ final class WidgetMeterStyleTests: XCTestCase {
     }
 
     func testGlobalModeOverridesDescriptorSampleDisplayMode() async {
-        // The descriptor sample is hardcoded to `.used`; the global store value must win on both the
-        // live-data path (resolve) and the fallback (sample) path.
         let (store, descriptor) = await makeRefreshedStore(
             format: .percent,
             used: 80,
@@ -112,9 +106,6 @@ final class WidgetMeterStyleTests: XCTestCase {
     }
 
     func testFallbackSampleShowsNoDataRegardlessOfMode() {
-        // No refresh => `data(for:)` returns the descriptor template flagged `hasData == false`. The row
-        // and menu bar must show the no-data marker, never the template's placeholder
-        // number — and flipping the global meter style can't resurrect a value that isn't there.
         let (store, descriptor) = makeStore(
             format: .percent,
             used: 80,
@@ -193,7 +184,7 @@ final class WidgetMeterStyleTests: XCTestCase {
         let store = makeEmptyStore(defaults)
         XCTAssertEqual(store.meterStyle, .used)
 
-        store.meterStyle = .remaining // triggers didSet -> persists
+        store.meterStyle = .remaining
 
         let reloaded = makeEmptyStore(defaults)
         XCTAssertEqual(reloaded.meterStyle, .remaining)

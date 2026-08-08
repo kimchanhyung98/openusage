@@ -57,7 +57,7 @@ final class CursorProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: any auth state (state DB or keychain) counts.
+        // `refresh()`와 같은 source: state DB 또는 keychain의 auth state면 충분.
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
@@ -105,7 +105,7 @@ final class CursorProvider: ProviderRuntime {
         guard let usage = ProviderParse.jsonObject(usageResponse.body) else {
             throw CursorUsageError.invalidResponse
         }
-        // The access token may have rotated during the usage fetch's refresh-and-retry; read the live one.
+        // usage fetch의 refresh-and-retry 중 access token이 rotate됐을 수 있음 — live 값 읽기.
         let currentToken = authState.accessToken ?? accessToken
 
         let (planName, planInfoUnavailable) = await fetchPlanName(accessToken: currentToken)
@@ -149,9 +149,7 @@ final class CursorProvider: ProviderRuntime {
         return snapshot(mapped, usageHistory: history)
     }
 
-    /// Strictly additive: fetch the usage CSV and append the three per-day spend tiles. Any failure
-    /// (no session, non-2xx, or undecodable body) appends nothing, so the live Cursor mapping is never
-    /// affected and the spend tiles fall back to "No data".
+    /// 엄격히 additive: usage CSV를 받아 일별 spend 타일 3개 추가. 어떤 실패(세션 없음, non-2xx, decode 불가)든 아무것도 추가하지 않음 — live Cursor 매핑은 영향 없고 spend 타일은 "No data"로 fallback.
     private func appendSpendLines(to lines: inout [MetricLine], accessToken: String) async -> ProviderUsageHistory? {
         let calendar = Calendar.current
         let end = now()
@@ -243,10 +241,7 @@ final class CursorProvider: ProviderRuntime {
         guard let accessToken = (body["access_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
             return nil
         }
-        // Fail loudly, but do NOT interpolate the error: the Cursor token is persisted via a SQL
-        // statement that embeds the token, and a sqlite3 failure surfaces as stderr that could echo a
-        // fragment of that statement (JWTs aren't covered by log redaction). A generic error line keeps
-        // it loud without risking a token leak. The refreshed token still works for this session.
+        // 크게 실패하되 error 내용은 interpolate 금지: Cursor token은 token을 내장한 SQL 문으로 persist되고, sqlite3 실패의 stderr가 그 문장 조각을 노출할 수 있음(JWT는 로그 redaction 미적용). 일반 오류 한 줄로 크게 알리면서 token 유출 위험 회피. 갱신된 token은 이번 세션에 유효.
         do {
             try authStore.saveAccessToken(accessToken, source: authState.source)
         } catch {
@@ -305,9 +300,7 @@ final class CursorProvider: ProviderRuntime {
         return CursorUsageMapper.stripeBalanceCents(from: body)
     }
 
-    /// Optional endpoints enrich a usable primary snapshot; they never fail the whole provider. Keep
-    /// their boundary handling in one place so transport, preparation, status, and schema failures are
-    /// all visible with fixed, credential-free diagnostics.
+    /// optional endpoint는 사용 가능한 primary snapshot을 보강할 뿐 provider 전체를 실패시키지 않음. boundary 처리를 한곳에 모아 transport·준비·status·schema 실패가 고정된 credential-free 진단으로 노출.
     private func fetchOptionalJSONObject(
         label: String,
         request: () async throws -> HTTPResponse?

@@ -1,10 +1,8 @@
 import Foundation
 import Network
 
-/// Loopback-only HTTP/1.1 listener for the read-only usage API on `127.0.0.1:6736`. Starts with
-/// the app; when the port is already taken the feature is silently disabled for the session
-/// (matching the original app). At most 16 requests are served concurrently — beyond that a
-/// connection gets `503 {"error":"server_busy"}` immediately.
+/// `127.0.0.1:6736`의 read-only usage API용 loopback 전용 HTTP/1.1 listener — 앱과 함께 시작.
+/// port 선점 시 세션 동안 조용히 비활성(원본 앱과 동일). 동시 요청 최대 16 — 초과 연결은 즉시 `503 {"error":"server_busy"}`.
 @MainActor
 final class LocalUsageServer {
     static let port: UInt16 = 6736
@@ -37,7 +35,7 @@ final class LocalUsageServer {
 
         listener.stateUpdateHandler = { state in
             if case .failed(let error) = state {
-                // Most commonly the port is already in use — silently disable for this session.
+                // 대부분 port 선점 — 이번 세션 동안 조용히 비활성.
                 AppLog.info(.localAPI, "disabled: \(error.localizedDescription)")
             }
         }
@@ -60,8 +58,7 @@ final class LocalUsageServer {
         receiveHead(connection, buffered: Data())
     }
 
-    /// Reads until the end of the request head (`\r\n\r\n`). GET/OPTIONS bodies are irrelevant,
-    /// so the head is all the router needs.
+    /// 요청 head 끝(`\r\n\r\n`)까지 read — GET/OPTIONS body는 무관, router는 head만 필요.
     private func receiveHead(_ connection: NWConnection, buffered: Data) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: Self.headLimit) { data, _, isComplete, error in
             Task { @MainActor [weak self] in
@@ -87,16 +84,13 @@ final class LocalUsageServer {
 
     private func route(head: String) -> LocalUsageAPI.Response {
         let (method, path) = Self.parseRequestLine(head)
-        // Path is secret-free (the loopback API serves only normalized usage); Debug-only.
+        // path는 secret-free(loopback API는 정규화된 usage만 서빙) — Debug 전용.
         AppLog.debug(.localAPI, "\(method) \(path)")
         return LocalUsageAPI.respond(method: method, path: path, state: state())
     }
 
-    /// Parse the HTTP request line into `(method, path)`. Tolerates an empty/malformed head: a
-    /// request that begins with `\r\n\r\n`, or carries invalid UTF-8 (decoded to `""` at the call
-    /// site), yields no request line — which must route to a normal `404` rather than trap. The
-    /// previous `head.split(...)[0]` force-index crashed the whole `@MainActor` menu-bar process on
-    /// any such loopback payload. `nonisolated` + pure so it's unit-testable without the listener.
+    /// HTTP request line을 `(method, path)`로 파싱 — 비어 있거나 malformed head 허용.
+    /// request line 부재는 trap 대신 일반 `404`로 라우팅 — 과거 force-index가 loopback payload로 `@MainActor` 프로세스 전체를 crash. `nonisolated` + pure로 listener 없이 unit-test 가능.
     nonisolated static func parseRequestLine(_ head: String) -> (method: String, path: String) {
         guard let requestLine = head.split(separator: "\r\n", maxSplits: 1).first else {
             return ("", "/")

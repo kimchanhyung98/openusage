@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The launch account pass end to end: observer outcomes → account registry records → the per-card
-/// identity map consumed by the snapshot cache stamp and the bare-id resolver.
 @MainActor
 final class ProviderAccountAssemblyTests: XCTestCase {
     private func makeScratchDefaults() -> UserDefaults {
@@ -19,7 +17,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let observer = DefaultAccountObserver(
             environment: FakeEnvironment([:]),
             files: FakeFiles([
-                // Claude resolved at the default home; Codex has credentials that name no account.
+                // Claude는 default home에서 resolve, Codex는 계정 미표기 credential
                 "/Users/dev/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-1", "emailAddress": "dev@example.com"}}"#,
                 "/Users/dev/.codex/auth.json": #"{"tokens": {"access_token": "at-1"}}"#,
             ]),
@@ -31,12 +29,10 @@ final class ProviderAccountAssemblyTests: XCTestCase {
 
         XCTAssertEqual(assembly.identityKeysByCard, ["claude": "acct-1"])
         XCTAssertEqual(assembly.defaultHomePathsByFamily, ["claude": "/Users/dev/.claude"])
-        // The registry recorded the resolved account under the bare id, holding the default badge.
         let record = try XCTUnwrap(store.defaultBadgeHolder(family: "claude"))
         XCTAssertEqual(record.id, "claude")
         XCTAssertEqual(record.label, "dev@example.com")
         XCTAssertEqual(record.sources.map(\.kind), [.defaultHome])
-        // An unresolved family claims no account: no record, no identity key.
         XCTAssertNil(store.defaultBadgeHolder(family: "codex"))
     }
 
@@ -59,9 +55,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(assembly.identityKeysByCard["codex"], "config-codex")
     }
 
-    /// A family whose home facts aren't readable this launch (first Finder/Dock launch racing a
-    /// slow shell) is left out of the pass entirely: not observed, not reconciled — while a family
-    /// whose home override is already in the process environment still resolves.
     func testFamiliesOutsideThePassAreNeitherObservedNorReconciled() {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
@@ -128,8 +121,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(card.configDirPath, "/Users/dev/.claude-work")
         XCTAssertEqual(assembly.identityKeysByCard["claude"], "acct-1")
         XCTAssertEqual(assembly.identityKeysByCard[card.id], "acct-2")
-        // The registry recorded both: the default holder under the bare id, the extra account with
-        // its config-dir source.
         let record = try XCTUnwrap(store.records.first { $0.id == card.id })
         XCTAssertEqual(record.sources.map(\.kind), [.configDir])
         XCTAssertEqual(record.label, "work@example.com (Sunstory)")
@@ -172,7 +163,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let observer = DefaultAccountObserver(
             environment: FakeEnvironment([:]),
             files: FakeFiles([
-                // Credentials exist but the state file names no account → unresolved, footprint present.
+                // credential은 있으나 state file에 계정 미표기 → unresolved, footprint 존재
                 "/Users/dev/.claude/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-1"}}"#,
             ]),
             keychain: FakeKeychain(nil),
@@ -242,7 +233,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             subdirectories: ["/Users/dev/.claude-work"]
         )
 
-        // First pass creates the record; the user then renames it.
         let first = ProviderAccountAssembly.make(
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
@@ -256,8 +246,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             accountsStore: reloadedStore,
             claudeDiscovery: discovery
         )
-        // The baked card name stays the DERIVED default — a rename lives only in the registry and
-        // is resolved at render time, so a baked name can never be a stale copy of it.
         XCTAssertEqual(second.claudeCards.first?.displayName, cardID)
         XCTAssertEqual(reloadedStore.resolvedDisplayName(cardID: cardID), "Work Max")
     }
@@ -287,7 +275,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             files["/Users/dev/.codex/auth.json"] =
                 #"{"tokens": {"access_token": "at-1", "account_id": "\#(accountID)"}}"#
         } else {
-            // A login footprint that names no account → `.unresolved`.
+            // 계정 미표기 login footprint → `.unresolved`
             files["/Users/dev/.codex/auth.json"] = #"{"tokens": {"access_token": "at-1"}}"#
         }
         return DefaultAccountObserver(
@@ -298,38 +286,28 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
     }
 
-    /// Default-home login swap: the moved-out account keeps its record id (badge and source edge
-    /// gone), the new account mints `codex@hash8` and takes the badge — and the parked bare record
-    /// renders no card until Phase 4 swap support.
     func testDefaultHomeSwapKeepsRecordsAndParksTheMovedOutAccount() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
 
-        // Launch 1: account A holds the default home.
         _ = ProviderAccountAssembly.make(
             observer: makeCodexObserver(accountID: "CODEX-A"),
             accountsStore: store
         )
         XCTAssertEqual(store.defaultBadgeHolder(family: "codex")?.id, "codex")
 
-        // Launch 2: account B holds the default home.
         let second = ProviderAccountAssembly.make(
             observer: makeCodexObserver(accountID: "CODEX-B"),
             accountsStore: store
         )
 
-        // A's record survives under the bare id; the default-home source edge moved to B.
         let recordA = try XCTUnwrap(store.records.first { $0.identityKey == "codex-a" })
         XCTAssertEqual(recordA.id, "codex")
         XCTAssertTrue(recordA.sources.isEmpty)
-        // B mints a hashed id and takes the default badge.
         let recordB = try XCTUnwrap(store.records.first { $0.identityKey == "codex-b" })
         XCTAssertTrue(recordB.id.hasPrefix("codex@"))
         XCTAssertTrue(recordB.sources.contains(where: \.holdsDefaultSource))
         XCTAssertEqual(store.defaultBadgeHolder(family: "codex")?.id, recordB.id)
-        // The default card is stamped with the account actually holding the default home — note
-        // the bare id now names B's key even though A's record still holds it; that divergence is
-        // exactly what Phase 4 re-points.
         XCTAssertEqual(second.identityKeysByCard["codex"], "codex-b")
     }
 
@@ -366,10 +344,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(assembly.identityKeysByCard[card.id], "acct-1")
     }
 
-    /// A profile whose account is already visible through a home-backed card this launch (here:
-    /// the default home) must not render a duplicate snapshot card. The SELECTED profile is the
-    /// mirror case: the shared home serves a different account, so without its own snapshot card it
-    /// would vanish from the dashboard entirely.
     func testSnapshotCardIsSuppressedWhenTheAccountAlreadyHasAHomeBackedCard() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)

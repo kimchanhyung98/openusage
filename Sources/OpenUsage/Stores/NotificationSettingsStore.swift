@@ -1,12 +1,8 @@
 import Foundation
 import Observation
 
-/// User preferences for quota pace notifications: the three per-milestone triggers (no master switch —
-/// turn all three off to silence). All default OFF; the app requests notification authorization the
-/// first time a trigger is turned on, so a fresh install stays quiet until the user opts in.
-///
-/// Persisted in `UserDefaults` (each key independently, with an unset key defaulting to `false`).
-/// `@Observable` lets the Settings toggles and `WidgetDataStore` evaluation read live values.
+/// quota pace 알림 사용자 설정 — milestone별 trigger 3종, master switch 없음 (셋 다 꺼야 무음)
+/// 전부 기본 OFF — 첫 trigger on 시점에 알림 권한 요청, 신규 설치는 opt-in 전까지 조용함
 @MainActor
 @Observable
 final class NotificationSettingsStore {
@@ -16,17 +12,17 @@ final class NotificationSettingsStore {
     private static let healthyToCloseKey = "openusage.notifications.healthyToClose"
     private static let closeToRunningOutKey = "openusage.notifications.closeToRunningOut"
 
-    /// Alert the first time a metric drops under 10% remaining for the period.
+    /// 기간 내 잔여 10% 미만 최초 진입 시 알림
     var underTenPercent: Bool {
         didSet { defaults.set(underTenPercent, forKey: Self.underTenKey) }
     }
 
-    /// Alert when pace worsens from healthy (blue) to close-to-limit (yellow).
+    /// pace가 healthy(파랑)에서 close-to-limit(노랑)로 악화 시 알림
     var healthyToClose: Bool {
         didSet { defaults.set(healthyToClose, forKey: Self.healthyToCloseKey) }
     }
 
-    /// Alert when pace worsens from close-to-limit (yellow) to running-out (red).
+    /// pace가 close-to-limit(노랑)에서 running-out(빨강)로 악화 시 알림
     var closeToRunningOut: Bool {
         didSet { defaults.set(closeToRunningOut, forKey: Self.closeToRunningOutKey) }
     }
@@ -38,7 +34,7 @@ final class NotificationSettingsStore {
         self.closeToRunningOut = defaults.bool(forKey: Self.closeToRunningOutKey, default: false)
     }
 
-    /// The per-milestone toggles as the pure logic consumes them.
+    /// 순수 logic이 소비하는 형태의 milestone toggle 묶음
     var toggles: PaceNotificationToggles {
         PaceNotificationToggles(
             underTenPercent: underTenPercent,
@@ -47,8 +43,6 @@ final class NotificationSettingsStore {
         )
     }
 
-    /// True when at least one trigger is on — used to decide whether to request authorization (when the
-    /// first trigger is turned on) and whether the Settings permission notice should show. Turning all
-    /// three off silences everything.
+    /// trigger 하나 이상 on 여부 — 권한 요청 시점과 Settings 권한 notice 표시 판단에 사용
     var anyEnabled: Bool { underTenPercent || healthyToClose || closeToRunningOut }
 }

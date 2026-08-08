@@ -1,26 +1,18 @@
 import Foundation
 
 extension Bundle {
-    /// The bundle carrying OpenUsage's copied resources (provider SVGs, pricing supplement + snapshots).
-    ///
-    /// SwiftPM generates `Bundle.module` for an executable target that only looks two places: next to
-    /// `Bundle.main.bundleURL` (which, for a packaged `.app`, is the app root) and a path into the build
-    /// tree baked in at compile time. Neither resolves in a shipped `.app`, where the resource bundle
-    /// lives in `Contents/Resources` — so `Bundle.module` hits its `fatalError` and the app crashes on
-    /// launch. (A locally built app appears to work only because the baked-in build path still exists on
-    /// the build machine.)
-    ///
-    /// This accessor looks where the resource bundle actually ships first, and only falls back to
-    /// `Bundle.module` for `swift run` / `swift test`, where the build path is valid.
+    /// OpenUsage의 복사된 리소스(provider SVG, pricing supplement + snapshot)를 담은 bundle.
+    /// `Bundle.module`은 packaged `.app`의 `Contents/Resources`를 못 찾아 launch crash — 실제 배포 위치를 먼저 탐색하고
+    /// `swift run`/`swift test`에서만 `Bundle.module`로 fallback.
     static let openUsageResources: Bundle = {
         let bundleName = "OpenUsage_OpenUsage.bundle"
         let containingAppResources = Bundle.main.executableURL
             .flatMap(ContainingAppBundle.url(for:))?
             .appendingPathComponent("Contents/Resources", isDirectory: true)
         let searchBases: [URL?] = [
-            Bundle.main.resourceURL,                          // packaged .app: Contents/Resources
-            Bundle.main.bundleURL,                            // bundle beside the app root
-            containingAppResources,                          // bundled CLI: helper -> app Resources
+            Bundle.main.resourceURL,                          // packaged .app의 Contents/Resources
+            Bundle.main.bundleURL,                            // 앱 루트 옆 bundle
+            containingAppResources,                          // 번들된 CLI: helper → 앱 Resources
             Bundle(for: ResourceBundleToken.self).resourceURL,
             Bundle(for: ResourceBundleToken.self).bundleURL
         ]
@@ -29,19 +21,15 @@ extension Bundle {
             if isValidOpenUsageResourceBundle(bundle) {
                 return bundle
             }
-            // `Bundle(url:)` succeeds for ANY directory at the path, not only a real resources bundle.
-            // A stale/empty same-named directory left by an earlier build would otherwise shadow the
-            // real one and make every resource URL nil (SF-Symbol icon fallbacks + a thrown Cursor
-            // manifest). Skip it loudly and keep searching the remaining bases.
+            // `Bundle(url:)`은 경로의 아무 디렉터리에서나 성공 — 이전 빌드가 남긴 stale/빈 동명 디렉터리가 실제 bundle을 가리지 않도록 크게 알리고 계속 탐색.
             AppLog.warn(.config, "ignoring resource bundle at \(base.lastPathComponent): missing expected resources")
         }
         return .module
     }()
 }
 
-/// Sentinel check: a valid OpenUsage resource bundle carries the bundled pricing supplement at its
-/// root (`.copy("Resources/pricing_supplement.json")`). Uses the same lookup the pricing store relies
-/// on, so it can never reject the real shipped bundle.
+/// sentinel 검사 — 유효한 OpenUsage 리소스 bundle은 루트에 pricing supplement 보유.
+/// pricing store와 같은 lookup을 사용해 실제 배포 bundle을 거부할 수 없음.
 private func isValidOpenUsageResourceBundle(_ bundle: Bundle) -> Bool {
     bundle.url(forResource: "pricing_supplement", withExtension: "json") != nil
 }

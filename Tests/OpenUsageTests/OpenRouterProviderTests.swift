@@ -3,7 +3,7 @@ import XCTest
 
 final class OpenRouterAuthStoreTests: XCTestCase {
     func testPrefersConfigFileOverEnvironment() {
-        // Config file wins so editing it to rotate the key isn't shadowed by a stale env value.
+        // config file 우선 — key 교체가 stale env 값에 가려지지 않도록
         let store = OpenRouterAuthStore(
             files: FakeFiles([OpenRouterAuthStore.configPaths[0]: #"{"apiKey":"sk-or-file"}"#]),
             environment: FakeEnvironment(["OPENROUTER_API_KEY": "sk-or-env"])
@@ -67,7 +67,7 @@ final class OpenRouterAuthStoreTests: XCTestCase {
 
         try store.saveAPIKey("  sk-or-new  ")
 
-        // Sorted-keys JSON, trimmed key — the exact bytes the auth store round-trips.
+        // sorted-keys JSON + trimmed key — auth store가 round-trip하는 바이트 그대로
         XCTAssertEqual(files.files[OpenRouterAuthStore.configPaths[0]], #"{"apiKey":"sk-or-new"}"#)
         XCTAssertEqual(store.loadAPIKey()?.apiKey, "sk-or-new")
     }
@@ -83,8 +83,7 @@ final class OpenRouterAuthStoreTests: XCTestCase {
     }
 
     func testSavedKeyOverridesEnvironment() throws {
-        // Saving writes the config file, which the auth store checks before the env var — so the
-        // saved key wins and the status reports overrideActive.
+        // 저장된 config file이 env var보다 우선 — status는 overrideActive
         let files = FakeFiles()
         let store = OpenRouterAuthStore(files: files, environment: FakeEnvironment(["OPENROUTER_API_KEY": "sk-or-env"]))
 
@@ -105,8 +104,7 @@ final class OpenRouterAuthStoreTests: XCTestCase {
     }
 
     func testKeyStatusOverrideActiveEvenWhenKeysMatch() {
-        // A saved key plus an env key is an override regardless of whether the values match — config
-        // wins, so the saved source is the one in use. (Same key in two places still reads Custom.)
+        // 값이 같아도 saved + env 조합은 override — config 우선
         let store = OpenRouterAuthStore(
             files: FakeFiles([OpenRouterAuthStore.configPaths[0]: #"{"apiKey":"sk-or-same"}"#]),
             environment: FakeEnvironment(["OPENROUTER_API_KEY": "sk-or-same"])
@@ -146,15 +144,14 @@ final class OpenRouterAuthStoreTests: XCTestCase {
     }
 
     func testDeleteAPIKeyIsNoOpWhenFileMissing() throws {
-        // Removing a key that isn't there is the desired end state, not an error.
+        // 없는 key 삭제는 목표 상태 달성 — error 아님
         let store = OpenRouterAuthStore(files: FakeFiles(), environment: FakeEnvironment())
         XCTAssertNoThrow(try store.deleteAPIKey())
         XCTAssertEqual(store.keyStatus(), .notSet)
     }
 
     func testDeleteAPIKeyClearsAllConfigPaths() throws {
-        // A key in the alternate config path must also be cleared, or it resurfaces after the primary
-        // file is deleted and the Settings "clear" appears not to work.
+        // alternate config path의 key도 함께 삭제 — 남으면 clear가 동작하지 않는 것처럼 보임
         let files = FakeFiles([
             OpenRouterAuthStore.configPaths[0]: #"{"apiKey":"sk-or-primary"}"#,
             OpenRouterAuthStore.configPaths[1]: "sk-or-alt"
@@ -198,7 +195,7 @@ final class OpenRouterUsageMapperTests: XCTestCase {
         let lines = OpenRouterUsageMapper.creditsLines(from: ["total_credits": 0, "total_usage": 0])
 
         XCTAssertNil(progress(lines, "Credits"))
-        // Balance is still shown as a real, measured zero — not "No data".
+        // Balance는 실측 0으로 표시 — "No data" 아님
         XCTAssertEqual(dollars(lines, "Balance"), 0)
     }
 
@@ -213,7 +210,7 @@ final class OpenRouterUsageMapperTests: XCTestCase {
         ])
 
         XCTAssertEqual(mapped.plan, "Pay as you go")
-        // A real, measured zero is shown — not collapsed to "No data".
+        // 실측 0 표시 — "No data"로 축약 금지
         XCTAssertEqual(dollars(mapped.lines, "Today"), 0)
         XCTAssertEqual(dollars(mapped.lines, "This Week"), 1.25)
         XCTAssertEqual(dollars(mapped.lines, "This Month"), 4.5)
@@ -286,7 +283,7 @@ final class OpenRouterProviderTests: XCTestCase {
     }
 
     func testRefreshShowsKeyDataWhenCreditsForbidden() async {
-        // If `/credits` is gated (403) but `/key` succeeds, still show the spend rows rather than erroring.
+        // `/credits` 403이어도 `/key` 성공 시 error 대신 spend row 표시
         let provider = OpenRouterProvider(
             authStore: makeAuthStore(key: "sk-or-test"),
             usageClient: OpenRouterUsageClient(http: RoutingHTTPClient { request in
@@ -321,7 +318,7 @@ final class OpenRouterProviderTests: XCTestCase {
     }
 
     func testRefreshOnAuthFailureReportsInvalidKey() async {
-        // Both endpoints reject the key — nothing usable comes back, so it's a hard auth failure.
+        // 두 endpoint 모두 key 거부 — hard auth failure
         let provider = OpenRouterProvider(
             authStore: makeAuthStore(key: "sk-or-bad"),
             usageClient: OpenRouterUsageClient(http: RoutingHTTPClient { _ in
@@ -335,15 +332,14 @@ final class OpenRouterProviderTests: XCTestCase {
     }
 
     func testRefreshDoesNotReportInvalidKeyWhenOnlyCreditsForbidden() async {
-        // `/credits` 403 (gated for this key type) but `/key` 200 — the key is valid, just gated for
-        // credits. With no usable lines, the error must NOT be "invalid key" (it's not the key's fault).
+        // `/credits`만 403(해당 key 유형에 gated), `/key`는 200 — key는 유효하므로 invalid key 판정 금지
         let provider = OpenRouterProvider(
             authStore: makeAuthStore(key: "sk-or-test"),
             usageClient: OpenRouterUsageClient(http: RoutingHTTPClient { request in
                 if request.url.absoluteString == OpenRouterUsageClient.creditsURL {
                     return HTTPResponse(statusCode: 403, headers: [:], body: Data("{}".utf8))
                 }
-                // `/key` returns 200 but with no usable fields → no metric lines.
+                // `/key` 200이지만 usable field 없음 → metric line 없음
                 return jsonResponse(["data": [:]])
             })
         )

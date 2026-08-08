@@ -2,9 +2,7 @@ import XCTest
 @testable import OpenUsage
 
 final class ProcessRunnerTests: XCTestCase {
-    /// Regression: a child whose output exceeds the ~64KB OS pipe buffer must not deadlock. Before the
-    /// pipes were drained concurrently, this blocked the child on write, so it never exited and tripped
-    /// the timeout. (`ps -ax -o command=` — used by language-server discovery — is ~240KB.)
+    /// OS pipe buffer(~64KB) 초과 출력을 동시 drain해 child write deadlock 방지
     func testLargeStdoutDoesNotDeadlock() throws {
         let runner = SystemProcessRunner()
         let result = try runner.run(

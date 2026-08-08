@@ -1,13 +1,9 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the daily-rollup/dedup contract of `TelemetryRecorder`: the 5-minute refresh timer produces
-/// ~1,440 outcomes/user/day, so the recorder must collapse them into at most one event per provider
-/// per day (and one `app_daily_active` per day), drop cache/skip/backoff noise, classify errors, and
-/// stop entirely when the user opts out.
 @MainActor
 final class TelemetryRecorderTests: XCTestCase {
-    /// Records captured events without touching PostHog.
+    /// PostHog 미접촉 event 기록용 sink
     private final class FakeSink: TelemetrySink {
         var events: [(name: String, properties: [String: Any])] = []
         var enabledCalls: [Bool] = []
@@ -34,7 +30,6 @@ final class TelemetryRecorderTests: XCTestCase {
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
 
-        // Day 25: real fetches plus timer noise that must be ignored.
         recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
         recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: true)
         recorder.record(providerID: "claude", outcome: .failed, category: .network, manual: false)
@@ -44,10 +39,8 @@ final class TelemetryRecorderTests: XCTestCase {
         recorder.record(providerID: "claude", outcome: .skipped, category: nil, manual: false)
         recorder.record(providerID: "claude", outcome: .backedOff, category: nil, manual: false)
 
-        // Same day → nothing emitted yet (it's still accumulating).
         XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
 
-        // New day → the first record rolls day 25's complete totals into one event.
         clock = day(26)
         recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
 
@@ -77,7 +70,7 @@ final class TelemetryRecorderTests: XCTestCase {
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
 
         recorder.tick()
-        recorder.tick() // same day → must not emit twice
+        recorder.tick()
 
         let active = sink.events(named: "app_daily_active")
         XCTAssertEqual(active.count, 1)
@@ -88,7 +81,7 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertEqual(active[0]["menu_bar_style"] as? String, "text")
 
         clock = day(26)
-        recorder.tick() // new day → emit again
+        recorder.tick()
         XCTAssertEqual(sink.events(named: "app_daily_active").count, 2)
     }
 
@@ -100,7 +93,6 @@ final class TelemetryRecorderTests: XCTestCase {
 
         recorder.record(providerID: "grok", outcome: .refreshed, category: nil, manual: false)
 
-        // A new day with no further grok outcomes: the tick sweep must still emit day 25's rollup.
         clock = day(26)
         recorder.tick()
 
@@ -177,7 +169,7 @@ final class TelemetryRecorderTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Local noon on 2026-06-`d`, matching the recorder's local-calendar day boundary.
+    /// 2026-06-`d` 현지 정오 — recorder의 local-calendar 일 경계와 일치
     private func day(_ d: Int) -> Date {
         var c = DateComponents()
         c.year = 2026; c.month = 6; c.day = d; c.hour = 12

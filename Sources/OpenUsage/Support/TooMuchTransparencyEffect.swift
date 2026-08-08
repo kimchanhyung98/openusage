@@ -1,23 +1,15 @@
 import SwiftUI
 
 extension View {
-    /// The "too much transparency" easter-egg treatment, applied as one stable modifier so enabling and
-    /// disabling **crossfade** (a ~0.55s ease) instead of snapping.
-    ///
-    /// - `.party`: the secret code's main state — a loud but **readable** party. A vivid churning
-    ///   gradient fills the popover behind the content and a glowing rim rotates around the edge, while
-    ///   the content stays crisp on frosted cards (no blur over text). Meter bars and provider marks join
-    ///   in via the `popoverPartyMode` environment flag.
-    /// - `.drunk`: the "Drunk Mode" escalation — properly tipsy: the deliberately barely-readable
-    ///   pink-glass chaos layered *over* the content (blur, pink wash, a woozy sway) with the window
-    ///   going see-through.
-    /// - `.opaque` / `.increased`: nothing — just the normal look.
+    /// "too much transparency" easter-egg 처리 — 안정된 modifier 하나로 적용되어 on/off가 snap 대신 ~0.55s crossfade.
+    /// `.party`는 읽을 수 있는 파티(콘텐츠는 frosted 카드 위에 선명), `.drunk`는 의도적으로 겨우 읽히는 pink-glass 혼돈,
+    /// `.opaque`/`.increased`는 효과 없음.
     func tooMuchTransparency(_ style: PopoverTransparencyStyle) -> some View {
         modifier(TooMuchTransparencyModifier(style: style))
     }
 }
 
-/// Shared party palette — a cocktail of hot pink, violet, teal, and amber.
+/// 공유 party 팔레트 — hot pink, violet, teal, amber.
 private let partyColors: [Color] = [
     Color(red: 1.00, green: 0.32, blue: 0.74),
     Color(red: 0.62, green: 0.40, blue: 1.00),
@@ -26,9 +18,8 @@ private let partyColors: [Color] = [
     Color(red: 1.00, green: 0.32, blue: 0.74),
 ]
 
-/// One stable modifier whose layers come and go by `style`. The `.animation(value:)` plus per-layer
-/// `.transition(.opacity)` is what makes toggling the egg fade in and out (the AppKit window alpha and
-/// backdrop crossfade on the same ~0.55s ease, driven by `StatusItemController`).
+/// `style`에 따라 레이어가 오가는 안정된 단일 modifier.
+/// `.animation(value:)` + 레이어별 `.transition(.opacity)`가 egg 토글의 fade를 만들고, AppKit window alpha도 같은 ease로 crossfade.
 private struct TooMuchTransparencyModifier: ViewModifier {
     let style: PopoverTransparencyStyle
 
@@ -54,22 +45,18 @@ private struct TooMuchTransparencyModifier: ViewModifier {
 
 // MARK: - Party (loud but readable)
 
-/// A vivid, slowly churning gradient that **tints** the popover, sitting behind the (frosted, readable)
-/// content. Built on the same translucent foundation as Increase Transparency: it's deliberately
-/// semi-transparent so the behind-window vibrancy backdrop — the blurred desktop — shows through and
-/// blends with the party colors, rather than an opaque wall that hides it. (A SwiftUI `blendMode` can't
-/// composite against the AppKit vibrancy view behind the host, so the desktop only blends through via
-/// alpha — hence the reduced opacity rather than a blend mode.)
+/// popover를 틴트하는 서서히 휘도는 vivid gradient — frosted 콘텐츠 뒤에 위치.
+/// 의도적 반투명 — SwiftUI `blendMode`는 AppKit vibrancy view와 합성 불가라 desktop은 alpha로만 비침.
 private struct PartyBackdrop: View {
     var body: some View {
-        // Churning clock mounts only while the popover is on-screen (see `VisibilityGatedTimeline`).
+        // churning clock은 popover가 보일 때만 mount(`VisibilityGatedTimeline` 참고).
         VisibilityGatedTimeline { t in gradient(at: t) }
     }
 
     private func gradient(at t: TimeInterval) -> some View {
         ZStack {
             AngularGradient(colors: partyColors, center: .center, angle: .degrees(t * 28))
-                .opacity(0.5)   // translucent tint, so the blurred desktop blends through the colors
+                .opacity(0.5)   // translucent 틴트 — 블러된 desktop이 색과 섞여 비침
             RadialGradient(
                 colors: [Color.white.opacity(0.15), .clear],
                 center: UnitPoint(x: 0.5 + cos(t * 0.5) * 0.3, y: 0.5 + sin(t * 0.6) * 0.3),
@@ -81,7 +68,7 @@ private struct PartyBackdrop: View {
     }
 }
 
-/// A glowing rim that rotates around the popover edge — pure party, never over the text.
+/// popover 가장자리를 도는 발광 rim — 텍스트 위로는 절대 올라오지 않음.
 private struct PartyRim: View {
     var body: some View {
         VisibilityGatedTimeline { t in rim(at: t) }
@@ -99,22 +86,14 @@ private struct PartyRim: View {
 
 // MARK: - Drunk (the woozy, barely-readable escalation)
 
-/// Blurs, hue-wobbles, and woozily sways the content — the "had one too many" part. Identity when
-/// inactive (no `TimelineView`, no effect), so it costs nothing outside the egg. While Drunk is active the
-/// sway clock is mounted only with the popover on-screen (a fresh mount on in-place activation starts it
-/// immediately, unlike the reverted `.animation(paused:)` overload); when Drunk is active but the popover
-/// is hidden it freezes the distortion at a static frame rather than dropping it, so the look doesn't snap
-/// off on close. The three branches are deliberate — collapsing active-but-hidden into the inactive branch
-/// would visibly remove the blur the instant the popover closes.
+/// 콘텐츠의 blur·hue-wobble·비틀거림 — 비활성 시 identity(`TimelineView` 없음, 비용 0).
+/// active + hidden은 static frame으로 동결 — inactive 분기로 합치면 popover가 닫히는 순간 blur가 눈에 띄게 사라짐.
 private struct DrunkDistortion: ViewModifier {
     let active: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        // Three effective states, deliberately kept distinct: active + popover shown → live distortion;
-        // active + hidden → frozen at a static frame (collapsing this into the inactive branch would
-        // visibly strip the blur the instant the popover closes); inactive → untouched content (no
-        // `TimelineView`, no cost). The shown/hidden split lives in `VisibilityGatedTimeline`.
+        // 세 상태 구분 유지: active+표시 → live, active+숨김 → static frame 동결, inactive → 원본(비용 0).
         if active {
             VisibilityGatedTimeline { t in distort(content, at: t) }
         } else {
@@ -127,13 +106,12 @@ private struct DrunkDistortion: ViewModifier {
             .saturation(1.55)
             .blur(radius: 3.6)
             .hueRotation(.degrees(sin(t * 1.1) * 16))
-            .scaleEffect(1.05 * (1 + sin(t * 1.2) * 0.018))   // over-scale hides sway gaps
-            .rotationEffect(.degrees(sin(t * 1.5) * 1.1))     // the room is spinning
+            .scaleEffect(1.05 * (1 + sin(t * 1.2) * 0.018))   // over-scale로 sway 틈 숨김
+            .rotationEffect(.degrees(sin(t * 1.5) * 1.1))     // 방이 빙빙 도는 중
     }
 }
 
-/// The pink-glass haze layered over the content: a clear-glass lens (the deliberate Liquid Glass abuse)
-/// and a slowly churning pink wash — double-vision territory.
+/// 콘텐츠 위에 겹치는 pink-glass haze — clear-glass 렌즈(의도적 Liquid Glass 남용) + 서서히 휘도는 pink wash.
 private struct DrunkOverlays: View {
     var body: some View {
         VisibilityGatedTimeline { t in haze(at: t) }

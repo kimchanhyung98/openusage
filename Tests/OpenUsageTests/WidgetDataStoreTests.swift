@@ -28,8 +28,7 @@ final class WidgetDataStoreTests: XCTestCase {
             )
         )
         let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
-        // Hermetic: pin the meter style via an isolated suite so a persisted `.used` in `.standard`
-        // can't flip the expected "remaining" output.
+        // isolated suite로 meterStyle 고정 — persisted `.used` 간섭 차단
         let store = WidgetDataStore(registry: registry, providers: [runtime], defaults: makeUserDefaults("resolve-progress"))
         store.meterStyle = .remaining
 
@@ -44,9 +43,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testSoftWarningSurfacesOnHeaderWhilePartialDataStillLoads() async {
-        // A *successful* snapshot carrying a `warning` (e.g. Claude's "Re-login for live usage" when the
-        // login lacks user:profile) surfaces as the header's amber triangle via `warningMessage(for:)`,
-        // while the partial data still loads and it is NOT treated as a hard refresh error.
         let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("claude"))
         let meter = WidgetDescriptor(
             id: "test.session",
@@ -73,14 +69,11 @@ final class WidgetDataStoreTests: XCTestCase {
         await store.refreshAll()
 
         XCTAssertEqual(store.warningMessage(for: provider.id), "Re-login for live usage. Run `claude` and sign in again.")
-        XCTAssertNil(store.errorMessage(for: provider.id))  // soft warning, not a hard error
-        XCTAssertTrue(store.data(for: meter).hasData)       // partial data still loads
+        XCTAssertNil(store.errorMessage(for: provider.id))
+        XCTAssertTrue(store.data(for: meter).hasData)
     }
 
     func testHardErrorTakesPrecedenceOverStaleSoftWarning() async {
-        // Bugbot: after a failed refresh the store keeps the last good snapshot (with its `warning`) while
-        // setting `providerErrors`. The header must show the current hard error, not the stale soft warning
-        // from the prior success — so `headerNotice(for:)` is `errorMessage ?? warningMessage`.
         let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("claude"))
         let meter = WidgetDescriptor(
             id: "test.session",
@@ -105,14 +98,14 @@ final class WidgetDataStoreTests: XCTestCase {
             defaults: makeUserDefaults("header-notice")
         )
 
-        await store.refreshAll(force: true)  // success with warning
+        await store.refreshAll(force: true)
         XCTAssertEqual(store.warningMessage(for: provider.id), "Re-login for live usage.")
         XCTAssertEqual(store.headerNotice(for: provider.id), "Re-login for live usage.")
 
-        await store.refreshAll(force: true)  // failure
+        await store.refreshAll(force: true)
         XCTAssertEqual(store.errorMessage(for: provider.id), "Token expired. Run `claude` to log in again.")
-        XCTAssertEqual(store.warningMessage(for: provider.id), "Re-login for live usage.")  // stale, still present
-        XCTAssertEqual(store.headerNotice(for: provider.id), "Token expired. Run `claude` to log in again.")  // error wins
+        XCTAssertEqual(store.warningMessage(for: provider.id), "Re-login for live usage.")
+        XCTAssertEqual(store.headerNotice(for: provider.id), "Token expired. Run `claude` to log in again.")
     }
 
     func testRemainingProgressWithoutResetUsesPeriodDurationLabel() {
@@ -142,7 +135,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testDollarLimitSubtitleIsNotAReset() {
-        // A dollar limit subtitle is not a reset countdown; it renders as plain "$<limit> limit" text.
         let onDemand = WidgetData(
             title: "On-demand", icon: .providerMark("cursor"),
             kind: .dollars, used: 0, limit: 100, limitNoun: "limit"
@@ -151,7 +143,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testDonutFractionMatchesRoundedHeadline() {
-        // 0.39% used reads "0%", so the ring must be empty (no sliver), not 0.0039.
         let nearlyZero = WidgetData(
             title: "Total usage",
             icon: .providerMark("cursor"),
@@ -162,7 +153,6 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(nearlyZero.valueText, "0%")
         XCTAssertEqual(nearlyZero.fraction, 0, accuracy: 0.0001)
 
-        // 0.6% rounds up to "1%", so the ring should match that 1%.
         let roundsUp = WidgetData(
             title: "Total usage",
             icon: .providerMark("cursor"),
@@ -173,7 +163,6 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(roundsUp.valueText, "1%")
         XCTAssertEqual(roundsUp.fraction, 0.01, accuracy: 0.0001)
 
-        // 99.6% used reads "100%", so the ring should be full.
         let nearlyFull = WidgetData(
             title: "Total usage",
             icon: .providerMark("cursor"),
@@ -198,8 +187,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testCreditsDollarLimitAppendsLimitNoun() {
-        // Matches the original OpenUsage, which renders every bounded dollar metric's subtitle as
-        // "$X limit" — never "total".
         let credits = WidgetData(
             title: "Credits",
             icon: .providerMark("cursor"),
@@ -212,7 +199,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testRequestsShowsBillingResetInsteadOfSuffix() {
-        // The requests tile resets on the billing cycle, so it shows the cadence rather than "requests".
         let requests = WidgetData(
             title: "Requests",
             icon: .providerMark("cursor"),
@@ -226,9 +212,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testCreditsRenderDollarAndCountCombinedInvariantToMeterStyle() async {
-        // Codex flex credits show the dollar value and the raw count combined ("$40.00 · 1,000
-        // credits"), invariant to the Used/Left meter style, while the dollar value drives the menu
-        // bar's compact reading — all from one `.values` row, no string re-parse.
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.combined(
             id: "codex.credits", provider: provider, title: "Extra Usage", metricLabel: "Credits"
@@ -255,7 +238,7 @@ final class WidgetDataStoreTests: XCTestCase {
         let remaining = store.data(for: descriptor)
         XCTAssertFalse(remaining.isBounded)
         XCTAssertEqual(remaining.unboundedDetail, "$40.00 · 1K credits")
-        XCTAssertEqual(remaining.menuBarValue, "$40")   // dollar value → compact tray reading
+        XCTAssertEqual(remaining.menuBarValue, "$40")
         XCTAssertNil(remaining.unboundedSubtitle)
 
         store.meterStyle = .used
@@ -265,9 +248,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testRateLimitResetsTileShowsCountInTrayAndPopover() async {
-        // Regression (#641): the menu-bar tile and the popover row resolve from one raw number, so a
-        // pinned tile can't read "0" while the popover reads "1". The popover keeps Codex's "available"
-        // wording, while the tighter tray reads "resets".
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.values(
             id: "codex.rateLimitResets",
@@ -303,8 +283,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testZeroRateLimitResetsStillFlagsResetPopoverForEmptyState() async {
-        // The descriptor opt-in must survive resolve even at "0 available" (no expiries): that's exactly
-        // when the value column needs to stay a hover target so the popover can show the empty state.
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.values(
             id: "codex.rateLimitResets",
@@ -337,7 +315,7 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertTrue(data.showsResetExpiries)
         XCTAssertTrue(data.hasData)
         XCTAssertTrue(data.expiriesAt.isEmpty)
-        XCTAssertNil(data.expirySeverity())          // no dot at zero
+        XCTAssertNil(data.expirySeverity())
         XCTAssertEqual(data.unboundedDetail, "0 available")
     }
 
@@ -421,10 +399,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testUncappedExtraUsageRendersCompactAndUnbounded() async {
-        // Regression (#658): Claude's `claude.extra` is a `boundedDollars` descriptor (a meter when the
-        // provider reports a monthly cap), but an uncapped spend arrives as a `.values` line. It must
-        // resolve to an unbounded tile — the sample's placeholder limit dropped — and read in the same
-        // compact shorthand as the spend tiles ("$1.2K spent"), not full currency, in both row and tray.
         let provider = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let descriptor = WidgetDescriptor.boundedDollars(
             id: "claude.extra", provider: provider, title: "Extra Usage",
@@ -451,17 +425,16 @@ final class WidgetDataStoreTests: XCTestCase {
 
         let data = store.data(for: descriptor)
         XCTAssertTrue(data.hasData)
-        XCTAssertFalse(data.isBounded)                          // sample's limit: 100 dropped for a .values row
-        XCTAssertEqual(data.unboundedDetail, "$1.2K spent")     // popover row — compact, not "$1,234.56"
-        XCTAssertEqual(data.menuBarValue, "$1.2K")              // tray — same shorthand
-        XCTAssertEqual(data.unboundedTooltip, "$1,234.56")      // hover still reveals the exact figure
+        XCTAssertFalse(data.isBounded)
+        XCTAssertEqual(data.unboundedDetail, "$1.2K spent")
+        XCTAssertEqual(data.menuBarValue, "$1.2K")
+        XCTAssertEqual(data.unboundedTooltip, "$1,234.56")
     }
 
     func testCreditValuesFloorAndClampBalance() {
         var data = WidgetData(title: "Extra Usage", icon: .providerMark("codex"), kind: .dollars, used: 0, limit: nil)
         data.values = CodexUsageMapper.creditValues(remaining: 820.9)
         XCTAssertEqual(data.unboundedDetail, "$32.80 · 820 credits")
-        // An exhausted/negative balance clamps to a real, measured zero — "$0.00 · 0 credits", not "No data".
         data.values = CodexUsageMapper.creditValues(remaining: -5)
         XCTAssertEqual(data.unboundedDetail, "$0.00 · 0 credits")
     }
@@ -482,8 +455,6 @@ final class WidgetDataStoreTests: XCTestCase {
     }
 
     func testCcusageSpendSplitsIntoCostTokensAndCombined() async {
-        // One `.values` spend row backs three tiles: cost-only (dollars + ⓘ), tokens-only (the
-        // measured count, no ⓘ), and combined (both, ⓘ because a shown value is estimated).
         let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("codex"))
         let cost = WidgetDescriptor.values(id: "test.last30", provider: provider, title: "Last 30 Days",
                                            selection: .kind(.dollars), valueWord: "spent")
@@ -505,7 +476,7 @@ final class WidgetDataStoreTests: XCTestCase {
                         MetricValue(number: 478.0, kind: .dollars, estimated: true),
                         MetricValue(number: 891_000, kind: .count, label: "tokens")
                     ]),
-                    // An unpriced day: real tokens, no dollar (cost unknown, not zero).
+                    // 미가격 산정일: tokens만 존재, dollar 없음 (cost는 unknown이지 0 아님)
                     .values(label: "Today", values: [MetricValue(number: 123_000, kind: .count, label: "tokens")])
                 ]
             )
@@ -520,35 +491,28 @@ final class WidgetDataStoreTests: XCTestCase {
         let store = WidgetDataStore(registry: registry, providers: [runtime], cache: cache)
         await store.refreshAll()
 
-        // Cost-only: the dollars, locally estimated.
         let costData = store.data(for: cost)
         XCTAssertEqual(costData.valueText, "$478.00")
         XCTAssertEqual(costData.unboundedDetail, "$478.00 spent")
         XCTAssertEqual(costData.infoNote, WidgetData.localEstimateNote)
 
-        // Tokens-only: the measured count with its "tokens" unit; the tooltip has every digit.
         let tokenData = store.data(for: tokens)
         XCTAssertEqual(tokenData.unboundedDetail, "891K tokens")
         XCTAssertEqual(tokenData.menuBarValue, "891K tokens")
         XCTAssertEqual(tokenData.unboundedTooltip, "891,000 tokens")
         XCTAssertNil(tokenData.infoNote)
 
-        // Combined: both values joined; the tray glances at the leading dollar value, the tooltip is full.
         let combinedData = store.data(for: combined)
         XCTAssertEqual(combinedData.unboundedDetail, "$478.00 · 891K tokens")
         XCTAssertEqual(combinedData.menuBarValue, "$478")
         XCTAssertEqual(combinedData.unboundedTooltip, "$478.00 · 891,000 tokens")
         XCTAssertEqual(combinedData.infoNote, WidgetData.localEstimateNote)
 
-        // The value hover carries exact figures plus the source note.
         XCTAssertEqual(combinedData.unboundedValueTooltip, "$478.00 · 891,000 tokens\n\(WidgetData.localEstimateNote)")
         XCTAssertEqual(costData.unboundedValueTooltip, "$478.00\n\(WidgetData.localEstimateNote)")
-        // The measured tokens tile has no source note, so it has only the exact-number value hover.
         XCTAssertNil(tokenData.infoNote)
         XCTAssertEqual(tokenData.unboundedValueTooltip, "891,000 tokens")
 
-        // An unpriced day (real tokens, no dollar): the cost-only tile finds no dollar value, so it reads
-        // "No data" rather than a fabricated $0.00.
         let todayData = store.data(for: todayCost)
         XCTAssertFalse(todayData.hasData)
         XCTAssertEqual(todayData.valueText, WidgetData.noDataHeadline)
@@ -672,8 +636,6 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(store.data(for: descriptor).valueText, "20%")
     }
 
-    /// `data(for:)` stamps the row's own card id on both branches (resolved metric and no-data
-    /// fallback) — per-card actions like the Codex reset-claim router key on it.
     func testDataForStampsTheProviderIDOnBothBranches() async {
         let provider = Provider(id: "codex@ab12cd34", displayName: "Codex — Work", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor(
@@ -694,7 +656,6 @@ final class WidgetDataStoreTests: XCTestCase {
         let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
         let store = WidgetDataStore(registry: registry, providers: [runtime], defaults: makeUserDefaults("provider-id-stamp"))
 
-        // No-data branch (no snapshot yet): the sample carries the stamp too.
         XCTAssertEqual(store.data(for: descriptor).providerID, provider.id)
 
         await store.refreshAll()

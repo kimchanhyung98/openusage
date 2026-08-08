@@ -1,38 +1,29 @@
 import Foundation
 
-/// Routing + JSON for the read-only local usage API, kept pure so it's unit-testable —
-/// `LocalUsageServer` is just the transport. The wire format follows docs/local-http-api.md
-/// (camelCase `providerId`, `color`, `fetchedAt`, type-tagged `lines`, `{"error": code}` bodies).
-/// One deliberate break from the original app, made before multi-account ships: `/v1/usage/:token`
-/// returns an array, and both single-token routes answer by plain string matching (exact card id or
-/// family id) — never by resolving state.
+/// 읽기 전용 로컬 usage API의 라우팅과 JSON 변환 — pure 함수로 유지하고 `LocalUsageServer`는 transport만 담당.
+/// `/v1/usage/:token`은 배열 반환, 단일 token 라우트는 plain string 매칭(정확한 카드 id 또는 family id) — 상태 해석 금지.
 enum LocalUsageAPI {
-    /// Everything one request needs, captured from the MainActor stores into a Sendable value.
+    /// 요청 1건에 필요한 전부 — MainActor store에서 Sendable 값으로 캡처.
     struct State: Sendable {
-        /// Provider IDs the collection endpoint serves: enablement-filtered, in the user's order.
+        /// collection endpoint가 서빙하는 provider ID — enablement 필터 적용, 사용자 순서.
         var enabledOrderedIDs: [String]
-        /// Every provider the registry knows — single-provider lookups work for disabled ones too.
+        /// registry가 아는 모든 provider — 비활성 provider도 단일 조회 가능.
         var knownIDs: Set<String>
-        /// The rendered snapshot set shared by both routes. `/v1/usage` and `/v1/limits` only differ
-        /// in how they project this data onto their legacy and normalized wire formats.
+        /// 두 라우트가 공유하는 렌더링된 snapshot 집합 — `/v1/usage`와 `/v1/limits`는 wire format projection만 상이.
         var snapshots: [String: ProviderSnapshot]
-        /// Only descriptors explicitly opted into the stable limits contract.
+        /// 안정적 limits 계약에 명시적으로 opt-in한 descriptor만 포함.
         var limitDescriptors: [String: [WidgetDescriptor]] = [:]
         var errors: [String: String] = [:]
         var generatedAt = Date()
 
-        /// Every known card the request token names — an exact card id, or a family id naming all of
-        /// that family's cards. Pure string matching, deliberately: the answer never depends on which
-        /// account is logged in, what's enabled, or any other runtime state. Sorted for stable output.
-        /// Empty means the token names nothing (404).
+        /// 요청 token이 지칭하는 모든 known 카드 — 정확한 카드 id, 또는 family 전체를 지칭하는 family id.
+        /// 의도된 pure string 매칭 — 로그인 계정·enablement 등 runtime 상태 비의존. 정렬 출력, 빈 결과는 404.
         func matchingCardIDs(for token: String) -> [String] {
             knownIDs.filter { $0 == token || ProviderAccountID.family(of: $0) == token }.sorted()
         }
 
-        /// A copy whose snapshots carry live card titles: `titles` maps card id → resolved title
-        /// (from the account registry, so renames show). Applied where the state is captured — the
-        /// snapshots themselves always store the derived name, so a rename never persists into the
-        /// cache or iCloud. Cards without an entry keep their baked name.
+        /// snapshot에 live 카드 title을 입힌 복사본 — `titles`는 카드 id → 해석된 title(account registry 기반, rename 반영).
+        /// snapshot 자체는 항상 파생 이름 저장 — rename의 cache·iCloud 영속 금지. 항목 없는 카드는 기존 이름 유지.
         func resolvingDisplayNames(_ titles: [String: String]) -> State {
             guard !titles.isEmpty else { return self }
             var state = self
@@ -52,7 +43,7 @@ enum LocalUsageAPI {
     }
 
     static func respond(method: String, path: String, state: State) -> Response {
-        // Preflight support: OPTIONS anywhere is 204 + the CORS headers the server always sends.
+        // preflight 지원 — 모든 경로의 OPTIONS는 204 + 서버 상시 CORS 헤더.
         if method == "OPTIONS" {
             return Response(status: 204, body: nil)
         }
@@ -71,9 +62,8 @@ enum LocalUsageAPI {
 
         case (3, "v1", "limits"):
             guard method == "GET" else { return error(405, "method_not_allowed") }
-            // The token names cards by plain string matching (see `matchingCardIDs`). The envelope is
-            // already keyed by card id, so one card and a whole family serialize identically; a
-            // matched card with no data yet simply has no entry. Only a token naming nothing is 404.
+            // token은 plain string 매칭으로 카드 지칭(`matchingCardIDs`) — envelope이 카드 id 키라 단일 카드와 family가 동일 직렬화.
+            // 데이터 없는 매칭 카드는 항목 없음 — token이 아무것도 지칭 못 할 때만 404.
             let providerIDs = state.matchingCardIDs(for: segments[2])
             guard !providerIDs.isEmpty else { return error(404, "provider_not_found") }
             return Response(
@@ -88,10 +78,7 @@ enum LocalUsageAPI {
 
         case (3, "v1", "usage"):
             guard method == "GET" else { return error(405, "method_not_allowed") }
-            // Same matching as `/v1/limits/:token`, same always-an-array shape as the collection
-            // route: every matched card with a snapshot, `[]` when the matches have no data yet.
-            // (Breaking change from the original single-object shape, made before multi-account
-            // ships so the shape never has to fork on how many cards a token names.)
+            // `/v1/limits/:token`과 동일 매칭, collection 라우트와 동일한 항상-배열 shape — 매칭에 데이터 없으면 `[]`.
             let providerIDs = state.matchingCardIDs(for: segments[2])
             guard !providerIDs.isEmpty else { return error(404, "provider_not_found") }
             let snapshots = providerIDs.compactMap { state.snapshots[$0] }
@@ -149,28 +136,24 @@ enum LocalUsageAPI {
                 try container.encode("text", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(value, forKey: .value)
-                try container.encode(color, forKey: .color)        // explicit null, like the original
+                try container.encode(color, forKey: .color)        // 원본과 동일한 explicit null.
                 try container.encode(subtitle, forKey: .subtitle)
             case .values(let label, let values, let color, let expiriesAt, _, _):
-                // Serialize as the original `text` shape (one combined `value` string) so existing
-                // local-API integrations keep working: dollars in full, counts compact — exactly the
-                // string the mapper used to produce (e.g. "$5.17 · 9.2M tokens").
-                // Per-model hover details are UI-only for now and are intentionally omitted from this
-                // documented public wire shape.
+                // 기존 local-API 통합 호환용 원본 `text` shape(결합 `value` 문자열)로 직렬화 — dollars는 full, counts는 compact.
+                // per-model hover 상세는 UI 전용 — 공개 wire shape에서 의도적 생략.
                 try container.encode("text", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(Self.legacyValueString(values), forKey: .value)
                 try container.encode(color, forKey: .color)
                 try container.encodeNil(forKey: .subtitle)
-                // Expose the soonest expiry (Codex reset credits) as ISO-8601 so consumers get the next
-                // one without us baking a display string — same `resetsAt` field a progress row uses.
+                // 가장 이른 expiry(Codex reset credits)를 ISO-8601로 노출 — progress row와 동일한 `resetsAt` 필드.
                 try container.encodeIfPresent(expiriesAt.min().map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
             case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let color):
                 try container.encode("progress", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(used, forKey: .used)
                 try container.encode(limit, forKey: .limit)
-                try container.encode(format, forKey: .format)      // {"kind": ...} (+ "suffix" for counts)
+                try container.encode(format, forKey: .format)      // {"kind": ...} (+ counts는 "suffix")
                 try container.encodeIfPresent(resetsAt.map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
                 try container.encodeIfPresent(periodDurationMs, forKey: .periodDurationMs)
                 try container.encode(color, forKey: .color)
@@ -181,8 +164,7 @@ enum LocalUsageAPI {
                 try container.encode(color, forKey: .color)
                 try container.encode(subtitle, forKey: .subtitle)
             case .chart(let label, let points, let note):
-                // The original app's `barChart` line shape: per-day {label, value, valueLabel} points
-                // plus an optional source note, so existing local-API integrations read the trend too.
+                // 원본 앱의 `barChart` line shape — 일자별 {label, value, valueLabel} point + 선택적 source note, 기존 통합의 trend 읽기 유지.
                 try container.encode("barChart", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(points, forKey: .points)
@@ -191,8 +173,7 @@ enum LocalUsageAPI {
             }
         }
 
-        /// The legacy combined string for a `.values` row: each value formatted (dollars full so cents
-        /// survive, counts compact like the mapper's old `formatTokens`) and joined with " · ".
+        /// `.values` row의 legacy 결합 문자열 — dollars는 full(cents 보존), counts는 compact, " · "로 join.
         private static func legacyValueString(_ values: [MetricValue]) -> String {
             values
                 .map { MetricFormatter.string(for: $0, style: $0.kind == .count ? .tray : .full) }

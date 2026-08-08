@@ -21,13 +21,10 @@ final class WidgetRegistryTests: XCTestCase {
             descriptors: []
         )
 
-        // The saved order predates the account card: it appears right after the claude group, not
-        // at the end of the dashboard; a genuinely new provider still appends.
         XCTAssertEqual(
             registry.orderedProviderIDs(savedOrder: ["codex", "claude"]),
             ["codex", "claude", "claude@ab12cd34", "cursor"]
         )
-        // With no family sibling in the saved order, the card appends like any new provider.
         XCTAssertEqual(
             registry.orderedProviderIDs(savedOrder: ["codex"]),
             ["codex", "claude", "claude@ab12cd34", "cursor"]
@@ -51,13 +48,10 @@ final class WidgetRegistryTests: XCTestCase {
         XCTAssertNil(registry.provider(id: "missing"))
     }
 
-    /// The precomputed per-provider list must preserve the original `descriptors` array order — the UI's
-    /// metric ordering depends on it, so this guards the O(1) refactor against silent reordering.
     func testDescriptorsForProviderPreserveOriginalOrder() {
         let claude = provider("claude")
         let codex = provider("codex")
-        // Interleave two providers so a naive grouping that didn't preserve order could still pass for a
-        // single contiguous run.
+        // 두 provider를 교차 배치 — 순서 미보존 grouping이 우연히 통과하지 못하도록
         let c1 = descriptor("claude.session", provider: claude)
         let x1 = descriptor("codex.session", provider: codex)
         let c2 = descriptor("claude.weekly", provider: claude)
@@ -91,8 +85,6 @@ final class WidgetRegistryTests: XCTestCase {
         )
     }
 
-    /// With duplicate ids, both single-entry lookups resolve to the first match — matching the original
-    /// `.first { $0.id == id }` accessors so the refactor can't change which descriptor/provider wins.
     func testDuplicateIDsResolveToFirstMatch() {
         let p1 = Provider(id: "dup", displayName: "First", icon: .providerMark("a"))
         let p2 = Provider(id: "dup", displayName: "Second", icon: .providerMark("b"))
@@ -103,7 +95,6 @@ final class WidgetRegistryTests: XCTestCase {
         let registry = WidgetRegistry(providers: [p1, p2], descriptors: [d1, d2])
 
         XCTAssertEqual(registry.provider(id: "dup")?.displayName, "First")
-        // WidgetDescriptor equality is id-only; compare the sample to prove the first one wins.
         XCTAssertEqual(registry.descriptor(id: "dup.m")?.sample.title, "First")
     }
 }

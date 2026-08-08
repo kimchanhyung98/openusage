@@ -4,36 +4,34 @@ OpenUsage exposes a read-only HTTP API on the loopback interface so other local 
 
 **Base URL:** `http://127.0.0.1:6736`
 
-The server starts automatically with the app. If the port is already in use, the feature is silently disabled for that session.
+The server starts automatically with the app.
+If the port is already in use, the feature is silently disabled for that session.
 
 ## Routes
 
 ### `GET /v1/limits`
 
-Returns a machine-facing envelope for all **enabled** providers. Providers and resources are keyed by
-stable IDs; values are raw scalars with explicit units. This is the preferred route for new integrations
-and the exact format printed by the `openusage` CLI.
+Returns a machine-facing envelope for all **enabled** providers.
+Providers and resources are keyed by stable IDs; values are raw scalars with explicit units.
+This is the preferred route for new integrations and the exact format printed by the `openusage` CLI.
 
 ### `GET /v1/limits/:id`
 
-Returns the same envelope containing every provider the ID names. It works for disabled providers too.
-Matching is plain string comparison: an exact provider ID names that provider, and a family ID
-(`claude`, `codex`) names every account card of that family — with one account that's exactly the one
-card. There is no aliasing or "pick the right account" logic; the same request always names the same
-providers.
+Returns the same envelope containing every provider the ID names.
+It works for disabled providers too.
+Matching is plain string comparison: an exact provider ID names that provider, and a family ID (`claude`, `codex`) names every account card of that family — with one account that's exactly the one card.
+There is no aliasing or "pick the right account" logic; the same request always names the same providers.
 
-- **200 OK** — limits envelope with every matched provider that has data (an `errors` entry appears
-  when a refresh failed; a matched provider with no data yet simply has no entry).
+- **200 OK** — limits envelope with every matched provider that has data (an `errors` entry appears when a refresh failed; a matched provider with no data yet simply has no entry).
 - **404 Not Found** — the ID names no known provider and no family.
 
 ### `GET /v1/usage`
 
-Returns the legacy UI-oriented snapshots for all **enabled** providers, in your dashboard order. Existing
-consumers remain supported while this route is deprecated; new consumers should use `/v1/limits`.
+Returns the legacy UI-oriented snapshots for all **enabled** providers, in your dashboard order.
+Existing consumers remain supported while this route is deprecated; new consumers should use `/v1/limits`.
 
-Both routes read the same rendered provider snapshots. When iCloud Sync is on, that means they both see
-the same iCloud-combined usage as the dashboard; `/v1/usage` returns the old UI-oriented shape, while
-`/v1/limits` projects the data into stable resource IDs and raw scalar values.
+Both routes read the same rendered provider snapshots.
+When iCloud Sync is on, that means they both see the same iCloud-combined usage as the dashboard; `/v1/usage` returns the old UI-oriented shape, while `/v1/limits` projects the data into stable resource IDs and raw scalar values.
 
 - **200 OK** — JSON array (may be empty `[]` if nothing has been fetched yet).
 
@@ -45,13 +43,13 @@ Works for disabled providers too.
 - **200 OK** — JSON array, one snapshot per matched provider that has one (`[]` when none do yet).
 - **404 Not Found** — the ID names no known provider and no family.
 
-> **Breaking change:** this route previously returned a single JSON object and `204` when the
-> provider had no snapshot. It now always returns an array, so the shape stays identical whether an
-> ID names one provider or a whole account family.
+> **Breaking change:** this route previously returned a single JSON object and `204` when the provider had no snapshot.
+> It now always returns an array, so the shape stays identical whether an ID names one provider or a whole account family.
 
 ### Everything else
 
-Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**. When the server is already handling its maximum of 16 concurrent connections, requests get **503** — back off and retry.
+Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**.
+When the server is already handling its maximum of 16 concurrent connections, requests get **503** — back off and retry.
 
 ## Limits response shape
 
@@ -89,15 +87,14 @@ Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**
 }
 ```
 
-`kind` is `consumption` (`used`) or `balance` (`available`). Bounded consumption also carries `limit`,
-`remaining`, and a 0–1 `utilization`. Reset, window, expiry-list, and `estimated` fields appear only when
-the provider supplies that meaning. A provider or resource with no current value is omitted rather than
-invented as zero. `expiresAt` is always `fetchedAt` plus the same five-minute freshness interval used by
-the app and CLI; `stale` says whether that instant has passed. Refresh failures appear in `errors` as
-`{"providerId":"…","message":"…"}` while a last-good provider snapshot remains available.
-For bounded progress resources, `unit` follows the provider's live metric format. For example, Cursor
-`totalUsage` is `percent` on percentage-based plans, `requests` on request-based Enterprise plans, and
-`usd` when Cursor reports a dollar pool.
+`kind` is `consumption` (`used`) or `balance` (`available`).
+Bounded consumption also carries `limit`, `remaining`, and a 0–1 `utilization`.
+Reset, window, expiry-list, and `estimated` fields appear only when the provider supplies that meaning.
+A provider or resource with no current value is omitted rather than invented as zero.
+`expiresAt` is always `fetchedAt` plus the same five-minute freshness interval used by the app and CLI; `stale` says whether that instant has passed.
+Refresh failures appear in `errors` as `{"providerId":"…","message":"…"}` while a last-good provider snapshot remains available.
+For bounded progress resources, `unit` follows the provider's live metric format.
+For example, Cursor `totalUsage` is `percent` on percentage-based plans, `requests` on request-based Enterprise plans, and `usd` when Cursor reports a dollar pool.
 
 ### Public resources
 
@@ -116,8 +113,8 @@ For bounded progress resources, `unit` follows the provider's live metric format
 | OpenRouter | `credits`, `balance`, `keyLimit` |
 | Z.ai | `session`, `weekly`, `webSearches` |
 
-Charts, colors, subtitles, formatted badges, layout state, and historical spend periods stay out of this
-contract. Codex's combined Credits UI row becomes two scalar resources: `credits` and `creditValue`.
+Charts, colors, subtitles, formatted badges, layout state, and historical spend periods stay out of this contract.
+Codex's combined Credits UI row becomes two scalar resources: `credits` and `creditValue`.
 
 ## Legacy usage response shape
 
@@ -166,11 +163,15 @@ contract. Codex's combined Credits UI row becomes two scalar resources: `credits
 }
 ```
 
-Line types are `progress`, `text`, `badge`, and `barChart`. A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25"). `fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
+Line types are `progress`, `text`, `badge`, and `barChart`.
+A `barChart` line carries a `points` array — one `{ label, value, valueLabel? }` per day, oldest first — plus an optional `note`; `value` is the day's token count, `valueLabel` its pre-formatted readout, and `label` a localized month/day (e.g. "Mar 25").
+`fetchedAt` is when the snapshot was last fetched successfully (ISO 8601).
 
-The in-app model breakdown shown when hovering spend rows is not included in this API yet. Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
+The in-app model breakdown shown when hovering spend rows is not included in this API yet.
+Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
 
-In both response shapes, `displayName` is the card's current name — if you renamed a card in the app, the rename shows here too. Match on `providerId` (or the envelope key), never on the name.
+In both response shapes, `displayName` is the card's current name — if you renamed a card in the app, the rename shows here too.
+Match on `providerId` (or the envelope key), never on the name.
 
 ## Errors
 
@@ -182,10 +183,15 @@ Codes: `provider_not_found`, `not_found`, `method_not_allowed`, `server_busy`.
 
 ## CORS and privacy
 
-All responses include permissive CORS headers (`Access-Control-Allow-Origin: *`, methods `GET, OPTIONS`). `OPTIONS` requests return **204** for preflight.
+All responses include permissive CORS headers (`Access-Control-Allow-Origin: *`, methods `GET, OPTIONS`).
+`OPTIONS` requests return **204** for preflight.
 
-The server only listens on the loopback interface (`127.0.0.1`), so it is not reachable from other machines on your network. Because the CORS header is permissive, though, a web page open in your browser can read your usage snapshots from this API while the app is running. The data exposed is the same usage numbers shown in the menu bar — no credentials or tokens are ever served. This matches the original app's behavior so existing integrations keep working.
+The server only listens on the loopback interface (`127.0.0.1`), so it is not reachable from other machines on your network.
+Because the CORS header is permissive, though, a web page open in your browser can read your usage snapshots from this API while the app is running.
+The data exposed is the same usage numbers shown in the menu bar — no credentials or tokens are ever served.
+This matches the original app's behavior so existing integrations keep working.
 
 ## Caching behavior
 
-The API serves whatever the app is showing: only successful fetches replace data, so a failed refresh never blanks the API — you keep getting the last good snapshot. See [Refreshing & caching](refreshing.md).
+The API serves whatever the app is showing: only successful fetches replace data, so a failed refresh never blanks the API — you keep getting the last good snapshot.
+See [Refreshing & caching](refreshing.md).

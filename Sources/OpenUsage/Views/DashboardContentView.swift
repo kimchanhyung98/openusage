@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The dashboard-only scrolling content. Screen switching, panel sizing, fixed bars, keyboard handling,
-/// and close/reset behavior stay with `DashboardView`.
+/// 대시보드 전용 스크롤 콘텐츠.
+/// 화면 전환·패널 크기·고정 바·키보드·닫기 처리는 `DashboardView` 소관.
 struct DashboardContentView: View {
     let container: AppContainer
     let layout: LayoutStore
@@ -19,15 +19,11 @@ struct DashboardContentView: View {
     var body: some View {
         PopoverScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // A pending update found by a scheduled Sparkle check tops everything — it's the
-                // reminder the buried Sparkle window can't deliver for a dockless app.
                 if let updateVersion = updater.availableUpdateVersion {
                     UpdateBannerCard(version: updateVersion)
                         .padding(.bottom, density.sectionSpacing)
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
-                // The one-time first-run hint sits above the provider sections (and above the
-                // empty-state line, which a fresh install can hit while nothing has data yet).
                 if container.onboarding.isCustomizeHintPending {
                     CustomizeHintCard()
                         .padding(.bottom, density.sectionSpacing)
@@ -47,8 +43,7 @@ struct DashboardContentView: View {
 
     @ViewBuilder
     private var widgetContent: some View {
-        // The cross-provider Total Spend ring stays visible whenever the user allows it and an enabled
-        // provider can track spend, even before fresh data arrives or when every metric row is hidden.
+        // Total Spend 링은 데이터 도착 전이나 모든 메트릭 행이 숨겨진 상태에서도 유지
         if showTotalSpend, layout.hasSpendCapableProvider {
             TotalSpendCard()
                 .padding(.bottom, density.sectionSpacing)

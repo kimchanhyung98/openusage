@@ -136,7 +136,7 @@ final class GrokProviderTests: XCTestCase {
     func testWeeklyMeterAndPayAsYouGoComeFromCreditsConfig() async {
         let httpClient = RecordingHTTPClient { request in
             if request.url == GrokUsageClient.creditsConfigURL {
-                // The same plain GET the Grok CLI makes, with the standard auth headers.
+                // Grok CLI와 동일한 plain GET + 표준 auth header
                 XCTAssertEqual(request.method, "GET")
                 XCTAssertNil(request.body)
                 XCTAssertEqual(request.headers["Authorization"], "Bearer token")
@@ -159,8 +159,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testCreditsFetchFailureFailsTheProvider() async {
-        // The credits config is the provider's only remote meter now — its failure is a provider
-        // error, not a partial degrade.
+        // credits config가 유일한 remote meter — 실패는 partial degrade가 아니라 provider error
         let httpClient = RecordingHTTPClient { request in
             if request.url == GrokUsageClient.creditsConfigURL {
                 return HTTPResponse(statusCode: 503, headers: [:], body: Data())
@@ -176,8 +175,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testMalformedBodyInsideHTTP200FailsTheProvider() async {
-        // An HTTP 200 whose body isn't the shape we know is schema drift — fail loudly rather than
-        // render a blank dashboard silently.
+        // HTTP 200에 미지의 body shape은 schema drift — 조용한 빈 dashboard 대신 loud fail
         let httpClient = RecordingHTTPClient { request in
             if request.url == GrokUsageClient.creditsConfigURL {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"config":{}}"#.utf8))
@@ -192,8 +190,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testNonWeeklyPeriodShowsNoWeeklyLineAndNoWarning() async {
-        // A not-yet-migrated (monthly-period) account is a valid state, not a failure: the Weekly
-        // tile reads "No data" without the amber triangle, and the badge still renders.
+        // monthly-period(미이전) 계정은 정상 상태 — Weekly tile은 경고 없이 "No data", badge는 유지
         let httpClient = RecordingHTTPClient { request in
             if request.url == GrokUsageClient.creditsConfigURL {
                 return HTTPResponse(statusCode: 200, headers: [:],
@@ -213,7 +210,7 @@ final class GrokProviderTests: XCTestCase {
 
     func testRefreshAppendsLocalSpendTilesFromLog() async {
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
-        // grok-build: 1M input @ $1 = $1.00 today; composer-2.5-fast: 1M output @ $15 = $15.00 yesterday.
+        // fixture: grok-build 1M input @ $1 = $1.00 (오늘), composer-2.5-fast 1M output @ $15 = $15.00 (어제)
         let log = """
         {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
@@ -229,7 +226,7 @@ final class GrokProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        // Existing credit lines stay; the three spend tiles are appended from the local log.
+        // 기존 credit line 유지 + local log에서 spend tile 3종 추가
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
         XCTAssertEqual(values(snapshot.lines, "Today"),
                        [MetricValue(number: 1.0, kind: .dollars, estimated: true), MetricValue(number: 1_000_000, kind: .count, label: "tokens")])
@@ -240,12 +237,9 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testPeriodWithoutUsageLeavesTileUnbacked() async {
-        // Regression for the reported "Today 0" bug: the log exists and has yesterday's usage, but no
-        // inference ran today. An idle today is "No data" (no backing line), never a fabricated
-        // "$0.00 · 0 tokens" that contradicts a live session. "No data" is also what a missing/unreadable
-        // log produces — the two cases collapse to the same honest read.
+        // "Today 0" 회귀 방지 — 오늘 usage 없으면 "$0.00 · 0 tokens" 조작 대신 backing line 없는 "No data"
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
-        // Only yesterday (06-17) has an inference row; today (06-18) has none.
+        // fixture: 06-17에만 inference row, 06-18(today)은 없음
         let log = """
         {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
@@ -259,7 +253,7 @@ final class GrokProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        // No usage today → "No data" (no Today line). Yesterday and the 30-day total still render.
+        // 오늘 usage 없음 → Today line 없음, Yesterday·30일 합계는 유지
         XCTAssertNil(values(snapshot.lines, "Today"))
         XCTAssertNotNil(values(snapshot.lines, "Yesterday"))
         XCTAssertNotNil(values(snapshot.lines, "Last 30 Days"))
@@ -267,7 +261,7 @@ final class GrokProviderTests: XCTestCase {
 
     func testRefreshAppendsUsageTrendFromLog() async {
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
-        // 1M input today (06-18), 1M output yesterday (06-17).
+        // 픽스처: 06-18 입력 1M, 06-17 출력 1M
         let log = """
         {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
@@ -299,7 +293,7 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Usage Trend" }), "no log means no trend chart")
     }
 
-    /// The stock happy-path routes: the captured weekly credits config and the plan name.
+    /// happy-path 기본 route — 캡처된 weekly credits config + plan 이름
     private static func defaultRoutes(_ request: HTTPRequest) -> HTTPResponse {
         if request.url == GrokUsageClient.creditsConfigURL {
             return HTTPResponse(statusCode: 200, headers: [:], body: GrokCreditsFixtures.capturedResponseBody)

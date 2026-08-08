@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Go-key detection from `auth.json`, including tolerance of unrelated sibling entries (regression for the
-/// atomic-decode gap that let one odd top-level value hide a valid `opencode-go` key) and the
-/// broken-storage-is-not-logout distinction (unreadable/malformed files throw instead of reading as nil).
 final class OpenCodeAuthStoreTests: XCTestCase {
     private func store(_ json: String) -> OpenCodeAuthStore {
         store(files: FakeFiles(["/oc/auth.json": json]))
@@ -22,7 +19,7 @@ final class OpenCodeAuthStoreTests: XCTestCase {
     }
 
     func testToleratesNonObjectSiblingEntries() throws {
-        // A future schema marker (string) and an array entry beside opencode-go must not hide the key.
+        // opencode-go 옆의 schema marker(string)·array entry가 key를 가리지 않아야 함
         let json = #"{"$schema":"https://opencode.ai/auth.json","opencode-go":{"type":"api","key":"sk-xyz"},"weird":["a","b"]}"#
         XCTAssertEqual(try store(json).goAPIKey(), "sk-xyz")
     }
@@ -36,7 +33,7 @@ final class OpenCodeAuthStoreTests: XCTestCase {
         XCTAssertNil(try store(#"{"opencode-go":{"type":"api"}}"#).goAPIKey())
         XCTAssertNil(try store(#"{"opencode-go":{"type":"api","key":"   "}}"#).goAPIKey())
         XCTAssertNil(try store(#"{"openai":{"type":"oauth"}}"#).goAPIKey())
-        XCTAssertNil(try store(files: FakeFiles()).goAPIKey()) // absent file = not logged in
+        XCTAssertNil(try store(files: FakeFiles()).goAPIKey()) // file 부재 = 미로그인
     }
 
     func testMalformedJSONThrowsCredentialsUnreadable() {
@@ -48,7 +45,7 @@ final class OpenCodeAuthStoreTests: XCTestCase {
     }
 
     func testUnreadablePresentFileThrowsCredentialsUnreadable() {
-        // A present auth.json that can't be read (permissions, encoding) must not masquerade as logout.
+        // 존재하지만 읽기 불가한 auth.json(권한·encoding)은 logout으로 위장 금지
         XCTAssertThrowsError(try store(files: UnreadableFiles(present: ["/oc/auth.json"])).goAPIKey()) { error in
             guard case OpenCodeUsageError.credentialsUnreadable = error else {
                 return XCTFail("expected credentialsUnreadable, got \(error)")
@@ -57,7 +54,7 @@ final class OpenCodeAuthStoreTests: XCTestCase {
     }
 }
 
-/// A file store whose present files exist but always fail to read, like a permission-denied auth.json.
+/// 존재하지만 읽기는 항상 실패하는 file store (permission-denied auth.json 모사)
 final class UnreadableFiles: TextFileAccessing, @unchecked Sendable {
     let present: Set<String>
     init(present: Set<String>) { self.present = present }

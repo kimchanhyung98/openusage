@@ -23,9 +23,6 @@ final class PanelOutsideClickPolicyTests: XCTestCase {
     }
 
     func testPopoverWindowMatchIsCaseInsensitive() {
-        // A click inside a hover popover (its own `_NSPopoverWindow`, floating outside the panel frame)
-        // must keep the panel open so interactive controls in it — the resets "Use" button — receive
-        // the click instead of being dismissed as an outside click.
         XCTAssertTrue(
             PanelOutsideClickPolicy.shouldKeepOpen(.init(eventWindowTypeName: "myPOPOVERwindow"))
         )
@@ -51,25 +48,19 @@ final class PanelOutsideClickPolicyTests: XCTestCase {
 
     // MARK: - Status-button hit test (issue #1008)
 
-    /// A button frame a few points shorter than its menu bar, the way AppKit lays it out: the
-    /// screen tops out at y=1000 but the 24pt button frame ends at y=996.
+    /// menu bar보다 몇 pt 낮은 button frame (screen maxY 1000, frame 상단 996)
     private let buttonFrame = NSRect(x: 100, y: 972, width: 40, height: 24)
     private let screenTop: CGFloat = 1000
 
     func testClickAtTopOfScreenHitsStatusButton() {
-        // The issue #1008 geometry, live-captured: with the cursor pinned to the top of the screen,
-        // `NSEvent.mouseLocation.y` reports exactly the screen's maxY — a few points *above* the
-        // button frame's top, in the menu-bar strip macOS still routes to the button. Reading it as
-        // an outside click dismissed the panel on mouse-down, and the button's mouse-up toggle
-        // reopened it, so the second click never closed the panel.
+        // #1008: 화면 최상단 커서는 mouseLocation.y가 screen maxY — button frame 위쪽이지만 macOS는 button으로 라우팅
         XCTAssertTrue(PanelOutsideClickPolicy.pointHitsStatusButton(
             NSPoint(x: 120, y: screenTop), buttonFrame: buttonFrame, screenTop: screenTop
         ))
     }
 
     func testClickAtTopOfScreenWithRealCapturedGeometryHits() {
-        // Verbatim from the diagnostic log that pinned the bug down: point {4122.98, 1555},
-        // buttonFrame {{4061, 1529}, {242.5, 22}}, screen {{1728, -65}, {2880, 1620}} (maxY 1555).
+        // 진단 log에서 그대로 가져온 실측 geometry
         XCTAssertTrue(PanelOutsideClickPolicy.pointHitsStatusButton(
             NSPoint(x: 4122.98046875, y: 1555),
             buttonFrame: NSRect(x: 4061, y: 1529, width: 242.5, height: 22),
@@ -99,8 +90,7 @@ final class PanelOutsideClickPolicyTests: XCTestCase {
     }
 
     func testClickInTopStripBesideStatusButtonMisses() {
-        // The upward extension widens the hit zone only vertically — a top-edge click next to the
-        // button (over a neighboring status item) must still dismiss.
+        // 상방 확장은 수직만 적용 — 옆 status item 위 최상단 클릭은 dismiss
         XCTAssertFalse(PanelOutsideClickPolicy.pointHitsStatusButton(
             NSPoint(x: 150, y: screenTop), buttonFrame: buttonFrame, screenTop: screenTop
         ))

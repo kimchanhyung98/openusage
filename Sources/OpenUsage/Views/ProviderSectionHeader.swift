@@ -1,47 +1,27 @@
 import SwiftUI
 
-/// Shared provider section header used by the dashboard and its lifted provider-reorder preview.
-/// The provider mark and name lead, followed by the optional plan badge. Dashboard callers supply a
-/// screenshot-copy action, revealed at the trailing edge while the header is hovered. Callers can also
-/// supply an optional `warning` — the latest refresh error, rendered as a small amber
-/// triangle beside the name whose hover tooltip carries the message (e.g. "Not logged in. Run `codex`
-/// to authenticate."). The
-/// optional `staleness` is the dashboard-only hint that the values shown are an aged snapshot still
-/// revalidating: a short "Outdated" tag whose hover tooltip carries the precise age ("Last updated 3h
-/// 12m ago"), so fossilized plan/limits never pass for current data.
+/// 대시보드·프로바이더 재정렬 프리뷰가 공유하는 프로바이더 섹션 헤더.
+/// 선택 요소: 호버 노출 스크린샷 복사, `warning`(최근 refresh 오류 삼각형), `staleness`("Outdated" 태그).
 struct ProviderSectionHeader: View {
     let provider: Provider
     var plan: String?
     var warning: String?
-    /// Whether this provider's refresh is currently in flight — drives the small spinner beside the name
-    /// so the section shows live feedback while values are being fetched (instead of silently sitting on
-    /// the previous, possibly stale, numbers).
     var refreshing: Bool = false
-    /// A muted "Outdated" hint shown only when the displayed snapshot has aged past its freshness window
-    /// (dashboard only; `nil` in the reorder preview, which never surfaces staleness). Its tooltip carries
-    /// the precise age.
+    /// 신선도 창을 넘긴 스냅샷의 "Outdated" 힌트 (대시보드 전용, 프리뷰는 `nil`). 정확한 경과는 tooltip.
     var staleness: StalenessHint?
-    /// Dashboard-only screenshot action. The reorder preview omits it, while Customize uses its own
-    /// row type and is unaffected by this header.
     var onCopyScreenshot: (() -> Bool)?
-    /// Managed account choices. The selector changes only the dashboard's usage view.
+    /// 관리 계정 선택지 — selector는 대시보드 사용량 뷰만 변경.
     var accountOptions: [AccountUsageOption] = []
     var selectedAccountID: String?
     var onSelectAccount: ((String) -> Void)?
-    /// True only for a card attached to a Settings-managed profile. Independently discovered
-    /// config-directory cards keep their existing account-derived titles.
+    /// Settings 관리 프로필에 연결된 카드만 true. 독립 발견 카드는 기존 계정 파생 제목 유지.
     var usesManagedAccountTitle = false
-    /// Registered account profiles for this provider family. This can exceed the number of runtime
-    /// cards when the selected account is running in the shared configuration home.
+    /// 프로바이더 패밀리의 등록 프로필 수 — 공유 config home 사용 시 런타임 카드 수 초과 가능.
     var managedProfileCount = 0
 
-    /// Header type and icon track the density setting like the rows do, so Compact shrinks the
-    /// whole section anatomy — not just the rows under it.
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-    /// Read for the live card name: a rename lands in the account registry and re-titles the header
-    /// without a relaunch (the `Provider`'s own name is baked at launch).
+    /// 카드 rename 반영용 — `Provider` 자체 이름은 launch 시 고정.
     @Environment(AppContainer.self) private var container
-    /// Party easter egg: pulse the provider mark. Off by default everywhere else.
     @Environment(\.popoverPartyMode) private var partyMode
     @State private var isHovered = false
 
@@ -73,17 +53,12 @@ struct ProviderSectionHeader: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            // The provider mark replaces the dashboard's visual drag grip. Reordering still belongs
-            // to the whole header at the caller, so the logo itself stays presentational.
+            // 프로바이더 마크가 시각적 drag grip 대체 — 재정렬은 호출자 소유, 로고는 표시 전용
             ProviderIcon(source: provider.icon, inset: 0.04)
                 .frame(width: density.headerIconSize, height: density.headerIconSize)
                 .partyPulse(partyMode)
-            // Baseline-aligned pair: the plan badge (and stale tag) are smaller type and sit on the
-            // name's text baseline, so the words line up along the bottom rather than floating centered.
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                // Name + plan keep their width and stay on one line; under width pressure (a long plan
-                // name like "Super Grok Heavy") the lower-priority stale tag truncates first instead of
-                // wrapping the name to a second line.
+                // 폭 압박 시 우선순위 낮은 stale 태그부터 truncate — 이름의 2줄 래핑 방지
                 Text(Self.headerTitle(
                     for: provider,
                     resolvedDisplayName: container.displayName(for: provider),
@@ -97,10 +72,7 @@ struct ProviderSectionHeader: View {
                     ProviderPlanBadge(plan: plan)
                         .layoutPriority(1)
                 }
-                // Tertiary, below the plan in hierarchy: outdated content, not something the user acts on.
-                // Short by design ("Outdated") so it never pushes the plan name onto a second line — the
-                // precise age rides in the hover tooltip. Hidden while a refresh is in flight: the spinner
-                // already says "working on it".
+                // refresh 진행 중엔 숨김 — 스피너가 이미 작업 중 신호
                 if let staleness, !refreshing {
                     Text(staleness.label)
                         .font(.system(size: density.planBadgePointSize))
@@ -154,9 +126,7 @@ extension ProviderSectionHeader {
         managedProfileCount > 1 && runtimeOptionCount > 0
     }
 
-    /// Settings-managed cards are alternate views of one provider and share its family title.
-    /// Independently discovered cards preserve the account-derived title they had before managed
-    /// switching existed.
+    /// Settings 관리 카드는 프로바이더 패밀리 제목 공유, 독립 발견 카드는 계정 파생 제목 유지.
     static func headerTitle(
         for provider: Provider,
         resolvedDisplayName: String,
@@ -168,7 +138,7 @@ extension ProviderSectionHeader {
     }
 }
 
-/// A compact, always-visible managed-account selector.
+/// 관리 계정 selector의 선택지 항목.
 struct AccountUsageOption: Identifiable, Hashable {
     let id: String
     let title: String
@@ -222,9 +192,6 @@ struct ProviderPlanBadge: View {
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
-        // Plain text — no pill/capsule — for a cleaner header. Secondary (not tertiary): the plan
-        // name is information the user reads, and tertiary on glass is reserved for inactive
-        // content. The smaller point size alone keeps it subordinate to metric values.
         Text(plan)
             .font(.system(size: density.planBadgePointSize))
             .foregroundStyle(.secondary)

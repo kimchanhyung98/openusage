@@ -1,36 +1,19 @@
 import SwiftUI
 import AppKit
 
-/// Handles the popover's two bare navigation keys via a local key monitor. SwiftUI
-/// `.keyboardShortcut` is unreliable here — a hidden/zero-size shortcut button never registers, and
-/// even a visible default button only fires when the popover is the key window — so the popover's
-/// keyboard navigation rides this low-level monitor instead, which sees the raw keyDown the moment
-/// the app processes it.
-///
-/// - **Esc**: `onEscape` gets first refusal (e.g. backing out of Customize); when it declines, the
-///   popover is dismissed through `MenuBarPopover.dismiss`, the same path a status-item click takes
-///   — so it stays in sync, reopens in one click, and trips the controller's visibility reset
-///   (cancelling edit mode + the jiggle).
-/// - **Return**: `onReturn` navigates into or back out of Customize (the same affordance the footer's
-///   Options ▸ Customize item carries). Consuming the key here is also what stops a bare
-///   Return from falling through and dismissing the popover.
+/// local key monitor로 popover의 bare navigation key 처리 — SwiftUI `.keyboardShortcut`은 popover가 key window일 때만 동작해 신뢰 불가.
+/// Esc는 `onEscape`가 먼저 거부권 행사 후 `MenuBarPopover.dismiss`로 닫기(status-item 클릭과 같은 경로);
+/// Return은 Customize 진입/복귀를 처리하며 여기서 소비되어 popover dismiss로 흘러가지 않음.
 struct PopoverKeyReader: NSViewRepresentable {
-    /// Called first on Esc. Return `true` when the press was handled in-popover (Esc then does
-    /// NOT close); return `false` to let the popover dismiss.
+    /// Esc에서 최우선 호출. in-popover에서 처리했으면 `true`(닫히지 않음); `false`면 popover dismiss.
     var onEscape: @MainActor () -> Bool = { false }
-    /// Called on plain (unmodified) Return. Return `true` to consume it (e.g. toggling Customize);
-    /// `false` lets the key fall through to a focused control.
+    /// 무수식 Return에서 호출. `true`면 소비(예: Customize 토글); `false`면 focus된 컨트롤로 fall through.
     var onReturn: @MainActor () -> Bool = { false }
-    /// Called on ⌘, (Settings). Handled on this always-on monitor — the same one as Esc/Return — so it
-    /// works from every screen, including Settings, whose footer has no Settings action. The Options
-    /// menu's Settings item carries ⌘, only as a *label*: while that menu is open the item handles
-    /// it, while it's closed this monitor does, so they never both fire.
+    /// ⌘,(Settings)에서 호출 — 상시 monitor라 모든 화면에서 동작.
+    /// Options 메뉴의 ⌘,는 라벨일 뿐 — 메뉴가 열려 있으면 메뉴 항목이, 닫혀 있으면 이 monitor가 처리해 이중 발화 없음.
     var onSettings: @MainActor () -> Bool = { false }
-    /// Called on plain ⌘Z (undo). Rides this monitor — same reasons as Esc/Return: a hidden SwiftUI
-    /// shortcut only fires when the popover is the key window, which the panel isn't always for. By the
-    /// time this runs the monitor has already confirmed the panel owns the keystroke and no text field is
-    /// editing (those keep their own ⌘Z), so callers should return `true` and consume it whether or not an
-    /// undo happened — returning `false` only lets AppKit beep on an empty undo.
+    /// 무수식 ⌘Z(undo)에서 호출. monitor가 panel의 keystroke 소유와 텍스트 편집 부재를 이미 확인한 뒤이므로
+    /// undo 실행 여부와 무관하게 `true` 반환·소비 권장 — `false`는 빈 undo에서 AppKit beep만 유발.
     var onUndo: @MainActor () -> Bool = { false }
 
     func makeNSView(context: Context) -> NSView {
@@ -50,15 +33,9 @@ struct PopoverKeyReader: NSViewRepresentable {
         view.onUndo = onUndo
     }
 
-    /// Whether a bare-key keyDown belongs to the popover: its key window must *be* the panel. The
-    /// panel is a non-activating key window that takes focus the instant it opens, so a foreign key
-    /// window (an open About panel, a tracking `NSMenu` from the Options menu or a Settings picker) — or
-    /// no key window at all — is correctly *not* the popover's, and Esc/Return leave it alone instead
-    /// of hijacking it. (An earlier build also claimed a nil key window, to paper over `NSPopover`'s
-    /// activation race; the `NSPanel` removed that race, so the strict match is correct and safer.)
-    // `nonisolated`: a pure comparison of two Sendable `ObjectIdentifier`s. The enclosing struct is
-    // implicitly @MainActor (it stores @MainActor closures), which would otherwise wall this helper off
-    // from non-MainActor callers — including its own tests (3 verified [#ActorIsolatedCall] warnings).
+    /// bare-key keyDown의 popover 소유 여부 — event의 key window가 panel 자체여야 함.
+    /// 외부 key window(About 패널, tracking `NSMenu`)나 key window 부재는 popover 소유가 아니므로 Esc/Return이 가로채지 않음.
+    // `nonisolated`: Sendable `ObjectIdentifier` 비교뿐 — struct의 암묵적 @MainActor가 테스트 등 non-MainActor 호출을 막지 않도록 함.
     nonisolated static func keyTargetsPopover(eventWindowID: ObjectIdentifier?, popoverWindowID: ObjectIdentifier) -> Bool {
         eventWindowID == popoverWindowID
     }
@@ -92,35 +69,31 @@ struct PopoverKeyReader: NSViewRepresentable {
                 let isReturn = keyCode == MonitorView.returnKeyCode
                 let isComma = keyCode == MonitorView.commaKeyCode
                 let isUndo = keyCode == MonitorView.zKeyCode
-                // Only bare Return navigates; ⌘⏎, ⌥⏎, etc. belong to other controls.
+                // 무수식 Return만 navigation; ⌘⏎, ⌥⏎ 등은 다른 컨트롤 소유.
                 if isReturn,
                    !event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty {
                     return event
                 }
-                // Only plain ⌘, navigates; a bare comma (typing) or ⌥⌘, etc. belong elsewhere.
+                // 순수 ⌘,만 navigation; bare comma(타이핑)나 ⌥⌘, 등은 다른 곳 소유.
                 if isComma,
                    event.modifierFlags.intersection([.command, .option, .control, .shift]) != [.command] {
                     return event
                 }
-                // Only plain ⌘Z undoes; a bare z (typing) or ⇧⌘Z (redo) belong elsewhere.
+                // 순수 ⌘Z만 undo; bare z(타이핑)나 ⇧⌘Z(redo)는 다른 곳 소유.
                 if isUndo,
                    event.modifierFlags.intersection([.command, .option, .control, .shift]) != [.command] {
                     return event
                 }
                 let eventWindowID = event.window.map(ObjectIdentifier.init)
                 let consumed = MainActor.assumeIsolated { () -> Bool in
-                    // Only act while the popover is on-screen; the SwiftUI tree (and this monitor) can
-                    // outlive a close, and `isVisible` stands in for `NSPopover.isShown`.
+                    // popover가 on-screen일 때만 동작 — SwiftUI tree와 monitor는 close 후에도 살아 있을 수 있음.
                     guard let self, let window = self.window, window.isVisible else { return false }
-                    // The key must target the popover — its key window must be the panel, so a key
-                    // pressed while a menu / About panel owns focus is left alone (see `keyTargetsPopover`).
-                    // This is also what hands ⌘, to an open Options menu's own item instead of here.
+                    // key가 popover를 대상으로 해야 함 — 메뉴/About 패널이 focus를 가진 동안의 key는 무시(`keyTargetsPopover` 참고).
                     guard PopoverKeyReader.keyTargetsPopover(
                         eventWindowID: eventWindowID,
                         popoverWindowID: ObjectIdentifier(window)
                     ) else { return false }
-                    // A text control is editing, or the Settings shortcut recorder is capturing a
-                    // combo: the key belongs to it (insert / cancel / record), not to popover nav.
+                    // 텍스트 컨트롤 편집 중이거나 shortcut recorder 캡처 중이면 key는 그쪽 소유.
                     if window.firstResponder is NSText || ShortcutRecorderField.isRecordingActive {
                         return false
                     }
@@ -145,30 +118,22 @@ struct PopoverKeyReader: NSViewRepresentable {
     }
 }
 
-/// Lets views inside the popover close it without knowing who owns it.
+/// popover 내부 view가 소유자를 모른 채 popover를 제어하게 하는 진입점.
 @MainActor
 enum MenuBarPopover {
-    /// Installed by `StatusItemController` at launch; closes the popover through the same code
-    /// path as a status-item click.
+    /// `StatusItemController`가 launch 시 설치 — status-item 클릭과 같은 경로로 popover 닫기.
     static var dismissHandler: (() -> Void)?
 
-    /// Installed by `StatusItemController` at launch; opens the popover (e.g. when the user taps a
-    /// quota pace notification banner).
+    /// `StatusItemController`가 launch 시 설치 — popover 열기(예: pace 알림 배너 탭).
     static var showHandler: (() -> Void)?
 
-    /// Auto-resize bridge — the "single clock". SwiftUI owns the animated height and the AppKit panel
-    /// is a passive follower: `applyHeight` is called once per animation frame from a SwiftUI
-    /// `Animatable` modifier with the interpolated height, and the controller hops it onto the main
-    /// queue (mandatory — it's invoked from inside SwiftUI's layout pass, and `setFrame` re-enters
-    /// AppKit layout on the constraint-pinned host, which would trip `_NSDetectedLayoutRecursion`) and
-    /// `setFrame`s the panel. `clampHeight` lets SwiftUI clamp its target to the same [min, screen-max]
-    /// range the panel will actually sit at, so the spring settles exactly on-frame.
+    /// auto-resize 브리지 — "single clock". SwiftUI가 애니메이션 높이를 소유하고 AppKit panel은 수동 follower.
+    /// `applyHeight`는 SwiftUI layout pass 내부에서 호출되므로 main queue hop 필수(`setFrame` 재진입이 layout 재귀 유발);
+    /// `clampHeight`는 SwiftUI 목표를 panel의 [min, screen-max] 범위로 clamp해 spring이 정확히 frame에 안착.
     static var applyHeight: ((CGFloat) -> Void)?
     static var clampHeight: ((CGFloat) -> CGFloat)?
 
-    /// Closes the popover. Falls back to ordering the given window out if no owner has installed
-    /// a handler (which would be a wiring bug, so it's logged loudly by the caller's absence of
-    /// effect rather than silently swallowed here).
+    /// popover 닫기. handler 미설치 시(배선 버그) 지정 window의 order-out으로 fallback.
     static func dismiss(fallback window: NSWindow?) {
         if let dismissHandler {
             dismissHandler()

@@ -39,7 +39,7 @@ final class DefaultAccountObserverTests: XCTestCase {
             "/Users/dev/.claude.json": claudeStateJSON(),
         ])
 
-        // The default `~/.claude` keeps its state at `~/.claude.json` — next to, not inside, the dir.
+        // 기본 `~/.claude`의 state는 dir 안이 아니라 옆의 `~/.claude.json`
         XCTAssertEqual(
             observer.observeClaude(),
             .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
@@ -66,8 +66,7 @@ final class DefaultAccountObserverTests: XCTestCase {
             "/Users/dev/.claude.json": claudeStateJSON(orgUuid: "ORG-9", orgName: "Sunstory"),
         ])
 
-        // One human commonly has a personal Max org and a company Team org under the SAME account —
-        // different usage pools, so the org id is part of the identity key.
+        // 같은 계정 아래 personal Max org와 company Team org 공존 가능 — usage pool이 달라 org id도 identity key에 포함
         XCTAssertEqual(
             observer.observeClaude(),
             .resolved(identityKey: "acct-uuid-1|org-9", label: "dev@example.com (Sunstory)", anchor: "/Users/dev/.claude")
@@ -98,8 +97,7 @@ final class DefaultAccountObserverTests: XCTestCase {
             pinsClaudeSharedHome: true
         )
 
-        // The switch transaction owns `~/.claude`; the observer must describe that home, not the
-        // ambient override — otherwise the app would manage one account while observing another.
+        // switch transaction이 `~/.claude` 소유 — observer는 ambient override가 아니라 그 home 기준으로 기술
         XCTAssertEqual(
             observer.observeClaude(),
             .resolved(identityKey: "acct-uuid-1", label: "dev@example.com", anchor: "/Users/dev/.claude")
@@ -107,8 +105,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testManagedClaudePinRequiresBothStateFilesToAgree() {
-        // Mirrors the switcher's rule: plain runs update `~/.claude.json`, wrapper runs update the
-        // state inside the home — a disagreement means the identity is ambiguous, never a guess.
+        // switcher 규칙과 동일 — 두 state file 불일치 시 identity ambiguous, 추측 금지
         let observer = DefaultAccountObserver(
             environment: FakeEnvironment([:]),
             files: FakeFiles([
@@ -142,8 +139,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testClaudeCommaListConfigDirIsUnresolved() {
-        // `ClaudeAuthStore` treats the env value as ONE credential path; a scanner-style comma list
-        // cannot be assigned a single account identity.
+        // `ClaudeAuthStore`는 env 값을 단일 credential 경로로 취급 — comma list는 단일 identity 부여 불가
         let observer = makeObserver(
             environment: ["CLAUDE_CONFIG_DIR": "~/a,~/b"],
             files: ["/Users/dev/a/.claude.json": claudeStateJSON()]
@@ -218,7 +214,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testCodexFallsBackToChatGPTAccountClaim() {
-        // The id_token's ChatGPT account claim is the value the CLI itself copies into `account_id`.
+        // id_token의 ChatGPT account claim은 CLI가 `account_id`로 복사하는 값
         let idToken = fakeJWT(payload: [
             "https://api.openai.com/auth": ["chatgpt_account_id": "CLAIM-ACCT-2"],
         ])
@@ -233,8 +229,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testCodexNamelessAuthFileIsUnresolvedNeverPathKeyed() {
-        // The strict identity rule: an auth file that can't name its account NEVER becomes an
-        // identity (no path-derived fallback) — it's reported, not guessed.
+        // strict identity 규칙 — 계정을 특정 못 하는 auth file은 identity화 금지 (path 유래 fallback 없음)
         let observer = makeObserver(files: [
             "/Users/dev/.codex/auth.json": codexAuthJSON(accountID: nil),
         ])
@@ -247,9 +242,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testCodexKeychainCredentialMakesTheFamilyUnresolved() {
-        // The provider can fall back to the keychain credential when file auth fails, so while a
-        // keychain item exists, the auth file's identity is not provably the producing account —
-        // and we never read the keychain secret on the launch path to find out.
+        // keychain item 존재 시 auth file identity가 실제 사용 계정임을 보증 불가 — launch 경로에서 keychain secret 미열람
         let observer = makeObserver(
             files: ["/Users/dev/.codex/auth.json": codexAuthJSON()],
             keychainValue: #"{"tokens": {"access_token": "kc-at"}}"#
@@ -262,8 +255,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testCodexUnverifiableKeychainProbeAlsoMakesTheFamilyUnresolved() {
-        // A timed-out/failed probe (`nil`) must land on the same side as "item present": resolving
-        // from the file while a keychain fallback might exist is the wrong-account stamp risk.
+        // probe 실패(`nil`)도 "item present"와 동일 취급 — wrong-account stamp 위험 방지
         let observer = DefaultAccountObserver(
             environment: FakeEnvironment([:]),
             files: FakeFiles(["/Users/dev/.codex/auth.json": codexAuthJSON()]),
@@ -278,8 +270,7 @@ final class DefaultAccountObserverTests: XCTestCase {
     }
 
     func testCodexXDGConfigHomeOrderMatchesAuthStore() {
-        // `CodexAuthStore.authPaths()` probes `~/.config/codex` before `~/.codex`; the observer must
-        // attribute the same home the provider actually loads credentials from.
+        // `CodexAuthStore.authPaths()`는 `~/.config/codex`를 `~/.codex`보다 먼저 probe — observer도 동일 home에 귀속
         let observer = makeObserver(files: [
             "/Users/dev/.config/codex/auth.json": codexAuthJSON(accountID: "config-home-acct"),
             "/Users/dev/.codex/auth.json": codexAuthJSON(accountID: "legacy-home-acct"),

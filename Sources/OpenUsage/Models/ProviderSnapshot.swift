@@ -1,27 +1,22 @@
 import Foundation
 
-/// Latest normalized output for one provider refresh.
+/// provider refresh 1회의 최신 정규화 출력.
 struct ProviderSnapshot: Hashable, Sendable, Codable {
     let providerID: String
-    /// The card title at refresh time — always the baked DERIVED name (renames never reach the
-    /// cache or iCloud). The CLI/API boundary re-resolves it against the account registry at
-    /// respond time (`LocalUsageAPI.State.resolvingDisplayNames`), so human-facing output carries
-    /// renames without persisting them.
+    /// refresh 시점의 카드 title — 항상 baked DERIVED name (rename은 cache·iCloud 미도달).
+    /// CLI/API 경계가 응답 시점에 account registry로 재해석 — rename은 표출만 되고 영속되지 않는 계약.
     var displayName: String
     var plan: String?
     var lines: [MetricLine]
     var refreshedAt: Date
-    /// Raw normalized daily history used to build spend rows. This always belongs to this Mac; peer
-    /// history is combined only in the in-memory rendered view and is never written into the cache.
+    /// spend row 구성용 raw 정규화 일별 history — 항상 이 Mac 소유.
+    /// peer history는 in-memory 렌더 뷰에서만 결합, cache 미기록.
     var usageHistory: ProviderUsageHistory?
-    /// A soft, non-blocking notice carried on a *successful* snapshot — e.g. Claude's "Re-login for live
-    /// usage" when the saved login lacks the `user:profile` scope. Distinct from `errorCategory` (which is
-    /// only on error snapshots): the refresh succeeded and partial data (spend tiles) still loads, so this
-    /// surfaces as the provider header's amber triangle rather than blanking the provider. Cached with the
-    /// snapshot; cleared on the next refresh when the condition resolves.
+    /// 성공 snapshot에 실리는 non-blocking 알림 (예: scope 부족 시 재로그인 안내).
+    /// refresh는 성공 상태 — provider header의 amber triangle로 표출, snapshot과 함께 cache, 해소 시 다음 refresh에서 제거.
     var warning: String?
-    /// Set only on error snapshots: a stable, non-PII bucket for the failure, read by telemetry on the
-    /// failure path. Always `nil` on success (and error snapshots aren't cached), so it never persists.
+    /// 오류 snapshot 전용 telemetry 분류 bucket (non-PII).
+    /// 성공 시 항상 nil, 오류 snapshot은 cache되지 않아 미영속.
     var errorCategory: ErrorCategory?
 
     init(
@@ -48,9 +43,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         lines.first { $0.label == label }
     }
 
-    /// The success-path counterpart to `error(provider:message:)`: derives `providerID`/`displayName`
-    /// from the provider so every runtime builds its snapshot the same way (`refreshedAt` is required
-    /// so each call passes its own `now()`).
+    /// `error(provider:message:)`의 성공 경로 대응 — provider에서 `providerID`/`displayName` 파생.
+    /// `refreshedAt` 필수 — 각 호출이 자신의 `now()` 전달.
     static func make(
         provider: Provider,
         plan: String?,
@@ -70,10 +64,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         )
     }
 
-    /// Build an error snapshot straight from a caught error: the badge text stays the error's
-    /// user-facing `localizedDescription` (UI copy is unchanged), and the telemetry category is derived
-    /// from the error's `CategorizedError` conformance (falling back to `.other` for anything that
-    /// doesn't classify itself). Preferred over `error(provider:message:)` wherever an `Error` is in hand.
+    /// 잡은 `Error`에서 오류 snapshot 생성 — badge text는 `localizedDescription`, category는 `CategorizedError`에서 파생(미분류는 `.other`).
+    /// `Error` 보유 시 `error(provider:message:)`보다 우선 사용.
     static func error(provider: Provider, error: Error) -> ProviderSnapshot {
         Self.error(
             provider: provider,

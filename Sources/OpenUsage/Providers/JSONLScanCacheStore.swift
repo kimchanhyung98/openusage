@@ -1,9 +1,8 @@
 import Darwin
 import Foundation
 
-/// Disk policy for one JSONL parser. `namespace` identifies the provider/parser; the scanner adds a
-/// stable provider/home identity below it. Bump `schemaVersion` whenever the persisted item meaning
-/// changes, including changes to nested values such as `TokenBreakdown`.
+/// JSONL parser 하나의 disk 정책. `namespace`는 provider/parser 식별자, 그 아래에 scanner가 provider/home identity를 추가.
+/// persist되는 item 의미가 바뀌면(중첩 값 `TokenBreakdown` 포함) `schemaVersion` 증가 필수.
 struct JSONLScanCachePersistence: Sendable {
     var namespace: String
     var schemaVersion: Int
@@ -36,7 +35,7 @@ struct JSONLScanCacheManifest: Codable, Sendable {
     var formatVersion: Int
     var schemaVersion: Int
     var identity: String
-    /// Diagnostic/retention timestamp for the last successful lock-scoped manifest merge.
+    /// 마지막 성공한 lock-scoped manifest merge의 진단·retention timestamp.
     var generatedAt: Date
     var files: [String: JSONLScanCacheFileMetadata]
 }
@@ -49,11 +48,9 @@ struct JSONLScanCacheUpsert: Sendable {
 struct JSONLScanCacheWriteBatch: Sendable {
     var persistence: JSONLScanCachePersistence
     var identity: String
-    /// Only new or changed source paths are present. The writer verifies each path's current stat before
-    /// publishing it, so a slow process cannot replace a newer parse of the same source file.
+    /// 새로 생겼거나 변경된 source 경로만 포함. writer가 publish 전에 각 경로의 현재 stat 검증 — 느린 프로세스가 같은 source의 더 새로운 parse를 덮어쓰지 못함.
     var upserts: [String: JSONLScanCacheUpsert]
-    /// A removal applies only while the on-disk metadata still equals the value this scanner observed.
-    /// Paths added or changed by another app/CLI process are therefore preserved.
+    /// on-disk metadata가 이 scanner가 관측한 값과 일치할 때만 적용 — 다른 앱/CLI 프로세스가 추가·변경한 경로는 보존.
     var removals: [String: JSONLScanCacheFileMetadata]
 }
 
@@ -128,9 +125,8 @@ enum JSONLScanCachePaths {
         return persistence.directory.appendingPathComponent(".\(directoryName).lock")
     }
 
-    /// Swift's `Hasher` is randomized per process; FNV-1a gives stable compact names across launches.
-    /// Manifests/records also carry and validate the unhashed identity/path, so a theoretical collision
-    /// causes a safe reparse instead of serving another source's items.
+    /// Swift `Hasher`는 프로세스별 랜덤 — FNV-1a로 launch 간 안정적인 압축 이름 생성.
+    /// manifest/record가 unhashed identity·path도 함께 검증하므로 이론적 충돌은 다른 source 제공이 아닌 안전한 reparse로 귀결.
     static func stableFingerprint(_ value: String) -> String {
         var hash: UInt64 = 14_695_981_039_346_656_037
         for byte in value.utf8 {
@@ -141,10 +137,8 @@ enum JSONLScanCachePaths {
     }
 }
 
-/// Serializes manifest publication within the process and uses `flock` to order app/CLI writers. Each
-/// batch carries path-level mutations, which are merged with the current manifest while locked so
-/// overlapping processes preserve one another's work. Records land before the manifest, so a crash can
-/// leave an orphan record but never publish metadata for a half-written one.
+/// manifest publish를 프로세스 내에서 직렬화하고 `flock`으로 앱/CLI writer 간 순서 보장 — batch의 경로 단위 변경을 lock 안에서 현재 manifest와 merge해 겹치는 프로세스가 서로의 작업 보존.
+/// record가 manifest보다 먼저 기록 — crash 시 orphan record는 남을 수 있어도 반쯤 쓰인 record의 metadata는 publish되지 않음.
 actor JSONLScanCacheWriter {
     static let shared = JSONLScanCacheWriter()
 
@@ -221,7 +215,7 @@ actor JSONLScanCacheWriter {
             try Self.createPrivateDirectory(persistence.directory)
             try Self.createPrivateDirectory(identityDirectory)
             try Self.createPrivateDirectory(recordsDirectory)
-            // Publish metadata last. A reader either sees the complete old generation or complete new one.
+            // metadata는 마지막에 publish — reader는 완전한 이전 세대 아니면 완전한 새 세대만 관측.
             let encoder = PropertyListEncoder()
             encoder.outputFormat = .binary
             try Self.writePrivate(try encoder.encode(manifest), to: manifestURL)
@@ -242,8 +236,7 @@ actor JSONLScanCacheWriter {
         }
     }
 
-    /// Reads one identity under a shared cross-process lock and marks it recently used before releasing
-    /// that lock. A concurrent stale-cache cleanup must then re-check the touched directory and keep it.
+    /// shared cross-process lock 아래 identity 하나를 읽고, lock 해제 전에 최근 사용으로 표시 — 동시 진행 중인 stale-cache 정리가 touched 디렉토리를 재확인 후 유지하게 함.
     nonisolated func load<Item: Codable & Sendable>(
         persistence: JSONLScanCachePersistence,
         identity: String,
@@ -319,9 +312,8 @@ actor JSONLScanCacheWriter {
         }
     }
 
-    /// Removes identity directories that have not been read or written for longer than the retained scan
-    /// window. The tiny lock files contain no usage data and intentionally remain: unlinking a lock
-    /// file while another process holds its inode would undermine cross-process exclusion.
+    /// 보존 scan window보다 오래 읽기/쓰기가 없던 identity 디렉토리 제거.
+    /// 작은 lock 파일은 의도적으로 잔존 — 다른 프로세스가 inode를 쥔 lock 파일을 unlink하면 cross-process 배제가 깨짐.
     func pruneStaleIdentities(
         persistence: JSONLScanCachePersistence,
         before cutoff: Date

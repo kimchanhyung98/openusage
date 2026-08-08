@@ -1,25 +1,24 @@
 import Foundation
 import Observation
 
-/// One managed account record for Claude/Codex account switching. A profile is not a folder: it is
-/// a stable handle for one provider account, proven by that provider's own credential metadata. The
-/// only user-editable field is `label`; authentication lives in the profile's Keychain snapshot and
-/// sign-in workspace, both keyed by the immutable `id`.
+/// Claude/Codex account switching의 managed account record. profile은 폴더가 아니라 provider 계정
+/// 하나의 stable handle(그 provider의 credential metadata로 증명). 사용자 편집 필드는 `label`뿐 —
+/// 인증은 immutable `id`로 key된 Keychain snapshot과 sign-in workspace에 보관.
 public struct AccountProfile: Codable, Equatable, Sendable, Identifiable {
-    /// Stable id minted at registration (a UUID for new profiles; migrated profiles keep their
-    /// original ids). The handle for the Keychain snapshot and the Sign-In Workspace.
+    /// 등록 시 발급되는 stable id(신규는 UUID, 이관 profile은 기존 id 유지) — Keychain snapshot과
+    /// Sign-In Workspace의 handle.
     public var id: String
-    /// The provider family this account belongs to: `claude` or `codex`. Never changes.
+    /// 소속 provider family(`claude`/`codex`) — 불변.
     public var family: String
-    /// Display name shown in Settings, the dashboard selector, and the CLI. Freely renameable —
-    /// never an identity input. Unique within a family so two rows can't read as one account.
+    /// 표시 이름(Settings·dashboard selector·CLI) — 자유 rename, identity 입력이 아님.
+    /// family 내 유일 — 두 행이 한 account로 읽히지 않도록.
     public var label: String
-    /// The provider-proven account identity (Claude: account+org UUIDs; Codex: ChatGPT account id).
-    /// Never user-edited; the switch transaction refuses credentials that don't carry it.
+    /// provider가 증명한 account identity(Claude: account+org UUID, Codex: ChatGPT account id) —
+    /// 사용자 편집 불가; switch transaction은 이 identity를 담지 않은 credential을 거부.
     public var identityKey: String
     public var createdAt: Date
-    /// Removal is a tombstone: the shared runtime homes are never deleted, and an archived profile
-    /// stays out of every picker and preferred selection.
+    /// 제거는 tombstone — 공유 runtime home은 삭제하지 않고, archived profile은 모든 picker·preferred
+    /// selection에서 제외.
     public var isArchived: Bool
 
     init(
@@ -52,7 +51,7 @@ public enum AccountProfileError: Error, Equatable {
 }
 
 extension AccountProfileError {
-    /// User-facing one-liner, shared by the Settings sheets and the `openusage account` CLI.
+    /// 사용자 노출 한 줄 메시지 — Settings sheet와 `openusage account` CLI 공용.
     public var userMessage: String {
         switch self {
         case .unknownFamily(let family):
@@ -77,11 +76,9 @@ extension AccountProfileError {
     }
 }
 
-/// The managed account registry (`openusage.accountProfiles.v2`). Lives in the shared defaults
-/// domain so the app and the read-only `openusage account` CLI see the same state: the CLI always
-/// reads fresh on launch, and the app calls `reloadFromDefaults()` when its panels open. This store
-/// holds only profile metadata — credentials live in each profile's Keychain snapshot, and card
-/// identity stays in `ProviderAccountsStore`.
+/// managed account registry(`openusage.accountProfiles.v2`) — 공유 defaults domain이라 앱과 read-only
+/// `openusage account` CLI가 같은 상태 공유(CLI는 launch마다 fresh read, 앱은 panel open 시 `reloadFromDefaults()`).
+/// profile metadata만 보유 — credential은 각 profile의 Keychain snapshot, 카드 identity는 `ProviderAccountsStore`.
 @MainActor
 @Observable
 public final class AccountProfilesStore {
@@ -116,7 +113,7 @@ public final class AccountProfilesStore {
         load()
     }
 
-    /// Active profiles of one family, oldest first (registration order is the display order).
+    /// 한 family의 active profile — 등록순(표시 순서).
     public func profiles(family: String) -> [AccountProfile] {
         profiles
             .filter { $0.family == family && !$0.isArchived }
@@ -127,14 +124,12 @@ public final class AccountProfilesStore {
         profiles.first { $0.id == id && !$0.isArchived }
     }
 
-    /// The active profile already registered for a provider account, if any — the duplicate gate
-    /// for adds and the target of a same-account re-login.
+    /// 한 provider account에 이미 등록된 active profile — add의 duplicate gate이자 same-account 재로그인의 target.
     public func activeProfile(family: String, identityKey: String) -> AccountProfile? {
         profiles(family: family).first { $0.identityKey == identityKey }
     }
 
-    /// The profile whose authentication new sessions use, if the stored selection still points at
-    /// an active profile of the family.
+    /// 새 세션이 인증에 사용할 profile id — 저장된 선택이 여전히 그 family의 active profile을 가리킬 때만.
     public func preferredProfileID(family: String) -> String? {
         guard let id = preferredByFamily[family],
               profiles.contains(where: { $0.id == id && $0.family == family && !$0.isArchived }) else {
@@ -147,8 +142,7 @@ public final class AccountProfilesStore {
         preferredProfileID(family: family).flatMap { id in profiles.first { $0.id == id } }
     }
 
-    /// Records the selected profile. A family with active profiles always keeps one selection, so
-    /// callers cannot accidentally leave every account toggle off.
+    /// 선택 profile 기록 — active profile이 있는 family는 항상 선택 1개 유지(모든 account toggle off 불가).
     public func setPreferred(family: String, profileID: String?) {
         guard !hasUnreadableRegistry else {
             AppLog.error(.config, "refusing to change account selection while the registry is unavailable")
@@ -167,9 +161,8 @@ public final class AccountProfilesStore {
         persist()
     }
 
-    /// Registers a profile for a proven provider account. The identity key is the dedupe key: one
-    /// provider account is one profile, however many times it signs in. `id` lets the sign-in flow
-    /// keep the workspace it minted before the official login ran; omitted, a fresh UUID is minted.
+    /// 증명된 provider account의 profile 등록 — identity key가 dedupe key(계정 하나 = profile 하나).
+    /// `id` 지정 시 sign-in flow가 공식 로그인 전에 발급한 workspace 유지; 생략하면 새 UUID 발급.
     @discardableResult
     public func add(family: String, label: String, identityKey: String, id: String? = nil) throws -> AccountProfile {
         try ensureRegistryWritable()
@@ -211,8 +204,7 @@ public final class AccountProfilesStore {
         return profile
     }
 
-    /// Renames a profile. Only the label changes: id, identity, snapshot, workspace, and the
-    /// preferred selection are untouched.
+    /// profile rename — `label`만 변경; id·identity·snapshot·workspace·preferred selection 불변.
     public func rename(profileID: String, to label: String) throws {
         try ensureRegistryWritable()
         guard let index = profiles.firstIndex(where: { $0.id == profileID && !$0.isArchived }) else {
@@ -230,9 +222,8 @@ public final class AccountProfilesStore {
         persist()
     }
 
-    /// Tombstones a profile. The caller removes the workspace and then the Keychain snapshot FIRST —
-    /// this refuses to archive the selected profile while another active profile exists, so a
-    /// switchable family can never end up with authentication that no row answers for.
+    /// profile tombstone 처리 — 다른 active profile이 있는 동안 선택된 profile의 archive는 거부, switchable
+    /// family에 어떤 행도 응답하지 않는 인증이 남을 수 없음. 호출자는 workspace·Keychain snapshot 제거를 먼저 수행.
     public func archive(profileID: String) throws {
         try validateArchive(profileID: profileID)
         let index = profiles.firstIndex(where: { $0.id == profileID && !$0.isArchived })!
@@ -256,7 +247,7 @@ public final class AccountProfilesStore {
         }
     }
 
-    /// Resolves a CLI/UI reference — a profile id or a unique case-insensitive label match.
+    /// CLI/UI reference 해석 — profile id 또는 유일한 case-insensitive label 매치.
     public func resolve(reference: String, family: String) throws -> AccountProfile {
         let active = profiles(family: family)
         if let byID = active.first(where: { $0.id == reference }) { return byID }
@@ -267,8 +258,7 @@ public final class AccountProfilesStore {
         return match
     }
 
-    /// Re-reads the shared domain. The long-lived app calls this when its panels open so writes
-    /// from another process show up without a relaunch.
+    /// 공유 domain 재읽기 — 장수 앱이 panel open 시 호출, 타 process의 쓰기를 relaunch 없이 반영.
     public func reloadFromDefaults() {
         load()
     }

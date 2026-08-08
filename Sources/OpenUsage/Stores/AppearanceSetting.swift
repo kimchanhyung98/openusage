@@ -1,10 +1,8 @@
 import AppKit
 
-/// Explicit appearance override for the whole app; `.system` follows macOS. Applied as
-/// `NSApp.appearance` — the panel hosting ignores SwiftUI's `preferredColorScheme`, so the override
-/// has to happen at the AppKit level. `applyCurrent()` also posts `didChangeNotification` for
-/// `StatusItemController` to pin the same appearance directly on the menu-bar panel. The menu-bar
-/// label is unaffected (template image).
+/// 앱 전체 appearance override, `.system`은 macOS 추종
+/// panel hosting이 SwiftUI `preferredColorScheme`을 무시하므로 `NSApp.appearance` 수준에서 적용
+/// 메뉴바 panel 동기화는 `applyCurrent()`의 `didChangeNotification` 게시로 처리
 enum AppearanceSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBacked {
     case system
     case light
@@ -13,8 +11,7 @@ enum AppearanceSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
     static let key = "appearance"
     static var fallback: AppearanceSetting { .system }
 
-    /// Posted by `applyCurrent()` after the app-level appearance is set, so the popover owner can
-    /// mirror the override onto the menu-bar panel.
+    /// 앱 수준 appearance 적용 후 게시 — popover 소유자가 메뉴바 panel에 동일 override 반영
     static let didChangeNotification = Notification.Name("AppearanceSettingDidChange")
 
     var label: String {
@@ -25,8 +22,7 @@ enum AppearanceSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
         }
     }
 
-    /// `nil` for `.system`: both `NSApp` and the menu-bar panel inherit the OS setting, so "System"
-    /// tracks live theme switches without re-applying.
+    /// `.system`은 `nil` — OS 설정 상속으로 재적용 없이 라이브 테마 전환 추종
     var nsAppearance: NSAppearance? {
         switch self {
         case .system: return nil
@@ -35,11 +31,9 @@ enum AppearanceSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
         }
     }
 
-    // `current` (the stored choice, `.system` when unset) comes from `UserDefaultsBacked`.
+    // `current`(저장된 선택값, 미설정 시 `.system`)는 `UserDefaultsBacked` 제공
 
-    /// Reads the stored choice and applies it app-wide. Call once at launch and again whenever
-    /// the setting changes — app windows restyle immediately, and the notification lets the
-    /// status-item owner restyle the menu-bar panel.
+    /// 저장된 선택값을 앱 전역에 적용 — 런칭 시 1회, 설정 변경 시마다 호출
     @MainActor
     static func applyCurrent() {
         NSApplication.shared.appearance = current.nsAppearance

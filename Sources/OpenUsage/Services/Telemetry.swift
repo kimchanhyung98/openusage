@@ -1,18 +1,13 @@
 import Foundation
 import PostHog
 
-/// Build-time configuration for the PostHog project. The project token is a client-side, write-only
-/// key (it ships in every distributed binary, like any analytics SDK key), so it is safe to commit;
-/// an `OPENUSAGE_POSTHOG_TOKEN` environment override is supported for local testing without editing
-/// source. The host is region-bound — a US token will not ingest against the EU host.
+/// PostHog 프로젝트의 build-time 설정.
+/// project token은 client-side write-only 키 — commit 안전, `OPENUSAGE_POSTHOG_TOKEN` 환경 override 지원. host는 region 종속 — US token은 EU host에 ingest 불가.
 enum TelemetryConfig {
-    /// Sentinel meaning "no real token configured" — the sink stays inert (no setup, no network) while
-    /// the resolved token equals this. Do NOT change this value.
+    /// "실제 token 미설정" sentinel — 해석된 token이 이 값이면 sink는 inert(설정·네트워크 없음). 값 변경 금지.
     static let placeholderToken = "phc_REPLACE_ME"
 
-    /// The project token baked into the build. Replace `phc_REPLACE_ME` with the real US-region
-    /// `phc_…` key (safe to commit — it's a client write-only key), or leave it and set
-    /// `OPENUSAGE_POSTHOG_TOKEN` at runtime for local testing.
+    /// 빌드에 포함되는 project token — commit 안전한 client write-only 키; 로컬 테스트는 `OPENUSAGE_POSTHOG_TOKEN` 사용.
     private static let bakedToken = "phc_tRD4fSrpb2bgA3xYLqCkLsZ9YSGQckuKNB5BBnRm7DCL"
 
     static var token: String {
@@ -22,30 +17,25 @@ enum TelemetryConfig {
         return bakedToken
     }
 
-    /// US cloud. Switch to "https://eu.i.posthog.com" only with an EU-region project token.
+    /// US 리전 기본값 — EU 프로젝트 토큰일 때만 EU 리전 host로 변경.
     static let host = "https://us.i.posthog.com"
 }
 
-/// The transport seam telemetry is emitted through. Abstracted from PostHog so the recorder's
-/// daily-rollup/dedup logic can be unit-tested against a fake sink.
+/// telemetry 전송 seam — PostHog에서 추상화해 recorder의 daily-rollup/dedup 로직을 fake sink로 unit-test 가능.
 @MainActor
 protocol TelemetrySink: AnyObject {
     func capture(_ event: String, _ properties: [String: Any])
-    /// Mirror the user's sharing choice onto the underlying SDK at runtime.
+    /// 사용자 공유 선택을 runtime에 SDK로 미러링.
     func setEnabled(_ enabled: Bool)
     func flush()
 }
 
-/// Anonymous, opt-in PostHog sink. No `identify()`/`group()`/`alias()`, `personProfiles = .never`,
-/// and only IDs/counts/enums are ever sent — never the free-form error message (the file log's
-/// `LogRedaction` does not cover a network transport). When no real project token is configured the
-/// sink is inert (the app still builds and the toggle still works), so dev builds never phone home.
+/// 익명·opt-in PostHog sink — `identify()`/`group()`/`alias()` 미사용, `personProfiles = .never`.
+/// ID·count·enum만 전송 — free-form 에러 메시지 전송 금지(`LogRedaction`은 네트워크 transport 미적용). 실제 token 미설정 시 inert — dev 빌드의 phone home 금지.
 @MainActor
 final class PostHogTelemetrySink: TelemetrySink {
-    /// Crash / uncaught-exception autocapture is gated on the SAME choice as usage telemetry, decided
-    /// here so the contract is unit-testable without touching the `PostHogSDK.shared` singleton.
-    /// Gating *install* (not just sending) means a disabled launch installs no signal/
-    /// exception handler and writes no crash report to disk — honoring privacy.md's "nothing while off".
+    /// crash/uncaught-exception autocapture는 usage telemetry와 동일한 선택으로 gate — `PostHogSDK.shared` singleton 없이 unit-test 가능하도록 여기서 결정.
+    /// 전송이 아닌 install 자체를 gate — 비활성 launch는 handler 미설치·crash report 미기록.
     nonisolated static func errorAutocaptureEnabled(telemetryEnabled: Bool) -> Bool { telemetryEnabled }
 
     private let configured: Bool
@@ -59,31 +49,21 @@ final class PostHogTelemetrySink: TelemetrySink {
         configured = true
 
         let config = PostHogConfig(projectToken: token, host: host)
-        // Fully anonymous: no person profiles, no anonymous->identified merge.
+        // 완전 익명 — person profile·anonymous→identified merge 없음.
         config.personProfiles = .never
-        // We use no feature flags and emit our own daily rollups, so skip both startup fetches/autocapture.
+        // feature flag 미사용·자체 daily rollup 사용 — startup fetch와 autocapture 모두 생략.
         config.preloadFeatureFlags = false
         config.captureApplicationLifecycleEvents = false
         config.captureScreenViews = false
-        // Start in the user's chosen state before any event can fire.
+        // 이벤트 발생 전 사용자 선택 상태로 시작.
         config.optOut = !enabled
-        // Crash / uncaught-exception autocapture, gated on the SAME sharing choice (anonymous `$exception`
-        // events, sent on the NEXT launch after a crash). It captures Mach exceptions, POSIX signals,
-        // and uncaught NSExceptions; Swift traps may surface as a bare `SIGTRAP` without the message —
-        // the symbolicated stack (dSYMs uploaded from release.yml) is what makes them actionable.
-        // Gating install on `enabled` (not relying on `optOut` alone) means an opted-out launch wires
-        // up no handler and writes nothing to disk. A runtime opt-IN therefore activates crash capture
-        // from the next launch; `optOut` (mirrored by `setEnabled`) still hard-stops sending in-session.
-        // NOTE: this local flag is necessary but NOT sufficient — posthog-ios also gates the integration
-        // on a SERVER-side switch (remote config `errorTracking.autocaptureExceptions`). "Exception
-        // autocapture" must be enabled in the PostHog project settings, and because the SDK reads it from
-        // cache at init, capture arms on the *second* launch after enabling (first launch fetches+caches).
-        // Never reference sessionReplay / surveys / captureElementInteractions / tracingHeaders here:
-        // they do not exist on a macOS target.
+        // crash/uncaught-exception autocapture — 동일한 공유 선택으로 install 자체를 gate: opt-out launch는 handler 미설치·디스크 기록 없음, opt-in은 다음 launch부터 활성(`optOut`은 세션 내 전송 즉시 차단).
+        // 이 flag만으로 불충분 — PostHog 프로젝트 설정의 server-side "Exception autocapture" 필요, SDK가 캐시에서 읽어 두 번째 launch부터 활성.
+        // sessionReplay/surveys/captureElementInteractions/tracingHeaders 참조 금지 — macOS target에 부재.
         config.errorTrackingConfig.autoCapture = Self.errorAutocaptureEnabled(telemetryEnabled: enabled)
         PostHogSDK.shared.setup(config)
 
-        // Super properties ride on every subsequent event (anonymous, non-PII).
+        // super property는 이후 모든 이벤트에 부착 (익명, non-PII).
         PostHogSDK.shared.register([
             "app_version": AppInfo.version,
             "os_version": ProcessInfo.processInfo.operatingSystemVersionString

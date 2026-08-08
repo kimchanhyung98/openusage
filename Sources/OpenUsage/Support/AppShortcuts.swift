@@ -1,7 +1,6 @@
 import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
-    /// Toggles the menu-bar popover from anywhere. No default combo — the user records one on the
-    /// popover's Settings screen (the recorder field clears with its ⓧ, which disables the shortcut).
+    /// 어디서든 menu-bar popover를 토글하는 단축키. 기본 combo 없음 — Settings 화면에서 사용자가 직접 기록.
     static let togglePopover = Self("togglePopover")
 }

@@ -1,18 +1,14 @@
 import SwiftUI
 
-/// One donut sector, styled like Swift Charts' `SectorMark` (hairline angular gaps, rounded sector
-/// corners) but with the start/end ring fractions as `animatableData` — the piece SectorMark is
-/// missing. Because each sector is its own SwiftUI view with its own fill, a re-ranked period
-/// switch morphs every provider's arc to its new position while its color stays put; SectorMark
-/// instead matches sectors positionally and smears colors across providers mid-animation.
-///
-/// Fractions run clockwise from 12 o'clock, 0...1 around the ring.
+/// SectorMark 스타일의 도넛 섹터 — start/end fraction이 `animatableData`인 자체 Shape.
+/// 섹터별 독립 뷰/fill 구조로 기간 전환 시 색상 고정 + 위치 morph 보장 (SectorMark는 위치 매칭으로 색 번짐).
+/// fraction은 12시 방향 기준 시계방향 0...1.
 struct RingSectorShape: Shape {
     var startFraction: Double
     var endFraction: Double
-    /// The hole's share of the diameter — the golden-ratio donut from Apple's own charts.
+    /// 지름 대비 구멍 비율 (황금비 도넛).
     var innerRadiusRatio: CGFloat = 0.618
-    /// Arc length (points, at the outer rim) of the gap between neighboring sectors.
+    /// 인접 섹터 간 간격의 외곽 림 기준 호 길이 (pt).
     var gapWidth: CGFloat = 1.6
     var cornerRadius: CGFloat = 3
 
@@ -29,8 +25,7 @@ struct RingSectorShape: Shape {
         let inner = outer * Double(innerRadiusRatio)
         let center = CGPoint(x: rect.midX, y: rect.midY)
 
-        // Angles in radians; screen y grows downward, so increasing angles read clockwise —
-        // exactly the ring's clockwise-from-noon direction.
+        // 화면 y축이 아래로 증가 → 각도 증가가 시계방향 (링 진행 방향과 일치)
         let top = -Double.pi / 2
         let halfGap = Double(gapWidth) / outer / 2
         let a0 = top + startFraction * 2 * .pi + halfGap
@@ -38,9 +33,7 @@ struct RingSectorShape: Shape {
         let width = a1 - a0
         guard width > 0.001 else { return Path() }
 
-        // Rounded corners can't be larger than the band is thick, and a narrow slice shrinks them
-        // further so the two corner arcs of one edge never cross (s bounds the corner's angular
-        // footprint to the slice's half-width).
+        // corner는 밴드 두께 절반 이하 + 슬라이스 반각 이내로 제한 — 한 변의 두 corner 호 교차 방지
         let s = sin(min(width / 2, .pi / 2))
         var corner = min(Double(cornerRadius), (outer - inner) / 2)
         corner = min(corner, outer * s / (1 + s))
@@ -54,7 +47,7 @@ struct RingSectorShape: Shape {
         return roundedWedge(center: center, inner: inner, outer: outer, a0: a0, a1: a1, corner: corner)
     }
 
-    /// The degenerate slice (hairline or squeezed mid-animation): a plain annular wedge, no corners.
+    /// 퇴화 슬라이스(hairline·애니메이션 중 압축)용 corner 없는 단순 환형 wedge.
     private func plainWedge(center: CGPoint, inner: Double, outer: Double, a0: Double, a1: Double) -> Path {
         var path = Path()
         path.addArc(center: center, radius: outer, startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
@@ -63,10 +56,9 @@ struct RingSectorShape: Shape {
         return path
     }
 
-    /// The full SectorMark-style wedge: outer arc, four tangent corner arcs, two radial edges, inner arc.
+    /// SectorMark 스타일 완전 wedge — 외곽 호, tangent corner 호 4개, radial edge 2개, 내곽 호.
     private func roundedWedge(center: CGPoint, inner: Double, outer: Double, a0: Double, a1: Double, corner: Double) -> Path {
-        // A corner circle sits `corner` inside the rim it rounds; `beta` is the angular offset from
-        // the sector edge to that circle's center, placing it tangent to both the rim and the edge.
+        // beta: corner 원 중심이 림·edge 양쪽에 접하도록 하는 섹터 edge 기준 각 오프셋
         let betaOuter = asin(min(1, corner / (outer - corner)))
         let betaInner = asin(min(1, corner / (inner + corner)))
 
@@ -78,40 +70,40 @@ struct RingSectorShape: Shape {
         }
 
         var path = Path()
-        // Outer rim, clockwise.
+        // 외곽 림, 시계방향
         path.addArc(
             center: center, radius: outer,
             startAngle: .radians(a0 + betaOuter), endAngle: .radians(a1 - betaOuter), clockwise: false
         )
-        // Outer corner into the trailing edge.
+        // 외곽 corner → trailing edge 진입
         let trailingOuter = polar(outer - corner, a1 - betaOuter)
         path.addArc(
             center: trailingOuter, radius: corner,
             startAngle: .radians(a1 - betaOuter), endAngle: .radians(a1 + .pi / 2), clockwise: false
         )
-        // Trailing radial edge, inward.
+        // trailing radial edge, 안쪽 방향
         let trailingInner = polar(inner + corner, a1 - betaInner)
         path.addLine(to: around(trailingInner, corner, a1 + .pi / 2))
-        // Inner corner off the trailing edge.
+        // trailing edge의 내곽 corner
         path.addArc(
             center: trailingInner, radius: corner,
             startAngle: .radians(a1 + .pi / 2), endAngle: .radians(a1 - betaInner + .pi), clockwise: false
         )
-        // Inner rim, counterclockwise (back toward the leading edge).
+        // 내곽 림, 반시계방향 (leading edge 방향)
         path.addArc(
             center: center, radius: inner,
             startAngle: .radians(a1 - betaInner), endAngle: .radians(a0 + betaInner), clockwise: true
         )
-        // Inner corner into the leading edge.
+        // leading edge의 내곽 corner
         let leadingInner = polar(inner + corner, a0 + betaInner)
         path.addArc(
             center: leadingInner, radius: corner,
             startAngle: .radians(a0 + betaInner + .pi), endAngle: .radians(a0 + 3 * .pi / 2), clockwise: false
         )
-        // Leading radial edge, outward.
+        // leading radial edge, 바깥 방향
         let leadingOuter = polar(outer - corner, a0 + betaOuter)
         path.addLine(to: around(leadingOuter, corner, a0 - .pi / 2))
-        // Outer corner back onto the rim.
+        // 외곽 corner → 림 복귀
         path.addArc(
             center: leadingOuter, radius: corner,
             startAngle: .radians(a0 + 3 * .pi / 2), endAngle: .radians(a0 + betaOuter), clockwise: false

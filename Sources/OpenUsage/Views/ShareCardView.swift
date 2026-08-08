@@ -1,32 +1,20 @@
 import SwiftUI
 
-/// An off-screen, branded PNG of one provider's usage, rendered for the right-click "Share Screenshot"
-/// action. It is a static snapshot — no drag grips, spinners, staleness tags, or refresh warnings — that
-/// mirrors what the provider's card currently shows in the popover (respecting whether the caret is
-/// expanded), drawn at the popover's own scale and rasterized at ×4 for a crisp, large share image.
-///
-/// The layout is intentionally not a fixed canvas: the card height grows with its rows, so a collapsed
-/// provider exports a short card and an expanded one a tall one, with little wasted whitespace. The view
-/// takes already-resolved `[WidgetData]` (not a store), so it has no environment dependency and renders
-/// the same way in the app and in tests. It paints an opaque `Theme.traySurface` background (an
-/// `ImageRenderer` has no window backdrop) and forces the appearance via `.environment(\.colorScheme, …)`
-/// so a Light-mode user gets a light card even when the OS is in dark mode.
+/// 우클릭 "Share Screenshot" 액션용 프로바이더 사용량 오프스크린 PNG.
+/// 팝오버의 현재 카드 상태(caret 확장 포함)를 정적 스냅샷으로 미러링, ×4 래스터화.
+/// 환경 의존 없는 `[WidgetData]` 입력 — 앱·테스트에서 동일 렌더 보장.
 struct ShareCardView: View {
     let provider: Provider
     var plan: String?
     let rows: [WidgetData]
     let appearance: ColorScheme
-    /// Index in `rows` where the On Demand rows begin (the Always Visible count), so the
-    /// neighbor-aware condensing treats the expand caret as a hard boundary the way the live dashboard
-    /// does. `nil` when the provider is collapsed (no expanded section).
+    /// On Demand 행 시작 인덱스 (Always Visible 수) — 이웃 condensing이 expand caret을 하드 경계로 취급.
+    /// 축소 상태(확장 섹션 없음)면 `nil`.
     var expandBoundaryIndex: Int? = nil
-    /// The live card title when it differs from the launch-baked `provider.displayName` (a rename can
-    /// land mid-session). Passed explicitly — this view renders in an `ImageRenderer`, outside the
-    /// app's environment, so it can't read the account registry itself.
+    /// 세션 중 rename된 라이브 카드 제목. `ImageRenderer`는 앱 environment 밖이라 명시 전달 필수.
     var displayNameOverride: String? = nil
 
-    /// Authored card width in points. The renderer multiplies this by `ShareCardRenderer.scale` for the
-    /// PNG's pixel width; the height is whatever the rows add up to (flexible).
+    /// 저작 카드 폭 (pt). 렌더러가 `ShareCardRenderer.scale` 배율 적용, 높이는 행 합산으로 가변.
     static let width: CGFloat = 360
 
     var body: some View {
@@ -38,9 +26,6 @@ struct ShareCardView: View {
 
     // MARK: - Header
 
-    /// Provider mark + name (+ optional plan), leading — logo, then name, then plan — at the popover's
-    /// type scale so it sits in proportion to the rows. Static: no drag grip, spinner, staleness tag, or
-    /// warning triangle.
     private var headerRow: some View {
         HStack(spacing: 10) {
             ProviderIcon(source: provider.icon, inset: 0.04)
@@ -63,9 +48,7 @@ struct ShareCardView: View {
 
     // MARK: - Body
 
-    /// The provider's visible metric rows in the shared card surface, reusing `WidgetRowView` so the
-    /// exported card matches the live dashboard exactly. Toggles are nil (static render). An empty
-    /// provider falls back to a quiet placeholder so the card never renders blank.
+    /// `WidgetRowView` 재사용으로 라이브 대시보드와 일치하는 정적 렌더. 빈 프로바이더는 플레이스홀더 표시.
     @ViewBuilder
     private var metricsCard: some View {
         if rows.isEmpty {
@@ -87,11 +70,8 @@ struct ShareCardView: View {
         }
     }
 
-    /// Flat indices of text-only rows that condense under another text-only row — the neighbor-aware rule
-    /// the live dashboard applies (shared via `WidgetData.condensedTextRowOffsets`), so a run of one-liners
-    /// (Today / Yesterday / Last 30 Days) clusters in the export the same way it does in the popover. The
-    /// expand caret is a hard boundary: each segment (always-shown, then expanded) is scanned separately,
-    /// never across, and its segment-local offsets are mapped back to flat `rows` indices.
+    /// 다른 텍스트 행 아래에서 condense되는 텍스트 행의 flat 인덱스 (라이브 대시보드와 동일 규칙 공유).
+    /// expand caret은 하드 경계 — 세그먼트별 개별 스캔 후 로컬 오프셋을 flat 인덱스로 매핑.
     static func condensedTextRowIndices(_ rows: [WidgetData], boundary: Int? = nil) -> Set<Int> {
         let edges = boundary.map { [0, $0, rows.count] } ?? [0, rows.count]
         var indices = Set<Int>()

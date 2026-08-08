@@ -1,7 +1,6 @@
 import Foundation
 
-/// How wall-clock times read (the absolute reset labels): the system's 12/24-hour convention, or
-/// an explicit override — matching the original app's Auto/12h/24h setting.
+/// 절대 reset label의 wall-clock 표기 방식 — 시스템 12/24시간 관례 또는 명시 override (원본 앱의 Auto/12h/24h 대응)
 enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBacked {
     case auto
     case twelveHour = "12h"
@@ -10,7 +9,7 @@ enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
     static let key = "timeFormat"
     static var fallback: TimeFormatSetting { .twentyFourHour }
 
-    // `current` (the user's current choice, read live) comes from `UserDefaultsBacked`.
+    // `current`(라이브로 읽는 저장 선택값)는 `UserDefaultsBacked` 제공
 
     var label: String {
         switch self {
@@ -20,7 +19,7 @@ enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
         }
     }
 
-    /// Short time string ("5:30 PM" / "17:30") honoring the override, via the locale's hour cycle.
+    /// override를 반영한 short time 문자열 ("5:30 PM" / "17:30") — locale hour cycle 경유
     func shortTime(_ date: Date, base: Locale = .current) -> String {
         var components = Locale.Components(locale: base)
         switch self {

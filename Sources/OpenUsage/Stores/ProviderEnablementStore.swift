@@ -1,24 +1,9 @@
 import Foundation
 import Observation
 
-/// The single source of truth for which providers are turned on.
-///
-/// Two storage modes, distinguished by which key exists:
-/// - **Legacy disabled-list** (`openusage.disabledProviders.v1`): only the *disabled* IDs are persisted.
-///   "Everything on" is an empty set, so a provider shipped in a future release defaults to enabled.
-///   Since the v2 settings migration converted every install to enabled-list mode, this branch is a
-///   dormant read path kept for downgrade safety only.
-/// - **Enabled-list** (`openusage.enabledProviders.v1`): only the *enabled* IDs are persisted. Fresh
-///   installs are seeded into this mode (see `FirstRunSeeder`) with just the providers detected on the
-///   machine; existing installs were migrated into it (settings schema v2).
-///
-/// When the enabled-list key exists it wins; the legacy key is ignored.
-///
-/// A third set — **known provider IDs** (`openusage.knownProviders.v1`) — records every provider this
-/// install has ever seen. In enabled-list mode "absent from the enabled set" is ambiguous (deliberately
-/// turned off, or didn't exist yet?); the known set resolves it. `NewProviderSeeder` diffs the registry
-/// against it each launch and credential-probes only the never-seen providers, so a user's choice to
-/// keep a known provider off is never overridden.
+/// provider on/off의 단일 출처 — enabled-list key 존재 시 우선, legacy disabled-list는 downgrade 안전용 휴면 경로
+/// known provider IDs가 enabled-list의 "부재" 중의성(의도적 off vs 미출시)을 해소
+/// `NewProviderSeeder`는 known 미기록 provider만 probe — 사용자의 off 선택은 절대 override되지 않는 규칙
 @MainActor
 @Observable
 final class ProviderEnablementStore {
@@ -26,32 +11,21 @@ final class ProviderEnablementStore {
     private static let enabledStorageKey = "openusage.enabledProviders.v1"
     private static let knownStorageKey = "openusage.knownProviders.v1"
 
-    /// Posted when the enabled-provider set actually changes. The refresh loop listens for this to wake
-    /// early and fetch a newly-enabled provider promptly, instead of waiting out the full interval —
-    /// WITHOUT subscribing to the firehose `UserDefaults.didChangeNotification`, which also fires for the
-    /// app's own snapshot-cache writes, Sparkle's update bookkeeping, and unrelated global-domain changes
-    /// from other processes. Waking on that (with no minimum interval) collapsed the fixed 5-minute
-    /// cadence into a refresh storm.
-    ///
-    /// `nonisolated` so the refresh loop's background task can name it without hopping to the main actor
-    /// (it's an immutable, `Sendable` constant — like Foundation's own notification names).
+    /// enabled-provider set 실제 변경 시 게시 — refresh loop의 조기 wake 신호
+    /// firehose `UserDefaults.didChangeNotification` 구독 금지 규칙 — 무관한 쓰기에 깨어나 refresh 폭주 유발
+    /// `nonisolated`: 불변 `Sendable` 상수라 background task가 main actor hop 없이 참조 가능
     nonisolated static let didChangeNotification = Notification.Name("ProviderEnablementDidChange")
 
-    /// Called with a provider's id the moment it turns ON (not on disable, not on a no-op re-set).
-    /// `AppContainer` wires this to clear that provider's failure backoff, so the enablement wake's
-    /// refresh actually probes it instead of being suppressed by a backoff left over from a failure
-    /// just before it was turned off.
+    /// provider가 ON으로 바뀌는 순간 호출 (disable·no-op 제외) — 실패 backoff를 지워 enablement wake의 probe 보장
     var onProviderEnabled: (@MainActor (String) -> Void)?
-    /// Called after any real enablement-set change. iCloud history rewrites its one machine document so
-    /// disabling a provider removes its stale contribution as promptly as enabling adds it.
+    /// 실제 enablement 변경 후 호출 — iCloud history가 machine document를 재작성해 stale 기여 즉시 제거
     var onChange: (@MainActor () -> Void)?
 
-    /// Legacy-mode state: the providers the user turned off. Unused (empty) in enabled-list mode.
+    /// legacy mode 상태 — 사용자가 끈 provider, enabled-list mode에서는 빈 set
     private(set) var disabledIDs: Set<String>
-    /// Enabled-list-mode state; `nil` means legacy disabled-list mode.
+    /// enabled-list mode 상태 — `nil`이면 legacy disabled-list mode
     private(set) var enabledIDs: Set<String>?
-    /// Every provider ID this install has ever seen (see the type comment). Seeded by the v2 settings
-    /// migration or `FirstRunSeeder`, then grown by `registerKnownProviders`.
+    /// 이 설치가 본 적 있는 provider ID 전체 — v2 migration·`FirstRunSeeder` 시딩 후 `registerKnownProviders`로 성장
     private(set) var knownIDs: Set<String>
     private let defaults: UserDefaults
 
@@ -75,7 +49,7 @@ final class ProviderEnablementStore {
     func setEnabled(_ enabled: Bool, for id: String) {
         if var ids = enabledIDs {
             if enabled { ids.insert(id) } else { ids.remove(id) }
-            // A no-op toggle (re-setting the same value) shouldn't persist or wake the refresh loop.
+            // no-op toggle은 persist·refresh wake 없이 종료
             guard ids != enabledIDs else { return }
             enabledIDs = ids
             defaults.set(Array(ids), forKey: Self.enabledStorageKey)
@@ -89,19 +63,13 @@ final class ProviderEnablementStore {
             guard disabledIDs != before else { return }
             defaults.set(Array(disabledIDs), forKey: Self.disabledStorageKey)
         }
-        // Clear the backoff BEFORE the wake notification, so the refresh it triggers actually probes the
-        // just-enabled provider instead of skipping it as recently-failed.
+        // wake 알림 전에 backoff 해제 — 트리거된 refresh가 방금 켠 provider를 recently-failed로 건너뛰지 않도록 순서 고정
         if enabled { onProviderEnabled?(id) }
         onChange?()
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    /// Switches the store into enabled-list mode with exactly `ids` on. Used by `FirstRunSeeder` on
-    /// fresh installs only — first synchronously with the fallback set, then again with the detected
-    /// set. Fires `onProviderEnabled` for each newly-on provider and posts the change notification, so
-    /// the refresh loop fetches them promptly.
-    /// Records `ids` as seen and returns the ones that were new. Pure bookkeeping: no enablement
-    /// change, no notification — `NewProviderSeeder` decides separately what to do with the new ones.
+    /// `ids`를 seen으로 기록하고 신규분 반환 — 순수 bookkeeping, enablement 변경·알림 없음
     @discardableResult
     func registerKnownProviders(_ ids: Set<String>) -> Set<String> {
         let new = ids.subtracting(knownIDs)
@@ -111,6 +79,8 @@ final class ProviderEnablementStore {
         return new
     }
 
+    /// enabled-list mode로 전환하며 정확히 `ids`만 on — `FirstRunSeeder` 신규 설치 전용
+    /// 신규 on provider마다 `onProviderEnabled` 호출 후 변경 알림 게시
     func seedEnabledProviders(_ ids: Set<String>) {
         let newlyEnabled = ids.filter { !isEnabled($0) }
         let changed = enabledIDs != ids

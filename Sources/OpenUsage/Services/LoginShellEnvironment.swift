@@ -1,38 +1,21 @@
 import Foundation
 
-/// A macOS GUI app launched from Finder, the Dock, or `open` inherits only the launchd session
-/// environment — not the variables a user exports in their interactive login shell
-/// (`~/.zshrc`, `~/.zprofile`, `~/.bash_profile`). Provider keys like `OPENROUTER_API_KEY` live
-/// there, so without this they are invisible to a packaged build; they only resolved when the
-/// binary was run straight from a terminal during development (which is why "it worked in dev"
-/// but not in the shipped beta).
-///
-/// This captures the login shell environment once, by running the user's `$SHELL` as a login +
-/// interactive shell and reading its `env`, then caches the result. `ProcessEnvironmentReader`
-/// consults it as a fallback after the process environment, so env-var keys resolve in the
-/// bundled app the same way they do from a terminal.
-///
-/// Threading: the capture subprocess never runs (or is waited on) while the state lock is held, so
-/// a cache read can't stall behind it. The **main thread** never triggers the capture — it reads
-/// whatever is cached and otherwise returns `nil`, so opening a provider's API-key editor before the
-/// cache warms can't freeze the UI. Off-main callers (provider refreshes) capture on demand and block
-/// only for the single, one-time spawn, so the first refresh still resolves the key. `prewarm()` kicks the
-/// capture at launch so the cache is normally warm before anything reads it.
+/// login shell 환경 1회 캡처·캐시 — Finder/Dock/`open` launch GUI 앱은 launchd 세션 환경만 상속하므로 shell profile export를 여기서 해석.
+/// `ProcessEnvironmentReader`가 process 환경 다음 fallback으로 사용.
+/// 스레딩 계약: 캡처 subprocess는 lock 보유 중 실행·대기 금지; 메인 스레드는 캐시만 read(미완 시 `nil`), off-main caller만 on-demand 캡처.
 final class LoginShellEnvironment: @unchecked Sendable {
     static let shared = LoginShellEnvironment()
 
-    /// Sentinel tokens that bracket our `env` output, so a login shell's banner/MOTD (printed before
-    /// our command runs) is discarded instead of mis-parsed as variables.
+    /// `env` 출력을 감싸는 sentinel token — login shell의 banner/MOTD를 변수로 오파싱하지 않고 폐기.
     private static let beginMarker = "__OPENUSAGE_ENV_BEGIN__"
     private static let endMarker = "__OPENUSAGE_ENV_END__"
-    /// Cap the shell spawn so a slow or hanging profile can't stall a provider refresh forever.
+    /// shell spawn 시간 제한 — 느리거나 hang된 profile의 provider refresh 무한 정지 방지.
     private static let captureTimeout: TimeInterval = 5
 
     private let runner: ProcessRunning
-    /// Guards `cached` only — held for microseconds, never across the subprocess.
+    /// `cached` 전용 guard — 마이크로초 단위 보유, subprocess 동안 보유 금지.
     private let stateLock = NSLock()
-    /// Serializes the capture so a single subprocess runs even under concurrent callers. Taken only
-    /// off the main thread (see `value(for:)`), so the UI thread can never wait on it.
+    /// 캡처 직렬화 — 동시 caller에도 subprocess 1개. off-main에서만 획득 — UI 스레드 대기 불가.
     private let captureLock = NSLock()
     private var cached: [String: String]?
 
@@ -40,36 +23,29 @@ final class LoginShellEnvironment: @unchecked Sendable {
         self.runner = runner
     }
 
-    /// The captured login-shell value for `name`, or `nil` if absent or empty. Never blocks the main
-    /// thread on the subprocess: on the main thread it only reads the cache, returning `nil` until the
-    /// prewarm fills it; off the main thread it captures on demand if needed.
+    /// 캡처된 login-shell 값 — 부재·빈 값은 `nil`.
+    /// 메인 스레드는 캐시만 read(prewarm 전 `nil`), off-main은 on-demand 캡처 — subprocess로 메인 스레드 blocking 금지.
     func value(for name: String) -> String? {
         if let env = cachedSnapshot() { return env[name]?.nilIfEmpty }
         guard !Thread.isMainThread else { return nil }
         return capturedEnvironment()[name]?.nilIfEmpty
     }
 
-    /// Spawn the capture eagerly off the main thread so the first provider refresh (and any UI read)
-    /// finds the cache already warm and never blocks on the subprocess. Safe to call more than once.
-    /// `.userInitiated`, not `.utility`: launch-time readers depend on this cache, and under
-    /// cold-launch CPU contention a utility-priority spawn regularly lost the race against the first
-    /// provider refresh — which then resolved shell-exported keys as absent for the whole pass.
+    /// launch 시 off-main 캡처 선행 — 첫 provider refresh·UI read가 warm 캐시를 만나도록. 중복 호출 안전.
+    /// `.userInitiated` 필수 — utility 우선순위는 cold-launch 경쟁에서 첫 refresh에 밀려 shell export를 부재로 오판.
     func prewarm() {
         Task.detached(priority: .userInitiated) { [weak self] in
             _ = self?.capturedEnvironment()
         }
     }
 
-    /// Whether a capture has completed AND yielded a plausible environment. A real login shell always
-    /// exports at least `PATH`/`HOME`, so an empty capture means the spawn or parse failed — callers
-    /// must not persist facts (like "no overrides exported") derived from it.
+    /// 캡처 완료 및 유효 환경 여부 — 실제 login shell은 최소 `PATH`/`HOME` export, 빈 캡처는 spawn/parse 실패.
+    /// 빈 캡처에서 파생된 사실("override 미export" 등) 영속화 금지.
     var capturedSuccessfully: Bool {
         !(cachedSnapshot() ?? [:]).isEmpty
     }
 
-    /// Off-main only: make sure the one-time capture has actually run (spawning it now if the prewarm
-    /// never completed), then report whether it succeeded. The post-launch snapshot task uses this so
-    /// a launch whose prewarm was slow still persists fresh facts for the next launch.
+    /// off-main 전용 — 1회 캡처 실행 보장(prewarm 미완 시 즉시 spawn) 후 성공 여부 보고.
     func ensureCaptured() -> Bool {
         guard !Thread.isMainThread else { return capturedSuccessfully }
         _ = capturedEnvironment()
@@ -82,9 +58,8 @@ final class LoginShellEnvironment: @unchecked Sendable {
         return cached
     }
 
-    /// Capture the environment once and cache it. Off-main only. Serialized by `captureLock` so a
-    /// single subprocess runs; the spawn happens with no lock held, and the result is stored under a
-    /// brief `stateLock` so concurrent cache reads never block on the subprocess.
+    /// 환경 1회 캡처 후 캐시 — off-main 전용, `captureLock`으로 subprocess 1개 보장.
+    /// spawn은 lock 미보유 상태 실행, 저장만 짧은 `stateLock` — 동시 캐시 read의 subprocess 대기 금지.
     private func capturedEnvironment() -> [String: String] {
         captureLock.lock()
         defer { captureLock.unlock() }
@@ -98,9 +73,7 @@ final class LoginShellEnvironment: @unchecked Sendable {
 
     private func capture() -> [String: String] {
         let shell = ProcessInfo.processInfo.environment["SHELL"]?.nilIfEmpty ?? "/bin/zsh"
-        // `-i -l -c`: interactive + login so both rc files (.zshrc/.bashrc) and profile files
-        // (.zprofile/.bash_profile) are sourced; `env -0` emits NUL-separated `KEY=VALUE`, robust
-        // against values that contain newlines.
+        // `-i -l -c`: rc 파일과 profile 파일 모두 source; `env -0`은 NUL 구분 `KEY=VALUE`로 개행 포함 값에 안전.
         let command = "printf '%s\\0' \(Self.beginMarker); /usr/bin/env -0; printf '%s\\0' \(Self.endMarker)"
         do {
             let result = try runner.run(
@@ -120,8 +93,7 @@ final class LoginShellEnvironment: @unchecked Sendable {
         }
     }
 
-    /// Parse the NUL-separated `env -0` output, keeping only the `KEY=VALUE` tokens between the begin
-    /// and end markers and ignoring any shell banner printed outside them.
+    /// NUL 구분 `env -0` 출력 파싱 — begin/end marker 사이 `KEY=VALUE`만 유지, 밖의 shell banner 무시.
     static func parse(_ output: String) -> [String: String] {
         let tokens = output.components(separatedBy: "\0")
         guard let begin = tokens.firstIndex(of: beginMarker) else { return [:] }

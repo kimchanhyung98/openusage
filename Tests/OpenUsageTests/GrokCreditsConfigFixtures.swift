@@ -1,12 +1,9 @@
 import Foundation
 @testable import OpenUsage
 
-/// Builders and a captured payload for Grok's `/v1/billing?format=credits` JSON response, shared by
-/// the decoder/mapper tests and the provider-level tests.
+/// Grok `/v1/billing?format=credits` 응답 fixture — decoder/mapper·provider test 공용
 enum GrokCreditsFixtures {
-    /// A real response captured live from cli-chat-proxy.grok.com on 2026-07-06 (percent edited to a
-    /// nonzero value; proto-JSON omits it at 0). Includes fields we don't map, which exercises
-    /// unknown-field tolerance on a genuine payload.
+    /// 2026-07-06 실캡처 응답 (percent는 nonzero로 편집 — proto-JSON은 0일 때 필드 생략), 미매핑 필드 포함
     static let capturedResponseBody = Data("""
     {"config":{"creditUsagePercent":99.0,"currentPeriod":{"type":"USAGE_PERIOD_TYPE_WEEKLY",\
     "start":"2026-06-30T21:36:52.140114+00:00","end":"2026-07-07T21:36:52.140114+00:00"},\
@@ -19,9 +16,7 @@ enum GrokCreditsFixtures {
     static let capturedPeriodStart = Date(timeIntervalSince1970: 1_782_855_412 + 0.140114)
     static let capturedPeriodEnd = Date(timeIntervalSince1970: 1_783_460_212 + 0.140114)
 
-    /// A synthetic response body with the fields the decoder reads, for shaping edge cases.
-    /// Pass `percent: nil` to omit the field the way proto-JSON does for 0.
-    /// Pass `percent: nil` / `onDemandCap: nil` to omit the fields the way proto-JSON does for 0.
+    /// decoder가 읽는 필드만 담은 합성 응답 — `percent`/`onDemandCap`에 nil 전달 시 proto-JSON처럼 필드 생략
     static func responseBody(
         periodType: String = "USAGE_PERIOD_TYPE_WEEKLY",
         percent: Any? = 99.0,

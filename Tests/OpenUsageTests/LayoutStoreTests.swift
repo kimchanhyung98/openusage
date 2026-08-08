@@ -24,21 +24,19 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoRestoresRemovedMetricToSamePosition() {
         let store = makeStore("UndoRestoresPosition")
-        // Enable Claude's full set so the order is well-defined and the removed metric has neighbours.
+        // 순서 고정과 이웃 metric 확보를 위해 Claude 전체 set 활성화
         for id in ["claude.session", "claude.weekly", "claude.extra", "claude.today"] {
             store.setMetricEnabled(id, true)
         }
         let orderBefore = store.orderedSupportedMetrics(for: "claude").map(\.id)
         let enabledBefore = store.placed.filter { $0.descriptorID.hasPrefix("claude.") }.map(\.descriptorID)
 
-        // Remove a middle metric, then undo it.
         store.setMetricEnabled("claude.weekly", false)
         XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
         XCTAssertTrue(store.canUndo)
 
         XCTAssertTrue(store.undo())
 
-        // Re-enabled and back in its exact slot, with the enabled placed order unchanged.
         XCTAssertTrue(store.isMetricEnabled("claude.weekly"))
         XCTAssertEqual(store.orderedSupportedMetrics(for: "claude").map(\.id), orderBefore)
         XCTAssertEqual(
@@ -49,7 +47,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoReversesEnable() {
         let store = makeStore("UndoEnable")
-        // cursor.credits is not in DefaultLayout.metricIDs, so it starts disabled in the mock.
+        // cursor.credits는 DefaultLayout.metricIDs에 없어 mock에서 비활성 시작
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
         store.setMetricEnabled("cursor.credits", true)
@@ -89,17 +87,15 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoReversesPinAndUnpin() {
         let store = makeStore("UndoPin")
-        // cursor.usage is enabled by default but not pinned (cursor's default pins aren't in the mock).
+        // cursor.usage는 기본 활성이지만 mock에 cursor 기본 pin이 없어 unpinned 시작
         XCTAssertTrue(store.isMetricEnabled("cursor.usage"))
         XCTAssertFalse(store.isPinned("cursor.usage"))
 
-        // Pin, then undo → back to unpinned.
         store.setPinned(true, for: "cursor.usage")
         XCTAssertTrue(store.isPinned("cursor.usage"))
         XCTAssertTrue(store.undo())
         XCTAssertFalse(store.isPinned("cursor.usage"), "undo reverses a pin")
 
-        // Unpin a default-pinned metric, then undo → back to pinned.
         XCTAssertTrue(store.isPinned("claude.weekly"))
         store.setPinned(false, for: "claude.weekly")
         XCTAssertFalse(store.isPinned("claude.weekly"))
@@ -109,7 +105,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoReversesExpandedMove() {
         let store = makeStore("UndoExpandedMove")
-        // claude.session stays above the fold by default (not in DefaultLayout.expandedMetricIDs).
+        // claude.session은 DefaultLayout.expandedMetricIDs에 없어 기본 above the fold
         XCTAssertFalse(store.expandedMetricIDs.contains("claude.session"))
 
         XCTAssertTrue(moveMetric("claude.session", expanded: true, in: store))
@@ -120,20 +116,16 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testUndoDoesNotRestoreProviderCardCaretState() {
-        // Provider card expand/collapse is transient view state, not a layout edit, so undo must leave
-        // the caret where the user last put it — not rewind it to whatever was open when the undone
-        // step was recorded. Regression test for the snapshot wrongly capturing expandedProviderIDs.
+        // provider card 펼침은 transient view state — snapshot이 expandedProviderIDs를 잘못 담던 회귀 방지
         let store = makeStore("UndoLeavesProviderCaret")
         XCTAssertFalse(store.isProviderExpanded("codex"))
 
-        // Open Codex's card, then make an undoable layout edit. The pre-edit snapshot must not capture
-        // the open caret.
         XCTAssertTrue(store.setProviderExpanded(true, for: "codex"))
         XCTAssertTrue(store.isProviderExpanded("codex"))
         store.setMetricEnabled("cursor.credits", true)
         XCTAssertTrue(store.canUndo)
 
-        // Collapse the card after the step was recorded, then undo the enable.
+        // step 기록 후 card를 접고 undo
         XCTAssertTrue(store.setProviderExpanded(false, for: "codex"))
         XCTAssertFalse(store.isProviderExpanded("codex"))
 
@@ -144,21 +136,19 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoWalksBackMultipleMixedSteps() {
         let store = makeStore("UndoMultiStep")
-        // Distinct, real changes: enable an off metric, pin an unpinned one, remove an on metric.
-        store.setMetricEnabled("cursor.credits", true)  // step 1: enable
-        store.setPinned(true, for: "cursor.usage")      // step 2: pin
-        store.setMetricEnabled("claude.session", false) // step 3: remove
+        store.setMetricEnabled("cursor.credits", true)
+        store.setPinned(true, for: "cursor.usage")
+        store.setMetricEnabled("claude.session", false)
 
-        // Walk back in reverse order, one step per ⌘Z.
-        XCTAssertTrue(store.undo())                      // undo remove
+        XCTAssertTrue(store.undo())
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertTrue(store.isPinned("cursor.usage"))
 
-        XCTAssertTrue(store.undo())                      // undo pin
+        XCTAssertTrue(store.undo())
         XCTAssertFalse(store.isPinned("cursor.usage"))
         XCTAssertTrue(store.isMetricEnabled("cursor.credits"))
 
-        XCTAssertTrue(store.undo())                      // undo enable
+        XCTAssertTrue(store.undo())
         XCTAssertFalse(store.isMetricEnabled("cursor.credits"))
 
         XCTAssertFalse(store.canUndo)
@@ -166,7 +156,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testUndoIsNotItselfRecorded() {
-        // Applying an undo must not push a new step — otherwise ⌘Z would ping-pong forever.
+        // undo 자체가 step으로 기록되면 ⌘Z가 무한 왕복 — 미기록 보장
         let store = makeStore("UndoNotRecorded")
         store.setMetricEnabled("cursor.credits", true)
         XCTAssertTrue(store.canUndo)
@@ -177,14 +167,13 @@ final class LayoutStoreTests: XCTestCase {
 
     func testUndoStackIsCappedAtMaxDepth() {
         let store = makeStore("UndoMaxDepth")
-        // Drive more distinct, recordable changes than the cap by toggling a pin on and off repeatedly.
+        // pin 토글 반복으로 cap 초과 step 생성
         store.setMetricEnabled("claude.weekly", true)
         var pinned = false
         for _ in 0..<(LayoutUndoHistory.maxDepth + 10) {
             pinned.toggle()
             store.setPinned(pinned, for: "claude.weekly")
         }
-        // Undo can only walk back the cap's worth of steps, then stops.
         var steps = 0
         while store.undo() { steps += 1 }
         XCTAssertEqual(steps, LayoutUndoHistory.maxDepth)
@@ -192,12 +181,11 @@ final class LayoutStoreTests: XCTestCase {
 
     func testNoOpActionDoesNotRecordUndoStep() {
         let store = makeStore("UndoNoOp")
-        store.setMetricEnabled("cursor.credits", true)  // one real step
-        // Re-enabling an already-on metric, or a self-target reorder, changes nothing → no step.
+        store.setMetricEnabled("cursor.credits", true)  // 실제 step 1건
+        // 이미 켜진 metric 재활성화·self-target reorder는 no-op — step 미기록
         store.setMetricEnabled("cursor.credits", true)
         store.reorderMetric(dragged: "claude.weekly", target: "claude.weekly", in: "claude")
 
-        // Exactly one undoable step (the original enable).
         XCTAssertTrue(store.undo())
         XCTAssertFalse(store.canUndo)
     }
@@ -231,14 +219,13 @@ final class LayoutStoreTests: XCTestCase {
 
         store.resetProvider("claude")
 
-        // Snapshots are whole-layout, so a reset (its own deliberate action) drops the entire stack.
+        // snapshot은 whole-layout 단위 — reset은 전체 stack 폐기
         XCTAssertFalse(store.canUndo)
         XCTAssertFalse(store.undo())
     }
 
     func testDirectRemoveDoesNotRecordUndo() {
-        // The low-level `remove(_:)` (used by drag teardown and tests) is not a user-facing seam, so it
-        // doesn't feed the undo stack — only the wrapped mutations (setMetricEnabled, reorder, pin) do.
+        // 저수준 `remove(_:)`는 user-facing seam이 아니어서 undo stack 미기록
         let store = makeStore("UndoDirectRemove")
         store.placed = [PlacedWidget(descriptorID: "claude.weekly")]
         guard let widget = store.placed.first(where: { $0.descriptorID == "claude.weekly" }) else {
@@ -400,8 +387,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testNewlySeededDefaultExpandedMetricEntersBelowCaretForExistingLayout() {
         let defaults = makeDefaults("SeedNewExpanded")
-        // An existing layout from before the new metric shipped, with a saved expanded set that can't
-        // know about it yet.
+        // 신규 metric 출시 이전의 기존 layout + 그 metric을 모르는 저장된 expanded set fixture
         saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
         defaults.set(["claude.weekly"], forKey: "layout.expandedMetrics")
 
@@ -414,13 +400,11 @@ final class LayoutStoreTests: XCTestCase {
             defaultExpandedMetricIDs: ["claude.today"]
         )
 
-        // The new default is auto-enabled by migration AND tucked below the caret, not surfaced primary.
+        // 신규 default는 migration으로 auto-enable + caret 아래 배치, 기존 metric은 always-shown 유지
         XCTAssertTrue(store.isMetricEnabled("claude.today"))
         XCTAssertTrue(store.expandedMetricIDs.contains("claude.today"))
-        // A metric the user already lived with stays always-shown.
         XCTAssertFalse(store.expandedMetricIDs.contains("claude.session"))
 
-        // The new expanded membership persists across reloads.
         let reloaded = LayoutStore(
             registry: .mock,
             defaults: defaults,
@@ -434,7 +418,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testMigrationPersistKeepsLegacyOptionalMetricExpandOnEnableAfterReload() {
         let defaults = makeDefaults("SeedExpandedKeepsFallback")
-        // Legacy layout: predates the expanded feature (no saved expanded set).
+        // legacy layout fixture — expanded 기능 이전이라 저장된 expanded set 없음
         saveStored([PlacedWidget(descriptorID: "cursor.usage")], forKey: "layout", in: defaults)
 
         let args: (UserDefaults) -> LayoutStore = { d in
@@ -444,17 +428,15 @@ final class LayoutStoreTests: XCTestCase {
                 storageKey: "layout",
                 defaultMetricIDs: ["cursor.usage", "claude.today"],
                 migrationBaselineMetricIDs: ["cursor.usage"],
-                // claude.today is a brand-new default (auto-enabled + tucked, persisting an expanded set);
-                // cursor.requests is an optional default-expanded metric the user hasn't enabled yet.
+                // claude.today는 신규 default, cursor.requests는 미활성 optional default-expanded metric
                 defaultExpandedMetricIDs: ["claude.today", "cursor.requests"]
             )
         }
 
-        // First launch performs the migration and persists the expanded set.
+        // 첫 launch에서 migration 수행·expanded set 저장
         _ = args(defaults)
 
-        // Second launch now sees a saved expanded set — the legacy optional metric must still enter below
-        // the caret when first enabled (regression: persisting the migration zeroed the on-enable queue).
+        // 회귀 방지: migration 저장이 on-enable queue를 비워 legacy optional metric의 caret 아래 진입이 깨지던 문제
         let reloaded = args(defaults)
         XCTAssertFalse(reloaded.expandedMetricIDs.contains("cursor.requests"))
         reloaded.setMetricEnabled("cursor.requests", true)
@@ -476,14 +458,12 @@ final class LayoutStoreTests: XCTestCase {
             )
         }
 
-        // The user drags the still-disabled optional metric above the divider — an explicit placement
-        // that consumes its expand-on-enable default.
+        // 비활성 optional metric을 divider 위로 drag — expand-on-enable default 소비
         let store = args(defaults)
         XCTAssertTrue(store.reorderMetric(dragged: "cursor.requests", target: "cursor.usage", in: "cursor"))
         XCTAssertFalse(store.expandedMetricIDs.contains("cursor.requests"))
 
-        // After a relaunch the consumed default must stay consumed — enabling it leaves it above the fold
-        // (regression: the queue was recomputed each launch and resurrected the consumed entry).
+        // 회귀 방지: launch마다 queue 재계산으로 소비된 entry가 부활하던 문제
         let reloaded = args(defaults)
         reloaded.setMetricEnabled("cursor.requests", true)
         XCTAssertTrue(reloaded.isMetricEnabled("cursor.requests"))
@@ -569,10 +549,7 @@ final class LayoutStoreTests: XCTestCase {
         )
         let divider = "cursor::expanded-divider"
 
-        // Customize passes the full metric list (metricOrderWithDivider includes the disabled
-        // cursor.requests before the divider) even when only reordering primary rows. The dragged
-        // metric is cursor.today, not cursor.requests — so cursor.requests' below-caret default must
-        // survive the reorder and still place it below the caret when later enabled.
+        // Customize는 primary만 reorder해도 full metric list 전달 — drag 대상이 아닌 cursor.requests의 below-caret default 유지
         XCTAssertTrue(store.applyMetricDividerOrder([
             "cursor.today",
             "cursor.usage",
@@ -653,7 +630,7 @@ final class LayoutStoreTests: XCTestCase {
             "grok.weekly", "grok.payAsYouGo",
             "grok.trend", "grok.today", "grok.yesterday", "grok.last30"
         ])
-        // Cursor's spend tiles + usage trend are enabled, so they trail the live meters in declaration order.
+        // Cursor spend tile + usage trend 활성 — live meter 뒤에 선언 순서로 배치
         XCTAssertEqual(store.orderedSupportedMetrics(for: "cursor").map(\.id), [
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.onDemand", "cursor.requests",
             "cursor.credits", "cursor.trend", "cursor.today", "cursor.yesterday", "cursor.last30"
@@ -678,7 +655,7 @@ final class LayoutStoreTests: XCTestCase {
             "devin.daily", "devin.weekly", "devin.extra",
             "grok.weekly", "grok.trend",
             "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
-            // Cursor spend tiles + usage trend are enabled, joining its live meters in the default layout.
+            // Cursor spend tile + usage trend는 기본 layout에서 활성
             "cursor.usage", "cursor.auto", "cursor.api", "cursor.trend",
             "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
         ]))
@@ -715,8 +692,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(expandedByProvider["grok"], [
             "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30"
         ])
-        // Cursor spend tiles + usage trend are enabled: the trend joins the primary rows, and the
-        // today/yesterday/last30 rows sit below the caret alongside the other secondary metrics.
+        // Cursor는 trend가 primary, today/yesterday/last30은 caret 아래 배치
         XCTAssertEqual(primaryByProvider["cursor"], ["cursor.usage", "cursor.auto", "cursor.api", "cursor.trend"])
         XCTAssertEqual(expandedByProvider["cursor"], [
             "cursor.onDemand", "cursor.requests", "cursor.credits",
@@ -832,9 +808,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testTranslatedDefaultsSeedAnAccountCardTheFirstTimeItAppears() {
-        // An existing user's layout predates the account card entirely; when the card first enters
-        // the registry, its family's default metrics seed for it (enabled), because translated ids
-        // are never part of the seeded-defaults baseline.
+        // translated id는 seeded-defaults baseline에 없어 account card 최초 등장 시 family default가 seed됨
         let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let work = Provider(id: "claude@work", displayName: "Claude — Work", icon: .providerMark("claude"))
         func descriptor(_ id: String, _ provider: Provider) -> WidgetDescriptor {
@@ -910,7 +884,7 @@ final class LayoutStoreTests: XCTestCase {
 
     func testDividerDragMovesMetricBelowDividerAndPersists() {
         let defaults = makeDefaults("ExpandMove")
-        // Hermetic: start with nothing below the caret (independent of DefaultLayout's seeding).
+        // hermetic fixture — DefaultLayout seeding과 무관하게 caret 아래를 비운 상태로 시작
         let store = LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout", defaultExpandedMetricIDs: [])
         guard let first = store.orderedSupportedMetrics(for: "claude").map(\.id).first else {
             return XCTFail("missing Claude metrics")
@@ -1140,8 +1114,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     func testProviderWithOnlyExpandedMetricsStillShowsRows() {
-        // Only session + weekly enabled, both primary to start, so expanding both makes the whole
-        // provider expanded — independent of DefaultLayout's seeding.
+        // session + weekly만 활성 후 둘 다 expand — provider 전체가 expanded가 되는 fixture
         let store = LayoutStore(
             registry: .mock,
             defaults: makeDefaults("AllExpanded"),
@@ -1209,23 +1182,23 @@ final class LayoutStoreTests: XCTestCase {
             defaultExpandedMetricIDs: []
         )
 
-        // Reorder providers first, so we can prove a per-provider reset leaves provider order alone.
+        // per-provider reset의 provider 순서 보존 확인용 사전 reorder
         store.reorderProvider(dragged: "cursor", target: "claude")
         let orderBefore = store.customizeGroups.map(\.provider.id)
 
-        // Diverge Claude from its defaults in every dimension a reset should restore.
+        // reset이 복원할 모든 차원에서 Claude를 default와 다르게 변경
         store.setMetricEnabled("claude.weekly", true)
         store.setPinned(true, for: "claude.weekly")
         store.setProviderExpanded(true, for: "claude")
         store.reorderMetric(dragged: "claude.extra", target: "claude.session", in: "claude")
 
-        // Diverge Codex too — a Claude reset must not touch it.
+        // Claude reset이 건드리면 안 되는 Codex도 변경
         store.setMetricEnabled("codex.weekly", true)
         store.setPinned(true, for: "codex.weekly")
 
         store.resetProvider("claude")
 
-        // Claude restored: enabled set, metric order, pins, and expanded state back to default.
+        // Claude: enabled set·metric 순서·pin·expanded 상태 모두 default 복원
         XCTAssertTrue(store.isMetricEnabled("claude.session"))
         XCTAssertFalse(store.isMetricEnabled("claude.weekly"))
         XCTAssertTrue(store.isPinned("claude.session"))
@@ -1236,11 +1209,11 @@ final class LayoutStoreTests: XCTestCase {
             MockData.descriptors(for: "claude").map(\.id)
         )
 
-        // Codex untouched by a Claude-only reset.
+        // Codex는 영향 없음
         XCTAssertTrue(store.isMetricEnabled("codex.weekly"))
         XCTAssertTrue(store.isPinned("codex.weekly"))
 
-        // Provider order untouched — contents-only reset.
+        // provider 순서 유지 — contents-only reset
         XCTAssertEqual(store.customizeGroups.map(\.provider.id), orderBefore)
     }
 
@@ -1254,7 +1227,7 @@ final class LayoutStoreTests: XCTestCase {
     // MARK: - Customize master/detail (L1 list + L2 detail)
 
     func testCustomizeProviderRowsIncludesAllProvidersRegardlessOfEnablement() {
-        // Disable Codex; L1 must still list it (greyed), in the registry's provider order.
+        // Codex 비활성 시에도 L1 목록에 registry 순서대로 표시(greyed)
         let store = LayoutStore(
             registry: .mock,
             defaults: makeDefaults("RowsIncludeDisabled"),
@@ -1282,7 +1255,7 @@ final class LayoutStoreTests: XCTestCase {
             storageKey: "layout",
             isProviderEnabled: { id in id != "codex" }
         )
-        // customizeGroups drops the disabled provider; customizeDetail does not.
+        // customizeGroups는 disabled provider 제외, customizeDetail은 포함
         XCTAssertNil(store.customizeGroups.first { $0.provider.id == "codex" })
         let detail = store.customizeDetail(for: "codex")
         XCTAssertNotNil(detail, "disabled provider still has a detail to render dimmed")
@@ -1324,7 +1297,7 @@ final class LayoutStoreTests: XCTestCase {
         store.screen = .dashboard
         XCTAssertNil(store.customizeProviderID, "leaving Customize resets the L2 selection back to the list")
 
-        // A direct jump to Settings also clears it — never strand a detail selection on another screen.
+        // Settings 직접 이동 시에도 L2 선택 해제
         store.screen = .customize
         store.customizeProviderID = "codex"
         store.screen = .settings
@@ -1333,8 +1306,7 @@ final class LayoutStoreTests: XCTestCase {
 
     // MARK: - Share confirmation
 
-    /// `clearShareConfirmation` hides the pill immediately and cancels the auto-clear task, so a
-    /// confirmation mid-countdown can't reappear stale after the popover closes and reopens.
+    /// auto-clear task 취소로 popover 재오픈 시 stale confirmation 재등장 방지
     func testClearShareConfirmationHidesPillAndCancelsTimer() {
         let store = makeStore("ShareConfirmationClear")
         XCTAssertFalse(store.shareConfirmation)
@@ -1346,8 +1318,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertFalse(store.shareConfirmation, "clear hides the pill immediately")
     }
 
-    /// Move a metric through the same divider-reorder route used by both dashboard and Customize
-    /// drags. Tests use this only when they need to perform that real user action as setup.
+    /// dashboard·Customize drag와 동일한 divider-reorder 경로로 metric 이동
     private func moveMetric(_ descriptorID: String, expanded: Bool, in store: LayoutStore) -> Bool {
         guard store.expandedMetricIDs.contains(descriptorID) != expanded,
               let providerID = descriptorID.split(separator: ".", maxSplits: 1).first.map(String.init)

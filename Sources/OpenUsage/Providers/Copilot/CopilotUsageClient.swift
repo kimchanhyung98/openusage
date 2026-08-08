@@ -1,8 +1,6 @@
 import Foundation
 
-/// Calls GitHub's internal Copilot usage endpoint with a GitHub OAuth token. Mirrors the headers the
-/// official Copilot client sends; `Authorization` uses the `token` scheme (not `Bearer`), which is what
-/// `/copilot_internal/user` accepts.
+/// GitHub OAuth token으로 GitHub 내부 Copilot usage endpoint 호출. 공식 Copilot 클라이언트의 header 미러링 — `Authorization`은 `/copilot_internal/user`가 받는 `token` scheme(`Bearer` 아님).
 struct CopilotUsageClient: Sendable {
     static let usageURL = "https://api.github.com/copilot_internal/user"
 

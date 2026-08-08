@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// True inside the readable "party" easter-egg mode, so leaf views (meter bars, provider marks) can
-/// join the party while staying legible. Default `false` everywhere — the windowless ShareCard export
-/// and every normal surface never opt in. (The unreadable "drunk" escalation does not set this; it just
-/// blurs everything.)
+/// 가독형 "party" easter-egg 모드 여부 — leaf view(meter bar, provider mark)가 가독성을 유지한 채 참여.
+/// 기본값 `false` — windowless ShareCard export와 일반 surface는 opt-in하지 않음.
 private struct PopoverPartyModeKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -15,19 +13,9 @@ extension EnvironmentValues {
     }
 }
 
-/// Whether the hosting popover is currently on-screen. The easter-egg animation loops read this to
-/// **mount** their `TimelineView(.animation)` clocks only while the popover is visible and drop to a
-/// static frame when it isn't, so a closed popover with the egg still active runs no display link and
-/// spends no CPU. Default `false`, so the windowless ShareCard export and any non-popover host never
-/// mount the loops. Seeded from `PopoverTransparencyStore.popoverShown`, which `StatusItemController`
-/// flips at its `showPanel`/`hidePanel` chokepoints.
-///
-/// This is a STRUCTURAL mount gate (`if shown { TimelineView } else { static }`), deliberately NOT the
-/// reverted `TimelineView(.animation(paused: !shown))` overload (commit 1ef9c4e): that overload froze
-/// in-place activation because its schedule only re-primes on a window-lifecycle event, never on an
-/// in-place `paused` flip. Mounting a fresh `TimelineView` always attaches its display link, so the egg
-/// starts the instant it's switched on with the popover already open. Do not collapse this back to the
-/// paused overload.
+/// 호스팅 popover의 on-screen 여부 — easter-egg loop가 보일 때만 `TimelineView(.animation)` clock을 mount해
+/// 닫힌 popover가 display link·CPU를 쓰지 않도록 함. 기본값 `false`라 windowless ShareCard export는 loop 미장착.
+/// 구조적 mount gate 필수 — `TimelineView(.animation(paused:))` overload는 in-place 활성화가 얼어 회귀됨; 되돌리기 금지.
 private struct PopoverIsVisibleKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -39,13 +27,9 @@ extension EnvironmentValues {
     }
 }
 
-/// Renders time-driven `content(t)` under a live `TimelineView(.animation)` while the popover is
-/// on-screen, and at a single static frame (the current instant, matching the live clock's first frame)
-/// when it's hidden — so no display link ticks behind a closed popover, yet the look doesn't snap off on
-/// close. This is the shared home of the STRUCTURAL mount gate every easter-egg loop uses; it is
-/// deliberately NOT the reverted `TimelineView(.animation(paused:))` overload (see `\.popoverIsVisible`).
-/// Both branches carry `.transition(.identity)` so toggling the egg crossfades via the surrounding
-/// `.animation`, never a hard cut. `t` is `timeIntervalSinceReferenceDate`.
+/// popover가 보일 때는 live `TimelineView(.animation)`, 숨겨지면 단일 static frame으로 `content(t)` 렌더 —
+/// 모든 easter-egg loop가 공유하는 구조적 mount gate(`\.popoverIsVisible` 참고).
+/// 두 분기 모두 `.transition(.identity)`라 egg 토글이 hard cut 없이 crossfade됨. `t`는 `timeIntervalSinceReferenceDate`.
 struct VisibilityGatedTimeline<Content: View>: View {
     @Environment(\.popoverIsVisible) private var shown
     private let content: (TimeInterval) -> Content
@@ -68,8 +52,7 @@ struct VisibilityGatedTimeline<Content: View>: View {
 }
 
 enum PartyMode {
-    /// Vivid gradient fill for meter bars in party mode. The bar still shows its fraction by width, so
-    /// it stays readable — it just trades the solid severity color for party colors.
+    /// party 모드 meter bar의 vivid gradient fill — bar는 여전히 너비로 fraction을 보여 가독성 유지.
     static let meterFill = AnyShapeStyle(
         LinearGradient(
             colors: [
@@ -84,8 +67,7 @@ enum PartyMode {
 }
 
 extension View {
-    /// A gentle pulse + color shimmer for the provider marks while party mode is on; identity otherwise
-    /// (no `TimelineView` mounted when the party is off).
+    /// party 모드 중 provider mark의 완만한 pulse + 색 shimmer; off일 때는 identity(`TimelineView` 미장착).
     @ViewBuilder
     func partyPulse(_ active: Bool) -> some View {
         if active {
@@ -98,8 +80,7 @@ extension View {
 
 private struct PartyPulseModifier: ViewModifier {
     func body(content: Content) -> some View {
-        // Clock mounts only while the popover is on-screen (see `VisibilityGatedTimeline`); the pulse
-        // starts immediately on reopen / in-place activation and costs nothing when the popover is closed.
+        // clock은 popover가 보일 때만 mount(`VisibilityGatedTimeline` 참고) — 닫힌 동안 비용 없음.
         VisibilityGatedTimeline { t in pulse(content, at: t) }
     }
 

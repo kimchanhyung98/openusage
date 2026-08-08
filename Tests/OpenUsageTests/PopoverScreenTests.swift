@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The in-popover screen mode (dashboard / Customize / Settings) and its `isEditing` bridge,
-/// which older call sites still drive Customize through.
 @MainActor
 final class PopoverScreenTests: XCTestCase {
     func testStartsOnDashboard() {

@@ -4,26 +4,9 @@ enum ProviderRefreshContext {
     @TaskLocal static var isManual = false
 }
 
-/// One AI provider OpenUsage can track. A conformer reads credentials already on the machine, calls the
-/// provider's API, and normalizes the result into a `ProviderSnapshot` of `MetricLine` values that the UI
-/// renders. See `docs/adding-a-provider.md` for the full walkthrough.
-///
-/// `refresh()` returns the latest snapshot. Build its `lines` from the app's small metric vocabulary,
-/// choosing the case by the shape of the value:
-/// - `.progress` — a bounded meter with a `used`/`limit` and a `format` (percent, dollars, or count). Use
-///   for anything with a ceiling: session/weekly quotas, credits with a cap. Add `resetsAt` when the
-///   window resets at a known time.
-/// - `.values` — one or more typed, unbounded numbers. Use for spend, balances, token counts, and other
-///   limitless numeric rows; formatting stays at the display edge.
-/// - `.badge` — a short status pill (e.g. "Disabled", or a pay-as-you-go cap). Use for state, not a number
-///   to fill a bar with.
-/// - `.chart` — dated numeric points rendered as a compact usage trend.
-/// - `.text` — a string-valued provider notice preserved for the local API. Dashboard widgets do not
-///   parse display text; use a typed line above for every widget descriptor.
-///
-/// On failure, return `ProviderSnapshot.error(provider:error:)` with a typed provider error so the error
-/// surfaces loudly in the UI and telemetry can report a stable, non-PII category. Use the message-only
-/// factory only when no typed error exists.
+/// 기기의 기존 credential을 읽고 provider API 응답을 UI용 `ProviderSnapshot`으로 정규화.
+/// line 선택은 값의 형태 기준 — 상한 있는 값은 `.progress`, 무한 숫자는 `.values`, 상태는 `.badge`, 날짜별 추이는 `.chart`, `.text`는 로컬 API용 notice(위젯은 display text를 파싱하지 않음).
+/// 실패 시 typed provider error로 `ProviderSnapshot.error(provider:error:)` 반환 — UI에 크게 표면화, telemetry는 안정적 non-PII 카테고리 보고. message-only factory는 typed error가 없을 때만.
 @MainActor
 protocol ProviderRuntime: AnyObject {
     var provider: Provider { get }
@@ -31,26 +14,18 @@ protocol ProviderRuntime: AnyObject {
 
     func refresh() async -> ProviderSnapshot
 
-    /// Whether credentials for this provider already exist on this machine — a cheap, local-only probe
-    /// (files, keychain, SQLite; never the network). Used once, on a fresh install's first launch, by
-    /// `FirstRunSeeder` to enable exactly the providers the user actually has. Mirror the credential
-    /// sources `refresh()` reads, and run blocking loads via `loadOffMainActor`.
+    /// 이 provider의 credential이 기기에 이미 있는지 — 저렴한 로컬 전용 probe(file·keychain·SQLite, 네트워크 금지).
+    /// fresh install 첫 launch에 `FirstRunSeeder`가 1회 사용. `refresh()`가 읽는 credential source를 그대로 미러링, blocking 로드는 `loadOffMainActor` 경유.
     func hasLocalCredentials() async -> Bool
 }
 
-/// Run a blocking, `Sendable` credential load off the MainActor.
-///
-/// Auth stores read credentials via the `security` (keychain) and `sqlite3` CLIs, whose `ProcessRunner`
-/// waits block the calling thread for up to ~5s each. Those loads run at the top of a provider's
-/// `@MainActor refresh()`, so calling them inline freezes the popover and the periodic-refresh loop for
-/// the whole subprocess window (Cursor issues several reads per refresh — up to ~25s). Offloading to a
-/// detached task moves the wait onto a background executor; the `Sendable` result crosses back cleanly.
-/// It is awaited immediately, so it reads like a normal call while no longer blocking the actor.
+/// blocking `Sendable` credential 로드를 MainActor 밖에서 실행.
+/// auth store의 `security`·`sqlite3` CLI 읽기는 호출 스레드를 최대 ~5초씩 블록 — inline 호출 시 popover와 주기 refresh가 subprocess 시간 내내 정지(Cursor는 refresh당 수 회, 최대 ~25초). detached task로 대기를 background executor에 넘기고 즉시 await.
 func loadOffMainActor<T: Sendable>(_ load: @escaping @Sendable () -> T) async -> T {
     await Task.detached(priority: .utility, operation: load).value
 }
 
-/// Throwing counterpart for blocking credential reads that distinguish absence from access failure.
+/// 부재와 접근 실패를 구분하는 blocking credential 읽기의 throwing 대응판.
 func loadOffMainActor<T: Sendable>(_ load: @escaping @Sendable () throws -> T) async throws -> T {
     try await Task.detached(priority: .utility, operation: load).value
 }

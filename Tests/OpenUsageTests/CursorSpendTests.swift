@@ -72,7 +72,7 @@ final class CursorCSVParserTests: XCTestCase {
 
         let row = try XCTUnwrap(CursorUsageCSV.parse(csv: csv, pricing: pricing).rows.first)
 
-        // A CSV row combines many requests, so its total cannot prove that any one request crossed 200k.
+        // CSV 행은 여러 request의 합산 — 총합만으로 단일 request의 200k 초과를 증명 불가
         XCTAssertEqual(row.imputedCostDollars!, 2.4, accuracy: 0.0001)
     }
 }
@@ -87,19 +87,19 @@ final class CursorSpendRangeTests: XCTestCase {
         let startOfLast30 = cal.date(byAdding: .day, value: -29, to: startOfToday)!
 
         let rows = [
-            makeRow(date: now, cost: 1.00, tokens: 100),                                              // today
-            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200),    // yesterday
-            makeRow(date: startOfLast30, cost: 0.50, tokens: 50),                                     // -29d edge: last30 only
-            makeRow(date: cal.date(byAdding: .day, value: -40, to: now)!, cost: 5.00, tokens: 999)    // old (provider scopes the fetch)
+            makeRow(date: now, cost: 1.00, tokens: 100),                                              // 오늘
+            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200),    // 어제
+            makeRow(date: startOfLast30, cost: 0.50, tokens: 50),                                     // -29d 경계: last30만 포함
+            makeRow(date: cal.date(byAdding: .day, value: -40, to: now)!, cost: 5.00, tokens: 999)    // 오래된 행 (provider가 fetch 범위 제한)
         ]
 
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        // Tokens come from Cursor; dollars are calculated locally and marked as estimated.
+        // token은 Cursor 제공, 달러는 로컬 계산 + estimated 표시
         XCTAssertEqual(values(lines, "Today"), [MetricValue(number: 1.00, kind: .dollars, estimated: true), MetricValue(number: 100, kind: .count, label: "tokens")])
         XCTAssertEqual(values(lines, "Yesterday"), [MetricValue(number: 2.00, kind: .dollars, estimated: true), MetricValue(number: 200, kind: .count, label: "tokens")])
-        // Last 30 Days sums every fetched day (the provider scopes the CSV to a 30-day window).
+        // Last 30 Days는 fetch된 전체 일자 합산 (provider가 CSV를 30일 window로 제한)
         XCTAssertEqual(values(lines, "Last 30 Days"), [MetricValue(number: 8.50, kind: .dollars, estimated: true), MetricValue(number: 1349, kind: .count, label: "tokens")])
     }
 
@@ -107,9 +107,7 @@ final class CursorSpendRangeTests: XCTestCase {
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: [], now: Date(), pricing: TestPricing.bundled, to: &lines)
 
-        // The export fetched but had no rows: every period is idle, so no spend tile is appended and the
-        // tiles fall back to "No data" — not a fabricated "$0.00 · 0 tokens" ("No data" is also what a
-        // failed export produces; see the provider test).
+        // fetch 성공 + 행 없음: 모든 기간 idle → spend 타일 미추가, "No data"로 fallback
         XCTAssertNil(values(lines, "Today"))
         XCTAssertNil(values(lines, "Yesterday"))
         XCTAssertNil(values(lines, "Last 30 Days"))
@@ -119,8 +117,8 @@ final class CursorSpendRangeTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let cal = Calendar.current
         let rows = [
-            makeRow(date: now, cost: 1.00, tokens: 100),                                           // today
-            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200)  // yesterday
+            makeRow(date: now, cost: 1.00, tokens: 100),                                           // 오늘
+            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200)  // 어제
         ]
 
         var lines: [MetricLine] = []
@@ -130,7 +128,7 @@ final class CursorSpendRangeTests: XCTestCase {
             return XCTFail("expected a Usage Trend chart line")
         }
         XCTAssertEqual(label, "Usage Trend")
-        // Cursor's tokens come from its server export, so the note names that source, not local logs.
+        // Cursor token은 서버 export 출처 — note가 로컬 로그가 아닌 그 출처를 명시
         XCTAssertEqual(note, "From your Cursor usage export")
         XCTAssertEqual(points.count, 31, "one bar per calendar day across the 31-day window")
         XCTAssertEqual(points.last?.value, 100, "today's tokens land on the last bar")
@@ -138,8 +136,7 @@ final class CursorSpendRangeTests: XCTestCase {
     }
 
     func testNoRowsLeavesNoUsageTrend() {
-        // A fetched-but-empty export leaves the spend tiles unbacked and gives the trend nothing to draw,
-        // so no chart line is appended (the row falls back to "No data").
+        // fetch됐지만 빈 export: trend 그릴 것 없음 → chart 라인 미추가("No data")
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: [], now: Date(), pricing: TestPricing.bundled, to: &lines)
         XCTAssertNil(lines.first(where: { $0.label == "Usage Trend" }))
@@ -149,17 +146,16 @@ final class CursorSpendRangeTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let cal = Calendar.current
         let rows = [
-            makeRow(date: now, cost: 1.00, tokens: 100, model: "composer-1"),                                  // priced, today
-            makeRow(date: now, cost: nil, tokens: 50, model: "totally-unknown-model-xyz"),                      // unknown, today
-            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200, model: "composer-1"), // priced, yesterday
-            makeRow(date: cal.date(byAdding: .day, value: -3, to: now)!, cost: nil, tokens: 80, model: "another-unknown-abc") // unknown, last30 only
+            makeRow(date: now, cost: 1.00, tokens: 100, model: "composer-1"),                                  // priced, 오늘
+            makeRow(date: now, cost: nil, tokens: 50, model: "totally-unknown-model-xyz"),                      // unknown, 오늘
+            makeRow(date: cal.date(byAdding: .day, value: -1, to: now)!, cost: 2.00, tokens: 200, model: "composer-1"), // priced, 어제
+            makeRow(date: cal.date(byAdding: .day, value: -3, to: now)!, cost: nil, tokens: 80, model: "another-unknown-abc") // unknown, last30만
         ]
 
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        // Today carries its own unknown model; a fully-priced Yesterday stays clean; Last 30 Days carries
-        // the de-duplicated, sorted union across the whole window.
+        // Today는 자기 unknown model 보유, 완전 priced인 Yesterday는 깨끗, Last 30 Days는 dedup·정렬된 합집합
         XCTAssertEqual(unknown(lines, "Today"), ["totally-unknown-model-xyz"])
         XCTAssertEqual(unknown(lines, "Yesterday"), [])
         XCTAssertEqual(unknown(lines, "Last 30 Days"), ["another-unknown-abc", "totally-unknown-model-xyz"])
@@ -167,9 +163,7 @@ final class CursorSpendRangeTests: XCTestCase {
 
     func testUnknownModelWithZeroTokensIsNotFlagged() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        // A zero-token row of an unknown model changes no cost, so it never raises the warning. The day
-        // also has real priced usage, so the tile exists (an all-idle day gets no tile at all) — proving
-        // the zero-token unknown is filtered out, not just hidden by an absent tile.
+        // unknown model의 zero-token 행은 cost 불변 → warning 미발생; 같은 날 priced usage로 타일 존재를 보장해 필터링 검증
         let rows = [
             makeRow(date: now, cost: 1.00, tokens: 100, model: "composer-1"),
             makeRow(date: now, cost: nil, tokens: 0, model: "totally-unknown-model-xyz")
@@ -194,8 +188,7 @@ final class CursorSpendRangeTests: XCTestCase {
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        // The unpriced row is excluded from the tile's tokens and the breakdown alike — it surfaces
-        // only through the unknown-model warning.
+        // unpriced 행은 타일 token·breakdown 모두에서 제외 — unknown-model warning으로만 노출
         XCTAssertEqual(values(lines, "Today"),
                        [MetricValue(number: 3.01, kind: .dollars, estimated: true), MetricValue(number: 300, kind: .count, label: "tokens")])
         XCTAssertEqual(unknown(lines, "Today"), ["unpriced-cursor-model"])
@@ -208,9 +201,7 @@ final class CursorSpendRangeTests: XCTestCase {
 
     func testModelBreakdownGroupsThinkingEffortSlugsIntoFamilies() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        // Cursor exports one slug per thinking-effort/fast combination; the panel row must group them
-        // under the canonical base model (via the supplement alias rules, with `-fast` folded into its
-        // base) and keep the raw slugs as the tooltip's per-effort variants.
+        // thinking-effort/fast 조합별 slug를 canonical base model로 그룹핑, 원시 slug는 tooltip variant로 유지
         let rows = [
             makeRow(date: now, cost: 3.00, tokens: 300, model: "claude-opus-4-8-thinking-max"),
             makeRow(date: now, cost: 1.00, tokens: 100, model: "claude-opus-4-8-thinking-high"),
@@ -237,9 +228,7 @@ final class CursorSpendRangeTests: XCTestCase {
     }
 
     func testUnpricedOnlyDayLeavesTilesUnbacked() {
-        // A day whose every row is unpriceable has nothing coherent to display: no tiles, no trend —
-        // the excluded usage exists only in `unknownModelsByDay` (which needs a rendered tile to show
-        // its triangle; here there is none, matching "No data").
+        // 모든 행이 unpriceable한 날은 타일·trend 없음 — 제외된 usage는 `unknownModelsByDay`에만 존재
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let rows = [
             makeRow(date: now, cost: nil, tokens: 100, model: "totally-unknown-model-xyz")
@@ -263,7 +252,7 @@ final class CursorSpendRangeTests: XCTestCase {
         return unknownModels
     }
 
-    /// `cost: nil` models a row no pricing source could price (the unknown-model case).
+    /// `cost: nil` = 어떤 pricing source도 가격 산정 못한 행 (unknown-model 케이스)
     private func makeRow(date: Date, cost: Double?, tokens: Int, model: String = "composer-1") -> CursorUsageCSVRow {
         CursorUsageCSVRow(
             date: date,
@@ -284,15 +273,12 @@ final class CursorSpendRangeTests: XCTestCase {
 @MainActor
 final class CursorSpendProviderTests: XCTestCase {
     func testSpendTrackingDownloadsCSVExposesSpendTilesAndFlagsUnknownModels() async {
-        // The provider downloads the usage CSV, exposes the spend-tile + trend descriptors, and emits
-        // Today / Yesterday / Last 30 Days / Usage Trend lines
-        // alongside the live quota meters. A row that used a model no pricing source can price carries
-        // that model's name so the tile can warn its cost is incomplete.
+        // usage CSV 다운로드 → spend 타일 + trend descriptor 노출, unknown model은 타일 warning용으로 이름 전달
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let iso = ISO8601DateFormatter()
         let todayStr = iso.string(from: now)
         let yesterdayStr = iso.string(from: Calendar.current.date(byAdding: .day, value: -1, to: now)!)
-        // A priced model and an unknown one both used today, plus a priced row yesterday.
+        // 오늘 priced + unknown model 사용, 어제는 priced 행
         let csv = """
         Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost
         \(todayStr),composer-1,No,0,1000000,0,0,Included
@@ -337,7 +323,7 @@ final class CursorSpendProviderTests: XCTestCase {
 
         XCTAssertTrue(http.requests.contains { $0.url.absoluteString.contains("export-usage-events-csv") },
                       "Cursor refresh must download the usage CSV for spend metrics")
-        // Live quota meter survives; spend tiles + trend are present.
+        // live quota 미터 유지, spend 타일 + trend 존재
         XCTAssertTrue(snapshot.lines.contains { $0.label == "Total usage" })
         for label in ["Today", "Yesterday", "Last 30 Days", "Usage Trend"] {
             XCTAssertNotNil(snapshot.lines.first { $0.label == label }, "\(label) line must be present")
@@ -347,7 +333,7 @@ final class CursorSpendProviderTests: XCTestCase {
             XCTAssertTrue(ids.contains(id), "\(id) descriptor must be present")
         }
 
-        // The unknown model rode onto Today (and the Last 30 Days union); a fully-priced Yesterday stays clean.
+        // unknown model은 Today(및 Last 30 Days 합집합)에 부착, 완전 priced인 Yesterday는 깨끗
         XCTAssertEqual(unknownModels(snapshot.lines, "Today"), ["totally-unknown-model-xyz"])
         XCTAssertEqual(unknownModels(snapshot.lines, "Yesterday"), [])
         XCTAssertEqual(unknownModels(snapshot.lines, "Last 30 Days"), ["totally-unknown-model-xyz"])
@@ -362,10 +348,7 @@ final class CursorSpendProviderTests: XCTestCase {
         let cursor = CursorProvider()
         let descriptor = try! XCTUnwrap(cursor.widgetDescriptors.first { $0.id == "cursor.today" })
 
-        // The combined tile joins the dollar and the labeled token count. The render shape for a zero
-        // line is still "$0.00 · 0 tokens" — the mapper no longer produces these (an idle period is left
-        // unbacked → "No data"), but a provider that reports a real $0.00 (e.g. OpenRouter) still renders
-        // it rather than hiding the figure.
+        // 결합 타일은 달러 + 라벨된 token count — 실제 $0.00 보고(예: OpenRouter)는 숨기지 않고 "$0.00 · 0 tokens"로 렌더
         let cases: [(Double, Int, String, String)] = [
             (12.34, 891_000, "$12.34", "$12.34 · 891K tokens"),
             (0.0, 0, "$0.00", "$0.00 · 0 tokens")
@@ -401,7 +384,7 @@ final class CursorSpendProviderTests: XCTestCase {
             XCTAssertEqual(remaining.valueText, expectedValue)
             XCTAssertEqual(remaining.unboundedDetail, expectedDetail)
             XCTAssertEqual(remaining.infoNote, WidgetData.localEstimateNote)
-            // Unbounded: identical under both meter styles.
+            // unbounded: 두 meter style에서 동일
             XCTAssertEqual(used.valueText, remaining.valueText)
             XCTAssertEqual(used.unboundedDetail, remaining.unboundedDetail)
             XCTAssertEqual(used.infoNote, remaining.infoNote)
@@ -425,9 +408,7 @@ final class CursorSpendProviderTests: XCTestCase {
 // MARK: - Client request contract
 
 final class CursorUsageClientRequestTests: XCTestCase {
-    // Pin the request contract directly at the client level — endpoint, epoch-ms range,
-    // `strategy=tokens`, the session cookie, and `Accept: text/csv` — so a silent regression in
-    // URL/header construction cannot slip through.
+    // client 레벨의 request 계약 고정 — endpoint, epoch-ms 범위, `strategy=tokens`, session cookie, `Accept: text/csv`
     func testFetchUsageCSVBuildsTokenStrategyRequestWithSessionCookie() async throws {
         let accessToken = makeCursorJWT(sub: "google-oauth2|user_abc123")
         let http = RoutingHTTPClient { _ in
@@ -436,13 +417,12 @@ final class CursorUsageClientRequestTests: XCTestCase {
 
         let response = try await CursorUsageClient(http: http).fetchUsageCSV(
             accessToken: accessToken,
-            start: Date(timeIntervalSince1970: 1_000),   // 1_000_000 ms
-            end: Date(timeIntervalSince1970: 2_000)      // 2_000_000 ms
+            start: Date(timeIntervalSince1970: 1_000),   // 밀리초 변환값 1_000_000
+            end: Date(timeIntervalSince1970: 2_000)      // 밀리초 변환값 2_000_000
         )
 
         XCTAssertEqual(response?.statusCode, 200)
-        // A nil session would skip the HTTP call entirely, so requiring a recorded request guards that
-        // the assertions below actually ran against a real request.
+        // session이 nil이면 HTTP 호출 자체를 skip — 기록된 request 요구로 아래 assertion의 실제 실행 보장
         let request = try XCTUnwrap(http.requests.first, "fetchUsageCSV must issue a request")
         let url = request.url.absoluteString
         XCTAssertTrue(url.contains("export-usage-events-csv"), "hits the CSV export endpoint")
@@ -474,5 +454,3 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     }
     func execute(path: String, sql: String) throws {}
 }
-
-// RoutingHTTPClient lives in TestSupport.swift (shared, records requests).

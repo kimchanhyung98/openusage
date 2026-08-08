@@ -1,27 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The dashboard footer's trailing control: a single **Options ⌄** menu button in Liquid Glass. The
-/// earlier split button ("Customize" + separate chevron) confused people — two tap targets in one
-/// capsule read as one — so everything now lives in one obvious menu: Customize / Settings / Share
-/// Screenshot / Check for Updates / About / Quit. Customize leads the menu because it's the screen
-/// users reach for most; Settings stays one click away (and always via ⌘,).
-///
-/// The capsule is a `.buttonStyle(.plain)` `Menu` with one `interactiveGlass(in: Capsule())` treatment
-/// behind it — the system `.buttonStyle(.glass)` renders flat on a `Menu` (its own button chrome wins),
-/// so the treatment goes on the container. Increase Transparency adds an adaptive frosted base beneath
-/// the glass for contrast; macOS 15 uses that frosted capsule as its fallback. The menu renders in its
-/// own `NSMenu`-backed window, which the panel's outside-click policy keeps the popover open for.
-///
-/// Only the dashboard shows this; the Customize and Settings screens carry their own top-leading back
-/// button (`PopoverTopBar`) to return home — the macOS-native place for it — so the footer control
-/// simply drops away there.
-///
-/// Shortcuts survive: ⌘, (Settings), ⏎ (Customize) and Esc are handled by the always-on
-/// `PopoverKeyReader` monitor, so they fire from every screen (including Settings, whose footer shows
-/// only the identity line — no actions). The menu items only carry their ⌘ key-equivalents as labels
-/// and fire while the menu is open, so the monitor and the items never double-fire. ⌘Q (Quit) is
-/// unowned elsewhere, so it rides its menu item directly.
+/// 대시보드 푸터 trailing의 Options 메뉴 버튼 (Liquid Glass 캡슐).
+/// glass 처리는 컨테이너 소유 — `Menu` 위의 `.buttonStyle(.glass)`는 자체 chrome에 밀려 flat 렌더.
+/// 단축키는 상시 `PopoverKeyReader`가 처리, 메뉴 항목은 열림 중에만 발화 — 이중 발화 없음. ⌘Q만 항목 소유.
 struct HeaderView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
@@ -29,18 +11,15 @@ struct HeaderView: View {
     @Environment(UpdaterController.self) private var updater
     @Environment(PopoverTransparencyStore.self) private var transparency
     @Environment(\.colorScheme) private var colorScheme
-    /// The current screen. The footer is fixed chrome keyed off `layout.screen` (it no longer slides
-    /// per-page), so this control shows only when that's `.dashboard` and swaps in place on a switch.
+    /// 현재 화면. `.dashboard`일 때만 이 컨트롤 표시.
     let screen: PopoverScreen
 
-    /// Control height, so the capsule matches the footer's other chrome.
     private static let controlHeight: CGFloat = 28
 
     var body: some View {
         leadingControl
     }
 
-    /// On the dashboard, the Options menu button on one glass capsule.
     @ViewBuilder
     private var leadingControl: some View {
         if screen == .dashboard {
@@ -53,9 +32,7 @@ struct HeaderView: View {
         }
     }
 
-    /// The Options pull-down: label plus its own chevron glyph. `.menuStyle(.button)` +
-    /// `.buttonStyle(.plain)` strip the menu chrome so `interactiveGlass` owns the surface;
-    /// `.menuIndicator(.hidden)` drops the built-in arrow in favor of our styled chevron.
+    /// `.menuStyle(.button)` + `.buttonStyle(.plain)`으로 메뉴 chrome 제거 — `interactiveGlass`가 표면 소유.
     private var optionsButton: some View {
         Menu {
             menuItems
@@ -77,13 +54,8 @@ struct HeaderView: View {
         .fixedSize()
     }
 
-    /// The menu's items, mirroring their in-popover entry points. Customize leads, then Settings.
-    /// `autoenablesItems` has no SwiftUI equivalent, so the Check for Updates item disables itself when
-    /// Sparkle can't currently check — e.g. dev builds with no feed, or while a check is already in
-    /// flight. Customize and Settings carry their key equivalents so the menu shows the shortcuts: when
-    /// the menu is open the items handle them; when it's closed the `PopoverKeyReader` monitor
-    /// handles (and consumes) them first, so the equivalents can't double-fire. Same split as the Quit
-    /// ⌘Q item below.
+    /// 메뉴 항목. Check for Updates는 Sparkle 체크 불가 시 자체 비활성 (`autoenablesItems`의 SwiftUI 부재 대응).
+    /// 메뉴 열림 중엔 항목이 단축키 처리, 닫힘 중엔 `PopoverKeyReader`가 선점 소비 — 이중 발화 방지.
     @ViewBuilder
     private var menuItems: some View {
         Button { toggle(.customize) } label: {
@@ -113,22 +85,17 @@ struct HeaderView: View {
         Button(role: .destructive) { NSApplication.shared.terminate(nil) } label: {
             Label("Quit OpenUsage", systemImage: "power")
         }
-        .keyboardShortcut("q") // ⌘Q — unowned elsewhere, so safe to register on the item.
+        .keyboardShortcut("q") // ⌘Q — 다른 소유자 없음, 항목 등록 안전
     }
 
-    /// The footer's "Share Screenshot" submenu: one entry per provider currently showing on the
-    /// dashboard (`displayGroups` — enabled providers with at least one visible metric), so a screenshot
-    /// is reachable without right-clicking a card. Each entry runs the same render path as the per-provider
-    /// right-click "Share Screenshot": a branded PNG of that provider's card copied to the clipboard. The
-    /// menu renders in its own `NSMenu`-backed window, so firing an item doesn't close the popover the way
-    /// a navigation toggle would — the share card reads the same live stores the dashboard does.
+    /// 대시보드 표시 중인 프로바이더별 "Share Screenshot" 서브메뉴 (`displayGroups` 기준).
+    /// 우클릭 공유와 동일 렌더 경로 — 브랜드 PNG 클립보드 복사.
     @ViewBuilder
     private var shareScreenshotMenu: some View {
         let groups = layout.displayGroups
         Menu {
             if groups.isEmpty {
-                // No provider is showing anything to screenshot — grey the item out instead of offering
-                // an empty submenu.
+                // 스크린샷 대상 없음 — 빈 서브메뉴 대신 비활성 항목 표시
                 Button("No Enabled Providers") {}
                     .disabled(true)
             } else {
@@ -141,11 +108,8 @@ struct HeaderView: View {
         }
     }
 
-    /// Renders the provider's branded share card and copies the PNG to the clipboard — the same action as
-    /// the dashboard's per-provider right-click "Share Screenshot". The appearance comes from the
-    /// popover's own `colorScheme`: the footer lives in the popover panel, whose appearance is
-    /// `AppearanceSetting.current` (explicit for Light/Dark, the menu bar for System), so the export
-    /// matches the card on screen instead of guessing from `NSApp.effectiveAppearance`.
+    /// 프로바이더 공유 카드 렌더 후 PNG 클립보드 복사.
+    /// appearance는 팝오버 자체 `colorScheme` 사용 — `NSApp.effectiveAppearance` 추정 대신 화면 표시와 일치 보장.
     private func shareCard(_ group: ProviderGroup) {
         ShareCardRenderer.share(
             group: group,

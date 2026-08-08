@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The official-login launcher: scoped home pinned, auth overrides stripped, Codex forced onto the
-/// file credential store.
 final class AccountSignInLauncherTests: XCTestCase {
     func testLoginArgumentsMatchTheInstalledCLIs() {
         XCTAssertEqual(AccountSignInLauncher.loginArguments(family: "claude"), ["auth", "login"])

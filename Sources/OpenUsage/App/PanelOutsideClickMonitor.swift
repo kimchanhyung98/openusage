@@ -1,6 +1,6 @@
 import AppKit
 
-/// Owns the local and global mouse monitors that dismiss the menu-bar panel.
+/// 메뉴 바 panel을 dismiss하는 local·global mouse monitor 소유.
 @MainActor
 final class PanelOutsideClickMonitor {
     private let panel: MenuBarPanel
@@ -28,7 +28,7 @@ final class PanelOutsideClickMonitor {
         stop()
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            // NSEvent is not Sendable, so only copy these small values before returning to the main actor.
+            // NSEvent는 non-Sendable — main actor 복귀 전 작은 값만 복사.
             let windowID = event.window.map(ObjectIdentifier.init)
             let windowTypeName = event.window.map { String(describing: type(of: $0)) }
             MainActor.assumeIsolated {
@@ -43,7 +43,7 @@ final class PanelOutsideClickMonitor {
             monitors.append(local)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
-            // Read the location now; the pointer may move before the main-actor task runs.
+            // 위치는 즉시 읽기 — main-actor task 실행 전 포인터 이동 가능.
             let screenPoint = NSEvent.mouseLocation
             Task { @MainActor [weak self] in
                 self?.handleClick(windowID: nil, windowTypeName: nil, screenPoint: screenPoint)
@@ -115,26 +115,12 @@ enum PanelOutsideClickPolicy {
             || context.isPanelWindow
             || context.isStatusItemWindow
             || context.eventWindowTypeName?.localizedCaseInsensitiveContains("menu") == true
-            // A hover popover (model breakdown, usage trend, resets timeline) is its own window that
-            // floats *outside* the panel frame, so a click on an interactive control inside it — e.g.
-            // the resets "Use" button — otherwise reads as an outside click and tears the panel down
-            // before the control's mouse-up fires. Its backing window class is `_NSPopoverWindow`.
+            // hover popover(`_NSPopoverWindow`)는 panel frame 밖의 자체 window — outside click 오판 시 내부 컨트롤의 mouse-up 전에 panel 해제.
             || context.eventWindowTypeName?.localizedCaseInsensitiveContains("popover") == true
     }
 
-    /// Status-button hit test. Differs from `NSRect.contains(buttonFrame)` in two ways, both needed
-    /// so a click with the cursor slammed against the top of the screen — the natural way to click
-    /// the menu bar — counts as *on* the button (issue #1008):
-    /// - The hit zone extends from the button frame's top edge to the top of the button's screen:
-    ///   the button is a few points shorter than the menu bar (observed live: a 22pt-tall button
-    ///   frame ending at y=1551 in a menu bar whose screen tops out at y=1555), while macOS still
-    ///   routes a click in that strip to the button.
-    /// - Edges are inclusive, where `contains` excludes max edges: a top-pinned cursor reports
-    ///   exactly the screen's `maxY`.
-    /// Without these, the monitor misread a dead-center click on the icon as an outside click: the
-    /// panel dismissed on mouse-down, then the button's mouse-up action toggled it right back open —
-    /// the second click never closed it. The monitor must agree with how macOS routes the click, or
-    /// its dismissal races the button's toggle.
+    /// status-button hit test. 화면 최상단에 붙은 클릭도 버튼으로 판정 필수 (#1008) —
+    /// hit zone을 버튼 상단에서 screen top까지 확장, max edge 포함 비교. macOS의 클릭 라우팅과 불일치 시 dismiss가 버튼 toggle과 race.
     static func pointHitsStatusButton(_ point: NSPoint, buttonFrame: NSRect, screenTop: CGFloat?) -> Bool {
         guard !buttonFrame.isEmpty else { return false }
         let top = max(buttonFrame.maxY, screenTop ?? buttonFrame.maxY)

@@ -1,23 +1,16 @@
 import Foundation
 
-/// One measured number on a metric row, carried raw so that formatting happens only at the display
-/// edge (see `MetricFormatter`) instead of being baked into a string the way `.text` rows used to.
-///
-/// A single row can hold several values — a daily-spend row carries dollars *and* tokens, a Codex
-/// credits row carries dollars *and* a credit count — and each widget chooses which to render via
-/// `ValueSelection`. That's what lets one row back a cost-only tile, a tokens-only tile, and a
-/// combined tile without the mapper emitting the data three times.
+/// metric row의 측정값 하나 — raw 숫자로 전달, format은 표시 edge(`MetricFormatter`)에서만 수행.
+/// 한 row가 값 여러 개 보유 가능(dollars + tokens 등), widget이 `ValueSelection`으로 렌더 대상 선택 —
+/// mapper가 한 번만 생산해도 cost 전용·token 전용·combined tile 지원.
 struct MetricValue: Hashable, Sendable, Codable {
-    /// The raw magnitude: USD for `.dollars`, 0...100 for `.percent`, an absolute count otherwise.
+    /// raw 크기 — `.dollars`는 USD, `.percent`는 0...100, 그 외 절대 count.
     var number: Double
-    /// How this number prints ($ / % / plain count). Distinct per value within a row, which is what
-    /// lets a widget pick "the dollars one" or "the count one" by kind.
+    /// 출력 형식($ / % / count) — row 안에서 값마다 달라 widget이 kind로 선택 가능.
     var kind: MetricKind
-    /// Unit noun shown after the number ("tokens", "credits", "available"). `nil` renders the number
-    /// bare — a dollar amount takes its trailing word from the widget (`unboundedValueWord`) instead.
+    /// 숫자 뒤 단위 명사("tokens", "credits"). nil이면 숫자만 표시 — dollar 금액은 widget의 `unboundedValueWord` 사용.
     var label: String?
-    /// True when the number is imputed locally rather than measured or billed — it drives the ⓘ note.
-    /// Per value because a spend row's dollars are an estimate while its token count is real.
+    /// 측정·청구가 아닌 local 추정치 여부 — ⓘ note 근거. spend row의 dollar는 추정, token은 실측이라 값 단위 보유.
     var estimated: Bool
 
     init(number: Double, kind: MetricKind, label: String? = nil, estimated: Bool = false) {
@@ -28,12 +21,11 @@ struct MetricValue: Hashable, Sendable, Codable {
     }
 }
 
-/// Which of a row's values a widget renders — the seam that lets one `.values` row back several tiles
-/// (cost-only, tokens-only, both) while the data is produced exactly once.
+/// widget이 렌더할 row 값의 선택 — `.values` row 하나가 여러 tile을 지원하게 하는 seam.
 enum ValueSelection: Hashable, Sendable {
-    /// Every value, in order — the combined reading, e.g. "$4.08 · 1.2M tokens".
+    /// 모든 값을 순서대로 — combined 표시 (예: "$4.08 · 1.2M tokens").
     case all
-    /// Only the values of one kind: `.dollars` for a cost-only tile, `.count` for a tokens-only tile.
+    /// 한 kind의 값만 — cost 전용은 `.dollars`, token 전용은 `.count`.
     case kind(MetricKind)
 
     func apply(to values: [MetricValue]) -> [MetricValue] {

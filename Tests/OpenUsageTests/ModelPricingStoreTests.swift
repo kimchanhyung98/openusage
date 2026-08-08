@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Fetch/cache/TTL behavior of the pricing store, with stubbed HTTP, an injected clock, and tiny
-/// fixture feeds.
 final class ModelPricingStoreTests: XCTestCase {
     private var tempDir: URL!
 
@@ -98,12 +96,12 @@ final class ModelPricingStoreTests: XCTestCase {
         let (store, _) = makeStore(handler: { Self.respond(to: $0) })
         await store.refreshNow()
 
-        // Second store, network dead: cached fetch results still apply.
+        // 두 번째 store는 network 차단 — cached fetch 결과 그대로 적용
         let (revived, http) = makeStore(handler: { _ in throw URLError(.notConnectedToInternet) })
         let pricing = await revived.current()
         XCTAssertEqual(pricing.resolve(model: "fetched-model")?.inputPerMillion, 5)
         XCTAssertEqual(pricing.resolve(model: "auto")?.inputPerMillion, 9)
-        // Fresh state file -> nothing due until the TTL elapses.
+        // 신선한 state file — TTL 경과까지 refetch 대상 없음
         await revived.refreshNow()
         XCTAssertTrue(http.requests.isEmpty, "sources within TTL must not refetch")
     }
@@ -162,13 +160,13 @@ final class ModelPricingStoreTests: XCTestCase {
         })
         await store.refreshNow()
         XCTAssertEqual(counter.value, 3)
-        // Immediately after a failure, nothing is due.
+        // 실패 직후에는 재시도 대상 없음
         await store.refreshNow()
         XCTAssertEqual(counter.value, 3)
     }
 }
 
-/// Tiny thread-safe counter for request counting across Sendable closures.
+/// Sendable closure 간 request 수 집계용 thread-safe counter
 private final class OSAllocatedUnfairLockedCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0

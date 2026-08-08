@@ -1,44 +1,30 @@
 import Foundation
 
-/// One ordered step that brings persisted settings from schema version `version - 1` up to `version`.
-/// A step is a pure transform over a `UserDefaults` domain — rename a key, seed a new default, drop a
-/// dead one. Keep it idempotent: an interrupted upgrade may re-run the same step on the next launch.
+/// 스키마 버전 `version - 1` → `version` 단일 migration step — `UserDefaults` 도메인에 대한 순수 변환.
+/// 중단된 업그레이드가 다음 런치에 같은 step을 재실행할 수 있으므로 멱등 유지 필수.
 struct SettingsMigration: Sendable {
-    /// The schema version this step produces. Versions are whole numbers counting up (1, 2, 3, …) and
-    /// are independent of the app's marketing version — they change only when a *setting's shape* does.
+    /// 이 step이 생성하는 스키마 버전. 앱 marketing 버전과 독립 — 설정의 shape 변경 시에만 증가.
     let version: Int
-    /// Applies the change to `defaults`. Throw to abort the cascade: the engine stops, keeps the version
-    /// at the last success, and retries from there on the next launch.
+    /// `defaults`에 변경 적용. throw 시 cascade 중단 — 마지막 성공 버전 유지, 다음 런치에 재시도.
     let migrate: @Sendable (UserDefaults) throws -> Void
 }
 
-/// The settings schema: its current version and the ordered migrations that build up to it. This enum is
-/// the ONLY thing to edit when a setting changes shape — append a `SettingsMigration` and bump `current`
-/// to match. The engine (`SettingsMigrator`) never needs to change.
+/// settings 스키마: 현재 버전과 그에 도달하는 순서형 migration.
+/// 설정 shape 변경 시 여기만 수정 — `SettingsMigration` 추가 + `current` 증가; engine(`SettingsMigrator`)은 불변.
 enum SettingsSchema {
-    /// Current schema version. Keep equal to the highest migration `version` below (or the baseline when
-    /// there are none). This is NOT the app version — bump it only alongside a migration you add.
+    /// 현재 스키마 버전. 아래 최고 migration `version`과 동일 유지 필수. 앱 버전 아님 — migration 추가 시에만 증가.
     static let current = 2
 
-    /// The provider IDs that existed when the v2 migration shipped, frozen forever. A migration is a
-    /// point-in-time transform: any future build with more providers also contains this migration, so a
-    /// legacy install jumping several versions is first converted with this exact list, and
-    /// `NewProviderSeeder` then picks up everything added afterwards as new. Never edit this list.
+    /// v2 migration 출시 시점의 provider ID, 영구 동결. migration은 시점 고정 변환 — 이 목록 수정 금지.
     static let v2ProviderIDs = [
         "antigravity", "claude", "codex", "copilot", "cursor", "devin", "grok", "openrouter", "zai"
     ]
 
-    /// Ordered migrations, each taking the domain one version higher. v1 is the baseline — the settings
-    /// shape at the moment this system replaced the beta-era "wipe on every update" behavior — so it
-    /// needs no transform. Migrations reference storage keys as string literals on purpose: they are
-    /// frozen transforms and must keep working even if a store renames its key constant later.
+    /// 순서형 migration 목록 (v1은 baseline이라 변환 불요).
+    /// storage key는 의도적으로 string literal — 동결된 변환이라 store의 key 상수 rename과 무관하게 동작 필수.
     static let migrations: [SettingsMigration] = [
-        // v2 unifies every install onto enabled-list mode (see `ProviderEnablementStore`) and records
-        // which providers the install has seen (`NewProviderSeeder` probes only never-seen ones):
-        // - legacy disabled-list installs convert to the equivalent enabled list (behavior-preserving:
-        //   the effective on/off set is identical before and after),
-        // - every install gets the known-provider set seeded with the providers of this era, so nothing
-        //   already shipped is retroactively treated as "new" and re-enabled against the user's choice.
+        // v2: 전체 설치를 enabled-list 모드로 통일 (동작 보존 변환) + known-provider set seed —
+        // 기존 provider가 "new"로 재활성화되지 않도록.
         SettingsMigration(version: 2) { defaults in
             if defaults.stringArray(forKey: "openusage.enabledProviders.v1") == nil {
                 let disabled = Set(defaults.stringArray(forKey: "openusage.disabledProviders.v1") ?? [])
@@ -53,26 +39,14 @@ enum SettingsSchema {
     ]
 }
 
-/// Versioned, cascading settings migration — the replacement for the beta-era domain wipe. Runs once at
-/// launch, BEFORE any store reads `UserDefaults`, so migrated values are already in place when stores
-/// load and a true fresh install can still be told apart from an upgrade (its domain is empty).
-///
-/// The stored schema version (`schemaVersionKey`, an integer) drives everything:
-///   - **Existing install:** run every migration whose `version` is above the stored one, in ascending
-///     order, persisting the new version after EACH step — so an interrupted or failed upgrade resumes
-///     where it left off next launch instead of replaying completed steps.
-///   - **Fresh install:** stamp `current` and run nothing; the stores seed their own current-shape
-///     defaults right after.
-///   - **Legacy install (predates this key):** treated as version 0 and migrated forward from there.
-///
-/// Crucially there is NO wipe: an app-version change never discards settings. (The old reset silently
-/// cleared `betaUpdatesEnabled`, dropping users off the Early Access channel — see `UpdaterController`.)
+/// 버전드 cascading settings migration — 어떤 store보다 먼저 런치 시 1회 실행 필수 (fresh install 판별은 빈 도메인 기준).
+/// 기존 설치는 초과분 migration을 오름차순 실행, step마다 버전 영속 (중단 시 재개); fresh는 `current` stamp만; legacy(키 부재)는 v0부터.
+/// wipe 없음 — 설정은 업데이트를 넘어 유지.
 enum SettingsMigrator {
-    /// Where the applied schema version is recorded, in the same standard domain as the settings it
-    /// guards. Integer; absent means "never migrated" — a fresh or legacy install, disambiguated at runtime.
+    /// 적용된 스키마 버전의 기록 key (정수). 부재 = 미마이그레이션 — fresh 또는 legacy, 런타임 판별.
     static let schemaVersionKey = "openusage.settings.schemaVersion"
 
-    /// Bring the domain up to `current`. Returns the resulting schema version (for logging and tests).
+    /// 도메인을 `current`까지 migration. 결과 스키마 버전 반환 (로깅·테스트용).
     @discardableResult
     static func migrate(
         defaults: UserDefaults = .standard,
@@ -92,8 +66,7 @@ enum SettingsMigrator {
             AppLog.info(.config, "legacy settings (no schema version) — migrating forward from v0")
         }
 
-        // Already current, or a downgrade (ran a newer build before): leave the recorded version as-is
-        // and never re-apply old migrations backward.
+        // 이미 최신이거나 downgrade — 기록 버전 유지, 역방향 재적용 금지.
         guard version < current else { return version }
 
         for step in migrations.sorted(by: { $0.version < $1.version })
@@ -102,15 +75,14 @@ enum SettingsMigrator {
                 try step.migrate(defaults)
             } catch {
                 AppLog.warn(.config, "settings migration to v\(step.version) failed: \(error.localizedDescription) — will retry next launch")
-                return version  // keep the last success; resume here next launch
+                return version  // 마지막 성공 유지 — 다음 런치에 여기서 재개
             }
             version = step.version
-            defaults.set(version, forKey: schemaVersionKey)  // persist after EACH step (resumable cascade)
+            defaults.set(version, forKey: schemaVersionKey)  // step마다 영속 (재개 가능 cascade)
             AppLog.info(.config, "migrated settings to schema v\(version)")
         }
 
-        // Record reaching `current` even when the highest migration is below it (a version bump that
-        // needed no data change), so the cascade isn't re-evaluated on every launch.
+        // 최고 migration이 `current` 미만이어도 `current` 기록 — 매 런치 cascade 재평가 방지.
         if version < current {
             version = current
             defaults.set(current, forKey: schemaVersionKey)
@@ -118,14 +90,8 @@ enum SettingsMigrator {
         return version
     }
 
-    /// A genuine first launch has nothing persisted yet. The migrator runs before any store writes
-    /// defaults, so an empty domain means fresh; existing keys with no schema version mean a legacy
-    /// install to migrate forward. An empty `domainName` (unbundled `swift run`) has no domain to
-    /// inspect — treat it as fresh, since there is nothing to migrate.
-    ///
-    /// Internal (not just the migrator's own check) because `AppDelegate` reads it BEFORE calling
-    /// `migrate()` — stamping the schema version makes the domain non-empty, so the answer must be
-    /// captured first. `FirstRunSeeder` keys off it to seed a fresh install's enabled providers.
+    /// 진짜 첫 런치 판별: 빈 도메인 = fresh, 키 존재 + 스키마 버전 부재 = legacy. 빈 `domainName`(unbundled `swift run`)은 fresh 취급.
+    /// `AppDelegate`가 `migrate()` 이전에 호출 필수 — schema stamp가 도메인을 non-empty로 변경.
     static func isFreshInstall(
         defaults: UserDefaults = .standard,
         domainName: String = Bundle.main.bundleIdentifier ?? ""

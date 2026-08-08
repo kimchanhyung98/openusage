@@ -1,12 +1,8 @@
 import XCTest
 @testable import OpenUsage
 
-/// The screen-share privacy contract: usage is concealed exactly when the setting is on AND a capture
-/// is active — never from either alone — the preference persists, and turning the setting off clears
-/// the capture state immediately (no wordmark lingering after opt-out).
 @MainActor
 final class MenuBarPrivacyStoreTests: XCTestCase {
-    /// Isolated, throwaway defaults per test (pattern from `PopoverTransparencyStoreTests`).
     private func makeDefaults(_ name: String) -> UserDefaults {
         let suiteName = "OpenUsageTests.MenuBarPrivacy.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -14,8 +10,7 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         return defaults
     }
 
-    /// A store with the capture probe pinned to `captured`'s live value and notifications stubbed out,
-    /// so tests never touch the real window server.
+    /// capture probe를 `captured`에 고정하고 notification을 stub — 실제 window server 미접촉
     private func makeStore(
         _ name: String,
         defaults: UserDefaults? = nil,
@@ -57,8 +52,7 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
     }
 
     func testConcealFollowsCaptureTransitions() {
-        // A reference box rather than a captured `var` — the probe closure crosses into the store,
-        // and mutating a captured local after a sendable capture warns under strict concurrency.
+        // strict concurrency에서 captured local 변경 경고를 피하려 reference box 사용
         final class CaptureFlag { var isOn = false }
         let capture = CaptureFlag()
         let store = makeStore("transitions", captured: { capture.isOn })
@@ -88,7 +82,7 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         let defaults = makeDefaults("persist")
         makeStore("persistFirst", defaults: defaults, captured: { true }).hideUsageWhileScreenSharing = false
 
-        // A fresh store on the same defaults must honor the saved opt-out over the default-on fallback.
+        // 동일 defaults의 새 store는 default-on fallback보다 저장된 opt-out 우선
         let relaunched = makeStore("persistSecond", defaults: defaults, captured: { true })
         XCTAssertFalse(relaunched.hideUsageWhileScreenSharing)
         XCTAssertFalse(relaunched.concealUsage)
@@ -98,8 +92,7 @@ final class MenuBarPrivacyStoreTests: XCTestCase {
         let store = makeStore("staleEvent", captured: { true })
         store.hideUsageWhileScreenSharing = true
         store.hideUsageWhileScreenSharing = false
-        // A window-server notification landing after opt-out re-runs the check; the setting gate
-        // must keep it from re-concealing.
+        // opt-out 이후 도착한 window-server notification이 재은닉하지 못하도록 설정 gate가 차단
         store.refreshCaptureState()
         XCTAssertFalse(store.concealUsage)
     }

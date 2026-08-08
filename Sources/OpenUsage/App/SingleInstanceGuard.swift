@@ -1,22 +1,12 @@
 import AppKit
 import Darwin
 
-/// Rejects a second copy of OpenUsage at launch (issue #635). macOS can fire two independent launch
-/// triggers on reboot — session restoration ("Reopen windows when logging back in") and the
-/// `SMAppService` login item — and a crashed or hung copy can linger holding `127.0.0.1:6736`.
-/// Without a guard either path yields a duplicate menu-bar icon (or, for an `LSUIElement` app, a
-/// launch that "does nothing"). The decision is split out from the live-workspace query so it can be
-/// unit-tested without a second running process.
+/// 런치 시 OpenUsage 중복 실행 거부 (#635) — 재부팅 시 세션 복원과 `SMAppService` login item이 독립 트리거로 동시 발화 가능.
+/// 판정 로직은 live-workspace 질의와 분리 — 두 번째 process 없이 단위 테스트 가능.
 @MainActor
 enum SingleInstanceGuard {
-    /// Pure decision: the PID of the instance we should yield to, or `nil` if we should keep running.
-    ///
-    /// Tie-break is deterministic — the lowest-PID instance is the survivor; every other copy yields
-    /// to it. This matters for the reboot race the guard targets: when two launches register at once,
-    /// a naive "yield if any other instance exists" rule makes *both* yield and terminate, leaving
-    /// zero running instances. Lowest-PID-wins guarantees exactly one survivor. (The one theoretical
-    /// hole — PID wraparound between an older instance's launch and ours — needs ~99k intervening PIDs
-    /// and is negligible.)
+    /// 순수 판정: 양보 대상 인스턴스의 PID, 계속 실행이면 `nil`.
+    /// tie-break은 결정적 — 최저 PID 생존. "peer 존재 시 양보" 규칙은 동시 등록에서 양쪽 모두 종료해 zero instance 유발.
     static func instanceToYieldTo(myPID: pid_t, runningPIDs: [pid_t]) -> pid_t? {
         guard let lowestPeer = runningPIDs.filter({ $0 != myPID }).min(), lowestPeer < myPID else {
             return nil
@@ -24,15 +14,12 @@ enum SingleInstanceGuard {
         return lowestPeer
     }
 
-    /// Live check + handoff. When another instance owns the slot, hands focus to the surviving copy
-    /// and returns `true` so the caller bows out before grabbing the local-API port or adding a status
-    /// item. Returns `false` (no-op) when we are the survivor, or when unbundled (`swift run`/preview)
-    /// has no bundle identifier to match against.
+    /// live 체크 + handoff. 다른 인스턴스가 slot 소유 시 focus를 넘기고 `true` 반환 — caller는 port·status item 확보 전에 종료.
+    /// 생존자이거나 unbundled(bundle identifier 부재)면 `false`.
     static func deferToExistingInstance() -> Bool {
         guard let bundleID = Bundle.main.bundleIdentifier else { return false }
         let me = NSRunningApplication.current
-        // Drop stale entries: yielding to a corpse can cascade into every copy terminating (the
-        // zero-survivor outcomes reproduced in #874).
+        // stale entry 제거 — corpse에 양보 시 전체 copy 종료 cascade (#874).
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter(isAlive)
         guard let survivorPID = instanceToYieldTo(
@@ -41,17 +28,13 @@ enum SingleInstanceGuard {
         ) else {
             return false
         }
-        // Resolved from the same snapshot the decision used, so the survivor is still present.
+        // 판정과 동일 snapshot에서 resolve — 생존자 존재 보장.
         running.first { $0.processIdentifier == survivorPID }?.activate()
         return true
     }
 
-    /// Focus handoff without the lowest-PID decision: activates any other running copy with our
-    /// bundle identifier. Used when `SingleInstanceLock` already told us a peer owns the slot —
-    /// lock acquisition order is not PID order, so the peer may have a *higher* PID and
-    /// `deferToExistingInstance()` would skip the activation. Best-effort: in the snapshot-miss
-    /// race the peer may not be visible to LaunchServices yet, and that's fine — the lock, not
-    /// this handoff, is what decides who survives.
+    /// 최저-PID 판정 없는 focus handoff — `SingleInstanceLock`이 peer 소유를 알린 경우 사용 (lock 획득 순서 ≠ PID 순서).
+    /// best-effort: 생존 결정은 lock 담당, 이 handoff 아님.
     static func activateExistingInstance() {
         guard let bundleID = Bundle.main.bundleIdentifier else { return }
         let myPID = NSRunningApplication.current.processIdentifier
@@ -60,8 +43,7 @@ enum SingleInstanceGuard {
             .activate()
     }
 
-    /// LaunchServices can briefly keep a just-terminated copy in its snapshot under load (#874).
-    /// `isTerminated` catches what it already knows; `kill(pid, 0)` asks the kernel directly.
+    /// LaunchServices snapshot의 just-terminated copy 잔류 대응 (#874) — `isTerminated` + `kill(pid, 0)` 커널 확인.
     private static func isAlive(_ app: NSRunningApplication) -> Bool {
         !app.isTerminated && kill(app.processIdentifier, 0) == 0
     }

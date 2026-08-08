@@ -1,8 +1,8 @@
 import Observation
 import ServiceManagement
 
-/// Keeps the Launch at Login switch aligned with macOS without treating a failed rollback as a
-/// second user action.
+/// Launch at Login 스위치를 macOS 상태와 동기화
+/// 실패한 rollback을 두 번째 사용자 액션으로 취급하지 않는 규칙
 @MainActor
 @Observable
 final class LaunchAtLoginSetting {

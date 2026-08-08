@@ -23,7 +23,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
         case desktop
         case environment
 
-        /// Log-safe source kind — NEVER the keychain service name or any token.
+        /// 로그 안전 source 종류 — keychain service 이름·토큰 노출 금지.
         var label: String {
             switch self {
             case .file: "file"
@@ -41,19 +41,13 @@ struct ClaudeCredentialState: Hashable, Sendable {
     var fullData: ClaudeCredentialsFile?
     var inferenceOnly: Bool
 
-    /// Whether this candidate carries a non-blank access token — the single definition of "usable"
-    /// shared by `refresh()`'s candidate filter and `hasLocalCredentials()`'s first-run detection, so
-    /// the two can never drift.
+    /// 공백 아닌 access token 보유 여부 — `refresh()` 필터와 `hasLocalCredentials()`가 공유하는 단일 "usable" 정의.
     var hasUsableAccessToken: Bool {
         oauth.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
-    /// A token-free, log-safe one-line descriptor for diagnosing auth failures from a default-level
-    /// (info) log: the source kind plus booleans for whether this candidate carries a refresh token and
-    /// whether its access token is already expired (`expiresAt`, epoch ms, vs `now`). NEVER includes any
-    /// token value or the credential blob — only the source kind and the two booleans. Why these two
-    /// booleans: a candidate with `refresh=no` can never self-heal an expiry (the #738 root cause), and
-    /// `expired=yes` explains why a refresh was needed at all.
+    /// 기본(info) 로그용 진단 라벨 — source 종류 + refresh token 유무 + 만료 여부만 포함.
+    /// 토큰 값·credential blob 노출 금지; `refresh=no`는 만료 자가 복구 불가의 근거(#738).
     func diagnosticsLabel(now: Date) -> String {
         let refresh = (oauth.refreshToken?.isEmpty == false) ? "yes" : "no"
         let expired: String
@@ -66,9 +60,8 @@ struct ClaudeCredentialState: Hashable, Sendable {
     }
 }
 
-/// Token-bearing credential candidates in their effective probe order. Environment-only inference
-/// tokens are excluded because they never fetch live usage; every stored candidate that can affect
-/// selection remains, including an earlier source that the current refresh already tried and rejected.
+/// 유효 probe 순서의 토큰 보유 credential 후보 집합 — inference 전용 environment 토큰은 제외,
+/// 선택에 영향 가능한 저장 후보는 전부 유지.
 struct ClaudeCredentialGeneration: Equatable, Sendable {
     struct Candidate: Equatable, Sendable {
         let oauth: ClaudeOAuth
@@ -134,12 +127,8 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
         }
     }
 
-    /// Whether a failure on one credential source should fall through to the next one rather than
-    /// failing the whole refresh. An expired/revoked token in the preferred source (a stale keychain
-    /// entry from a prior login that later "locked out") must not shadow a fresh token an external
-    /// `claude` re-login wrote to a different source — so the token-is-bad cases allow a fallback,
-    /// while "no credentials at all" does not (there is nothing better to try). Mirrors
-    /// `CodexAuthError.allowsAuthFallback`.
+    /// source 하나의 실패가 다음 source로 폴백 가능한지 여부 — 토큰 만료/폐기 계열만 허용.
+    /// 외부 `claude` 재로그인이 다른 source에 남긴 새 토큰을 stale 토큰이 가리면 안 됨.
     var allowsAuthFallback: Bool {
         switch self {
         case .sessionExpired, .tokenExpired, .desktopTokenExpired:
@@ -157,17 +146,14 @@ struct ClaudeOAuthConfig: Hashable, Sendable {
     var clientID: String
 }
 
-/// Which login a `ClaudeAuthStore` is allowed to see. `.standard` is the default card —
-/// byte-identical to the store's historical behavior. `.configDir` backs an extra account card and
-/// deliberately has no cross-account, environment-token, or Desktop fallback: the card can only ever
-/// read the one login it was created for.
+/// `ClaudeAuthStore`가 볼 수 있는 로그인 범위. `.standard`는 기본 카드(기존 동작 그대로);
+/// 나머지는 cross-account·environment 토큰·Desktop 폴백 없이 생성된 로그인 하나만 조회.
 enum ClaudeCredentialScope: Hashable, Sendable {
     case standard
-    /// One extra `CLAUDE_CONFIG_DIR` home. `keychainLiteral` is the literal string whose hash names
-    /// the keychain item (Claude Code hashes the env value as typed — `~/…` vs absolute differ).
+    /// 추가 `CLAUDE_CONFIG_DIR` home 하나. `keychainLiteral`은 keychain 항목 이름을 만드는
+    /// 해시 원문 — Claude Code는 env 값을 입력된 표기 그대로 해시(`~/…` vs 절대 경로 상이).
     case configDir(path: String, keychainLiteral: String)
-    /// A saved account-switching credential. This is strictly read-only to terminal state: token
-    /// rotation persists back to the same private snapshot rather than the shared Claude home.
+    /// 저장된 계정 전환 credential — 토큰 rotation은 공유 Claude home이 아닌 전용 snapshot에 기록.
     case accountSnapshot(profileID: String)
 }
 
@@ -186,15 +172,11 @@ struct ClaudeAuthStore: Sendable {
     var desktop: ClaudeDesktopAuthStore
     var now: @Sendable () -> Date
     let scope: ClaudeCredentialScope
-    /// Whether the `.standard` store may fall back to Claude Desktop's credentials. On by default
-    /// (the historical behavior); the catalog turns it OFF once extra Claude account cards exist,
-    /// because the Desktop login could belong to any of them — borrowing it unpinned could fetch one
-    /// account's usage onto another account's card. Desktop-backed cards return properly in Phase 3.
+    /// `.standard` store의 Claude Desktop credential 폴백 허용 여부. 추가 계정 카드가 생기면
+    /// catalog가 OFF — Desktop 로그인의 소속 카드를 몰라 다른 계정 카드에 usage가 섞일 수 있음.
     let allowsDesktopFallback: Bool
-    /// Managed switching owns `~/.claude` as the Shared Runtime Home. The bare card's `.standard`
-    /// store must then read exactly that home — base keychain service and
-    /// `~/.claude/.credentials.json` — even when an ambient `CLAUDE_CONFIG_DIR` names another
-    /// directory, so the card always shows the account the switch transaction installed.
+    /// 관리 전환이 `~/.claude`를 Shared Runtime Home으로 소유할 때 true — ambient
+    /// `CLAUDE_CONFIG_DIR`를 무시하고 정확히 그 home(기본 keychain service + credential 파일)만 조회.
     let pinsSharedHome: Bool
 
     init(
@@ -217,25 +199,18 @@ struct ClaudeAuthStore: Sendable {
         self.now = now
     }
 
-    /// All credential sources currently on disk/keychain, in fixed keychain-before-file order, for the
-    /// refresh loop to try in order. The provider probes each and — on an auth-expiry error
-    /// (`ClaudeAuthError.allowsAuthFallback`) — falls through to the next, so an external `claude`
-    /// re-login is picked up no matter which source it lands in, even when a stale/locked-out token still
-    /// sits in another. Re-read on every refresh; nothing is cached in memory.
+    /// 디스크/keychain의 credential source 전부를 keychain-우선 고정 순서로 반환 — refresh 루프의 폴백 순회용.
+    /// 매 refresh마다 재조회, 메모리 캐시 없음.
     func loadCredentialSet(
         allowDesktopInteraction: Bool = false,
         forceDesktopFallback: Bool = false
     ) -> ClaudeCredentialLoad {
         var stored = orderedStoredCandidates()
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
-        // A working CLI login remains the source of truth and avoids a second Keychain prompt. Desktop
-        // is a fallback for people who only use the native app (or whose stored CLI login lacks profile
-        // scope), never a competing account source. A `.configDir` card never consults Desktop at all —
-        // that login belongs to another card.
+        // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
         let desktopAllowed = scope == .standard && allowsDesktopFallback
         if forceDesktopFallback, !desktopAllowed {
-            // Tell the provider there is no safe Desktop candidate so it preserves the original CLI
-            // auth error instead of converting it to a generic "not logged in" result.
+            // 안전한 Desktop 후보 없음을 알려 원래 CLI auth 에러 보존 — generic "not logged in" 변환 방지.
             desktopStatus = .notFound
         }
         let hasUsableCLILogin = stored.contains {
@@ -262,10 +237,8 @@ struct ClaudeAuthStore: Sendable {
         loadCredentialSet().candidates
     }
 
-    /// Whether this scoped card's login leaves any local footprint, checked without ever reading a
-    /// keychain secret — safe for the every-launch seeding probe (`NewProviderSeeder`), which must
-    /// never raise a permission dialog. The `.standard` card keeps its richer
-    /// `loadCredentialSet`-based probe in `ClaudeProvider.hasLocalCredentials`.
+    /// keychain secret을 읽지 않는 로컬 로그인 흔적 확인 — 매 실행 seeding probe(`NewProviderSeeder`)용,
+    /// 권한 dialog 발생 금지. `.standard` 카드는 `ClaudeProvider.hasLocalCredentials`의 확장 probe 사용.
     func hasCredentialFootprint() -> Bool {
         switch scope {
         case .standard:
@@ -283,27 +256,16 @@ struct ClaudeAuthStore: Sendable {
     }
 
     private func applyingEnvironmentToken(to stored: [ClaudeCredentialState]) -> [ClaudeCredentialState] {
-        // An ambient env token describes the DEFAULT login's environment; a scoped card must never
-        // inherit it (that would leak one account's token into another account's card).
+        // ambient env 토큰은 DEFAULT 로그인 소유 — scoped 카드 상속 금지(계정 간 토큰 누출).
         guard case .standard = scope else { return stored }
         guard let envAccessToken = envText("CLAUDE_CODE_OAUTH_TOKEN") else {
             return stored
         }
-        // An explicit `CLAUDE_CODE_OAUTH_TOKEN` is inference-only (typically a `claude setup-token`
-        // token): it can run the model but 403s on the usage endpoint. It also reaches us when the user
-        // only *ambiently* has it exported — OpenUsage captures the login-shell environment — so it must
-        // not shadow a real interactive login that CAN read usage. Prefer any stored login able to fetch
-        // live usage (keychain-first, then file) for the usage call, with the env token kept as a
-        // trailing inference-only fallback for the refresh loop. With no live-capable stored login (a
-        // genuinely headless setup) the env token is the only candidate — unchanged: spend tiles still
-        // load. Nothing is silenced; only the credential SELECTED for the usage fetch changes.
+        // 명시적 `CLAUDE_CODE_OAUTH_TOKEN`은 inference 전용(usage endpoint 403) — 라이브 usage 가능한
+        // 저장 로그인을 우선, env 토큰은 후순위 inference 전용 폴백. 저장 로그인 부재 시 유일 후보.
         let liveCapable = stored.filter { liveUsageAvailability($0) == .available }
-        // Borrow plan metadata (subscription type / scopes) for display from the credential actually
-        // preferred — the live-capable login when there is one, else the first stored login — so the
-        // fallback doesn't inherit metadata from a login we decided not to use. Source it honestly as
-        // `.environment`: the token came from the env, so the refresh-start diagnostics name the real
-        // source when the loop falls back to it, and `save()` correctly no-ops instead of writing an env
-        // token back into the keychain under a borrowed source.
+        // plan 메타데이터는 실제 우선되는 credential에서 차용, source는 `.environment`로 정직하게 표기 —
+        // 진단 로그가 실제 source를 가리키고 `save()`가 env 토큰을 keychain에 쓰지 않도록.
         let base = liveCapable.first ?? stored.first
         var oauth = base?.oauth ?? ClaudeOAuth()
         oauth.accessToken = envAccessToken
@@ -325,9 +287,8 @@ struct ClaudeAuthStore: Sendable {
         ClaudeCredentialGeneration(loadCredentialSet(forceDesktopFallback: forceDesktopFallback).candidates)
     }
 
-    /// Save an OAuth rotation only if the ordered effective candidate set is unchanged. Checking the
-    /// whole generation catches a newly added higher-priority source as well as replacement in place.
-    /// The underlying stores provide no atomic compare-and-swap, so this remains best-effort.
+    /// 유효 후보 집합이 그대로일 때만 OAuth rotation 저장 — generation 전체 비교로 상위 source 추가까지 감지.
+    /// 저장소에 원자적 compare-and-swap이 없어 best-effort.
     func save(_ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration) throws -> Bool {
         guard credentialGeneration() == expected else { return false }
         var fullData = state.fullData ?? ClaudeCredentialsFile()
@@ -353,33 +314,26 @@ struct ClaudeAuthStore: Sendable {
         case .environment:
             return false
         }
-        // NEVER log the credential blob/tokens — only that a rotation was persisted, and to where.
+        // credential blob·토큰 로깅 금지 — rotation 발생 사실과 대상 source만 기록.
         AppLog.debug(LogTag.auth("claude"), "persisted rotated credentials (source=\(state.source.label))")
         return true
     }
 
-    /// Why the live-usage endpoint (`/api/oauth/usage`, which backs Session / Weekly / Sonnet / Extra
-    /// Usage) can or can't be called for a credential. Reading usage requires the `user:profile` scope,
-    /// so a token that only carries `user:inference` (e.g. one minted by `claude setup-token`) can't —
-    /// and the provider surfaces that as a friendly "re-login" notice instead of silently blank bars.
+    /// credential의 라이브 usage endpoint(`/api/oauth/usage`) 호출 가능 여부 — usage 조회에는 `user:profile` scope 필요.
     enum LiveUsageAvailability: Equatable, Sendable {
         case available
-        /// An explicit `CLAUDE_CODE_OAUTH_TOKEN`: inference-only by design, so there's nothing to fetch
-        /// and nothing to nag about — the spend tiles still load from local logs.
+        /// 명시적 `CLAUDE_CODE_OAUTH_TOKEN` — 설계상 inference 전용, spend 타일은 로컬 로그로 유지.
         case inferenceOnlyToken
-        /// A stored login whose granted scopes lack `user:profile`. The usage endpoint would reject it,
-        /// so the session/weekly bars can't load until the user signs in again with `claude`.
+        /// `user:profile` scope 없는 저장 로그인 — `claude` 재로그인 전까지 session/weekly 바 조회 불가.
         case missingProfileScope
     }
 
-    /// The required scope for the usage endpoint. A credential missing it can authenticate for inference
-    /// but can't read subscription usage windows.
+    /// usage endpoint 필수 scope — 없으면 inference 인증만 가능.
     static let usageScope = "user:profile"
 
     func liveUsageAvailability(_ state: ClaudeCredentialState) -> LiveUsageAvailability {
         if state.inferenceOnly { return .inferenceOnlyToken }
-        // Older credentials predate the scopes field; treat an absent/empty list as "unknown, allow" so
-        // we don't suppress usage for tokens that actually carry the access (and would 403 loudly if not).
+        // scopes 필드 이전의 구버전 credential은 "unknown, allow" 처리 — 권한 있는 토큰의 usage 억제 방지(없으면 403이 loudly 표면화).
         guard let scopes = state.oauth.scopes, !scopes.isEmpty else { return .available }
         return scopes.contains(Self.usageScope) ? .available : .missingProfileScope
     }
@@ -388,9 +342,7 @@ struct ClaudeAuthStore: Sendable {
         pinsSharedHome ? nil : envText("CLAUDE_CONFIG_DIR")
     }
 
-    // Resolved OAuth endpoint strings before URL validation. The suffix is derived from the same
-    // env-var branching as the URLs but never depends on URL validity, so the (non-throwing) keychain
-    // candidate path can read it without risking a throw.
+    // URL 검증 전의 resolved OAuth endpoint 문자열 — suffix는 URL 유효성과 무관해 non-throwing keychain 경로에서 사용 가능.
     private struct ResolvedOAuthEndpoints {
         var baseAPI: String
         var refreshURL: String
@@ -435,10 +387,8 @@ struct ClaudeAuthStore: Sendable {
         return ResolvedOAuthEndpoints(baseAPI: baseAPI, refreshURL: refreshURL, clientID: clientID, suffix: suffix)
     }
 
-    /// The keychain service names as this environment's Claude Code writes them — the single source
-    /// both the scoped store and config-dir DISCOVERY build from, so a non-prod OAuth setup (local/
-    /// staging/custom, which suffixes the service) can never make discovery probe one name while
-    /// refresh reads another.
+    /// 이 환경의 Claude Code가 쓰는 keychain service 이름 — scoped store와 config-dir discovery의
+    /// 단일 원천(비프로덕션 OAuth suffix로 인한 probe/refresh 이름 불일치 방지).
     static func baseKeychainServiceName(environment: EnvironmentReading) -> String {
         "\(keychainServicePrefix)\(resolveOAuthEndpoints(environment: environment).suffix)-credentials"
     }
@@ -447,10 +397,8 @@ struct ClaudeAuthStore: Sendable {
         "\(baseKeychainServiceName(environment: environment))-\(hashSuffix(literal))"
     }
 
-    // baseAPI/refreshURL can derive from user-set env vars (CLAUDE_CODE_CUSTOM_OAUTH_URL,
-    // CLAUDE_LOCAL_OAUTH_API_BASE). A malformed value is a system-boundary input that must fail
-    // loudly — never force-unwrap (crashes the app) and never silently fall back to prod (that hides
-    // the misconfiguration and would send the user's token to production).
+    // env 유래 URL은 system-boundary 입력 — 잘못된 값은 loudly 실패. force-unwrap 금지,
+    // prod 폴백 금지(오설정 은폐 + 사용자 토큰의 production 전송 위험).
     func oauthConfig() throws -> ClaudeOAuthConfig {
         let endpoints = resolveOAuthEndpoints()
         let usageURLString = "\(endpoints.baseAPI)/api/oauth/usage"
@@ -468,13 +416,11 @@ struct ClaudeAuthStore: Sendable {
     }
 
     func keychainServiceCandidates() -> [String] {
-        // Only needs the file suffix, which never fails — keep this off the throwing URL path so
-        // credential loading stays forgiving even when a custom OAuth URL is malformed.
+        // suffix만 필요(실패 없음) — throwing URL 경로와 분리해 커스텀 OAuth URL 오류에도 credential 로딩 유지.
         let base = "\(Self.keychainServicePrefix)\(resolveOAuthEndpoints().suffix)-credentials"
         switch scope {
         case .configDir(_, let keychainLiteral):
-            // Exactly this card's item — never the bare default service, which is another account's
-            // login.
+            // 이 카드의 항목만 — 기본 service는 다른 계정의 로그인.
             return ["\(base)-\(hashSuffix(keychainLiteral))"]
         case .standard:
             if let configDir = claudeHomeOverride() {
@@ -490,14 +436,8 @@ struct ClaudeAuthStore: Sendable {
         ProviderParse.decodeJSONWithHexFallback(text, as: ClaudeCredentialsFile.self)
     }
 
-    /// Keychain and file credentials in fixed keychain-before-file order. The keychain is Claude Code's
-    /// source of truth on macOS — recent versions keep the current session there and can leave a stale
-    /// `~/.claude/.credentials.json` behind — so it must win when valid; the file is only a fallback
-    /// (older installs / Linux-style layouts). The refresh loop still falls through to the file on an
-    /// auth-expiry error, so a fresh external `claude` re-login that landed in the other source is picked
-    /// up (#687) WITHOUT letting a stale file outrank the live keychain just because its token carries a
-    /// later expiry (the #738 regression from ranking purely by expiry). The source kind (never the
-    /// token) is logged so a "locked out" report can be diagnosed from which source was chosen.
+    /// keychain-우선 고정 순서의 credential 후보. keychain이 macOS의 source of truth — stale 파일이
+    /// 늦은 만료 시각만으로 keychain을 앞서면 안 됨(#738); 파일 폴백은 refresh 루프 담당(#687).
     private func orderedStoredCandidates() -> [ClaudeCredentialState] {
         if case .accountSnapshot(let profileID) = scope {
             return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
@@ -529,7 +469,7 @@ struct ClaudeAuthStore: Sendable {
     }
 
     private func loadKeychainCredentials() -> ClaudeCredentialState? {
-        // The service name is safe to log; NEVER log the returned credential blob / OAuth tokens.
+        // service 이름은 로그 가능; 반환된 credential blob·OAuth 토큰 로깅 금지.
         for service in keychainServiceCandidates() {
             if let state = credentialState(
                 from: try? keychain.readGenericPasswordForCurrentUser(service: service),
@@ -567,9 +507,8 @@ struct ClaudeAuthStore: Sendable {
         )
     }
 
-    /// Parse one keychain hit into a credential state, or `nil` if it's absent / malformed / tokenless.
-    /// Shared by the current-user and legacy reads so they don't repeat the parse-guard-log-build block;
-    /// the keychain read itself stays at the call site to preserve the read order and error-swallowing.
+    /// keychain 히트 1건을 credential state로 파싱 — 부재/손상/토큰 없음이면 `nil`.
+    /// keychain 읽기 자체는 호출부 유지 — 읽기 순서와 에러 처리 보존.
     private func credentialState(
         from value: String?,
         service: String,

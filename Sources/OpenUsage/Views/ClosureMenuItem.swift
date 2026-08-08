@@ -1,11 +1,7 @@
 import AppKit
 
-/// An `NSMenuItem` that runs a closure when selected, so menus can be built inline without a separate
-/// target/action object. `keyEquivalent` defaults to none; when set it uses the ⌘ modifier (the
-/// standard for menu shortcuts like ⌘Q).
-///
-/// Used by the status-item right-click menu (`StatusItemController`), which is a real `NSMenu`. The
-/// footer's "Options" menu is a SwiftUI `Menu` and does not need this.
+/// 선택 시 closure를 실행하는 `NSMenuItem`.
+/// `keyEquivalent` 지정 시 ⌘ modifier 적용.
 @MainActor
 final class ClosureMenuItem: NSMenuItem {
     private let handler: () -> Void

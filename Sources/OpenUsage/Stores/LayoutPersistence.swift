@@ -1,7 +1,6 @@
 import Foundation
 
-/// The saved half of `LayoutStore`. It owns the key names, encoding, and UserDefaults access so the
-/// live store can focus on layout rules and user actions.
+/// `LayoutStore`의 저장 담당 절반 — key 이름·encoding·UserDefaults 접근 소유
 @MainActor
 final class LayoutPersistence {
     private let defaults: UserDefaults
@@ -12,8 +11,8 @@ final class LayoutPersistence {
         self.keys = Keys(storageKey: storageKey)
     }
 
-    /// Presence is separate from successful decoding. Existing-but-unreadable data is still an existing
-    /// layout, so startup must not mistake corruption for a fresh install and apply fresh-only defaults.
+    /// 존재 여부는 decode 성공과 별개 — 손상된 데이터도 기존 layout이므로
+    /// startup이 corruption을 신규 설치로 오인해 신규 전용 default를 적용하지 않도록 하는 규칙
     var hasStoredLayout: Bool { defaults.data(forKey: keys.placed) != nil }
     var hasStoredSeededDefaults: Bool { defaults.data(forKey: keys.seededDefaults) != nil }
 
@@ -51,7 +50,7 @@ final class LayoutPersistence {
         defaults.set(value.rawValue, forKey: keys.menuBarStyle)
     }
 
-    /// Fail loudly: a swallowed encode would silently lose a layout change with no signal.
+    /// encode 실패는 loud하게 기록 — 조용히 삼키면 layout 변경 유실이 무신호로 발생
     private func encode<T: Encodable>(_ value: T, forKey key: String) {
         do {
             defaults.set(try JSONEncoder().encode(value), forKey: key)
@@ -60,8 +59,7 @@ final class LayoutPersistence {
         }
     }
 
-    /// Missing data is a normal first launch. Present-but-unreadable data is logged before startup uses
-    /// its normal fallback, so a damaged saved layout is never silently hidden.
+    /// 데이터 없음은 정상 첫 launch, 있는데 못 읽으면 로그 후 fallback — 손상된 저장 layout의 무음 은폐 방지
     private func decode<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
         do {

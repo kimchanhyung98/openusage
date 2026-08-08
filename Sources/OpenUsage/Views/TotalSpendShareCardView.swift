@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// The branded, off-screen PNG for the Total Spend card's share action — the aggregate counterpart to
-/// `ShareCardView`. Static: the metric title and period are baked into the header (no menus in an
-/// image), and the body reuses `TotalSpendRingContent` so the exported ring and legend are exactly
-/// what the popover shows. Same authored width, opaque tray background, forced appearance, and
-/// watermark footer as the per-provider card, so shared images read as one family.
+/// Total Spend 카드 공유 액션용 오프스크린 PNG — `ShareCardView`의 집계판.
+/// 본문은 `TotalSpendRingContent` 재사용으로 팝오버 표시와 동일한 링·범례 보장.
 struct TotalSpendShareCardView: View {
     let total: TotalSpend
     let metric: TotalSpendMetric

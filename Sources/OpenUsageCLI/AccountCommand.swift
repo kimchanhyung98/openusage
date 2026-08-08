@@ -1,10 +1,8 @@
 import Foundation
 import OpenUsage
 
-/// The `openusage account …` command grammar. The CLI is a read-only view of the registry —
-/// adding, removing, re-signing, and switching accounts live in OpenUsage Settings, and a
-/// confirmed switch applies to new terminal sessions automatically. Nothing here reads or copies
-/// credentials, and no command starts a session from a Sign-In Workspace.
+/// `openusage account …` 명령 문법 — CLI는 registry의 read-only view, 계정 추가·제거·재로그인·전환은 OpenUsage Settings 담당.
+/// credential read·복사 금지, Sign-In Workspace에서 세션 시작하는 명령 없음.
 enum AccountCommand: Equatable, Sendable {
     case list(family: String?, json: Bool)
     case current(family: String?)

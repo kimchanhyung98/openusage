@@ -1,9 +1,7 @@
 import Foundation
 
-/// The outcome of a reset-credit claim, as the resets popover renders it — the consume endpoint's four
-/// `code` values collapsed to what the user needs to know (`reset` and `already_redeemed` are both
-/// "claimed": the latter is the idempotency key doing its job on a retry), plus a transport/HTTP
-/// `.failed`.
+/// Reset-credit claim의 결과 — consume endpoint의 `code` 4종을 popover 표시용으로 축약.
+/// `reset`·`already_redeemed`는 둘 다 성공 (후자는 retry에서 idempotency key가 동작한 것), transport/HTTP 오류는 `.failed`.
 enum ResetClaimOutcome: Equatable, Sendable {
     case success
     case nothingToReset
@@ -11,17 +9,8 @@ enum ResetClaimOutcome: Equatable, Sendable {
     case failed
 }
 
-/// Claims a Codex rate-limit reset credit — the app's only provider-API write, so it is deliberately
-/// narrow: one credit per call, always by explicit credit id, guarded by the caller's idempotency key.
-/// The protocol was reverse-engineered from the open-source Codex CLI and verified live once; see
-/// docs/research/codex-reset-credit-claim.md.
-///
-/// The claim re-fetches the credit list at claim time and matches the target credit by its expiry
-/// instant (the identity the popover timeline carries), rather than trusting a cached id: the list is a
-/// safe GET, the id is guaranteed fresh, and a credit that raced away (claimed from the CLI or web in
-/// the meantime) simply fails to match → `.noCredit`, exactly the truth. A successful claim awaits a
-/// forced Codex refresh before returning, so by the time the popover shows its result banner the
-/// Session/Weekly meters and the credit count already tell the post-reset story.
+/// Codex rate-limit reset credit claim — 앱의 유일한 provider-API write, 의도적으로 좁은 범위 (호출당 credit 1개, 명시적 credit id, caller의 idempotency key 보호).
+/// Claim 시점에 credit 목록(안전한 GET)을 재조회해 expiry로 매칭 — 그사이 CLI/web에서 사라진 credit은 `.noCredit`. 성공 시 강제 Codex refresh 완료 후 반환.
 @MainActor
 final class CodexResetClaimService {
     typealias Credentials = (accessToken: String, accountID: String?)
@@ -29,14 +18,11 @@ final class CodexResetClaimService {
     private let usageClient: CodexUsageClient
     private let credentialCandidates: () async -> [Credentials]
     private let refreshAfterClaim: () async -> Void
-    /// The credit id each idempotency key was matched to, kept for the key's retries: if a consume
-    /// succeeded but its response was lost, the credit is gone from a re-fetched list — a fresh match
-    /// would misread the retry as "no longer available" instead of replaying the POST and letting the
-    /// server answer `already_redeemed`. Session-lived, keyed by the popover's per-credit UUIDs.
+    /// Idempotency key별 매칭된 credit id — retry는 재매칭 없이 같은 (key, credit) 쌍을 replay.
+    /// 응답 유실 후 재조회 목록에는 credit이 없어, replay만이 서버의 `already_redeemed`로 성공을 증명. Session-lived, popover의 per-credit UUID가 key.
     private var matchedCreditIDs: [String: String] = [:]
 
-    /// Test seam: injected credential candidates and refresh hook, the same `usageClient` the requests
-    /// go through. Candidates are tried in order until one authenticates (see `claim`).
+    /// Test seam — credential 후보와 refresh hook 주입, 후보는 인증될 때까지 순서대로 시도 (`claim` 참고).
     init(
         usageClient: CodexUsageClient,
         credentialCandidates: @escaping () async -> [Credentials],
@@ -47,12 +33,8 @@ final class CodexResetClaimService {
         self.refreshAfterClaim = refreshAfterClaim
     }
 
-    /// Production wiring: shares the Codex provider's auth store and usage client, so credential
-    /// selection can't drift from `refresh()` — every usable candidate in the provider's order (files
-    /// first, then keychain), and `claim` falls back across them on an auth rejection the same way the
-    /// provider's probe does. No token refresh here: the claim runs seconds after a successful usage
-    /// fetch (which rotates tokens back to disk), so a candidate that still fails auth is genuinely
-    /// dead and the next one is the right move.
+    /// Production 연결 — provider의 auth store·usage client 공유로 credential 선택이 `refresh()`와 drift 불가 (파일 우선, keychain fallback, auth 거부 시 다음 후보).
+    /// Token refresh 없음 — claim은 성공한 usage fetch 직후 실행이라 여전히 auth에 실패하는 후보는 dead, 다음 후보가 정답.
     convenience init(
         authStore: CodexAuthStore,
         usageClient: CodexUsageClient,
@@ -76,8 +58,7 @@ final class CodexResetClaimService {
         )
     }
 
-    /// Claims the credit expiring at `expiry`. Never throws — every failure mode is logged loudly and
-    /// collapsed to an outcome the popover can render.
+    /// `expiry`에 만료되는 credit claim — throw 없음, 모든 실패는 loud log 후 popover용 outcome으로 축약.
     func claim(creditExpiringAt expiry: Date, redeemRequestID: String) async -> ResetClaimOutcome {
         let candidates = await credentialCandidates()
         guard !candidates.isEmpty else {
@@ -85,9 +66,7 @@ final class CodexResetClaimService {
             return .failed
         }
 
-        // A retry of an idempotency key that already matched replays the exact same (key, credit) pair
-        // instead of re-matching: after a consume whose response was lost, the credit is no longer in
-        // the list, and only the replay lets the server's `already_redeemed` prove the claim landed.
+        // 이미 매칭된 idempotency key의 retry는 재매칭 없이 같은 (key, credit) 쌍 replay — 서버의 `already_redeemed`만이 유실된 성공을 증명.
         let creditID: String
         var preferredCandidates = candidates
         if let replayID = matchedCreditIDs[redeemRequestID] {
@@ -97,15 +76,12 @@ final class CodexResetClaimService {
             case .matched(let id, let authenticated):
                 creditID = id
                 matchedCreditIDs[redeemRequestID] = id
-                // Lead with the credential that just authenticated the list fetch. Deduplicate by the
-                // full (token, account) pair — ChatGPT-Account-Id changes what a token is authorized
-                // for, so a same-token candidate with a different account is a distinct fallback.
+                // 목록 fetch를 인증한 credential 우선. dedup은 (token, account) 쌍 전체 기준 — ChatGPT-Account-Id가 authorization 대상을 바꾸므로 계정이 다른 동일 token은 별개 fallback.
                 preferredCandidates = [authenticated] + candidates.filter {
                     $0.accessToken != authenticated.accessToken || $0.accountID != authenticated.accountID
                 }
             case .noCredit:
-                // Not an error: the credit was claimed elsewhere (CLI/web) or expired since the popover
-                // rendered. The refresh reconciles the timeline with reality.
+                // 오류 아님 — popover 렌더 이후 CLI/web에서 claim됐거나 만료. refresh가 timeline을 실제 상태와 동기화.
                 AppLog.warn(LogTag.plugin("codex"), "reset claim: no available credit matches the picked expiry")
                 await refreshAfterClaim()
                 return .noCredit
@@ -118,16 +94,14 @@ final class CodexResetClaimService {
             creditID: creditID, redeemRequestID: redeemRequestID, candidates: preferredCandidates
         )
         if outcome != .failed {
-            // The world changed (or turned out different from the snapshot): refresh before returning,
-            // so the result banner appears over already-reconciled meters and credit count.
+            // 상태 변경(또는 snapshot과 불일치) 확인 — 결과 banner가 이미 동기화된 meter·credit count 위에 뜨도록 refresh 후 반환.
             await refreshAfterClaim()
         }
         return outcome
     }
 
-    /// POSTs the consume, falling back across credential candidates on an auth rejection (401/403).
-    /// Safe to repeat: every attempt carries the same idempotency key, so at most one credit is ever
-    /// spent no matter how many candidates are tried.
+    /// Consume POST — auth 거부(401/403) 시 다음 credential 후보로 fallback.
+    /// 반복 안전 — 모든 시도가 같은 idempotency key를 전송하므로 credit은 최대 1개만 소모.
     private func consume(
         creditID: String, redeemRequestID: String, candidates: [Credentials]
     ) async -> ResetClaimOutcome {
@@ -169,10 +143,8 @@ final class CodexResetClaimService {
         case failed
     }
 
-    /// Fresh credit list (safe GET) → the id of the credit the user picked, matched by expiry. Tries
-    /// each credential candidate in order, moving on when one is rejected as unauthenticated (401/403)
-    /// — the same fallback the provider's probe applies — so a stale first auth file can't strand the
-    /// claim while the dashboard works off a later one.
+    /// 새 credit 목록(안전한 GET)에서 사용자가 고른 credit의 id를 expiry로 매칭.
+    /// credential 후보를 순서대로 시도, 401/403은 다음 후보로 — provider probe와 동일한 fallback이라 stale한 첫 auth 파일이 claim을 가로막지 못함.
     private func matchCredit(expiringAt expiry: Date, candidates: [Credentials]) async -> MatchResult {
         var lastFailure = "no credential candidate authenticated"
         for credentials in candidates {
@@ -200,10 +172,8 @@ final class CodexResetClaimService {
         return .failed
     }
 
-    /// The id of the still-available credit whose `expires_at` matches `expiry` (±1s — the popover's
-    /// dates round-trip through the same ISO-8601 parsing as this list, so a real match is exact; the
-    /// tolerance only absorbs sub-second truncation). Mirrors the mapper's status filter: a credit with
-    /// no `status` counts as available, only an explicit non-"available" state is skipped.
+    /// `expires_at`이 `expiry`와 일치(±1s — 실제 매칭은 정확 일치, 허용치는 sub-second 절단 흡수용)하는 still-available credit의 id.
+    /// mapper의 status filter와 동일 — `status` 없는 credit은 available 간주, 명시적 non-"available"만 제외.
     static func creditID(in body: [String: Any], expiringAt expiry: Date) -> String? {
         guard let credits = body["credits"] as? [[String: Any]] else { return nil }
         return credits.first { credit in
@@ -213,8 +183,7 @@ final class CodexResetClaimService {
         }?["id"] as? String
     }
 
-    /// Collapses a consume response to the popover's outcome. All four protocol codes arrive as HTTP
-    /// 200 — the outcome is in the body — so a non-2xx or an unrecognized code is `.failed`.
+    /// Consume 응답 → popover outcome. protocol code 4종 모두 HTTP 200으로 도착(outcome은 body의 `code`) — non-2xx·미인식 code는 `.failed`.
     static func outcome(fromConsume response: HTTPResponse) -> ResetClaimOutcome {
         guard (200..<300).contains(response.statusCode),
               let body = ProviderParse.jsonObject(response.body),

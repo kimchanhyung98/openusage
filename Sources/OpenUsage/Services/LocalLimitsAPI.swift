@@ -1,8 +1,7 @@
 import Foundation
 
-/// Machine-facing limits serializer shared by the one-shot CLI and local HTTP API.
-/// Provider refresh/mapping remains the single source of truth; this edge only selects scalar resources
-/// explicitly declared on `WidgetDescriptor` and gives them stable public names.
+/// one-shot CLI와 로컬 HTTP API가 공유하는 machine-facing limits serializer.
+/// source of truth는 provider refresh/mapping — 이 edge는 `WidgetDescriptor`에 명시 선언된 scalar resource만 선택해 안정적 공개 이름 부여.
 enum LocalLimitsAPI {
     static let schema = "openusage.limits.v1"
 
@@ -131,9 +130,8 @@ enum LocalLimitsAPI {
             }
         }
 
-        /// A descriptor names the stable resource and supplies a fallback unit for value rows. Progress
-        /// rows carry their actual runtime unit, which can vary by plan (for example Cursor Total Usage
-        /// is percent on individual plans and requests on request-based Enterprise plans).
+        /// descriptor는 안정적 resource 이름과 value row용 fallback unit 제공.
+        /// progress row는 실제 runtime unit 보유 — plan별 상이 가능(e.g. Cursor Total Usage는 개인 plan에서 percent, Enterprise에서 requests).
         private static func progressUnit(_ line: MetricLine) -> String? {
             guard case .progress(_, _, _, let format, _, _, _) = line else { return nil }
             switch format {

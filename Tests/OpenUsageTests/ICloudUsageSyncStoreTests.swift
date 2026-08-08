@@ -61,8 +61,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
             observesMetadataChanges: false
         )
 
-        // Hold the enable write open so disable can race it deliberately, instead of hoping an
-        // 80ms sleep is still in flight when the test flips the toggle on a loaded CI runner.
+        // enable 쓰기를 붙잡아 disable과 의도적으로 경합 — CI 부하에 좌우되는 sleep 의존 제거
         await fileStore.holdNextWrite()
         sync.enabled = true
         try await waitUntil { await fileStore.writeInFlight }
@@ -145,7 +144,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
             await fileStore.writeCount == 1 && !sync.isSyncing
         }
 
-        // Gate only the post-write reload so isSyncing stays true long enough to observe.
+        // 쓰기 이후 reload만 gate — isSyncing 관찰 가능하도록 유지
         await fileStore.holdNextLoad()
         sync.scheduleWrite()
         try await waitUntil {

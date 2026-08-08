@@ -32,20 +32,16 @@ enum OpenRouterAuthError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Reads an OpenRouter API key the user has already placed on the machine. Unlike the CLI-backed
-/// providers, OpenRouter has no companion app that stashes a credential in a known spot, so the key
-/// comes from an environment variable or a small config file. A GUI app launched from Finder/Dock
-/// doesn't inherit the interactive shell environment, so `ProcessEnvironmentReader` captures the
-/// login shell's environment at launch (see `LoginShellEnvironment`) — meaning an env var exported in
-/// a shell profile is honored even in a packaged build; the config file remains the explicit path.
+/// 사용자가 머신에 이미 둔 OpenRouter API key 읽기 — companion 앱이 없어 환경 변수 또는 config 파일이 소스.
+/// Finder/Dock 실행 GUI 앱은 interactive shell 환경을 상속받지 못함 — `ProcessEnvironmentReader`가 실행 시
+/// login shell 환경을 capture하므로(`LoginShellEnvironment` 참고) shell profile의 export도 packaged build에서 유효.
 struct OpenRouterAuthStore: Sendable {
-    /// Config files checked in order; first readable key wins. JSON (`apiKey` / `api_key` / `key`) or a
-    /// plain-text file containing only the key.
+    /// 순서대로 확인하는 config 파일 — 처음 읽히는 key 사용. JSON(`apiKey`/`api_key`/`key`) 또는 key만 담긴 plain text.
     static let configPaths = [
         "~/.config/openusage/openrouter.json",
         "~/.config/openrouter/key.json"
     ]
-    /// Environment variables checked in order. `OPENROUTER_API_KEY` is the de-facto standard.
+    /// 순서대로 확인하는 환경 변수 — `OPENROUTER_API_KEY`가 사실상 표준.
     static let environmentNames = ["OPENROUTER_API_KEY", "OPENROUTER_KEY"]
 
     private let store: UserAPIKeyStore

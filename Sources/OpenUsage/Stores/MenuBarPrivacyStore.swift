@@ -1,28 +1,19 @@
 import Foundation
 import Observation
 
-/// Single source of truth for the menu bar's screen-share privacy mode: the persisted "Hide From
-/// Screen Share" preference plus the live is-the-screen-captured signal behind it.
-/// `StatusItemImageUpdater` reads `concealUsage` inside its observation loop, so the strip swaps to
-/// the wordmark the moment a capture starts and back when it ends; Settings binds the toggle and
-/// shows a live "concealing right now" notice.
-///
-/// Monitoring runs only while the setting is on: a short poll (the guarantee) plus the window
-/// server's watcher notifications (the fast path — private and best-effort, so never relied on
-/// alone). With the setting off the store does no periodic work at all.
+/// 메뉴바 screen-share privacy mode의 단일 출처 — persisted "Hide From Screen Share" 설정과 라이브 캡처 신호
+/// `StatusItemImageUpdater`가 observation loop에서 `concealUsage`를 읽어 캡처 시작·종료 즉시 wordmark 전환
+/// monitoring은 설정 on일 때만 — poll(보증)과 window server watcher 알림(fast path, best-effort) 병행
 @MainActor
 @Observable
 final class MenuBarPrivacyStore {
     static let key = "hideUsageWhileScreenSharing"
 
-    /// How often the poll re-checks the watcher flag while the setting is on. Short enough that a
-    /// missed notification exposes usage for a few seconds at worst; the check itself is a single
-    /// cheap window-server call.
+    /// 설정 on 동안의 poll 주기 — 알림 유실 시 노출을 수 초로 제한, 검사 자체는 저비용 window-server 호출 1회
     static let pollInterval: Duration = .seconds(3)
 
-    /// The persisted preference (default on). Stored here rather than as a view-local `@AppStorage`
-    /// so the AppKit strip renderer honors exactly the value the Settings toggle writes. Toggling it
-    /// starts/stops the capture monitoring, so the off state costs nothing.
+    /// persisted 설정 (기본 on) — view-local `@AppStorage` 대신 여기 저장해 AppKit strip renderer와 값 일치 보장
+    /// toggle이 monitoring을 시작·중지하므로 off 상태 비용 없음
     var hideUsageWhileScreenSharing: Bool {
         didSet {
             guard hideUsageWhileScreenSharing != oldValue else { return }
@@ -35,11 +26,10 @@ final class MenuBarPrivacyStore {
         }
     }
 
-    /// Whether a screen capture is active right now. Only maintained while the setting is on;
-    /// always `false` otherwise.
+    /// 현재 캡처 활성 여부 — 설정 on 동안만 유지, 그 외 항상 `false`
     private(set) var screenIsCaptured = false
 
-    /// True exactly when the menu bar should show the wordmark instead of usage values.
+    /// 메뉴바가 usage 대신 wordmark를 보여야 하는 정확한 조건
     var concealUsage: Bool { hideUsageWhileScreenSharing && screenIsCaptured }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -47,8 +37,7 @@ final class MenuBarPrivacyStore {
     @ObservationIgnored private let installChangeNotifications: @MainActor (@escaping @Sendable () -> Void) -> Void
     @ObservationIgnored private var pollTask: Task<Void, Never>?
 
-    /// The probe and notification installer default to the real window-server signal
-    /// (`ScreenCaptureProbe`) and are injectable so tests can pin the capture state deterministically.
+    /// probe·알림 installer는 실제 window-server 신호(`ScreenCaptureProbe`)가 기본값, 테스트 주입용으로 교체 가능
     init(
         defaults: UserDefaults = .standard,
         probe: @escaping @MainActor () -> Bool = ScreenCaptureProbe.isScreenCaptured,
@@ -58,7 +47,7 @@ final class MenuBarPrivacyStore {
         self.probe = probe
         self.installChangeNotifications = installChangeNotifications
         self.hideUsageWhileScreenSharing = defaults.bool(forKey: Self.key, default: true)
-        // `didSet` doesn't fire during init; arm monitoring for a persisted-on launch directly.
+        // init 중에는 `didSet` 미발동 — persisted-on launch는 직접 monitoring 시작
         if hideUsageWhileScreenSharing {
             startMonitoring()
         }
@@ -66,9 +55,8 @@ final class MenuBarPrivacyStore {
 
     deinit { pollTask?.cancel() }
 
-    /// Re-reads the watcher flag and publishes a change. Called by the poll, the window-server
-    /// notification hop, and monitoring start. Reads through the setting so a stale notification
-    /// arriving after the toggle turned off can't re-conceal.
+    /// watcher flag 재확인 후 변경 게시 — poll·window-server 알림·monitoring 시작이 호출
+    /// 설정을 경유해 읽으므로 toggle off 후 도착한 stale 알림이 재은폐 불가
     func refreshCaptureState() {
         let captured = hideUsageWhileScreenSharing && probe()
         guard captured != screenIsCaptured else { return }

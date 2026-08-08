@@ -1,14 +1,13 @@
 import Foundation
 
-/// Typed failures for the OpenCode provider, so telemetry groups them by a stable category
-/// (see `ErrorCategory.swift`).
+/// OpenCode provider의 typed failure — telemetry가 안정된 category로 그룹화 (`ErrorCategory.swift` 참고).
 enum OpenCodeUsageError: Error, LocalizedError, Equatable {
     case notLoggedIn
-    /// `auth.json` exists but could not be read or parsed — broken storage, not logout. `detail`
-    /// carries the underlying cause for the log file; the user-facing description stays friendly.
+    /// `auth.json`이 존재하나 읽기·parse 불가 — logout이 아닌 손상 storage.
+    /// `detail`은 로그 파일용 원인, 사용자용 설명은 friendly하게 유지.
     case credentialsUnreadable(detail: String)
-    /// OpenCode databases exist on disk but none could be read this refresh. Failing loudly here beats
-    /// rendering authoritative-looking $0 meters from an empty scan.
+    /// 디스크에 database가 있으나 이번 refresh에서 하나도 읽지 못한 상태.
+    /// 빈 scan으로 확정값처럼 보이는 $0 meter를 그리는 대신 크게 실패.
     case databaseUnreadable
 
     var errorDescription: String? {
@@ -23,9 +22,8 @@ enum OpenCodeUsageError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Tracks OpenCode-hosted usage (the Go subscription + the Zen pay-as-you-go gateway) from OpenCode's
-/// local SQLite logs. Cookie-free and network-free — see `OpenCodeUsageScanner`. The card shows the Go
-/// plan caps as dollar meters plus honest local spend tiles + a usage trend.
+/// OpenCode-hosted 사용량(Go 구독 + Zen pay-as-you-go gateway)을 로컬 SQLite 로그에서 추적.
+/// cookie·network 불필요 (`OpenCodeUsageScanner` 참고) — 카드는 Go plan cap 달러 meter + local spend tile + usage trend 표시.
 @MainActor
 final class OpenCodeProvider: ProviderRuntime {
     let provider = Provider(
@@ -41,13 +39,11 @@ final class OpenCodeProvider: ProviderRuntime {
     let usageScanner: OpenCodeUsageScanner
     let now: @Sendable () -> Date
 
-    /// Names the local source on hover (the dollars can only undercount true account usage — this
-    /// machine only). No "(estimated)": OpenCode records its own per-message cost, so the values are
-    /// measured, not imputed.
+    /// hover 시 표기할 로컬 소스 이름 — 이 머신만 집계하므로 실제 계정 사용량보다 적게만 나옴.
+    /// OpenCode가 메시지별 cost를 직접 기록한 측정값이라 "(estimated)" 미표기.
     private let sourceNote = "From your OpenCode logs"
 
-    /// Edge-triggers the auth-read-failure log so a persistently unreadable `auth.json` warns once per
-    /// run, not once per 5-minute refresh.
+    /// auth 읽기 실패 로그의 edge-trigger — 지속적으로 읽기 불가한 `auth.json`은 5분 refresh마다가 아닌 실행당 1회만 경고.
     private var loggedAuthReadFailure = false
 
     init(
@@ -61,8 +57,8 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
-        // Go plan caps read from local `opencode-go` spend (Session/Weekly above the fold, Monthly on
-        // demand); the spend tiles + trend below sum combined OpenCode-hosted (Go + Zen) spend.
+        // Go plan cap은 로컬 `opencode-go` spend에서 계산(Session/Weekly는 상단 노출, Monthly는 on demand)
+        // 하단 spend tile + trend는 OpenCode-hosted(Go + Zen) 합산 spend
         [
             .boundedDollars(id: "opencode.session", provider: provider, title: "Session", limit: OpenCodeUsageMapper.sessionCap)
                 .exportingLimit("session", unit: "usd", estimated: true),
@@ -80,9 +76,8 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same sources as `refresh()`: the local `opencode-go` auth key, or any hosted usage already in
-        // the local database. Local-only, off the main actor. An unreadable auth.json is itself an
-        // OpenCode footprint — enable the provider so `refresh()` can surface the actionable error.
+        // `refresh()`와 동일 소스(로컬 `opencode-go` auth key 또는 로컬 database의 hosted usage) — local 전용, main actor 밖 수행
+        // 읽기 불가 auth.json도 OpenCode 흔적 — provider를 활성화해 `refresh()`가 실행 가능한 에러를 노출하게 함
         await loadOffMainActor { [authStore, usageScanner] in
             do {
                 if try authStore.goAPIKey() != nil { return true }
@@ -94,12 +89,10 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
-        // One clock for the whole refresh, so the scan cutoff, tiles, trend, and snapshot timestamp
-        // can't straddle a midnight boundary.
+        // refresh 전체에 단일 시각 사용 — scan cutoff·tile·trend·snapshot timestamp가 자정 경계에 걸치지 않게 함
         let refreshedAt = now()
 
-        // An unreadable auth.json must not kill a refresh that can still read the database (a Zen user
-        // stays live), but it stays distinguishable from "not logged in" when nothing else loads.
+        // 읽기 불가 auth.json이 database를 읽을 수 있는 refresh를 막으면 안 됨(Zen 사용자 유지) — 단 아무것도 없을 때 "not logged in"과는 구분 유지
         var hasGoKey = false
         var authReadError: OpenCodeUsageError?
         do {
@@ -123,10 +116,9 @@ final class OpenCodeProvider: ProviderRuntime {
         }
 
         guard let scan else {
-            // No OpenCode database on disk at all.
+            // 디스크에 OpenCode database가 전혀 없는 경우
             if hasGoKey {
-                // Freshly logged into Go, before the first local message: the key alone establishes the
-                // plan, so show the published caps at $0 rather than a bare "No usage data".
+                // 첫 로컬 메시지 이전의 Go 신규 로그인 — key만으로 plan 확정, "No usage data" 대신 공표 cap을 $0으로 표시
                 let windows = OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt)
                 return ProviderSnapshot.make(
                     provider: provider, plan: "Go",
@@ -152,8 +144,7 @@ final class OpenCodeProvider: ProviderRuntime {
         SpendTileMapper.appendUsageTrend(scan.logScan.series, to: &lines, now: refreshedAt, note: sourceNote)
         MetricLine.appendNoDataIfNeeded(&lines)
 
-        // `goWindows` is present only on a current Go signal (key or recent spend), never a stale anchor,
-        // so it's the honest source for the plan badge too.
+        // `goWindows`는 현재 Go 신호(key 또는 최근 spend)일 때만 존재, stale anchor로는 생기지 않음 — plan badge의 정직한 근거
         let plan: String? = scan.goWindows != nil ? "Go" : nil
         return ProviderSnapshot.make(
             provider: provider,

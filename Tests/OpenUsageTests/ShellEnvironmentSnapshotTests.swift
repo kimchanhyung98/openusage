@@ -26,8 +26,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
     }
 
     func testCurrentIsNilWhenCaptureFailed() {
-        // An empty capture means the spawn or parse failed (a real login shell always exports
-        // PATH/HOME) — its "facts" must not be persisted as a snapshot.
+        // 빈 capture는 spawn·parse 실패 의미 — snapshot으로 persist 금지
         let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: "no markers"))
         XCTAssertFalse(shellEnvironment.ensureCapturedForTesting(), "an empty capture must report failure")
         XCTAssertNil(ShellEnvironmentSnapshot.current(shellEnvironment: shellEnvironment))
@@ -46,7 +45,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
 
         let snapshot = ShellEnvironmentSnapshot.current(shellEnvironment: shellEnvironment)
 
-        // Only the declared non-secret keys land in the snapshot — never API keys or tokens.
+        // 선언된 비밀 아닌 key만 snapshot에 포함 — API key·token 제외
         XCTAssertEqual(snapshot?.values, ["CLAUDE_CONFIG_DIR": "~/.claude-work"])
     }
 
@@ -158,7 +157,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
     }
 
     func testReaderServesSnapshotFactsWhileTheCaptureIsCold() {
-        // A main-thread read never triggers the capture, so this cold shell layer answers "unknown".
+        // main-thread 읽기는 capture를 유발하지 않아 cold shell layer는 "unknown" 응답
         let cold = LoginShellEnvironment(runner: FixedRunner(stdout: "unused"))
         let snapshot = ShellEnvironmentSnapshot(values: ["CODEX_HOME": "/tmp/persisted"], capturedAt: Date())
         let reader = ProcessEnvironmentReader(
@@ -168,15 +167,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         )
 
         XCTAssertEqual(reader.value(for: "CODEX_HOME"), "/tmp/persisted")
-        // A key the snapshot verifiably lacks reads as "no override" — pinned absent.
+        // snapshot에 명확히 없는 key는 "override 없음"으로 pin
         XCTAssertNil(reader.value(for: "CLAUDE_CONFIG_DIR"))
     }
 
     func testReaderPinsIdentityKeysToTheSnapshotEvenAfterTheCaptureLands() {
-        // The capture lands with a CHANGED export. Identity-relevant keys must keep reading the
-        // launch snapshot for the whole session — otherwise the account identity (read at init from
-        // the snapshot) and later provider refreshes (reading the fresh capture) would resolve
-        // different homes and mis-stamp the shared cache. The new export applies from the next launch.
         let stdout = [
             "__OPENUSAGE_ENV_BEGIN__", "CODEX_HOME=/tmp/changed", "MY_API_KEY=sk-live", "PATH=/usr/bin", "__OPENUSAGE_ENV_END__",
         ].joined(separator: "\0")
@@ -189,13 +184,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         )
 
         XCTAssertEqual(reader.value(for: "CODEX_HOME"), "/tmp/pinned")
-        // Non-identity keys (API keys and everything else) keep reading the live capture as before.
+        // identity 외 key는 기존대로 live capture 참조
         XCTAssertEqual(reader.value(for: "MY_API_KEY"), "sk-live")
     }
 
     func testReaderFallsToTheLiveCaptureWhenNoSnapshotExists() {
-        // A genuinely first launch: no snapshot yet, so identity keys read the live capture directly
-        // (consistent for the session — the capture is one-time per process).
         let stdout = ["__OPENUSAGE_ENV_BEGIN__", "CODEX_HOME=/tmp/live", "__OPENUSAGE_ENV_END__"].joined(separator: "\0")
         let warm = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(warm.ensureCapturedForTesting())
@@ -233,8 +226,7 @@ private final class FixedRunner: ProcessRunning, @unchecked Sendable {
 }
 
 private extension LoginShellEnvironment {
-    /// Force the capture from the test's (main) thread by hopping off-main, since `ensureCaptured`
-    /// refuses to spawn on the main thread.
+    /// `ensureCaptured`가 main thread에서 spawn을 거부하므로 off-main으로 우회해 강제 capture
     func ensureCapturedForTesting() -> Bool {
         let done = DispatchSemaphore(value: 0)
         var result = false

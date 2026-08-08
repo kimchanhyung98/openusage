@@ -18,9 +18,6 @@ final class ProviderCatalogTests: XCTestCase {
         return defaults
     }
 
-    /// An inactive Codex profile's snapshot becomes an ordinary runtime right after the default
-    /// Codex card: per-card provider id and a metric set whose ids derive from the card id — while
-    /// the default card stays first and unchanged.
     func testCodexSnapshotCardsSlotInAfterTheDefaultCodexCard() {
         let card = AccountUsageSnapshotCard(id: "codex@profile-p1", profileID: "p1", family: "codex")
 
@@ -46,8 +43,6 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertFalse(descriptorIDs.contains("codex.session"), "metric ids never leak the bare card id")
     }
 
-    /// Managed switching pins the default Codex card to the shared `auth.json` the switch
-    /// transaction owns; without it the historical candidate scan stays in place.
     func testManagedSwitchingPinsTheDefaultCodexCardToTheSharedAuthFile() throws {
         let pinned = ProviderCatalog.make(codexSharedAuthHome: "/Users/x/.codex")
             .compactMap { $0 as? CodexProvider }
@@ -106,9 +101,6 @@ final class ProviderCatalogTests: XCTestCase {
         )
     }
 
-    /// Layout seeding end to end: `DefaultLayout.translatedForAccountCards` re-prefixes the codex
-    /// family defaults onto the snapshot card (and the caret split), every translated id exists in
-    /// the registry, and pins stay untranslated.
     func testCodexSnapshotCardsSeedTheirFamilyDefaultLayout() {
         let card = AccountUsageSnapshotCard(id: "codex@profile-p1", profileID: "p1", family: "codex")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))

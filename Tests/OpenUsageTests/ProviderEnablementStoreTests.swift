@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the persistence contract of `ProviderEnablementStore`: only *disabled* IDs are stored, so an
-/// empty suite means everything is on and the choice survives relaunch.
 @MainActor
 final class ProviderEnablementStoreTests: XCTestCase {
     func testEmptySuiteEnablesEverything() {
@@ -49,31 +47,31 @@ final class ProviderEnablementStoreTests: XCTestCase {
         let store = ProviderEnablementStore(defaults: makeDefaults("notify-change"))
         let posted = XCTNSNotificationExpectation(name: ProviderEnablementStore.didChangeNotification)
 
-        store.setEnabled(false, for: "codex")   // enabled -> disabled: a real change
+        store.setEnabled(false, for: "codex")
 
         wait(for: [posted], timeout: 1)
     }
 
     func testNoOpToggleDoesNotPostDidChangeNotification() {
-        // The refresh loop wakes on this notification; a redundant toggle must not wake it (and re-probe).
+        // refresh loop가 이 notification으로 wake — 무의미한 toggle은 wake·재probe 금지
         let store = ProviderEnablementStore(defaults: makeDefaults("notify-noop"))
         let notPosted = XCTNSNotificationExpectation(name: ProviderEnablementStore.didChangeNotification)
         notPosted.isInverted = true
 
-        store.setEnabled(true, for: "codex")    // already enabled (empty suite): a no-op
+        store.setEnabled(true, for: "codex")
 
         wait(for: [notPosted], timeout: 0.2)
     }
 
     func testOnProviderEnabledFiresOnEnableOnly() {
-        // Wired to clear the failure backoff; must fire on a real enable, never on disable or a no-op.
+        // failure backoff clear 용도 — 실제 enable에만 발화
         let store = ProviderEnablementStore(defaults: makeDefaults("on-enable"))
         var enabledIDs: [String] = []
         store.onProviderEnabled = { enabledIDs.append($0) }
 
-        store.setEnabled(false, for: "codex")   // disable: must NOT fire
-        store.setEnabled(true, for: "codex")    // enable: fires with "codex"
-        store.setEnabled(true, for: "codex")    // already enabled (no-op): must NOT fire
+        store.setEnabled(false, for: "codex")
+        store.setEnabled(true, for: "codex")
+        store.setEnabled(true, for: "codex")
 
         XCTAssertEqual(enabledIDs, ["codex"])
     }
@@ -89,7 +87,7 @@ final class ProviderEnablementStoreTests: XCTestCase {
         XCTAssertTrue(store.isEnabled("claude"))
         XCTAssertTrue(store.isEnabled("codex"))
         XCTAssertFalse(store.isEnabled("grok"))
-        // The key property of enabled-list mode: a provider shipped later defaults to OFF.
+        // enabled-list mode 핵심 성질 — 이후 추가된 provider는 기본 OFF
         XCTAssertFalse(store.isEnabled("a-provider-that-ships-next-year"))
 
         let reloaded = ProviderEnablementStore(defaults: defaults)
@@ -118,7 +116,7 @@ final class ProviderEnablementStoreTests: XCTestCase {
         var enabledIDs: [String] = []
         store.onProviderEnabled = { enabledIDs.append($0) }
 
-        // The detection pass replacing the fallback: codex stays on (no callback), grok turns on.
+        // detection pass가 fallback 대체 — codex는 유지(callback 없음), grok만 on
         store.seedEnabledProviders(["codex", "grok"])
 
         XCTAssertEqual(enabledIDs, ["grok"])
@@ -136,8 +134,7 @@ final class ProviderEnablementStoreTests: XCTestCase {
     }
 
     func testLegacyModeIgnoresEnabledListUntilSeeded() {
-        // An existing install (disabled-list mode) must keep its semantics: absent enabled key means
-        // everything is on except the explicitly disabled IDs.
+        // 기존 설치본(disabled-list mode)은 semantics 유지 — enabled key 부재 시 disabled 외 전부 on
         let defaults = makeDefaults("legacy-untouched")
         defaults.set(["devin"], forKey: "openusage.disabledProviders.v1")
         let store = ProviderEnablementStore(defaults: defaults)
@@ -164,7 +161,7 @@ final class ProviderEnablementStoreTests: XCTestCase {
     }
 
     func testRegisterKnownProvidersDoesNotTouchEnablement() {
-        // Pure bookkeeping: registering must not flip any toggle or wake the refresh loop.
+        // 단순 기록 — toggle 변경·refresh loop wake 금지
         let store = ProviderEnablementStore(defaults: makeDefaults("known-pure"))
         store.seedEnabledProviders(["claude"])
         let notPosted = XCTNSNotificationExpectation(name: ProviderEnablementStore.didChangeNotification)

@@ -1,13 +1,10 @@
 import XCTest
 @testable import OpenUsage
 
-/// The pi log fold-in: parse pi's assistant usage lines, attribute them to the mapped OpenUsage card,
-/// and price by pi's carried cost (else the engine). Also covers the shared scan-merge that folds the
-/// pi slice into a provider's native scan.
 final class PiUsageScannerTests: XCTestCase {
     private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
 
-    /// Fixture pricing so the carried-$0 fall-through can be exercised: composer priced at $10/M input.
+    /// carried-$0 fall-through 검증용 fixture pricing (composer input $10/M)
     private let pricing = ModelPricing(
         supplement: PricingSupplement(),
         primary: PricingCatalog(entries: [
@@ -69,7 +66,7 @@ final class PiUsageScannerTests: XCTestCase {
     }
 
     func testZeroCarriedCostFallsThroughToPricing() {
-        // Cursor logs $0; the engine prices composer's 100 input @ $10/M + 50 output @ $20/M = $0.002.
+        // log가 $0이면 engine이 산정 — input 100 @ $10/M + output 50 @ $20/M = $0.002
         let entry = PiUsageScanner.parseLine(line(provider: "cursor", model: "composer-2.5", cost: "0"))!
         let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.002, accuracy: 0.00001)

@@ -140,9 +140,7 @@ final class CursorUsageMapperTests: XCTestCase {
     }
 
     func testTeamAccountEmitsDollarTotalUsageAndNoOrphanedBonusSpendLine() throws {
-        // Team accounts report Total usage as a dollar meter and may carry a `bonusSpend` field. No
-        // widget descriptor matches a "Bonus spend" label, so emitting one produced a line that could
-        // never render. Regression: the mapper must not emit that orphaned line even when bonusSpend > 0.
+        // "Bonus spend" 라벨에 대응하는 widget descriptor가 없어 렌더 불가 — bonusSpend > 0이어도 고아 라인 방출 금지 (회귀)
         let mapped = try CursorUsageMapper.mapUsage(
             usage: [
                 "enabled": true,
@@ -161,8 +159,8 @@ final class CursorUsageMapperTests: XCTestCase {
 
         XCTAssertEqual(mapped.plan, "Team")
         let total = try XCTUnwrap(progress(mapped.lines, "Total usage"))
-        XCTAssertEqual(total.used, 100, accuracy: 0.001)    // $100.00 spent (totalSpend, cents → dollars)
-        XCTAssertEqual(total.limit, 400, accuracy: 0.001)   // of a $400.00 limit
+        XCTAssertEqual(total.used, 100, accuracy: 0.001)    // $100.00 지출 (totalSpend, cents → dollars)
+        XCTAssertEqual(total.limit, 400, accuracy: 0.001)   // $400.00 한도 기준
         XCTAssertFalse(mapped.lines.contains { $0.label == "Bonus spend" })
     }
 
@@ -300,5 +298,3 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
         return String(sql[start..<end]).replacingOccurrences(of: "''", with: "'")
     }
 }
-
-// RoutingHTTPClient lives in TestSupport.swift (shared, records requests).

@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The popover auto-fit height computation, now unit-testable after being split out of DashboardView:
-/// each screen's ideal = (top bar unless dashboard) + footer + scroll content, and `target` clamps it.
 @MainActor
 final class PanelHeightCoordinatorTests: XCTestCase {
     private let topBar: CGFloat = 44
@@ -11,7 +9,6 @@ final class PanelHeightCoordinatorTests: XCTestCase {
         let c = PanelHeightCoordinator(topBarHeight: topBar)
         c.setScrollContent(300, for: .dashboard)
         c.setFooter(40, for: .dashboard)
-        // Dashboard has no top bar: ideal = content + footer.
         XCTAssertEqual(c.measuredIdeal[.dashboard], 340)
     }
 
@@ -19,7 +16,6 @@ final class PanelHeightCoordinatorTests: XCTestCase {
         let c = PanelHeightCoordinator(topBarHeight: topBar)
         c.setScrollContent(300, for: .customize)
         c.setFooter(40, for: .customize)
-        // Customize/Settings pin the fixed top bar: ideal = topBar + footer + content.
         XCTAssertEqual(c.measuredIdeal[.customize], 44 + 40 + 300)
     }
 
@@ -31,18 +27,14 @@ final class PanelHeightCoordinatorTests: XCTestCase {
 
     func testIdealUnsetUntilScrollContentMeasured() {
         let c = PanelHeightCoordinator(topBarHeight: topBar)
-        // A footer measurement alone (no scroll content yet) leaves the ideal unset — the view keeps the
-        // controller's opening size until real content lands.
         c.setFooter(40, for: .dashboard)
         XCTAssertNil(c.measuredIdeal[.dashboard])
-        // A zero-height content measurement is also ignored.
         c.setScrollContent(0, for: .dashboard)
         XCTAssertNil(c.measuredIdeal[.dashboard])
     }
 
     func testTargetIsNilUntilMeasuredThenClamps() {
-        // The clamp hook is a process global (see PanelHeightBridgeTests for the same reset pattern):
-        // pin it explicitly on both branches so this test can't depend on suite order.
+        // clamp hook은 process 전역 — suite 순서 의존을 피하려 양쪽 분기에서 명시 고정
         let previousClamp = MenuBarPopover.clampHeight
         defer { MenuBarPopover.clampHeight = previousClamp }
 
@@ -51,23 +43,21 @@ final class PanelHeightCoordinatorTests: XCTestCase {
 
         MenuBarPopover.clampHeight = nil
         c.setScrollContent(300, for: .dashboard)
-        // No clamp hook installed → target is the raw ideal.
         XCTAssertEqual(c.target(for: .dashboard), 300)
 
-        // With the panel's hook installed, the target is floored and capped at both edges.
         MenuBarPopover.clampHeight = { min(max($0, 400), 600) }
-        XCTAssertEqual(c.target(for: .dashboard), 400)  // 300 floored to the panel minimum
+        XCTAssertEqual(c.target(for: .dashboard), 400)
         c.setScrollContent(900, for: .dashboard)
-        XCTAssertEqual(c.target(for: .dashboard), 600)  // 900 capped at the screen max
+        XCTAssertEqual(c.target(for: .dashboard), 600)
         c.setScrollContent(500, for: .dashboard)
-        XCTAssertEqual(c.target(for: .dashboard), 500)  // in-range ideals pass through
+        XCTAssertEqual(c.target(for: .dashboard), 500)
     }
 
     func testLaterMeasurementRecomposesIdeal() {
         let c = PanelHeightCoordinator(topBarHeight: topBar)
         c.setScrollContent(300, for: .dashboard)
         XCTAssertEqual(c.measuredIdeal[.dashboard], 300)
-        c.setScrollContent(500, for: .dashboard)   // content grew (rows loaded)
+        c.setScrollContent(500, for: .dashboard)
         XCTAssertEqual(c.measuredIdeal[.dashboard], 500)
     }
 }

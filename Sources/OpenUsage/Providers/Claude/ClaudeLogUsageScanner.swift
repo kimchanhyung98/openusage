@@ -1,59 +1,39 @@
 import Foundation
 
-/// Builds daily token/cost estimates for Claude by scanning Claude Code's local session logs
-/// natively (`<config dir>/projects/**/*.jsonl`), replacing the external `ccusage` CLI.
-///
-/// Ports ccusage's Claude adapter semantics:
-/// - Roots come from `CLAUDE_CONFIG_DIR` (comma-separated; each entry is a config dir containing
-///   `projects/`, or the `projects/` dir itself), else `$XDG_CONFIG_HOME/claude` and `~/.claude`.
-/// - A usage line must carry `"usage":{`, parse as JSON with a valid timestamp, not carry `null` in
-///   fields Claude never writes as null, and pass the validity checks (semver-ish `version`,
-///   non-empty ids/model).
-/// - Entries are deduplicated by `(message.id, requestId)`, with a second pass that catches
-///   sidechain logs replaying a parent message under a new request id. On collision the non-sidechain
-///   entry wins, then the larger token total, then the one carrying a `speed` field.
-/// - Advisor-message iterations become separate entries under their own model. Other iteration
-///   types stay represented only by the parent usage totals, avoiding double-counting.
-/// - Cost mode "auto": a line's `costUSD` when present, else tokens priced through `ModelPricing`.
-///
-/// An actor so the whole scan runs off the main actor. Parsed files are cached by path + size + mtime
-/// in memory and Application Support: refreshes and relaunches parse only changed files, then re-run
-/// the cheap dedup + day aggregation over cached entries before local model-rate estimates.
+/// Claude Code 로컬 세션 로그(`<config dir>/projects/**/*.jsonl`) 네이티브 스캔으로 일별 토큰/비용 추정.
+/// ccusage Claude adapter 의미론 포팅 — root 해석, 유효성 검사, `(message.id, requestId)` dedup, cost mode "auto".
+/// actor로 main actor 밖에서 실행; 파일은 path + size + mtime으로 캐시되어 변경분만 재파싱.
 actor ClaudeLogUsageScanner {
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Entry>
-    /// Scoped provider instances pass their stable parse-source identity here. Account or time filters
-    /// over the same physical roots deliberately pass the same value and share whole-file records.
+    /// scoped provider 인스턴스의 안정적 parse-source identity — 같은 물리 root를 보는
+    /// 계정/시간 필터는 같은 값을 전달해 whole-file 레코드 공유.
     private let cacheIdentityOverride: String?
-    /// Extra account cards pin the scan to exactly their config dir(s), replacing the standard
-    /// resolution (env override, XDG, `~/.claude`, Cowork sandboxes) entirely — another account's
-    /// logs must never bleed into a scoped card. `nil` keeps the standard walk byte-identical.
+    /// 추가 계정 카드의 config dir 고정 — 표준 해석 전체를 대체, 다른 계정 로그 유입 금지.
+    /// `nil`이면 표준 walk 그대로 유지.
     private let rootsOverride: [URL]?
-    /// Same-account custom config dirs appended to the DEFAULT card's standard roots, so spend the
-    /// user's own login produced in a side home still counts on its card.
+    /// DEFAULT 카드의 표준 root에 덧붙는 같은 계정 커스텀 config dir — side home의 자기 spend 집계용.
     private let additionalRoots: [URL]
-    /// Managed switching owns `~/.claude`; the default card's scan must then ignore an ambient
-    /// `CLAUDE_CONFIG_DIR` and walk the shared home exactly like an override-free machine.
+    /// 관리 전환이 `~/.claude` 소유 시 true — 기본 카드 스캔은 ambient `CLAUDE_CONFIG_DIR`를 무시하고 공유 home만 walk.
     nonisolated let pinsSharedHome: Bool
 
-    /// One parsed usage line. Token buckets are pre-normalized into `TokenBreakdown`; dedup fields
-    /// ride along so the global dedup pass can run over cached entries.
+    /// 파싱된 usage 라인 1건 — 토큰은 `TokenBreakdown`으로 정규화, dedup 필드 동반(캐시된 entry 위에서 dedup 실행).
     struct Entry: Codable, Sendable, Equatable {
         var timestamp: Date
         var tokens: TokenBreakdown
         var messageID: String?
         var requestID: String?
         var isSidechain: Bool = false
-        /// The line carried a `speed` field at all (dedup tiebreaker); `tokens.isFast` says it was "fast".
+        /// `speed` 필드 존재 여부(dedup tiebreaker) — "fast" 여부는 `tokens.isFast`.
         var hasSpeed: Bool = false
         var costUSD: Double?
-        /// `nil` when the line has no model or the placeholder `<synthetic>` (tokens count, cost is $0).
+        /// 모델 없음 또는 placeholder `<synthetic>`이면 `nil`(토큰은 집계, 비용 $0).
         var model: String?
     }
 
-    /// Cards that read the same Claude home share one actor, so the first scan populates both the
-    /// in-memory and disk caches and the rest reuse it. Tests inject an isolated memory-only scanner.
+    /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
+    /// 테스트는 격리된 메모리 전용 scanner 주입.
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
         persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 1)
@@ -73,8 +53,7 @@ actor ClaudeLogUsageScanner {
         pinsSharedHome: Bool = false
     ) {
         precondition(cacheIdentityOverride?.isEmpty != true)
-        // A scoped root set must carry its own parse-source identity, or its cache records would
-        // collide with the default card's under the standard identity.
+        // scoped root 집합은 자체 parse-source identity 필수 — 기본 카드 캐시 레코드와 충돌 방지.
         precondition(rootsOverride == nil || cacheIdentityOverride != nil)
         self.environment = environment
         self.homeDirectory = homeDirectory
@@ -85,9 +64,8 @@ actor ClaudeLogUsageScanner {
         self.pinsSharedHome = pinsSharedHome
     }
 
-    /// Scan the last `daysBack` days of Claude logs. Returns `nil` when no Claude data directory or
-    /// no log files exist (the spend tiles then render "No data"); returns an empty series when logs
-    /// exist but have no usage in the window.
+    /// 최근 `daysBack`일의 Claude 로그 스캔 — 데이터 dir/로그 파일 부재 시 `nil`("No data" 렌더),
+    /// 로그는 있으나 window 내 usage 없음이면 빈 series.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let cacheIdentity = parseCacheIdentity()
@@ -107,7 +85,7 @@ actor ClaudeLogUsageScanner {
             return nil
         }
 
-        // Entries come back concatenated in path-sorted file order, so dedup's keep-first is deterministic.
+        // entry는 경로 정렬 파일 순서로 연결 — dedup keep-first의 결정성 보장.
         guard let entries = await scanner.items(
             from: files,
             since: since,
@@ -117,9 +95,8 @@ actor ClaudeLogUsageScanner {
         return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
     }
 
-    /// Stable source configuration identity rather than the discovered root list: Cowork adds session
-    /// roots over time, and a new session must extend the same cache instead of cold-parsing every old
-    /// file. Scoped root overrides pass an explicit identity so distinct homes stay partitioned.
+    /// 발견된 root 목록이 아닌 안정적 source 구성 identity — Cowork 세션 추가 시 기존 캐시 확장(cold-parse 방지),
+    /// scoped override는 명시 identity로 home 간 분리 유지.
     private func parseCacheIdentity() -> String {
         if let cacheIdentityOverride { return cacheIdentityOverride }
         let home = homeDirectory().resolvingSymlinksInPath().path
@@ -154,11 +131,8 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Root and file discovery
 
-    /// Claude config directories that actually contain a `projects/` folder, in ccusage's order:
-    /// every entry of `CLAUDE_CONFIG_DIR` when set (an invalid list logs and yields none), else
-    /// `$XDG_CONFIG_HOME/claude` (default `~/.config/claude`) and `~/.claude`. Cowork's per-session
-    /// `.claude` sandboxes are always appended — they live under the desktop app's own container,
-    /// so `CLAUDE_CONFIG_DIR` (a terminal-CLI override) doesn't speak for them.
+    /// `projects/`를 실제 포함한 Claude config dir 목록(ccusage 순서) — `CLAUDE_CONFIG_DIR` 우선,
+    /// 없으면 `$XDG_CONFIG_HOME/claude`·`~/.claude`; Cowork 세션 sandbox는 항상 추가.
     private func claudeRoots() -> [URL] {
         var roots: [URL] = []
         var seen: Set<String> = []
@@ -170,8 +144,7 @@ actor ClaudeLogUsageScanner {
             roots.append(url)
         }
 
-        // A scoped card scans exactly its own config dir(s) — no env resolution, no Cowork walk
-        // (sandboxes belong to the default login until Phase 3 attributes them per account).
+        // scoped 카드는 자기 config dir만 스캔 — env 해석·Cowork walk 없음(sandbox는 기본 로그인 소속).
         if let rootsOverride {
             for root in rootsOverride { addIfValid(root) }
             return roots
@@ -182,7 +155,7 @@ actor ClaudeLogUsageScanner {
            !raw.isEmpty {
             for part in raw.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
                 var url = URL(fileURLWithPath: expandHome(part))
-                // Accept the `projects/` directory itself as an alias for its parent config dir.
+                // `projects/` dir 자체를 상위 config dir의 alias로 수용.
                 if url.lastPathComponent == "projects", FileManager.default.fileExists(atPath: url.path) {
                     url.deleteLastPathComponent()
                 }
@@ -202,18 +175,15 @@ actor ClaudeLogUsageScanner {
         for sandbox in Self.coworkClaudeDirs(home: homeDirectory()) {
             addIfValid(sandbox)
         }
-        // Same-account custom config dirs (default card only): the user's own spend in a side home.
+        // 같은 계정 커스텀 config dir(기본 카드 전용) — side home의 자기 spend.
         for root in additionalRoots {
             addIfValid(root)
         }
         return roots
     }
 
-    /// The `.claude` dirs Cowork (the Claude desktop app's agent mode) creates, one per session,
-    /// under `~/Library/Application Support/Claude/local-agent-mode-sessions/<group>/<sub>/local_*`
-    /// (plus an `agent/local_*` variant one level deeper). Each holds the same `projects/**/*.jsonl`
-    /// session logs as `~/.claude`, so they scan as additional roots. The walk is bounded to those
-    /// known levels — session dirs contain full sandbox homes we must not recurse into.
+    /// Cowork(desktop agent mode)가 세션마다 만드는 `.claude` dir — `~/.claude`와 같은 세션 로그 보유.
+    /// walk는 알려진 level로 한정 — 세션 dir 내부의 전체 sandbox home 재귀 금지.
     private static func coworkClaudeDirs(home: URL) -> [URL] {
         let base = home
             .appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions")
@@ -242,8 +212,7 @@ actor ClaudeLogUsageScanner {
         return dirs.sorted { $0.path < $1.path }
     }
 
-    /// Every `*.jsonl` under each root's `projects/`, path-sorted so the dedup pass (keep-first wins)
-    /// is deterministic — the same order ccusage scans in.
+    /// 각 root `projects/` 하위의 `*.jsonl` 전부, 경로 정렬 — dedup keep-first 결정성(ccusage와 동일 순서).
     private static func usageFiles(under roots: [URL]) -> [JSONLScanning.DiscoveredFile] {
         roots
             .flatMap { JSONLScanning.jsonlFiles(under: $0.appendingPathComponent("projects")) }
@@ -252,8 +221,7 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Line parsing
 
-    /// Parse every usage line of one session file. Entries keep their raw timestamps — the date
-    /// window is applied at aggregation so a cached parse stays valid as the window slides.
+    /// 세션 파일 1개의 모든 usage 라인 파싱 — 날짜 window는 집계 시 적용, window 이동에도 캐시된 파싱 유효.
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage":{"#.utf8)
         var entries: [Entry] = []
@@ -265,16 +233,13 @@ actor ClaudeLogUsageScanner {
         return entries
     }
 
-    /// Decode one JSONL line into an `Entry`, mirroring what ccusage's serde model accepts: `usage`
-    /// with numeric `input_tokens`/`output_tokens` is required, everything else optional, and a
-    /// malformed or invalid line is skipped rather than failing the file.
+    /// JSONL 라인 1개를 `Entry`로 디코드 — ccusage serde 수용 범위와 동일, 손상 라인은 파일 실패 대신 skip.
     static func parseLine(_ data: Data) -> Entry? {
         parseEntries(data).first
     }
 
-    /// A Claude log line can carry nested advisor work in `usage.iterations`. The top-level usage
-    /// remains the main-model entry; only advisor-message iterations become additional entries,
-    /// matching ccusage without recounting the ordinary message iterations that feed that total.
+    /// top-level usage는 main-model entry 유지, `usage.iterations`의 advisor-message만 별도 entry —
+    /// ccusage와 동일, 일반 iteration 재집계 금지.
     private static func parseEntries(_ data: Data) -> [Entry] {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let timestampRaw = object["timestamp"] as? String,
@@ -330,13 +295,11 @@ actor ClaudeLogUsageScanner {
               let output = usage["output_tokens"] as? NSNumber
         else { return nil }
 
-        // Claude tags fast-mode requests with `speed`; any value outside the known set marks a log
-        // shape we don't understand, so the line is skipped (ccusage's enum parse does the same).
+        // 알 수 없는 `speed` 값은 미지의 로그 형태 — 라인 skip(ccusage enum 파싱과 동일).
         let speed = usage["speed"] as? String
         if let speed, speed != "fast", speed != "standard" { return nil }
 
-        // Cache writes: the 5m/1h split when present (1h bills at 2x input), else the legacy
-        // aggregate `cache_creation_input_tokens` treated as all-5m.
+        // cache write: 5m/1h 분리값 우선(1h는 input 2x 과금), 없으면 legacy 합계를 전량 5m 처리.
         var cacheWrite5m = 0
         var cacheWrite1h = 0
         if let cacheCreation = usage["cache_creation"] as? [String: Any] {
@@ -356,8 +319,7 @@ actor ClaudeLogUsageScanner {
         ), speed != nil)
     }
 
-    /// ccusage's validity rules: a `version` that isn't semver-ish marks a foreign log format, and
-    /// ids/model that are present but empty mark a malformed line.
+    /// ccusage 유효성 규칙 — semver 아닌 `version`은 외부 로그 형식, 비어 있는 id/model은 손상 라인.
     private static func isValidEntry(_ object: [String: Any], message: [String: Any]) -> Bool {
         if let version = object["version"] as? String, !isSemverPrefix(version) { return false }
         for value in [object["sessionId"], object["requestId"], message["id"], message["model"]] {
@@ -366,7 +328,7 @@ actor ClaudeLogUsageScanner {
         return true
     }
 
-    /// `digits.digits.digit…` — accepts "1.0.24" and pre-release suffixes, rejects e.g. "unknown".
+    /// `digits.digits.digit…` 형태 — "1.0.24"·pre-release suffix 수용, "unknown" 등 거부.
     static func isSemverPrefix(_ value: String) -> Bool {
         let bytes = Array(value.utf8)
         var index = 0
@@ -382,12 +344,11 @@ actor ClaudeLogUsageScanner {
         return index < bytes.count && bytes[index].isASCIIDigit
     }
 
-    /// Claude never writes `null` into these fields; a line that does is a foreign/corrupt shape that
-    /// ccusage skips before JSON parsing, and we match it byte-for-byte.
+    /// Claude가 `null`을 쓰지 않는 필드에 null이 있으면 외부/손상 로그 — ccusage와 byte 단위 동일 기준으로 skip.
     static func hasUnsupportedNullField(_ line: Data.SubSequence) -> Bool {
         let nullMarker = Data(":null".utf8)
         let quote = UInt8(ascii: "\"")
-        let bytes = Data(line) // fresh copy → indices are 0-based
+        let bytes = Data(line) // 새 복사본 — 인덱스 0 기준
         var offset = bytes.startIndex
         while let markerRange = bytes.range(of: nullMarker, in: offset..<bytes.endIndex) {
             let start = markerRange.lowerBound
@@ -420,10 +381,8 @@ actor ClaudeLogUsageScanner {
         var requestID: String?
     }
 
-    /// Drop replayed usage lines, keeping ccusage's preferences. Entries are keyed by
-    /// `(message.id, requestId)`; a second index on `message.id` alone catches sidechain logs that
-    /// replay a parent message under a new request id. On a collision the existing entry is replaced
-    /// only when the candidate wins `shouldReplace`. Entries without a message id are always kept.
+    /// 재생된 usage 라인 제거(ccusage 선호 유지) — `(message.id, requestId)` 키 + sidechain 재생 대응
+    /// `message.id` 보조 인덱스; message id 없는 entry는 항상 유지.
     static func dedup(_ entries: [Entry]) -> [Entry] {
         var deduped: [Entry] = []
         var exactIndex: [ExactKey: Int] = [:]
@@ -459,8 +418,7 @@ actor ClaudeLogUsageScanner {
         return deduped
     }
 
-    /// Preference order on a duplicate: the non-sidechain (parent) entry, then the larger token
-    /// total, then the entry that carries a `speed` field (richer log shape).
+    /// 중복 시 선호 순서 — non-sidechain(parent), 큰 토큰 합계, `speed` 필드 보유 순.
     static func shouldReplace(candidate: Entry, existing: Entry) -> Bool {
         if candidate.isSidechain != existing.isSidechain {
             return existing.isSidechain
@@ -475,21 +433,14 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Aggregation
 
-    /// Bucket deduplicated entries into local calendar days. Cost mode "auto": a line's `costUSD`
-    /// when present, else tokens priced through `pricing`.
-    ///
-    /// Entries that can't be priced (an unknown model, or unattributed tokens with no carried cost)
-    /// are excluded from every displayed total — tokens, dollars, the trend, and the model breakdown —
-    /// because mixing measured tokens with unpriceable ones makes the figures incoherent. An unknown
-    /// model's name lands in `unknownModelsByDay` (the tile's warning triangle), the only place
-    /// unpriceable usage surfaces.
+    /// dedup된 entry의 로컬 달력 일자 집계. cost mode "auto": 라인의 `costUSD` 우선, 없으면 `pricing` 추정.
+    /// 가격 산정 불가 entry는 모든 표시 합계에서 제외 — unknown 모델명만 `unknownModelsByDay`(경고 삼각형)로 노출.
     static func aggregate(entries: [Entry], since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
 
         for entry in entries where entry.timestamp >= since {
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
-            // One trimmed slug for pricing, the unknown-model warning, and the breakdown key alike —
-            // diverging spellings would let the warning triangle and the hover panel disagree.
+            // pricing·unknown 경고·breakdown 키가 하나의 trimmed slug 공유 — 표기 분기 시 경고 삼각형과 hover 패널 불일치.
             let trimmedModel = entry.model?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
 

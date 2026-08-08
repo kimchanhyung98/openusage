@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The SQLite scanner: unions `opencode*.db` files, sums combined hosted spend for the tiles/trend, and
-/// derives Go-only windows for the meters. Fed a stub `SQLiteAccessing` that returns crafted
-/// `json_group_array` payloads keyed by path.
 final class OpenCodeUsageScannerTests: XCTestCase {
     private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
@@ -14,11 +11,11 @@ final class OpenCodeUsageScannerTests: XCTestCase {
 
     private var db1: String {
         "[" + [
-            row("2026-07-12T11:00:00.000Z", "2.0", 1000, "glm-5.2", "opencode-go"),  // today, go, in session
-            row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode"),      // today, zen
-            row("2026-07-11T10:00:00.000Z", "3.0", 2000, "kimi-k2.6", "opencode-go"),// yesterday, go
-            row("2026-07-12T11:00:00.000Z", "null", 100, "x", "opencode-go"),        // null cost → skipped
-            "\"garbage\""                                                             // non-array → skipped
+            row("2026-07-12T11:00:00.000Z", "2.0", 1000, "glm-5.2", "opencode-go"),  // 오늘·go·session 내
+            row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode"),      // 오늘·zen
+            row("2026-07-11T10:00:00.000Z", "3.0", 2000, "kimi-k2.6", "opencode-go"),// 어제·go
+            row("2026-07-12T11:00:00.000Z", "null", 100, "x", "opencode-go"),        // 비용 null → 제외
+            "\"garbage\""                                                             // 배열 아님 → 제외
         ].joined(separator: ",") + "]"
     }
     private var db2: String {
@@ -37,16 +34,15 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         guard let scan = try await standardScanner().scan(now: now) else { return XCTFail("expected a scan") }
         let totalCost = scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +)
         let totalTokens = scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }
-        // opencode-go 2+3+4 plus Zen 1 = 10; the null-cost and "garbage" rows are dropped.
+        // opencode-go 2+3+4 + Zen 1 = 10 — null cost·"garbage" row 제외
         XCTAssertEqual(totalCost, 10.0, accuracy: 0.0001)
-        XCTAssertEqual(totalTokens, 4300) // 1000 + 500 + 2000 + 800
+        XCTAssertEqual(totalTokens, 4300) // 계산: 1000 + 500 + 2000 + 800
     }
 
     func testSessionSumsOnlyGoAcrossDatabases() async throws {
         guard let scan = try await standardScanner().scan(now: now) else { return XCTFail("expected a scan") }
         XCTAssertNotNil(scan.goWindows)
-        // Session window (last 5h) contains the two go rows (11:00 = 2.0, 09:00 = 4.0); the Zen row at
-        // 10:00 is excluded from the Go cap even though it counts toward combined spend.
+        // session window(최근 5h)에 go row 2건(2.0, 4.0) 포함 — 10:00 Zen row는 Go cap에서 제외
         XCTAssertEqual(scan.goWindows?.sessionSpend ?? -1, 6.0, accuracy: 0.0001)
     }
 
@@ -57,7 +53,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
             databasePaths: { ["/oc/opencode.db"] }
         )
         guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
-        XCTAssertNil(scan.goWindows) // no Go footprint → no empty cap meters
+        XCTAssertNil(scan.goWindows) // Go footprint 없음 → 빈 cap meter 미생성
         XCTAssertEqual(scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +), 1.0, accuracy: 0.0001)
     }
 
@@ -87,8 +83,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 
     func testAllDatabasesFailingThrowsInsteadOfEmptyScan() async {
-        // Every DB locked/corrupt → the refresh has no data source; an empty "success" would render
-        // authoritative-looking $0 meters (regression for the silent-empty-scan bug).
+        // 전 DB locked/corrupt — 빈 "success"는 $0 meter를 사실처럼 렌더 (silent-empty-scan 회귀 방지)
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(failing: ["/oc/opencode.db", "/oc/opencode-next.db"]),
             databasePaths: { ["/oc/opencode.db", "/oc/opencode-next.db"] }
@@ -102,7 +97,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 
     func testUnreadableDataDirectoryThrowsInsteadOfNil() async {
-        // The data dir exists but can't be enumerated → broken access, not "never used OpenCode".
+        // data dir enumerate 불가 → "미사용"이 아니라 접근 고장
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(),
             databasePaths: { throw CocoaError(.fileReadNoPermission) }
@@ -131,7 +126,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 
     func testAbsurdTokenCountIsClampedNotCrashing() async throws {
-        // A corrupt token count over Int.max must clamp (to 1e15), not trap the Int(Double) conversion.
+        // Int.max 초과 token count는 1e15로 clamp — Int(Double) 변환 trap 방지
         let db = "[[\(epochMs("2026-07-12T10:00:00.000Z")),1.0,1e19,\"glm-5.2\",\"opencode-go\"]]"
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
@@ -143,8 +138,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 
     func testStaleGoAnchorWithoutRecentSpendOrKeyHasNoGoWindows() async throws {
-        // Old opencode-go usage left an anchor, but there's no recent Go spend and no auth key: the caps
-        // (and the "Go" badge) must NOT come back for a lapsed/Zen-only user.
+        // 오래된 Go anchor만 있고 최근 Go spend·auth key 없음 — lapsed/Zen-only 사용자에게 cap·"Go" badge 미표시
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode.db": db], anchors: ["/oc/opencode.db": "1700000000000"]),
@@ -155,7 +149,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 
     func testGoKeyShowsWindowsEvenWithoutRecentSpend() async throws {
-        // Logged into Go but idle in-window → still show the caps at $0, using the anchor for the month.
+        // Go 로그인 상태로 window 내 idle → anchor 기준 월로 $0 cap 표시
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode.db": db], anchors: ["/oc/opencode.db": "1700000000000"]),
@@ -167,7 +161,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     }
 }
 
-/// Stub that returns crafted payloads per database path and classifies the query by SQL shape.
+/// DB path별 payload 반환, SQL shape으로 query 분류하는 stub
 private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     var data: [String: String]
     var anchors: [String: String]

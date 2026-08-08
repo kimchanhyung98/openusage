@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// `WidgetData.isZeroUsage` distinguishes a real zero-usage period (every selected value is 0) from
-/// "no data" and from small non-zero usage, so an empty row ("$0.00 · 0 tokens") can carry a "no usage"
-/// note instead of a figures reveal.
 final class WidgetZeroUsageTests: XCTestCase {
     private func row(values: [MetricValue], hasData: Bool = true) -> WidgetData {
         WidgetData(title: "Today", icon: .providerMark("codex"), kind: .count, used: 0, limit: nil,

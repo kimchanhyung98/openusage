@@ -1,8 +1,7 @@
 import Foundation
 import os
 
-/// Subsystem tags that prefix every log line, keeping lines grep-friendly (`[refresh]`, `[cache]`,
-/// `[plugin:claude]`, …). The raw value is the bracketed text and the `os.Logger` category.
+/// 모든 로그 라인 앞에 붙는 grep 친화적 subsystem 태그. raw value가 bracket 텍스트이자 `os.Logger` category.
 enum LogTag: String, Sendable {
     case refresh
     case cache
@@ -18,31 +17,14 @@ enum LogTag: String, Sendable {
     case lifecycle
     case notifications
 
-    /// Compound `[plugin:<id>]` / `[auth:<id>]` tags for per-provider lines.
+    /// provider별 라인용 `[plugin:<id>]` / `[auth:<id>]` 복합 태그.
     static func plugin(_ id: String) -> String { "plugin:\(id)" }
     static func auth(_ id: String) -> String { "auth:\(id)" }
 }
 
-/// The one consolidated logging facility. The user's `LogLevelSetting` is a single floor that governs
-/// BOTH sinks. Each call:
-///   1. drops the line immediately if its severity is below the current floor — before the message is
-///      even built (so the `@autoclosure` truly defers) and before any redaction runs,
-///   2. otherwise runs the message through `LogRedaction.redactLogMessage` as a lightweight last line
-///      of defense, then fans out to a per-category `os.Logger` and a grep-friendly `LogFile` line
-///      (`ISO8601 [LEVEL] [tag] msg`).
-///
-/// `redactLogMessage` is URL/body-unaware (matching the Tauri `redact_log_message`): any call site that
-/// logs a URL or response body MUST pre-redact it via `LogRedaction.redactURL` / `bodyPreview`.
-///
-/// `os.Logger` has no runtime level gate of its own, so the floor is enforced here for both sinks.
-/// Errors (severity 0) always clear any floor, so they are never suppressed. Raising the level to
-/// Debug in Settings is what surfaces debug lines in both the file and `log stream` (see
-/// `docs/debugging.md`) — matching #604's "Debug only when the user opts in".
-///
-/// The level is cached (not re-read from `UserDefaults` on every call, which would be wasteful on the
-/// hot `[http]`/`[cache]` paths) and refreshed by `reloadLevel()` from the Settings `.onChange` and at
-/// `bootstrap()`. A programmatic `UserDefaults` write outside the picker won't propagate until the next
-/// `reloadLevel()` — acceptable since the picker is the only writer.
+/// 통합 로깅 파사드 — `LogLevelSetting` 하나가 `os.Logger`와 `LogFile` 두 sink의 공통 level floor.
+/// floor 미달 라인은 메시지 생성·redaction 전에 드롭되고, error(severity 0)는 floor와 무관하게 항상 기록.
+/// `redactLogMessage`는 URL/body를 모름 — URL이나 응답 body를 로그하는 호출부는 `LogRedaction.redactURL`/`bodyPreview`로 선-redaction 필수.
 enum AppLog {
     private enum Level: Int {
         case error = 0
@@ -69,41 +51,36 @@ enum AppLog {
         }
     }
 
-    /// Cached level floor (severity ordinal), guarded by a lock so any isolation can read it cheaply.
+    /// lock으로 보호되는 level floor 캐시(severity 서수) — 어떤 isolation에서도 저렴하게 읽기 가능.
     private static let levelLock = NSLock()
     private nonisolated(unsafe) static var cachedSeverity = LogLevelSetting.fallback.severity
 
-    /// Per-category `os.Logger` cache, guarded by its own lock.
+    /// category별 `os.Logger` 캐시.
     private static let loggerLock = NSLock()
     private nonisolated(unsafe) static var loggers: [String: Logger] = [:]
 
-    /// The file sink. Injectable so tests can point it at a temp directory and assert what the level
-    /// gate actually writes; production uses the shared `~/Library/Logs/OpenUsage/OpenUsage.log` appender.
+    /// file sink. 테스트에서 임시 디렉터리로 주입 가능; production은 공유 `~/Library/Logs/OpenUsage/OpenUsage.log` appender.
     nonisolated(unsafe) static var sink: LogFile = .shared
 
     // MARK: - Lifecycle
 
-    /// Open/trim the file, seed the cached level, and emit one startup line. Call FIRST at launch,
-    /// before any other subsystem logs. Idempotent in practice (the file `open()` is idempotent).
+    /// 파일 open/trim, level 캐시 seed, 시작 라인 1줄 기록. 다른 subsystem이 로그하기 전 launch 최우선 호출 필요.
     static func bootstrap() {
         sink.open()
         reloadLevel()
         let level = LogLevelSetting.current
-        // Abbreviate `$HOME` to `~` so the path survives `redactLogMessage` (which masks `/Users/...`)
-        // and the startup line actually self-documents where the log lives.
+        // `$HOME`을 `~`로 축약해 경로가 `redactLogMessage`의 `/Users/...` 마스킹을 통과하도록 함.
         let displayPath = (LogFile.url.path as NSString).abbreviatingWithTildeInPath
         info(LogTag.config.rawValue,
              "OpenUsage v\(AppInfo.version) starting (level=\(level.rawValue), log=\(displayPath))")
     }
 
-    /// Re-read the persisted level into the cache. Invoked from the Settings picker `.onChange` so a
-    /// level change applies live with no restart (mirrors Tauri's `log::set_max_level`).
+    /// 저장된 level을 캐시로 재적재. Settings picker `.onChange`에서 호출되어 재시작 없이 즉시 반영.
     static func reloadLevel() {
         apply(LogLevelSetting.current.severity)
     }
 
-    /// Apply a level directly, bypassing `UserDefaults`. The seam tests use to exercise the gate
-    /// without racing on global `UserDefaults.standard` state.
+    /// `UserDefaults`를 우회해 level을 직접 적용하는 테스트용 seam.
     static func reloadLevel(_ level: LogLevelSetting) {
         apply(level.severity)
     }
@@ -116,14 +93,13 @@ enum AppLog {
 
     // MARK: - Public API
 
-    /// `@autoclosure` defers the interpolation: a line below the current level floor is dropped before
-    /// its message is built, so a `debug` line genuinely costs nothing when the level is Info.
+    /// `@autoclosure`로 interpolation 지연 — floor 미달 라인은 메시지 생성 비용 자체가 없음.
     static func error(_ tag: String, _ message: @autoclosure () -> String) { emit(.error, tag, message) }
     static func warn(_ tag: String, _ message: @autoclosure () -> String) { emit(.warn, tag, message) }
     static func info(_ tag: String, _ message: @autoclosure () -> String) { emit(.info, tag, message) }
     static func debug(_ tag: String, _ message: @autoclosure () -> String) { emit(.debug, tag, message) }
 
-    // Convenience overloads for the typed tags (the common case).
+    // 타입 태그용 편의 overload.
     static func error(_ tag: LogTag, _ message: @autoclosure () -> String) { emit(.error, tag.rawValue, message) }
     static func warn(_ tag: LogTag, _ message: @autoclosure () -> String) { emit(.warn, tag.rawValue, message) }
     static func info(_ tag: LogTag, _ message: @autoclosure () -> String) { emit(.info, tag.rawValue, message) }
@@ -132,9 +108,7 @@ enum AppLog {
     // MARK: - Emit
 
     private static func emit(_ level: Level, _ tag: String, _ message: () -> String) {
-        // Gate first: a line below the floor builds no message, runs no redaction, hits no sink. The
-        // floor governs both os_log and the file, so the level picker is a single honest knob. Errors
-        // (severity 0) clear any floor and are never suppressed.
+        // floor gate 우선: 미달 라인은 메시지 생성·redaction·sink 없이 드롭, error(severity 0)는 항상 통과.
         levelLock.lock()
         let floor = cachedSeverity
         levelLock.unlock()

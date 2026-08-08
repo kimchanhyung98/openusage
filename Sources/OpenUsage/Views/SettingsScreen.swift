@@ -4,12 +4,8 @@ import KeyboardShortcuts
 import SwiftUI
 import UserNotifications
 
-/// The in-popover Settings screen — the popover's third mode alongside the dashboard and
-/// Customize. It replaces the old separate Settings window, which forced the popover closed every
-/// time it opened. Sections are Customize-style cards (caption header over a rounded card of rows)
-/// so the popover keeps one visual language; controls sit on each row's trailing edge like
-/// System Settings. The footer already shows the version; the release build adds an "Updates" section
-/// (auto-check, beta channel, and a full-width manual check button).
+/// 팝오버 내 Settings 화면 — 대시보드·Customize에 이은 세 번째 모드.
+/// 섹션은 Customize 스타일 카드로 단일 시각 언어 유지.
 struct SettingsScreen: View {
     @Environment(AppContainer.self) private var container
     @Environment(UpdaterController.self) private var updater
@@ -21,17 +17,13 @@ struct SettingsScreen: View {
     @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.fallback
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @AppStorage(LogLevelSetting.key) private var logLevel = LogLevelSetting.fallback
-    /// Surfaced under the Advanced rows when copying the path or revealing the file fails.
+    /// 로그 경로 복사·파일 열기 실패 시 Advanced 행 아래 표시.
     @State private var logActionError: String?
-    /// macOS notification authorization for OpenUsage, surfaced in the Notifications section so a
-    /// warning glyph and action button can appear when alerts can't be delivered. Refreshed on appear,
-    /// when a trigger turns on, and when the app becomes active again (e.g. the user returns from
-    /// System Settings after re-enabling).
+    /// macOS 알림 권한 상태 — 미허용 + 트리거 on 시 경고 glyph·액션 버튼 노출.
+    /// appear·트리거 on·앱 재활성 시 갱신.
     private enum NotificationsAuthState { case authorized, denied, notDetermined }
     @State private var notificationsAuth: NotificationsAuthState = .authorized
 
-    /// Fills the region the dashboard's pinned footer leaves. Same scroller treatment as Customize:
-    /// the overlay scroller stays (the scroll edge effect needs it) but is invisible.
     var body: some View {
         PopoverScrollView {
             content
@@ -45,11 +37,9 @@ struct SettingsScreen: View {
         @Bindable var transparency = container.transparency
         @Bindable var privacy = container.privacy
         @Bindable var notifications = container.notificationSettings
-        // Same section rhythm as the dashboard and Customize (all read the density setting).
         return VStack(alignment: .leading, spacing: density.sectionSpacing) {
             section("General") {
-                // The dashboard's cross-provider Total Spend card; at least one enabled spend-capable
-                // provider must exist, so this toggle can't conjure it up alone.
+                // 활성 spend-capable 프로바이더 존재 시에만 카드 표시 — 이 토글 단독으로는 미노출
                 row("Show Total Spend") {
                     Toggle("", isOn: $showTotalSpend)
                         .settingsSwitchStyle()
@@ -64,7 +54,6 @@ struct SettingsScreen: View {
                 if let launchAtLoginError = launchAtLogin.errorMessage {
                     inlineNotice(launchAtLoginError)
                 }
-                // Click-to-record field; its ⓧ clears the combo and disables the shortcut.
                 row("Global Shortcut") {
                     ShortcutRecorderField(name: .togglePopover)
                         .hoverTooltip("Open OpenUsage from anywhere")
@@ -78,7 +67,7 @@ struct SettingsScreen: View {
                 }
                 row("Theme") {
                     picker($appearance, options: AppearanceSetting.allCases, label: \.label)
-                        // NSApp-level so the popover panel restyles too (it ignores preferredColorScheme).
+                        // 팝오버 패널은 preferredColorScheme 무시 — NSApp 수준 적용 필요
                         .onChange(of: appearance) {
                             AppearanceSetting.applyCurrent()
                         }
@@ -89,28 +78,21 @@ struct SettingsScreen: View {
                 row("Time Format") {
                     picker($timeFormat, options: TimeFormatSetting.allCases, label: \.label)
                 }
-                // Translucent popover the proper way (behind-window vibrancy, text stays legible). It
-                // yields to the system accessibility settings, and to the party easter egg while that's
-                // running (the egg drives the look) — either way, see the paused notice below.
+                // 시스템 접근성 설정·party easter egg에 양보 — 일시정지 시 아래 notice 표시
                 row("Increase Transparency") {
                     Toggle("", isOn: $transparency.increaseTransparency)
                         .settingsSwitchStyle()
-                        // Party mode owns the look while it's active, so disable (dim) the toggle to show
-                        // it has no effect right now — its stored value resumes once the egg is exited.
+                        // party mode가 look 소유 중 — 토글 무효를 dim으로 표시, 저장값은 egg 종료 후 복원
                         .disabled(transparency.secretCodeActive)
                 }
-                // Egg first: while Party runs it overrides the toggle regardless of the system flags, so
-                // its notice takes precedence over the accessibility one.
+                // egg 우선: Party 실행 중엔 접근성 notice보다 party notice 우선
                 if transparency.secretCodeActive {
                     inlineNotice("Party mode is on, so this stays paused.")
                 } else if transparency.isPaused {
                     inlineNotice("macOS Reduce Transparency or Increase Contrast is on, so this stays paused.")
                 }
-                // Both rows surface only after the secret code has been entered. Party Mode is the egg's
-                // own switch: turning it off (like re-typing the code) exits the egg and hides both rows,
-                // dropping back to the base state. Drunk Mode escalates the readable party into the woozy,
-                // barely-readable state and back — turning it off stays in the party (4 → 3), while turning
-                // Party Mode off from there clears Drunk Mode too (4 → base).
+                // 두 행은 시크릿 코드 입력 후에만 노출. Party Mode off는 egg 종료 (두 행 숨김),
+                // Drunk Mode off는 party 유지 — Party off는 Drunk도 함께 해제.
                 if transparency.secretCodeActive {
                     row("Party Mode") {
                         Toggle("", isOn: $transparency.partyModeActive)
@@ -120,8 +102,7 @@ struct SettingsScreen: View {
                         Toggle("", isOn: $transparency.drunkMode)
                             .settingsSwitchStyle()
                     }
-                    // The egg yields to the accessibility flags too: when one is on the panel stays
-                    // opaque, so explain why the party looks normal rather than leaving it a mystery.
+                    // egg도 접근성 플래그에 양보 — party가 평범해 보이는 이유 설명
                     if transparency.partyPaused {
                         inlineNotice("macOS Reduce Transparency or Increase Contrast is on, so the party stays paused.")
                     }
@@ -134,7 +115,6 @@ struct SettingsScreen: View {
                 row("Reset Times") {
                     picker($store.resetDisplayMode, options: ResetDisplayMode.allCases, label: \.label)
                 }
-                // On (default) surfaces projection and the even-pace tick on blue rows too.
                 row("Always Show Pacing") {
                     Toggle("", isOn: $store.alwaysShowPacing)
                         .settingsSwitchStyle()
@@ -160,8 +140,6 @@ struct SettingsScreen: View {
                     ))
                     .settingsSwitchStyle()
                 }
-                // Plain-language disclosure of exactly what leaves the machine — coarse counts and
-                // error types only, never account details or usage values.
                 Text("Shares anonymous usage counts and error types to help improve OpenUsage. No account details, credentials, or usage values are sent.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -171,8 +149,7 @@ struct SettingsScreen: View {
             }
             commandLineSection
             advancedSection
-            // Visible whenever the updater is active (only the signed release build ships a feed; the
-            // dev build and a bare `swift run`, with no feed, hide this).
+            // 서명 릴리스 빌드만 feed 보유 — dev 빌드·`swift run`에선 숨김
             if updater.isActive {
                 section("Updates") {
                     row("Update Automatically") {
@@ -184,9 +161,6 @@ struct SettingsScreen: View {
                             .settingsSwitchStyle()
                             .hoverTooltip("Receive pre-release builds before they ship to everyone")
                     }
-                    // No version label here — the footer already shows it. The frame goes on the label so
-                    // the glass background stretches the full row width instead of hugging the text.
-                    // (Glass on macOS 26+, bordered fallback on macOS 15.)
                     Button { updater.checkForUpdates() } label: {
                         Text("Check for Updates…").frame(maxWidth: .infinity)
                     }
@@ -197,7 +171,6 @@ struct SettingsScreen: View {
                     .padding(.vertical, density.controlRowPadding)
                 }
             }
-            // Mirror of the Customize cross-link — the layout controls live on the other screen.
             ScreenCrossLinkRow(
                 systemImage: "slider.horizontal.3",
                 title: "Customize",
@@ -216,10 +189,8 @@ struct SettingsScreen: View {
 
     // MARK: - Notifications
 
-    /// Quota pace notifications: three per-trigger toggles (no master switch — turn all three off to
-    /// silence), each with an (i) tooltip. A warning glyph on the section header and an action row under
-    /// the toggles appear when macOS permission isn't authorized and at least one trigger is on. Defaults
-    /// are all off; the app requests authorization the first time a trigger is turned on.
+    /// Quota pace 알림 — 트리거별 토글 3개 (마스터 스위치 없음), 기본 전체 off.
+    /// 권한 미허용 + 트리거 on 시 헤더 경고 glyph + 액션 행 표시. 첫 트리거 on에 권한 요청.
     private var notificationsSection: some View {
         @Bindable var notifications = container.notificationSettings
         let needsAttention = notificationsAuth != .authorized && anyToggleOn
@@ -250,16 +221,13 @@ struct SettingsScreen: View {
         }
         .onChange(of: anyToggleOn) { _, on in
             if on {
-                // The first time a trigger is turned on, ask macOS for permission (memoized — it only
-                // prompts while authorization is still not determined). Then refresh so the
-                // warning/action row reflects the new status.
+                // 첫 트리거 on 시 권한 요청 (미결정 상태에서만 프롬프트) 후 상태 갱신
                 AppNotifications.shared.requestAuthorization()
                 Task { await refreshNotificationsAuth() }
             }
         }
     }
 
-    /// One trigger row: the setting label, an (i) info icon with a one-sentence tooltip, and the toggle.
     private func notifToggleRow(_ milestone: PaceMilestone, isOn: Binding<Bool>) -> some View {
         HStack(spacing: 6) {
             Text(milestone.settingLabel)
@@ -275,9 +243,7 @@ struct SettingsScreen: View {
         .padding(.vertical, density.controlRowPadding)
     }
 
-    /// The conditional action under the toggles: a full-width "Open System Settings" button when macOS
-    /// denied permission, or "Allow Notifications" when still undecided. The reason lives in the header
-    /// triangle's tooltip. Shown only when a trigger is on.
+    /// 권한 거부 시 "Open System Settings", 미결정 시 "Allow Notifications" — 트리거 on일 때만 표시.
     private var notificationsActionRow: some View {
         VStack(spacing: 0) {
             Divider()
@@ -298,14 +264,11 @@ struct SettingsScreen: View {
         }
     }
 
-    /// True when at least one trigger is on — the gate for the permission warning + action row.
-    /// Delegates to the store's `anyEnabled` so the disjunction lives in one place.
     private var anyToggleOn: Bool {
         container.notificationSettings.anyEnabled
     }
 
-    /// Read the live macOS authorization status into `notificationsAuth`, but only when at least one
-    /// trigger is on so no warning shows while all alerts are off.
+    /// macOS 권한 상태 조회 — 전 트리거 off면 경고 억제를 위해 authorized 유지.
     private func refreshNotificationsAuth() async {
         guard anyToggleOn else {
             notificationsAuth = .authorized
@@ -350,15 +313,13 @@ struct SettingsScreen: View {
 
     // MARK: - Advanced (logging)
 
-    /// Log-level control plus copy/reveal buttons for the file log. The file lives at a fixed path
-    /// (`~/Library/Logs/OpenUsage/OpenUsage.log`); raising the level here applies live (no restart) and
-    /// persists across launches. Default Info, Debug is opt-in.
+    /// 로그 레벨 컨트롤 + 파일 로그 복사/열기. 레벨 변경은 재시작 없이 즉시 적용, 재실행 간 유지.
     private var advancedSection: some View {
         section("Advanced") {
             row("Log Level") {
                 picker($logLevel, options: LogLevelSetting.allCases, label: \.label)
                     .onChange(of: logLevel) {
-                        // Apply the new floor to the file sink immediately, then record the transition.
+                        // 새 레벨을 파일 sink에 즉시 적용 후 전환 기록
                         AppLog.reloadLevel()
                         AppLog.info(.config, "Log level changed to \(logLevel.rawValue)")
                     }
@@ -383,8 +344,6 @@ struct SettingsScreen: View {
         }
     }
 
-    /// A full-width glass button row, matching the "Check for Updates…" idiom.
-    /// Glass on macOS 26+, bordered fallback on macOS 15.
     private func logButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).frame(maxWidth: .infinity)
@@ -397,9 +356,6 @@ struct SettingsScreen: View {
 
     // MARK: - Section / row scaffolding
 
-    /// A caption header over a rounded card of rows — the Customize block shape. The header is
-    /// inset 8pt so it aligns with the rows' content, matching how Customize lines its provider
-    /// headers up with the card rows.
     private func section(
         _ title: String,
         @ViewBuilder rows: () -> some View
@@ -416,8 +372,6 @@ struct SettingsScreen: View {
         }
     }
 
-    /// One settings row: label on the leading edge, the control on the trailing edge. Same insets
-    /// as a Customize metric row so the cards share one rhythm.
     private func row(_ label: String, @ViewBuilder control: () -> some View) -> some View {
         HStack(spacing: 10) {
             Text(label)
@@ -428,9 +382,6 @@ struct SettingsScreen: View {
         .padding(.vertical, density.controlRowPadding)
     }
 
-    /// An inline orange caption under a row — the single definition of the notice idiom shared by the
-    /// General/Advanced error lines and the "this setting is paused" captions (Increase Transparency
-    /// paused by a system accessibility setting, or by Party mode taking over the look).
     private func inlineNotice(_ text: String) -> some View {
         Text(text)
             .font(.caption)
@@ -440,8 +391,6 @@ struct SettingsScreen: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// A trailing popup picker that hugs its selection — segmented controls don't fit the 320pt
-    /// popover once options have real words in them.
     private func picker<Value: Hashable>(
         _ selection: Binding<Value>,
         options: [Value],

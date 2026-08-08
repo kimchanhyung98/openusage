@@ -9,10 +9,8 @@ enum AccountShellProfile: String, CaseIterable, Identifiable {
 
     var title: String { rawValue }
 
-    /// The static wrapper installed on the first confirmed switch: strip the family's auth
-    /// environment overrides, pin the Shared Runtime Home, run the real tool. It never reads the
-    /// selected profile — the switch's substance is the shared home's replaced authentication, so
-    /// the wrapper doesn't need to know which account is active.
+    /// 첫 전환 확정 시 설치되는 static wrapper — family의 auth 환경 override 제거, Shared Runtime Home 고정, 실제 도구 실행.
+    /// 선택 profile 미참조 — 전환의 실체는 shared home의 교체된 인증이므로 wrapper는 활성 계정을 알 필요 없음.
     func setupSource(family: String, configurationHome: String) -> String {
         let removals = (family == "claude"
             ? AccountSignInLauncher.claudeAuthEnvironmentRemovals
@@ -58,8 +56,7 @@ enum AccountShellInstaller {
         return AccountShellProfile(rawValue: URL(fileURLWithPath: path).lastPathComponent)
     }
 
-    /// Installs or refreshes the family's marker block in the shell profile. Idempotent: an
-    /// existing OpenUsage block is replaced in place, everything else in the file is preserved.
+    /// shell profile에 family marker 블록 설치·갱신 — idempotent, 기존 OpenUsage 블록은 제자리 교체·나머지 내용 보존.
     static func install(
         family: String,
         shell: AccountShellProfile,
@@ -84,8 +81,7 @@ enum AccountShellInstaller {
     }
 
     private static func replace(_ source: String, for family: String, at url: URL, fileManager: FileManager) throws {
-        // The rc file may be a symlink into a dotfiles repo; the atomic write below would replace
-        // the link itself with a regular file, so resolve it and write to the real file.
+        // rc 파일이 symlink일 수 있음 — 해석 후 실제 파일에 기록해 링크 보존.
         let url = fileManager.fileExists(atPath: url.path) ? url.resolvingSymlinksInPath() : url
         let start = "# >>> OpenUsage \(family) account switching >>>"
         let end = "# <<< OpenUsage \(family) account switching <<<"

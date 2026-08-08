@@ -1,13 +1,12 @@
 import Foundation
 
-/// Parsers for the two public pricing feeds, plus the compact catalog format OpenUsage uses for
-/// its bundled snapshots and on-disk caches (cost fields only — the full feeds are megabytes).
+/// 공개 pricing feed 2종의 parser + bundled snapshot·disk cache용 compact catalog format.
+/// compact format은 cost field만 보존 — 원본 feed는 수 MB.
 enum PricingCatalogCodecs {
     // MARK: - LiteLLM (model_prices_and_context_window.json)
 
-    /// Builds a catalog from LiteLLM's full JSON. Entries without both input and output costs are
-    /// skipped (stubs and non-chat modes). Costs are per-token in the feed; stored per-million.
-    /// Parsed with JSONSerialization so one malformed entry can't sink the whole feed.
+    /// LiteLLM 전체 JSON에서 catalog 생성 — input·output cost 없는 entry 제외, feed의 per-token을 per-million으로 저장.
+    /// JSONSerialization 사용 — 불량 entry 하나가 feed 전체를 무너뜨리지 않는 계약.
     static func catalogFromLiteLLM(_ data: Data) throws -> PricingCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PricingCodecError.notAnObject
@@ -42,9 +41,8 @@ enum PricingCatalogCodecs {
 
     // MARK: - models.dev (api.json)
 
-    /// Builds a catalog from models.dev's api.json (`{provider: {models: {id: {cost: ...}}}}`).
-    /// Model ids are stored bare; when the same id appears under several providers the first in
-    /// provider-name order wins (rates agree in practice). Costs are already per-million.
+    /// models.dev `api.json`(`{provider: {models: {id: {cost: ...}}}}`)에서 catalog 생성.
+    /// model id는 bare 저장 — 동일 id 중복 시 provider명 정렬 첫 항목 승리, cost는 feed에서 이미 per-million.
     static func catalogFromModelsDev(_ data: Data) throws -> PricingCatalog {
         guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw PricingCodecError.notAnObject
@@ -122,8 +120,7 @@ enum PricingCatalogCodecs {
         return try encoder.encode(CompactCatalog(retrievedAt: catalog.retrievedAt, models: models))
     }
 
-    /// Per-million rates keyed by short names to keep snapshots small: `i`nput, `o`utput,
-    /// `c`ache`w`rite, `c`ache`r`ead, with `a`bove-200k variants, plus the `fast` multiplier.
+    /// snapshot 축소용 단축 key의 per-million rates — `i`nput, `o`utput, `c`ache`w`rite, `c`ache`r`ead, `a`bove-200k 변형, `fast` multiplier.
     private struct CompactCatalog: Codable {
         var retrievedAt: String?
         var models: [String: Model]
@@ -137,8 +134,7 @@ enum PricingCatalogCodecs {
             var oa: Double?
             var cwa: Double?
             var cra: Double?
-            /// Omitted means explicit for backward compatibility with snapshots written before the
-            /// provenance bit existed. Newly compacted synthesized rates write `false`.
+            /// 생략 = explicit — provenance bit 이전 snapshot과의 하위 호환. 새로 compact되는 합성 rate는 `false` 기록.
             var cre: Bool?
             var fast: Double?
         }

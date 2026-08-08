@@ -8,7 +8,7 @@ struct CLIArguments: Equatable, Sendable {
     var account: AccountCommand?
 
     static func parse(_ arguments: [String]) throws -> CLIArguments {
-        // The `account` namespace is reserved: as the first token it switches grammars entirely.
+        // `account` namespace는 예약 — 첫 token일 때 문법 전체 전환.
         if arguments.first == "account" {
             return CLIArguments(account: try AccountCommand.parse(Array(arguments.dropFirst())))
         }

@@ -1,17 +1,10 @@
 import SwiftUI
 
-/// The Customize metric row shape, shared by the live row in `CustomizeProviderDetailView` and the
-/// lifted drag preview in `ReorderLiftPreview`. The layout is **grip · label · star · toggle** — the
-/// drag grip leads (left), the name follows, and the star + on/off toggle trail on the right. This
-/// mirrors the provider row's "drag left, toggle right" arrangement. Defining the grip slot once is
-/// what keeps the floating preview pixel-identical to the row the user is dragging.
-///
-/// `handle` wraps the leading drag grip — the live row threads its reorder gesture through it; the
-/// preview leaves it inert. `trailing` is the star button + toggle (live) or placeholders (preview).
+/// 라이브 행과 드래그 프리뷰가 공유하는 Customize 메트릭 행 레이아웃 (grip · label · star · toggle).
+/// grip 슬롯을 한 곳에 정의해 프리뷰와 라이브 행의 픽셀 일치 보장.
 struct CustomizeMetricRow<Handle: View, Trailing: View>: View {
     let title: String
-    /// Wraps the leading drag grip. The live row threads its reorder gesture through here; the
-    /// preview leaves it untouched.
+    /// 선행 drag grip 래핑. 라이브 행은 재정렬 제스처 주입, 프리뷰는 그대로 통과.
     let handle: (AnyView) -> Handle
     @ViewBuilder var trailing: Trailing
 
@@ -31,15 +24,13 @@ struct CustomizeMetricRow<Handle: View, Trailing: View>: View {
 }
 
 extension CustomizeMetricRow where Handle == AnyView {
-    /// Static variant for the lifted drag preview: the grip is rendered inert (no gesture).
+    /// 드래그 프리뷰용 정적 변형 — grip 제스처 없음.
     init(title: String, @ViewBuilder trailing: () -> Trailing) {
         self.init(title: title, handle: { $0 }, trailing: trailing)
     }
 }
 
-/// The static switch placeholder the lifted previews render where the live row shows a real
-/// `Toggle` — a quaternary capsule the size of a small switch, so the floating chip reads like the
-/// row without carrying a live control.
+/// 드래그 프리뷰가 라이브 `Toggle` 자리에 그리는 정적 스위치 플레이스홀더.
 struct CustomizeSwitchPlaceholder: View {
     var body: some View {
         Capsule()
@@ -48,7 +39,7 @@ struct CustomizeSwitchPlaceholder: View {
     }
 }
 
-/// The static star placeholder the lifted preview renders where the live row shows the star button.
+/// 드래그 프리뷰가 star 버튼 자리에 그리는 정적 플레이스홀더.
 struct CustomizeStarPlaceholder: View {
     var body: some View {
         Image(systemName: "star")

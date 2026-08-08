@@ -2,11 +2,7 @@ import XCTest
 import UserNotifications
 @testable import OpenUsage
 
-/// `AppNotifications` wraps `UNUserNotificationCenter`, which can't be instantiated or subclassed in a
-/// unit test. The behavior we can pin without a live center is the test short-circuit: under XCTest,
-/// `post` / `registerAsDelegate` must never touch the center (no prompt, no scheduled notification), so
-/// the injected center provider is never invoked. The end-to-end "one post per fired milestone" check
-/// lives in `WidgetDataStoreNotificationTests`, which injects a recording sink into the store.
+/// `UNUserNotificationCenter`는 단위 테스트에서 생성·상속 불가 — XCTest 하의 short-circuit만 검증
 @MainActor
 final class AppNotificationsTests: XCTestCase {
     func testIsRunningUnderTestsIsTrueInTheHarness() {
@@ -32,7 +28,7 @@ final class AppNotificationsTests: XCTestCase {
         XCTAssertFalse(probe.touched, "Under tests, no notification path should reach the center provider")
     }
 
-    /// A tiny reference box so the `@Sendable` provider closure can record whether it ran.
+    /// `@Sendable` provider closure의 실행 여부 기록용 참조 box
     private final class CenterProbe: @unchecked Sendable {
         var touched = false
     }

@@ -1,21 +1,12 @@
 import Foundation
 
-/// Net-new, faithful port of the Tauri redaction functions (`src-tauri/src/plugin_engine/host_api.rs`
-/// `redact_value`/`redact_url`/`redact_body`/`redact_log_message`). Pure, `Sendable`, no I/O.
-///
-/// `redactLogMessage` is the lightweight last line of defense every `AppLog` line passes through, but
-/// it is URL- and body-unaware by design (matching the Rust `redact_log_message`). Any caller that logs
-/// a URL or a response body MUST pre-redact it via `redactURL` / `bodyPreview` first — those handle the
-/// query-parameter and JSON-key surfaces `redactLogMessage` deliberately does not.
-///
-/// The regexes reproduce the exact Rust patterns (including the `{12,}` quantifier *after* the
-/// prefix, the optional-quote api-key variant in `redactBody` versus the no-quote variant in
-/// `redactLogMessage`, and the unique `account=` pass). They are compiled once as static `let`s.
+/// Tauri redaction 함수들의 충실한 port — pure, `Sendable`, I/O 없음.
+/// `redactLogMessage`는 설계상 URL/body를 모름 — URL이나 응답 body를 로그하는 호출부는 `redactURL`/`bodyPreview` 선처리 필수.
+/// 정규식은 Rust 패턴을 그대로 재현해 static `let`으로 1회 컴파일.
 enum LogRedaction {
     // MARK: - Value masking
 
-    /// Redact a sensitive value to `first4...last4`, or `[REDACTED]` when it is too short to mask
-    /// safely. Character-based (not byte-based) to match Rust's `char` semantics.
+    /// 민감 값을 `first4...last4`로 마스킹, 안전하게 가리기에 짧으면 `[REDACTED]`. Rust `char` 의미론에 맞춘 문자 기반.
     static func redactValue(_ value: String) -> String {
         let chars = Array(value)
         if chars.count <= 12 {
@@ -28,20 +19,18 @@ enum LogRedaction {
 
     // MARK: - URL
 
-    /// Lowercased substring match list for sensitive query-parameter names (matches Rust's
-    /// `sensitive_params`). A parameter is redacted when its lowercased name *contains* any of these
-    /// and its value is non-empty; the original name casing is preserved.
+    /// 민감 query-parameter 이름의 소문자 substring 매치 목록.
+    /// 소문자화한 이름이 이들 중 하나를 포함하고 값이 비어 있지 않으면 redaction; 원래 이름 표기는 보존.
     private static let urlSensitiveParams = [
         "key", "api_key", "apikey", "token", "access_token", "secret", "password",
         "auth", "authorization", "bearer", "credential", "user", "user_id", "userid",
         "account_id", "accountid", "profilearn", "profile_arn", "email", "login"
     ]
 
-    /// Redact sensitive query parameters in a URL. Only the query string is touched; the path is
-    /// left intact (paths are handled by `redactBody`/`redactLogMessage`).
+    /// URL의 민감 query parameter redaction — query string만 대상, path는 그대로 둠.
     static func redactURL(_ url: String) -> String {
         guard let queryStart = url.firstIndex(of: "?") else { return url }
-        let base = String(url[..<url.index(after: queryStart)]) // includes the '?'
+        let base = String(url[..<url.index(after: queryStart)]) // '?' 포함
         let query = String(url[url.index(after: queryStart)...])
 
         let redactedParams = query.split(separator: "&", omittingEmptySubsequences: false).map { rawParam -> String in
@@ -60,7 +49,7 @@ enum LogRedaction {
 
     // MARK: - Body
 
-    /// JSON keys whose values are redacted in a body (matches Rust's `sensitive_keys`).
+    /// body에서 값이 redaction되는 JSON key 목록.
     private static let jsonSensitiveKeys = [
         "name", "password", "token", "access_token", "refresh_token", "secret", "api_key",
         "apiKey", "authorization", "bearer", "credential", "session_token", "sessionToken",
@@ -70,9 +59,8 @@ enum LogRedaction {
         "profileArn", "email", "login", "analytics_tracking_id"
     ]
 
-    /// Redact sensitive patterns in a response body for logging. Five ordered passes, matching the
-    /// Rust `redact_body`: JWT, quoted api-key, devin-session, the 36 JSON keys, then filesystem
-    /// paths. Redact BEFORE any truncation so a secret straddling the cut is still caught intact.
+    /// 로그용 response body redaction — JWT, quoted api-key, devin-session, JSON key, 파일 경로 순의 5개 pass.
+    /// 잘림 경계에 걸친 secret도 잡히도록 truncation 전 redaction 필수.
     static func redactBody(_ body: String) -> String {
         var result = body
         result = replaceAll(jwtRegex, in: result) { redactValue($0) }
@@ -82,7 +70,7 @@ enum LogRedaction {
         }
         result = replaceAll(devinRegex, in: result) { redactValue($0) }
         for key in jsonSensitiveKeys {
-            // Match "key": "value" or "key":"value" — capture group 1 is the value.
+            // "key": "value" 또는 "key":"value" 매치 — capture group 1이 값.
             guard let regex = jsonKeyRegexCache[key] else { continue }
             result = replaceGroup1(regex, in: result) { value in
                 "\"\(key)\": \"\(redactValue(value))\""
@@ -94,14 +82,12 @@ enum LogRedaction {
         return result
     }
 
-    /// Redact a body, then truncate to a Character-safe preview with a byte-count suffix. Mirrors the
-    /// Tauri host_api preview (`{}... ({} bytes total)`), measured on the *original* body's UTF-8
-    /// byte length. Any provider that ever needs to log a body MUST route it through here.
+    /// body redaction 후 Character-safe truncation과 byte 수 suffix 부가 — byte 수는 원본 body의 UTF-8 길이 기준.
+    /// body를 로그해야 하는 provider는 반드시 이 경로 사용.
     static func bodyPreview(_ body: String, limit: Int = 500) -> String {
         let redacted = redactBody(body)
         guard redacted.utf8.count > limit else { return redacted }
-        // UTF-8 safe truncation: include a character while its STARTING byte offset is < limit,
-        // mirroring Rust's `char_indices().take_while(|(i, _)| *i < limit)` exactly.
+        // UTF-8 safe truncation: 시작 byte offset이 limit 미만인 문자까지 포함(Rust `char_indices` 동작 재현).
         var truncated = ""
         var byteOffset = 0
         for character in redacted {
@@ -114,9 +100,7 @@ enum LogRedaction {
 
     // MARK: - Log message
 
-    /// Lightweight redaction for free-form log messages. Five ordered passes matching the Rust
-    /// `redact_log_message`: JWT, the NO-QUOTE api-key variant, devin-session, the unique `account=`
-    /// pass, then filesystem paths.
+    /// 자유형 로그 메시지용 경량 redaction — JWT, no-quote api-key, devin-session, `account=`, 파일 경로 순의 5개 pass.
     static func redactLogMessage(_ message: String) -> String {
         var result = message
         result = replaceAll(jwtRegex, in: result) { redactValue($0) }
@@ -138,7 +122,7 @@ enum LogRedaction {
     private static let accountRegex = makeRegex(#"(account=)([^,\s]+)"#)
     private static let pathRegex = makeRegex(#"(/(?:Users|home|opt|private|var|tmp|Applications)/[^\s"')]+)"#)
 
-    /// One compiled regex per sensitive JSON key (`"<key>":\s*"([^"]+)"`), built once.
+    /// 민감 JSON key별 컴파일된 정규식(`"<key>":\s*"([^"]+)"`), 1회 생성.
     private static let jsonKeyRegexCache: [String: NSRegularExpression] = {
         var cache: [String: NSRegularExpression] = [:]
         for key in jsonSensitiveKeys {
@@ -149,8 +133,7 @@ enum LogRedaction {
     }()
 
     private static func makeRegex(_ pattern: String) -> NSRegularExpression {
-        // Patterns are static literals ported verbatim from Rust; a failure here is a programmer
-        // error, so fail loudly rather than silently disabling redaction.
+        // 패턴은 static literal — 실패는 프로그래머 오류이므로 redaction의 조용한 비활성화 대신 크게 실패.
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             fatalError("LogRedaction: invalid regex pattern: \(pattern)")
         }
@@ -159,8 +142,7 @@ enum LogRedaction {
 
     // MARK: - Regex replacement helpers
 
-    /// Replace every full match of `regex` in `input` using `transform` on the matched substring.
-    /// Walks matches in reverse so earlier ranges stay valid as later ones are replaced.
+    /// `regex`의 전체 매치를 `transform` 결과로 치환. 역순 순회로 앞선 range 유효성 유지.
     private static func replaceAll(
         _ regex: NSRegularExpression,
         in input: String,
@@ -176,8 +158,7 @@ enum LogRedaction {
         return result
     }
 
-    /// Replace every match of `regex`, passing capture group 1 to `transform`. The whole match is
-    /// replaced with `transform`'s output. Reverse order keeps ranges valid.
+    /// capture group 1을 `transform`에 넘겨 전체 매치를 그 결과로 치환. 역순 순회로 range 유효성 유지.
     private static func replaceGroup1(
         _ regex: NSRegularExpression,
         in input: String,
@@ -197,7 +178,7 @@ enum LogRedaction {
         return result
     }
 
-    /// The `account=<value>` pass: keep the `account=` prefix, redact only the value (group 2).
+    /// `account=<value>` pass — `account=` prefix는 유지하고 값(group 2)만 redaction.
     private static func replaceAccountEq(in input: String) -> String {
         let matches = accountRegex.matches(in: input, range: NSRange(input.startIndex..., in: input))
         guard !matches.isEmpty else { return input }

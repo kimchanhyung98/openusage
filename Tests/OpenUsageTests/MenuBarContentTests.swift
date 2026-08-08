@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers `MenuBarContentBuilder`: it resolves pinned provider groups into Text groups (order, labels,
-/// and values preserved) and Bars entries (bounded metrics only, first four in order), and reports empty
-/// when nothing is pinned.
 @MainActor
 final class MenuBarContentTests: XCTestCase {
     func testEmptyWhenNoGroups() {
@@ -26,8 +23,7 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testBarsIncludeBoundedMetricsAndDropUnbounded() {
-        // A bounded dollar metric has a fill, so it belongs in Bars. An unbounded value (raw spend,
-        // no limit) has no fill and is dropped.
+        // bounded dollar metric은 fill이 있어 Bars 포함, unbounded(limit 없는 raw spend)는 제외
         let content = MenuBarContentBuilder.build(
             groups: [group("a",
                 percent("a.pct", "Pct", 40),
@@ -36,8 +32,8 @@ final class MenuBarContentTests: XCTestCase {
             data: { $0.sample }
         )
 
-        XCTAssertEqual(content.groups[0].metrics.map(\.id), ["a.pct", "a.credits", "a.spend"])  // Text: all
-        XCTAssertEqual(content.bars.map(\.id), ["a.pct", "a.credits"])                          // Bars: bounded only
+        XCTAssertEqual(content.groups[0].metrics.map(\.id), ["a.pct", "a.credits", "a.spend"])  // Text: 전체
+        XCTAssertEqual(content.bars.map(\.id), ["a.pct", "a.credits"])                          // Bars: bounded만
     }
 
     func testBarsCappedToFourInOrder() {
@@ -55,9 +51,7 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testNoDataMetricsDropFromStrip() {
-        // The strip is dynamic: a pinned metric without data vanishes instead of rendering "—", and
-        // the surviving pin renders alone (full size). A provider whose pins all lack data
-        // contributes no icon at all.
+        // data 없는 pinned metric은 "—" 대신 제거 — pin 전부가 data 없는 provider는 icon도 미기여
         let content = MenuBarContentBuilder.build(
             groups: [
                 group("a", percent("a.live", "Session", 41), noDataPercent("a.dark", "Weekly")),
@@ -88,8 +82,7 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testAccessibilityTextUsesTheResolvedTitle() {
-        // The VoiceOver summary is a human-facing name, so it goes through the caller's resolver
-        // (the account registry) instead of the baked provider name.
+        // VoiceOver 요약은 baked provider 이름 대신 caller의 resolver(account registry) 이름 사용
         let content = MenuBarContentBuilder.build(
             groups: [group("a", percent("a.m1", "Session", 41))],
             data: { $0.sample },
@@ -107,23 +100,22 @@ final class MenuBarContentTests: XCTestCase {
     }
 
     func testBoundedTrayValuesStayUnitAware() {
-        // Percent meters still read as percentages, while bounded dollars/counts keep their natural
-        // unit in the strip instead of collapsing to "used / limit" percentages.
+        // percent는 %, bounded dollars/counts는 고유 단위 유지 — "used / limit" %로 붕괴 금지
         let usage = percent("a.usage", "Usage", 67)
         let credits = boundedDollars("a.credits", "Credits", used: 12000, limit: 18000)
         let requests = boundedCount("a.requests", "Requests", used: 412, limit: 500)
-        let spend = unbounded("a.spend", "Spend")   // unbounded $42
+        let spend = unbounded("a.spend", "Spend")
         let content = MenuBarContentBuilder.build(groups: [group("a", usage, credits, requests, spend)], data: { $0.sample })
 
         XCTAssertEqual(content.groups[0].metrics.map(\.value), ["67%", "$12K", "412", "$42"])
     }
 
     func testUnboundedNumbersAreCompacted() {
-        // Standard compact notation for big numbers; values shown in full drop their decimals.
+        // 큰 수는 표준 compact 표기, 전체 표시 값은 소수점 제거
         let content = MenuBarContentBuilder.build(
             groups: [group("a",
-                unbounded("a.big", "Big", 12923),         // → $12.9K
-                unbounded("a.small", "Small", 129.81))],  // → $130 (no decimals)
+                unbounded("a.big", "Big", 12923),
+                unbounded("a.small", "Small", 129.81))],
             data: { $0.sample }
         )
 

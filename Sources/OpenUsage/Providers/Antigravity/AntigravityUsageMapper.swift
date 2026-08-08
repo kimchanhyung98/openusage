@@ -1,8 +1,7 @@
 import Foundation
 
-/// One model's quota as returned by any source (LS, Cloud Code models, Cloud Code buckets), normalized
-/// before pooling. `remainingFraction` is 0…1 (1 = full); a model with no quota info is treated as
-/// depleted (0 remaining).
+/// 어떤 source(LS, Cloud Code models, Cloud Code buckets)든 반환한 모델 하나의 quota — pooling 전 normalize된 형태.
+/// `remainingFraction`은 0…1(1 = full), quota 정보 없는 모델은 소진(0 remaining)으로 취급.
 struct AntigravityModelConfig: Sendable, Equatable {
     var label: String
     var modelID: String?
@@ -10,18 +9,11 @@ struct AntigravityModelConfig: Sendable, Equatable {
     var resetTime: Date?
 }
 
-/// Turns Antigravity's quota responses into the app's metric vocabulary.
-///
-/// The authoritative source is the `RetrieveUserQuotaSummary` RPC (`parseQuotaSummary`): two pools
-/// (Gemini, shown as "Session"/"Weekly"; Claude = every non-Gemini model incl. GPT-OSS), each with a
-/// rolling 5-hour and a weekly window — up to four meters. Builds without that RPC fall back to the
-/// legacy per-model endpoints, whose fine-grained models collapse into the two 5h pool meters
-/// ("Session", "Claude"), each keeping the
-/// worst (lowest) remaining fraction in its pool; the legacy data is 5h-only, so the weekly meters
-/// read "No data" there.
+/// Antigravity quota 응답을 앱의 metric vocabulary로 변환.
+/// authoritative source는 `RetrieveUserQuotaSummary` RPC(`parseQuotaSummary`): 두 pool(Gemini = "Session"/"Weekly", Claude = GPT-OSS 포함 모든 비Gemini), 각각 rolling 5시간 + weekly window — 최대 4개 meter.
+/// 해당 RPC 없는 빌드는 legacy per-model endpoint로 fallback — 세분화 모델을 pool별 최저 remaining fraction의 5h meter 2개("Session", "Claude")로 축약, 5h 전용이라 weekly meter는 "No data".
 enum AntigravityUsageMapper {
-    /// Internal/duplicate model IDs that should never surface as a meter. Matched against the model ID
-    /// (LS `modelOrAlias.model`, Cloud Code `model`/key); the Cloud Code path also drops `isInternal`.
+    /// meter로 노출 금지인 internal/중복 모델 ID. 모델 ID(LS `modelOrAlias.model`, Cloud Code `model`/key) 기준 매칭 — Cloud Code 경로는 `isInternal`도 제외.
     static let modelBlacklist: Set<String> = [
         "MODEL_CHAT_20706", "MODEL_CHAT_23310",
         "MODEL_GOOGLE_GEMINI_2_5_FLASH", "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
@@ -31,9 +23,8 @@ enum AntigravityUsageMapper {
 
     // MARK: - Quota summary (the authoritative source)
 
-    /// The four pool buckets `RetrieveUserQuotaSummary` reports, matched by **exact `bucketId` only** —
-    /// a future bucket (e.g. `gemini-image-5h`) must never silently join a pool, and pool identity is
-    /// never inferred from `displayName`/`window`.
+    /// `RetrieveUserQuotaSummary`가 보고하는 pool bucket 4개 — **정확한 `bucketId`로만** 매칭.
+    /// 미래의 bucket(예: `gemini-image-5h`)이 조용히 pool에 합류하면 안 되고, pool identity를 `displayName`/`window`에서 추론 금지.
     static let summaryBuckets: [(bucketID: String, label: String, periodMs: Int)] = [
         ("gemini-5h", AntigravityMetric.sessionLabel, MetricPeriod.sessionMs),
         ("gemini-weekly", AntigravityMetric.weeklyLabel, MetricPeriod.weekMs),
@@ -41,21 +32,14 @@ enum AntigravityUsageMapper {
         ("3p-weekly", AntigravityMetric.claudeWeeklyLabel, MetricPeriod.weekMs)
     ]
 
-    /// `RetrieveUserQuotaSummary` → up to four pool meters, ordered Session, Weekly, Claude,
-    /// Claude Weekly. Accepts both the LS envelope (`{"response": {"groups": …}}`) and the bare remote
-    /// payload (`{"groups": …}`).
-    ///
-    /// Nil means "not a summary" (undecodable body / no `groups` anywhere) and the caller may fall back
-    /// to the legacy endpoints. A non-nil result — even an empty one — is authoritative: the legacy
-    /// path fabricates "fully used" from missing quota info, so a parsed summary must never fall
-    /// through to it. Buckets decode leniently (one malformed bucket never voids the envelope); a
-    /// bucket with a missing/unusable `remainingFraction` drops its line (the row reads "No data")
-    /// rather than fabricating 0% or 100%.
+    /// `RetrieveUserQuotaSummary` → 최대 4개 pool meter (Session, Weekly, Claude, Claude Weekly 순). LS envelope(`{"response": {"groups": …}}`)와 bare 원격 payload(`{"groups": …}`) 모두 허용.
+    /// nil은 "summary 아님"(decode 불가 body / `groups` 부재) — 호출자가 legacy endpoint로 fallback 가능. non-nil은 비어 있어도 authoritative: legacy 경로는 quota 부재를 "fully used"로 지어내므로 파싱된 summary가 흘러가면 안 됨.
+    /// bucket은 관대하게 decode(잘못된 bucket 하나가 envelope를 무효화하지 않음) — `remainingFraction`이 없거나 못 쓰는 bucket은 0%/100% 조작 대신 line을 drop("No data" 행).
     static func parseQuotaSummary(_ data: Data) -> [MetricLine]? {
         guard let envelope = try? JSONDecoder().decode(QuotaSummaryEnvelope.self, from: data),
               let groups = envelope.response?.groups ?? envelope.groups
         else {
-            // Callers only parse 2xx bodies, so an undecodable one is schema drift — say so loudly.
+            // 호출자는 2xx body만 파싱 — decode 불가는 schema drift이므로 크게 알림.
             AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups; treating as not-a-summary")
             return nil
         }
@@ -66,7 +50,7 @@ enum AntigravityUsageMapper {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary: skipping unrecognized bucket id '\(bucket.bucketId ?? "<absent>")'")
                 continue
             }
-            guard pooled[id] == nil else { continue } // duplicate bucket id — first one wins
+            guard pooled[id] == nil else { continue } // 중복 bucket id — 첫 항목 승리
             guard let fraction = bucket.remainingFraction, fraction.isFinite else {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has no usable remainingFraction; dropping its line")
                 continue
@@ -82,21 +66,20 @@ enum AntigravityUsageMapper {
 
     // MARK: - Response parsing (legacy per-model endpoints)
 
-    /// LS `GetUserStatus` → plan name + model configs. Nil when the body has no `userStatus`.
+    /// LS `GetUserStatus` → plan 이름 + model config. body에 `userStatus` 없으면 nil.
     static func parseUserStatus(_ data: Data) -> (plan: String?, configs: [AntigravityModelConfig])? {
         guard let envelope = try? JSONDecoder().decode(LSUserStatusEnvelope.self, from: data),
               let status = envelope.userStatus
         else {
             return nil
         }
-        // Prefer Google's own `userTier` over the Windsurf-inherited `planInfo.planName` (which reads
-        // "Pro" for every paid tier).
+        // Windsurf에서 물려받은 `planInfo.planName`(유료 tier 전부 "Pro"로 표기)보다 Google 자체 `userTier` 우선.
         let plan = formatPlan(status.userTier?.name ?? status.planStatus?.planInfo?.planName)
         let configs = (status.cascadeModelConfigData?.clientModelConfigs ?? []).compactMap(config(fromLS:))
         return (plan, configs)
     }
 
-    /// LS `GetCommandModelConfigs` fallback → model configs only (no plan). Nil when absent.
+    /// LS `GetCommandModelConfigs` fallback → model config만 (plan 없음). 부재 시 nil.
     static func parseCommandModelConfigs(_ data: Data) -> [AntigravityModelConfig]? {
         guard let envelope = try? JSONDecoder().decode(LSCommandConfigsEnvelope.self, from: data),
               let configs = envelope.clientModelConfigs
@@ -106,7 +89,7 @@ enum AntigravityUsageMapper {
         return configs.compactMap(config(fromLS:))
     }
 
-    /// Cloud Code `fetchAvailableModels` → model configs (drops `isInternal`, empty-label models).
+    /// Cloud Code `fetchAvailableModels` → model config (`isInternal`·빈 라벨 모델 제외).
     static func parseCloudCodeModels(_ data: Data) -> [AntigravityModelConfig] {
         guard let envelope = try? JSONDecoder().decode(CCModelsEnvelope.self, from: data),
               let models = envelope.models
@@ -120,7 +103,7 @@ enum AntigravityUsageMapper {
         }
     }
 
-    /// Cloud Code `retrieveUserQuota` → buckets keyed by raw model id (e.g. `gemini-3-pro-preview`).
+    /// Cloud Code `retrieveUserQuota` → raw model id(예: `gemini-3-pro-preview`)로 key된 bucket.
     static func parseQuotaBuckets(_ data: Data) -> [AntigravityModelConfig] {
         guard let envelope = try? JSONDecoder().decode(CCQuotaEnvelope.self, from: data),
               let buckets = envelope.buckets
@@ -138,7 +121,7 @@ enum AntigravityUsageMapper {
         }
     }
 
-    /// Cloud Code `loadCodeAssist` → plan name (paid tier preferred over current tier).
+    /// Cloud Code `loadCodeAssist` → plan 이름 (paid tier를 current tier보다 우선).
     static func parseLoadCodeAssistPlan(_ data: Data) -> String? {
         guard let envelope = try? JSONDecoder().decode(CCLoadEnvelope.self, from: data) else { return nil }
         return formatPlan(envelope.paidTier?.name ?? envelope.currentTier?.name)
@@ -150,8 +133,7 @@ enum AntigravityUsageMapper {
 
     // MARK: - Line building (legacy pooling)
 
-    /// Collapse model configs into the two quota-pool meters, keeping the worst fraction per pool and
-    /// ordering the Gemini pool ("Session") before Claude. Blacklisted and empty-label models are dropped.
+    /// model config를 quota-pool meter 2개로 축약 — pool별 최저 fraction 유지, Gemini pool("Session")을 Claude보다 앞에 정렬. blacklist·빈 라벨 모델 제외.
     static func buildLines(_ configs: [AntigravityModelConfig]) -> [MetricLine] {
         var pooled: [String: (fraction: Double, resetTime: Date?)] = [:]
         for config in configs {
@@ -161,7 +143,7 @@ enum AntigravityUsageMapper {
 
             let pool = poolLabel(normalizeLabel(label))
             if let existing = pooled[pool] {
-                // Worst-case wins; ties keep the first seen.
+                // 최악값 승리 — 동률은 먼저 본 항목 유지.
                 if config.remainingFraction < existing.fraction {
                     pooled[pool] = (config.remainingFraction, config.resetTime)
                 }
@@ -180,7 +162,7 @@ enum AntigravityUsageMapper {
         let used = (1 - clamped) * 100
         return .progress(
             label: pool,
-            used: used.rounded(), // keep whole percents so a fresh window reads 0 and "Not started" works
+            used: used.rounded(), // 정수 percent 유지 — 새 window가 0으로 읽혀 "Not started" 동작
             limit: 100,
             format: .percent,
             resetsAt: resetTime,
@@ -190,7 +172,7 @@ enum AntigravityUsageMapper {
 
     // MARK: - Pooling helpers (pure)
 
-    /// "Gemini 3 Pro (High)" → "Gemini 3 Pro" — strip a trailing parenthetical variant.
+    /// "Gemini 3 Pro (High)" → "Gemini 3 Pro" — 끝의 괄호 variant 제거.
     static func normalizeLabel(_ label: String) -> String {
         if let range = label.range(of: #"\s*\([^)]*\)\s*$"#, options: .regularExpression) {
             return String(label[..<range.lowerBound]).trimmingCharacters(in: .whitespaces)
@@ -199,19 +181,16 @@ enum AntigravityUsageMapper {
     }
 
     static func poolLabel(_ normalizedLabel: String) -> String {
-        // Pro and Flash draw from one shared pool since Antigravity's 2026-05-19 quota merge, so every
-        // Gemini model (Pro, Flash, Ultra, bare names) maps to the single "Session" meter; Claude,
-        // GPT-OSS, and any other non-Gemini model share the other pool.
+        // 2026-05-19 quota 병합 이후 Pro·Flash는 한 pool — 모든 Gemini 모델(Pro, Flash, Ultra, bare 이름)은 단일 "Session" meter, Claude·GPT-OSS 등 비Gemini는 다른 pool 공유.
         normalizedLabel.lowercased().contains("gemini") ? AntigravityMetric.sessionLabel : AntigravityMetric.claudeLabel
     }
 
     static func sortKey(_ poolLabel: String) -> String {
-        // The Gemini pool ("Session") before Claude, matching the widget declaration order.
+        // Gemini pool("Session")을 Claude보다 앞에 — 위젯 선언 순서와 일치.
         poolLabel == AntigravityMetric.sessionLabel ? "0_\(poolLabel)" : "1_\(poolLabel)"
     }
 
-    /// Normalize a raw plan/tier string to a short label. LS returns "Google AI Pro" (strip the prefix,
-    /// keep the tail); Cloud Code returns "Gemini Code Assist in Google One AI Pro" (pull the tier word).
+    /// raw plan/tier 문자열을 짧은 라벨로 normalize. LS는 "Google AI Pro"(prefix 제거 후 꼬리 유지), Cloud Code는 "Gemini Code Assist in Google One AI Pro"(tier 단어 추출).
     static func formatPlan(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
         if let range = trimmed.range(of: "Google AI "), range.lowerBound == trimmed.startIndex {
@@ -240,9 +219,8 @@ enum AntigravityUsageMapper {
 
 // MARK: - Wire types (the documented response shapes; validated only at this boundary)
 
-/// `RetrieveUserQuotaSummary`, both envelopes: the LS wraps the payload in `{"response": {...}}`,
-/// the remote Cloud Code endpoint returns it bare. Every field is optional — third-party parsers have
-/// already regressed by assuming absent fields (defaulting a missing `remainingFraction` to "full").
+/// `RetrieveUserQuotaSummary`의 두 envelope: LS는 `{"response": {...}}`로 감싸고, 원격 Cloud Code endpoint는 bare 반환.
+/// 모든 필드 optional — 필드 존재를 가정한 third-party parser들이 이미 회귀한 전례(누락 `remainingFraction`을 "full"로 기본 처리).
 private struct QuotaSummaryEnvelope: Decodable {
     let response: QuotaSummaryRoot?
     let groups: [QuotaSummaryGroup]?
@@ -256,9 +234,7 @@ private struct QuotaSummaryGroup: Decodable {
     let buckets: [QuotaSummaryBucket]?
 }
 
-/// A bucket that never fails its containing array: a malformed element (not an object, or a field of
-/// the wrong type) decodes to nil fields instead of throwing the whole summary into the legacy
-/// fallback. The mapper then drops the unusable bucket with a warning and keeps the rest.
+/// 포함된 배열을 절대 실패시키지 않는 bucket: 잘못된 element(객체 아님, 잘못된 타입 필드)는 summary 전체를 legacy fallback으로 던지는 대신 nil 필드로 decode. mapper가 못 쓰는 bucket만 경고와 함께 drop.
 private struct QuotaSummaryBucket: Decodable {
     let bucketId: String?
     let remainingFraction: Double?

@@ -1,23 +1,14 @@
 import Foundation
 
-/// Read-only catalog of providers and the widgets they register, built from the live
-/// `ProviderRuntime`s at launch.
-///
-/// The registry is immutable once built, and its lookups are read on every render through
-/// `LayoutStore`'s `@Observable` computed properties (display groups, metric order, pin counts).
-/// So the three accessors are backed by lookup maps precomputed once at construction — O(1)/O(k)
-/// instead of linear scans of every descriptor on every call.
+/// launch 시 live `ProviderRuntime`들로 구성되는 provider·widget 읽기 전용 catalog
+/// 구성 후 불변 — lookup이 매 render마다 호출되므로 조회 map을 생성 시 1회 precompute (선형 scan 회피)
 struct WidgetRegistry: Sendable {
     let providers: [Provider]
     let descriptors: [WidgetDescriptor]
 
-    /// Descriptor by id — backs `descriptor(id:)`.
     private let descriptorsByID: [String: WidgetDescriptor]
-    /// Provider by id — backs `provider(id:)`.
     private let providersByID: [String: Provider]
-    /// Per-provider descriptor lists, preserving the original `descriptors` order within each provider
-    /// (a stable `filter` walk), so `descriptors(for:)` returns the exact sequence the UI metric order
-    /// depends on.
+    /// provider별 descriptor 목록 — 원본 `descriptors` 순서 보존 (UI metric 순서가 의존하는 sequence)
     private let descriptorsByProvider: [String: [WidgetDescriptor]]
 
     init(providers: [Provider], descriptors: [WidgetDescriptor]) {
@@ -44,10 +35,8 @@ struct WidgetRegistry: Sendable {
         descriptorsByProvider[providerID] ?? []
     }
 
-    /// Saved order filtered to installed providers, with newly introduced providers appended in the
-    /// canonical registry order — except account cards (`claude@ab12cd34`), which slot in right
-    /// after their family's group so a newly discovered account appears next to its siblings
-    /// instead of at the end of the dashboard. Shared by the dashboard, local API, and one-shot CLI.
+    /// 설치된 provider로 필터링한 저장 순서 + 신규 provider는 canonical registry 순서로 append
+    /// 계정 card(`claude@ab12cd34`)는 family 그룹 바로 뒤에 삽입 — dashboard·local API·one-shot CLI 공용
     func orderedProviderIDs(savedOrder: [String]) -> [String] {
         let defaults = providers.map(\.id)
         let known = Set(defaults)

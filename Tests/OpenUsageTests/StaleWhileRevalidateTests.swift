@@ -3,9 +3,6 @@ import os
 import XCTest
 @testable import OpenUsage
 
-/// Covers stale-while-revalidate display: expired cached snapshots still load at launch (so the menu
-/// bar never blanks to "—" while the first refresh runs), and a failed refresh records a provider
-/// error while keeping the last good snapshot on screen instead of collapsing rows to "No data".
 @MainActor
 final class StaleWhileRevalidateTests: XCTestCase {
     func testExpiredSnapshotStillLoadsAtLaunchThenRefreshes() async {
@@ -14,7 +11,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
         let defaults = makeUserDefaults("stale-launch")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })
 
-        // Persist a snapshot that is well past the TTL (a relaunch hours later).
         cache.store(ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
@@ -38,11 +34,9 @@ final class StaleWhileRevalidateTests: XCTestCase {
             defaults: defaults
         )
 
-        // Stale values display immediately at launch…
         XCTAssertEqual(store.data(for: descriptor).used, 40)
         XCTAssertTrue(store.data(for: descriptor).hasData)
 
-        // …but the expired cache does not short-circuit the refresh: the provider is hit and wins.
         await store.refreshAll()
         XCTAssertEqual(runtime.refreshCount, 1)
         XCTAssertEqual(store.data(for: descriptor).used, 55)
@@ -72,14 +66,12 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertTrue(store.data(for: descriptor).hasData)
         XCTAssertNil(store.errorMessage(for: provider.id))
 
-        // The next refresh fails: the error surfaces, but the good data stays on screen.
         runtime.snapshot = ProviderSnapshot.error(provider: provider, message: "Not signed in")
         await store.refreshAll(force: true)
         XCTAssertEqual(store.errorMessage(for: provider.id), "Not signed in")
         XCTAssertTrue(store.data(for: descriptor).hasData)
         XCTAssertEqual(store.data(for: descriptor).used, 40)
 
-        // A later successful refresh clears the error again.
         runtime.snapshot = ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
@@ -171,15 +163,12 @@ final class StaleWhileRevalidateTests: XCTestCase {
     }
 
     func testCacheHitRefreshDoesNotInvalidateSnapshotObservers() async {
-        // Regression for #18: a cache-hit pass must not re-assign an unchanged snapshot.
-        // `@Observable` doesn't compare values, so a no-op write would still re-render the
-        // menu-bar label (and re-run its ImageRenderer) every pass.
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
         let defaults = makeUserDefaults("cache-hit-no-invalidation")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })
 
-        // A fresh (within-TTL) cached snapshot, also loaded into `snapshots` by the store's init.
+        // TTL 이내 cached snapshot — store init 시 `snapshots`에 로드됨
         cache.store(ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
@@ -202,8 +191,7 @@ final class StaleWhileRevalidateTests: XCTestCase {
             defaults: defaults
         )
 
-        // Lock-boxed because `onChange` is `@Sendable`; it fires synchronously during the write
-        // (if any), so reading it after the pass is deterministic.
+        // `onChange`가 `@Sendable`이라 lock-box 사용 — write 중 동기 발화, pass 후 판독 결정적
         let snapshotsInvalidated = OSAllocatedUnfairLock(initialState: false)
         withObservationTracking {
             _ = store.snapshots
@@ -219,8 +207,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
     }
 
     func testErrorBeforeAnyDataShowsNoDataPlusError() async {
-        // A provider that has never refreshed successfully has nothing to keep: rows are "No data"
-        // and the error indicator explains why.
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
         let defaults = makeUserDefaults("error-no-data")
@@ -353,9 +339,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertEqual(store.data(for: descriptor).used, 55)
     }
 
-    /// A managed switch keeps the bare card id while changing the account behind it. The previous
-    /// account's in-memory snapshot must not survive the catalog swap — and the persisted cache,
-    /// stamped by the old account, must not repaint it either.
     func testReplacingCatalogWithANewIdentityClearsTheSameCardsState() async {
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
@@ -390,9 +373,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
                        "the persisted cache, stamped by the old account, must not repaint either")
     }
 
-    /// A fetch that started under the previous account and finishes after the switch must be
-    /// discarded: publishing it would show the old account's data under the new one, and stamping
-    /// it would carry the new identity — falsely legitimizing it for every later stamp check.
     func testAFetchFinishingAfterACatalogSwapIsDiscardedAndNotStamped() async throws {
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
@@ -445,8 +425,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
                       "the late result must never be stamped with the new account's identity")
     }
 
-    /// When the new account's first fetch fails, the card must show that failure — not stand the
-    /// previous account's values in behind the unchanged card id.
     func testNewAccountFetchFailureShowsAnErrorInsteadOfTheOldAccountsData() async {
         let provider = Self.testProvider
         let descriptor = Self.descriptor(provider, id: "test.alpha", metric: "Alpha")
@@ -589,10 +567,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
     }
 
     func testCorruptCacheBlobRecoversToEmptyInsteadOfDroppingSilently() {
-        // A non-decodable blob under the cache key (post-upgrade schema drift, a half-written
-        // write, a manual `defaults` edit) must recover to an empty cache rather than crash — and,
-        // per the loud-fail rule, leave a warn. Previously `try?` dropped ALL providers' snapshots
-        // silently, which is the load-side feeder of the refresh storm.
         let defaults = makeUserDefaults("corrupt-cache")
         defaults.set(Data("not a valid snapshot payload".utf8), forKey: "snapshots")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })
@@ -610,7 +584,6 @@ final class StaleWhileRevalidateTests: XCTestCase {
     }
 }
 
-/// Test runtime whose snapshot can be swapped between refresh passes.
 @MainActor
 private final class MutableProviderRuntime: ProviderRuntime {
     let provider: Provider

@@ -1,8 +1,7 @@
 import Foundation
 
-/// How the menu-bar item renders the pinned metrics: a `text` strip (provider icon + values, one
-/// segment per pinned provider) or the compact `bars` glyph (up to four bounded-metric bars). Chosen in
-/// Settings and persisted by `LayoutStore`; defaults to `.bars`.
+/// menu-bar item의 pinned metric 렌더 방식 — `text` strip 또는 compact `bars` glyph.
+/// Settings에서 선택, `LayoutStore`가 persist — 기본값 `.bars`.
 enum MenuBarStyle: String, Hashable, Sendable, CaseIterable {
     case text
     case bars

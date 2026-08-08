@@ -1,21 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Renders the Text-style menu-bar strip (`MenuBarContent`) into a template `NSImage` for the
-/// `MenuBarExtra` label: provider mark + bare value for a single metric, or a tight labeled stack for
-/// two. Black-on-clear so macOS tints it for light/dark; sized to its natural width. The image is built
-/// outside the `label:` view builder (an `ImageRenderer` inline there throws obscure errors).
+/// Text 스타일 menu-bar strip(`MenuBarContent`)을 `MenuBarExtra` 라벨용 template `NSImage`로 렌더링.
+/// black-on-clear라 macOS가 light/dark에 맞게 틴트.
+/// 이미지는 `label:` view builder 밖에서 빌드 필요 — inline `ImageRenderer`는 불명확한 오류 유발.
 @MainActor
 enum MenuBarStripRenderer {
-    /// Last render, memoized on (content, style). The label view re-evaluates on every snapshot
-    /// write — several times per refresh pass — but the strip's visible content rarely changes.
-    /// Returning the same `NSImage` instance lets SwiftUI skip the status-item update, and keeps
-    /// `ImageRenderer` (which retains a little memory per run on macOS) to actual visual changes.
+    /// (content, style) 기준 마지막 렌더의 memoize.
+    /// 같은 `NSImage` 인스턴스 반환으로 SwiftUI가 status-item 갱신을 건너뛰고 `ImageRenderer` 실행을 실제 시각 변화로 한정.
     private static var lastRender: (content: MenuBarContent, style: MenuBarStyle, image: NSImage?)?
 
-    /// The strip image for the given content and style, or `nil` when the content renders nothing
-    /// in that style (caller falls back to the app icon). Memoized: equal inputs return the
-    /// previously rendered instance.
+    /// 지정 content·style의 strip 이미지 — 해당 스타일에서 렌더할 것이 없으면 `nil`(호출자는 앱 아이콘 fallback).
+    /// memoize: 같은 입력은 이전에 렌더된 인스턴스 반환.
     static func image(for content: MenuBarContent, style: MenuBarStyle) -> NSImage? {
         if let lastRender, lastRender.content == content, lastRender.style == style {
             AppLog.debug(.menubar, "strip cache hit")
@@ -31,13 +27,8 @@ enum MenuBarStripRenderer {
         return image
     }
 
-    /// The pinned-metrics strip, or `nil` when nothing is pinned or no pinned metric has data yet
-    /// (caller falls back to the app icon).
-    ///
-    /// The render is trimmed to its visible pixels: the view's anti-aliasing padding and the provider
-    /// glyph's normalization inset would otherwise ship as transparent margins, widening the status
-    /// item past its artwork (the menu bar already pads every item, so baked-in margins read as an
-    /// extra-large gap next to neighboring items).
+    /// 고정 metric strip — 고정된 metric이 없거나 데이터가 아직 없으면 `nil`(앱 아이콘 fallback).
+    /// 렌더는 보이는 픽셀로 trim — 투명 여백이 남으면 status item이 artwork보다 넓어져 이웃 항목과의 간격이 과대해짐.
     static func textImage(for content: MenuBarContent) -> NSImage? {
         guard !content.isEmpty else { return nil }
         let renderer = ImageRenderer(content: MenuBarTextStrip(content: content))
@@ -53,15 +44,13 @@ enum MenuBarStripRenderer {
         return image
     }
 
-    /// Crops fully transparent margins off a rendered strip, or `nil` when the image has no visible
-    /// pixels (caller keeps the untrimmed render).
+    /// 렌더된 strip의 완전 투명 여백 crop — 보이는 픽셀이 없으면 `nil`(호출자는 untrimmed 렌더 유지).
     nonisolated static func trimmedToVisibleContent(_ image: CGImage) -> CGImage? {
         guard let bounds = visibleBounds(of: image) else { return nil }
         return image.cropping(to: bounds)
     }
 
-    /// The bounding box of pixels with non-zero alpha, in pixel coordinates (origin at the top-left
-    /// row, matching `CGImage.cropping(to:)`), or `nil` for a fully transparent image.
+    /// non-zero alpha 픽셀의 bounding box(pixel 좌표, top-left 원점 — `CGImage.cropping(to:)`와 일치); 완전 투명이면 `nil`.
     nonisolated static func visibleBounds(of image: CGImage) -> CGRect? {
         let width = image.width
         let height = image.height
@@ -88,7 +77,7 @@ enum MenuBarStripRenderer {
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
-    /// The compact Bars glyph (≤4 bounded-metric bars), or `nil` when no pinned metric has a fill.
+    /// compact Bars glyph(≤4개 bounded-metric bar) — 고정 metric에 fill이 없으면 `nil`.
     static func barsImage(for content: MenuBarContent) -> NSImage? {
         let fractions = content.bars.map(\.fraction)
         guard !fractions.isEmpty else { return nil }
@@ -100,10 +89,8 @@ enum MenuBarStripRenderer {
         return image
     }
 
-    /// The screen-share privacy stand-in: the wordmark instead of usage values, shown while
-    /// `MenuBarPrivacyStore.concealUsage` is true so a shared or recorded screen never carries token
-    /// counts or spend. Deterministic, so rendered once; `nil` only if `ImageRenderer` fails entirely
-    /// (caller falls back to the app icon).
+    /// screen-share 프라이버시 대체 이미지 — `MenuBarPrivacyStore.concealUsage` 동안 사용량 대신 wordmark 표시.
+    /// 공유·녹화 화면에 token 수나 지출이 절대 실리지 않는 것이 계약; deterministic이라 1회 렌더, `ImageRenderer` 전체 실패 시에만 `nil`.
     static let privacyImage: NSImage? = {
         let renderer = ImageRenderer(content: MenuBarPrivacyLabel())
         renderer.scale = 2
@@ -118,7 +105,7 @@ enum MenuBarStripRenderer {
         return image
     }()
 
-    /// Last-resort icon if the brand mark fails to load.
+    /// 브랜드 mark 로드 실패 시 최후의 아이콘.
     static let fallbackIcon: NSImage = {
         let image = NSImage(
             systemSymbolName: "gauge.with.dots.needle.bottom.50percent",
@@ -129,14 +116,12 @@ enum MenuBarStripRenderer {
     }()
 }
 
-/// The brand gauge mark plus wordmark drawn in place of the strip while screen-share privacy is
-/// concealing usage. Same black-on-clear template treatment, glyph box, and type size as a
-/// single-metric Text strip, so the swap doesn't jump the menu bar's rhythm.
+/// 프라이버시 은닉 중 strip 대신 그려지는 브랜드 gauge mark + wordmark.
+/// 단일 metric Text strip과 같은 template 처리·glyph box·글자 크기라 교체 시 menu bar 리듬이 유지됨.
 private struct MenuBarPrivacyLabel: View {
     var body: some View {
         HStack(spacing: 5) {
-            // The same mark and inset as `MenuBarIcon` (the art carries its own margin), sized to the
-            // strip's glyph box so the swap keeps the provider-glyph scale.
+            // `MenuBarIcon`과 같은 mark·inset, strip의 glyph box 크기에 맞춰 provider-glyph 스케일 유지.
             if let mark = ProviderMarks.mark(for: "openusage") {
                 ProviderIconShape(pathData: mark.path, inset: 0.08)
                     .fill(Color.black)
@@ -171,8 +156,7 @@ private struct MenuBarTextStrip: View {
         .fixedSize()
     }
 
-    /// A provider's pinned values, no labels: one metric as a single large number, two stacked on two
-    /// tight lines (much narrower than side-by-side), read positionally.
+    /// provider의 고정 값들(라벨 없음) — 1개는 큰 숫자 하나, 2개는 좁은 두 줄 stack으로 위치 기반 읽기.
     @ViewBuilder
     private func metricsView(_ metrics: [MenuBarContent.Metric]) -> some View {
         if metrics.count <= 1 {
@@ -189,10 +173,8 @@ private struct MenuBarTextStrip: View {
         }
     }
 
-    /// Side length of the glyph box. Sized to fill the strip's height so the mark reads at the same
-    /// scale as the dual-line metric block beside it (the single number is shorter), instead of
-    /// floating small in the middle. `ProviderIconShape` already normalizes every mark to its true
-    /// bounding box, so a near-zero `inset` here makes each provider fill this box uniformly.
+    /// glyph box 한 변 길이 — strip 높이를 채워 mark가 옆 metric 블록과 같은 스케일로 읽히도록 함.
+    /// `ProviderIconShape`가 mark를 실제 bounding box로 정규화하므로 근소한 `inset`이면 모든 provider가 box를 균일하게 채움.
     private static let glyphSide: CGFloat = 16
 
     @ViewBuilder
@@ -207,10 +189,8 @@ private struct MenuBarTextStrip: View {
     }
 }
 
-/// Draws up to four horizontal usage bars into a compact square — a 1:1 port of the original OpenUsage
-/// tray bars: track 0.16 / fill 1.0 / remainder 0.24 opacity (black, so the template tints them), a
-/// rounded leading edge with a small rounded moving edge, and near-full quantization so a 97% bar still
-/// shows a visible tail.
+/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 OpenUsage tray bar의 1:1 port.
+/// track 0.16 / fill 1.0 / remainder 0.24 opacity, near-full 양자화로 97% bar도 보이는 꼬리 유지.
 private struct MenuBarBars: View {
     let fractions: [Double]
     let side: CGFloat
@@ -273,8 +253,7 @@ private struct MenuBarBars: View {
     }
 }
 
-/// Pure fill geometry for the Bars glyph, factored out so the near-full quantization and minimum-visible
-/// remainder rules are unit-testable. A 1:1 port of the original OpenUsage tray math.
+/// Bars glyph의 순수 fill geometry — near-full 양자화와 최소 가시 remainder 규칙의 단위 테스트를 위해 분리.
 enum MenuBarBarGeometry {
     struct Fill: Equatable {
         let fillW: CGFloat
@@ -282,8 +261,7 @@ enum MenuBarBarGeometry {
         let dividerX: CGFloat?
     }
 
-    /// Quantize near-full (0.7–1.0) bars by remainder in 15% steps, so a nearly-full bar still leaves a
-    /// visible tail instead of reading as 100%.
+    /// near-full(0.7–1.0) bar를 remainder 기준 15% 단위로 양자화 — 거의 가득 찬 bar가 100%로 읽히지 않도록 꼬리 유지.
     static func visualFraction(_ fraction: Double) -> Double {
         guard fraction.isFinite else { return 0 }
         let clamped = min(1, max(0, fraction))

@@ -8,8 +8,7 @@ struct CodexMappedUsage: Equatable, Sendable {
 enum CodexUsageMapper {
     static let sessionPeriodMs = MetricPeriod.sessionMs
     static let weeklyPeriodMs = MetricPeriod.weekMs
-    /// Codex flex credits are worth 4¢ each; the credits line leads with the dollar value
-    /// (mirrors the JS plugin's `CREDIT_USD_RATE`).
+    /// Codex flex credit 1개당 4¢ — credits line은 dollar 값 선행 (JS plugin의 `CREDIT_USD_RATE` mirror).
     static let creditUSDRate = 0.04
 
     static func mapUsageResponse(
@@ -39,15 +38,10 @@ enum CodexUsageMapper {
             now: now
         ))
 
-        // Model-specific limits (e.g. GPT-5.3-Codex-Spark) ride in a separate `additional_rate_limits`
-        // array, each entry reusing the primary/secondary window shape. Surfaced as their own Spark /
-        // Spark Weekly meters (issue #796) — the JS edition had these; the Swift rewrite dropped them.
+        // Model별 limit(예: GPT-5.3-Codex-Spark)은 별도 `additional_rate_limits` 배열 — Spark / Spark Weekly meter로 노출 (issue #796).
         lines.append(contentsOf: sparkLines(body: body, now: now))
 
-        // On-demand rate-limit reset credits, shown before Credits — mirrors the JS plugin (PR #577).
-        // The row reads "2 available" (the count is carried raw, so the menu-bar tile reads the same
-        // number); each still-available credit's expiry rides along in `expiriesAt` and surfaces in the
-        // row's hover tooltip ("Resets expire in: …").
+        // On-demand reset credit은 Credits 앞에 표시 — count는 raw 전달(menu-bar tile과 동일 숫자), 각 credit의 expiry는 `expiriesAt`로 hover tooltip에 노출.
         if let resets = readResetCredits(body: body, resetCredits: resetCredits) {
             lines.append(.values(
                 label: "Rate Limit Resets",
@@ -60,8 +54,7 @@ enum CodexUsageMapper {
             lines.append(.values(label: "Credits", values: creditValues(remaining: remaining)))
         }
 
-        // The "no usage data" badge is appended by `CodexProvider.probe` *after* the scanned spend
-        // lines, so an empty live response never yields a badge that coexists with Today/Yesterday.
+        // "no usage data" badge는 `CodexProvider.probe`가 스캔된 spend line *뒤에* 추가 — 빈 live 응답의 badge가 Today/Yesterday와 공존 불가.
         return CodexMappedUsage(plan: formatCodexPlan(body["plan_type"]), lines: lines)
     }
 
@@ -82,9 +75,7 @@ enum CodexUsageMapper {
         )
     }
 
-    /// One rate-limit window → a percent-used meter, or `nil` when `usedPercent` is absent. Resolves the
-    /// window's own period (falling back to `defaultPeriodMs`) while preserving the percentage reported
-    /// by Codex, so all Session/Weekly/Spark paths share one construction.
+    /// Rate-limit window 1개 → percent-used meter, `usedPercent` 없으면 `nil` — Session/Weekly/Spark 경로가 공유하는 단일 구성.
     private static func windowLine(
         label: String,
         usedPercent: Double?,
@@ -114,10 +105,8 @@ enum CodexUsageMapper {
         var fallbackKind: WindowKind
     }
 
-    /// Codex normally returns the five-hour window as `primary_window` and the weekly window as
-    /// `secondary_window`, but it can move a temporarily sole weekly limit into the primary slot.
-    /// Classify by the explicit duration when present; keep the historical slot mapping only as a
-    /// compatibility fallback for payloads that omit or introduce an unfamiliar duration.
+    /// Session/Weekly window 분류 — 명시적 duration 우선 (Codex가 단독 weekly limit을 primary slot으로 옮기는 경우 대응).
+    /// primary=session / secondary=weekly slot 매핑은 duration을 생략하거나 낯선 값을 쓰는 payload용 호환 fallback.
     private static func classifiedWindowLines(
         rateLimit: [String: Any]?,
         labels: (session: String, weekly: String),
@@ -176,13 +165,8 @@ enum CodexUsageMapper {
         }
     }
 
-    /// Spark (and any future model-specific) limits from `additional_rate_limits`. Each array entry is a
-    /// named limit whose `rate_limit` reuses the primary (5-hour) / secondary (weekly) window shape, so
-    /// the parsing mirrors the core Session/Weekly path exactly. We surface the entry whose
-    /// `limit_name`/`metered_feature` names Spark as the
-    /// `Spark` and `Spark Weekly` meters; a non-dictionary or null array element is skipped rather than
-    /// discarding its valid siblings. Returns an empty list when the field is absent or carries no Spark
-    /// entry (the common case for accounts without the limit), so those rows simply read "No data".
+    /// `additional_rate_limits`의 Spark(및 향후 model별) limit — 각 entry의 `rate_limit`이 primary/secondary window shape를 재사용하므로 core Session/Weekly 경로와 동일하게 파싱.
+    /// 비-dictionary·null 요소는 유효한 형제를 버리지 않고 skip; Spark entry 없으면 빈 목록 반환 — 해당 row는 "No data".
     private static func sparkLines(body: [String: Any], now: Date) -> [MetricLine] {
         guard let rawEntries = body["additional_rate_limits"] as? [Any] else { return [] }
         let entries = rawEntries.compactMap { $0 as? [String: Any] }
@@ -199,9 +183,7 @@ enum CodexUsageMapper {
         )
     }
 
-    /// True when an `additional_rate_limits` entry is the Spark limit — matched on either `limit_name`
-    /// ("GPT-5.3-Codex-Spark") or `metered_feature`, case-insensitively, so a wording change on either
-    /// field still resolves it.
+    /// Spark limit entry 판별 — `limit_name`("GPT-5.3-Codex-Spark") 또는 `metered_feature`를 case-insensitive 매칭, 한쪽 표기 변경에도 해석 유지.
     private static func isSparkEntry(_ entry: [String: Any]) -> Bool {
         [entry["limit_name"], entry["metered_feature"]]
             .compactMap { ($0 as? String)?.lowercased() }
@@ -225,11 +207,8 @@ enum CodexUsageMapper {
         return Int(seconds * 1000)
     }
 
-    /// Codex flex credits as raw values: the floored credit count and its dollar value (count × 4¢),
-    /// shown combined as e.g. "$32.84 · 821 credits". The count is floored *before* pricing to match the
-    /// Codex CLI/plugin (so OpenUsage's dollar agrees with Codex's own), which keeps the two values
-    /// mutually consistent. Negative balances clamp to zero, so an exhausted balance reads
-    /// "$0.00 · 0 credits" — a real, measured zero, not "No data".
+    /// Flex credit을 raw 값으로 — floored count와 dollar 값(count × 4¢), "$32.84 · 821 credits" 형태로 결합 표시.
+    /// count를 pricing *전에* floor — Codex CLI/plugin과 dollar 일치. 음수 잔액은 0으로 clamp — "$0.00 · 0 credits"는 측정된 zero, "No data" 아님.
     static func creditValues(remaining: Double) -> [MetricValue] {
         let credits = max(0, Int(remaining.rounded(.down)))
         let usd = Double(credits) * creditUSDRate
@@ -239,13 +218,8 @@ enum CodexUsageMapper {
         ]
     }
 
-    /// On-demand reset credits: the floored available count plus each still-available credit's expiry
-    /// (sorted soonest-first, for the row's hover tooltip).
-    ///
-    /// Prefers the dedicated `/rate-limit-reset-credits` payload (the only source that carries the
-    /// per-credit expiry list); falls back to the usage body's embedded `rate_limit_reset_credits`
-    /// object (count only) when that fetch was unavailable — mirroring the JS plugin. `ProviderParse.number`
-    /// returns nil for missing/null/non-numeric counts, so a malformed count skips the row entirely.
+    /// On-demand reset credit — floored available count + still-available credit들의 expiry (soonest-first, hover tooltip용).
+    /// per-credit expiry를 유일하게 제공하는 전용 `/rate-limit-reset-credits` payload 우선, 없으면 usage body의 count-only object로 fallback. 비numeric count는 row 전체 skip.
     static func readResetCredits(
         body: [String: Any],
         resetCredits: HTTPResponse?
@@ -258,11 +232,8 @@ enum CodexUsageMapper {
         return (Int(count.rounded(.down)), availableExpiries(in: source["credits"]))
     }
 
-    /// The dictionary the count and expiry list are read from: the dedicated endpoint's body when it
-    /// returned a usable payload (2xx, parseable, carrying a *numeric* `available_count`), otherwise the
-    /// usage body's embedded object. The count is validated with `ProviderParse.number` rather than a bare
-    /// nil-check: a JSON `null` decodes to `NSNull` (non-nil), so a bare check would select a dedicated
-    /// body whose count is unusable and drop the row instead of falling back to the usage-body count.
+    /// count·expiry를 읽을 source — 전용 endpoint body가 usable(2xx, 파싱 가능, *numeric* `available_count`)일 때만 채택, 아니면 usage body의 embedded object.
+    /// bare nil-check 금지 — JSON `null`은 `NSNull`(non-nil)이라 unusable한 전용 body를 선택해 usage-body count로의 fallback을 막음.
     private static func resetCreditsSource(
         body: [String: Any],
         resetCredits: HTTPResponse?
@@ -275,12 +246,8 @@ enum CodexUsageMapper {
         return body["rate_limit_reset_credits"] as? [String: Any]
     }
 
-    /// Every still-available credit's `expires_at`, sorted soonest-first. `status` is optional upstream,
-    /// so a credit is kept when it's explicitly "available" *or* carries no status at all — only an
-    /// explicitly non-available state (e.g. "consumed"/"expired") is dropped. Filtering hard on
-    /// `== "available"` would otherwise blank the whole expiry list (tooltip + 24h warning) for responses
-    /// that omit status, even though `available_count` reported credits. `expires_at` is parsed as an
-    /// ISO-8601 string or an epoch number.
+    /// Still-available credit들의 `expires_at` (soonest-first). `status`는 upstream optional — 명시적 non-available("consumed"/"expired")만 제외, status 없는 credit은 유지.
+    /// `== "available"` hard filter는 status 생략 응답에서 expiry 목록(tooltip + 24h 경고) 전체를 비움. `expires_at`은 ISO-8601 문자열 또는 epoch 숫자로 파싱.
     private static func availableExpiries(in value: Any?) -> [Date] {
         guard let credits = value as? [[String: Any]] else { return [] }
         return credits

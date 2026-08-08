@@ -57,9 +57,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     }
 
     func testFullScopeProductionClientOutranksLongerLivedProfileOnlyEntry() throws {
-        // Two live entries under the same org: a long-TTL profile-only leftover carrying a stale 5x
-        // tier, and the current full-scope Claude Code production login (20x) expiring sooner. Expiry
-        // alone would pick the stale 5x token; the ranking must pick the production login.
+        // 동일 org의 장수명 profile-only stale 5x vs 만료 임박한 full-scope production 20x — expiry만으로는 오선택
         let productionClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
         let selection = ClaudeDesktopAuthStore.selectCredential(
             activeOrganization: organization,
@@ -115,7 +113,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(fixture.store.load(allowInteraction: true).status, .available)
         XCTAssertEqual(fixture.keyReader.calls, [false, true])
 
-        // The derived key is cached after approval, so later background refreshes are prompt-free.
+        // 승인 후 derived key가 캐시되어 이후 background refresh는 prompt 없음
         XCTAssertEqual(fixture.store.load(allowInteraction: false).status, .available)
         XCTAssertEqual(fixture.keyReader.calls, [false, true])
     }

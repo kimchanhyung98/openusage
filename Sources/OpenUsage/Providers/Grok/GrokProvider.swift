@@ -42,12 +42,12 @@ final class GrokProvider: ProviderRuntime {
                     estimatedCost: true,
                     sourceNote: "From your Grok logs (estimated)"
                 )
-            // Local spend tiles, estimated from the Grok CLI log (see GrokLogUsageScanner).
+            // Grok CLI 로그 기반 추정 local spend tile (GrokLogUsageScanner 참고)
         ] + WidgetDescriptor.spendTiles(provider: provider)
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: ~/.grok/auth.json with at least one keyed entry.
+        // `refresh()`와 동일 소스 — key 있는 entry가 1개 이상인 ~/.grok/auth.json
         await loadOffMainActor { [authStore] in
             ((try? authStore.loadAuthCandidates()) ?? []).isEmpty == false
         }
@@ -85,16 +85,14 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func probe(state: inout GrokAuthState, accessToken: String) async throws -> ProviderSnapshot {
-        // The weekly shared-pool meter and pay-as-you-go badge come from the billing endpoint with
-        // `?format=credits` — the call the Grok CLI itself makes. This is the provider's primary
-        // remote fetch; a failure here fails the provider like any other usage call.
+        // weekly shared-pool meter와 pay-as-you-go badge는 Grok CLI가 직접 호출하는 billing `?format=credits` endpoint에서 취득
+        // provider의 primary remote fetch — 실패 시 다른 usage 호출과 동일하게 provider 실패 처리
         let creditsResponse = try await fetchCreditsConfigWithRetry(accessToken: accessToken, state: &state)
         var mapped = try GrokUsageMapper.mapCreditsConfig(creditsResponse)
 
         let plan = await fetchPlanName(accessToken: state.token)
 
-        // Local spend tiles, read natively from the Grok CLI log and priced via the shared pricing
-        // store. `scan` is awaited so its whole-file read + parse runs off the main actor.
+        // Grok CLI 로그를 직접 읽어 shared pricing store로 가격 산정 — `scan` await로 읽기+parse는 main actor 밖에서 수행
         var usageHistory: ProviderUsageHistory?
         if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
             usageHistory = ProviderUsageHistory(
@@ -152,11 +150,7 @@ final class GrokProvider: ProviderRuntime {
                 clientID: authStore.clientID(entryKey: state.entryKey, entry: state.entry)
             )
         } catch {
-            // Log the real cause: a transport failure here is currently surfaced to the user as
-            // "auth expired" (loadAndProbe / the retry closure both map a nil refresh to .expired), so
-            // without this line the actual reason (network/DNS/timeout) is lost. (Refining the
-            // user-facing message to a request-failure is deferred — it needs a careful rework of the
-            // candidate-loop + retry-closure semantics.)
+            // transport 실패도 사용자에게는 "auth expired"로 표기되므로(nil refresh → .expired) 실제 원인은 이 로그로만 보존
             AppLog.warn(LogTag.auth("grok"), "token refresh request failed (transport): \(error.localizedDescription)")
             return nil
         }
@@ -184,9 +178,8 @@ final class GrokProvider: ProviderRuntime {
 
         let expiresAt = refreshExpiryDate(response: decoded, accessToken: accessToken)
         state.entry.expiresAt = OpenUsageISO8601.string(from: expiresAt)
-        // Fail loudly: a swallowed save strands the rotated token on disk (next launch re-refreshes /
-        // can surface a false "auth expired"). The refreshed token works for this session, so log and
-        // continue rather than fail the live fetch.
+        // save 실패를 삼키면 rotate된 token이 디스크에 남지 않아 다음 실행에서 재refresh·거짓 "auth expired" 발생 — 로그로 크게 알림
+        // refresh된 token은 이번 session에 유효하므로 live fetch는 실패시키지 않고 계속 진행
         do {
             try authStore.save(state)
         } catch {

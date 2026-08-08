@@ -1,8 +1,7 @@
 import Foundation
 
 enum UsageHistoryAggregator {
-    /// Combines only providers explicitly declared machine-local. Account-wide histories such as
-    /// Cursor are left out even if a malformed or future file contains them.
+    /// machine-local로 명시 선언된 provider만 결합 — Cursor 등 account-wide history는 malformed/future 파일에 있어도 제외.
     static func merged(
         localSnapshots: [String: ProviderSnapshot],
         peerDocuments: [UsageHistoryDocument],
@@ -18,9 +17,8 @@ enum UsageHistoryAggregator {
         return merged(localSnapshots: localSnapshots, peerHistories: pairs, descriptors: descriptors, now: now)
     }
 
-    /// The identity-remapped variant: peers arrive as (LOCAL card id, history) pairs — see
-    /// `PeerHistoryRemapper` — so the same account merges into the same card regardless of which Mac
-    /// calls it the default and which shows it as an extra account card.
+    /// identity 재매핑 변형 — peer는 (로컬 카드 id, history) 쌍으로 도착(`PeerHistoryRemapper`).
+    /// 같은 계정은 Mac별 default/추가 카드 구분과 무관하게 같은 카드로 merge.
     static func merged(
         localSnapshots: [String: ProviderSnapshot],
         peerHistories: [(String, ProviderUsageHistory)],
@@ -40,8 +38,7 @@ enum UsageHistoryAggregator {
         return inputs.mapValues { merge($0, includedDays: includedDays) }
     }
 
-    /// Day-sum several histories into one — the same merge the per-card path uses, exposed for
-    /// remote-only accounts (histories synced from other Macs with no local card).
+    /// 여러 history의 일 단위 합산 병합 — per-card 경로와 동일한 merge, 로컬 카드 없는 remote-only 계정용 노출.
     static func mergeHistories(_ histories: [ProviderUsageHistory], now: Date = Date()) -> ProviderUsageHistory {
         merge(histories, includedDays: UsageHistoryWindow.dayKeys(through: now))
     }

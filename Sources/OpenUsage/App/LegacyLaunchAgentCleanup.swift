@@ -1,46 +1,21 @@
 import Foundation
 
-/// Deletes the autostart LaunchAgent left behind by the legacy Tauri edition (issues #607/#874).
-///
-/// `tauri-plugin-autostart` (edition ≤ 0.6.28) wrote `~/Library/LaunchAgents/OpenUsage.plist` with
-/// `RunAtLoad = true`, pointing at the app binary by absolute path. Updating in place never removed
-/// it, and on a case-insensitive volume (the APFS default) its Tauri-era program path
-/// (`…/Contents/MacOS/openusage`, lowercase binary name) resolves to this edition's binary. Two
-/// consequences for upgraded machines:
-/// - the agent launches the app at every login *in addition to* the `SMAppService` login item —
-///   the double launch behind #874 (`disableRelaunchOnLogin()` is AppKit-level and cannot suppress
-///   a launchd agent), and
-/// - Login Items & Extensions attributes the agent to the signing team ("SUNSTORY LLC") instead of
-///   the app (#607): a bare LaunchAgent has no app identity, so macOS labels it by the code
-///   signature of the binary it points to.
-///
-/// The removal decision is pure and deliberately conservative: only an agent whose program resolves
-/// *inside this app's own bundle* is deleted. Anything else — a hand-rolled agent pointing at
-/// another location, some other tool's agent that happens to share the filename — is left alone
-/// (and logged, so a stray survivor is visible in the log file). Runs on every launch: the common
-/// case is a single file-existence probe, and re-running covers a user who reinstalls the legacy
-/// edition and upgrades again.
-///
-/// Deliberately file-only — no `launchctl bootout`. With `RunAtLoad`, the process the agent spawned
-/// IS the service process, and if the single-instance survivor is the agent-launched copy (it's
-/// whichever copy won the startup race), booting out the label would SIGTERM this very process.
-/// Deleting the plist is sufficient and self-safe: launchd loads agents from disk at login, so the
-/// next login has nothing to load, and the Login Items entry disappears once the file is gone.
+/// 레거시 Tauri 에디션이 남긴 autostart LaunchAgent(`~/Library/LaunchAgents/OpenUsage.plist`) 삭제 — 로그인 이중 실행 원인 (#607/#874).
+/// 제거 판정은 보수적 — program이 이 앱 bundle 내부를 가리킬 때만 삭제, 그 외는 방치·로그.
+/// 의도적으로 파일 삭제만 수행 — `launchctl bootout`은 agent가 띄운 현재 process를 SIGTERM할 위험.
 enum LegacyLaunchAgentCleanup {
-    /// What the legacy plist declares, as far as the removal decision cares. `programPath` is the
-    /// executable the agent launches: launchd's `Program` key when present, else the first
-    /// `ProgramArguments` element (`tauri-plugin-autostart` wrote only the latter).
+    /// 제거 판정에 필요한 레거시 plist 선언부. `programPath`는 `Program` key, 없으면 `ProgramArguments` 첫 요소.
     struct Agent: Equatable {
         var programPath: String?
     }
 
-    /// `tauri-plugin-autostart` named the plist after the app's product name.
+    /// `tauri-plugin-autostart`가 product name으로 명명한 plist 경로.
     static var defaultAgentURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/OpenUsage.plist")
     }
 
-    /// Live entry point, called once per launch. Parameters exist for tests only.
+    /// 런치당 1회 호출되는 live entry point. 파라미터는 테스트 전용.
     static func removeLeftoverAgent(
         agentURL: URL = defaultAgentURL,
         bundlePath: String = Bundle.main.bundlePath
@@ -69,10 +44,8 @@ enum LegacyLaunchAgentCleanup {
         }
     }
 
-    /// Pure decision: remove only when the agent's program lives inside our own `.app` bundle.
-    /// The comparison is case-insensitive to mirror the APFS default — the whole reason the
-    /// lowercase Tauri path still launches this edition's binary. Requiring a `.app` bundle path
-    /// keeps unbundled runs (`swift run`, whose "bundle" is a build directory) from ever matching.
+    /// 순수 제거 판정: agent의 program이 이 앱 `.app` bundle 내부일 때만 true.
+    /// APFS 기본을 따라 대소문자 무시 비교; `.app` suffix 요구로 unbundled 실행(`swift run`) 미매칭.
     static func shouldRemove(programPath: String?, bundlePath: String) -> Bool {
         guard let programPath else { return false }
         let bundle = (bundlePath as NSString).standardizingPath
@@ -81,8 +54,7 @@ enum LegacyLaunchAgentCleanup {
         return program.lowercased().hasPrefix(bundle.lowercased() + "/")
     }
 
-    /// Extracts the launched executable from a launchd plist. Throws on non-plist data; unknown or
-    /// missing keys yield a nil `programPath` (which `shouldRemove` treats as "leave it alone").
+    /// launchd plist에서 실행 파일 추출. 비-plist 데이터는 throw; 키 부재 시 `programPath` nil (제거 판정에서 방치 취급).
     static func parse(plistData: Data) throws -> Agent {
         let plist = try PropertyListSerialization.propertyList(from: plistData, format: nil)
         guard let dict = plist as? [String: Any] else {

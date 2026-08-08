@@ -5,22 +5,19 @@ struct CursorMappedUsage: Equatable, Sendable {
     var lines: [MetricLine]
 }
 
-/// The handful of facts the three plan-usage decisions read off Cursor's untyped `usage` payload —
-/// the map guards, the request-based fallback, and the generic fallback. Decoded once here so those
-/// predicates can't drift apart (they steer one flow and previously spelled the same checks out
-/// independently across two files).
+/// Cursor의 untyped `usage` payload에서 3개 plan-usage 결정(map guard, request-based fallback, generic fallback)이 읽는 사실들.
+/// 한곳에서 1회 decode — predicate들이 어긋나지 않게 함(과거 두 파일에 같은 검사가 중복).
 struct CursorPlanUsageFacts {
-    /// `usage.enabled` is only "off" when explicitly `false`; absent reads as enabled.
+    /// `usage.enabled`는 명시적 `false`일 때만 "off" — 부재는 enabled로 해석.
     let isEnabled: Bool
-    /// A `planUsage` object is present at all.
     let hasPlanUsage: Bool
-    /// `planUsage.limit`, when numeric.
+    /// 숫자일 때의 `planUsage.limit`.
     let limit: Double?
-    /// `planUsage.totalPercentUsed`, when numeric.
+    /// 숫자일 때의 `planUsage.totalPercentUsed`.
     let totalPercentUsed: Double?
-    /// `spendLimitUsage.limitType`, lowercased.
+    /// 소문자화한 `spendLimitUsage.limitType`.
     let spendLimitType: String?
-    /// `spendLimitUsage.pooledLimit` (0 when absent).
+    /// `spendLimitUsage.pooledLimit` (부재 시 0).
     let pooledLimit: Double
 
     init(usage: [String: Any]) {
@@ -36,13 +33,12 @@ struct CursorPlanUsageFacts {
 
     var hasLimit: Bool { limit != nil }
     var hasTotalUsagePercent: Bool { totalPercentUsed != nil }
-    /// `planUsage` exists but carries no usable limit — the "present but unusable" state the fallbacks key on.
+    /// `planUsage`는 있으나 쓸 만한 limit 없음 — fallback들이 기준 삼는 "존재하나 무용" 상태.
     var planUsageLimitMissing: Bool { hasPlanUsage && !hasLimit }
     var planUsageUnusable: Bool { !hasPlanUsage || planUsageLimitMissing }
-    /// Team account inferred from the spend-limit shape alone (independent of the plan name).
+    /// plan 이름과 무관하게 spend-limit 형태만으로 추론한 team 계정.
     var isTeamByShape: Bool { spendLimitType == "team" || pooledLimit > 0 }
-    /// The generic request-based fallback trigger: an enabled account with a `planUsage` that carries
-    /// neither a limit nor a total-percent figure.
+    /// generic request-based fallback 트리거: limit도 total-percent도 없는 `planUsage`를 가진 enabled 계정.
     var shouldTryGenericRequestFallback: Bool {
         isEnabled && hasPlanUsage && !hasLimit && !hasTotalUsagePercent
     }
@@ -251,20 +247,8 @@ enum CursorUsageMapper {
         return (false, "")
     }
 
-    /// Append the shared Today / Yesterday / Last 30 Days spend tiles from Cursor's CSV rows. The rows
-    /// are aggregated into one local-calendar-day `DailyUsageSeries` and handed to `SpendTileMapper`
-    /// — the same builder the Claude/Codex/Grok tiles use — so the output is identical apart from the
-    /// source note. Cursor's costs are calculated locally from the exported token counts, so the dollar
-    /// values carry the estimate icon. Callers only invoke this when the CSV fetched and parsed, so a
-    /// failure appends nothing and the tiles read "No data".
-    ///
-    /// Model breakdown rows group by base model, not raw CSV slug: Cursor exports one slug per thinking
-    /// effort / fast combination (`claude-opus-4-8-thinking-max`, `gpt-5.5-extra-high-fast`, …), and a
-    /// panel of near-duplicate rows hides the actual ranking. The supplement's alias rules already
-    /// collapse those slugs to a canonical pricing key, and `-fast` canonicals fold into their base, so
-    /// the family comes from the same machinery that prices the row (ported from cursorcat's
-    /// family grouping). The raw slugs survive as `variants` — the per-effort breakdown the row's
-    /// tooltip shows.
+    /// Cursor CSV 행에서 공용 Today / Yesterday / Last 30 Days spend 타일 추가. 행을 로컬 캘린더 일 단위 `DailyUsageSeries`로 집계해 Claude/Codex/Grok 타일과 같은 `SpendTileMapper`에 전달 — source note만 다르고 출력 동일. cost는 export된 token 수로 로컬 계산이라 달러 값에 추정 아이콘.
+    /// 모델 breakdown 행은 raw CSV slug가 아닌 base 모델로 그룹화 — Cursor는 thinking effort/fast 조합마다 slug를 export해 근사 중복 행이 실제 순위를 가림. supplement의 alias rule이 slug를 canonical pricing key로 축약하고 `-fast` canonical은 base로 흡수. raw slug는 `variants`로 생존 — 행 tooltip의 effort별 breakdown.
     static func appendSpendLines(
         rows: [CursorUsageCSVRow],
         now: Date,
@@ -275,12 +259,7 @@ enum CursorUsageMapper {
         var costByDay: [String: Double] = [:]
         var tokensByDay: [String: Int] = [:]
         var modelsByDay: [String: [String: ModelAccumulator]] = [:]
-        // Rows no pricing source can price (nil imputed cost) are excluded from every displayed total —
-        // tokens, dollars, the trend, and the model breakdown — because mixing measured tokens with
-        // unpriceable ones makes the figures incoherent (a huge token count next to a dollar figure that
-        // ignores it). Their model names surface only through the warning triangle: track them per day so
-        // the spend tile can warn that its figures are incomplete. Only rows that actually spent tokens
-        // count — a 0-token row of an unknown model changes nothing, so it isn't worth flagging.
+        // pricing source가 가격을 모르는 행(nil imputed cost)은 모든 표시 합계(tokens·달러·trend·모델 breakdown)에서 제외 — 측정 tokens와 unpriceable tokens를 섞으면 수치가 모순됨. 모델명은 경고 삼각형으로만 노출 — 일 단위로 추적해 spend 타일이 수치 불완전을 경고. 실제 tokens를 쓴 행만 집계 — unknown 모델의 0-token 행은 아무것도 바꾸지 않아 표시할 가치 없음.
         var unknownModelsByDay: [String: Set<String>] = [:]
         for row in rows {
             let day = DailyUsageAccumulator.dayKey(from: row.date, calendar: calendar)
@@ -302,8 +281,7 @@ enum CursorUsageMapper {
             )
         }
 
-        // Sum raw dollars per day, then snap to whole cents once — rounding per row would accumulate
-        // sub-cent drift across a busy day.
+        // 일별 raw 달러 합산 후 마지막에 한 번만 센트 단위로 snap — 행마다 반올림하면 바쁜 날 sub-cent drift 누적.
         let daily = tokensByDay.keys.sorted(by: >).map { day in
             DailyUsageEntry(
                 date: day,
@@ -324,9 +302,7 @@ enum CursorUsageMapper {
                                          unknownModelsByDay: unknownModelsByDay,
                                          modelUsage: modelUsage,
                                          modelSourceNote: "From your Cursor usage export")
-        // Cursor's tokens come from the server-exported usage CSV, not a local CLI log, so the trend
-        // note names that source rather than the "estimated from local logs" line the log-scanning
-        // providers use. Tokens are measured either way.
+        // Cursor tokens는 로컬 CLI 로그가 아닌 server export CSV에서 옴 — trend note는 로그 스캔 provider들의 "estimated from local logs" 대신 그 source를 명시. tokens는 어느 쪽이든 측정값.
         SpendTileMapper.appendUsageTrend(series, to: &lines, now: now, note: "From your Cursor usage export")
         return ProviderUsageHistory(
             series: series,
@@ -335,9 +311,7 @@ enum CursorUsageMapper {
         )
     }
 
-    /// The display family for a raw CSV slug: its canonical pricing key with a `-fast` suffix folded
-    /// into the base (`gpt-5.5-extra-high-fast` → `gpt-5.5-fast` → `gpt-5.5`). Slugs no alias rule
-    /// knows keep their raw name — a wrong guess would silently merge unrelated models.
+    /// raw CSV slug의 표시 family: canonical pricing key에서 `-fast` suffix를 base로 흡수(`gpt-5.5-extra-high-fast` → `gpt-5.5-fast` → `gpt-5.5`). alias rule이 모르는 slug는 raw 이름 유지 — 잘못된 추측은 무관한 모델을 조용히 병합.
     private static func familyName(for model: String, pricing: ModelPricing) -> String {
         let canonical = pricing.supplement.canonicalName(for: model) ?? model
         guard canonical.hasSuffix("-fast") else { return canonical }
@@ -361,8 +335,7 @@ enum CursorUsageMapper {
         }
 
         func entry(model: String) -> ModelUsageEntry {
-            // A single variant with the family's own name is not a breakdown — leave `variants` nil so
-            // the hover tooltip falls back to plain figures.
+            // family 자신의 이름을 가진 단일 variant는 breakdown이 아님 — `variants`를 nil로 두어 hover tooltip이 수치만 표시.
             let list = variants.map { ModelUsageVariant(model: $0.key, totalTokens: $0.value.tokens, costUSD: $0.value.costUSD) }
             let isTrivial = list.count == 1 && list[0].model == model
             return ModelUsageEntry(model: model, totalTokens: tokens, costUSD: costUSD,

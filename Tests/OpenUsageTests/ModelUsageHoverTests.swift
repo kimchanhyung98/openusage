@@ -92,10 +92,9 @@ final class ModelUsageHoverTests: XCTestCase {
     }
 
     func testWholePercentsAlwaysSumToOneHundred() {
-        // Independent rounding would print 33 / 33 / 33 = 99; the largest remainder takes the leftover point.
+        // 개별 반올림은 99가 되므로 최대 remainder가 남은 1점 흡수
         XCTAssertEqual(ModelUsageDetail.wholePercents([1.0 / 3, 1.0 / 3, 1.0 / 3]), [34, 33, 33])
-        // Independent rounding would print 62 + 34 + 5 = 101 (0.045 rounds up); flooring plus
-        // remainder distribution keeps the column at exactly 100.
+        // 개별 반올림은 101이 되므로 floor + remainder 분배로 합계 100 고정
         XCTAssertEqual(ModelUsageDetail.wholePercents([0.62, 0.335, 0.045]), [62, 34, 4])
         XCTAssertEqual(ModelUsageDetail.wholePercents([1.0]), [100])
         XCTAssertEqual(ModelUsageDetail.wholePercents([0, 0]), [0, 0], "an empty period stays all zero")

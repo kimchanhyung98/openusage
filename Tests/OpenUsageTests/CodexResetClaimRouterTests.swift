@@ -1,15 +1,10 @@
 import XCTest
 @testable import OpenUsage
 
-/// The per-card claim router: every card's service must authenticate with THAT card's credential —
-/// a claim is irreversible, so routing a managed-profile card's claim through the default card's
-/// login would spend the wrong account. Proven here by claiming through each service and asserting
-/// the bearer token on the wire, plus the per-card `refreshAfterClaim` target.
 @MainActor
 final class CodexResetClaimRouterTests: XCTestCase {
     private nonisolated static let expiry = Date(timeIntervalSince1970: 1_800_000_000)
 
-    /// Records values from an escaping async context.
     private final class Recorder: @unchecked Sendable {
         var values: [String] = []
     }
@@ -27,7 +22,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         """.utf8)
     }
 
-    /// Routes the list GET and consume POST, always succeeding.
+    /// list GET·consume POST 라우팅 — 항상 성공
     private func makeHTTP() -> RoutingHTTPClient {
         RoutingHTTPClient { request in
             switch request.url {
@@ -42,7 +37,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         }
     }
 
-    /// The default card, faithful to production: a `.standard` store over a `CODEX_HOME` override.
+    /// 프로덕션과 동일한 default card — `CODEX_HOME` override 위의 `.standard` store
     private func makeDefaultProvider(home: String, token: String, http: RoutingHTTPClient) -> CodexProvider {
         CodexProvider(
             authStore: CodexAuthStore(
@@ -54,7 +49,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         )
     }
 
-    /// A managed-profile account card: a `.home`-scoped store over its registered home.
+    /// managed-profile account card — 등록된 home 위의 `.home` scoped store
     private func makeCardProvider(cardID: String, home: String, token: String, http: RoutingHTTPClient) -> CodexProvider {
         CodexProvider(
             provider: CodexProvider.makeProvider(id: cardID, displayName: cardID),
@@ -68,7 +63,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         )
     }
 
-    /// The bare card after the first managed switch: same `codex` id, `.home`-pinned to the shared home.
+    /// 첫 managed 전환 후의 bare card — 동일한 `codex` id에 shared home으로 `.home` pin
     private func makeSharedHomeProvider(home: String, token: String, http: RoutingHTTPClient) -> CodexProvider {
         CodexProvider(
             authStore: CodexAuthStore(
@@ -115,10 +110,6 @@ final class CodexResetClaimRouterTests: XCTestCase {
                        "a successful claim refreshes the card it was tapped on")
     }
 
-    /// The first managed Codex switch rescopes the bare `codex` runtime from the historical
-    /// `.standard` store to the shared-home pin without changing the card id. The rebuilt router
-    /// must claim with the NEW runtime's credential — the old service's sources include another
-    /// account's env-override home and the shared keychain fallback.
     func testReconfigureReplacesTheServiceOfARescopedBareCard() async throws {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
@@ -171,8 +162,6 @@ final class CodexResetClaimRouterTests: XCTestCase {
         XCTAssertNotNil(router.service(for: "codex"), "the default card's service is always present")
     }
 
-    /// A scoped card whose home has no usable login must fail the claim loudly — never fall back to
-    /// the shared keychain item, which is another account's credential.
     func testScopedCardClaimNeverFallsBackToTheSharedKeychainItem() async throws {
         let keychain = ServiceKeychain(values: [
             CodexAuthStore.keychainService: Self.auth(token: "keychain-token", accountID: "acct-other"),

@@ -1,9 +1,7 @@
 import Foundation
 
-/// Global choice for how reset countdowns read across every bounded row: a relative duration
-/// ("Resets in 4d 17h") or a concrete wall-clock time ("Resets tomorrow at 9:00 AM"). Ported from the
-/// original OpenUsage's `resetTimerDisplayMode` setting; toggled by clicking any reset label.
-/// The labels avoid relative/absolute jargon: they're what each mode looks like.
+/// 모든 bounded row의 reset countdown 표시 방식 전역 설정 — 상대 시간("Resets in 4d 17h") 또는 절대 시각.
+/// reset label 클릭으로 toggle. label 문구는 relative/absolute 용어 대신 각 mode의 표시 형태 기술.
 enum ResetDisplayMode: String, Hashable, Sendable, CaseIterable {
     case relative
     case absolute

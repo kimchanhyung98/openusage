@@ -1,18 +1,8 @@
 import Foundation
 
-/// Builds a per-day token/cost series from pi's session logs for one OpenUsage card, so usage that
-/// happened inside pi (e.g. a Claude sub driven through pi) folds into that card's Usage Trend and
-/// spend tiles alongside its native source.
-///
-/// Pi records an authoritative per-message `usage.cost.total` (like OpenCode), so that carried cost is
-/// used when present; when pi logs a `$0` cost (subscription usage it doesn't impute), the tokens are
-/// priced through the shared engine instead — the same `carried cost, else price` rule the Claude and
-/// Codex log scanners use. Pi's usage shape differs from Claude Code's (`usage.input`/`output`,
-/// nested `usage.cost.total`), so it has its own parser rather than routing through those scanners.
-///
-/// An actor holding the versioned incremental parse cache (keyed path + size + mtime) in memory and
-/// Application Support, so refreshes and relaunches parse only changed session files. A single shared
-/// instance is used by every consuming provider, so pi's logs are parsed once rather than once per card.
+/// pi session 로그에서 OpenUsage 카드 하나의 일별 token/cost series 구축 — pi 안에서 발생한 usage(pi로 구동한 Claude sub 등)를 해당 카드의 Usage Trend·spend 타일에 native source와 함께 합산.
+/// cost 규칙은 Claude·Codex 로그 scanner와 동일한 `carried cost, else price` — pi의 per-message `usage.cost.total`이 있으면 그대로, `$0`(미산정 구독 usage)이면 공유 엔진으로 가격 산정. usage shape이 Claude Code와 달라 자체 parser 보유.
+/// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
 
@@ -39,23 +29,21 @@ actor PiUsageScanner {
         self.scanner = incrementalScanner ?? Self.sharedScanner
     }
 
-    /// One parsed assistant-message usage line. Raw timestamp is kept so a cached parse stays valid as
-    /// the window slides; `cardID` is resolved at parse time so aggregation is a cheap filter.
+    /// 파싱된 assistant-message usage line 하나. raw timestamp 유지로 window가 이동해도 cached parse 유효, `cardID`는 parse 시 해석해 집계가 저렴한 filter.
     struct Entry: Codable, Sendable, Equatable {
         var id: String?
         var timestamp: Date
         var cardID: String
         var model: String
-        /// pi's own `usage.cost.total`, used directly when > 0; nil/0 falls through to engine pricing.
+        /// pi 자신의 `usage.cost.total` — > 0이면 그대로 사용, nil/0은 엔진 가격 산정으로 fallthrough.
         var carriedCost: Double?
-        /// The token buckets, for pricing the fall-through case.
+        /// fallthrough 가격 산정용 token bucket.
         var tokens: TokenBreakdown
-        /// pi's reported `usage.totalTokens`, shown as the row's token count (matches pi's own footer).
+        /// pi가 보고한 `usage.totalTokens` — 행의 token 수로 표시 (pi 자체 footer와 일치).
         var reportedTotalTokens: Int
     }
 
-    /// Scan the last `daysBack` days of pi logs for one card. Returns nil when pi's sessions directory
-    /// has no log files at all, so a provider with no pi usage folds in nothing.
+    /// 카드 하나에 대해 최근 `daysBack`일의 pi 로그 스캔. sessions 디렉토리에 로그 파일이 전혀 없으면 nil — pi usage 없는 provider는 아무것도 합산하지 않음.
     func scan(cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let directory = PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
@@ -79,8 +67,7 @@ actor PiUsageScanner {
 
     // MARK: - Parsing
 
-    /// Parse every mapped assistant usage line of one session file. Lines for pi providers OpenUsage
-    /// doesn't track are dropped here so they never reach aggregation.
+    /// session 파일 하나의 매핑된 assistant usage line 전부 파싱. OpenUsage가 추적하지 않는 pi provider의 line은 여기서 drop — 집계에 도달하지 않음.
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage":{"#.utf8)
         var entries: [Entry] = []
@@ -127,8 +114,7 @@ actor PiUsageScanner {
 
     // MARK: - Dedup and aggregation
 
-    /// Drop replayed lines that a forked/cloned session can duplicate under the same message id, keeping
-    /// the first occurrence. Lines without an id are always kept.
+    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 첫 등장 유지. id 없는 line은 항상 유지.
     static func dedup(_ entries: [Entry]) -> [Entry] {
         var seen: Set<String> = []
         var out: [Entry] = []
@@ -140,10 +126,7 @@ actor PiUsageScanner {
         return out
     }
 
-    /// Bucket the card's entries into local calendar days. Cost is pi's carried total when it recorded
-    /// one, else the tokens priced through `pricing`; a model that can't be priced and carries no cost
-    /// is excluded from the totals and surfaced as the tile's unknown-model warning, matching the log
-    /// scanners.
+    /// 카드의 entry를 로컬 캘린더 일 단위로 bucket. cost는 pi carried total 우선, 없으면 `pricing`으로 산정 — 산정 불가·cost 없는 모델은 합계에서 제외하고 unknown-model 경고로 표시 (로그 scanner와 동일).
     static func aggregate(entries: [Entry], cardID: String, since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
         for entry in entries where entry.cardID == cardID && entry.timestamp >= since {

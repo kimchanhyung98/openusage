@@ -1,9 +1,7 @@
 import Foundation
 
-/// Where pi stores its session logs on this machine. Resolution mirrors pi itself: an explicit
-/// `PI_CODING_AGENT_SESSION_DIR` wins, else `PI_CODING_AGENT_DIR/sessions` (the config-dir override),
-/// else the default `~/.pi/agent/sessions`. Pi writes one `*.jsonl` per session under a
-/// per-working-directory subfolder, so the directory is scanned recursively.
+/// pi가 이 기기에 session 로그를 두는 위치 — 해석은 pi 자신과 동일: `PI_CODING_AGENT_SESSION_DIR` 우선, 다음 `PI_CODING_AGENT_DIR/sessions`(config-dir override), 마지막 기본 `~/.pi/agent/sessions`.
+/// pi는 working-directory별 하위 폴더에 session당 `*.jsonl` 하나를 기록 — 디렉토리는 재귀 스캔.
 enum PiPaths {
     static func sessionsDirectory(environment: EnvironmentReading, homeDirectory: URL) -> URL {
         if let override = environment.value(for: "PI_CODING_AGENT_SESSION_DIR")?

@@ -1,8 +1,6 @@
 import Foundation
 
-/// Canonical usage-window lengths in milliseconds, defined once and shared by the providers so the
-/// same window (5h session, 1 day, 7 days, 30-day billing cycle) isn't re-spelled as a magic number
-/// in each mapper.
+/// provider들이 공유하는 표준 usage-window 길이(ms) — 같은 window가 mapper마다 magic number로 재정의되지 않도록 함.
 enum MetricPeriod {
     static let sessionMs = 5 * 60 * 60 * 1000
     static let dayMs = 24 * 60 * 60 * 1000

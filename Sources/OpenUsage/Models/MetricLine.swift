@@ -1,8 +1,6 @@
 import Foundation
 
-/// Provider output normalized into a small app-owned vocabulary.
-///
-/// This mirrors the old JavaScript plugin contract while keeping rendering decisions in Swift.
+/// `.progress` line 값의 표시 format.
 enum ProgressFormat: Hashable, Sendable, Codable {
     case percent
     case dollars
@@ -61,16 +59,15 @@ enum ProgressFormat: Hashable, Sendable, Codable {
     }
 }
 
-/// One column of a `.chart` line: a day's value, its axis label ("Jun 21"), and the pre-formatted
-/// readout shown on hover ("222M tokens"). The producer formats `valueLabel` so the chart stays a dumb
-/// renderer of already-priced numbers, the same split the spend tiles use.
+/// `.chart` line의 하루치 column — 값, 축 label, hover용 pre-format readout.
+/// `valueLabel`은 producer가 format — chart는 이미 가격 계산된 숫자의 dumb renderer.
 struct MetricChartPoint: Hashable, Sendable, Codable {
     var value: Double
     var label: String
     var valueLabel: String?
 
-    /// The hover readout for this day: the producer's pre-formatted label, or a compact token count as a
-    /// fallback. One definition so the inline sparkline and the detail popover never format it differently.
+    /// 하루치 hover readout — producer의 pre-format label, 없으면 compact token count fallback.
+    /// 단일 정의 — inline sparkline과 detail popover의 format 불일치 방지.
     var readout: String {
         valueLabel ?? (MetricFormatter.number(value, kind: .count, style: .row) + " tokens")
     }
@@ -78,23 +75,12 @@ struct MetricChartPoint: Hashable, Sendable, Codable {
 
 enum MetricLine: Hashable, Sendable, Codable {
     case text(label: String, value: String, colorHex: String? = nil, subtitle: String? = nil)
-    /// A small day-by-day bar chart (the Usage Trend row). Carries the raw per-day points plus an
-    /// optional source note; the view formats and draws them. Unbounded, never pinned to the menu bar.
+    /// 일별 bar chart (Usage Trend row) — raw per-day point와 note 전달, view가 format·렌더.
+    /// unbounded, menu bar pin 불가.
     case chart(label: String, points: [MetricChartPoint], note: String? = nil)
-    /// An unbounded row carrying one or more raw numbers (see `MetricValue`) — the preferred shape for
-    /// numeric rows. The number is the source of truth; formatting and which value(s) to show happen at
-    /// the display edge, so the menu bar never has to re-parse a finished string. `.text` stays only for
-    /// genuinely string-valued provider notices exposed through the local API; widgets do not parse it.
-    ///
-    /// `expiriesAt` carries zero or more future expiry instants the row surfaces in its hover tooltip —
-    /// used for the Codex rate-limit-reset-credits row ("2 available", with each credit's expiry listed
-    /// on hover). Carried as raw `Date`s (not baked strings) so they count down on the popover's clock
-    /// tick and honor the global relative/absolute reset mode, like a bounded row's reset countdown.
-    ///
-    /// `unknownModels` carries the names of models this period's spend used that the pricing sources
-    /// don't know. Their usage is left out of the displayed total, so the row shows a warning triangle
-    /// listing them on hover. `modelBreakdown` carries the period-scoped ranked model
-    /// list for spend rows; it is internal UI data, not part of the local HTTP API wire shape.
+    /// raw 숫자(`MetricValue`)를 담는 unbounded row — 숫자가 source of truth, format·값 선택은 표시 edge에서 수행.
+    /// `expiriesAt`은 raw `Date` 유지(popover clock tick·전역 reset mode 대응), `unknownModels`는 미가격 model 경고용,
+    /// `modelBreakdown`은 internal UI 데이터 — local HTTP API wire shape에서 제외.
     case values(
         label: String,
         values: [MetricValue],
@@ -125,9 +111,8 @@ enum MetricLine: Hashable, Sendable, Codable {
         }
     }
 
-    /// The badge label that marks a provider-level error line (produced by `ProviderSnapshot.error`).
-    /// Shared so the producer and `isError`'s detection are compile-time coupled and can't drift apart —
-    /// a silent drift would let a failed provider's error render as a normal pill and cache stale data.
+    /// provider 오류 line을 표시하는 badge label (`ProviderSnapshot.error`가 생산).
+    /// producer와 `isError` 판정의 compile-time 결합 — drift 시 오류가 일반 pill로 렌더되고 stale data가 cache되는 문제 방지.
     static let errorBadgeLabel = "Error"
 
     var isError: Bool {
@@ -137,11 +122,10 @@ enum MetricLine: Hashable, Sendable, Codable {
         return false
     }
 
-    /// The shared "no usage data" placeholder badge, shown when a provider returns no metric lines.
+    /// provider가 metric line을 반환하지 않을 때 표시하는 공용 "no usage data" placeholder badge.
     static let noUsageData = MetricLine.badge(label: "Status", text: "No usage data", colorHex: "#A3A3A3")
 
-    /// Append `noUsageData` when nothing was produced, so an empty result reads as a clear status
-    /// instead of a blank tile.
+    /// 결과가 비어 있으면 `noUsageData` 추가 — 빈 tile 대신 명시적 status 표시.
     static func appendNoDataIfNeeded(_ lines: inout [MetricLine]) {
         if lines.isEmpty {
             lines.append(.noUsageData)

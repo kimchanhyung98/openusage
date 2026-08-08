@@ -1,11 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Regression coverage for #582: a refresh that keeps failing leaves the last good snapshot on screen
-/// (stale-while-revalidate by design), but nothing told the user how old that data was — the fossilized
-/// plan/limits looked current. The store now exposes a per-provider hint once the displayed snapshot ages
-/// past its freshness window: a short "Outdated" label the dashboard header renders, plus a tooltip
-/// ("Last updated 3h ago") that carries the precise age.
 @MainActor
 final class StalenessLabelTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -17,8 +12,7 @@ final class StalenessLabelTests: XCTestCase {
     }
 
     func testSnapshotWithinThresholdHasNoStalenessLabel() {
-        // One refresh interval old is normal right before the next pass — must not flicker a hint on
-        // healthy providers, so the threshold sits above a single interval.
+        // refresh interval 1회분은 정상 — threshold는 단일 interval보다 큼
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now.addingTimeInterval(-RefreshSetting.interval))
         XCTAssertNil(store.stalenessHint(for: "devin"))
@@ -32,14 +26,12 @@ final class StalenessLabelTests: XCTestCase {
     }
 
     func testSnapshotExactlyAtThresholdIsStale() {
-        // Pins the `>=` boundary: exactly `stalenessThreshold` old must already count as stale.
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now.addingTimeInterval(-WidgetDataStore.stalenessThreshold))
         XCTAssertNotNil(store.stalenessHint(for: "devin"))
     }
 
     func testSnapshotJustBelowThresholdIsNotStale() {
-        // One second under the threshold must stay clean — locks the boundary against drift.
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now.addingTimeInterval(-(WidgetDataStore.stalenessThreshold - 1)))
         XCTAssertNil(store.stalenessHint(for: "devin"))
@@ -52,7 +44,7 @@ final class StalenessLabelTests: XCTestCase {
     }
 
     func testFutureRefreshedAtHasNoStalenessLabel() {
-        // Clock skew can stamp a snapshot in the future; a negative age must never render a hint.
+        // clock skew로 미래 시각이 찍힐 수 있음 — 음수 age는 hint 미표시
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now.addingTimeInterval(60 * 60))
         XCTAssertNil(store.stalenessHint(for: "devin"))
@@ -63,9 +55,6 @@ final class StalenessLabelTests: XCTestCase {
         XCTAssertNil(store.stalenessHint(for: "devin"))
     }
 
-    /// The exact #582 scenario, end to end: a cached snapshot is on screen, the live refresh keeps
-    /// failing, so the fossil persists — and is now labelled with its age instead of silently passing
-    /// for current data.
     func testFailingRefreshKeepsFossilButLabelsItStale() async {
         let provider = Provider(id: "devin", displayName: "Devin", icon: .providerMark("devin"))
         let descriptor = WidgetDescriptor(
@@ -78,7 +67,6 @@ final class StalenessLabelTests: XCTestCase {
             snapshot: .error(provider: provider, message: "Not logged in")
         )
         let store = makeStore(provider: provider, descriptor: descriptor, runtime: runtime)
-        // Old cached snapshot already on screen (the "Team 5x" fossil), three hours stale.
         store.snapshots["devin"] = ProviderSnapshot(
             providerID: "devin", displayName: "Devin", plan: "Team 5x",
             lines: [.progress(label: "Weekly quota", used: 40, limit: 100, format: .percent)],

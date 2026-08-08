@@ -50,8 +50,7 @@ enum DevinUsageMapper {
             ))
         } else if hideDailyQuota,
                   let dailyRemaining {
-            // No weekly quota in the response: surface the (hidden) daily quota in the Weekly row so
-            // the tile stays meaningful. Still flipped from remaining→used, just like every quota row.
+            // 응답에 weekly quota 부재 시 숨겨진 daily quota를 Weekly 행으로 표시 (remaining→used 반전은 동일)
             lines.append(quotaLine(
                 label: "Weekly quota",
                 remaining: dailyRemaining,
@@ -61,8 +60,7 @@ enum DevinUsageMapper {
         }
 
         if let extraUsageBalance {
-            // Carried raw (not a baked currency string) so it formats through `MetricFormatter` and picks
-            // up the same compact "$1.2K left" shorthand as the spend tiles.
+            // 숫자 원값 유지 — `MetricFormatter`의 compact 표기("$1.2K left")를 그대로 적용받기 위함
             lines.append(.values(label: "Extra usage balance", values: [MetricValue(number: extraUsageBalance, kind: .dollars)]))
         }
 
@@ -73,8 +71,7 @@ enum DevinUsageMapper {
         return DevinMappedUsage(plan: plan, lines: lines)
     }
 
-    /// Devin reports quota as percent *remaining*; the tile shows percent *used*, so every quota row
-    /// flips `100 - remaining` (clamped) — including the weekly-from-daily fallback above.
+    /// Devin이 보고하는 remaining percent를 `100 - remaining`(clamp)으로 반전한 used percent 행 생성.
     private static func quotaLine(label: String, remaining: Double, resetsAt: Date?, periodDurationMs: Int) -> MetricLine {
         .progress(
             label: label,
@@ -91,8 +88,8 @@ enum DevinUsageMapper {
         return Date(timeIntervalSince1970: seconds)
     }
 
-    /// An overage balance in dollars; `nil` only when the field is missing or non-numeric (truly no
-    /// data). A present balance of zero stays a real, measured zero (renders "$0.00") — not "No data".
+    /// micros 값을 달러 단위 overage balance로 변환.
+    /// 필드 부재·비숫자일 때만 `nil` — 0 balance는 실측 0으로 유지("$0.00" 표시).
     private static func dollarsFromMicros(_ value: Any?) -> Double? {
         guard let micros = ProviderParse.number(value) else { return nil }
         return max(0, micros) / 1_000_000

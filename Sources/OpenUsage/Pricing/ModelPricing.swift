@@ -1,29 +1,17 @@
 import Foundation
 import os
 
-/// An immutable pricing snapshot: the supplement plus the two public catalogs, with the resolution
-/// order ported from ccusage. `ModelPricingStore` builds one; scanners and mappers use it
-/// synchronously for a whole parse pass.
-///
-/// Resolution for a model name:
-/// 1. Supplement alias rules rewrite the slug to a canonical key (raw name kept as fallback).
-/// 2. Supplement pricing (exact) — Cursor-native models live here.
-/// 3. LiteLLM exact.
-/// 4. `-fast` suffix: price the base model and scale by its fast multiplier; if no multiplier or
-///    exact fast entry exists, leave it unpriced instead of silently using standard-speed rates.
-/// 5. LiteLLM fuzzy (boundary-aware substring matching, for non-fast slugs only).
-/// 6. models.dev exact — id-level gap-filler only. models.dev aggregates resellers under near-
-///    identical bare ids (`glm-5-2` vs `glm-5.2`) with diverging rates, so fuzzy matching against
-///    it risks wrong dollars; unknown slug variants stay unpriced (and visibly flagged) instead.
+/// 불변 pricing snapshot — supplement + 공개 catalog 2종. `ModelPricingStore`가 생성, scanner/mapper가 한 parse pass 동안 동기 사용.
+/// 해석 순서: supplement alias 재작성 → supplement 정확 일치 → LiteLLM 정확 → `-fast`는 base × fast multiplier(배율 없으면 미가격)
+/// → LiteLLM fuzzy(비-fast slug만) → models.dev 정확 일치만 — reseller 집계 특성상 fuzzy는 오가격 위험, unknown variant는 미가격 유지.
 final class ModelPricing: Sendable {
     let supplement: PricingSupplement
-    /// LiteLLM `model_prices_and_context_window.json` (bundled snapshot merged with fetched data).
+    /// LiteLLM `model_prices_and_context_window.json` — bundled snapshot에 fetch 데이터 merge.
     let primary: PricingCatalog
-    /// models.dev `api.json` — gap-filler for models LiteLLM misses (e.g. `grok-build-0.1`).
+    /// models.dev `api.json` — LiteLLM 누락 model의 gap-filler.
     let secondary: PricingCatalog
 
-    /// Resolution walks every catalog entry on a fuzzy miss, so memoize per model name. Shared
-    /// across threads; a pricing snapshot is immutable so entries never invalidate.
+    /// fuzzy miss마다 전체 catalog 순회 — model 이름별 memoize. snapshot 불변이라 entry invalidation 없음.
     private let memo = OSAllocatedUnfairLock<[String: ModelRates?]>(initialState: [:])
 
     init(supplement: PricingSupplement, primary: PricingCatalog, secondary: PricingCatalog) {
@@ -34,8 +22,7 @@ final class ModelPricing: Sendable {
 
     static let empty = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(), secondary: PricingCatalog())
 
-    /// Rates for `model`, or nil when no source can price it (caller shows the unknown-model
-    /// warning and counts tokens at $0).
+    /// `model`의 rates — 어떤 source도 가격 못 매기면 nil (caller가 unknown-model 경고 표시, token은 $0 계산).
     func resolve(model: String) -> ModelRates? {
         if let cached = memo.withLock({ $0[model] }) {
             return cached
@@ -45,8 +32,8 @@ final class ModelPricing: Sendable {
         return resolved
     }
 
-    /// Dollar cost of `tokens` for `model`, or nil when the model can't be priced. Aggregated sources
-    /// can disable long-context tiers when they do not preserve individual request boundaries.
+    /// `model` 기준 `tokens`의 dollar cost — 미가격 model이면 nil.
+    /// request 경계를 보존하지 않는 집계 source는 long-context tier 비활성 가능.
     func estimatedCostDollars(
         model: String,
         tokens: TokenBreakdown,
@@ -63,9 +50,7 @@ final class ModelPricing: Sendable {
         return lookup(model)
     }
 
-    /// The secondary catalog is consulted only after the whole primary lookup misses, like ccusage —
-    /// models.dev aggregates resellers whose rates can differ, so LiteLLM wins whenever it knows the
-    /// model at all, and models.dev answers exact ids only (see the fuzzy note on the type).
+    /// secondary catalog은 primary 전체 miss 후에만 조회 (ccusage 방식) — LiteLLM이 알면 항상 우선, models.dev는 정확 id만 응답.
     private func lookup(_ name: String) -> ModelRates? {
         if let entry = supplement.pricing[name] { return entry }
         if let exact = primary.findExact(name) { return exact.rates }
@@ -76,9 +61,8 @@ final class ModelPricing: Sendable {
         return nil
     }
 
-    /// Prices `<base>-fast` slugs from their base entry when a fast multiplier is known. Returns
-    /// nil when the multiplier is unknown; the caller may still accept an exact fast entry from
-    /// models.dev, but never fuzzy-matches the standard-speed base rate.
+    /// `<base>-fast` slug를 base entry × fast multiplier로 가격 산정 — multiplier 미상이면 nil.
+    /// caller는 models.dev의 정확 fast entry는 수용 가능하나 표준 속도 base rate로의 fuzzy 매칭은 금지.
     private func fastVariant(_ name: String) -> ModelRates? {
         guard name.hasSuffix("-fast") else { return nil }
         let base = String(name.dropLast("-fast".count))

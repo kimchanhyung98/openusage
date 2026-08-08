@@ -1,19 +1,11 @@
 import Foundation
 
-/// Turns on providers that arrived with an update — but only the ones the user actually has.
-///
-/// `FirstRunSeeder` handles the very first launch; this is its every-later-launch sibling. It diffs the
-/// registry against the store's known-provider set: anything never seen before gets the same local-only
-/// `hasLocalCredentials()` probe as first-run detection, and is enabled on a hit. Providers the install
-/// has already seen are never touched, so a user's choice to keep one off is never overridden.
-///
-/// One-shot semantics: new IDs are marked known synchronously, before the probe. A new provider without
-/// credentials stays off and is never probed again — enabling it later is the user's call.
+/// 업데이트로 추가된 provider의 자동 활성화 — 사용자가 실제 보유한 도구만.
+/// registry와 known-provider set의 diff 대상만 로컬 probe — 이미 본 provider 미접촉, 사용자의 off 선택 보존.
+/// one-shot: 새 ID는 probe 전 동기로 known 처리, credential 없는 provider는 재probe 없음.
 @MainActor
 enum NewProviderSeeder {
-    /// Returns the detection task (for tests to await), or `nil` when there is nothing to do — the
-    /// common case: no new providers, or a store still in legacy disabled-list mode (where new providers
-    /// default to on already, so there is nothing to detect).
+    /// 탐지 task 반환 (테스트 await용); 할 일 없으면 `nil` — 새 provider 없음 또는 legacy disabled-list 모드.
     @discardableResult
     static func reconcileIfNeeded(
         providers: [ProviderRuntime],
@@ -22,10 +14,7 @@ enum NewProviderSeeder {
         guard enablement.enabledIDs != nil else { return nil }
 
         let currentIDs = Set(providers.map(\.provider.id))
-        // An enabled-list store with no known set predates the tracking (an unbundled `swift run`
-        // seeded before this shipped — bundled installs get it from the v2 settings migration or
-        // `FirstRunSeeder`). Baseline it to the current registry without probing: we can't tell "new"
-        // from "user turned it off", so auto-enabling anything here could override a real choice.
+        // known set 없는 enabled-list store는 tracking 이전 seed — "new"와 "user off" 구분 불가, probe 없이 baseline만.
         guard !enablement.knownIDs.isEmpty else {
             enablement.registerKnownProviders(currentIDs)
             return nil
@@ -36,12 +25,11 @@ enum NewProviderSeeder {
         AppLog.info(.config, "new providers since last run: \(newIDs.sorted()); probing local credentials")
 
         return Task {
-            // Same concurrent local-only probe as first-run detection and the Reset All reseed.
+            // 첫 런치 탐지와 동일한 동시 로컬 probe.
             let newProviders = providers.filter { newIDs.contains($0.provider.id) }
             let detected = await FirstRunSeeder.detectLocalProviders(newProviders)
             for id in detected.sorted() {
-                // The probe takes a moment; if the user already turned the provider on themselves,
-                // leave their toggle alone (setEnabled would be a no-op anyway).
+                // probe 중 사용자가 이미 켠 토글은 유지.
                 guard !enablement.isEnabled(id) else { continue }
                 AppLog.info(.config, "new provider \(id): credentials detected, enabling")
                 enablement.setEnabled(true, for: id)

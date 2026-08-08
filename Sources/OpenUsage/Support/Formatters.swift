@@ -1,7 +1,6 @@
 import Foundation
 
-/// Shared display formatters for live usage data: the mode-aware deadline/reset phrasing
-/// (`deadlineLabel`, `resetRelativeLabel`, `resetAbsoluteLabel`), compact durations, and USD currency.
+/// 사용량 표시용 공통 formatter: mode-aware deadline/reset 문구, compact duration, USD 통화.
 enum Formatters {
     static func currency(_ amount: Double, fractionDigits: Int = 2) -> String {
         let f = NumberFormatter()
@@ -10,22 +9,17 @@ enum Formatters {
         f.locale = Locale(identifier: "en_US")
         f.maximumFractionDigits = fractionDigits
         f.minimumFractionDigits = fractionDigits
-        // The fallback must also respect the requested precision: a raw "$\(amount)" would leak the
-        // double's full decimals (e.g. "$180.168"), which is exactly the rounding glitch we're fixing.
+        // fallback도 요청 precision 준수 — raw "$\(amount)"는 double의 전체 소수를 노출함.
         return f.string(from: amount as NSNumber) ?? "$\(String(format: "%.\(fractionDigits)f", amount))"
     }
 
-    /// The app's compact month/day, e.g. "Jun 21" — localized, no year. Shared so every short calendar
-    /// date (reset deadlines, the Usage Trend axis) reads the same and changes in one place.
+    /// 앱 공통 compact 월/일 표기(예: "Jun 21") — localized, 연도 없음.
     static func monthDayLabel(_ date: Date) -> String {
         date.formatted(.dateTime.month(.abbreviated).day())
     }
 
-    /// The one mode-aware deadline phrase, shared by every "<verb> + when" label (reset countdowns,
-    /// run-out projections): `.relative` → "<prefix> in 2d 6h", `.absolute` → "<prefix> today at
-    /// 5:30 PM" / "<prefix> tomorrow at 9:00 AM" / "<prefix> Feb 15 at 3:45 PM" (ported from the
-    /// original's `formatResetAbsoluteLabel`; time uses the locale's 12/24-hour convention). An
-    /// imminent deadline (≤5 min out relative, past-due absolute) collapses to "<prefix> soon".
+    /// 모든 "<verb> + when" 라벨이 공유하는 mode-aware deadline 문구.
+    /// `.relative` → "<prefix> in 2d 6h", `.absolute` → "<prefix> today at 5:30 PM" 등; 임박 시 "<prefix> soon"으로 축약.
     static func deadlineLabel(
         _ prefix: String,
         at date: Date,
@@ -41,10 +35,8 @@ enum Formatters {
         }
     }
 
-    /// The verb-less "when" phrase shared by `deadlineLabel` (which prefixes a verb) and the
-    /// reset-credit tooltip (which lists bare entries): `.relative` → "2d 6h" / `imminent`;
-    /// `.absolute` → "today at 5:30 PM" / "tomorrow at 9:00 AM" / "Feb 15 at 3:45 PM" / `imminent`
-    /// (past-due or ≤5 min out). `nil` only when the duration is non-finite.
+    /// `deadlineLabel`과 reset-credit tooltip이 공유하는 verb 없는 "when" 문구.
+    /// 임박(past-due 또는 ≤5분) 시 `imminent`, duration이 non-finite일 때만 `nil`.
     static func whenLabel(
         at date: Date,
         mode: ResetDisplayMode,
@@ -63,7 +55,7 @@ enum Formatters {
                 from: calendar.startOfDay(for: now),
                 to: calendar.startOfDay(for: date)
             ).day ?? 0
-            // The wall-clock part honors the user's Auto/12h/24h time-format setting.
+            // wall-clock 부분은 사용자의 Auto/12h/24h 시간 형식 설정 준수.
             let time = TimeFormatSetting.current.shortTime(date)
             if dayDiff <= 0 { return "today at \(time)" }
             if dayDiff == 1 { return "tomorrow at \(time)" }
@@ -71,8 +63,7 @@ enum Formatters {
         }
     }
 
-    /// The collapsed phrase for a deadline that's past-due or within ~5 minutes — too close to print a
-    /// useful countdown. Shared so `deadlineLabel` and any bare-`whenLabel` caller agree on the wording.
+    /// past-due이거나 ~5분 이내라 countdown이 무의미한 deadline의 축약 문구.
     static let imminent = "soon"
 
     static func resetRelativeLabel(until resetsAt: Date, now: Date = Date()) -> String? {
@@ -83,9 +74,8 @@ enum Formatters {
         deadlineLabel("Resets", at: resetsAt, mode: .absolute, now: now, calendar: calendar)
     }
 
-    /// Compact "Xd Yh" / "Xh Ym" / "Xm" duration. At the day scale it always shows two units — the
-    /// hours ride along even when zero ("4d 0h") — so a span 4 days + 52 min out never reads as a flat
-    /// "4d" that hides the sub-day remainder. Minutes are dropped at the day scale.
+    /// compact duration 표기 — "Xd Yh" / "Xh Ym" / "Xm".
+    /// day 단위에서는 hours가 0이어도 항상 두 단위 표기("4d 0h"), minutes는 생략.
     static func compactDuration(_ seconds: TimeInterval) -> String? {
         guard seconds.isFinite, seconds > 0 else { return nil }
         let totalMinutes = max(1, Int((seconds / 60).rounded(.up)))

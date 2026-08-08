@@ -36,9 +36,7 @@ struct CodexAuthState: Hashable, Sendable {
     var auth: CodexAuth
     var source: Source
 
-    /// Whether this candidate carries a non-empty OAuth access token — the same bar `refresh()`'s
-    /// probe requires before fetching usage (an API-key-only auth.json can't serve the usage API).
-    /// `hasLocalCredentials()`'s first-run detection checks this, so the two can never drift.
+    /// 비어 있지 않은 OAuth access token 보유 여부 — `refresh()` probe와 `hasLocalCredentials()`가 공유하는 단일 기준 (drift 방지).
     var hasUsableAccessToken: Bool {
         auth.tokens?.accessToken?.isEmpty == false
     }
@@ -82,23 +80,19 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Which login a `CodexAuthStore` is allowed to see. `.standard` is the default card — byte-identical
-/// to the store's historical behavior (`CODEX_HOME`, the default home list, the shared keychain item).
-/// `.home` backs a managed-profile account card and deliberately has no keychain, environment, or
-/// default-home fallback: the card can only ever read the one login it was created for. (Mirror of
-/// `ClaudeCredentialScope`.)
+/// `CodexAuthStore`가 볼 수 있는 login의 범위. `.standard`는 기본 카드 (`CODEX_HOME`, 기본 home 목록, 공유 keychain item).
+/// `.home`은 managed-profile 계정 카드 전용 — keychain·environment·기본 home fallback 없이 생성 당시의 login 하나만 접근. (`ClaudeCredentialScope` mirror.)
 enum CodexCredentialScope: Hashable, Sendable {
     case standard
-    /// One registered launch-profile home; only `<path>/auth.json` is ever read.
+    /// 등록된 launch-profile home 하나 — `<path>/auth.json`만 읽기.
     case home(path: String)
-    /// A saved account-switching credential, used only for a dashboard usage card.
+    /// 저장된 계정 전환 credential — dashboard usage 카드 전용.
     case accountSnapshot(profileID: String)
 }
 
 struct CodexAuthStore: Sendable {
     static let keychainService = "Codex Auth"
-    /// Refresh once the access token is within this window of its JWT `exp` — the same 5-minute slack
-    /// the `codex` CLI itself uses, so OpenUsage rotates on the same schedule rather than guessing.
+    /// JWT `exp` 기준 refresh 선행 window — `codex` CLI와 동일한 5분 slack으로 같은 일정에 회전.
     static let accessTokenRefreshWindow: TimeInterval = 5 * 60
     private static let authFile = "auth.json"
     private static let defaultAuthHomes = ["~/.config/codex", "~/.codex"]
@@ -130,10 +124,8 @@ struct CodexAuthStore: Sendable {
         return authPaths().compactMap { loadAuth(at: $0) }
     }
 
-    /// Reads the credential from a single on-disk auth file — the targeted counterpart to
-    /// `loadKeychainAuth()`, used when reloading the exact source we already loaded from so we don't
-    /// re-scan every candidate path. Returns `nil` when the file is missing, unreadable, or doesn't
-    /// carry token-like auth.
+    /// 단일 auth 파일에서 credential 읽기 — 이미 로드한 source의 재로드용, 후보 경로 전체 재스캔 없음.
+    /// 파일 누락·판독 불가·token 없는 auth는 `nil`.
     func loadAuth(at path: String) -> CodexAuthState? {
         guard files.exists(path),
               let text = try? files.readText(path),
@@ -146,9 +138,7 @@ struct CodexAuthStore: Sendable {
     }
 
     func loadKeychainAuth() -> CodexAuthState? {
-        // A scoped card never touches the shared "Codex Auth" item — that login belongs to another
-        // card, and merely reading it could raise a Keychain prompt for a credential this card must
-        // never use.
+        // scoped 카드는 공유 "Codex Auth" item 접근 금지 — 다른 카드의 login이고, 읽기만으로도 Keychain prompt 유발 가능.
         guard case .standard = scope else { return nil }
         guard let value = try? keychain.readGenericPassword(service: Self.keychainService),
               let auth = Self.parseAuth(value),
@@ -181,13 +171,8 @@ struct CodexAuthStore: Sendable {
         }
     }
 
-    /// Whether the access token should be proactively refreshed.
-    ///
-    /// Prefers the access token's own JWT `exp` — refresh only when it is at (or within
-    /// `accessTokenRefreshWindow` of) expiry, mirroring the `codex` CLI. The hardcoded 8-day
-    /// wall-clock age is only a fallback for tokens whose `exp` we can't read; on its own it forced a
-    /// refresh while the access token was still valid, tripping `refresh_token_reused` (issue #516).
-    /// A brand-new login with no `last_refresh` and no readable `exp` does NOT need a refresh.
+    /// Access token의 선제 refresh 필요 여부 — JWT `exp` 우선, `codex` CLI와 동일 판정.
+    /// 8일 wall-clock age는 `exp` 미판독 token 전용 fallback — 단독 적용 시 유효한 token까지 refresh해 `refresh_token_reused` 유발 (issue #516).
     func needsRefresh(_ auth: CodexAuth) -> Bool {
         if let accessToken = auth.tokens?.accessToken,
            let expiresAt = accessTokenExpiresAt(accessToken) {
@@ -201,8 +186,7 @@ struct CodexAuthStore: Sendable {
         return now().timeIntervalSince(date) > 8 * 24 * 60 * 60
     }
 
-    /// The access token's expiry from its JWT `exp` claim, or `nil` when the token isn't a decodable
-    /// JWT or omits `exp`.
+    /// JWT `exp` claim 기준 access token 만료 시각 — decode 불가하거나 `exp` 없으면 `nil`.
     func accessTokenExpiresAt(_ token: String) -> Date? {
         guard let exp = ProviderParse.jwtPayload(token)?["exp"].flatMap(ProviderParse.number) else {
             return nil
@@ -211,8 +195,7 @@ struct CodexAuthStore: Sendable {
     }
 
     func authPaths() -> [String] {
-        // A scoped card reads exactly its own home — never the environment override or the default
-        // home list, both of which belong to the default card's login.
+        // scoped 카드는 자기 home만 읽기 — 환경 변수 override와 기본 home 목록은 기본 카드의 login 소유.
         if case .home(let path) = scope {
             return [joinPath(path, Self.authFile)]
         }

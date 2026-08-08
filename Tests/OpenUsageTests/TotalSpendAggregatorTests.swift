@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the Total Spend card's aggregation and metric projection: which providers contribute,
-/// how slices rank per metric, Cost/MTok math, and when the combined number counts as estimated.
 final class TotalSpendAggregatorTests: XCTestCase {
     private let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
     private let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
@@ -51,9 +49,6 @@ final class TotalSpendAggregatorTests: XCTestCase {
     }
 
     func testSlicesCarryTheCallerResolvedTitleThroughProjection() {
-        // The caller (the live card, with registry access) resolves each slice's title once; the
-        // legend and the share export both read that resolved string, so a mid-session rename can
-        // never show on one and not the other.
         let snapshots = [
             "claude": snapshot(claude, lines: [spendLine("Today", dollars: 2.50)]),
             "cursor": snapshot(cursor, lines: [spendLine("Today", dollars: 7.25)])
@@ -72,7 +67,6 @@ final class TotalSpendAggregatorTests: XCTestCase {
     func testProviderWithoutPeriodLineIsExcludedNotZero() {
         let snapshots = [
             "claude": snapshot(claude, lines: [spendLine("Today", dollars: 1.00)]),
-            // Codex has spend for yesterday only — it must not appear in today's slices.
             "codex": snapshot(codex, lines: [spendLine("Yesterday", dollars: 3.00)])
         ]
 
@@ -125,8 +119,6 @@ final class TotalSpendAggregatorTests: XCTestCase {
     }
 
     func testCostPerMtokRanksByRateAndBlendsTotals() {
-        // Claude: $10 / 1M tokens = $10/MTok
-        // Cursor: $30 / 1M tokens = $30/MTok — ranks first by rate
         let snapshots = [
             "claude": snapshot(claude, lines: [spendLine("Today", dollars: 10, tokens: 1_000_000)]),
             "cursor": snapshot(cursor, lines: [spendLine("Today", dollars: 30, tokens: 1_000_000)])
@@ -138,7 +130,6 @@ final class TotalSpendAggregatorTests: XCTestCase {
         XCTAssertEqual(rates.slices.map(\.provider.id), ["cursor", "claude"])
         XCTAssertEqual(rates.slices[0].displayAmount, 30, accuracy: 0.0001)
         XCTAssertEqual(rates.slices[1].displayAmount, 10, accuracy: 0.0001)
-        // Blended center: ($40 / 2M) * 1e6 = $20/MTok
         XCTAssertEqual(rates.centerValue, 20, accuracy: 0.0001)
     }
 

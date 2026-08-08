@@ -1,16 +1,10 @@
 import Foundation
 
-/// A user-supplied API key already on the machine — an environment variable or a small JSON/plain-text
-/// config file — for providers with no companion CLI/app that stashes a credential (OpenRouter, Z.ai).
-/// The full read / status / save / delete behavior lives here so each such provider is a thin wrapper
-/// over its own config paths, env-var names, and error messages instead of a line-for-line copy.
-///
-/// A GUI app launched from Finder/Dock doesn't inherit the interactive shell environment, so
-/// `ProcessEnvironmentReader` captures the login shell's environment at launch (see
-/// `LoginShellEnvironment`) — an env var exported in a shell profile is honored even in a packaged
-/// build; the config file remains the explicit path.
+/// 기기에 이미 있는 user-supplied API key(환경 변수 또는 작은 JSON/plain-text config file) — credential을 남기는 동반 CLI/앱이 없는 provider(OpenRouter, Z.ai)용.
+/// read/status/save/delete 전부가 여기 있어 각 provider는 config 경로·env-var 이름·오류 메시지만 갖는 얇은 wrapper.
+/// Finder/Dock에서 실행된 GUI 앱은 interactive shell 환경을 상속하지 않음 — `ProcessEnvironmentReader`가 launch 시 login shell 환경을 capture(`LoginShellEnvironment`)해 shell profile의 export도 패키지 빌드에서 유효.
 struct UserAPIKeyStore: Sendable {
-    /// A save/delete failure the wrapper maps to its provider's own error, preserving the user-facing message.
+    /// wrapper가 자기 provider 오류로 매핑하는 save/delete 실패 — user-facing 메시지 보존.
     enum Failure { case missingKey, saveFailed, deleteFailed }
 
     let configPaths: [String]
@@ -19,14 +13,12 @@ struct UserAPIKeyStore: Sendable {
     var environment: EnvironmentReading
     let makeError: @Sendable (Failure) -> Error
 
-    /// Config file first, environment second: the config file is the path a user edits to rotate or
-    /// replace the key, so it wins over a stale env value an old `launchctl setenv` may have left behind.
+    /// config file 우선, 환경 변수 차선 — config file이 키 교체 시 사용자가 편집하는 경로라 낡은 `launchctl setenv` 잔여값보다 우선.
     func loadKey() -> String? {
         keyFromConfigFile() ?? keyFromEnvironment()
     }
 
-    /// Which combination of sources currently holds a key — drives the four-state per-provider API-key
-    /// editor. A saved key plus an environment key is `overrideActive` because config wins.
+    /// 현재 key를 쥔 source 조합 — 4-state per-provider API-key 편집기 구동. 저장 key + env key는 config 우선이라 `overrideActive`.
     func keyStatus() -> APIKeyStatus {
         let hasConfig = keyFromConfigFile() != nil
         let hasEnv = keyFromEnvironment() != nil
@@ -38,8 +30,7 @@ struct UserAPIKeyStore: Sendable {
         }
     }
 
-    /// Persist `key` to the primary config file (as JSON `{"apiKey":"…"}`), which wins over a stale env
-    /// var — so this is also the "override" path. Empty input is rejected as `.missingKey`.
+    /// primary config file에 JSON `{"apiKey":"…"}`로 저장 — 낡은 env var보다 우선하므로 "override" 경로이기도 함. 빈 입력은 `.missingKey`.
     func saveKey(_ key: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw makeError(.missingKey) }
@@ -53,8 +44,7 @@ struct UserAPIKeyStore: Sendable {
         }
     }
 
-    /// Remove the saved key from every config path (not just the primary), so clearing truly clears it —
-    /// otherwise a key in an alternate path would resurface. A missing file is a no-op.
+    /// primary만이 아닌 모든 config 경로에서 저장 key 제거 — 대체 경로의 key가 되살아나지 않도록. 없는 파일은 no-op.
     func deleteKey() throws {
         for path in configPaths {
             guard files.exists(path) else { continue }
@@ -87,7 +77,7 @@ struct UserAPIKeyStore: Sendable {
         return nil
     }
 
-    /// Accept a JSON object with `apiKey` / `api_key` / `key`, or a plain-text file holding only the key.
+    /// `apiKey` / `api_key` / `key`를 가진 JSON 객체 또는 key만 담긴 plain-text 파일 허용.
     static func keyFromConfigText(_ text: String) -> String? {
         if let data = text.data(using: .utf8),
            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
@@ -100,7 +90,7 @@ struct UserAPIKeyStore: Sendable {
             return nil
         }
 
-        // Not JSON: treat as a plain-text key file, ignoring blank lines.
+        // JSON 아님 — 빈 줄 무시하고 plain-text key 파일로 취급.
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty || trimmed.contains("{") ? nil : trimmed
     }

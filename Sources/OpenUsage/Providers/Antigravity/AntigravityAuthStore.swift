@@ -1,10 +1,8 @@
 import CryptoKit
 import Foundation
 
-/// Credentials Antigravity already has on the machine. On current builds the OAuth tokens live in the
-/// macOS Keychain (service `gemini`, account `antigravity`) as a `go-keyring-base64`-wrapped JSON blob
-/// holding an access token, a refresh token, and an expiry — written by the Antigravity app / `agy` CLI.
-/// (The old SQLite `oauthToken` envelope no longer carries tokens, so it isn't read.)
+/// Antigravity가 기기에 이미 가진 credential. 현재 빌드는 OAuth token을 macOS Keychain(service `gemini`, account `antigravity`)에 `go-keyring-base64` 래핑 JSON blob으로 저장 — access token·refresh token·expiry, Antigravity 앱/`agy` CLI가 기록.
+/// (구 SQLite `oauthToken` envelope는 더 이상 token을 담지 않아 읽지 않음.)
 struct AntigravityKeychainToken: Sendable, Equatable {
     var accessToken: String?
     var refreshToken: String?
@@ -14,10 +12,9 @@ struct AntigravityKeychainToken: Sendable, Equatable {
 struct AntigravityAuthStore: Sendable {
     static let keychainService = "gemini"
     static let keychainAccount = "antigravity"
-    /// Our own cache of refreshed access tokens, so a Google OAuth refresh happens ~once per token
-    /// lifetime instead of every refresh cycle. We never write back to Antigravity's keychain item.
+    /// 갱신된 access token의 자체 cache — Google OAuth refresh를 매 cycle 대신 token 수명당 ~1회로 축소. Antigravity의 keychain 항목에는 절대 쓰지 않음.
     static let cachePath = "~/Library/Application Support/OpenUsage/antigravity/auth.json"
-    /// Treat a token with less than this left as already expired (skip straight to refresh).
+    /// 남은 수명이 이 값 미만인 token은 만료로 취급 (바로 refresh).
     static let refreshBuffer: TimeInterval = 60
 
     var keychain: KeychainAccessing
@@ -34,7 +31,7 @@ struct AntigravityAuthStore: Sendable {
         self.now = now
     }
 
-    /// Blocking keychain read — call off the main actor.
+    /// blocking keychain 읽기 — main actor 밖에서 호출.
     func loadKeychainToken() throws -> AntigravityKeychainToken? {
         let raw: String?
         do {
@@ -54,7 +51,7 @@ struct AntigravityAuthStore: Sendable {
         return token
     }
 
-    /// Whether a keychain access token is worth attempting: expiry unknown, or it hasn't passed yet.
+    /// keychain access token이 시도할 가치가 있는지: expiry 미상이거나 아직 지나지 않음.
     func isUsable(expiry: Date?) -> Bool {
         guard let expiry else { return true }
         return expiry.timeIntervalSince(now()) > Self.refreshBuffer
@@ -65,8 +62,7 @@ struct AntigravityAuthStore: Sendable {
     private struct CachedToken: Codable {
         var accessToken: String
         var expiresAtMs: Double
-        /// SHA-256 of the Keychain refresh credential that produced this derived access token. This is
-        /// optional only so older unbound cache files decode as a safe miss during migration.
+        /// 이 파생 access token을 만든 Keychain refresh credential의 SHA-256. optional인 이유는 구버전 unbound cache 파일이 migration 중 안전한 miss로 decode되게 하기 위함.
         var credentialFingerprint: Data?
     }
 
@@ -75,9 +71,7 @@ struct AntigravityAuthStore: Sendable {
             discardCachedToken()
             return nil
         }
-        // Require at least `refreshBuffer` of life left, matching `isUsable(expiry:)` for the keychain
-        // token — a near-expiry cached token would otherwise yield a near-certain 401 and a wasteful
-        // extra refresh.
+        // keychain token의 `isUsable(expiry:)`와 동일하게 최소 `refreshBuffer`만큼 수명 요구 — 임박 만료 cached token은 거의 확실한 401과 불필요한 refresh만 유발.
         let text: String
         do {
             guard let stored = try files.readTextIfPresent(Self.cachePath) else { return nil }
@@ -116,13 +110,12 @@ struct AntigravityAuthStore: Sendable {
             let data = try JSONEncoder().encode(cached)
             try files.writeText(Self.cachePath, String(decoding: data, as: UTF8.self))
         } catch {
-            // The refreshed token still works for this session; a failed cache only means we refresh
-            // again next cycle. Log loudly rather than fail the live fetch.
+            // 갱신된 token은 이번 세션에 유효 — cache 실패는 다음 cycle에 다시 refresh할 뿐. live fetch를 실패시키지 않고 크게 로그.
             AppLog.warn(LogTag.auth("antigravity"), "failed to cache refreshed token: \(error.localizedDescription)")
         }
     }
 
-    /// Remove only OpenUsage's derived token; Antigravity's Keychain entry is never modified.
+    /// OpenUsage의 파생 token만 제거 — Antigravity의 Keychain 항목은 절대 수정하지 않음.
     func discardCachedToken() {
         do {
             try files.remove(Self.cachePath)
@@ -142,9 +135,7 @@ struct AntigravityAuthStore: Sendable {
 
     // MARK: - Token extraction (pure)
 
-    /// Decode the keychain value into tokens. Mirrors the `agy` format: an optional
-    /// `go-keyring-base64:` wrapper around JSON `{ token: { access_token, refresh_token, expiry }, … }`,
-    /// with fallbacks for a bare JSON string, a `Bearer …` value, or a raw token.
+    /// keychain 값을 token으로 decode — `agy` 형식 미러링: JSON `{ token: { access_token, refresh_token, expiry }, … }`에 optional `go-keyring-base64:` wrapper, bare JSON string·`Bearer …`·raw token fallback.
     static func extractToken(fromKeychainRaw raw: String) -> AntigravityKeychainToken? {
         let boundaryCharacters = CharacterSet.whitespacesAndNewlines
             .union(CharacterSet(charactersIn: "\u{FEFF}"))
@@ -165,7 +156,7 @@ struct AntigravityAuthStore: Sendable {
             return nil
         }
 
-        // Broken structured material is never sent as a raw bearer token.
+        // 손상된 구조화 데이터는 raw bearer token으로 전송 금지.
         if text.hasPrefix("{") || text.hasPrefix("[") {
             return nil
         }
@@ -178,7 +169,7 @@ struct AntigravityAuthStore: Sendable {
     }
 
     static func tokenFromObject(_ object: [String: Any]) -> AntigravityKeychainToken? {
-        // Prefer a nested `token` object (the agy shape); otherwise read fields off the root.
+        // 중첩 `token` 객체(agy 형태) 우선, 없으면 root에서 필드 읽기.
         let source = (object["token"] as? [String: Any]) ?? object
         let access = firstString(source, ["access_token", "accessToken", "token", "id_token", "idToken", "bearerToken", "auth_token", "authToken"])
         let refresh = firstString(source, ["refresh_token", "refreshToken"])

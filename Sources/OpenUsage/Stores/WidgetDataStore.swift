@@ -1,9 +1,7 @@
 import Foundation
 import Observation
 
-/// A compact staleness hint for a provider's on-screen snapshot. `label` is a short, fixed word
-/// ("Outdated") that stays narrow next to long plan names like "Super Grok Heavy", while the precise
-/// age lives in `tooltip` ("Last updated 3h 12m ago"), revealed on hover.
+/// Provider snapshot의 staleness 힌트 — `label`은 고정 단어("Outdated"), 정확한 age는 hover tooltip.
 struct StalenessHint: Equatable {
     let label: String
     let tooltip: String
@@ -16,102 +14,71 @@ final class WidgetDataStore {
     private var providersByID: [String: ProviderRuntime]
     private let cache: ProviderSnapshotCache
     private let defaults: UserDefaults
-    /// Whether a provider is currently enabled. Injected so the store consults the single
-    /// `ProviderEnablementStore` without owning it; defaults to "all enabled" for tests and previews.
+    /// Provider enablement 조회 — 주입식, 기본은 전부 enabled(테스트·프리뷰용).
     private let isProviderEnabled: @MainActor (String) -> Bool
-    /// The user's widget order (already enablement-filtered) that drives the menu-bar value. Injected
-    /// so the store reads `LayoutStore.visiblePlaced` without owning it; defaults to registry order.
+    /// 메뉴바 값을 결정하는 사용자 widget 순서(enablement 필터 적용) — 주입식, 기본은 registry 순서.
     private let orderedDescriptors: @MainActor () -> [WidgetDescriptor]
-    /// Clock for the failure-backoff window. Injected so tests can advance time deterministically.
+    /// failure-backoff 윈도우용 clock — 테스트에서 주입.
     private let now: () -> Date
-    /// Monotonic clock for refresh durations, kept separate from wall time so a clock adjustment cannot
-    /// produce a negative or wildly inflated provider timing. Tests inject exact ticks.
+    /// refresh 시간 측정용 monotonic clock — wall clock 조정이 timing을 왜곡하지 않도록 분리.
     private let monotonicNow: () -> TimeInterval
     private let slowProviderRefreshThreshold: TimeInterval
-    /// Quota-notification preferences (three independent triggers). Injected; `nil` disables
-    /// notifications entirely (tests and previews that don't wire it).
+    /// Quota-notification 설정 — nil이면 notification 전체 비활성(테스트·프리뷰).
     private let notificationSettings: (@MainActor () -> NotificationSettingsStore)?
-    /// Card id → the account identity currently signed in there, resolved once at launch by
-    /// `ProviderAccountAssembly`. Drives the snapshot cache's account stamp: writes record the
-    /// producer, and launch loads only paint an entry whose stamp matches. A card absent here has an
-    /// unresolved identity this launch (or isn't account-aware) — its cache behaves as it always did.
+    /// Card id → 현재 로그인된 account identity(launch 시 `ProviderAccountAssembly`가 해석).
+    /// snapshot cache의 account stamp 근거 — 쓰기는 producer를 기록, launch 로드는 stamp 일치 entry만 paint.
     private var providerIdentityKeys: [String: String]
     private var familyTotalHistoryCardIDs: Set<String>
-    /// The live card title for a card id, `nil` for non-account providers — the account-registry
-    /// name resolver, injected by `AppContainer` so notification titles carry renames. `nil`
-    /// (tests, the one-shot CLI) falls back to the baked derived name.
+    /// Card id → live 카드 title 리졸버(비계정 provider는 nil) — nil(테스트·one-shot CLI)이면 derived name 폴백.
     private let resolveDisplayName: (@MainActor (String) -> String?)?
-    /// Where a fired milestone is delivered: `(idPrefix, title, subtitle, body) -> Bool`. The Bool is
-    /// whether it was actually delivered (authorized + scheduled); on false the caller leaves the
-    /// milestone un-marked so it retries next pass. Injected so tests can record posts without a live
-    /// notification center; defaults to the shared `AppNotifications`.
+    /// Milestone notification 전달 지점 — 반환 Bool은 실제 전달 여부, false면 un-marked로 남겨 다음 pass 재시도.
     private let postNotification: @MainActor (String, String, String, String) async -> Bool
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let alwaysShowPacingKey = "alwaysShowPacing"
-    /// How long a provider that just failed is skipped before the loop will probe it again. A failed
-    /// refresh isn't cached, so — unlike a success, which the snapshot cache gates for an interval —
-    /// nothing else stops the loop from re-probing a broken provider (logged-out Devin/Grok especially)
-    /// on every wake, spawning subprocesses and network calls in a tight loop. This negative-cache caps a
-    /// failing provider to one probe per window. Shorter than the refresh interval, so the normal
-    /// 5-minute heartbeat always retries; it only suppresses the sub-interval re-probes a wake burst
-    /// would cause. The manual `force` refresh (⌘R) always bypasses it.
+    /// 실패한 provider의 재probe 억제 윈도우 — 실패는 캐시되지 않아 이 negative-cache만이 wake 연발의 재probe를 차단.
+    /// refresh interval보다 짧아 5분 heartbeat 재시도는 유지; 수동 force refresh(⌘R)는 항상 우회.
     private static let failureRetryBackoff: TimeInterval = 60
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
 
-    /// Rendered snapshots consumed by every UI/API surface. Equal to `localSnapshots` when iCloud sync
-    /// is off; machine-local history rows are rebuilt from the union while sync is on.
+    /// 모든 UI/API 표면이 소비하는 렌더링된 snapshot — iCloud sync off면 `localSnapshots`와 동일, on이면 peer union으로 재구성.
     var snapshots: [String: ProviderSnapshot] = [:]
-    /// Last-good snapshots produced on this Mac. These alone are cached and exported to iCloud, so a
-    /// peer contribution can never echo back out and multiply on the next device.
+    /// 이 Mac이 생산한 last-good snapshot — 이것만 캐시·iCloud export되어 peer 기여의 echo 증식을 차단.
     private(set) var localSnapshots: [String: ProviderSnapshot] = [:]
     var refreshingProviderIDs: Set<String> = []
-    /// Wall-clock time the most recent full refresh pass finished. Together with the chosen refresh
-    /// cadence it drives the dashboard footer's live "Next update in …" countdown, so the footer reflects
-    /// the real schedule instead of a hardcoded value. `nil` until the first pass completes.
+    /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
     var lastRefreshAt: Date?
-    /// Latest refresh error per provider (e.g. "Not logged in. Run `codex` to authenticate."). Set when
-    /// a refresh comes back as an error snapshot, cleared on the next successful one. The dashboard
-    /// renders it as a warning indicator beside the provider name; the last good snapshot keeps
-    /// displaying (stale-while-revalidate) instead of being replaced by dead "No data" rows.
+    /// Provider별 최신 refresh 에러 — 에러 snapshot에서 설정, 다음 성공에서 해제.
+    /// last-good snapshot은 계속 표시(stale-while-revalidate), dashboard는 경고 indicator만 추가.
     var providerErrors: [String: String] = [:]
 
-    /// Per-provider earliest next-probe time after a failure (see `failureRetryBackoff`). Not part of
-    /// observable UI state, so it's excluded from `@Observable` tracking.
+    /// Provider별 실패 후 다음 probe 허용 시각(`failureRetryBackoff` 참고) — UI 상태가 아니라 observation 제외.
     @ObservationIgnored private var failureRetryAfter: [String: Date] = [:]
 
-    /// Owns the quota pace-notification subsystem (dedup state, fire/deliver decision, trace). This store
-    /// just gathers each pass's enabled bounded metrics and delegates.
+    /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
 
-    /// Telemetry hook wired by `AppContainer`. Invoked once per *real* provider fetch — `.refreshed` or
-    /// `.failed` only, never the cache-hit/skip/backoff outcomes that the 5-minute timer produces in
-    /// bulk — so the recorder can roll daily usage and error counts up into one event per provider per
-    /// day. `nil` (and so a no-op) in tests and previews. Not observable UI state.
+    /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
+    /// 테스트·프리뷰에서는 nil(no-op).
     @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, Bool) -> Void)?
-    /// Wired by `ICloudUsageSyncStore`; debounced there so a concurrent provider batch produces one file.
+    /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
     @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
     @ObservationIgnored private var peerHistoryDocuments: [UsageHistoryDocument] = []
-    /// Accounts synced from other Macs that have NO card here: surfaced in Total Spend only (their
-    /// synthesized snapshots carry the usual Today/Yesterday/Last 30 Days lines), never as cards.
+    /// 다른 Mac에서 sync됐지만 이곳에 카드가 없는 account — Total Spend에만 노출, 카드로는 미표시.
     private(set) var remoteOnlySpend: [(provider: Provider, snapshot: ProviderSnapshot)] = []
 
-    /// Global meter style: whether every bounded tile (and the menu-bar value) renders as "used" or
-    /// "left/remaining". Persisted so the choice survives relaunch; defaults to `.used`.
+    /// 전역 meter 스타일("used"/"left") — persist, 기본 .used.
     var meterStyle: WidgetDisplayMode {
         didSet { defaults.set(meterStyle.rawValue, forKey: Self.meterStyleKey) }
     }
 
-    /// Global reset-countdown format: relative ("Resets in 4d 17h") or absolute ("Resets tomorrow at
-    /// 9:00 AM"). Persisted across relaunch; defaults to `.absolute`. Toggled by clicking a reset label.
+    /// 전역 reset 카운트다운 형식(relative/absolute) — persist, 기본 .absolute. reset label 클릭으로 toggle.
     var resetDisplayMode: ResetDisplayMode {
         didSet { defaults.set(resetDisplayMode.rawValue, forKey: Self.resetDisplayModeKey) }
     }
 
-    /// Global "always show pacing" opt-in: when on, on-track rows surface their pace projection (the
-    /// blue/healthy row gains its "~N% left at reset" copy + an even-pace tick, the amber tick switches
-    /// to the same even-pace line). Persisted across relaunch; defaults to `true`.
+    /// 전역 "always show pacing" opt-in — on이면 on-track 행에도 pace projection 노출. persist, 기본 true.
     var alwaysShowPacing: Bool {
         didSet { defaults.set(alwaysShowPacing, forKey: Self.alwaysShowPacingKey) }
     }
@@ -153,16 +120,9 @@ final class WidgetDataStore {
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
         self.resetDisplayMode = defaults.enumValue(forKey: Self.resetDisplayModeKey, default: .absolute)
         self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey, default: true)
-        // Stale-while-revalidate: load whatever was cached (expired included) so the menu bar and
-        // dashboard show last-known values immediately at launch instead of "—"; the refresh loop
-        // replaces them as soon as fresh data lands.
-        //
-        // Account swap guard: when a claude/codex card's CURRENT account identity is known, a cached
-        // entry only paints if the account that produced it matches. After a swap at the same home the
-        // card id still matches, so without this check the previous account's limits and plan would
-        // paint under the new account until the first successful refresh. A card whose current
-        // identity is unresolved (logged out, keyring-mode Codex) can't be verified either way — it
-        // keeps its cache, exactly as before the guard existed. Non-account providers are unaffected.
+        // Stale-while-revalidate: 만료 포함 캐시를 즉시 로드 — launch 직후 "—" 대신 last-known 값 표시.
+        // Account swap guard: 현재 identity가 known인 카드는 생산 account가 일치하는 entry만 paint — 같은 home에서
+        // swap 후 이전 account의 limit·plan 노출 차단. identity 미해석 카드는 검증 불가라 종전대로 캐시 유지.
         let loaded = cache.loadSnapshots(providerIDs: registry.providers.map(\.id))
             .filter { cardID, _ in
                 guard cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: providerIdentityKeys[cardID]) else {
@@ -175,14 +135,10 @@ final class WidgetDataStore {
         self.snapshots = loaded
     }
 
-    /// Refresh every enabled provider, concurrently — one slow provider never delays the rest.
-    /// Everything stays MainActor-isolated; the overlap happens at the network awaits inside each
-    /// provider, and the per-provider in-flight guard in `refresh` still prevents duplicate fetches.
-    /// `force` bypasses the snapshot cache (the manual "refresh now" path); the periodic loop keeps
-    /// honoring it.
+    /// Enabled provider 전체를 동시 refresh — 느린 provider 하나가 나머지를 지연시키지 않는 구조.
+    /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
     func refreshAll(force: Bool = false) async {
-        // `Task {}` from MainActor context inherits the isolation (a task-group child can't capture
-        // the non-Sendable store), so: fire one task per provider, then await them all.
+        // MainActor 격리 유지를 위해 task group 대신 provider별 Task 생성 후 일괄 await.
         let providerIDs = registry.providers.map(\.id).filter { isProviderEnabled($0) }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
@@ -194,13 +150,10 @@ final class WidgetDataStore {
         for task in tasks {
             outcomes.append(await task.value)
         }
-        // Stamp the end of the pass so the footer countdown targets the next scheduled refresh
-        // (this time + one refresh interval), mirroring the periodic loop that sleeps one interval
-        // after each pass.
+        // pass 종료 시각 stamp — footer 카운트다운이 다음 예정 refresh(이 시각 + 1 interval)를 겨냥.
         lastRefreshAt = Date()
         let durationMs = durationMilliseconds(since: start)
-        // Count THIS batch's actual outcomes, not the long-lived `providerErrors` map (which persists
-        // across passes, so reading it would miscount cache hits and stale earlier failures).
+        // 이번 batch의 실제 outcome만 집계 — 누적 providerErrors로 세면 cache hit·과거 실패가 오염.
         let refreshed = outcomes.count { $0 == .refreshed }
         let failed = outcomes.count { $0 == .failed }
         let cached = outcomes.count { $0 == .cacheHit }
@@ -209,10 +162,8 @@ final class WidgetDataStore {
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
     }
 
-    /// The account switch changes the menu-bar pins before its selected card necessarily has a
-    /// snapshot. A periodic refresh can already own that card at this instant; wait for it to finish
-    /// and run the user-requested fetch instead of dropping the refresh and leaving the strip stale
-    /// until the next cadence.
+    /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
+    /// 사용자 요청 fetch를 실행, 다음 cadence까지 strip이 stale하게 남는 것을 방지.
     func refreshAfterAccountSelection(
         providerID: String,
         maxAttempts: Int = 45,
@@ -232,14 +183,12 @@ final class WidgetDataStore {
         AppLog.error(.refresh, "account selection refresh kept being skipped for \(providerID); waiting for the next cycle")
     }
 
-    /// Bumped on every catalog replacement; `refresh` captures it at fetch start and discards a
-    /// result whose catalog changed mid-fetch, so a fetch started under one account can never be
-    /// published — or stamped — under the identity installed after it began.
+    /// 카탈로그 교체마다 증가 — `refresh`가 fetch 시작 시 캡처해 교체를 가로지른 결과를 폐기,
+    /// 한 account에서 시작한 fetch가 이후 설치된 identity로 publish·stamp되는 일 차단.
     private var catalogGeneration = 0
 
-    /// Replaces the catalog after Settings discovers a signed-in account. The object itself stays
-    /// stable, so views and the status item immediately observe the new registry without restarting
-    /// the menu-bar process.
+    /// Settings의 account 발견 이후 catalog 교체 — store 객체는 유지되어 view·status item이
+    /// 메뉴바 process 재시작 없이 새 registry를 즉시 관찰.
     func replaceProviderCatalog(
         registry: WidgetRegistry,
         providers: [ProviderRuntime],
@@ -247,10 +196,9 @@ final class WidgetDataStore {
         familyTotalHistoryCardIDs: Set<String> = []
     ) {
         let liveIDs = Set(registry.providers.map(\.id))
-        // A managed switch keeps the bare claude/codex card ids alive while changing the account
-        // behind them. State produced for the previous identity — snapshot, error, and failure
-        // backoff alike — must not carry over. Mirrors `hasStaleAccountStamp`: a card whose new
-        // identity is known and differs from the previous one starts empty.
+        // Managed switch는 bare claude/codex 카드 id를 유지한 채 account만 교체 — 이전 identity가 생산한
+        // snapshot·error·failure backoff는 이월 금지. `hasStaleAccountStamp`와 동일 규칙: 새 identity가
+        // known이고 이전과 다르면 빈 상태로 시작.
         let previousIdentityKeys = providerIdentityKeys
         func keepsState(_ cardID: String) -> Bool {
             guard liveIDs.contains(cardID) else { return false }
@@ -278,25 +226,14 @@ final class WidgetDataStore {
     var knownProviderIDs: [String] { registry.providers.map(\.id) }
     var limitDescriptorsByProvider: [String: [WidgetDescriptor]] { registry.limitDescriptorsByProvider }
 
-    /// Evaluate every visible, enabled metric for a quota pace milestone and post a notification for any
-    /// that just crossed one. Driven from the periodic loop *after* `refreshAll`, so it catches pace
-    /// worsening from time passing (not only from a fresh fetch). Deduped per metric per reset window by
-    /// the evaluator's per-key state. No-data metrics never fire; bounded level-only metrics can fire
-    /// Almost Out, but not pace-based milestones. A no-op when notifications are unconfigured
-    /// (tests/previews) or all triggers are off.
-    ///
-    /// State for metrics not visited this pass (e.g. a provider the user just disabled, or a metric
-    /// removed from the layout) is pruned, so re-enabling/re-adding starts fresh rather than carrying a
-    /// stale "already fired" flag.
+    /// 표시 중인 enabled bounded metric의 quota pace milestone 평가·notification 발송 — `refreshAll` 이후
+    /// 주기 loop에서 구동해 시간 경과만으로 악화된 pace도 포착. 이번 pass에 방문하지 않은 metric의
+    /// 상태는 prune — 재활성화·재추가 시 stale "already fired" flag 없이 fresh 시작.
     func evaluateNotifications(now: Date = Date()) async {
         guard let settingsProvider = notificationSettings else { return }
         let toggles = settingsProvider().toggles
-        // Gather this pass's enabled, bounded, visible metrics — unbounded rows and charts have no pace
-        // story (their meterState never fires), so they're skipped here rather than occupying state.
-        // Order is the layout order; the evaluator prunes state for anything not passed this pass.
-        // Deliberate delta from the pre-extraction loop: the pass decides from this snapshot, taken
-        // before the first delivery `await`, where the old inline loop re-read `data(for:)` between
-        // deliveries — a mid-pass refresh no longer changes later metrics' inputs within one pass.
+        // unbounded 행·chart는 pace 대상이 아니라 제외; 순서는 layout 순서, evaluator가 미방문 상태를 prune.
+        // pass 입력은 첫 delivery await 이전에 고정 — mid-pass refresh가 이후 metric의 입력을 바꾸지 않음.
         let metrics = orderedDescriptors()
             .filter { isProviderEnabled($0.providerID) }
             .compactMap { descriptor -> QuotaNotificationEvaluator.Metric? in
@@ -319,10 +256,8 @@ final class WidgetDataStore {
         )
     }
 
-    /// What a single provider's refresh actually did this pass, so `refreshAll` can summarize the batch
-    /// from real outcomes rather than cumulative error state. `.backedOff` is a probe deliberately skipped
-    /// because the provider failed within the last `failureRetryBackoff` — distinct from `.skipped`
-    /// (disabled / unknown / already in flight) so a wake-burst's suppression is visible in the logs.
+    /// 한 provider의 refresh가 이번 pass에서 실제 수행한 일 — batch 요약의 근거. `.backedOff`는
+    /// backoff로 의도적으로 건너뛴 probe(disabled/unknown/in-flight의 `.skipped`와 구분).
     enum RefreshOutcome: Sendable { case refreshed, failed, cacheHit, skipped, backedOff }
 
     @discardableResult
@@ -332,16 +267,14 @@ final class WidgetDataStore {
         notifyHistoryChange: Bool = true
     ) async -> RefreshOutcome {
         guard isProviderEnabled(providerID) else { return .skipped }
-        // A TTL-fresh entry that provably belongs to another account (swap since it was written) must
-        // not short-circuit the refresh — under persisted freshness (the one-shot CLI) it would copy
-        // the previous account's snapshot back in. Treat it as a miss so the fetch overwrites it.
+        // TTL-fresh라도 다른 account 소유가 증명된 entry는 refresh를 short-circuit하면 안 됨 —
+        // miss로 취급해 fetch가 덮어쓰도록 처리(persisted freshness의 one-shot CLI에서 특히 위험).
         let staleAccountStamp = cache.hasStaleAccountStamp(
             providerID: providerID,
             currentIdentityKey: providerIdentityKeys[providerID]
         )
         if !force, !staleAccountStamp, let cached = cache.snapshot(providerID: providerID) {
-            // Skip the no-op write: `@Observable` doesn't compare values, so unconditionally
-            // re-assigning an unchanged snapshot would re-render the menu-bar label every pass.
+            // no-op write 회피 — @Observable은 값 비교를 하지 않아 재할당만으로 메뉴바 label 재렌더 발생.
             AppLog.debug(.refresh, "cache hit \(providerID)")
             if localSnapshots[providerID] != cached {
                 localSnapshots[providerID] = cached
@@ -351,16 +284,14 @@ final class WidgetDataStore {
         }
         if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
 
-        // A provider that just failed isn't cached, so nothing else stops the loop from re-probing it on
-        // every wake. Hold off until its backoff expires; the manual `force` refresh ignores the backoff.
+        // 실패는 캐시되지 않아 backoff 만료까지 재probe 보류; 수동 force refresh는 backoff 무시.
         if !force, let retryAfter = failureRetryAfter[providerID], now() < retryAfter {
             AppLog.debug(.refresh, "backoff skip \(providerID) (failed <\(Int(Self.failureRetryBackoff))s ago)")
             return .backedOff
         }
 
         guard let provider = providersByID[providerID] else { return .skipped }
-        // Skip if an in-flight refresh already owns this provider (e.g. the background timer racing the
-        // first popover open), so we never fire duplicate network calls for the same provider.
+        // in-flight refresh가 이미 소유 중이면 skip — 동일 provider 중복 network call 방지.
         guard !refreshingProviderIDs.contains(providerID) else {
             AppLog.debug(.refresh, "cache skip \(providerID) (already in flight)")
             return .skipped
@@ -372,16 +303,13 @@ final class WidgetDataStore {
         var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
             await provider.refresh()
         }
-        // A canceled refresh may still return if a provider's underlying work is non-throwing. Never
-        // publish that potentially partial snapshot; keep the last-good state exactly as it was.
+        // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
         guard !Task.isCancelled else {
             AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
             return .skipped
         }
-        // The catalog changed while this fetch ran: the card id may now name a different account,
-        // so publishing this result would show the old account's data under the new one — and the
-        // stamp written below would carry the NEW identity, falsely legitimizing it for every later
-        // stamp check. Discard; the switch path force-refreshes the selected card itself.
+        // fetch 중 catalog 교체: 카드 id가 다른 account를 가리킬 수 있어 결과 폐기 — publish하면 이전
+        // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
         guard catalogGeneration == boundGeneration else {
             AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
             return .skipped
@@ -394,10 +322,9 @@ final class WidgetDataStore {
             )
         }
         if let message = Self.errorMessage(in: snapshot) {
-            // Failed refresh: surface the error but keep the last good snapshot on screen rather than
-            // collapsing every row to "No data". The provider error string is already user-safe.
+            // 실패 시 에러만 노출하고 last-good snapshot 유지 — 전 행 "No data" 붕괴 방지.
             providerErrors[providerID] = message
-            // Negative-cache the failure so a wake burst can't re-probe this provider in a tight loop.
+            // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
             AppLog.warn(.refresh, "\(providerID) failed: \(message)")
             onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, force)
@@ -406,12 +333,10 @@ final class WidgetDataStore {
         if providerErrors[providerID] != nil {
             providerErrors[providerID] = nil
         }
-        // Recovered: drop any backoff so the provider resumes the normal cadence immediately.
+        // 회복 시 backoff 해제 — 즉시 정상 cadence 복귀.
         failureRetryAfter[providerID] = nil
-        // A provider can refresh its live limits successfully while its optional local log/CSV scan
-        // produces no result. Keep only the last-good normalized history in that case; the new plan,
-        // limits, warnings, and timestamp still win. A non-nil empty history remains authoritative and
-        // clears the old rows, because it proves the scan completed and found no usage.
+        // live limit refresh 성공 + local log/CSV scan 무결과이면 last-good normalized history만 보존(새 plan·
+        // limit·warning·timestamp는 반영). non-nil 빈 history는 scan 완료의 증거라 authoritative — 기존 행 삭제.
         if snapshot.usageHistory == nil,
            let history = localSnapshots[providerID]?.usageHistory,
            let descriptor = registry.historyDescriptorsByProvider[providerID]
@@ -427,8 +352,7 @@ final class WidgetDataStore {
             AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
         }
         localSnapshots[providerID] = snapshot
-        // Stamp the write with the card's launch-resolved account identity; nil (no stamp) for
-        // non-account providers and for cards whose identity didn't resolve this launch.
+        // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
         cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
         rebuildRenderedSnapshots()
         if notifyHistoryChange { onLocalHistoryChanged?() }
@@ -441,22 +365,18 @@ final class WidgetDataStore {
         max(0, Int((monotonicNow() - start) * 1000))
     }
 
-    /// Clears a provider's failure backoff so the next pass probes it immediately. Called when the user
-    /// re-enables a provider: the enablement wake exists to fetch promptly, so a stale backoff from a
-    /// failure just before it was turned off must not suppress that fetch (the loop wouldn't otherwise
-    /// retry until the 5-minute heartbeat). The periodic loop never calls this — only the user action does.
+    /// 실패 backoff 해제 — provider 재활성화라는 사용자 action만 호출(주기 loop는 호출 금지),
+    /// enablement wake의 즉시 fetch가 꺼지기 직전 실패의 stale backoff에 막히지 않도록 보장.
     func clearFailureBackoff(for providerID: String) {
         failureRetryAfter[providerID] = nil
     }
 
-    /// Rebuild the in-memory union immediately after a provider toggle. Local cached data remains
-    /// available to direct API reads, but disabled providers stop receiving peer contributions.
+    /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
     func providerEnablementDidChange() {
         rebuildRenderedSnapshots()
     }
 
-    /// Replaces the downloaded peer set. A conflicted duplicate device file resolves to the newest
-    /// valid document, and this Mac's own downloaded copy is excluded in favor of current memory.
+    /// 다운로드한 peer set 교체 — device별 최신 유효 문서만 남기고 이 Mac의 자체 사본은 현재 메모리 우선으로 제외.
     func setPeerHistoryDocuments(_ documents: [UsageHistoryDocument], ownDeviceID: String) {
         peerHistoryDocuments = UsageHistoryDocument.newestByDevice(documents)
             .filter { $0.deviceID != ownDeviceID }
@@ -472,17 +392,14 @@ final class WidgetDataStore {
     func localHistoryDocument(deviceID: String, deviceName: String, updatedAt: Date = Date()) -> UsageHistoryDocument {
         var providers: [String: ProviderUsageHistory] = [:]
         var identities: [String: String] = [:]
-        // Every machine-local card syncs — account cards included. Their ids are identity-derived,
-        // so they mean the same account on every Mac; the identities map additionally lets peers
-        // match a default card's history to whatever card that account is over there (see
-        // `PeerHistoryRemapper`).
+        // machine-local 카드는 account 카드 포함 전부 sync — id가 identity 파생이라 모든 Mac에서 같은 account를
+        // 의미. identities map은 peer가 default 카드의 history를 그쪽 카드에 매칭하는 근거(`PeerHistoryRemapper`).
         for (providerID, descriptor) in registry.historyDescriptorsByProvider
         where descriptor.scope == .machineLocal && isProviderEnabled(providerID) {
             if let history = localSnapshots[providerID]?.usageHistory {
                 providers[providerID] = history
-                // A managed shared-home history mixes sessions from every switched account, so it
-                // syncs as a family total WITHOUT the selected profile's identity — a stamp would
-                // make peers re-attribute the whole total to whichever account is selected now.
+                // managed shared-home history는 switch된 모든 account의 session이 섞인 family 합계 — 선택 profile의
+                // identity 없이 sync. stamp를 찍으면 peer가 합계 전체를 현재 선택 account로 재귀속.
                 if let identity = providerIdentityKeys[providerID],
                    !familyTotalHistoryCardIDs.contains(providerID) {
                     identities[providerID] = identity
@@ -510,9 +427,8 @@ final class WidgetDataStore {
         ) { result, entry in
             if isProviderEnabled(entry.key) { result[entry.key] = entry.value }
         }
-        // Match peers by account identity, not card id — the same account can be the default card
-        // on one Mac and an extra account card on another. Whatever matches no local card at all
-        // becomes a Total Spend-only remote entry below.
+        // peer 매칭은 card id가 아닌 account identity 기준 — 같은 account가 Mac마다 다른 카드일 수 있음.
+        // local 카드와 무매칭이면 아래에서 Total Spend 전용 remote entry로 처리.
         let remapped = PeerHistoryRemapper.remap(
             documents: peerHistoryDocuments,
             localIdentityByCardID: providerIdentityKeys
@@ -549,9 +465,8 @@ final class WidgetDataStore {
         snapshots = rendered
     }
 
-    /// Synthesize Total Spend entries for accounts that exist only on other Macs: a pseudo provider
-    /// (family icon, "Claude · Mac mini" name) plus a snapshot carrying the standard spend-tile
-    /// lines, rendered from the merged remote history by the same renderer real cards use.
+    /// 다른 Mac에만 있는 account의 Total Spend entry 합성 — pseudo provider(family icon, "Claude · Mac mini")
+    /// + 실제 카드와 같은 renderer로 그린 표준 spend-tile line snapshot.
     private static func renderRemoteOnlySpend(
         _ remoteOnly: [PeerHistoryRemapper.RemoteOnlyHistory],
         registry: WidgetRegistry,
@@ -564,12 +479,8 @@ final class WidgetDataStore {
             let history = UsageHistoryAggregator.mergeHistories(entry.histories, now: now)
             guard !history.series.daily.isEmpty else { return nil }
 
-            // The slice is named by the account's identity-derived card id ("claude@ab12cd34") —
-            // unique per account, and the exact id the account's card gets the day it's signed in
-            // here (and the id the CLI/API answer to on the Mac that has it). Which Mac the spend
-            // came from is irrelevant to the total, so it's not part of the name. The pseudo
-            // provider id stays distinct from real card ids so a slice can never collide with a
-            // live card.
+            // slice 이름은 identity 파생 card id("claude@ab12cd34") — account별 유일, 그 account가 여기 로그인하면
+            // 받을 id와 동일. pseudo provider id는 실제 card id와 충돌하지 않도록 별도 형식 유지.
             let provider = Provider(
                 id: "\(entry.family)@peer-\(ProviderAccountID.hash8(entry.identityKey))",
                 displayName: entry.cardID,
@@ -591,30 +502,23 @@ final class WidgetDataStore {
         }
     }
 
-    /// The provider's latest refresh error, or `nil` when its last refresh succeeded.
     func errorMessage(for providerID: String) -> String? {
         providerErrors[providerID]
     }
 
-    /// A soft, non-blocking notice from the provider's latest *successful* snapshot (e.g. Claude's
-    /// "Re-login for live usage" when the login lacks the `user:profile` scope). `nil` when there's no
-    /// warning. After a *failed* refresh the store keeps the last good snapshot (so this warning can
-    /// linger) while setting `providerErrors` — use `headerNotice(for:)` for the rendered triangle so a
-    /// current hard error isn't masked by a stale soft warning.
+    /// 최신 *성공* snapshot의 soft warning(예: Claude "Re-login for live usage") — 실패 후에도 last-good이
+    /// 유지돼 남을 수 있음; 렌더링되는 triangle은 hard error가 우선하는 `headerNotice(for:)` 사용.
     func warningMessage(for providerID: String) -> String? {
         snapshots[providerID]?.warning
     }
 
-    /// The provider header's amber-triangle notice: a hard refresh error takes precedence over a stale
-    /// soft warning from the last successful snapshot. After a failed refresh the store keeps the last
-    /// good snapshot (so `warningMessage` still returns its warning) while `errorMessage` holds the
-    /// current failure — the error must win, or a stale "Re-login for live usage" warning would hide a
-    /// real "Token expired" failure. When there's no error, the soft warning (if any) shows.
+    /// Provider header의 amber-triangle notice — 현재 hard refresh error가 stale soft warning에 우선
+    /// (에러가 밀리면 stale warning이 실제 실패를 가림). 에러 없으면 soft warning 표시.
     func headerNotice(for providerID: String) -> String? {
         errorMessage(for: providerID) ?? warningMessage(for: providerID)
     }
 
-    /// A snapshot that carries only error lines is a failed refresh; its message comes from the badge.
+    /// 에러 line만 있는 snapshot은 실패한 refresh — 메시지는 badge에서 추출.
     private static func errorMessage(in snapshot: ProviderSnapshot) -> String? {
         guard !snapshot.lines.isEmpty, snapshot.lines.allSatisfy(\.isError) else { return nil }
         if case .badge(_, let text, _, _) = snapshot.lines[0] { return text }
@@ -628,43 +532,32 @@ final class WidgetDataStore {
            let data = resolve(line, descriptor: descriptor) {
             result = data
         } else {
-            // No real metric line backs this placed tile, so the sample's numbers are placeholders.
-            // Flag it as no-data; the tile renders "No data" instead of inventing usage.
+            // 배치된 tile을 뒷받침하는 실제 metric line 부재 — sample 숫자는 placeholder이므로 no-data 처리.
             result = descriptor.sample
             result.hasData = false
         }
 
-        // Single global choke point: dashboard/share rows and menu-bar values all funnel through here,
-        // so stamping the mode once makes them follow the global setting. Inert for unbounded rows
-        // (limit == nil), whose displayed value ignores displayMode.
+        // 전역 단일 choke point — dashboard/share 행과 메뉴바 값이 모두 여기를 거치므로 mode를 한 번만 stamp.
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
-        // The row's own card identity — per-card actions (the Codex reset-claim router) key on it.
+        // 행 자신의 카드 identity — per-card action(Codex reset-claim router)의 키.
         result.providerID = descriptor.providerID
         return result
     }
 
-    /// The plan label for a provider's latest snapshot. `nil` until a snapshot exists or when the
-    /// provider doesn't expose a plan. Provider section headers render this beside the provider name.
+    /// 최신 snapshot의 plan label — snapshot 없음·plan 미노출이면 nil. provider section header가 표시.
     func plan(for providerID: String) -> String? {
         snapshots[providerID]?.plan
     }
 
-    /// How long a displayed snapshot may age before the header calls it out. A healthy provider's
-    /// snapshot resets to ~0 on every successful pass and only brushes one interval just before the next
-    /// one, so the threshold sits at two intervals: it fires only when a refresh has actually been missed
-    /// — a refresh loop that keeps failing, or a long-suspended background timer — never on the normal
-    /// per-cycle aging, which would flicker a hint on healthy providers.
+    /// 표시 중 snapshot의 staleness 판정 경계 — 2 interval. 정상 per-cycle aging에는 미발화(flicker 방지),
+    /// refresh가 실제로 누락됐을 때(계속 실패하는 loop, 장기 suspend된 timer)만 발화.
     static let stalenessThreshold = RefreshSetting.interval * 2
 
-    /// A compact "Outdated" hint for the provider's on-screen snapshot, surfaced only once that snapshot
-    /// has aged past `stalenessThreshold`; `nil` while the data is still current (the common case), so the
-    /// header stays clean until staleness is real. The label is short on purpose — a long plan name plus a
-    /// full "Updated 3h ago" string would overflow the header — so the precise age rides in the tooltip.
-    /// This is the visible counterpart to the silent fossilized-cache problem (#582): a failing-refresh
-    /// loop keeps the last good plan/limits on screen, and without this nothing told the user that data was
-    /// stale. Reads the store's injected clock, which tests pin to a fixed value.
+    /// snapshot이 `stalenessThreshold`를 넘겼을 때의 "Outdated" 힌트 — 데이터가 현재이면 nil.
+    /// 실패 loop가 last-good plan/limit을 계속 표시하는 fossilized-cache(#582)의 가시화 장치;
+    /// label은 header overflow 방지를 위해 짧게, 정확한 age는 tooltip에. 주입된 clock 사용(테스트 고정).
     func stalenessHint(for providerID: String) -> StalenessHint? {
         guard let refreshedAt = snapshots[providerID]?.refreshedAt else { return nil }
         let age = now().timeIntervalSince(refreshedAt)
@@ -677,13 +570,8 @@ final class WidgetDataStore {
     private func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {
         switch line {
         case .progress(_, let used, let limit, let format, let resetsAt, let periodDurationMs, _):
-            // A percent meter is a bounded 0...100 domain; sanitize an out-of-range sample (a provider
-            // reporting a negative or >100 utilization) here, at the single construction choke point
-            // every provider funnels through, so no surface — headline, flip tooltip, menu bar — can
-            // render "-5%" or "105%". For percent the limit is always 100, so clamping `used` also
-            // keeps the meter's spent verdict intact (>=100 still reads "Limit reached"). Non-percent
-            // meters keep their raw `used`: a dollar/count overage (used > limit) is real and is
-            // conveyed by the meter's spent state rather than hidden.
+            // percent meter는 0...100 bounded — 모든 provider가 거치는 단일 구성 choke point에서 clamp,
+            // 어떤 표면도 "-5%"/"105%"를 렌더하지 않음. 비percent는 raw 유지 — 실제 overage는 spent state로 전달.
             let normalizedUsed = format == .percent ? ProviderParse.clampPercent(used) : used
             var result = WidgetData(
                 title: descriptor.sample.title,
@@ -698,36 +586,26 @@ final class WidgetDataStore {
                 limitNoun: descriptor.sample.limitNoun,
                 infoNote: descriptor.sample.infoNote
             )
-            // Descriptor opt-in (session-window meters read "Not started" when unused); the fresh
-            // `.progress` result doesn't start from the sample, so carry the flag explicitly.
+            // descriptor opt-in flag(session-window meter의 "Not started") — `.progress` 결과는 sample에서 시작하지 않으므로 명시적으로 carry.
             result.isSessionWindow = descriptor.sample.isSessionWindow
             return result
         case .text:
-            // Text lines carry provider notices for the local API; no dashboard descriptor consumes
-            // them. Numeric widgets use typed progress/values lines and must never parse display text.
+            // text line은 local API용 provider notice — 숫자 widget은 typed line만 소비, display text parse 금지.
             return nil
         case .values(_, let values, _, let expiriesAt, let unknownModels, let modelBreakdown):
-            // The number is carried raw — no regex re-parse. Presentation (title, icon, selection,
-            // trailing word) comes from the descriptor's sample; the live numbers come from the line.
+            // 숫자는 raw로 carry(regex re-parse 없음) — presentation은 sample, live 값은 line.
             var data = descriptor.sample
             data.values = values
-            // A `.values` line is unbounded by definition (see `MetricLine`), so it never renders as a
-            // meter even when the descriptor template carries a placeholder limit — e.g. Claude's
-            // `claude.extra` is `boundedDollars` for its capped `.progress` case but feeds an uncapped
-            // `.values` row when there's no monthly cap.
+            // `.values` line은 정의상 unbounded — descriptor template의 placeholder limit이 있어도 meter로 렌더하지 않음.
             data.limit = nil
-            // Optional expiry instants (Codex rate-limit-reset credits): surfaced in the row's hover
-            // tooltip (see `expiryTooltip`), with the row re-rendering on the clock tick so they stay live.
+            // 만료 시각(Codex reset-credit) — row hover tooltip에 노출, clock tick마다 재렌더로 live 유지.
             data.expiriesAt = expiriesAt
-            // Unknown-model names (Cursor spend tiles): drive the label warning triangle whose hover lists
-            // the models this period used that the pricing manifest can't price, so the cost is incomplete.
+            // 미가격 model 목록(Cursor spend tile) — label 경고 triangle과 hover 목록 구동.
             data.unknownModels = unknownModels
             data.modelBreakdown = modelBreakdown
-            // A tile whose selection finds no value (e.g. a cost-only tile on a day the scanner couldn't
-            // price) has nothing real to show — render "No data" rather than a misleading $0.00 / 0.
+            // selection에 값이 없는 tile은 "No data" 렌더 — 오해 소지의 $0.00 / 0 방지.
             data.hasData = !data.selectedValues.isEmpty
-            // The ⓘ is data-driven: it shows when a *shown* value is locally estimated (a spend row's
-            // dollars) and stays off for a measured one (its tokens), so the tokens-only tile reads clean.
+            // ⓘ는 data-driven — 표시 값이 로컬 추정(estimated)일 때만 estimate note, 실측 값은 clean.
             data.infoNote = data.selectedValues.contains(where: \.estimated)
                 ? WidgetData.localEstimateNote
                 : descriptor.sample.infoNote
@@ -738,9 +616,7 @@ final class WidgetDataStore {
             data.subtitleOverride = subtitle
             return data
         case .chart(_, let points, let note):
-            // Presentation (title, icon) from the sample; the live per-day points from the line. No
-            // points means the source was read but had no usable day — render "No data", not an empty
-            // axis (and so descriptor template data never leaks onto the dashboard).
+            // point 없음은 "source를 읽었지만 사용 가능한 day 없음" — 빈 축 대신 "No data" 렌더.
             var data = descriptor.sample
             data.isChart = true
             data.chartPoints = points

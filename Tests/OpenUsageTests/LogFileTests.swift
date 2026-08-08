@@ -1,9 +1,7 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the resolved path suffix (mirrors the Tauri `builds_log_file_path_from_log_dir` test) and
-/// the 10 MB single-archive rotation / launch-time trim. All file I/O is confined to a per-test temp
-/// directory — never touches `~/Library/Logs`.
+/// log 경로 suffix와 single-archive rotation·launch trim 검증 — 모든 file I/O는 test별 temp dir 한정
 final class LogFileTests: XCTestCase {
     private var tempDir: URL!
 
@@ -26,8 +24,7 @@ final class LogFileTests: XCTestCase {
     }
 
     func testAdvertisedURLMatchesSharedSinkPath() {
-        // `LogFile.url` is what the app advertises (startup log, Settings copy/reveal); it must equal
-        // where the shared sink actually writes so the two can never drift to different files.
+        // 앱이 노출하는 `LogFile.url`과 shared sink의 실제 쓰기 경로 일치 — 두 경로 divergence 방지
         XCTAssertEqual(LogFile.url, LogFile.shared.fileURL)
     }
 
@@ -43,14 +40,14 @@ final class LogFileTests: XCTestCase {
     }
 
     func testRotationCreatesBackupWhenCapExceeded() throws {
-        // Small cap so a few lines trip rotation.
+        // 소형 cap fixture — 몇 줄로 rotation 유발
         let cap = 200
         let log = LogFile(directory: tempDir, fileName: "OpenUsage.log", maxBytes: cap)
         log.open()
-        let line = String(repeating: "a", count: 80) // 81 bytes with newline
-        log.append(line) // 81
-        log.append(line) // 162
-        log.append(line) // would be 243 > 200 -> rotate first, then write to fresh file
+        let line = String(repeating: "a", count: 80) // newline 포함 81 bytes
+        log.append(line)
+        log.append(line)
+        log.append(line) // 243 > 200 → rotate 후 새 file에 기록
 
         let mainURL = tempDir.appendingPathComponent("OpenUsage.log")
         let archiveURL = tempDir.appendingPathComponent("OpenUsage.1.log")
@@ -67,7 +64,7 @@ final class LogFileTests: XCTestCase {
         let log = LogFile(directory: tempDir, fileName: "OpenUsage.log", maxBytes: cap)
         log.open()
         let line = String(repeating: "b", count: 80)
-        // Enough lines to force two rotations; only one .1 archive should survive.
+        // rotation 2회 유발 — .1 archive 하나만 잔존
         for _ in 0..<10 { log.append(line) }
 
         let archiveURL = tempDir.appendingPathComponent("OpenUsage.1.log")
@@ -80,7 +77,7 @@ final class LogFileTests: XCTestCase {
         let cap = 100
         let mainURL = tempDir.appendingPathComponent("OpenUsage.log")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        // Leftover oversize file from a long-dead session.
+        // 이전 session이 남긴 초과 크기 file fixture
         try Data(repeating: 0x61, count: cap + 50).write(to: mainURL)
 
         let log = LogFile(directory: tempDir, fileName: "OpenUsage.log", maxBytes: cap)

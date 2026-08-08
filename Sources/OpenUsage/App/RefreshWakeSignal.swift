@@ -1,28 +1,14 @@
 import Foundation
 
-/// The refresh loop's between-passes wait: sleeps one refresh interval, but wakes early when the
-/// enabled-provider set changes — and, crucially, never loses a change that lands *during* a pass.
-///
-/// The bug this replaces: the loop used to subscribe to
-/// `ProviderEnablementStore.didChangeNotification` only inside its wait, after `refreshAll()` had
-/// finished. First-run credential detection is local-only and fast while the first refresh pass does
-/// network I/O and is slow, so the "providers enabled" notification almost always fired mid-pass with
-/// nobody listening — `NotificationCenter.notifications(named:)` doesn't buffer events from before
-/// iteration starts. The wake was silently dropped and the newly detected providers sat dataless until
-/// the next scheduled pass or a manual refresh. The same lost wake hit `NewProviderSeeder` and the
-/// Customize "Reset All" reseed.
-///
-/// Here the subscription is installed once, synchronously, in `init` — before the loop's first pass —
-/// feeding an `AsyncStream` with `.bufferingNewest(1)`: a wake posted while nobody is waiting is
-/// retained, and a burst coalesces into a single pending wake, so the next `waitForWake` returns
-/// immediately instead of sleeping out the interval.
+/// refresh loop의 패스 사이 대기: interval sleep + enabled-provider 변경 시 조기 wake.
+/// 구독은 `init`에서 동기 설치 — loop 첫 패스 전. `.bufferingNewest(1)` stream이라 대기자 없을 때의 wake도 보존,
+/// burst는 한 번의 pending wake로 병합 — 패스 도중 변경 무유실.
 @MainActor
 final class RefreshWakeSignal {
     private let stream: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let center: NotificationCenter
-    /// `nonisolated(unsafe)` so the nonisolated `deinit` can unregister the observer; it is immutable
-    /// after `init`, and `NotificationCenter` is documented thread-safe.
+    /// nonisolated `deinit`의 observer 해제용 `nonisolated(unsafe)` — init 후 불변, `NotificationCenter`는 thread-safe 문서화.
     private nonisolated(unsafe) let observer: NSObjectProtocol
 
     init(
@@ -33,8 +19,7 @@ final class RefreshWakeSignal {
         self.stream = stream
         self.continuation = continuation
         self.center = center
-        // Registered synchronously, so no notification posted after `init` returns can be missed.
-        // The continuation is `Sendable`; yielding from whatever context posts is safe.
+        // 동기 등록 — init 반환 후 post되는 notification 무유실. continuation은 `Sendable`이라 어느 context에서든 yield 안전.
         self.observer = center.addObserver(forName: name, object: nil, queue: nil) { _ in
             continuation.yield()
         }
@@ -45,14 +30,8 @@ final class RefreshWakeSignal {
         continuation.finish()
     }
 
-    /// Returns when a wake has been posted — including one buffered while the caller was doing other
-    /// work — or when `timeout` elapses, whichever comes first (the timer feeds the same stream). Also
-    /// returns promptly when the surrounding task is cancelled. If the timeout and a wake race, the
-    /// loser stays buffered; the resulting extra pass is all cache hits, so it stays harmless.
-    ///
-    /// The refresh loop is the signal's only consumer, and only ever sequentially: each call makes a
-    /// fresh iterator over the shared stream (fine sequentially — the buffer lives on the stream), so
-    /// no actor-isolated iterator state has to survive a suspension.
+    /// wake(버퍼된 것 포함) 또는 `timeout` 중 먼저 오는 쪽에 반환; task cancel 시에도 즉시 반환.
+    /// timeout과 wake race 시 패자는 buffer 잔류 — 추가 패스는 전부 cache hit로 무해. 소비자는 refresh loop 단일·순차 한정.
     func waitForWake(timeout: TimeInterval) async {
         let timer = Task { [continuation] in
             try? await Task.sleep(for: .seconds(timeout))

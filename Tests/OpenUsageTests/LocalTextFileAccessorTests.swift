@@ -2,8 +2,7 @@ import Foundation
 import XCTest
 @testable import OpenUsage
 
-/// Real-filesystem coverage for the credential writer. Every test stays inside a unique temporary
-/// directory and verifies both data integrity and the POSIX boundary that protects local secrets.
+/// credential writer의 실제 filesystem 검증 — test별 temp dir 내에서 data 정합성과 POSIX 권한 경계 확인
 final class LocalTextFileAccessorTests: XCTestCase {
     private var temporaryDirectory: URL!
 

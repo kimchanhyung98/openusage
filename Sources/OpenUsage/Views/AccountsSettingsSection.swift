@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// The Settings surface for managed Claude/Codex accounts. The per-family toggle keeps the one
-/// Shared Runtime Home and replaces only its authentication with the selected account. Rows never
-/// expose credentials or paths — the badge is the local `AccountSignInProbe` verdict on whether the
-/// profile's saved sign-in still proves its account.
+/// 관리되는 Claude/Codex 계정의 Settings surface — family별 토글은 하나의 Shared Runtime Home을 유지한 채
+/// authentication만 선택 계정으로 교체. 행은 credential/경로를 노출하지 않음 — badge는 저장된 sign-in의
+/// 유효성에 대한 로컬 `AccountSignInProbe` 판정.
 struct AccountsSettingsSection: View {
     @Environment(AppContainer.self) private var container
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
@@ -112,7 +111,7 @@ struct AccountsSettingsSection: View {
             }
         }
         .onAppear {
-            // Settings can be reopened after another app window updates the same defaults domain.
+            // 다른 창이 같은 defaults domain을 갱신한 뒤 재오픈될 수 있어 reload.
             store.reloadFromDefaults()
             refreshSignInStates()
         }
@@ -186,9 +185,8 @@ struct AccountsSettingsSection: View {
         label.count > 10 ? "\(label.prefix(10))…" : label
     }
 
-    /// The per-family selection. Radio behavior: selecting another profile moves the selection,
-    /// while turning the selected switch off is ignored — a family with a Ready profile never ends
-    /// up with every account deselected.
+    /// family별 선택의 radio 동작 — 다른 profile 선택은 이동, 선택된 스위치 off는 무시:
+    /// Ready profile이 있는 family가 전원 해제 상태로 남지 않음.
     private func selectionBinding(family: String, profileID: String) -> Binding<Bool> {
         Binding(
             get: { store.preferredProfileID(family: family) == profileID },
@@ -211,9 +209,8 @@ struct AccountsSettingsSection: View {
         }
         let currentProfile = store.preferredProfile(family: profile.family)
         do {
-            // The wrapper is account-agnostic (it only pins the shared home), so install it FIRST:
-            // if it fails, nothing was switched; once the auth transaction commits, no fallible
-            // step remains between the shared home and the selection state.
+            // wrapper는 계정 무관(shared home만 고정)이므로 먼저 설치 — 실패해도 아무것도 전환되지 않고,
+            // auth transaction commit 이후에는 shared home과 선택 상태 사이에 실패 가능한 단계 없음.
             try AccountShellInstaller.install(family: profile.family, shell: shell)
             try AccountCredentialSwitcher().switchAuthentication(to: profile, from: currentProfile)
             store.setPreferred(family: profile.family, profileID: profile.id)
@@ -237,8 +234,7 @@ struct AccountsSettingsSection: View {
     }
 }
 
-/// The compact readiness dot shown on account rows and sheets: green when the profile's saved
-/// sign-in still proves its account, amber when it needs a sign-in.
+/// 계정 행/sheet의 compact readiness dot — 저장된 sign-in이 유효하면 green, sign-in 필요하면 amber.
 struct AccountStatusBadge: View {
     let state: AccountSignInProbe.State
 

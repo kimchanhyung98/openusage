@@ -1,10 +1,7 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the crux of #604: the user's log level is a single floor that decides what actually reaches
-/// the file sink. The sink is pointed at a per-test temp file so we can read back exactly what the gate
-/// wrote. `AppLog.reloadLevel(_:)` applies a level without touching `UserDefaults.standard`, so these
-/// tests never race on global state.
+/// 테스트별 임시 sink와 명시적 level로 전역 상태 경쟁 차단
 final class AppLogTests: XCTestCase {
     private var tempDir: URL!
     private var sink: LogFile!
@@ -21,7 +18,7 @@ final class AppLogTests: XCTestCase {
 
     override func tearDownWithError() throws {
         AppLog.sink = originalSink
-        AppLog.reloadLevel() // restore the real persisted floor for any later code
+        AppLog.reloadLevel() // 이후 코드용으로 실제 저장된 floor 복원
         if let tempDir, FileManager.default.fileExists(atPath: tempDir.path) {
             try FileManager.default.removeItem(at: tempDir)
         }
@@ -64,7 +61,7 @@ final class AppLogTests: XCTestCase {
     func testWrittenLineCarriesLevelAndTag() throws {
         AppLog.reloadLevel(.info)
         AppLog.info(.refresh, "hello")
-        // Grep-friendly shape: `<timestamp> [INFO] [refresh] hello`.
+        // grep 친화 형태: `<timestamp> [INFO] [refresh] hello`
         let contents = try fileContents()
         XCTAssertTrue(contents.contains("[INFO] [refresh] hello"), contents)
     }
@@ -72,7 +69,7 @@ final class AppLogTests: XCTestCase {
     func testAutoclosureIsNotEvaluatedBelowFloor() {
         AppLog.reloadLevel(.info)
         var built = false
-        // `@autoclosure` wraps this call; the side effect fires only if `emit` actually builds the message.
+        // `@autoclosure`로 감싸지므로 `emit`이 실제로 메시지를 만들 때만 side effect 발생
         func expensiveMessage() -> String {
             built = true
             return "expensive"

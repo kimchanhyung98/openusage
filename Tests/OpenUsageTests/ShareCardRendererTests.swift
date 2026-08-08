@@ -2,10 +2,6 @@ import XCTest
 import SwiftUI
 @testable import OpenUsage
 
-/// Covers the Share card export pipeline: `image(for:)` rasterizes the flexible-height card, and
-/// `pngData(from:)` round-trips to a valid PNG. `ImageRenderer` is MainActor-only, so the whole case
-/// runs on the main actor. Pixel dimensions are checked scale-agnostically (the bitmap width is a
-/// multiple of the authored card width) because `ImageRenderer.scale` is not honored in headless CI.
 @MainActor
 final class ShareCardRendererTests: XCTestCase {
     private func sampleCard() -> ShareCardView {
@@ -17,9 +13,7 @@ final class ShareCardRendererTests: XCTestCase {
     func testImageRasterizesAtAuthoredWidthMultiple() throws {
         let image = try XCTUnwrap(ShareCardRenderer.image(for: sampleCard()))
 
-        // The bitmap width is the authored card width times the render scale. `ImageRenderer.scale` is
-        // not honored in headless CI (it rasterizes at ×1), so assert a scale-agnostic multiple rather
-        // than an exact `width * scale` — it holds at ×1 in CI and ×4 locally.
+        // CI는 ×1, 로컬은 ×4로 rasterize되므로 정확한 곱 대신 배수로 검증
         let rep = try XCTUnwrap(image.representations.first)
         let width = Int(ShareCardView.width)
         XCTAssertGreaterThan(rep.pixelsWide, 0)
@@ -32,10 +26,9 @@ final class ShareCardRendererTests: XCTestCase {
         let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
 
         XCTAssertFalse(png.isEmpty)
-        // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A.
+        // PNG 매직 바이트: 89 50 4E 47 0D 0A 1A 0A
         let magic: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         XCTAssertEqual(Array(png.prefix(magic.count)), magic)
-        // The PNG must decode back into an image (a non-empty Data alone isn't proof it's valid).
         XCTAssertNotNil(NSImage(data: png))
     }
 
@@ -43,7 +36,6 @@ final class ShareCardRendererTests: XCTestCase {
         let card = ShareCardView(provider: MockData.cursor, plan: nil, rows: [], appearance: .dark)
         let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
         let rep = try XCTUnwrap(image.representations.first)
-        // Same scale-agnostic width check; the point is it doesn't crash on an empty provider.
         XCTAssertEqual(rep.pixelsWide % Int(ShareCardView.width), 0)
         XCTAssertGreaterThan(rep.pixelsHigh, 0)
     }
@@ -76,18 +68,13 @@ final class ShareCardRendererTests: XCTestCase {
 
     // MARK: - Clipboard write result
 
-    /// `copyToPasteboard` reports `false` when the image can't be PNG-encoded, so `share` can gate the
-    /// "Copied to clipboard" confirmation on a real successful write instead of claiming success after a
-    /// silent encode/pasteboard failure. Regression guard for the success-pill-after-copy-failure bug.
     func testCopyToPasteboardReturnsFalseForUnencodableImage() {
-        // An empty NSImage has no representations, so tiffRepresentation is nil and PNG encoding fails.
+        // 빈 NSImage는 representation이 없어 tiffRepresentation nil → PNG encode 실패
         let empty = NSImage()
         XCTAssertFalse(ShareCardRenderer.copyToPasteboard(empty),
                        "a failed encode must report false, not silently return success")
     }
 
-    /// `copyToPasteboard` reports `true` and actually writes PNG data onto the pasteboard for a valid
-    /// image — the success contract the confirmation gates on.
     func testCopyToPasteboardWritesPNGAndReturnsTrueForValidImage() throws {
         let image = try XCTUnwrap(ShareCardRenderer.image(for: sampleCard()))
         let pasteboard = NSPasteboard(name: .init("OpenUsageTests.ShareCard.\(UUID().uuidString)"))
@@ -97,7 +84,7 @@ final class ShareCardRendererTests: XCTestCase {
 
         let png = try XCTUnwrap(pasteboard.data(forType: .png))
         XCTAssertFalse(png.isEmpty)
-        // PNG magic bytes confirm the pasteboard holds an actual PNG, not just non-empty data.
+        // 매직 바이트로 pasteboard 내용이 실제 PNG임을 확인
         let magic: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         XCTAssertEqual(Array(png.prefix(magic.count)), magic)
     }

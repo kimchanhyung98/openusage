@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Identity-keyed iCloud matching: the same account merges into the same card across Macs regardless
-/// of which machine calls it the default and which shows it as an extra account card, and accounts
-/// with no local card surface as remote-only Total Spend entries.
 @MainActor
 final class PeerHistoryIdentityTests: XCTestCase {
     private let teamKey = "uuid-me|org-team"
@@ -17,7 +14,7 @@ final class PeerHistoryIdentityTests: XCTestCase {
         XCTAssertNoThrow(try v2.validate())
 
         v2.schema = UsageHistoryDocument.legacySchemaV1
-        XCTAssertThrowsError(try v2.validate()) // account-card ids are a v2 concept
+        XCTAssertThrowsError(try v2.validate())
 
         let v1 = UsageHistoryDocument(
             schema: UsageHistoryDocument.legacySchemaV1,
@@ -29,9 +26,6 @@ final class PeerHistoryIdentityTests: XCTestCase {
     }
 
     func testRemapMatchesAccountsAcrossDefaultAndExtraCardRoles() {
-        // The mini↔MacBook case: mini's DEFAULT card is the Team account (claude), its extra card is
-        // Max. This Mac is the mirror image (default = Max, extra = Team). Every peer history must
-        // land on the LOCAL card with the same account.
         let miniDoc = makeDocument(
             deviceName: "Mac mini",
             providers: [
@@ -71,10 +65,6 @@ final class PeerHistoryIdentityTests: XCTestCase {
     }
 
     func testUnresolvedLocalIdentityKeepsTheBareCardMergeInsteadOfDoubleCounting() {
-        // The peer named its bare card's account, but this Mac's own bare-card identity didn't
-        // resolve this launch (no local map entry). A mismatch can't be proven, so the history must
-        // stay on the same-id card — going remote-only would ADD a Total Spend slice on top of the
-        // local card's own spend for what is most likely the same account.
         let doc = makeDocument(
             deviceName: "Mac mini",
             providers: ["claude": history(day: "2026-07-16", tokens: 10, cost: 1)],
@@ -103,8 +93,7 @@ final class PeerHistoryIdentityTests: XCTestCase {
 
     func testLocalDocumentPublishesAccountCardsWithIdentities() {
         let registry = makeRegistry()
-        // Preload the cache; the store's init adopts cached snapshots as its local set. The entries
-        // carry the same account stamp the store is launched with, or the swap guard discards them.
+        // cache 선적재 — entry의 account stamp가 store 기동 값과 같아야 swap guard를 통과
         let cache = scratchCache()
         cache.store(
             snapshot(providerID: "claude", history: history(day: "2026-07-16", tokens: 10, cost: 1)),
@@ -130,9 +119,6 @@ final class PeerHistoryIdentityTests: XCTestCase {
         XCTAssertNoThrow(try document.validate())
     }
 
-    /// A managed shared-home history mixes sessions from every switched account, so the bare card
-    /// exports as a family total WITHOUT the selected profile's identity — while an account-pinned
-    /// discovery card keeps its identity for cross-Mac matching.
     func testManagedFamilyTotalExportsWithoutTheSelectedProfilesIdentity() {
         let registry = makeRegistry()
         let cache = scratchCache()
@@ -162,9 +148,6 @@ final class PeerHistoryIdentityTests: XCTestCase {
         XCTAssertNoThrow(try document.validate())
     }
 
-    /// The peer side of the family total: a bare-card history without an identity merges into this
-    /// Mac's bare family card — never into a specific account's remote-only Total Spend slice, no
-    /// matter which account is selected here.
     func testPeerFamilyTotalWithoutIdentityMergesIntoTheBareFamilyCard() {
         let doc = makeDocument(
             deviceName: "Mac mini",
@@ -217,8 +200,6 @@ final class PeerHistoryIdentityTests: XCTestCase {
     }
 
     func testSeveralRemoteOnlyAccountsFromOneDeviceStayTellableApart() {
-        // Many accounts on the mini, none on this Mac: each must keep its own slice with its own
-        // identity-derived name — never several identical "Claude · Mac mini" legend rows.
         let dataStore = WidgetDataStore(
             registry: makeRegistry(),
             providers: [],

@@ -1,28 +1,24 @@
 import Foundation
 
-/// The `Item`-independent half of the incremental scan machinery: file discovery and the scan-window
-/// lower bound. A non-generic namespace so providers that only need the window math (Grok) share it
-/// without dragging in the generic actor, and so call sites read `JSONLScanning.sinceDate(...)` instead
-/// of `IncrementalJSONLScanner<Entry>.sinceDate(...)`.
+/// incremental scan 기계장치의 `Item` 비의존 절반: 파일 discovery와 scan window 하한.
+/// non-generic namespace — window 계산만 필요한 provider(Grok)가 generic actor 없이 공유.
 enum JSONLScanning {
-    /// A discovered log file plus the stat fields the parse cache is keyed on.
+    /// 발견한 로그 파일 + parse cache의 key가 되는 stat 필드.
     struct DiscoveredFile: Sendable {
         var path: String
         var size: Int
         var mtime: Date
     }
 
-    /// Start of the day `daysBack` days before `now` — the lower bound of the scan window.
+    /// `now`에서 `daysBack`일 전 날의 시작 — scan window의 하한.
     static func sinceDate(daysBack: Int, now: Date) -> Date {
         let shifted = Calendar.current.date(byAdding: .day, value: -daysBack, to: now) ?? now
         return Calendar.current.startOfDay(for: shifted)
     }
 
-    /// Every `*.jsonl` regular file under `dir` (recursively), path-sorted so a keep-first dedup is
-    /// deterministic. Empty when `dir` can't be enumerated.
+    /// `dir` 아래(재귀) 모든 `*.jsonl` regular file — keep-first dedup이 결정적이도록 경로 정렬. enumeration 불가 시 빈 배열.
     static func jsonlFiles(under dir: URL) -> [DiscoveredFile] {
-        // `FileManager.enumerator` silently yields nothing when `dir` itself is a symlink.
-        // Resolve first so the enumeration sees the real directory.
+        // `FileManager.enumerator`는 `dir` 자체가 symlink면 조용히 아무것도 내놓지 않음 — 먼저 resolve.
         let dir = dir.resolvingSymlinksInPath()
         let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         guard let enumerator = FileManager.default.enumerator(
@@ -44,15 +40,8 @@ enum JSONLScanning {
     }
 }
 
-/// The incremental, off-main-actor scan machinery shared by the Claude, Codex, and pi log scanners: discover
-/// `*.jsonl` files, re-parse only those changed since the last scan (a per-file cache keyed by path +
-/// size + mtime), and return the parsed items concatenated in file order. Each provider supplies its own
-/// file discovery, per-file parser, and post-parse dedup/aggregation; this owns the cache, the parallel
-/// parse, the mtime-window skip, and (via `JSONLScanning`) the jsonl enumeration so that scaffolding
-/// isn't copied per provider.
-///
-/// An actor so the parse cache persists across the ~5-minute provider refreshes while staying off the
-/// main actor. Provider scanner instances share one actor per parser; `Item` is that parser's row.
+/// Claude·Codex·pi 로그 scanner가 공유하는 incremental scan actor: `*.jsonl` 중 변경된 파일만 재파싱(path+size+mtime key의 per-file cache)해 파일 순서대로 반환.
+/// provider는 discovery·per-file parser·후처리 dedup만 제공. actor라 parse cache가 refresh 주기 사이에 main actor 밖에서 유지 — parser당 하나를 scanner 인스턴스들이 공유, `Item`은 그 parser의 row.
 actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private typealias CachedFile = JSONLScanCachedFile<Item>
 
@@ -61,9 +50,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         var continuation: CheckedContinuation<Bool, Never>
     }
 
-    /// One in-memory partition per provider/home identity. Provider scanner instances share this actor,
-    /// so same-home multi-account cards reuse both memory and disk without letting disjoint homes prune
-    /// one another's files.
+    /// provider/home identity당 in-memory partition 하나 — 같은 home의 multi-account 카드는 재사용, disjoint home끼리는 서로의 파일을 prune하지 못하게 분리.
     private var caches: [String: [String: CachedFile]] = [:]
     private var persistedMetadata: [String: [String: JSONLScanCacheFileMetadata]] = [:]
     private var dirtyUpsertPaths: [String: Set<String>] = [:]
@@ -101,12 +88,9 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         }
     }
 
-    /// Re-parse the in-window files (reusing the cache on an unchanged path + size + mtime), then return
-    /// every file's items concatenated in the input order — callers pass a path-sorted list so a
-    /// keep-first dedup stays deterministic. Files whose mtime predates `since` are skipped, so a
-    /// years-deep tree stays cheap to rescan; an unreadable file is skipped and not cached, so a
-    /// transient read failure doesn't stick. `nil` means the scan was canceled; a completed scan with
-    /// no parsed rows returns `[]`, so callers never mistake cancellation for authoritative empty data.
+    /// window 안 파일 재파싱(path+size+mtime 불변이면 cache 재사용) 후 입력 순서대로 이어붙여 반환 — 호출자가 경로 정렬 목록을 넘겨 keep-first dedup 유지.
+    /// mtime이 `since` 이전인 파일은 skip, 읽기 실패 파일은 cache에 남기지 않아 일시적 오류가 고착되지 않음.
+    /// `nil`은 취소를 의미 — 완료된 scan의 빈 결과는 `[]`이므로 취소와 "정말 빈 데이터"가 섞이지 않음.
     func items(
         from files: [JSONLScanning.DiscoveredFile],
         since: Date,
@@ -121,9 +105,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         await loadCacheIfNeeded(identity: cacheIdentity)
         guard !Task.isCancelled else { return nil }
         let currentCache = caches[cacheIdentity] ?? [:]
-        // Keep other same-parser scans' files in the shared partition until they age out of the window.
-        // This lets multi-account cards with disjoint roots share one actor safely; only the current
-        // call's input paths are returned below.
+        // 같은 parser의 다른 scan 파일들도 window에서 벗어날 때까지 shared partition에 유지 — disjoint root의 multi-account 카드가 한 actor를 안전하게 공유. 반환은 현재 호출의 입력 경로만.
         var nextCache = currentCache.filter { $0.value.mtime >= since }
         var toParse: [JSONLScanning.DiscoveredFile] = []
         for file in files {
@@ -177,16 +159,14 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         return Task.isCancelled ? nil : items
     }
 
-    /// Wait for the real debounced tasks rather than bypassing them. Tests configure a tiny debounce,
-    /// then use this to prove ordinary scans actually schedule and finish persistence.
+    /// debounce된 실제 task를 우회하지 않고 대기 — 테스트가 짧은 debounce로 persistence 완료를 검증하는 용도.
     func waitForPendingWritesForTesting() async {
         for task in Array(writeTasks.values) {
             await task.value
         }
     }
 
-    /// Commits the latest snapshots immediately. One-shot processes call this before exiting; the
-    /// long-lived app keeps the ordinary debounced path so refresh latency is unaffected.
+    /// 최신 snapshot 즉시 commit — one-shot 프로세스가 종료 전 호출. 장수 앱은 평소의 debounce 경로 유지.
     func flushPendingWrites() async {
         var identities = Set(writeTasks.keys)
         identities.formUnion(dirtyUpsertPaths.compactMap { $0.value.isEmpty ? nil : $0.key })
@@ -195,8 +175,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         for identity in identities {
             writeTasks[identity]?.cancel()
             writeTasks[identity] = nil
-            // Supersede an encoding or writer operation already in flight. Its generation guards then
-            // leave the dirty state for this explicit drain to commit instead of racing to clear it.
+            // 진행 중인 encoding/writer 작업을 세대 교체로 대체 — dirty 상태는 이 명시적 drain이 commit하도록 남김.
             let generation = writeGenerations[identity, default: 0] + 1
             writeGenerations[identity] = generation
             await persistCache(identity: identity, generation: generation)
@@ -218,9 +197,8 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
 
     // MARK: - Same-identity scan serialization
 
-    /// Actors are reentrant at `await parseFiles`; without this gate two cards launched together can
-    /// cold-parse the same home concurrently and then race to replace its cache. Different identities
-    /// remain independent, while matching ones queue behind the first parse and immediately hit cache.
+    /// actor는 `await parseFiles`에서 reentrant — 이 gate가 없으면 동시 실행된 두 카드가 같은 home을 중복 cold-parse 후 cache 교체를 경합.
+    /// 같은 identity만 첫 parse 뒤에 줄 세워 cache hit 유도, 다른 identity는 독립.
     private func acquire(_ identity: String) async -> Bool {
         guard activeIdentities.contains(identity) else {
             activeIdentities.insert(identity)
@@ -346,8 +324,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         }
         let removalSnapshot = dirtyRemovals[identity, default: [:]]
         do {
-            // Only changed per-source records are encoded, avoiding an O(all 30-day history) rewrite
-            // whenever the active rollout grows. The writer builds the small merged manifest under lock.
+            // 변경된 per-source record만 encode — O(30일 전체 이력) 재작성 회피. 작은 merged manifest는 writer가 lock 안에서 구성.
             let upserts = try await Task.detached(priority: .utility) {
                 let encoder = PropertyListEncoder()
                 encoder.outputFormat = .binary
@@ -404,8 +381,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         return result
     }
 
-    /// Read + parse a bounded number of changed files in parallel. Results are keyed back to the input
-    /// order; a `nil` item list marks an unreadable file.
+    /// 변경 파일을 상한 내에서 병렬 read + parse. 결과는 입력 순서로 키잉, `nil` item 목록은 읽기 실패 표시.
     private static func parseFiles(
         _ files: [JSONLScanning.DiscoveredFile],
         maxConcurrentParses: Int,

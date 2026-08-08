@@ -3,9 +3,7 @@ import Foundation
 
 @MainActor
 final class ClaudeProvider: ProviderRuntime {
-    /// The default card's identity. Extra account cards inject their own `Provider` with an
-    /// `@`-suffixed id and an account-derived display name; everything else about the runtime is
-    /// identical.
+    /// 기본 카드의 identity — 추가 계정 카드는 `@` suffix id와 계정 유래 이름만 다른 동일 runtime.
     static func makeProvider(id: String = "claude", displayName: String = "Claude") -> Provider {
         Provider(
             id: id,
@@ -27,11 +25,8 @@ final class ClaudeProvider: ProviderRuntime {
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
-    /// Last successful live-usage result and a rate-limit cooldown, carried across refreshes (the provider
-    /// is a long-lived singleton). `/api/oauth/usage` rate-limits aggressively, so on a 429 we serve the
-    /// last-good bars with a staleness note instead of blanking the dashboard, and skip the live call
-    /// entirely until the cooldown expires so we don't keep hammering an endpoint that's already limiting
-    /// us. Mirrors the legacy plugin's `cachedUsageData` + `rateLimitedUntilMs`.
+    /// refresh 간 유지되는 마지막 성공 라이브 usage + rate-limit cooldown — 429 시 last-good 바를
+    /// staleness note와 함께 제공하고, cooldown 만료까지 라이브 호출 skip(429 가중 방지).
     private var cachedCredentialFingerprint: Data?
     private var lastGoodUsage: ClaudeMappedUsage?
     private var rateLimitedUntil: Date?
@@ -77,14 +72,13 @@ final class ClaudeProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Scoped cards answer from footprints only (file existence / keychain attributes) so the
-        // every-launch seeding probe can never raise a keychain dialog for an account the user
-        // hasn't granted yet. The secret read happens on the first refresh.
+        // scoped 카드는 footprint만 확인(파일 존재/keychain attributes) — 매 실행 seeding probe에서
+        // keychain dialog 발생 금지; secret 읽기는 첫 refresh에서 수행.
         if authStore.scope != .standard {
             return await loadOffMainActor { [authStore] in authStore.hasCredentialFootprint() }
         }
-        // Never trigger another app's Keychain prompt during first-run detection. Encrypted Desktop
-        // material still counts as a local login; the first manual refresh requests access if needed.
+        // first-run 감지 중 타 앱 Keychain prompt 금지 — 암호화된 Desktop 자료도 로컬 로그인으로 집계,
+        // 접근 요청은 첫 수동 refresh에서 수행.
         let load = await loadOffMainActor { [authStore] in authStore.loadCredentialSet() }
         if load.candidates.contains(where: \.hasUsableAccessToken) { return true }
         return load.desktopStatus == .permissionRequired || load.desktopStatus == .stale
@@ -98,8 +92,7 @@ final class ClaudeProvider: ProviderRuntime {
         )
     }
 
-    /// Claude Code can replace a login while a request is in flight. Reload once when that happens so
-    /// the older account cannot reach the dashboard or cache; bound the retry for a changing source.
+    /// 요청 진행 중 로그인 교체 대응 — 1회 재로드로 구계정의 dashboard/cache 접근 차단, 재시도 횟수 제한.
     private func refresh(
         credentialReloadsRemaining: Int,
         forceDesktopFallback: Bool,
@@ -160,21 +153,16 @@ final class ClaudeProvider: ProviderRuntime {
             return ProviderSnapshot.error(provider: provider, error: ClaudeAuthError.notLoggedIn)
         }
 
-        // Per-source diagnostics at info level (token-free: source kind + refresh-token-present + expired
-        // booleans) so a "token expired" report is diagnosable from a default log without a debug build —
-        // e.g. all sources showing `refresh=no` explains why an expiry can never self-heal (issue #738).
+        // source별 진단을 info 레벨로(토큰 없는 라벨) — 기본 로그만으로 "token expired" 진단 가능(#738).
         let sources = candidates.map { $0.diagnosticsLabel(now: now()) }.joined(separator: ", ")
         AppLog.info(LogTag.plugin("claude"), "refresh start (\(candidates.count) source\(candidates.count == 1 ? "" : "s"): \(sources))")
         let start = Date()
-        // Probe each credential source in keychain-before-file order. An auth-expiry failure on one source (a
-        // stale/locked-out token that an external `claude` re-login replaced in another source) falls
-        // through to the next rather than failing the whole refresh; any non-auth error (rate limit,
-        // request/transport failure) surfaces immediately so a real outage is never masked as a retry.
+        // keychain-우선 순서로 credential source probe. auth-expiry 실패는 다음 source로 폴백;
+        // 비-auth 에러(rate limit, transport)는 즉시 표면화 — 실제 장애를 재시도로 가리지 않음.
         var lastFallbackError: ClaudeAuthError?
         var credentialGeneration = ClaudeCredentialGeneration(storedCandidates)
         for state in candidates {
-            // The environment token cannot read subscription usage. If a CLI login was rejected, try
-            // Desktop before this spend-only fallback can turn the refresh into a false success.
+            // environment 토큰은 subscription usage 조회 불가 — spend 전용 폴백이 거짓 성공이 되기 전에 Desktop 시도.
             if !forceDesktopFallback,
                lastFallbackError != nil,
                credentialLoad.desktopStatus == .notChecked,
@@ -247,37 +235,29 @@ final class ClaudeProvider: ProviderRuntime {
                 state: &state,
                 credentialGeneration: &credentialGeneration
             )
-            // A rate-limited fetch rides its "Updates blocked by Anthropic" notice on the mapped usage so
-            // it reaches the header triangle even when the badge/note lines aren't in the user's layout.
+            // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
             warning = mapped.warning
         case .missingProfileScope:
-            // The login authenticates for inference but lacks the `user:profile` scope the usage endpoint
-            // needs (typically a `claude setup-token` token). Don't leave the session/weekly bars silently
-            // blank — log it for diagnosis and surface a provider header warning (the amber triangle, like
-            // Z.ai's "no coding plan" notice) telling the user a re-login restores them. The local-log
-            // spend tiles below are unaffected and still load.
+            // `user:profile` scope 없는 로그인(`claude setup-token` 계열) — session/weekly 바를 조용히
+            // 비우는 대신 로그 + header 경고로 재로그인 안내; 로컬 로그 spend 타일은 영향 없음.
             AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope (inference-only token); re-login with `claude` to restore session/weekly limits")
             warning = ClaudeUsageMapper.missingProfileScopeWarning
         case .inferenceOnlyToken:
-            // An explicit CLAUDE_CODE_OAUTH_TOKEN is inference-only by design; nothing to fetch and nothing
-            // to nag about — the spend tiles still load below.
+            // 명시적 CLAUDE_CODE_OAUTH_TOKEN은 설계상 inference 전용 — 조회·안내 대상 아님, spend 타일은 유지.
             break
         }
         if let fallbackWarning {
             warning = fallbackWarning
         }
 
-        // Local spend tiles, scanned natively from Claude Code's session logs and priced through the
-        // shared pricing store, merged with Claude usage that happened inside pi (attributed back here).
-        // Both scans run on their scanner actors, off the main actor.
+        // 로컬 spend 타일 — 네이티브 로그 스캔 + pi 내 Claude usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
         let pricing = await pricing()
         let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
         let piScan = includePiUsage
             ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
             : nil
         var usageHistory: ProviderUsageHistory?
-        // Cancellation can land between the native and pi scans. Treat the pair as one unit so a
-        // partial result cannot replace the last-good combined history in WidgetDataStore.
+        // 취소가 native/pi 스캔 사이에 올 수 있음 — 쌍을 한 단위로 취급해 부분 결과의 last-good 교체 방지.
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
             let note = piScan == nil
                 ? "From your Claude usage history (estimated)"
@@ -315,8 +295,7 @@ final class ClaudeProvider: ProviderRuntime {
         defer { credentialGeneration = expectedGeneration }
         activateLiveUsageCache(for: state.oauth)
 
-        // Inside an active rate-limit cooldown, skip the live call and serve the last-good usage so a
-        // constantly-limited endpoint doesn't blank the dashboard (and we don't pile on more 429s).
+        // rate-limit cooldown 중에는 라이브 호출 skip, last-good 제공 — dashboard 공백과 429 가중 방지.
         if let until = rateLimitedUntil, now() < until {
             AppLog.info(LogTag.plugin("claude"), "rate-limited (cooldown active, serving \(lastGoodUsage == nil ? "badge" : "last-good usage"))")
             return rateLimitedSnapshot(credentials: state.oauth, retryAfterSeconds: Int(until.timeIntervalSince(now()).rounded(.up)))
@@ -366,8 +345,7 @@ final class ClaudeProvider: ProviderRuntime {
         }
         guard currentGeneration == expectedGeneration else { throw ClaudeAuthError.credentialsChanged }
 
-        // 429 can come back from either attempt; the helper hands both through unchanged. Start a cooldown
-        // (respecting Retry-After) and serve the last-good usage rather than a bare badge.
+        // 429는 양쪽 attempt에서 가능 — Retry-After 존중 cooldown 시작, bare badge 대신 last-good 제공.
         if response.statusCode == 429 {
             let retryAfterSeconds = ClaudeUsageMapper.parseRetryAfterSeconds(response, now: now())
             rateLimitedUntil = now().addingTimeInterval(TimeInterval(retryAfterSeconds ?? Int(Self.rateLimitCooldown)))
@@ -381,10 +359,8 @@ final class ClaudeProvider: ProviderRuntime {
         return mapped
     }
 
-    /// Last-good usage with an appended staleness note when we have it; otherwise the plain rate-limited
-    /// badge (no successful fetch yet this run). `lastGoodUsage` only ever holds a clean `mapUsageResponse`
-    /// result (never a rate-limited snapshot), so the note is never duplicated and no stale spend tiles
-    /// ride along — `probe` appends those fresh after this returns.
+    /// last-good usage + staleness note, 없으면 bare rate-limited badge. `lastGoodUsage`는 항상 clean한
+    /// `mapUsageResponse` 결과만 보유 — note 중복·stale spend 타일 동반 없음.
     private func rateLimitedSnapshot(credentials: ClaudeOAuth, retryAfterSeconds: Int?) -> ClaudeMappedUsage {
         guard var mapped = lastGoodUsage else {
             return ClaudeUsageMapper.rateLimitedUsage(credentials: credentials, retryAfterSeconds: retryAfterSeconds)
@@ -394,8 +370,7 @@ final class ClaudeProvider: ProviderRuntime {
         return mapped
     }
 
-    /// Cache state belongs to the complete access + refresh credential pair. A login change therefore
-    /// clears both last-good usage and cooldown, even when the two accounts share an access token.
+    /// 캐시 상태는 access + refresh 쌍 단위 — 로그인 변경 시 access token이 같아도 last-good·cooldown 초기화.
     private func activateLiveUsageCache(for credentials: ClaudeOAuth) {
         let fingerprint = Self.credentialFingerprint(credentials)
         guard cachedCredentialFingerprint != fingerprint else { return }
@@ -431,15 +406,14 @@ final class ClaudeProvider: ProviderRuntime {
                 AppLog.warn(LogTag.auth("claude"), "session expired (invalid_grant)")
                 throw ClaudeAuthError.sessionExpired
             }
-            // A 400/401 without a recognized OAuth error code isn't necessarily an expired token — it
-            // can be an HTML proxy/WAF page or a gateway error. Surface the HTTP status rather than
-            // telling the user to re-login (which can't fix a transport/infra failure).
+            // 인식 못한 OAuth 에러 코드의 400/401은 만료 확정 아님(proxy/WAF/gateway 가능) —
+            // 재로그인 안내 대신 HTTP status 표면화.
             throw ClaudeUsageError.requestFailed(response.statusCode)
         }
         guard (200..<300).contains(response.statusCode) else {
             throw ClaudeUsageError.requestFailed(response.statusCode)
         }
-        // NEVER log decoded.accessToken / refreshToken — only the fact that a rotation happened.
+        // decoded.accessToken / refreshToken 로깅 금지 — rotation 발생 사실만 기록.
         let decoded = try JSONDecoder().decode(ClaudeRefreshResponse.self, from: response.body)
         let previousOAuth = state.oauth
         state.oauth.accessToken = decoded.accessToken
@@ -449,10 +423,8 @@ final class ClaudeProvider: ProviderRuntime {
         if let expiresIn = decoded.expiresIn {
             state.oauth.expiresAt = now().timeIntervalSince1970 * 1000 + expiresIn * 1000
         }
-        // Fail loudly: a swallowed save leaves the OLD refresh token on disk after a rotation, so the
-        // next launch refreshes with a server-invalidated token and the user sees a misleading
-        // "session expired". The refreshed token still works for this session, so we log and continue
-        // rather than fail the live fetch.
+        // loudly 실패: save 누락 시 구 refresh token이 디스크에 남아 다음 launch가 무효 토큰으로
+        // "session expired" 오인; refresh된 토큰은 이번 세션에 유효하므로 로그 후 계속.
         let persisted: Bool
         do {
             guard try await Task.detached(priority: .utility, operation: { [authStore, state] in

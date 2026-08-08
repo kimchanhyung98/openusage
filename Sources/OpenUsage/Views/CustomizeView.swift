@@ -1,15 +1,8 @@
 import SwiftUI
 
-/// The Customize screen, now a two-level master/detail: the provider list (L1) or, when
-/// `layout.customizeProviderID` is set, that provider's detail (L2). The two slide horizontally — L2
-/// enters from the trailing edge, L1 returns from the leading edge — on the same spring. The back
-/// chevron (handled in `DashboardView`) is context-aware: L2 → L1, L1 → dashboard.
-///
-/// Reordering uses `DragGesture` plus local row geometry, kept inside the menu-bar popover instead
-/// of SwiftUI's pasteboard-backed drag/drop (unreliable here). The router owns the scroll view and
-/// the reorder-frame map; L1 and L2 read it for their drag hit-testing and emit frames via
-/// `.reorderFrame`. The `customizeProviderID` route lives in `LayoutStore` so the popover-closed
-/// reset and the Esc handler drive the same state.
+/// Customize 화면 — 프로바이더 목록(L1)과 상세(L2)의 2단 master/detail.
+/// 재정렬은 pasteboard 드래그 대신 `DragGesture` + 로컬 row geometry 사용.
+/// 라우트 `customizeProviderID`는 `LayoutStore` 소유 — 팝오버 닫힘 리셋·Esc 핸들러와 동일 상태 공유.
 struct CustomizeView: View {
     @Environment(LayoutStore.self) private var layout
     let reorderSpaceName: String
@@ -25,9 +18,7 @@ struct CustomizeView: View {
                 .frame(maxWidth: .infinity)
         }
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
-        // The transient star/denial pill floats above the Customize content — the same capsule style
-        // as the dashboard's "Copied to clipboard" share pill. Green for a successful star/unstar,
-        // orange for the per-provider cap denial.
+        // star/거부 알림 필 — 성공은 green, 프로바이더별 상한 거부는 orange
         .overlay(alignment: .bottom) {
             if layout.customizationNotice != nil {
                 customizationNoticePill

@@ -12,11 +12,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        // Open/trim the file log, seed the cached level, and emit the startup line BEFORE anything
-        // else logs, so the first lines of a session are captured.
+        // 다른 로그보다 먼저 bootstrap — 세션 첫 라인 캡처.
         AppLog.bootstrap()
-        // Kernel-level single-instance lock (#874): rejects a duplicate even when two copies launch
-        // so close together that the workspace guard's LaunchServices snapshot misses the peer.
+        // 커널 수준 single-instance lock (#874) — workspace guard snapshot이 놓치는 근접 동시 런치도 차단.
         var holdsLock = false
         if let bundleID = Bundle.main.bundleIdentifier {
             switch SingleInstanceLock.acquire(bundleIdentifier: bundleID) {
@@ -32,52 +30,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 AppLog.error(.lifecycle, "single-instance lock unavailable: \(message)")
             }
         }
-        // The lock winner must NOT consult the workspace guard: its snapshot can still contain a
-        // lock loser that is mid-exit (alive, lower PID), and yielding to it leaves ZERO instances
-        // (reproduced in #874). The guard remains only as the fallback for unbundled launches
-        // (`swift run` has no bundle ID) or lock setup failure. `terminate(_:)` unwinds
-        // asynchronously and is cancellable, so we MUST return here — otherwise this method keeps
-        // running and creates the very duplicate it was meant to prevent.
+        // lock 승자는 workspace guard 미참조 필수 — snapshot의 mid-exit 패자에 양보하면 zero instance (#874);
+        // guard는 unbundled 런치·lock 실패의 fallback 전용. `terminate(_:)`는 비동기 unwind — 여기서 return 필수.
         if !holdsLock, SingleInstanceGuard.deferToExistingInstance() {
             AppLog.info(.lifecycle, "duplicate launch detected; handing off to the running instance and terminating")
             NSApp.terminate(nil)
             return
         }
-        // Versioned settings migration — replaces the old beta-era "wipe all settings on every update".
-        // MUST run before anything reads or writes UserDefaults (AppKit below, AppearanceSetting, and the
-        // AppContainer stores), so migrated values are in place when the stores load and a genuine fresh
-        // install still presents an empty domain — how the migrator tells a first launch from an upgrade.
-        // Nothing is wiped now; settings carry across updates. See `SettingsMigrator`.
-        // The fresh-install answer is captured BEFORE migrating (the schema stamp makes the domain
-        // non-empty) and handed to `AppContainer`, whose `FirstRunSeeder` seeds a minimal provider set.
+        // 버전드 settings migration. UserDefaults를 읽고 쓰는 모든 코드보다 먼저 실행 필수 —
+        // fresh-install 판정은 migrate 전에 캡처 (schema stamp가 도메인을 non-empty로 변경). `SettingsMigrator` 참고.
         let isFreshInstall = SettingsMigrator.isFreshInstall()
         SettingsMigrator.migrate()
-        // Let only the `SMAppService` login item drive startup: opt out of AppKit's reopen-on-login
-        // so a reboot doesn't also restore us and race the login item in the first place. The lock
-        // above resolves same-bundle startup races even if both launch triggers fire; this just avoids
-        // the wasted second launch.
+        // 시작은 `SMAppService` login item 단독 담당 — AppKit reopen-on-login opt-out으로 재부팅 시 이중 런치 예방.
         NSApp.disableRelaunchOnLogin()
-        // The legacy Tauri edition's autostart agent (~/Library/LaunchAgents/OpenUsage.plist)
-        // survives the upgrade and re-launches this binary at every login, racing the login item —
-        // the double launch behind #874 and the "SUNSTORY LLC" Login Items entry from #607.
-        // Deleting it (only when it provably points into our bundle) stops that race at the source;
-        // the instance guard above stays as the referee for the remaining triggers. Runs after the
-        // guard on purpose, so only the surviving copy touches the file.
+        // 레거시 Tauri autostart agent 정리 — 로그인 이중 실행 원인 (#607/#874). guard 이후 실행 필수 — 생존 copy만 파일 접근.
         LegacyLaunchAgentCleanup.removeLeftoverAgent()
-        // App-wide theme override (NSApp.appearance): the popover ignores SwiftUI's
-        // preferredColorScheme, so the override is applied at the AppKit level once at launch;
-        // the Theme picker on the Settings screen re-applies it on change.
+        // 앱 전역 theme override는 AppKit 수준 적용 — popover가 SwiftUI `preferredColorScheme` 미준수.
         AppearanceSetting.applyCurrent()
         let container = AppContainer(isFreshInstall: isFreshInstall)
         self.container = container
         statusItemController = StatusItemController(container: container, updater: updater)
-        // Starts background update checks (release build only; dormant under preview/`swift run`).
+        // 백그라운드 업데이트 체크 시작 (release build 한정).
         updater.start()
     }
 
-    /// Flush queued telemetry on quit. The SDK's lifecycle autocapture is off (we emit our own daily
-    /// rollups), so it won't auto-flush on termination — this explicit flush keeps low-frequency events
-    /// from being stranded across a clean quit.
+    /// 종료 시 대기 telemetry flush — SDK lifecycle autocapture off라 자동 flush 부재, 저빈도 이벤트 유실 방지.
     public func applicationWillTerminate(_ notification: Notification) {
         container?.telemetry.flush()
     }

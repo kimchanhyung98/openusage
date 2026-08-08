@@ -1,14 +1,9 @@
 import Foundation
 
-/// The login-shell facts identity resolution depends on (provider home overrides and OAuth endpoint
-/// switches), persisted after every successful shell capture. Shell exports change ~never between
-/// launches, so `ProcessEnvironmentReader` PINS these keys to the persisted facts for the whole
-/// session: every reader sees the same values no matter when the async login-shell capture lands,
-/// and a slow shell can't make an exported override read as "not set". A changed export applies
-/// from the next launch. Only a genuinely first launch (no snapshot yet) has nothing to pin.
+/// identity 해석이 의존하는 login-shell 사실(provider home override·OAuth endpoint 스위치) — 성공한 shell 캡처마다 영속화.
+/// `ProcessEnvironmentReader`가 세션 내내 이 키를 persisted 사실에 고정 — 느린 shell이 export된 override를 "미설정"으로 오독하는 일 방지, 변경된 export는 다음 launch부터 적용.
 struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
-    /// Identity-relevant, non-secret configuration variables. Secrets (API keys, tokens) must never
-    /// be added here — the snapshot lives in UserDefaults as plain text.
+    /// identity 관련 non-secret 설정 변수 — secret(API 키·token) 추가 금지, snapshot은 UserDefaults에 평문 저장.
     static let capturedKeys = [
         "CLAUDE_CONFIG_DIR", "CODEX_HOME", "KIMI_CODE_HOME", "XDG_CONFIG_HOME",
         "USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH",
@@ -17,15 +12,14 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
         "KIMI_DISABLE_OAUTH_LOCK",
     ]
 
-    /// Keys present in the v1 snapshot format, before Kimi-specific identity settings were added.
+    /// Kimi identity 설정 추가 전 v1 snapshot format의 키.
     static let legacyCapturedKeys = [
         "CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CONFIG_HOME",
         "USER_TYPE", "USE_LOCAL_OAUTH", "USE_STAGING_OAUTH",
         "CLAUDE_LOCAL_OAUTH_API_BASE", "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     ]
 
-    /// Captured values. An absent pinned key was verifiably NOT exported at capture time, so it reads
-    /// as "no override" for the process lifetime.
+    /// 캡처된 값 — pinned 키의 부재는 캡처 시점 "미export 검증됨", 프로세스 수명 동안 "override 없음"으로 read.
     var values: [String: String]
     var capturedAt: Date
     var pinnedKeys: Set<String>
@@ -54,9 +48,8 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
             ?? Set(Self.capturedKeys)
     }
 
-    /// Values for every captured key as the (warm) login-shell layer reports them, or `nil` when the
-    /// capture failed — a real login shell always exports PATH/HOME, so an empty capture means the
-    /// spawn or parse failed and its "facts" must not be persisted.
+    /// warm login-shell 레이어 기준 캡처 키 전체 값 — 캡처 실패 시 `nil`.
+    /// 빈 캡처는 spawn/parse 실패 — 그 "사실"의 영속화 금지.
     static func current(
         shellEnvironment: LoginShellEnvironment = .shared,
         capturedAt: Date = Date()
@@ -70,16 +63,13 @@ struct ShellEnvironmentSnapshot: Codable, Equatable, Sendable {
     }
 }
 
-/// UserDefaults persistence for the snapshot (`openusage.shellEnvSnapshot.v2`). A class so the
-/// post-launch refresh task can carry it across actors; UserDefaults itself is thread-safe.
+/// snapshot의 UserDefaults 영속화 (`openusage.shellEnvSnapshot.v2`) — post-launch refresh task의 actor 간 이동용 class, UserDefaults 자체는 thread-safe.
 final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
     static let storageKey = "openusage.shellEnvSnapshot.v2"
     static let previousStorageKey = "openusage.shellEnvSnapshot.v1"
 
-    /// The snapshot as it existed at process start, decoded once and memoized (a `static let` is
-    /// thread-safe lazy). `ProcessEnvironmentReader` consults this on every identity-key read, so it
-    /// must not re-hit UserDefaults each time. Deliberately frozen for the process lifetime — that
-    /// freeze IS the session pin; the refresh task's newer facts apply from the next launch.
+    /// 프로세스 시작 시점 snapshot — 1회 decode·memoize(`static let`은 thread-safe lazy), identity-key read마다 UserDefaults 재조회 금지.
+    /// 프로세스 수명 동안 의도적 동결 — 이 동결이 곧 세션 pin; refresh task의 새 사실은 다음 launch부터 적용.
     static let launchSnapshot: ShellEnvironmentSnapshot? =
         ShellEnvironmentSnapshotStore(defaults: .standard).load()
 
@@ -124,10 +114,8 @@ final class ShellEnvironmentSnapshotStore: @unchecked Sendable {
         defaults.removeObject(forKey: Self.previousStorageKey)
     }
 
-    /// Wait (off-main, bounded by the capture's own subprocess timeout) for the login-shell capture
-    /// kicked off by `prewarm()`, then persist a fresh snapshot of its facts. A failed capture
-    /// persists nothing — the previous snapshot's facts stay in place. Callers retain the task and
-    /// cancel it on teardown.
+    /// `prewarm()`이 시작한 login-shell 캡처를 off-main에서 대기(캡처 자체 timeout 한도) 후 최신 snapshot 영속화.
+    /// 캡처 실패 시 영속화 없음 — 이전 snapshot 사실 유지. caller가 task 보유, teardown 시 취소.
     func startRefreshTask(shellEnvironment: LoginShellEnvironment = .shared) -> Task<Void, Never> {
         Task.detached(priority: .utility) { [self] in
             guard shellEnvironment.ensureCaptured(),

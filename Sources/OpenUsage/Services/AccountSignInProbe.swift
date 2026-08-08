@@ -1,15 +1,13 @@
 import Foundation
 
-/// The local readiness check behind the Settings account badge and the switch toggle. A profile is
-/// **Ready** when its OpenUsage Keychain snapshot carries a usable credential that still proves the
-/// profile's own identity — the exact precondition of the switch transaction, checked through the
-/// same readers. No provider network call, no shared-home read, no prompt-risk Keychain probing of
-/// other apps' items.
+/// Settings 계정 badge·전환 토글 뒤의 로컬 준비 상태 점검.
+/// Ready = OpenUsage Keychain snapshot이 profile 자신의 identity를 여전히 증명하는 사용 가능 credential 보유 — switch 트랜잭션의 전제 조건을 동일한 reader로 검사.
+/// provider 네트워크 호출·shared-home read·타 앱 item의 prompt 위험 Keychain probe 없음.
 struct AccountSignInProbe: Sendable {
     enum State: Equatable, Sendable {
-        /// The snapshot proves the profile's account and carries a usable credential shape.
+        /// snapshot이 profile 계정을 증명하고 사용 가능한 credential 형태 보유.
         case ready(identityKey: String, label: String?)
-        /// No provable sign-in snapshot for this profile. Never "wrong account" — simply not ready.
+        /// 증명 가능한 sign-in snapshot 부재 — "wrong account"가 아니라 단순 미준비.
         case needsSignIn
     }
 

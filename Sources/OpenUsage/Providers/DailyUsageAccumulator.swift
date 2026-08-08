@@ -1,41 +1,27 @@
 import Foundation
 
-/// Accumulates priced per-day usage — tokens, cost, and the per-model breakdown — then assembles a
-/// `LogUsageScan`. Shared by the log scanners (Claude, Codex, Grok) so the "accumulate then assemble"
-/// tail lives in one place instead of a byte-identical copy per provider; each scanner keeps only its
-/// format-specific parse/pricing loop.
-///
-/// Days are keyed by the shared local-calendar `dayKey`, matching `SpendTileMapper`'s Today / Yesterday
-/// lookup — the day-key contract is one function, not five copies (drift here is the class of bug behind
-/// the ccusage false-zero fix). Only priced rows are added (every scanner skips unpriceable rows before
-/// counting), so every counted day carries a real cost; unpriceable models are tracked separately for
-/// the tile's warning triangle.
+/// 일 단위 priced usage(tokens·cost·모델별 breakdown)를 누적해 `LogUsageScan`으로 조립.
+/// Claude·Codex·Grok 로그 scanner가 공유하는 공통 꼬리 — priced row만 집계하고, unpriceable 모델은 경고 삼각형용으로 별도 추적.
 struct DailyUsageAccumulator {
     private var tokensByDay: [String: Int] = [:]
     private var costByDay: [String: Double] = [:]
     private var unknownModelsByDay: [String: Set<String>] = [:]
     private var modelsByDay: [String: [String: ModelAccumulator]] = [:]
 
-    /// Local calendar day as `yyyy-MM-dd`. The single day-key contract shared by the accumulator,
-    /// `SpendTileMapper`, and the Cursor CSV aggregation. `calendar` is injectable for tests; production
-    /// uses `.current`.
+    /// 로컬 캘린더 기준 `yyyy-MM-dd` day key — accumulator·`SpendTileMapper`·Cursor CSV 집계가 공유하는 단일 계약.
     static func dayKey(from date: Date, calendar: Calendar = .current) -> String {
         let components = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
     }
 
-    /// Add a priced row's tokens + cost, attributed to `model` on `day`.
     mutating func add(day: String, tokens: Int, cost: Double, model: String) {
         tokensByDay[day, default: 0] += tokens
         costByDay[day, default: 0] += cost
         modelsByDay[day, default: [:]][model, default: ModelAccumulator()].add(tokens: tokens, costUSD: cost)
     }
 
-    /// Merge already-built scans (a provider's native log scan plus its pi slice) into one, by replaying
-    /// each scan's per-model daily usage through a fresh accumulator so the combined `series`,
-    /// `modelUsage`, and unknown-model set stay consistent. Every input must be accumulator-built (its
-    /// `series` derived from the same per-model maps), which the native and pi scanners guarantee. Nil
-    /// inputs are skipped; returns nil when they are all nil (the provider then folds in nothing).
+    /// 이미 만들어진 scan들(native + pi slice)을 하나로 병합 — 모델별 daily usage를 새 accumulator로 재생해 일관성 유지.
+    /// 모든 입력은 accumulator 기반이어야 함(native·pi scanner가 보장). nil 입력은 건너뛰고 전부 nil이면 nil 반환.
     static func merged(_ scans: [LogUsageScan?]) -> LogUsageScan? {
         let present = scans.compactMap { $0 }
         guard !present.isEmpty else { return nil }
@@ -43,8 +29,7 @@ struct DailyUsageAccumulator {
         for scan in present {
             for day in scan.modelUsage?.daily ?? [] {
                 for model in day.models {
-                    // Skip cost-unknown entries rather than treating nil as $0 — their unknown-model
-                    // metadata is already carried through via unknownModelsByDay below.
+                    // cost-unknown 항목은 $0로 치지 않고 건너뜀 — unknown-model 정보는 아래 unknownModelsByDay로 별도 반영.
                     guard let cost = model.costUSD else { continue }
                     accumulator.add(day: day.date, tokens: model.totalTokens, cost: cost, model: model.model)
                 }
@@ -58,14 +43,13 @@ struct DailyUsageAccumulator {
         return accumulator.build()
     }
 
-    /// Note a model that couldn't be priced but still carried tokens — surfaced as the tile's warning
-    /// triangle, the only place unpriceable usage appears (it's excluded from every displayed total).
+    /// 가격 산정은 불가하지만 tokens는 있는 모델 기록 — 타일 경고 삼각형에만 표시되고 모든 합계에서 제외.
     mutating func addUnknownModel(day: String, model: String) {
         unknownModelsByDay[day, default: []].insert(model)
     }
 
-    /// Assemble the scan: per-day tokens/cost (days sorted newest-first), the per-day model breakdown,
-    /// and the unknown-model set. Every counted day is priced, so its `costUSD` is always the real total.
+    /// scan 조립: 일별 tokens/cost(최신순), 모델별 breakdown, unknown-model 집합.
+    /// 집계된 날은 전부 priced — `costUSD`는 항상 실제 합계.
     func build() -> LogUsageScan {
         let days = tokensByDay.keys.sorted(by: >).map { day in
             DailyUsageEntry(date: day, totalTokens: tokensByDay[day] ?? 0, costUSD: costByDay[day] ?? 0)

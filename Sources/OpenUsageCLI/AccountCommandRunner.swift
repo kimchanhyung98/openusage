@@ -1,9 +1,8 @@
 import Foundation
 import OpenUsage
 
-/// Executes a read-only `openusage account` command against the shared profile registry. The app
-/// writes the same UserDefaults domain, so a Settings switch and this CLI always agree. The CLI
-/// never touches credentials, the Keychain, or the shell setup.
+/// 공유 profile registry에 대한 read-only `openusage account` 명령 실행 — 앱과 같은 UserDefaults domain이라 Settings 전환과 항상 일치.
+/// CLI는 credential·Keychain·shell setup에 접근 금지.
 @MainActor
 struct AccountCommandRunner {
     private let store: AccountProfilesStore
@@ -75,7 +74,7 @@ struct AccountCommandRunner {
             }
             return 0
         }
-        // Scriptable spelling: the bare label on stdout, nothing when no account is selected.
+        // script 친화 출력 — stdout에 label만, 선택 계정 없으면 무출력.
         if let profile = store.preferredProfile(family: family) {
             print(profile.label)
         }
@@ -83,7 +82,7 @@ struct AccountCommandRunner {
     }
 }
 
-/// User-facing one-liners for store errors (exit 2 — the request was wrong, not the system).
+/// store 에러의 사용자용 한 줄 메시지 (exit 2 — 시스템이 아닌 요청 오류).
 func accountErrorMessage(_ error: AccountProfileError) -> String {
     error.userMessage
 }

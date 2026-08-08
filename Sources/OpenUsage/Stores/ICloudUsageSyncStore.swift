@@ -46,7 +46,7 @@ enum ICloudUsageSyncError: Error, LocalizedError {
     }
 }
 
-/// Coordinated access to the app-private data area of OpenUsage's iCloud Documents container.
+/// OpenUsage iCloud Documents container의 app 전용 영역에 대한 coordinated 접근
 actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -251,8 +251,7 @@ final class ICloudUsageSyncStore {
             )
             do {
                 try await fileStore.write(document)
-                // Disabling can run while the coordinated write is in flight. If it did, remove the
-                // just-finished write as well so this Mac cannot reappear in peers after opting out.
+                // coordinated write 중 비활성화 가능성 대비 — opt-out 후 peer 재등장 방지 위해 방금 쓴 문서도 삭제
                 guard enabled else {
                     try await fileStore.delete(deviceID: deviceID)
                     return
@@ -270,7 +269,7 @@ final class ICloudUsageSyncStore {
         await withSyncActivity {
             do {
                 let result = try await fileStore.loadDocuments()
-                // A read that began while enabled must not restore peer state after sync was disabled.
+                // enabled 상태에서 시작된 read가 비활성화 후 peer 상태를 복원하지 않도록 하는 guard
                 guard enabled else { return }
                 documents = UsageHistoryDocument.newestByDevice(result.documents)
                 invalidFileMessages = result.invalidFileMessages

@@ -1,15 +1,13 @@
 import Foundation
 
-/// Owns the app's model pricing data: bundled snapshots for offline first launch, on-disk caches in
-/// Application Support, and hourly refreshes from the live feeds (LiteLLM, models.dev, and the
-/// OpenUsage pricing supplement on gh-pages). `current()` never blocks on the network — it serves
-/// the freshest data on hand and revalidates in the background (stale-while-revalidate).
+/// 앱 model pricing 데이터의 소유자 — bundled snapshot, Application Support disk cache, live feed(LiteLLM·models.dev·supplement) 시간별 refresh.
+/// `current()`는 network 비대기 — 보유한 최신 데이터 제공 후 background 재검증 (stale-while-revalidate).
 actor ModelPricingStore {
     static let shared = ModelPricingStore()
 
-    /// Refetch a source this long after its last success.
+    /// 마지막 성공 후 이 간격 경과 시 재fetch.
     private static let refreshInterval: TimeInterval = 60 * 60
-    /// Retry a failed source after this long (keeps failure logs from repeating every provider pass).
+    /// 실패 source의 재시도 간격 — provider pass마다 실패 log 반복 방지.
     private static let failureRetryInterval: TimeInterval = 30 * 60
 
     enum SourceID: String, CaseIterable, Codable, Sendable {
@@ -67,8 +65,7 @@ actor ModelPricingStore {
         return try? Data(contentsOf: url)
     }
 
-    /// The pricing snapshot to use for a scan/parse pass. Kicks a background refresh when any
-    /// source is due; the refreshed data is picked up by the next call.
+    /// scan/parse pass에 사용할 pricing snapshot — 기한 도래 source는 background refresh 시작, 결과는 다음 호출에 반영.
     func current() -> ModelPricing {
         loadIfNeeded()
         if refreshTask == nil, SourceID.allCases.contains(where: isDue) {
@@ -77,7 +74,7 @@ actor ModelPricingStore {
         return pricing
     }
 
-    /// Runs any due fetches to completion — for tests and deterministic refresh points.
+    /// 기한 도래 fetch를 완료까지 수행 — test·결정적 refresh 지점용.
     func refreshNow() async {
         loadIfNeeded()
         if refreshTask == nil {
@@ -123,8 +120,7 @@ actor ModelPricingStore {
         }
     }
 
-    /// A catalog is the bundled snapshot with the fetched cache merged on top — cached entries win,
-    /// but snapshot-only models survive if the live feed ever drops them.
+    /// catalog = bundled snapshot 위에 fetch cache merge — cache entry 우선, live feed가 지운 snapshot 전용 model은 생존.
     private func loadCatalog(_ source: SourceID, parse: (Data) throws -> PricingCatalog) -> PricingCatalog {
         var catalog = PricingCatalog()
         let resourceName = source == .litellm ? "pricing_litellm_snapshot" : "pricing_models_dev_snapshot"
@@ -173,7 +169,7 @@ actor ModelPricingStore {
         writeSourceStates()
     }
 
-    /// Fetches one source and updates its cache file. Returns true when new data was stored.
+    /// source 1개 fetch 및 cache 파일 갱신 — 새 데이터 저장 시 true.
     private func fetch(_ source: SourceID) async -> Bool {
         guard let url = sourceURLs[source] else { return false }
         var state = sourceStates[source] ?? SourceState()
@@ -208,8 +204,7 @@ actor ModelPricingStore {
         }
     }
 
-    /// Parses the fetched body (throwing on garbage so it never replaces a good cache) and returns
-    /// the bytes to persist — compacted for the big catalogs, verbatim for the supplement.
+    /// fetch body 파싱(불량이면 throw — 정상 cache 보호) 후 저장할 바이트 반환 — 대형 catalog은 compact, supplement는 원본 유지.
     private func validatedCacheData(_ source: SourceID, body: Data) throws -> Data {
         switch source {
         case .litellm:

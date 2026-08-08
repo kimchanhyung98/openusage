@@ -1,13 +1,10 @@
 import XCTest
 @testable import OpenUsage
 
-/// Line parsing, deduplication, and day aggregation for the native Claude log scanner — the
-/// dedup/validity fixtures are ported from ccusage's Claude adapter tests so the two agree on
-/// what counts.
 final class ClaudeLogUsageScannerTests: XCTestCase {
     private typealias Entry = ClaudeLogUsageScanner.Entry
 
-    /// Deterministic fixture pricing: input $10/M, output $20/M, cache write $12.5/M, read $1/M.
+    /// 결정적 픽스처 가격: input $10/M, output $20/M, cache write $12.5/M, read $1/M
     private let pricing = ModelPricing(
         supplement: PricingSupplement(),
         primary: PricingCatalog(entries: [
@@ -69,23 +66,23 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testRejectsLinesTheCcusageSchemaRejects() {
-        // Missing usage.input_tokens / output_tokens.
+        // usage.input_tokens / output_tokens 누락
         XCTAssertNil(ClaudeLogUsageScanner.parseLine(Data(
             #"{"timestamp":"2026-02-20T12:00:00Z","message":{"usage":{"output_tokens":5}}}"#.utf8
         )))
-        // Unparseable timestamp.
+        // 파싱 불가 timestamp
         XCTAssertNil(ClaudeLogUsageScanner.parseLine(Data(
             #"{"timestamp":"not-a-date","message":{"usage":{"input_tokens":1,"output_tokens":2}}}"#.utf8
         )))
-        // Unknown speed value (ccusage's lowercase enum parse fails the line).
+        // 알 수 없는 speed 값 (ccusage의 lowercase enum 파싱 실패)
         XCTAssertNil(ClaudeLogUsageScanner.parseLine(Data(
             #"{"timestamp":"2026-02-20T12:00:00Z","message":{"usage":{"input_tokens":1,"output_tokens":2,"speed":"turbo"}}}"#.utf8
         )))
-        // Non-semver version marks a foreign log shape.
+        // 비semver version은 외부 로그 형태 표시
         XCTAssertNil(ClaudeLogUsageScanner.parseLine(Data(
             ClaudeLogFixture.usageLine(timestamp: "2026-02-20T12:00:00Z", version: "unknown").utf8
         )))
-        // Present-but-empty model.
+        // 존재하지만 빈 model
         XCTAssertNil(ClaudeLogUsageScanner.parseLine(Data(
             ClaudeLogFixture.usageLine(timestamp: "2026-02-20T12:00:00Z", model: "").utf8
         )))
@@ -108,7 +105,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertFalse(ClaudeLogUsageScanner.isSemverPrefix("1.0."))
     }
 
-    // Ported from ccusage `rejects_null_schema_fields_like_typescript_loader`.
+    // ccusage `rejects_null_schema_fields_like_typescript_loader`에서 이식
     func testRejectsNullSchemaFields() {
         XCTAssertTrue(ClaudeLogUsageScanner.hasUnsupportedNullField(Data(
             #"{"message":{"usage":{"speed":null}}}"#.utf8
@@ -119,7 +116,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertTrue(ClaudeLogUsageScanner.hasUnsupportedNullField(Data(
             #"{"sessionId":null,"message":{"usage":{"input_tokens":0}}}"#.utf8
         )))
-        // `content: null` is fine — only the known schema fields reject nulls.
+        // `content: null`은 허용 — 알려진 schema 필드만 null 거부
         XCTAssertFalse(ClaudeLogUsageScanner.hasUnsupportedNullField(Data(
             #"{"message":{"content":null,"usage":{"input_tokens":0}}}"#.utf8
         )))
@@ -138,8 +135,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testPersistedPrintModeUsageCountsLikeInteractiveUsage() throws {
-        // `claude -p` writes the same assistant usage record with the `sdk-cli` entrypoint unless
-        // the caller explicitly passes `--no-session-persistence`.
+        // `claude -p`도 `--no-session-persistence` 없으면 `sdk-cli` entrypoint로 동일한 assistant usage record 기록
         let line = #"{"type":"assistant","entrypoint":"sdk-cli","timestamp":"2026-02-20T12:00:00.000Z","sessionId":"print-session","requestId":"print-request","version":"2.1.207","message":{"id":"print-message","model":"claude-test-model","usage":{"input_tokens":100,"output_tokens":20,"cache_creation_input_tokens":30,"cache_read_input_tokens":40,"speed":"standard"}}}"#
 
         let entries = ClaudeLogUsageScanner.parseFile(Data(line.utf8))
@@ -183,7 +179,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
             entries: ClaudeLogUsageScanner.dedup(entries), since: .distantPast, pricing: pricing
         )
 
-        // Parent: carried $1.23. Advisor: 10 input at $10/M + 2 output at $20/M.
+        // parent는 carried $1.23, advisor는 input 10 x $10/M + output 2 x $20/M
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 15)
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 1.23014, accuracy: 1e-9)
         let models = scan.modelUsage?.daily.first?.models ?? []
@@ -211,7 +207,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         )
     }
 
-    // Ported from `keeps_parent_usage_when_sidechain_replays_message_with_new_request_id`.
+    // ccusage `keeps_parent_usage_when_sidechain_replays_message_with_new_request_id`에서 이식
     func testKeepsParentUsageWhenSidechainReplaysMessageWithNewRequestID() {
         let deduped = ClaudeLogUsageScanner.dedup([
             entry(messageID: "msg-parent", requestID: "req-parent", isSidechain: false, cacheRead: 20, output: 10),
@@ -225,7 +221,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(deduped[1].tokens.cacheRead, 700)
     }
 
-    // Ported from `refreshes_dedupe_indexes_when_parent_replaces_sidechain_replay`.
+    // ccusage `refreshes_dedupe_indexes_when_parent_replaces_sidechain_replay`에서 이식
     func testParentReplacesSidechainReplayAndIndexesStayFresh() {
         let deduped = ClaudeLogUsageScanner.dedup([
             entry(messageID: "msg-parent", requestID: "req-sidechain-replay", isSidechain: true, cacheRead: 50_000, output: 10),
@@ -246,7 +242,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testExactDuplicateKeepsLargerTokenTotalThenSpeedTiebreak() {
-        // Same (messageID, requestID): the larger token total wins…
+        // 동일 (messageID, requestID): 더 큰 token total 승…
         var deduped = ClaudeLogUsageScanner.dedup([
             entry(messageID: "msg-1", requestID: "req-1", isSidechain: false, cacheRead: 10, output: 10),
             entry(messageID: "msg-1", requestID: "req-1", isSidechain: false, cacheRead: 100, output: 10)
@@ -254,7 +250,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(deduped.count, 1)
         XCTAssertEqual(deduped[0].tokens.cacheRead, 100)
 
-        // …and on an equal total, the entry carrying a `speed` field wins.
+        // …total 동률이면 `speed` 필드 보유 entry 승
         deduped = ClaudeLogUsageScanner.dedup([
             entry(messageID: "msg-2", requestID: "req-2", isSidechain: false, cacheRead: 10, output: 10),
             entry(messageID: "msg-2", requestID: "req-2", isSidechain: false, cacheRead: 10, output: 10, hasSpeed: true)
@@ -278,7 +274,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         var carried = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         carried.costUSD = 0.75
         carried.tokens = TokenBreakdown(input: 100, output: 50)
-        // Computed from the fixture rates: 1000 input = $0.01, 500 output = $0.01.
+        // 픽스처 요율 기준 계산: input 1000 = $0.01, output 500 = $0.01
         var computed = entry(messageID: "m2", requestID: "r2", isSidechain: false, cacheRead: 0, output: 0)
         computed.tokens = TokenBreakdown(input: 1000, output: 500)
 
@@ -304,7 +300,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [fast], since: .distantPast, pricing: pricing)
 
-        // Fixture fastMultiplier is 2: ($0.01 + $0.01) * 2.
+        // 픽스처 fastMultiplier 2: ($0.01 + $0.01) * 2
         XCTAssertEqual(scan.series.daily[0].costUSD ?? 0, 0.04, accuracy: 1e-9)
     }
 
@@ -318,8 +314,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [unknown, priced], since: .distantPast, pricing: pricing)
 
-        // Unpriceable tokens never enter the displayed totals — they surface only through the
-        // warning triangle, so the tile's tokens and dollars stay coherent.
+        // 가격 산정 불가 token은 표시 totals에서 제외 — warning triangle로만 노출
         XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 1500, costUSD: 0.02)])
         XCTAssertEqual(scan.unknownModelsByDay[day], ["mystery-model"])
         XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
@@ -335,8 +330,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [unknown], since: .distantPast, pricing: pricing)
 
-        // A day with nothing priceable produces no series entry at all (→ "No data"), but the
-        // unknown-model warning still names what was excluded.
+        // 가격 산정 가능한 것이 없는 날은 series 항목 자체가 없음(→ "No data"), unknown-model warning은 유지
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertEqual(scan.unknownModelsByDay[day], ["mystery-model"])
         XCTAssertEqual(scan.modelUsage?.daily ?? [], [])
@@ -349,16 +343,14 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [synthetic], since: .distantPast, pricing: pricing)
 
-        // No model and no carried cost: unpriceable, so excluded from totals — and with no name to
-        // warn about, no unknown-model entry either.
+        // model 없음 + carried cost 없음: unpriceable로 totals 제외 — warning할 이름도 없어 unknown-model 항목도 없음
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
         XCTAssertEqual(scan.modelUsage?.daily ?? [], [])
     }
 
     func testAggregateSyntheticModelWithCarriedCostStillCounts() {
-        // A cost the log itself carries is priced regardless of the missing model name — only
-        // unpriceable usage is excluded.
+        // 로그 자체가 carried한 cost는 model 이름 없어도 집계 — unpriceable usage만 제외
         var synthetic = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         synthetic.model = nil
         synthetic.costUSD = 0.10
@@ -403,7 +395,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(first.series.daily[0].totalTokens, 150)
         XCTAssertEqual(first.series.daily[0].costUSD ?? 0, 0.25, accuracy: 1e-9)
 
-        // Append a second session file; the rescan must pick it up (per-file cache invalidation).
+        // 두 번째 세션 파일 추가 — rescan이 반영해야 함 (per-file cache invalidation)
         let newFile = home.appendingPathComponent("projects/project-a/session-2.jsonl")
         try ClaudeLogFixture.usageLine(
             timestamp: timestamp, input: 10, output: 5, costUSD: 0.05,
@@ -419,8 +411,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     func testScanDeduplicatesReplaysAcrossFiles() async throws {
         let now = Date()
         let timestamp = OpenUsageISO8601.string(from: now)
-        // The same message replayed in a sidechain session file under a new request id: only the
-        // parent's tokens may count.
+        // 같은 message가 sidechain 세션 파일에서 새 request id로 replay — parent token만 집계
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/parent.jsonl": ClaudeLogFixture.usageLine(
                 timestamp: timestamp, input: 100, output: 50, costUSD: 0.25,
@@ -465,8 +456,6 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertNil(scan)
     }
 
-    /// Manual parity harness against the real logs on this machine: prints per-day totals to compare
-    /// with `ccusage daily --json --offline`. Gated like the other live tests.
     func testParityAgainstRealLocalLogs() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["OPENUSAGE_CLAUDE_PARITY"] == "1")
         let scanner = ClaudeLogUsageScanner()
@@ -568,7 +557,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
                 timestamp: OpenUsageISO8601.string(from: now), input: 10, output: 5, costUSD: 0.01
             )
         ])
-        // ccusage accepts `CLAUDE_CONFIG_DIR` pointing at the `projects/` dir itself.
+        // `CLAUDE_CONFIG_DIR`가 `projects/` dir 자체를 가리키는 것도 허용 (ccusage와 동일)
         let scanner = ClaudeLogUsageScanner(
             environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": home.appendingPathComponent("projects").path]),
             homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("openusage-no-claude-home") },
@@ -584,10 +573,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     func testScanFollowsSymlinkedProjectsDir() async throws {
         let now = Date()
         let timestamp = OpenUsageISO8601.string(from: now)
-        // The real logs live outside the config dir (e.g. a externally sync-ed folder) and
-        // `~/.claude/projects` is a symlink to them. Root discovery accepted this layout
-        // (`fileExists` follows symlinks) but enumeration used to come back empty, so the spend
-        // tiles silently under-counted to just the Cowork logs.
+        // `~/.claude/projects`가 외부 폴더로의 symlink인 레이아웃 — enumeration이 비어 spend 타일이 과소 집계되던 회귀
         let real = try ClaudeLogFixture.makeHome(files: [
             "project-a/session.jsonl": ClaudeLogFixture.usageLine(
                 timestamp: timestamp, input: 100, output: 50, costUSD: 0.25

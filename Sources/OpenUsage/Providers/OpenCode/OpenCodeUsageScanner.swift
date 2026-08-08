@@ -1,23 +1,18 @@
 import Foundation
 
-/// The result of a local OpenCode scan: the combined-hosted daily series (for the spend tiles + trend,
-/// via `SpendTileMapper`) and the Go-only plan windows (for the meters). `goWindows` is `nil` when the
-/// machine has no `opencode-go` footprint at all, so a Zen-only user sees spend tiles without empty caps.
+/// 로컬 OpenCode scan 결과 — hosted 합산 daily series(spend tile + trend용)와 Go 전용 plan window(meter용).
+/// `opencode-go` 흔적이 전혀 없으면 `goWindows`는 `nil` — Zen 전용 사용자는 빈 cap 없이 spend tile만 표시.
 struct OpenCodeUsageScan: Sendable {
     var logScan: LogUsageScan
     var goWindows: OpenCodeGoWindows?
 }
 
-/// Reads OpenCode's local SQLite logs (`~/.local/share/opencode/opencode*.db`, all release channels) and
-/// builds the usage the provider renders. Cookie-free and network-free: the per-message `cost` OpenCode
-/// writes for its own hosted gateways is authoritative (Zen models aren't in our pricing snapshots), so
-/// it is summed directly rather than re-priced.
-///
-/// A `Sendable` struct (like the Grok scanner), `async` and nonisolated, so the SQLite reads run off the
-/// main actor when the `@MainActor` provider `await`s it.
+/// OpenCode 로컬 SQLite 로그(`opencode*.db`, 전체 release channel)에서 provider가 렌더링할 usage 생성.
+/// hosted gateway의 메시지별 `cost`는 OpenCode가 기록한 확정값 — 재가격 없이 그대로 합산 (Zen model은 pricing snapshot에 없음).
+/// nonisolated async `Sendable` struct — `@MainActor` provider가 `await`하면 SQLite 읽기는 main actor 밖에서 수행.
 struct OpenCodeUsageScanner: Sendable {
-    /// The OpenCode-hosted providerIDs we track: the Go subscription and the Zen pay-as-you-go gateway.
-    /// Both write an authoritative `cost`; other (BYO-key) providerIDs log `cost: 0` and are out of scope.
+    /// 추적 대상 OpenCode-hosted providerID — Go 구독과 Zen pay-as-you-go gateway.
+    /// 둘 다 확정 `cost` 기록, 그 외 BYO-key providerID는 `cost: 0`이라 범위 밖.
     static let hostedProviderIDs = ["opencode-go", "opencode"]
     static let goProviderID = "opencode-go"
 
@@ -46,19 +41,15 @@ struct OpenCodeUsageScanner: Sendable {
         return try OpenCodePaths.databaseFiles(in: dir)
     }
 
-    /// Scan the last `daysBack` days. Returns `nil` only when there is no OpenCode database at all (→ the
-    /// provider shows "No data"); a present-but-empty database yields an empty scan (idle tiles collapse
-    /// to "No data" via `SpendTileMapper`). Throws `databaseUnreadable` when databases exist but none
-    /// could be read — an all-failed refresh has no data source and must not render as zero usage.
-    /// 33 days covers the widest meter window (anchored month) plus slack; the tiles/trend are
-    /// re-bounded to 31 calendar days below.
+    /// 최근 `daysBack`일 scan — database가 전혀 없을 때만 `nil`("No data" 표시), 있으나 비어 있으면 빈 scan.
+    /// database가 존재하는데 하나도 못 읽으면 `databaseUnreadable` throw — 전부 실패한 refresh를 0 사용량으로 렌더링 금지.
+    /// 기본 33일은 가장 넓은 meter window(anchored month)+여유분 — tile/trend는 아래에서 31일로 재제한.
     func scan(now: Date, daysBack: Int = 33, hasGoKey: Bool = false) async throws -> OpenCodeUsageScan? {
         let paths: [String]
         do {
             paths = try databasePaths()
         } catch {
-            // The data directory exists but couldn't be enumerated — same failure class as unreadable
-            // databases, edge-logged through the reporter so a persistent failure doesn't spam.
+            // data directory가 존재하나 열거 불가 — 읽기 불가 database와 동일 실패군, reporter edge-log로 반복 spam 방지
             let marker = "<data directory>"
             let newlyFailing = await readFailureReporter.update(checkedPaths: [marker], failingPaths: [marker])
             if !newlyFailing.isEmpty {
@@ -87,15 +78,13 @@ struct OpenCodeUsageScanner: Sendable {
                 failures[path] = error.localizedDescription
                 continue
             }
-            // Monthly cycle anchor: the earliest-ever local Go usage (unbounded, so it survives the
-            // day-window cutoff). Cheap and best-effort — a failure just falls back to the calendar month.
+            // monthly cycle anchor는 최초 로컬 Go 사용 시각(무제한 조회라 day-window cutoff와 무관) — best-effort, 실패 시 calendar month fallback
             if let text = (try? sqlite.queryValue(path: path, sql: Self.anchorSQL)) ?? nil,
                let value = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
                 anchorMs = Swift.min(anchorMs ?? value, value)
             }
         }
-        // Per-path detail is logged only for newly failing paths (the reporter edge-triggers), so a
-        // persistently locked database warns once, not on every 5-minute refresh.
+        // 경로별 상세는 새로 실패한 경로만 로그(reporter edge-trigger) — 계속 잠긴 database는 5분마다가 아닌 1회만 경고
         let newlyFailing = await readFailureReporter.update(checkedPaths: checked, failingPaths: Set(failures.keys))
         for path in newlyFailing.sorted() {
             AppLog.warn(LogTag.plugin("opencode"), "usage query failed for \(path): \(failures[path] ?? "unknown error")")
@@ -104,8 +93,7 @@ struct OpenCodeUsageScanner: Sendable {
             throw OpenCodeUsageError.databaseUnreadable
         }
 
-        // Combined hosted daily series (opencode-go + opencode) → the spend tiles + usage trend. Cost is
-        // authoritative, so every row is "priced": feed it straight into the shared accumulator.
+        // hosted 합산 daily series(opencode-go + opencode) → spend tile + usage trend, cost가 확정값이라 모든 행을 그대로 accumulator에 투입
         let tileSince = JSONLScanning.sinceDate(daysBack: 30, now: now)
         var accumulator = DailyUsageAccumulator()
         for row in rows {
@@ -118,10 +106,8 @@ struct OpenCodeUsageScanner: Sendable {
         }
         let logScan = accumulator.build()
 
-        // Go-only windows → the Session / Weekly / Monthly caps. Shown only on a CURRENT Go signal: the
-        // user is logged into Go (`hasGoKey`), or has spent on Go within the window. A stale anchor from
-        // old usage must NOT resurrect the caps or the "Go" plan for a lapsed or Zen-only user — the
-        // anchor only sets the monthly-cycle boundary once we've decided to show the meters.
+        // Go 전용 window → Session/Weekly/Monthly cap, 현재 Go 신호(`hasGoKey` 또는 window 내 Go spend)일 때만 표시
+        // 과거 사용의 stale anchor가 해지·Zen 전용 사용자에게 cap이나 "Go" plan을 되살리면 안 됨 — anchor는 monthly cycle 경계 설정에만 사용
         let goCosts = rows
             .filter { $0.providerID == Self.goProviderID }
             .map { (ms: $0.ms, cost: $0.cost) }
@@ -132,10 +118,9 @@ struct OpenCodeUsageScanner: Sendable {
         return OpenCodeUsageScan(logScan: logScan, goWindows: goWindows)
     }
 
-    /// Cheap local probe for `hasLocalCredentials()`: does any tracked database hold at least one hosted
-    /// assistant row with a numeric cost? Read-only, no network. Failures are logged (this runs only
-    /// during first-run / new-provider detection, so there's no refresh spam to throttle); an unreadable
-    /// data directory counts as an OpenCode footprint so `refresh()` gets to surface the real error.
+    /// `hasLocalCredentials()`용 저비용 로컬 probe — 추적 database에 numeric cost의 hosted assistant 행 존재 여부 확인.
+    /// read-only·network 없음. first-run/new-provider 감지에서만 실행되므로 실패는 throttle 없이 로그.
+    /// 읽기 불가 data directory도 OpenCode 흔적으로 취급 — `refresh()`가 실제 에러를 노출하게 함.
     func hasHostedUsage() -> Bool {
         let paths: [String]
         do {
@@ -166,9 +151,8 @@ struct OpenCodeUsageScanner: Sendable {
         var providerID: String
     }
 
-    /// Parse the `json_group_array(json_array(...))` payload: an array of
-    /// `[time_created, cost, tokensTotal, modelID, providerID]`. Rows with a missing timestamp/cost or a
-    /// non-string providerID are skipped at this boundary.
+    /// `json_group_array(json_array(...))` payload인 `[time_created, cost, tokensTotal, modelID, providerID]` 배열 parse.
+    /// timestamp/cost 누락 또는 비문자열 providerID 행은 이 경계에서 skip.
     private static func parseRows(_ json: String) -> [Row] {
         guard let data = json.data(using: .utf8),
               let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
@@ -182,8 +166,7 @@ struct OpenCodeUsageScanner: Sendable {
                   let cost = ProviderParse.number(entry[1]), cost >= 0,
                   let providerID = entry[4] as? String
             else { continue }
-            // Clamp before the Int conversion so a corrupt, absurdly large token count can't trap
-            // (Int(Double) crashes above Int.max). 1e15 is far above any real token total.
+            // Int 변환 전 clamp — 손상된 초대형 token 수의 trap 방지(Int.max 초과 Int(Double)은 crash), 1e15는 실제 총량을 크게 상회
             let tokens = Int(min(max(ProviderParse.number(entry[2]) ?? 0, 0), 1e15))
             let model = (entry[3] as? String) ?? ""
             rows.append(Row(
@@ -199,7 +182,7 @@ struct OpenCodeUsageScanner: Sendable {
 
     // MARK: - SQL
 
-    /// SQL literal built from `hostedProviderIDs`, so the tracked list has one source of truth.
+    /// `hostedProviderIDs`로 만든 SQL literal — 추적 목록의 단일 source of truth 유지.
     private static let providerFilter = "(" + hostedProviderIDs.map { "'\($0)'" }.joined(separator: ",") + ")"
 
     static func dataSQL(cutoffMs: Int) -> String {

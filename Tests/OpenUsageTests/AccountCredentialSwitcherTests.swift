@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The switch transaction: only the Shared Runtime Home's authentication moves, identity gates
-/// every write, and failures leave the previous account in place.
 final class AccountCredentialSwitcherTests: XCTestCase {
     // MARK: - Claude
 
@@ -24,8 +22,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
 
         try fixture.switcher.switchAuthentication(to: work, from: personal)
 
-        // Only authentication moved: credential file, both keychain services, and the
-        // `oauthAccount` key of both state files.
+        // authentication만 이동: credential 파일, 양쪽 keychain service, 두 state 파일의 `oauthAccount` 키
         XCTAssertEqual(
             try text(sharedHome.appendingPathComponent(".credentials.json")),
             claudeCredential(token: "token-b")
@@ -47,7 +44,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         XCTAssertEqual((localState["oauthAccount"] as? [String: Any])?["accountUuid"] as? String, "acct-b")
         XCTAssertEqual(try text(sessionFile), "session-data")
 
-        // The leaving account's live credential was preserved to its snapshot and workspace.
+        // 떠나는 account의 live credential이 snapshot·workspace에 보존
         let preserved = try XCTUnwrap(fixture.vault.load(profile: personal))
         XCTAssertEqual(preserved.credential, claudeCredential(token: "token-a"))
         let personalWorkspace = try fixture.workspace.directory(family: "claude", profileID: personal.id)
@@ -77,7 +74,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
         let defaultState = try state(at: fixture.home.appendingPathComponent(".claude.json"))
         XCTAssertEqual((defaultState["oauthAccount"] as? [String: Any])?["accountUuid"] as? String, "acct-a")
-        // The middle account's credential survived its stint as the active one.
+        // 중간에 활성이던 account의 credential 생존
         XCTAssertEqual(
             try XCTUnwrap(fixture.vault.load(profile: work)).credential,
             claudeCredential(token: "token-b")
@@ -88,7 +85,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
-        // The snapshot is stale; the shared home rotated to a newer token of the SAME account.
+        // snapshot은 stale, shared home은 동일 account의 더 새 token으로 rotate된 상태
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-a-old"), claudeOAuthAccount: claudeAccount("a")),
             profile: personal
@@ -125,7 +122,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             .init(credential: claudeCredential(token: "token-a-old"), claudeOAuthAccount: claudeAccount("a")),
             profile: personal
         )
-        // Someone signed the shared home into a third account outside OpenUsage.
+        // OpenUsage 외부에서 shared home이 제3의 account로 로그인된 상태
         try seedClaudeSharedHome(fixture, token: "token-c", account: claudeAccount("c"))
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-b"), claudeOAuthAccount: claudeAccount("b")),
@@ -134,7 +131,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
 
         try fixture.switcher.switchAuthentication(to: work, from: personal)
 
-        // The foreign credential never lands in the leaving profile's snapshot.
+        // 외부 credential이 떠나는 profile의 snapshot에 유입 금지
         XCTAssertEqual(
             try XCTUnwrap(fixture.vault.load(profile: personal)).credential,
             claudeCredential(token: "token-a-old")
@@ -165,7 +162,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")
         let work = profile(id: "profile-b", family: "claude", label: "Work", identityKey: "acct-b|org-b")
         try seedClaudeSharedHome(fixture, token: "token-a", account: claudeAccount("a"))
-        // The snapshot rotted: it now carries a different account's credential.
+        // snapshot 부패: 다른 account의 credential 보유
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-c"), claudeOAuthAccount: claudeAccount("c")),
             profile: work
@@ -214,7 +211,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
 
         XCTAssertThrowsError(try fixture.switcher.switchAuthentication(to: work, from: personal))
 
-        // The apply never reached the credential file, and the previous account still answers.
+        // apply가 credential 파일에 도달하지 않고 이전 account 유지
         XCTAssertEqual(
             try text(fixture.home.appendingPathComponent(".claude/.credentials.json")),
             claudeCredential(token: "token-a")
@@ -328,7 +325,6 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         #"{"claudeAiOauth":{"accessToken":"\#(token)","refreshToken":"refresh-\#(token)"}}"#
     }
 
-    /// oauthAccount JSON for suffix `x`: identity key `acct-x|org-x`.
     private func claudeAccount(_ suffix: String) -> String {
         #"{"accountUuid":"acct-\#(suffix)","emailAddress":"\#(suffix)@example.com","organizationName":"Org","organizationUuid":"org-\#(suffix)"}"#
     }
@@ -337,8 +333,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         #"{"tokens":{"access_token":"\#(token)","account_id":"\#(accountID)"}}"#
     }
 
-    /// A signed-in shared Claude home: credential file, base keychain item, and both state files
-    /// (extra keys included so preservation is observable).
+    /// 로그인된 shared Claude home — 보존 관측용으로 추가 키 포함
     private func seedClaudeSharedHome(_ fixture: Fixture, token: String, account: String) throws {
         let sharedHome = fixture.home.appendingPathComponent(".claude")
         try FileManager.default.createDirectory(at: sharedHome, withIntermediateDirectories: true)
@@ -386,8 +381,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
     }
 }
 
-/// Service-keyed keychain double with a write counter and per-service failure injection — the
-/// switcher's snapshot code is service-addressed, so the service-blind `FakeKeychain` cannot back it.
+/// service 단위 keychain double — switcher가 service 주소 기반이라 service를 모르는 `FakeKeychain`으로 대체 불가
 private final class CountingKeychain: KeychainAccessing, @unchecked Sendable {
     var values: [String: String] = [:]
     var currentUserValues: [String: String] = [:]

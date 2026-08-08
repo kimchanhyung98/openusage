@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Profiles map to usage cards by identity, never by path: the selected profile answers for the
-/// bare family card, snapshot cards carry their explicit profile mapping, and an ambient card
-/// attaches to the profile proving the same account.
 @MainActor
 final class AccountCardMappingTests: XCTestCase {
     private func makeScratchDefaults() -> UserDefaults {
@@ -44,7 +41,7 @@ final class AccountCardMappingTests: XCTestCase {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
         let work = try profiles.add(family: "claude", label: "Work", identityKey: "acct-2")
         profiles.setPreferred(family: "claude", profileID: work.id)
-        // Someone signed the shared home into a different account outside OpenUsage.
+        // OpenUsage 외부에서 shared home이 다른 account로 로그인된 상태
         let assembly = ProviderAccountAssembly(identityKeysByCard: ["claude": "acct-9"])
 
         let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)

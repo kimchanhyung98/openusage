@@ -1,19 +1,13 @@
 import CoreGraphics
 import Observation
 
-/// The popover's auto-fit height *computation*, split out of `DashboardView`: per-screen measured
-/// pieces summed into each screen's ideal window height (the morph target), clamped to the panel's
-/// allowed range. The view keeps the animation itself — `animatedHeight`, the screen-switch slide, and
-/// the `withAnimation` spring — so this holds only the deterministic measurement/target logic (which is
-/// now unit-testable), not the timing-sensitive animation clock.
-///
-/// Held as `@State` by the view; `@Observable` so `measuredIdeal` changes drive the view's morph
-/// `onChange`. The measured parts are written from the view's geometry callbacks via the setters.
+/// 팝오버 auto-fit 높이 계산부 — 화면별 측정값을 이상 높이(morph 목표)로 합산·클램프.
+/// 애니메이션은 `DashboardView` 소유, 여기는 결정적 측정·목표 계산만 담당.
+/// 뷰가 `@State`로 보유, `measuredIdeal` 변경이 morph `onChange` 트리거.
 @MainActor
 @Observable
 final class PanelHeightCoordinator {
-    /// The window height each screen wants (top bar + footer + scroll content) — the morph target the
-    /// view animates toward. `private(set)`: written only through the measurement setters below.
+    /// 화면별 이상 window 높이 (top bar + footer + scroll content) — morph 목표값.
     private(set) var measuredIdeal: [PopoverScreen: CGFloat] = [:]
 
     @ObservationIgnored private var measuredScrollContent: [PopoverScreen: CGFloat] = [:]
@@ -24,23 +18,20 @@ final class PanelHeightCoordinator {
         self.topBarHeight = topBarHeight
     }
 
-    /// Record a screen's measured scroll-content height (from the view's geometry action) and recompose
-    /// its ideal.
+    /// 화면의 scroll-content 측정 높이 기록 및 ideal 재구성.
     func setScrollContent(_ height: CGFloat, for screen: PopoverScreen) {
         measuredScrollContent[screen] = height
         recomposeIdeal(for: screen)
     }
 
-    /// Record a screen's measured footer height (Dashboard and Settings have different content) and
-    /// recompose.
+    /// 화면의 footer 측정 높이 기록 및 ideal 재구성.
     func setFooter(_ height: CGFloat, for screen: PopoverScreen) {
         measuredFooter[screen] = height
         recomposeIdeal(for: screen)
     }
 
-    /// Sum a screen's measured parts into its ideal window height. The dashboard shows no top bar; other
-    /// screens pin it to `topBarHeight`. A zero/absent scroll content leaves the ideal unset (not yet
-    /// measured), so the view keeps the size the controller opened at until a real measurement lands.
+    /// 측정값 합산으로 화면 ideal 재구성. 대시보드는 top bar 제외.
+    /// scroll content 미측정(0) 시 ideal 미설정 유지 — 실측 전까지 기존 크기 보존.
     private func recomposeIdeal(for screen: PopoverScreen) {
         guard let content = measuredScrollContent[screen], content > 0 else { return }
         let topBar: CGFloat = screen == .dashboard ? 0 : topBarHeight
@@ -48,12 +39,12 @@ final class PanelHeightCoordinator {
         measuredIdeal[screen] = topBar + footer + content
     }
 
-    /// The clamped target height for a screen, or `nil` until it's been measured.
+    /// 화면의 클램프된 목표 높이. 미측정 시 `nil`.
     func target(for screen: PopoverScreen) -> CGFloat? {
         measuredIdeal[screen].map(clamped)
     }
 
-    /// Clamp an ideal to the panel's [min, screen-max] via the shared hook (identity when unset).
+    /// 패널 허용 범위 [min, screen-max]로 클램프 — 훅 미설정 시 identity.
     private func clamped(_ ideal: CGFloat) -> CGFloat {
         MenuBarPopover.clampHeight?(ideal) ?? ideal
     }

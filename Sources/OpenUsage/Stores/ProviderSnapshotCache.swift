@@ -4,37 +4,26 @@ import os
 struct ProviderSnapshotCache {
     private struct Payload: Codable {
         var snapshots: [String: ProviderSnapshot]
-        /// Card id → the account identity key that produced the stored snapshot. A sidecar map rather
-        /// than a field on `ProviderSnapshot` because that model is serialized verbatim to the local
-        /// HTTP API (`LocalUsageAPI`) — the stamp is cache bookkeeping, not wire data. Absent for
-        /// providers without an account identity (everything outside the claude/codex families).
+        /// Card id → 저장된 snapshot을 생산한 account identity key. `ProviderSnapshot`이 local HTTP API
+        /// (`LocalUsageAPI`)로 그대로 직렬화되므로 필드가 아닌 sidecar map — stamp는 cache bookkeeping,
+        /// wire 데이터 아님. account identity 없는 provider(claude/codex family 외)에는 부재.
         var producedByIdentityKeys: [String: String]
     }
 
-    /// In-memory mirror of the persisted blob. Reads (`snapshot`, `loadSnapshots`, and the read inside
-    /// `store`) hit this instead of re-decoding the whole all-providers JSON from `UserDefaults` on
-    /// every call — a refresh pass otherwise paid O(N) full decodes (plus O(N) encodes) per pass on the
-    /// MainActor. The blob is decoded at most once per cache instance (first access); writes update the
-    /// mirror and persist through. Lock-backed so the value-type cache memoizes across calls and stays
-    /// safe to share.
+    /// persist blob의 in-memory mirror — 읽기마다 전 provider JSON을 MainActor에서 re-decode하던 비용 제거.
+    /// 인스턴스당 최대 1회 decode(첫 접근); 쓰기는 mirror 갱신 후 persist. lock으로 value-type 공유 안전.
     private let memo = OSAllocatedUnfairLock<Payload?>(initialState: nil)
 
-    /// Provider IDs whose snapshot was written by `store` *during this cache instance's lifetime* (i.e.
-    /// this running session). The freshness gate (`snapshot(providerID:)`) trusts a snapshot only when
-    /// its provider is in here — so a snapshot loaded from disk on launch is shown (via `loadSnapshots`)
-    /// but never counts as fresh, forcing one refresh on the first post-launch pass. Lock-backed for the
-    /// same reason as `memo`: the value-type cache shares it across copies and stays safe. See #697.
+    /// 이 cache 인스턴스 생애(=이 세션)에 `store`가 쓴 provider id — freshness gate는 여기 있는 provider만
+    /// 신뢰. launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
     private let sessionWrites = OSAllocatedUnfairLock<Set<String>>(initialState: [])
 
     private let userDefaults: UserDefaults
     private let storageKey: String
-    /// A snapshot written this session stays fresh for exactly one refresh interval, then expires so the
-    /// periodic loop refetches on schedule. A snapshot loaded from a *previous* session (off disk) is never
-    /// fresh regardless of its `refreshedAt` — see `sessionWrites`. Tests inject a fixed TTL for a
-    /// deterministic freshness window.
+    /// 세션 내에 쓴 snapshot의 fresh 유지 기간(1 refresh interval) — 이전 세션의 snapshot은 `refreshedAt`과
+    /// 무관하게 non-fresh(`sessionWrites` 참고). 테스트는 고정 TTL 주입.
     private let ttl: TimeInterval
-    /// The menu-bar app deliberately refreshes once per launch, even when its persisted snapshot is
-    /// young. A one-shot reader has no meaningful session, so it opts into timestamp-only freshness.
+    /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
     private let now: () -> Date
     private let encoder: JSONEncoder
@@ -42,25 +31,8 @@ struct ProviderSnapshotCache {
 
     init(
         userDefaults: UserDefaults = .standard,
-        // v3: spend / Codex credits / rate-limit-resets rows moved from `.text` (a parsed display string)
-        // to `.values` (raw numbers). Bumping the key drops pre-upgrade caches so the new `.values`-based
-        // widgets never try to resolve a stale `.text` line — which would misread the fused string
-        // (tokens tile showing the dollar amount, combined dropping tokens) until the first refresh.
-        // v4/v5: `.values` rows gained Codex reset-credit expiry data — v4 carried a single `resetsAt`,
-        // v5 replaced it with an `expiriesAt` list (one per available credit, shown in the row's
-        // tooltip). Old payloads decode cleanly (the absent key → empty list), but the bump refetches
-        // once so the expiries show immediately on upgrade instead of after the cached snapshot expires.
-        // v6: `.values` rows gained `unknownModels` (Cursor spend tiles list the unpriced models behind a
-        // warning triangle). Same story — old payloads decode with an empty list, the bump just refetches
-        // once so the warning shows immediately instead of after the cached snapshot expires.
-        // v7: spend `.values` rows gained `modelBreakdown` for the per-model hover panel. Old payloads
-        // decode cleanly without it, but the bump fetches fresh snapshots so hover panels appear right away.
-        // v8: provider snapshots gained normalized daily history for iCloud aggregation. Refetch on
-        // upgrade so enabling sync can publish a complete first document immediately.
-        // v9: entries gained a `producedByIdentityKeys` sidecar (which account produced each snapshot),
-        // so a launch after an account swap at the same home can discard the previous account's cached
-        // limits/plan instead of painting them under the new account's card. Refetch on upgrade so every
-        // retained entry carries a stamp from its first write.
+        // storage key 버전 bump는 pre-upgrade 캐시를 폐기 — schema 확장 필드를 1회 refetch로 즉시 반영.
+        // v9: `producedByIdentityKeys` sidecar 추가 — account swap 후 launch가 이전 account의 캐시를 식별·폐기.
         storageKey: String = "openusage.providerSnapshots.v9",
         ttl: TimeInterval = RefreshSetting.interval,
         allowsPersistedFreshness: Bool = false,
@@ -79,9 +51,8 @@ struct ProviderSnapshotCache {
         self.decoder = decoder
     }
 
-    /// Every stored snapshot for the given providers, including expired ones. Display uses this
-    /// (stale-while-revalidate: last-known values keep showing while a refresh runs); refresh gating
-    /// still goes through the TTL-checked `snapshot(providerID:)`.
+    /// 대상 provider의 저장 snapshot 전부(만료 포함) — 표시용(stale-while-revalidate).
+    /// refresh gating은 TTL 검사하는 `snapshot(providerID:)` 경유.
     func loadSnapshots(providerIDs: [String]) -> [String: ProviderSnapshot] {
         let providerIDSet = Set(providerIDs)
         let loaded = loadPayload().snapshots.filter { providerID, _ in
@@ -94,10 +65,8 @@ struct ProviderSnapshotCache {
     func snapshot(providerID: String) -> ProviderSnapshot? {
         let snapshot = loadPayload().snapshots[providerID]
         guard let snapshot else { return nil }
-        // Freshness has two requirements, and disk age alone is not enough: the snapshot must have been
-        // written *this session* AND still be within TTL. A snapshot served from a previous session's
-        // persisted blob is shown for instant paint but never gates a refresh, so every launch refetches
-        // promptly instead of waiting out the previous session's remaining interval (#697).
+        // freshness는 이중 조건: 이 세션에 쓰였고 AND TTL 이내 — 이전 세션 blob은 즉시 paint용일 뿐
+        // refresh를 gate하지 않아 launch마다 즉시 refetch(#697).
         let writtenThisSession = sessionWrites.withLock { $0.contains(providerID) }
         let age = now().timeIntervalSince(snapshot.refreshedAt)
         let trusted = allowsPersistedFreshness || writtenThisSession
@@ -108,40 +77,34 @@ struct ProviderSnapshotCache {
         return fresh ? snapshot : nil
     }
 
-    /// `producedByIdentityKey` is the account identity that produced this snapshot (the card's identity
-    /// at write time); `nil` for providers without account identity, or when the identity is unresolved.
+    /// `producedByIdentityKey`는 이 snapshot을 생산한 account identity(쓰기 시점의 카드 identity) —
+    /// account identity 없는 provider·identity 미해석이면 nil.
     func store(_ snapshot: ProviderSnapshot, producedByIdentityKey: String? = nil) {
         guard !snapshot.lines.contains(where: \.isError) else {
             AppLog.debug(.cache, "skip write \(snapshot.providerID) (error snapshot)")
             return
         }
         AppLog.debug(.cache, "write \(snapshot.providerID)")
-        // Mark this provider as written *this session* so its snapshot now satisfies the freshness gate
-        // (a launch-loaded snapshot never does — see `sessionWrites`).
+        // 이 세션의 쓰기로 기록 — 이제 freshness gate 충족(launch 로드 snapshot은 불충족, `sessionWrites` 참고).
         sessionWrites.withLock { $0.insert(snapshot.providerID) }
         var payload = loadPayload()
         payload.snapshots[snapshot.providerID] = snapshot
-        // Stamp (or clear) the producing account alongside the entry. A nil identity must *clear* any
-        // prior stamp rather than keep it: the new snapshot is unattributable, and leaving the old
-        // account's stamp would falsely bless it at the next launch's identity check.
+        // entry 옆에 생산 account를 stamp(또는 clear) — nil identity는 이전 stamp를 반드시 clear.
+        // 무귀속 snapshot에 이전 account의 stamp가 남으면 다음 launch의 identity 검사를 거짓 통과.
         payload.producedByIdentityKeys[snapshot.providerID] = producedByIdentityKey
         save(payload)
     }
 
-    /// The account identity stamped when this provider's entry was stored, or `nil` when the entry is
-    /// absent or was written without one. Launch filtering compares this against the card's current
-    /// identity before showing a cached snapshot for an account-aware card (see `WidgetDataStore.init`).
+    /// entry 저장 시 stamp된 account identity — entry 부재·무stamp면 nil. launch 필터가 account-aware
+    /// 카드의 현재 identity와 비교(`WidgetDataStore.init`).
     func producedByIdentityKey(providerID: String) -> String? {
         loadPayload().producedByIdentityKeys[providerID]
     }
 
-    /// Whether this provider's stored entry cannot be attributed to `currentIdentityKey`: the entry
-    /// exists, the card's current identity is known, and the stamp is missing or names another
-    /// account. Every read path must treat such an entry as absent — the launch paint filter
-    /// (`WidgetDataStore.init`), the refresh cache-hit gate (`WidgetDataStore.refresh`), and the
-    /// one-shot CLI's persisted-freshness reads (`UsageReader`) — or a swap at the same home would
-    /// serve the previous account's data. `false` when the identity is unresolved (`nil`): an
-    /// unverifiable entry keeps painting exactly as it did before account stamps existed.
+    /// 저장 entry를 `currentIdentityKey`로 귀속할 수 없는지 — entry 존재 + 현재 identity known + stamp 누락/타 account.
+    /// 모든 read 경로(launch paint 필터·refresh cache-hit gate·one-shot CLI의 persisted-freshness 읽기)가 이를
+    /// 부재로 취급해야 같은 home에서의 swap이 이전 account 데이터를 서빙하지 않음.
+    /// identity 미해석(nil)이면 false — 검증 불가 entry는 stamp 도입 전과 동일하게 paint.
     func hasStaleAccountStamp(providerID: String, currentIdentityKey: String?) -> Bool {
         guard let currentIdentityKey else { return false }
         let payload = loadPayload()
@@ -151,20 +114,15 @@ struct ProviderSnapshotCache {
 
     private func loadPayload() -> Payload {
         if let mirror = memo.withLock({ $0 }) { return mirror }
-        // First access only: decode the persisted blob once, then mirror it. (Decoding outside the
-        // lock keeps `self` out of the `@Sendable` closure; cache access is MainActor-serialized in
-        // production, so the worst a race could do is decode twice into the same value — harmless.)
+        // 첫 접근에만 blob decode 후 mirror — lock 밖 decode로 @Sendable closure에서 self 제외, race는 동일 값 중복 decode에 그침(무해).
         let loaded = decodeStoredPayload()
         memo.withLock { $0 = loaded }
         return loaded
     }
 
     private func decodeStoredPayload() -> Payload {
-        // No stored data is the legitimate first-launch / cleared-cache case — recover to empty
-        // silently. Data present but undecodable is a real problem (post-upgrade schema drift, a
-        // half-written blob, a manual `defaults` edit): fail loudly, then recover to empty. A silent
-        // drop here empties ALL providers' caches at once and feeds the refresh storm. Mirrors the
-        // loud `save` path above. Runs at most once per cache instance (then memoized).
+        // 저장 데이터 없음은 정상 first-launch·cleared-cache — 조용히 empty 복구. 데이터가 있는데 decode 실패는
+        // 실제 문제(schema drift, half-write) — 크게 log 후 empty 복구(조용한 drop은 전 provider 캐시 소실 + refresh storm).
         guard let data = userDefaults.data(forKey: storageKey) else {
             return Payload(snapshots: [:], producedByIdentityKeys: [:])
         }
@@ -177,11 +135,9 @@ struct ProviderSnapshotCache {
     }
 
     private func save(_ payload: Payload) {
-        // Update the in-memory mirror first so subsequent reads see this write even if the encode
-        // below fails (the running session stays correct; only persistence is best-effort).
+        // mirror 먼저 갱신 — encode 실패해도 세션 내 읽기는 이 쓰기를 반영(persist만 best-effort).
         memo.withLock { $0 = payload }
-        // Fail loudly: a swallowed encode error would silently drop a snapshot from the persisted
-        // cache. No behavior change (the write is still best-effort), but the failure is now visible.
+        // encode 실패는 크게 log — 조용히 삼키면 snapshot이 persisted cache에서 소리 없이 빠짐.
         do {
             let data = try encoder.encode(payload)
             userDefaults.set(data, forKey: storageKey)

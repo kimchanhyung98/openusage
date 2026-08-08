@@ -3,28 +3,20 @@ import Carbon.HIToolbox
 import KeyboardShortcuts
 import SwiftUI
 
-/// A click-to-record shortcut field backed by the KeyboardShortcuts store.
-///
-/// This replaces `KeyboardShortcuts.Recorder`, whose NSSearchField needs to become first
-/// responder of a key window to see key presses — focus plumbing that does not work inside the
-/// menu-bar popover on macOS 26+ (clicking the field looked focused but recorded nothing).
-/// Recording here uses a local key-event monitor instead, which only needs the app to be active,
-/// so it works wherever the popover does. Storage and the global hotkey stay with the
-/// KeyboardShortcuts library (`setShortcut` persists and re-registers automatically).
+/// KeyboardShortcuts 스토어 기반 클릭-녹화 단축키 필드.
+/// `KeyboardShortcuts.Recorder` 대체 — first responder 포커스가 메뉴바 팝오버(macOS 26+)에서 미동작.
+/// 녹화는 로컬 key-event monitor 사용, 저장·글로벌 hotkey는 라이브러리 유지.
 struct ShortcutRecorderField: View {
     let name: KeyboardShortcuts.Name
 
-    /// Read by `EscapeToCloseReader`: while recording, Esc belongs to the recorder (cancel), not
-    /// to popover navigation. The recorder's own monitor consumes the press; this flag keeps the
-    /// popover's Esc handling from also acting on it.
+    /// `EscapeToCloseReader`가 참조 — 녹화 중 Esc는 recorder(취소) 소유, 팝오버 내비게이션 이중 처리 방지.
     @MainActor static private(set) var isRecordingActive = false
 
     @State private var isRecording = false
     @State private var keyMonitor: Any?
-    /// Re-renders the chip after `setShortcut` (the library's store isn't observable).
+    /// `setShortcut` 후 chip 재렌더용 (라이브러리 스토어는 비관찰).
     @State private var currentShortcut: KeyboardShortcuts.Shortcut?
-    /// The hosting popover window; key events only reach the local monitor while the app is
-    /// active and some window is key, so recording starts by making this one key.
+    /// 호스팅 팝오버 window — 녹화 시작 시 key 승격으로 로컬 monitor에 이벤트 도달 보장.
     @State private var hostWindow: NSWindow?
 
     var body: some View {
@@ -64,7 +56,7 @@ struct ShortcutRecorderField: View {
             currentShortcut = KeyboardShortcuts.getShortcut(for: name)
         }
         .background(HostWindowReader(window: $hostWindow))
-        // Covers the popover closing (or the screen switching away) mid-recording.
+        // 녹화 중 팝오버 닫힘·화면 전환 대응
         .onDisappear {
             stopRecording()
         }
@@ -101,8 +93,7 @@ struct ShortcutRecorderField: View {
 
     private func startRecording() {
         stopRecording()
-        // Without a monitor there is no recording session — bail before touching any state, or
-        // the UI would sit in "Type Shortcut…" with the hotkey disabled and nothing listening.
+        // monitor 없이는 녹화 세션 불가 — 상태 변경 전 중단
         guard let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { event in
             MainActor.assumeIsolated {
                 handleRecorded(event)
@@ -117,8 +108,7 @@ struct ShortcutRecorderField: View {
         Self.isRecordingActive = true
         NSApp.activate(ignoringOtherApps: true)
         hostWindow?.makeKey()
-        // The combo being recorded may be the current hotkey itself (or contain it) — don't let
-        // the press toggle the popover out from under the recorder.
+        // 녹화 대상 콤보가 현재 hotkey일 수 있음 — 입력이 팝오버를 토글하지 않도록 비활성
         KeyboardShortcuts.disable(name)
     }
 
@@ -141,7 +131,7 @@ struct ShortcutRecorderField: View {
         stopRecording()
     }
 
-    /// Global hotkeys need a real modifier; plain keys (or shift-only) would hijack normal typing.
+    /// 글로벌 hotkey는 실제 modifier 필수 — 일반 키(또는 shift 단독)는 타이핑 하이재킹.
     private func isValid(_ shortcut: KeyboardShortcuts.Shortcut) -> Bool {
         !shortcut.modifiers.intersection([.command, .option, .control]).isEmpty
     }
@@ -158,7 +148,7 @@ struct ShortcutRecorderField: View {
     }
 }
 
-/// Reports the window hosting the view, so recording can make it key.
+/// 뷰의 호스팅 window 보고 — 녹화 시 key 승격용.
 private struct HostWindowReader: NSViewRepresentable {
     @Binding var window: NSWindow?
 
@@ -178,7 +168,7 @@ private struct HostWindowReader: NSViewRepresentable {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             let window = self.window
-            // Defer past the SwiftUI update that triggered the move.
+            // 이동을 유발한 SwiftUI 업데이트 이후로 지연
             DispatchQueue.main.async { [weak self] in
                 self?.onWindowChange?(window)
             }

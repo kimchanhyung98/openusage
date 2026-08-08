@@ -19,8 +19,7 @@ public enum UsageReaderError: LocalizedError, Sendable {
     }
 }
 
-/// One-shot access to the same provider cache and refresh engine used by the menu-bar app.
-/// It owns no timer, local server, status item, updater, or other long-lived app service.
+/// 메뉴바 앱과 동일한 provider cache·refresh 엔진의 one-shot 접근 — timer·로컬 서버·status item·updater 등 장수명 서비스 미보유.
 @MainActor
 public struct UsageReader {
     private let defaults: UserDefaults
@@ -37,20 +36,9 @@ public struct UsageReader {
     }
 
     public func read(providerID requestedProviderID: String? = nil, force: Bool = false) async throws -> UsageReadResult {
-        // The launch account pass (see `ProviderAccountAssembly`): resolves each family's default
-        // account so cached snapshots are guarded — and refreshed ones stamped — with the correct
-        // account, and finds the extra Claude cards the catalog must build (the CLI must know the
-        // same card set as the app, or family matching would answer differently between the two).
-        // Snapshot cards are app-only: their credentials live in app-created Keychain items the
-        // one-shot CLI must not touch. Skipped when a test injects its own providers — they have no
-        // real homes to read.
-        //
-        // Warm the login-shell capture FIRST (off-main, one bounded subprocess). Identity-relevant
-        // keys are pinned to the persisted shell-environment snapshot, but a CLI spawned without the
-        // user's shell exports AND without a snapshot (the app never ran here) still needs the live
-        // capture warm before the identity read — a MainActor read never triggers the capture itself,
-        // so identity would read one home while the providers' off-main reads (which do trigger it)
-        // fetch usage from another. From an interactive terminal the capture is redundant but harmless.
+        // launch 계정 pass(`ProviderAccountAssembly`) — 카드별 계정 해석으로 캐시 snapshot guard·stamp, 앱과 동일한 카드 집합 구성(family 매칭 일치).
+        // snapshot 카드는 앱 전용 — one-shot CLI는 앱 생성 Keychain item 접근 금지. 테스트 provider 주입 시 skip.
+        // login-shell 캡처를 먼저 warm — MainActor read는 캡처를 트리거하지 않으므로, snapshot 없는 CLI에서 identity와 usage가 다른 home을 읽는 분열 방지.
         if providersOverride == nil {
             await Task.detached(priority: .userInitiated) {
                 _ = LoginShellEnvironment.shared.ensureCaptured()
@@ -69,10 +57,7 @@ public struct UsageReader {
         let registry = WidgetRegistry.from(providers)
         let knownIDs = Set(registry.providers.map(\.id))
         let enablement = ProviderEnablementStore(defaults: defaults)
-        // A requested id names cards by plain string matching — an exact card id, or a family id
-        // naming all of that family's cards — mirroring the local HTTP API exactly (see
-        // `LocalUsageAPI.State.matchingCardIDs`). Never resolved from runtime state: the same
-        // request names the same cards no matter who is logged in or what's enabled.
+        // 요청 id는 plain string 매칭으로 카드 지칭(정확한 카드 id 또는 family id) — 로컬 HTTP API(`LocalUsageAPI.State.matchingCardIDs`)와 동일, runtime 상태 비의존.
         let requestedToken = requestedProviderID?.lowercased()
         let matchedIDs: Set<String>? = requestedToken.map { token in
             knownIDs.filter { $0 == token || ProviderAccountID.family(of: $0) == token }
@@ -86,9 +71,7 @@ public struct UsageReader {
         }
         let cache = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true)
         let allProviderIDs = registry.providers.map(\.id)
-        // The same account guard the app applies at launch: an entry that provably belongs to another
-        // account (swap since it was written) is never served, and its provider counts as needing a
-        // refresh even while the stale entry is TTL-fresh.
+        // 앱이 launch에 적용하는 것과 동일한 계정 guard — 다른 계정 소유가 증명된 entry는 미제공, TTL-fresh여도 refresh 필요로 계산.
         let staleAccountStampIDs = Set(allProviderIDs.filter {
             cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: accountAssembly.identityKeysByCard[$0])
         })
@@ -115,8 +98,7 @@ public struct UsageReader {
                 cache: cache,
                 defaults: defaults,
                 isProviderEnabled: includesProvider,
-                // The CLI shares the app's snapshot cache, so its writes must carry the same account
-                // stamp — an unstamped claude/codex entry would be discarded at the app's next launch.
+                // CLI는 앱의 snapshot cache 공유 — 쓰기에 동일한 계정 stamp 필수, 미stamp claude/codex entry는 앱의 다음 launch에 폐기.
                 providerIdentityKeys: accountAssembly.identityKeysByCard
             )
             if let matchedIDs {
@@ -135,9 +117,7 @@ public struct UsageReader {
                 .compactMap { id in errors[id].map { "\(id): \($0)" } }
         }
 
-        // CLI output is human-read: resolve card titles against the persisted account registry so
-        // renames show, matching the app's UI and HTTP API. Injected-provider tests use their own
-        // defaults suite, so this is a no-op there.
+        // CLI 출력은 사람이 읽는 용도 — persisted account registry로 카드 title 해석해 rename 반영(앱 UI·HTTP API와 일치). 주입 provider 테스트에서는 no-op.
         let accountTitles = ProviderAccountsStore(defaults: defaults).resolvedDisplayNamesByCardID
         let state = LocalUsageAPI.State(
             enabledOrderedIDs: enabledOrderedIDs,
@@ -150,8 +130,7 @@ public struct UsageReader {
         let path = requestedToken.map { "/v1/limits/\($0)" } ?? "/v1/limits"
         let response = LocalUsageAPI.respond(method: "GET", path: path, state: state)
         guard let data = response.body else {
-            // Unreachable in practice: the token was validated above and the limits routes always
-            // produce a body for a known token. Fail loudly rather than print nothing.
+            // 사실상 unreachable — token은 위에서 검증, limits 라우트는 known token에 항상 body 생성. 무출력 대신 loud 실패.
             throw UsageReaderError.refreshFailed(warnings.first ?? "local read produced no data")
         }
         return UsageReadResult(data: data, warnings: warnings)

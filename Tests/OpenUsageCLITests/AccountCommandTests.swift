@@ -29,7 +29,7 @@ final class AccountCommandTests: XCTestCase {
         XCTAssertEqual(parsed.account, .list(family: "codex", json: false))
         XCTAssertNil(parsed.providerID)
 
-        // The provider grammar is untouched.
+        // account 네임스페이스 추가 후에도 기존 provider 문법 유지.
         let provider = try CLIArguments.parse(["codex", "--force"])
         XCTAssertEqual(provider.providerID, "codex")
         XCTAssertNil(provider.account)

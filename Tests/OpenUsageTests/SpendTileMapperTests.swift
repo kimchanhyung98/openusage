@@ -1,16 +1,8 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers `SpendTileMapper.appendTokenUsage`'s no-usage handling.
-///
-/// A period with no usage (an idle day the source didn't report, or a day it reported as zero) is left
-/// unbacked so the tile reads "No data" rather than a fabricated "$0.00 · 0 tokens" that contradicts a
-/// live Session/Weekly meter proving otherwise. This holds for every source — the Claude/Codex/Grok
-/// log scanners, Cursor's CSV — with no per-source branching. The Usage Trend is unaffected; it
-/// still zero-fills the window (see `UsageTrendTests`).
 final class SpendTileMapperTests: XCTestCase {
     func testIdleRecentDaysLeftUnbacked() {
-        // The source's last reported day is 3 days before today: today and yesterday are idle.
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             series([("2026-06-22", 5_000), ("2026-06-23", 7_000)]),
@@ -23,9 +15,6 @@ final class SpendTileMapperTests: XCTestCase {
     }
 
     func testInRangeIdleDayAlsoLeftUnbacked() {
-        // Used today and two days ago but not yesterday: a zero-token yesterday is "No data" too, not a
-        // measured $0.00 — the branch between "absent" and "in-range zero" is gone. (Tokens-only rows
-        // carry no cost — these series have costUSD nil — so a used day shows just its token count.)
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             series([("2026-06-24", 9_000), ("2026-06-26", 3_000)]),
@@ -37,8 +26,6 @@ final class SpendTileMapperTests: XCTestCase {
     }
 
     func testEmptySeriesLeavesAllTilesUnbacked() {
-        // The source ran but found nothing in the whole window (e.g. a brand-new user): every period is
-        // idle, so nothing is appended and all three tiles read "No data".
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: []), to: &lines, now: day(2026, 6, 26), estimated: false
@@ -48,7 +35,6 @@ final class SpendTileMapperTests: XCTestCase {
     }
 
     func testUsedDayRendersItsValues() {
-        // A day with real usage renders its token count (and cost, when the source prices it).
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-06-26", totalTokens: 12_000, costUSD: 1.50)]),
@@ -171,9 +157,7 @@ final class SpendTileMapperTests: XCTestCase {
             modelSourceNote: "From test logs"
         )
 
-        // The unpriced "mystery" puts the whole list on token shares (the basis the panel's percent
-        // labels use), so "alpha" — top spend but only 100 of 3,700 tokens (~3%) — folds into Other
-        // along with over-the-cap "eta". The sort still ranks by cost first.
+        // 미가격 "mystery" 존재 → 전체가 token share 기준으로 전환, 정렬은 cost 우선 유지
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(
             breakdown.models.map(\.model),
@@ -206,8 +190,7 @@ final class SpendTileMapperTests: XCTestCase {
             modelSourceNote: "From test logs"
         )
 
-        // All priced → cost shares: 90% / 6% / 4%. "tiny" is under the 5% floor and folds into Other
-        // even though the named-model cap has room.
+        // 전부 가격 존재 → cost share 90/6/4%, 5% floor 미만인 "tiny"는 cap 여유와 무관하게 Other로 편입
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(breakdown.models.map(\.model), ["big", "mid", "Other"])
         let other = try XCTUnwrap(breakdown.models.first { $0.model == "Other" })
@@ -227,7 +210,7 @@ final class SpendTileMapperTests: XCTestCase {
             modelUsage: ModelUsageSeries(daily: [
                 DailyModelUsageEntry(date: "2026-06-26", models: [
                     ModelUsageEntry(model: "grok-build", totalTokens: 600, costUSD: 6),
-                    // 40% of tokens — well above the 5% floor, still folds.
+                    // token 40% — 5% floor를 크게 넘지만 여전히 Other로 편입
                     ModelUsageEntry(model: ModelUsageEntry.unattributedModelName, totalTokens: 400, costUSD: nil)
                 ])
             ]),
@@ -311,8 +294,7 @@ final class SpendTileMapperTests: XCTestCase {
         DailyUsageSeries(daily: days.map { DailyUsageEntry(date: $0.0, totalTokens: $0.1, costUSD: nil) })
     }
 
-    /// A fixed instant at midday in the current calendar, so `dayKey(from:)` and the hyphenated input
-    /// dates line up regardless of the test machine's clock.
+    /// 정오 고정 시각 — `dayKey(from:)`와 hyphen 입력 날짜 정렬 일치
     private func day(_ year: Int, _ month: Int, _ day: Int) -> Date {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
     }

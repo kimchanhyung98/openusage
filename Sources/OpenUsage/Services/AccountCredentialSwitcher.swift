@@ -1,10 +1,7 @@
 import Foundation
 
-/// The one credential-moving path for account switching. It applies exactly one profile's
-/// authentication to the family's Shared Runtime Home (`~/.claude`, `~/.codex`) and never touches
-/// configuration, MCP, memory, plugins, or session history. Every reader here is also reused by the
-/// first-account import, re-login, and registry migration so a second credential parser never
-/// exists.
+/// 계정 전환의 유일한 credential 이동 경로 — 한 profile의 인증만 family의 Shared Runtime Home(`~/.claude`, `~/.codex`)에 적용.
+/// configuration·MCP·memory·plugin·세션 history 불변. reader는 첫 import·re-login·registry migration이 재사용 — 제2의 credential parser 금지.
 struct AccountCredentialSwitcher {
     enum Error: LocalizedError, Equatable {
         case unsupportedFamily(String)
@@ -51,15 +48,13 @@ struct AccountCredentialSwitcher {
 
     // MARK: - Switch transaction
 
-    /// The Settings toggle transaction: validate the target snapshot, preserve the rotated
-    /// credential of the account that is leaving, apply only the target's authentication to the
-    /// Shared Runtime Home, verify the applied identity, and roll back on any failure. Selection
-    /// state is the caller's to update — only after this returns.
+    /// Settings 토글 트랜잭션 — target snapshot 검증, 떠나는 계정의 rotated credential 보존, target 인증만 적용, 적용 identity 검증, 실패 시 rollback.
+    /// 선택 상태 갱신은 caller 몫 — 이 함수 반환 후에만.
     func switchAuthentication(to selected: AccountProfile, from current: AccountProfile?) throws {
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
         }
-        // Re-selecting the active profile must not produce a single write.
+        // 활성 profile 재선택 시 쓰기 1건도 발생 금지.
         guard current?.id != selected.id else { return }
 
         guard let target = try? loadSnapshot(for: selected) else {
@@ -69,9 +64,7 @@ struct AccountCredentialSwitcher {
             throw Error.snapshotIdentityMismatch(selected.label)
         }
 
-        // The active credential may have rotated since the current profile was applied. Preserve it
-        // to that profile's snapshot and workspace — but only when the shared home still provably
-        // belongs to that profile's account.
+        // 활성 credential은 적용 후 rotate됐을 수 있음 — 현재 profile의 snapshot·workspace에 보존, 단 shared home이 그 profile 계정임이 증명될 때만.
         let active = try readSharedAuthentication(family: selected.family)
         if let current,
            current.family == selected.family,
@@ -102,20 +95,18 @@ struct AccountCredentialSwitcher {
 
     // MARK: - Shared Runtime Home
 
-    /// The one home a family's terminal sessions share — fixed by the switching model, never a
-    /// user-editable path.
+    /// family의 터미널 세션이 공유하는 유일한 home — 전환 모델이 고정, 사용자 편집 불가 경로.
     func sharedHomePath(family: String) -> String {
         homeDirectory.appendingPathComponent(".\(family)").path
     }
 
-    /// The Shared Runtime Home's current authentication, or `nil` when nothing usable is signed in.
+    /// Shared Runtime Home의 현재 인증 — 사용 가능한 로그인 없으면 `nil`.
     func readSharedAuthentication(family: String) throws -> AccountCredentialVault.Entry? {
         try readAuthentication(family: family, home: sharedHomePath(family: family))
     }
 
-    /// Reads one home's authentication (the Shared Runtime Home, a Sign-In Workspace, or a legacy
-    /// profile home). Claude reads its scoped Keychain credential first — Claude Code's source of
-    /// truth on macOS — then the credential file; Codex reads only `auth.json`.
+    /// 한 home의 인증 read (Shared Runtime Home·Sign-In Workspace·legacy profile home).
+    /// Claude는 scoped Keychain credential 우선(macOS의 source of truth) 후 credential 파일, Codex는 `auth.json`만.
     func readAuthentication(family: String, home: String) throws -> AccountCredentialVault.Entry? {
         switch family {
         case "claude":
@@ -134,9 +125,8 @@ struct AccountCredentialSwitcher {
         }
     }
 
-    /// Applies one entry's authentication to the Shared Runtime Home — and nothing else. Claude:
-    /// the scoped/base Keychain credential, `.credentials.json`, and the `oauthAccount` key merged
-    /// into the state files (all other keys preserved). Codex: an atomic `auth.json` replace.
+    /// entry의 인증만 Shared Runtime Home에 적용 — 그 외 일체 불변.
+    /// Claude: scoped/base Keychain credential + `.credentials.json` + state 파일에 `oauthAccount` 키만 merge(다른 키 보존). Codex: `auth.json` 원자적 교체.
     func applySharedAuthentication(_ entry: AccountCredentialVault.Entry, family: String) throws {
         let home = sharedHomePath(family: family)
         switch family {
@@ -167,8 +157,7 @@ struct AccountCredentialSwitcher {
         try AccountCredentialVault(keychain: keychain).save(entry, profile: profile)
     }
 
-    /// Mirrors an entry into the profile's Sign-In Workspace so a later official re-login starts
-    /// from the account's freshest credential. Never used as a normal session home.
+    /// entry를 profile의 Sign-In Workspace에 미러링 — 이후 공식 re-login이 최신 credential에서 시작. 일반 세션 home 사용 금지.
     func writeWorkspaceAuthentication(_ entry: AccountCredentialVault.Entry, for profile: AccountProfile) throws {
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
@@ -186,8 +175,7 @@ struct AccountCredentialSwitcher {
 
     // MARK: - Identity
 
-    /// The provider-proven identity carried by an entry, or `nil` when the credential can't name
-    /// its account. Copy, switch, and rotation preservation all stop on `nil`.
+    /// entry가 담은 provider 증명 identity — credential이 계정을 특정 못 하면 `nil`, copy·switch·rotation 보존 모두 `nil`에서 중단.
     func identity(of entry: AccountCredentialVault.Entry, family: String) -> (identityKey: String, label: String?)? {
         switch family {
         case "claude":
@@ -254,9 +242,8 @@ struct AccountCredentialSwitcher {
         )
     }
 
-    /// Where Claude names the shared home's account: the default state next to `~/.claude` first
-    /// (plain `claude` runs), then the state inside the home (wrapper runs with an explicit
-    /// `CLAUDE_CONFIG_DIR`). A custom home — a workspace or legacy profile home — has only its own.
+    /// Claude가 shared home 계정을 기록하는 위치 — `~/.claude` 옆 기본 state 우선(plain `claude` 실행), 다음 home 내부 state(wrapper의 명시적 `CLAUDE_CONFIG_DIR` 실행).
+    /// custom home(workspace·legacy profile home)은 자체 state만 보유.
     private func claudeStateReadURLs(for home: String) -> [URL] {
         let local = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
         if canonicalPath(home) == canonicalPath(sharedHomePath(family: "claude")) {
@@ -269,10 +256,8 @@ struct AccountCredentialSwitcher {
         claudeStateReadURLs(for: home)
     }
 
-    /// The shared home's `oauthAccount`, from the first state file that names one. When BOTH state
-    /// files exist and name DIFFERENT accounts (an external login updated only one of them), the
-    /// home's identity is ambiguous — return `nil` so preservation and import stop rather than
-    /// pairing a credential with the wrong account.
+    /// 계정을 기록한 첫 state 파일의 `oauthAccount`.
+    /// 두 state 파일이 서로 다른 계정 기록 시 identity 모호 — `nil` 반환으로 보존·import 중단, credential과 잘못된 계정의 결합 방지.
     private func claudeOAuthAccount(inFirstOf urls: [URL]) throws -> String? {
         var accounts: [String] = []
         for url in urls {
@@ -299,10 +284,8 @@ struct AccountCredentialSwitcher {
         return first
     }
 
-    /// Deletes the provider-scoped login credential a workspace sign-in created. Claude Code on
-    /// macOS stores the workspace login in a Keychain item scoped to the `CLAUDE_CONFIG_DIR`
-    /// literal; removing an account must clear it or the removed account's tokens outlive the
-    /// profile. Codex workspaces are file-only (the launcher forces the file credential store).
+    /// workspace sign-in이 만든 provider-scoped 로그인 credential 삭제.
+    /// Claude Code는 `CLAUDE_CONFIG_DIR` literal 스코프의 Keychain item에 로그인 저장 — 미삭제 시 제거된 계정의 token이 profile보다 오래 생존. Codex workspace는 파일 전용.
     func removeWorkspaceCredentialArtifacts(family: String, profileID: String) throws {
         guard family == "claude" else { return }
         let home = try workspace.directory(family: family, profileID: profileID).path
@@ -314,8 +297,7 @@ struct AccountCredentialSwitcher {
         )
     }
 
-    /// Merges only the `oauthAccount` key into a Claude state file, preserving every other key. A
-    /// missing file gets minimal onboarding-complete state so Claude Code never replays first-run.
+    /// Claude state 파일에 `oauthAccount` 키만 merge, 다른 키 전부 보존 — 파일 부재 시 onboarding-complete 최소 state 생성으로 first-run 재생 방지.
     private func mergeClaudeOAuthAccount(_ account: String, at url: URL) throws {
         let oauthAccount = try JSONSerialization.jsonObject(with: Data(account.utf8))
         var state: [String: Any] = [:]

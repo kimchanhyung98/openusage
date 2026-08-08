@@ -1,22 +1,17 @@
 import SwiftUI
 
-/// The Usage Trend row: a compact, right-aligned day-by-day token sparkline that reads at a glance and
-/// keeps the card's row rhythm. Hovering reveals a larger, readable chart (`UsageTrendDetail`) with the
-/// peak, the date range, the source note, and per-bar highlight. The bars render already-priced per-day
-/// numbers (`MetricChartPoint`); this view never computes usage, only draws it.
+/// Usage Trend 행 — 우측 정렬 일별 토큰 sparkline. 호버 시 상세 차트(`UsageTrendDetail`) 노출.
+/// 이미 산출된 `MetricChartPoint`만 그림 — 사용량 계산은 미수행.
 struct UsageSparkline: View {
     let data: WidgetData
-    /// The row's per-day points (the producer already validated and capped them); held directly so the
-    /// bars, the popover, and the accessibility label all read one list.
+    /// 바·팝오버·접근성 라벨이 공유하는 단일 일별 포인트 목록.
     private let points: [MetricChartPoint]
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @State private var hover = HoverPopoverState()
 
-    /// Widest the bar strip grows to, and a floor so it can't collapse to a sliver next to a long title.
     private static let maxChartWidth: CGFloat = 150
     private static let minChartWidth: CGFloat = 90
-    /// Per-bar floor (matches the original app) so a dense window never squashes bars below visibility.
     private static let minBarWidth: CGFloat = 2
 
     init(data: WidgetData) {
@@ -31,12 +26,9 @@ struct UsageSparkline: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            // Anchor the popover to the bar strip (not the whole row), so its arrow points straight up
-            // at the chart rather than at the row's center, off to the left of the bars.
+            // 팝오버 앵커는 행 전체가 아닌 바 스트립 — 화살표가 차트를 직접 가리키도록
             bars
-                // Match the spend/reset value affordance: light the sparkline as soon as the pointer
-                // arrives, then hold the highlight while its detail popover is open so the chart still
-                // reads as the popover's source. `hover.dismiss()` clears both flags on panel close.
+                // 포인터 진입 즉시 하이라이트, 팝오버 열림 동안 유지 — 패널 close 시 `hover.dismiss()`가 해제
                 .background {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(.quaternary)
@@ -45,14 +37,12 @@ struct UsageSparkline: View {
                         .opacity(showChartHighlight ? 1 : 0)
                 }
                 .animation(.easeOut(duration: 0.12), value: showChartHighlight)
-                // Only the bar strip is hoverable — hovering the title must not reveal the detail.
+                // 바 스트립만 hover 대상 — 제목 호버로는 상세 미노출
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     if case .active = phase { hover.inlineHover(true) } else { hover.inlineHover(false) }
                 }
-                // Dismissing from outside (click-away) removes the detail view without an `.ended`
-                // hover event, so a plain assignment would strand `overDetail == true` and block
-                // future hides — reset the whole hover state instead.
+                // click-away 해제는 `.ended` 호버 이벤트 없이 뷰 제거 — `overDetail` true 잔존 방지 위해 전체 상태 리셋 필수
                 .popover(isPresented: Binding(get: { hover.isPresented }, set: { if !$0 { hover.dismiss() } }),
                          arrowEdge: .top) {
                     UsageTrendDetail(title: data.title, points: points, note: data.chartNote) { inside in
@@ -65,19 +55,14 @@ struct UsageSparkline: View {
         .onDisappear { hover.dismiss() }
     }
 
-    /// Immediate pointer affordance plus a persistent source highlight while the popover is visible.
     private var showChartHighlight: Bool {
         hover.overInline || hover.isPresented
     }
 
     private var bars: some View {
         let maxValue = max(1, points.map(\.value).max() ?? 1)
-        // The bars use the same blue as a healthy meter (`Theme.meterFill(.normal)`, system blue softened
-        // for glass), so the trend reads as part of the card's visual language and tracks light/dark and
-        // the accessibility contrast settings like every other bar.
         return HStack(alignment: .bottom, spacing: 1) {
-            // Keyed by the day label (unique — the producer collapses duplicate days) so a refresh that
-            // adds or drops a day re-lays-out cleanly instead of remapping bars by position.
+            // day 라벨 키 (producer가 중복 일자 병합 보장) — refresh 시 위치 기반 바 재매핑 방지
             ForEach(points, id: \.label) { point in
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
                     .fill(Theme.meterFill(.normal))
@@ -89,8 +74,7 @@ struct UsageSparkline: View {
         .frame(height: density.trendChartHeight, alignment: .bottom)
     }
 
-    /// A bar's height: proportional to the window's peak, with a visible floor so a small non-zero day
-    /// never collapses to nothing, and a thin stub for a true zero so gaps still read as days.
+    /// 피크 대비 비례 높이. non-zero 일자는 최소 높이 보장, 0은 얇은 stub 유지.
     private func barHeight(_ value: Double, max maxValue: Double) -> CGFloat {
         let height = density.trendChartHeight
         guard value > 0 else { return 2 }

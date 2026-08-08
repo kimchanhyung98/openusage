@@ -1,11 +1,7 @@
 import SwiftUI
 
-/// One row in the Customize provider list (L1). The drag grip leads (drag-only — a tap on it does
-/// nothing); the middle content (mark + name + count) is tappable to open the provider's detail (L2)
-/// and expands to fill, so the empty space between the name and the toggle is tappable too; the
-/// trailing on/off toggle toggles; the caret after the toggle also opens L2. So: tap anything except
-/// the grip or the toggle to open L2, drag the grip to reorder. The secondary line shows the
-/// provider's total metric count. Disabled providers render greyed but stay openable.
+/// Customize 프로바이더 목록(L1)의 단일 행.
+/// grip·토글 제외 전 영역 탭 시 L2 진입, grip 드래그로 재정렬. 비활성 프로바이더도 열기 가능.
 struct ProviderListRow<Handle: View>: View {
     let provider: Provider
     let isEnabled: Bool
@@ -15,18 +11,15 @@ struct ProviderListRow<Handle: View>: View {
     var onOpen: () -> Void = {}
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-    /// Read for the live card name, so a rename re-titles the Customize row without a relaunch.
+    /// 카드 이름 변경 시 행 제목 동기화용.
     @Environment(AppContainer.self) private var container
 
     var body: some View {
         HStack(spacing: 10) {
-            // Drag handle only — outside the open target so a tap on the grip doesn't open L2.
+            // grip은 open 대상 밖 — grip 탭으로는 L2 미진입
             handle(AnyView(ReorderGrip()))
 
-            // Open target: mark + name + count, expanding to fill so the gap before the toggle is
-            // tappable. `onTapGesture` on a content-shaped, full-width view is the reliable way to make
-            // the whole area (including the empty spacer) hit-test, where a plain Button's hit area
-            // would shrink to its drawn content.
+            // Button 대신 contentShape + onTapGesture — 빈 공간 포함 전체 폭 hit-test 보장
             HStack(spacing: 10) {
                 ProviderIcon(source: provider.icon)
                     .frame(width: 18, height: 18)
