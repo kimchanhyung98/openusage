@@ -1,8 +1,7 @@
 import Foundation
 
-/// A read-only usage card backed by an account credential snapshot rather than a configuration home.
-/// The terminal keeps using the shared home; this card only gives the dashboard a stable source for a
-/// profile that is currently inactive there.
+/// configuration home이 아닌 계정 credential snapshot 기반 read-only usage 카드.
+/// 터미널은 shared home 계속 사용 — 이 카드는 현재 비활성 profile의 대시보드용 안정 소스만 제공.
 struct AccountUsageSnapshotCard: Equatable, Sendable {
     let id: String
     let profileID: String
@@ -10,10 +9,8 @@ struct AccountUsageSnapshotCard: Equatable, Sendable {
 }
 
 enum AccountUsageCardPlanner {
-    /// One snapshot card per inactive profile with a saved credential. The selected profile renders
-    /// through the family's shared-home runtime instead — but only while that home actually serves
-    /// it: when the home's observed account is a different identity (an external re-login), the
-    /// selected profile gets a snapshot card too, or it would vanish from the dashboard entirely.
+    /// 저장된 credential이 있는 비활성 profile당 snapshot 카드 1개 — 선택 profile은 family의 shared-home runtime으로 렌더.
+    /// 단 shared home의 관찰 계정이 다른 identity(외부 re-login)면 선택 profile도 snapshot 카드 부여 — 대시보드 소실 방지.
     static func snapshotCards(
         profiles: [AccountProfile],
         preferredProfileIDs: [String: String],

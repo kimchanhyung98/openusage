@@ -1,12 +1,9 @@
 import Foundation
 
-/// One Mac's presentation-free usage history in the private iCloud container.
+/// private iCloud container에 저장되는 Mac 1대의 presentation 무관 usage history.
 struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
-    /// v2 adds account cards (`claude@ab12cd34`) and the `identities` map that lets peers match
-    /// histories by ACCOUNT instead of by card id — the same account can be the default card on one
-    /// Mac and an extra card on another. v1 documents stay readable (no identities → the legacy
-    /// same-card-id merge); v1 readers reject v2 documents with their designed "update OpenUsage"
-    /// message.
+    /// v2: account 카드(`claude@ab12cd34`)와 `identities` map 추가 — peer 간 카드 id 대신 ACCOUNT 기준 history 매칭.
+    /// v1 문서는 계속 판독 가능(identities 없음 → legacy same-card-id merge), v1 reader는 v2 문서를 "update OpenUsage" 메시지로 거부.
     static let currentSchema = "openusage.history.v2"
     static let legacySchemaV1 = "openusage.history.v1"
 
@@ -15,9 +12,8 @@ struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
     var deviceName: String
     var updatedAt: Date
     var providers: [String: ProviderUsageHistory]
-    /// Card id → stable account identity key (see `ProviderAccountID`), for every card whose
-    /// identity this Mac knows. Absent on v1 documents. Contains no emails or names — identity keys
-    /// are opaque account/organization identifiers.
+    /// 카드 id → 안정적 account identity key (`ProviderAccountID` 참조) — v1 문서에는 부재.
+    /// email·이름 미포함 — identity key는 불투명한 account/organization 식별자.
     var identities: [String: String]?
 
     var id: String { deviceID }
@@ -37,7 +33,7 @@ struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
         guard schema == Self.currentSchema || schema == Self.legacySchemaV1 else {
             throw UsageHistoryDocumentError.unsupportedSchema
         }
-        // v1 card ids are bare provider ids; v2 additionally carries account cards (`claude@ab12cd34`).
+        // v1 카드 id는 bare provider id, v2는 account 카드(`claude@ab12cd34`)까지 허용.
         let idPattern = schema == Self.legacySchemaV1
             ? #"^[a-z0-9][a-z0-9-]*$"#
             : #"^[a-z0-9][a-z0-9@-]*$"#

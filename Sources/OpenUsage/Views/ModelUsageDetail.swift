@@ -1,10 +1,6 @@
 import SwiftUI
 
-/// Hover detail for a spend period: a flat ranked list of models, each two text lines (name/cost,
-/// share percent/tokens) over a proportional share bar. Rows carry no tooltips — everything shown is
-/// already on the row. The header carries only the period name — the hovered row right below already
-/// shows the period total, so repeating it here would duplicate (and wrap on) long figures. Mirrors
-/// `UsageTrendDetail`'s calm — header + flat list + source note.
+/// spend 기간 호버 상세 — 모델별 순위 목록 (이름/비용, 점유율/토큰, 비례 share 바).
 struct ModelUsageDetail: View {
     let title: String
     let breakdown: ModelUsageBreakdown
@@ -44,9 +40,6 @@ struct ModelUsageDetail: View {
             .foregroundStyle(.primary)
     }
 
-    /// Two text lines and the bar: model name / cost on top, share percent / tokens beneath. The name
-    /// only competes with the short cost figure, so it almost never truncates; the percent line answers
-    /// what the bar can't say precisely.
     private func modelRow(_ model: ModelUsageEntry, share: Double, percent: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -94,13 +87,8 @@ struct ModelUsageDetail: View {
         .padding(.vertical, density.textRowPadding)
     }
 
-    /// Share against the sum of the listed models' own (display-rounded) figures, not the spend row's
-    /// `totalCostUSD` — that total is rounded per day on a different path, so using it would let the
-    /// percentages drift from the numbers printed right next to them.
-    ///
-    /// One basis for the whole list: cost shares only when every listed model is priced — otherwise a
-    /// column mixing cost shares (priced rows) with token shares (unpriced rows) would sum past 100%.
-    /// With any unpriced model present, every row falls back to its token share.
+    /// 목록 모델 자체 수치 합 기준 share 산출 — 별도 경로에서 반올림되는 `totalCostUSD` 사용 시 표기 수치와 괴리 발생.
+    /// 단일 기준 원칙: 전 모델이 priced일 때만 cost share, 미가격 모델이 하나라도 있으면 전 행 token share 폴백.
     static func shares(for models: [ModelUsageEntry]) -> [Double] {
         let allPriced = models.allSatisfy { $0.costUSD != nil }
         if allPriced {
@@ -118,10 +106,7 @@ struct ModelUsageDetail: View {
         }
     }
 
-    /// Integer percentages that always total exactly 100 (largest-remainder rounding): rounding each
-    /// share independently can print a column that sums to 99 or 101, so every share is floored and
-    /// the leftover points go to the rows with the biggest fractional remainders. All-zero shares
-    /// (an empty period) stay all zero.
+    /// 합계가 정확히 100이 되는 정수 백분율 (largest-remainder rounding). 전부 0인 share는 0 유지.
     static func wholePercents(_ shares: [Double]) -> [Int] {
         guard shares.contains(where: { $0 > 0 }) else { return shares.map { _ in 0 } }
         let raw = shares.map { $0 * 100 }

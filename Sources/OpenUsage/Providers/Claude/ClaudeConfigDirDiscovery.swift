@@ -1,33 +1,22 @@
 import Foundation
 
-/// Launch-time scan for EXTRA Claude logins in custom config dirs — the homes a user points
-/// `CLAUDE_CONFIG_DIR` at besides the default (`~/.claude` / `$XDG_CONFIG_HOME/claude`).
-///
-/// Runs synchronously inside the launch account pass under a small time budget, and reads **no
-/// keychain secrets** — credential presence is checked from file existence and attributes-only
-/// keychain probes, so discovery can never raise a macOS permission dialog or block launch.
-///
-/// Shape rules: candidates are dot-dirs at `~` and dirs under `~/.config` — bounded, never temp dirs
-/// or project trees. A candidate only counts when it carries Claude's exact credential shape AND
-/// names its account (identity read from the home itself). Identity-extraction-is-validation: that
-/// routing, not name matching, is what keeps toys, forks, and sandbox homes out.
+/// 커스텀 config dir(기본 home 외 `CLAUDE_CONFIG_DIR` 대상)의 추가 Claude 로그인 launch-time 스캔.
+/// keychain secret 미조회(파일 존재 + attributes-only probe) — 권한 dialog·launch 블로킹 금지.
+/// 후보는 `~`의 dot-dir와 `~/.config` 하위로 한정; identity 추출 성공이 곧 검증(이름 매칭 아님).
 struct ClaudeConfigDirDiscovery {
-    /// One accepted custom-config-dir login. Whether it becomes its own card or attaches to an
-    /// existing account's record is the assembly's call, not discovery's.
+    /// 승인된 커스텀 config-dir 로그인 1건 — 카드화/기존 계정 귀속 판단은 assembly 소관.
     struct Finding: Equatable, Sendable {
         var identityKey: String
         var label: String?
-        /// The expanded config-dir path (the card's credential home and its spend-log root).
+        /// 확장된 config-dir 경로 — 카드의 credential home이자 spend 로그 root.
         var anchorPath: String
-        /// The literal string whose hash names the dir's keychain item (see `ClaudeCredentialScope`).
+        /// keychain 항목 이름을 만드는 해시 원문 문자열(`ClaudeCredentialScope` 참고).
         var keychainLiteral: String
     }
 
     struct Result: Sendable {
         var findings: [Finding] = []
-        /// The support trail: one line per notable decision (near-miss rejections, folds), emitted to
-        /// the log so a "my account didn't show up" report is diagnosable from a default log.
-        /// Token-free and email-free by construction — identity hashes, kinds, and paths only.
+        /// 결정별 support trail(로그 출력) — 토큰·이메일 없이 identity 해시·종류·경로만 포함.
         var notes: [String] = []
     }
 
@@ -36,7 +25,7 @@ struct ClaudeConfigDirDiscovery {
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
     var listSubdirectories: @Sendable (URL) -> [URL]
-    /// Wall-clock budget; on overrun the scan returns what it has (and the next launch resumes).
+    /// wall-clock 예산 — 초과 시 부분 결과 반환, 다음 launch에서 재개.
     var timeBudget: TimeInterval
     var now: @Sendable () -> Date
 
@@ -64,9 +53,7 @@ struct ClaudeConfigDirDiscovery {
         let excluded = Set(defaultClaudeConfigDirs().map(canonical))
         var visited: Set<String> = []
 
-        // Registered homes are exact account handles and take priority over the bounded ambient
-        // scan. A user may edit a profile to any directory inside their home, not only a dot-dir or
-        // a direct ~/.config child; those homes must still bind to a card within this launch budget.
+        // 등록된 home은 정확한 계정 handle — bounded ambient 스캔보다 우선, launch 예산 안에서 카드 바인딩 필수.
         for candidate in additionalDirectories + candidateDirectories() {
             if now().timeIntervalSince(started) > timeBudget {
                 result.notes.append("claude config-dir scan hit its \(Int(timeBudget * 1000))ms budget; finishing with partial results")
@@ -82,11 +69,9 @@ struct ClaudeConfigDirDiscovery {
         return result
     }
 
-    /// Identity + credential read of one EXACT config dir — the managed-profile sign-in probe.
-    /// Same strict validation as the launch scan (`claudeCandidate`), minus candidate gating and
-    /// the time budget; the decision trail still lands in the log so a "sign-in not detected"
-    /// report is diagnosable. Callers route default-home paths to `DefaultAccountObserver`
-    /// instead — this always reads the state file INSIDE the dir.
+    /// 지정된 config dir 1개의 identity + credential 조회 — 관리 profile sign-in probe.
+    /// launch 스캔과 동일한 엄격 검증(후보 gating·시간 예산만 제외); 기본 home 경로는
+    /// `DefaultAccountObserver`로 라우팅 — 여기서는 항상 dir 내부의 state 파일 조회.
     func inspect(configDir url: URL) -> Finding? {
         var notes: [String] = []
         let finding = claudeCandidate(at: url, notes: &notes)
@@ -98,7 +83,7 @@ struct ClaudeConfigDirDiscovery {
 
     // MARK: - Candidates
 
-    /// Dot-dirs at `~` plus dirs under `~/.config`, in stable path order.
+    /// `~`의 dot-dir + `~/.config` 하위 dir, 안정적 경로 순서.
     private func candidateDirectories() -> [URL] {
         let home = homeDirectory()
         var candidates = listSubdirectories(home).filter { $0.lastPathComponent.hasPrefix(".") }
@@ -118,10 +103,8 @@ struct ClaudeConfigDirDiscovery {
     }
 
     private func claudeCandidate(at url: URL, notes: inout [String]) -> Finding? {
-        // Pre-gate: only dirs that carry an identity file at all enter the trail — everything else
-        // is a random dot-dir and stays out of the log. (A custom config dir keeps its state INSIDE
-        // the dir; only the default `~/.claude` keeps it next door at `~/.claude.json`, and the
-        // default homes are excluded before this runs.)
+        // pre-gate: identity 파일 보유 dir만 trail 진입 — 나머지는 무관한 dot-dir로 로그 제외.
+        // 커스텀 dir은 state를 내부에 보관; 기본 home(`~/.claude.json` 방식)은 사전 제외됨.
         guard let identityText = try? files.readTextIfPresent(url.path + "/.claude.json") else {
             return nil
         }
@@ -135,9 +118,8 @@ struct ClaudeConfigDirDiscovery {
             return nil
         }
 
-        // Credential shape: the dir's own `.credentials.json`, or its *computed* keychain item.
-        // Claude Code hashes the literal CLAUDE_CONFIG_DIR string, so every plausible spelling of
-        // this path is probed (attributes only — no secret, no prompt).
+        // credential 형태: dir의 `.credentials.json` 또는 계산된 keychain 항목 —
+        // 가능한 경로 표기 전부를 attributes-only로 probe(secret·prompt 없음).
         let fileBacked = (try? files.readTextIfPresent(url.path + "/.credentials.json"))
             .flatMap { $0 }
             .flatMap { ClaudeAuthStore.parseCredentials($0) }?
@@ -169,9 +151,7 @@ struct ClaudeConfigDirDiscovery {
         )
     }
 
-    /// Every plausible spelling Claude Code might have hashed for this dir's keychain item: the path
-    /// as listed, symlink-resolved, and each with the home prefix swapped for `~` (users export
-    /// `CLAUDE_CONFIG_DIR=~/x` and `=/Users/me/x` interchangeably).
+    /// Claude Code가 해시했을 수 있는 이 dir의 경로 표기 전부 — 원본·symlink 해소·`~` 축약 조합.
     private func keychainLiterals(for url: URL) -> [String] {
         let home = homeDirectory()
         let homePaths = Array(Set([home.path, home.resolvingSymlinksInPath().path]))
@@ -195,8 +175,7 @@ struct ClaudeConfigDirDiscovery {
 
     // MARK: - Default homes (the exclusion set)
 
-    /// The default card's config dirs: every `CLAUDE_CONFIG_DIR` entry when set, else the scanner's
-    /// standard resolution (`$XDG_CONFIG_HOME/claude`, then `~/.claude`).
+    /// 기본 카드의 config dir 목록 — `CLAUDE_CONFIG_DIR` 우선, 없으면 표준 해석(`$XDG_CONFIG_HOME/claude`, `~/.claude`).
     private func defaultClaudeConfigDirs() -> [String] {
         if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
@@ -222,7 +201,7 @@ struct ClaudeConfigDirDiscovery {
         URL(fileURLWithPath: expandTilde(path)).resolvingSymlinksInPath().standardizedFileURL.path
     }
 
-    /// Log-safe path: the home prefix is folded to `~` so support logs don't carry the username.
+    /// 로그 안전 경로 — home prefix를 `~`로 접어 username 노출 방지.
     private func logPath(_ path: String) -> String {
         let home = homeDirectory().path
         guard path.hasPrefix(home + "/") else { return path }

@@ -42,7 +42,7 @@ final class ZAIProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: a stored or environment-exported API key.
+        // `refresh()`와 동일 소스 — 저장되었거나 환경 변수로 export된 API key
         await loadOffMainActor { [authStore] in authStore.loadAPIKey() } != nil
     }
 
@@ -51,17 +51,14 @@ final class ZAIProvider: ProviderRuntime {
             return ProviderSnapshot.error(provider: provider, error: ZAIAuthError.missingKey)
         }
 
-        // The quota endpoint is required; the subscription endpoint is best-effort (plan name only),
-        // so a failure there must not blank out the meters. Both are fetched, and whatever the quota
-        // returns is mapped alongside the plan name if the subscription succeeded.
+        // quota endpoint는 필수, subscription endpoint는 plan 이름용 best-effort — subscription 실패가 meter를 지우면 안 됨
         let quota = await load { try await usageClient.fetchQuota(apiKey: auth.apiKey) }
         let subscription = await loadOptional { try await usageClient.fetchSubscription(apiKey: auth.apiKey) }
 
         switch quota {
         case .success(let body):
-            // A valid key whose account has no GLM Coding Plan gets a 2xx with `success:false`. Surface
-            // that as a clear provider warning (the header's amber notice) rather than three blank "No
-            // data" meters that don't explain why nothing's there.
+            // 유효 key지만 GLM Coding Plan이 없는 계정은 2xx + `success:false` 응답
+            // 이유를 설명하지 못하는 빈 "No data" meter 세 개 대신 명확한 provider 경고(header amber notice)로 노출
             if ZAIUsageMapper.isNoCodingPlan(body) {
                 return ProviderSnapshot.error(provider: provider, error: ZAIUsageError.noCodingPlan)
             }
@@ -78,8 +75,7 @@ final class ZAIProvider: ProviderRuntime {
         }
     }
 
-    /// Run the required quota call and classify the outcome: the body on 2xx, an auth failure on
-    /// 401/403, or a typed failure for any other non-2xx, transport error, or empty body.
+    /// 필수 quota 호출 실행 후 결과 분류 — 2xx는 body, 401/403은 auth failure, 그 외는 typed failure.
     private func load(_ call: () async throws -> HTTPResponse) async -> QuotaResult {
         do {
             let response = try await call()
@@ -93,9 +89,8 @@ final class ZAIProvider: ProviderRuntime {
         }
     }
 
-    /// Run the optional subscription call — never throws into the snapshot: a transport error, a
-    /// non-2xx, or an auth failure all just mean "no plan name this refresh". Returns just the body
-    /// (the only thing the mapper consumes); the outcome is otherwise discarded.
+    /// 선택적 subscription 호출 실행 — snapshot으로 throw하지 않음, 모든 실패는 "이번 refresh에 plan 이름 없음"일 뿐.
+    /// mapper가 소비하는 body만 반환, 그 외 결과는 폐기.
     private func loadOptional(_ call: () async throws -> HTTPResponse) async -> Data? {
         do {
             let response = try await call()

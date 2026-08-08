@@ -5,10 +5,8 @@ struct GrokMappedUsage: Equatable, Sendable {
 }
 
 enum GrokUsageMapper {
-    /// Map the credits-format billing response into the provider's remote lines: the Weekly meter
-    /// plus the pay-as-you-go badge. The Weekly line is omitted (the tile reads "No data") when the
-    /// account's current period isn't weekly — an account still on the old monthly-only billing has
-    /// no weekly pool, and mislabeling its monthly percent would be worse than an honest blank.
+    /// credits-format billing 응답을 remote line(Weekly meter + pay-as-you-go badge)으로 매핑.
+    /// current period가 weekly가 아니면 Weekly 행 생략("No data") — 구 monthly-only 계정의 percent 오표기 방지.
     static func mapCreditsConfig(_ response: HTTPResponse) throws -> GrokMappedUsage {
         try ProviderAuthRetry.requireSuccess(
             response,
@@ -28,8 +26,7 @@ enum GrokUsageMapper {
                 periodDurationMs: config.periodDurationMs
             ))
         }
-        // A missing `onDemandCap` means no pay-as-you-go (proto-JSON also drops a 0 cap) → the
-        // Disabled badge, same as a present cap of 0.
+        // `onDemandCap` 부재는 pay-as-you-go 없음(proto-JSON은 0 cap도 생략) — cap 0과 동일하게 Disabled badge
         lines.append(.badge(
             label: "Pay as you go",
             text: config.onDemandCap > 0 ? "\(formatUnits(config.onDemandCap)) cap" : "Disabled",

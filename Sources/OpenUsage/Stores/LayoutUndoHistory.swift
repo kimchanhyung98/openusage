@@ -1,12 +1,8 @@
 import Foundation
 
-/// An immutable capture of every piece of layout state a user action can change — the unit the undo
-/// stack stores. Rather than record a bespoke inverse per action type (remove vs. reorder vs. pin),
-/// undo snapshots this whole slice before each change and restores it wholesale, so every action kind
-/// is undoable through one code path and the restore is always exact (interlocking state — order,
-/// expanded membership, and pins all move together — can't drift out of sync).
-///
-/// Equatable so the store can skip pushing a snapshot when an action turned out to be a no-op.
+/// 사용자 액션이 바꿀 수 있는 layout 상태 전체의 불변 capture — undo stack의 저장 단위
+/// 액션별 역연산 대신 전체 snapshot 복원으로 모든 액션을 한 경로에서 undo, 연동 상태의 drift 방지
+/// Equatable로 no-op 액션의 snapshot push 생략 지원
 struct LayoutSnapshot: Equatable {
     let placed: [PlacedWidget]
     let providerOrder: [String]
@@ -16,22 +12,17 @@ struct LayoutSnapshot: Equatable {
     let defaultExpandedOnEnableIDs: Set<String>
 }
 
-/// A small, bounded undo stack of `LayoutSnapshot`s — the machinery behind `LayoutStore`'s app-wide
-/// ⌘Z. Kept as its own type so the history logic doesn't push `LayoutStore` past the ~500 LOC
-/// guideline. Session-scoped (the store never persists it). Covers every customization action that
-/// flows through the store's user-facing mutations; reverting reorder, pin/unpin, show/hide all reduce
-/// to restoring an earlier snapshot.
+/// `LayoutStore` 앱 전역 ⌘Z를 받치는 bounded undo stack
+/// session 한정 (store가 persist하지 않음), store의 사용자 대상 mutation 전부를 snapshot 복원으로 커버
 struct LayoutUndoHistory {
-    /// How many steps ⌘Z can walk back. Deep enough to cover a real editing session (prune a few rows,
-    /// reorder, pin) without growing unbounded; snapshots are small value types so the memory cost is
-    /// negligible at this depth.
+    /// ⌘Z 최대 깊이 — 실제 편집 session을 덮으면서 무한 증식하지 않는 수준
     static let maxDepth = 40
 
     private(set) var snapshots: [LayoutSnapshot] = []
 
     var canUndo: Bool { !snapshots.isEmpty }
 
-    /// Push a pre-change snapshot as the newest undo step, dropping the oldest once the cap is reached.
+    /// 변경 전 snapshot을 최신 undo step으로 push — 상한 초과 시 가장 오래된 step 제거
     mutating func record(_ snapshot: LayoutSnapshot) {
         snapshots.append(snapshot)
         if snapshots.count > Self.maxDepth {
@@ -39,13 +30,12 @@ struct LayoutUndoHistory {
         }
     }
 
-    /// Pop the most recent snapshot to restore, or `nil` when there's nothing to undo.
+    /// 복원할 최신 snapshot pop, undo 대상 없으면 `nil`
     mutating func popLast() -> LayoutSnapshot? {
         snapshots.popLast()
     }
 
-    /// Forget every recorded step — used when the layout is reset, where prior snapshots describe a
-    /// pre-reset arrangement that undoing into would resurrect.
+    /// 기록 전체 삭제 — layout reset 시 pre-reset 배치로의 undo 부활 방지
     mutating func clear() {
         snapshots.removeAll()
     }

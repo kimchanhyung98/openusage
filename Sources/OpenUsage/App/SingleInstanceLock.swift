@@ -1,12 +1,8 @@
 import Darwin
 import Foundation
 
-/// Kernel-backed single-instance lock, closing the startup race `SingleInstanceGuard` (#635/#637)
-/// can't: the guard decides from an `NSRunningApplication` snapshot, and when two copies launch
-/// near-simultaneously LaunchServices can hand each a snapshot containing only itself — both
-/// conclude "no older peer" and keep running. An exclusive `flock` on a per-bundle file is atomic
-/// in the kernel: exactly one process holds it no matter how the launches interleave. The kernel
-/// also releases it when the holder exits or crashes, so a stale lock can never block a relaunch.
+/// 커널 기반 single-instance lock — `SingleInstanceGuard`(#635/#637)의 snapshot이 놓치는 근접 동시 런치 race 차단.
+/// per-bundle 파일의 exclusive `flock`은 커널에서 원자적; holder 종료·crash 시 자동 해제라 stale lock의 재실행 차단 불가.
 enum SingleInstanceLock {
     enum Acquisition {
         case acquired(Token)
@@ -14,8 +10,7 @@ enum SingleInstanceLock {
         case failed(String)
     }
 
-    /// Owns the lock for the process lifetime — keeps the descriptor open so the kernel keeps the
-    /// `flock` held. Dropping the token unlocks and closes the descriptor.
+    /// process 수명 동안 lock 소유 — descriptor를 열어 두어 `flock` 유지. token 해제 시 unlock + close.
     final class Token {
         private let fd: CInt
 
@@ -29,8 +24,7 @@ enum SingleInstanceLock {
         }
     }
 
-    /// Locks `Application Support/OpenUsage/<bundle id>.lock` — a directory the app already uses
-    /// for its own state, and stable no matter where the app bundle itself lives.
+    /// `Application Support/OpenUsage/<bundle id>.lock` 잠금 — 앱 bundle 위치와 무관하게 안정적인 경로.
     static func acquire(bundleIdentifier: String) -> Acquisition {
         guard let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
@@ -44,7 +38,7 @@ enum SingleInstanceLock {
         return acquire(at: lockURL)
     }
 
-    /// Split out from the well-known-path entry point so tests can aim the lock at a temp file.
+    /// 테스트가 temp 파일을 대상으로 lock을 걸 수 있도록 분리한 entry point.
     static func acquire(at lockURL: URL) -> Acquisition {
         do {
             try FileManager.default.createDirectory(

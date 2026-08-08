@@ -14,21 +14,12 @@ struct ProcessEnvironmentReader: EnvironmentReading {
     private static let identityKeys = Set(ShellEnvironmentSnapshot.capturedKeys)
 
     func value(for name: String) -> String? {
-        // The process environment first (set by launchd, `launchctl setenv`, or a terminal launch),
-        // then the captured login-shell environment — so keys a user exports in their shell profile
-        // still resolve in a packaged app launched from Finder/Dock. See `LoginShellEnvironment`.
+        // process 환경 우선(launchd·`launchctl setenv`·터미널 launch), 다음 login-shell 캡처 — Finder/Dock launch에서도 shell profile export 해석.
         if let value = processEnvironment[name]?.nilIfEmpty {
             return value
         }
-        // Identity-relevant keys (provider home overrides, OAuth endpoint switches) resolve from the
-        // persisted shell-environment snapshot when one exists: those facts — including "verifiably
-        // NOT exported" — are frozen for the whole session, so every reader (the launch account pass
-        // at init, the provider auth stores and log scanners whenever they run) sees the same home
-        // overrides no matter when the async login-shell capture lands. Without the pin, an export
-        // changed since the last launch would split them: identity read from the snapshot's home,
-        // usage fetched from the freshly captured one, mis-stamping the shared snapshot cache. A
-        // changed export applies from the next launch (the snapshot refresh task persists and logs
-        // it). Every other key reads the live capture as before.
+        // identity 관련 키는 persisted shell-environment snapshot에 세션 내내 고정 — 모든 reader가 같은 home override를 해석해 shared snapshot cache 오염 방지.
+        // 변경된 export는 다음 launch부터 적용; 그 외 키는 live 캡처 사용.
         if Self.identityKeys.contains(name),
            let snapshot = launchSnapshot(),
            snapshot.pinnedKeys.contains(name)
@@ -41,19 +32,17 @@ struct ProcessEnvironmentReader: EnvironmentReading {
 
 protocol TextFileAccessing: Sendable {
     func exists(_ path: String) -> Bool
-    /// Read a UTF-8 file when it exists. `nil` means the path is absent; permission, encoding, and
-    /// other failures still throw so credential callers do not confuse broken storage with logout.
+    /// UTF-8 파일 존재 시 read — `nil`은 경로 부재만 의미.
+    /// 권한·인코딩 실패는 throw — 저장소 고장을 로그아웃으로 오인 금지.
     func readTextIfPresent(_ path: String) throws -> String?
     func readText(_ path: String) throws -> String
     func writeText(_ path: String, _ text: String) throws
-    /// Remove the file at `path`. A missing file is not an error — the caller wants the key gone, and
-    /// it already is. Used by the in-app API-key editor's Remove / Clear-override actions.
+    /// `path` 파일 삭제 — 부재는 에러 아님(이미 목적 달성 상태).
     func remove(_ path: String) throws
 }
 
 extension TextFileAccessing {
-    /// Compatibility path for test doubles. The production accessor classifies the read error directly
-    /// so it does not have an exists-then-read race.
+    /// 테스트 double용 호환 경로 — production accessor는 read 에러를 직접 분류해 exists-then-read race 없음.
     func readTextIfPresent(_ path: String) throws -> String? {
         guard exists(path) else { return nil }
         return try readText(path)
@@ -61,9 +50,8 @@ extension TextFileAccessing {
 }
 
 struct LocalTextFileAccessor: TextFileAccessing {
-    /// Credential and token files must never be readable by another local account. Write through a
-    /// private temporary file in the destination directory, flush it, then rename it over the target:
-    /// the final replacement is atomic and has mode 0600 from the moment it becomes addressable.
+    /// credential·token 파일의 타 로컬 계정 읽기 금지 계약.
+    /// 목적지 디렉터리의 private 임시 파일에 쓰고 flush 후 rename — 교체는 원자적, 노출 시점부터 mode 0600 보장.
     private static let privateFileMode = mode_t(S_IRUSR | S_IWUSR)
 
     func exists(_ path: String) -> Bool {
@@ -105,8 +93,7 @@ struct LocalTextFileAccessor: TextFileAccessing {
             }
         }
 
-        // A process umask may only remove permissions at creation. Reassert the exact private mode on
-        // the still-unpublished inode before writing or renaming it into place.
+        // umask는 생성 시 권한 제거만 가능 — 공개 전 inode에 정확한 private mode 재설정.
         guard Darwin.fchmod(descriptor, Self.privateFileMode) == 0 else {
             throw Self.currentPOSIXError()
         }
@@ -169,8 +156,7 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
     }
 
     func queryValue(path: String, sql: String) throws -> String? {
-        // A normal sqlite3 open can create a missing database. Credential probes must be read-only and
-        // side-effect free, so absence returns nil before a process is launched.
+        // sqlite3 일반 open은 부재 DB를 생성 가능 — credential probe는 read-only여야 하므로 부재 시 프로세스 실행 전 nil 반환.
         guard try databaseExists(path) else { return nil }
         let result = try run(path: path, sql: sql, readOnly: true)
         guard result.succeeded else {
@@ -230,9 +216,7 @@ protocol KeychainAccessing: Sendable {
     func deleteGenericPassword(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
-    /// Read a generic password scoped to an explicit account (`-a`). Used when another app stored the
-    /// item under a known account name (e.g. Antigravity's `agy` token under service `gemini`,
-    /// account `antigravity`) rather than the current user.
+    /// 명시적 account(`-a`) 스코프의 generic password read — 타 앱이 특정 account 이름으로 저장한 item용.
     func readGenericPassword(service: String, account: String) throws -> String?
 }
 
@@ -245,17 +229,13 @@ extension KeychainAccessing {
         try writeGenericPassword(service: service, value: value)
     }
 
-    /// Default for mocks that don't model accounts: fall back to the service-only lookup. The real
-    /// `SecurityKeychainAccessor` overrides this to pass `-a <account>`.
+    /// account 미모델 mock용 기본 구현 — service-only 조회 fallback; 실제 `SecurityKeychainAccessor`는 `-a <account>` 전달.
     func readGenericPassword(service: String, account: String) throws -> String? {
         try readGenericPassword(service: service)
     }
 
-    /// Whether an item exists for `service`, without reading its secret. `nil` means the probe
-    /// itself failed (locked keychain, denied) — the caller picks its own safe side, which is not
-    /// the same for every caller. The default (for mocks) falls back to a read; the real
-    /// `SecurityKeychainAccessor` overrides this with an in-process attributes-only probe, safe for
-    /// the launch path — it can't trigger an unlock prompt and returns in microseconds.
+    /// secret 읽기 없이 `service` item 존재 여부 probe — `nil`은 probe 자체 실패(잠긴 Keychain·거부), 안전한 해석은 caller별 판단.
+    /// 기본 구현(mock용)은 read fallback; `SecurityKeychainAccessor`는 in-process attributes-only probe로 override.
     func genericPasswordExists(service: String) -> Bool? {
         do {
             return try readGenericPassword(service: service) != nil
@@ -272,21 +252,15 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         self.processRunner = processRunner
     }
 
-    // `security find-generic-password` exits 44 (errSecItemNotFound) when no item matches — the
-    // legitimate "no credential stored" case. Any OTHER non-zero exit means a real failure (keychain
-    // locked or access denied, a cancelled unlock prompt) that must not be silently rendered as
-    // "not signed in".
+    // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.
     private static let itemNotFoundExitCode: Int32 = 44
 
     func readGenericPassword(service: String) throws -> String? {
         try readPassword(["find-generic-password", "-s", service, "-w"], service: service)
     }
 
-    /// Attributes-only existence probe used on the launch path: an in-process Security-framework
-    /// query (no subprocess, returns in microseconds) that never requests the secret and forbids
-    /// any UI, so it can neither trigger an unlock prompt nor stall launch. A failed probe (locked
-    /// keychain, denied) reports `nil` ("unknown"), never a definite answer, so callers can pick
-    /// their safe side.
+    /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.
+    /// probe 실패(잠김·거부)는 `nil`("unknown")로만 보고 — 확정 답 금지.
     func genericPasswordExists(service: String) -> Bool? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -318,9 +292,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         )
         guard result.succeeded else {
             if result.exitCode == Self.itemNotFoundExitCode { return nil }
-            // Log loudly here so a locked/denied keychain is diagnosable even though current callers
-            // `try?` this back to nil ("not signed in"). Surfacing a distinct user-facing "keychain
-            // locked" message needs the auth-load chains to propagate the throw (folded into H1).
+            // 잠김·거부 Keychain 진단용 로그 — caller가 `try?`로 nil 처리해도 여기서 기록 필수.
             AppLog.warn(.keychain, "read failed for service '\(service)' (exit \(result.exitCode))")
             throw KeychainError.readFailed(result.stderr)
         }
@@ -333,8 +305,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func deleteGenericPassword(service: String) throws {
-        // One `security` call removes one matching item, and a service can hold both an
-        // account-scoped and an unscoped item — repeat until not-found so neither survives.
+        // `security` 1회 호출은 item 1개만 삭제 — account-scoped와 unscoped item 공존 가능, not-found까지 반복해 전부 제거.
         for _ in 0..<8 {
             let result = try processRunner.run(
                 executable: "/usr/bin/security",
@@ -344,8 +315,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
             )
             if result.exitCode == Self.itemNotFoundExitCode { return }
             if result.succeeded { continue }
-            // NEVER the service name: account-vault services embed profile ids, and the spec keeps
-            // Keychain service names out of logs entirely.
+            // 서비스명 로깅 금지 — account-vault 서비스명에 profile id 포함.
             AppLog.warn(.keychain, "keychain delete failed (exit \(result.exitCode))")
             throw KeychainError.deleteFailed("exit \(result.exitCode)")
         }

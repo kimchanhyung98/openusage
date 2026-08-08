@@ -83,9 +83,7 @@ struct CursorUsageClient: Sendable {
         ))
     }
 
-    /// GET the dashboard usage CSV for `[start, end]` (epoch-ms query params, token strategy) using the
-    /// same `WorkosCursorSessionToken` cookie as the Stripe/REST calls. Returns nil when the access token
-    /// carries no usable session.
+    /// `[start, end]`의 dashboard usage CSV GET(epoch-ms query param, token strategy) — Stripe/REST 호출과 같은 `WorkosCursorSessionToken` cookie 사용. access token에 쓸 만한 session이 없으면 nil.
     func fetchUsageCSV(accessToken: String, start: Date, end: Date) async throws -> HTTPResponse? {
         guard let session = Self.session(from: accessToken) else { return nil }
         var components = URLComponents(url: Self.exportCSVURL, resolvingAgainstBaseURL: false)

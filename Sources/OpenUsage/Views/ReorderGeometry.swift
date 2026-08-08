@@ -14,9 +14,8 @@ struct ReorderLift {
     let touchOffset: CGPoint
     var location: CGPoint
 
-    /// The one place a lift is built from a drag value. Every reorder site (dashboard/Customize ×
-    /// provider/metric) differs only in the `payload`; the frame lookup and touch-offset math are
-    /// identical, so they live here once. Returns `nil` when the dragged row has no recorded frame.
+    /// drag value로부터 lift를 생성하는 단일 지점 — 재정렬 사이트별 차이는 `payload`뿐.
+    /// 드래그된 행의 frame 미기록 시 `nil` 반환.
     static func make(
         id: String,
         payload: Payload,
@@ -40,9 +39,7 @@ struct ReorderLift {
 struct ReorderLiftPreview: View {
     let lift: ReorderLift
 
-    // The previews are deliberately the same views the live screens render (shared row/card
-    // builders); reading the density here lets the header→card spacing track the live sections too,
-    // so a lifted provider block matches its source block in every density.
+    // 프리뷰는 라이브 화면과 동일 뷰 재사용 — density도 함께 읽어 모든 density에서 원본 블록과 일치
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {
@@ -73,8 +70,7 @@ struct ReorderLiftPreview: View {
     }
 
     private func dashboardProviderPreview(provider: Provider, plan: String?, rows: [WidgetData]) -> some View {
-        // Same anatomy as the live dashboard section (`WidgetGroupedListView.section` + `container`):
-        // header over the shared metric card, at the density's header→card spacing.
+        // 라이브 대시보드 섹션과 동일 구성 (헤더 + 공유 메트릭 카드)
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             ProviderSectionHeader(provider: provider, plan: plan)
                 .padding(.horizontal, 8)
@@ -93,9 +89,7 @@ struct ReorderLiftPreview: View {
     }
 
     private func customizeProviderRowPreview(provider: Provider, isEnabled: Bool, metricCount: Int) -> some View {
-        // Same row anatomy as the live L1 (`ProviderListRow`), rendered inert — the lift's shadow +
-        // scale read as the floating chip, and the whole preview is non-interactive (`.allowsHitTesting`
-        // false in `body`), so the toggle/chevron carry no live action.
+        // 라이브 L1 행과 동일 구성의 비활성 렌더 — 프리뷰 전체가 non-interactive
         ProviderListRow(
             provider: provider,
             isEnabled: isEnabled,
@@ -117,11 +111,8 @@ struct ReorderLiftPreview: View {
 
 }
 
-/// Lightweight in-view geometry used for reordering inside the menu-bar popover.
-///
-/// This deliberately avoids SwiftUI's pasteboard-backed `.draggable` / `.dropDestination` APIs, which are
-/// unreliable in this popover. A plain `DragGesture` stays inside the SwiftUI view tree: we record row frames,
-/// compare the pointer location to those frames, and then mutate `LayoutStore` directly.
+/// 팝오버 내부 재정렬용 경량 in-view geometry.
+/// 이 팝오버에서 신뢰 불가한 pasteboard 기반 `.draggable`/`.dropDestination` 대신 `DragGesture` + row frame 비교 사용.
 struct ReorderFramePreferenceKey: PreferenceKey {
     static let defaultValue: [String: CGRect] = [:]
 
@@ -143,10 +134,8 @@ extension View {
     }
 }
 
-/// The shared drag-to-reorder gesture used by both the dashboard list and the Customize screen, for both
-/// provider headers and metric rows. The gesture body (lift tracking, target hit-testing, spring + haptic)
-/// lives here once; each caller supplies only what differs: the active-row binding, the lift builder, the
-/// current ordered ids, and the reorder action.
+/// 대시보드·Customize의 프로바이더/메트릭 공용 drag-to-reorder 제스처.
+/// lift 추적·타깃 hit-test·spring·haptic은 공통, 호출자는 차이점만 주입.
 @MainActor
 func reorderDragGesture(
     id: String,
@@ -199,8 +188,7 @@ func reorderTarget(
 
         guard frame.insetBy(dx: 0, dy: -2).contains(location) else { continue }
 
-        // Reorder only after crossing partway into the target row. This avoids the jumpy feel where a row moves
-        // as soon as the pointer barely enters a neighbor, while still feeling less delayed than the midpoint.
+        // 타깃 행에 일정 비율 진입한 후에만 재정렬 — 경계 진입 즉시 이동하는 튐 방지
         if to > from {
             return location.y >= frame.minY + frame.height * crossingThreshold ? id : nil
         } else {

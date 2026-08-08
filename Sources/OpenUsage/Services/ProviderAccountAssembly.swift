@@ -1,84 +1,58 @@
 import Foundation
 
-/// One extra Claude account card to build this launch: a custom-config-dir login found on this
-/// computer whose account is distinct from the default card's. Cards render only while their source
-/// is found (owner decision 4) — a record with no finding this launch simply builds no card.
+/// 이번 launch에 추가로 빌드할 Claude 계정 카드 — 기본 카드와 다른 계정의 custom config dir 로그인.
+/// 소스가 발견된 launch에만 카드 빌드 — finding 없는 record는 카드 미생성.
 struct ClaudeAccountCard: Equatable, Sendable {
-    /// The account's stable record id (`claude@ab12cd34`) — the card id everywhere: layout, cache,
-    /// CLI/API matching.
+    /// 계정의 안정적 record id (`claude@ab12cd34`) — layout·cache·CLI/API 매칭에 쓰는 카드 id.
     var id: String
-    /// The DERIVED card name (`ProviderAccountRecord.derivedDisplayName`) baked into the launch
-    /// `Provider`. Never a rename: renames live only in the account registry and are resolved at
-    /// render time, so a baked name can never be a stale copy of one.
+    /// launch `Provider`에 새겨지는 파생 표시명 — rename은 registry에서 render 시점에 해석되므로 stale 복사 불가.
     var displayName: String
-    /// The config dir the card's credentials and spend logs are pinned to.
+    /// 카드의 credential과 spend log가 고정되는 config dir.
     var configDirPath: String
-    /// The literal string whose hash names the dir's keychain item (see `ClaudeCredentialScope`).
+    /// 해당 dir의 Keychain item 이름을 만드는 해시의 원본 literal (`ClaudeCredentialScope` 참고).
     var keychainLiteral: String
-    /// Same-account additional config dirs (rare): extra spend-log roots, never extra credentials.
+    /// 같은 계정의 추가 config dir — 추가 spend-log root 전용, credential 소스 아님.
     var extraLogRoots: [URL] = []
 }
 
-/// The launch-time account pass: read which account is signed in at each family's default home,
-/// scan for extra Claude logins in custom config dirs, reconcile the account registry, import the
-/// first managed profile when none exists yet, and expose what the rest of launch consumes — the
-/// per-card identity map (snapshot-cache account stamp) and the extra-card build plan
-/// (`ProviderCatalog`). Runs once per launch (app) or per invocation (one-shot CLI); a mid-run swap
-/// is caught on the next launch.
+/// launch 시점 계정 pass — 기본 home의 로그인 계정 read, custom config dir의 추가 Claude 로그인 스캔,
+/// account registry reconcile 후 카드별 identity map과 추가 카드 빌드 계획 노출.
+/// launch(앱)·invocation(CLI)당 1회 실행 — 실행 중 계정 swap은 다음 launch에 반영.
 @MainActor
 struct ProviderAccountAssembly {
-    /// Card id → the account identity signed in there this launch. A card whose identity didn't
-    /// resolve is absent.
+    /// 카드 id → 이번 launch에 로그인된 계정 identity — identity 미해석 카드는 부재.
     let identityKeysByCard: [String: String]
-    /// Family → the canonical home backing its bare/default card this launch. This comes from the
-    /// same observer result as `identityKeysByCard`, rather than assuming a conventional dot-dir.
+    /// family → bare/default 카드를 뒷받침하는 canonical home — identity와 같은 observer 결과에서 도출.
     var defaultHomePathsByFamily: [String: String] = [:]
-    /// Extra Claude account cards found on this computer this launch, in stable id order.
+    /// 이번 launch에 발견된 추가 Claude 계정 카드 (id 순 정렬).
     var claudeCards: [ClaudeAccountCard] = []
-    /// Same-account custom config dirs discovered for the DEFAULT card's login: extra spend-log
-    /// roots for the default scanner, never extra credentials.
+    /// 기본 카드와 같은 계정으로 판명된 custom config dir — 추가 spend-log root 전용, credential 소스 아님.
     var defaultClaudeExtraLogRoots: [URL] = []
-    /// Inactive managed profiles whose credentials live in OpenUsage's private Keychain snapshots.
-    /// These are dashboard-only usage cards; they never redirect a terminal.
+    /// 비활성 managed profile 카드 — credential은 OpenUsage 전용 Keychain snapshot 보관, 대시보드 전용(터미널 redirect 없음).
     var snapshotCards: [AccountUsageSnapshotCard] = []
-    /// Bare family card ids whose local history is a managed shared-home total: sessions from
-    /// several switched accounts share those logs, so the history syncs as a family total and must
-    /// never be attributed to the currently selected profile's identity.
+    /// 로컬 history가 managed shared-home 합산인 bare family 카드 id.
+    /// 여러 전환 계정의 세션이 로그를 공유 — history는 family 합계로 sync, 현재 선택 profile identity로 귀속 금지.
     var familyTotalHistoryCardIDs: Set<String> = []
-    /// Explicit profile ownership for snapshot cards, whose synthetic provider ids cannot be
-    /// derived from a configuration-home path.
+    /// snapshot 카드의 profile 소유 명시 — synthetic provider id는 configuration-home 경로에서 유도 불가.
     var profileIDsByCard: [String: String] = [:]
-    /// Set while managed Codex switching is active: the shared `~/.codex` home whose `auth.json`
-    /// the default Codex card must treat as its only credential source, so a stale `Codex Auth`
-    /// Keychain item can never fall back to another account.
+    /// managed Codex 전환 활성 시 설정되는 shared `~/.codex` home.
+    /// 기본 Codex 카드는 이 home의 `auth.json`만 credential 소스로 사용 — stale `Codex Auth` Keychain item의 타 계정 fallback 차단.
     var codexSharedAuthHome: String?
-    /// True while managed Claude profiles exist: the default Claude card must not fall back to the
-    /// Claude Desktop login, which can belong to a different account than the one switched into
-    /// the shared home — an auth failure must surface as re-login, never as another account's usage.
+    /// managed Claude profile 존재 시 true — 기본 카드의 Claude Desktop 로그인 fallback 금지.
+    /// auth 실패는 re-login으로 표면화 — 타 계정 usage로 표시 금지.
     var claudeManagedSwitchActive: Bool = false
 
-    /// `waitsForLoginShell`: true for the menu-bar app (a Finder/Dock launch inherits no shell
-    /// exports, so the pass leans on the login-shell layers), false for the one-shot CLI (a terminal
-    /// launch's process environment already carries the user's exports). The app passes its own
-    /// `accountsStore` so the registry the pass reconciles is the same instance the UI observes for
-    /// renames; the CLI omits it and gets a throwaway. `accountProfiles` likewise. First-account
-    /// import is an explicit Settings action and never runs during this launch-time read pass.
+    /// `waitsForLoginShell`: 메뉴바 앱은 true(Finder/Dock launch는 shell export 미상속 → login-shell 레이어 의존), one-shot CLI는 false.
+    /// 앱은 UI가 rename을 관찰하는 동일 `accountsStore`(및 `accountProfiles`) 인스턴스 전달, CLI는 생략.
+    /// 첫 profile import는 Settings의 명시적 동작 — 이 launch read pass에서 실행 금지.
     static func make(
         defaults: UserDefaults = .standard,
         accountsStore: ProviderAccountsStore? = nil,
         waitsForLoginShell: Bool,
         accountProfiles: AccountProfilesStore? = nil
     ) -> ProviderAccountAssembly {
-        // The identity read needs the login shell's exports (CLAUDE_CONFIG_DIR/CODEX_HOME name the
-        // default homes), and it reads them through the very same reader the provider auth stores
-        // use — `ProcessEnvironmentReader`, which pins identity-relevant keys to the persisted
-        // shell-environment snapshot for the whole session, so identity and usage resolve the same
-        // homes no matter when the async capture lands. The one unreadable state is a genuinely
-        // FIRST Finder/Dock launch: capture still cold and no snapshot persisted yet — a
-        // shell-exported home override would be invisible, so that family's read must be skipped
-        // rather than misread as "no override". The skip is per family: a family whose home override
-        // is already visible in the process environment (a terminal launch, `launchctl setenv`)
-        // doesn't need the shell layers at all and still resolves.
+        // identity read는 provider auth store와 동일한 `ProcessEnvironmentReader` 경유 — identity 키를 세션 내내 snapshot에 고정해 identity와 usage가 같은 home 해석.
+        // 첫 Finder/Dock launch(캡처 미완료·snapshot 부재)는 family별 read skip — override 부재로 오독 금지; process 환경에 override가 보이는 family는 해석 유지.
         let shellFactsReadable = !waitsForLoginShell
             || LoginShellEnvironment.shared.capturedSuccessfully
             || ShellEnvironmentSnapshotStore.launchSnapshot != nil
@@ -93,19 +67,13 @@ struct ProviderAccountAssembly {
         }
         let profileStore = accountProfiles ?? AccountProfilesStore(defaults: defaults)
 
-        // Managed Codex switching pins the provider AND the identity read to the shared
-        // `~/.codex/auth.json` — the file the switch transaction owns. Gated on that file actually
-        // existing: a legacy `~/.config/codex`-only login with an imported profile must keep
-        // resolving through the historical source list until a switch (or the CLI itself) writes
-        // the shared auth file.
+        // managed Codex 전환은 provider와 identity read를 shared `~/.codex/auth.json`에 고정 — 파일 실존 시에만 (legacy `~/.config/codex` 전용 로그인은 switch 전까지 기존 소스 목록 유지).
         let sharedCodexAuthFile = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/auth.json").path
         let codexManaged = families.contains("codex")
             && !profileStore.profiles(family: "codex").isEmpty
             && FileManager.default.fileExists(atPath: sharedCodexAuthFile)
-        // Managed Claude switching owns `~/.claude`: pin the identity read to that home (the
-        // catalog pins the bare runtime the same way) so an ambient CLAUDE_CONFIG_DIR can't make
-        // the app manage one account while observing another.
+        // managed Claude 전환은 `~/.claude`에 identity read 고정 — ambient CLAUDE_CONFIG_DIR로 관리 계정과 관찰 계정이 갈리는 것 방지.
         let claudeManaged = families.contains("claude")
             && !profileStore.profiles(family: "claude").isEmpty
         let managedProfiles = profileStore.profiles
@@ -130,19 +98,14 @@ struct ProviderAccountAssembly {
         )
     }
 
-    /// The environment variable that relocates each family's default home — the fact whose
-    /// invisibility (shell layers unreadable AND not in the process environment) makes that family's
-    /// identity read unsafe on a first launch.
+    /// family별 기본 home을 재배치하는 환경 변수 — 이 값이 안 보이는 첫 launch에는 해당 family identity read 불가.
     private static let homeOverrideKeys: [String: String] = [
         "claude": "CLAUDE_CONFIG_DIR",
         "codex": "CODEX_HOME",
     ]
 
-    /// The environment-independent core, separated so tests inject a fixed observer, discovery, and
-    /// scratch store. `families` limits the pass to the families whose home facts are readable this
-    /// launch (see `make(defaults:waitsForLoginShell:)`); a family left out is simply not observed —
-    /// no identity key, no reconciliation, exactly as if the pass never ran for it. `claudeDiscovery`
-    /// is skipped alongside the claude family (its exclusion set needs the same home facts).
+    /// 환경 비의존 core — 테스트에서 observer·discovery·store 주입용.
+    /// `families`는 home 사실이 읽히는 family로 pass 제한 — 제외된 family는 pass가 없던 것과 동일(identity 키·reconcile 없음).
     static func make(
         observer: DefaultAccountObserver,
         accountsStore: ProviderAccountsStore,
@@ -177,18 +140,15 @@ struct ProviderAccountAssembly {
                 ))
                 AppLog.info(.config, "accounts: \(family) default identity resolved (\(ProviderAccountID.make(family: family, identityKey: identityKey)))")
             case .unresolved(let reason):
-                // The soak signal for later phases: how often a real login can't name its account.
+                // 실제 로그인이 계정을 식별 못 하는 빈도 관측용 로그.
                 AppLog.info(.config, "accounts: \(family) default identity unresolved — \(reason)")
             case .absent:
                 AppLog.debug(.config, "accounts: \(family) has no default login")
             }
         }
 
-        // Extra Claude logins in custom config dirs. Guarded on the default read: when a default
-        // login clearly EXISTS but can't be named (`unresolved`), accepting candidates could render
-        // the very account the default card shows as a second card — skip them this launch instead.
-        // A machine with no default login at all keeps accepting: there is nothing to duplicate,
-        // and a custom-dir-only login should still get its card.
+        // custom config dir의 추가 Claude 로그인 스캔.
+        // 기본 로그인이 `unresolved`면 기본 카드 계정의 중복 카드 렌더 위험 — 이번 launch는 candidate skip; 기본 로그인 부재 시에는 수용 유지.
         var foundClaudeAccounts: [(identityKey: String, label: String?, dirs: [ClaudeConfigDirDiscovery.Finding])] = []
         var defaultClaudeExtraLogRoots: [URL] = []
         let claudeOutcome = outcomes.first { $0.family == "claude" }?.outcome
@@ -218,9 +178,7 @@ struct ProviderAccountAssembly {
                         )
                     }
                     if identityKey == defaultKey {
-                        // Same account as the default card: its dirs are extra spend-log roots on
-                        // that card, never a second card — duplicate cards are structurally
-                        // impossible because identity routes the source to the existing record.
+                        // 기본 카드와 같은 계정: dir은 그 카드의 추가 spend-log root — identity가 소스를 기존 record로 라우팅하므로 중복 카드 불가.
                         defaultClaudeExtraLogRoots += findings.map { URL(fileURLWithPath: $0.anchorPath) }
                         if let index = observations.firstIndex(where: { $0.family == "claude" && $0.identityKey == identityKey }) {
                             observations[index].sources += sources
@@ -241,18 +199,15 @@ struct ProviderAccountAssembly {
 
         let records = accountsStore.reconcile(with: observations)
 
-        // The extra-card build plan: one card per distinct account found this launch, under its
-        // reconciled record id.
+        // 추가 카드 빌드 계획 — 발견 계정별 1카드, reconcile된 record id 사용.
         var claudeCards: [ClaudeAccountCard] = []
         for account in foundClaudeAccounts {
             guard let record = records.first(where: { $0.family == "claude" && $0.identityKey == account.identityKey }) else {
                 continue
             }
             guard record.id != "claude" else {
-                // The bare record's account has moved out of the default home into a config dir
-                // while another login occupies the default. The bare CARD is the default home's
-                // runtime, so this record can't render under its own id this launch. Proper swap
-                // support re-points this in Phase 4; until then the parked account stays hidden.
+                // bare record의 계정이 config dir로 이동하고 기본 home은 다른 로그인이 점유한 상태.
+                // bare 카드는 기본 home의 runtime — 이 record는 자체 id로 렌더 불가, swap 지원 전까지 숨김.
                 AppLog.warn(.config, "discovery: the claude record's account now lives in a config dir; its card is unavailable until swap support lands")
                 continue
             }
@@ -269,9 +224,7 @@ struct ProviderAccountAssembly {
         }
         claudeCards.sort { $0.id < $1.id }
 
-        // Inactive managed profiles render as snapshot cards — read-only usage backed by their
-        // Keychain snapshot. A profile whose account is already visible through a home-backed card
-        // this launch (the default home, or an ambient config dir) never gets a duplicate.
+        // 비활성 managed profile은 Keychain snapshot 기반 snapshot 카드로 렌더 — home-backed 카드로 이미 보이는 계정은 중복 생성 금지.
         let preferredProfileIDs = Dictionary(uniqueKeysWithValues: ProviderAccountID.families.compactMap { family in
             accountProfiles?.preferredProfileID(family: family).map { (family, $0) }
         })

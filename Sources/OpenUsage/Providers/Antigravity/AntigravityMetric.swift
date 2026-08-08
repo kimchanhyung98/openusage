@@ -1,16 +1,8 @@
 import Foundation
 
-/// The four Antigravity widget IDs and metric labels, shared by `AntigravityProvider.widgetDescriptors`
-/// and `AntigravityUsageMapper` so both sides of the exact-string label binding
-/// (`WidgetDescriptor.metricLabel` == `MetricLine.label`, resolved in `WidgetDataStore.data(for:)`)
-/// come from one place — label drift there is a silent "No data" failure.
-///
-/// Antigravity merged its quota pools on 2026-05-19: Gemini Pro and Flash now draw from one shared
-/// pool, every non-Gemini model (Claude, GPT-OSS) shares a second, and each pool has a rolling 5-hour
-/// window plus a weekly window. The Gemini pool pair is titled "Session" / "Weekly" to match the
-/// Claude/Codex rows; the non-Gemini pool keeps its "Claude" name, mirroring Codex's Spark /
-/// Spark Weekly pair. `geminiID` keeps its historical `antigravity.geminiPro` raw value so existing
-/// users' layout state (enabled/pin/order) carries over to the merged meter with zero migration.
+/// Antigravity의 위젯 ID 4개와 metric 라벨 — `AntigravityProvider.widgetDescriptors`와 `AntigravityUsageMapper`가 공유해 exact-string 라벨 바인딩(`WidgetDescriptor.metricLabel` == `MetricLine.label`)의 drift 방지. drift는 조용한 "No data" 실패.
+/// 2026-05-19 quota pool 병합: Gemini Pro/Flash가 한 pool, 비Gemini 모델(Claude, GPT-OSS)이 두 번째 pool 공유 — pool마다 rolling 5시간 + weekly window. Gemini pool 쌍은 Claude/Codex 행에 맞춰 "Session"/"Weekly", 비Gemini pool은 Codex의 Spark 쌍처럼 "Claude" 이름 유지.
+/// `geminiID`는 기존 사용자의 layout 상태(enabled/pin/order)가 무이관 승계되도록 역사적 `antigravity.geminiPro` raw 값 유지.
 enum AntigravityMetric {
     static let geminiID = "antigravity.geminiPro"
     static let geminiWeeklyID = "antigravity.geminiWeekly"

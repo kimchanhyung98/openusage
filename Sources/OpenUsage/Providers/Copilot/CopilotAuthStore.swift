@@ -1,6 +1,6 @@
 import Foundation
 
-/// A GitHub token already on the machine, usable against the Copilot usage endpoint.
+/// 기기에 이미 있는 GitHub token — Copilot usage endpoint에 사용 가능.
 struct CopilotToken: Hashable, Sendable {
     var value: String
 }
@@ -19,13 +19,9 @@ enum CopilotAuthError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Reads a GitHub token that Copilot tooling already left on the machine — no login flow, no browser
-/// cookies. Sources are tried prompt-free files first, Keychain last:
-/// 1. Copilot editor config `~/.config/github-copilot/apps.json` (older `hosts.json`) — the OAuth token
-///    the VS Code / JetBrains / Neovim Copilot plugins write. Universal and file-based.
-/// 2. GitHub CLI `~/.config/gh/hosts.yml` `oauth_token` — present when `gh` stores the token in a file.
-/// 3. GitHub CLI Keychain item (service `gh:github.com`) — go-keyring-wrapped, used when `gh` stores the
-///    token in the system keyring instead of the file.
+/// Copilot 도구가 기기에 이미 남긴 GitHub token 읽기 — 로그인 flow·브라우저 쿠키 없음. prompt 없는 파일 우선, Keychain 마지막:
+/// 1) Copilot 에디터 config `~/.config/github-copilot/apps.json`(구 `hosts.json`) — VS Code/JetBrains/Neovim Copilot 플러그인이 쓰는 OAuth token.
+/// 2) GitHub CLI `~/.config/gh/hosts.yml`의 `oauth_token`. 3) GitHub CLI Keychain 항목(service `gh:github.com`) — token을 파일 대신 system keyring에 둘 때, go-keyring 래핑.
 struct CopilotAuthStore: Sendable {
     static let editorAppsPath = "~/.config/github-copilot/apps.json"
     static let editorHostsPath = "~/.config/github-copilot/hosts.json"
@@ -43,7 +39,7 @@ struct CopilotAuthStore: Sendable {
         self.keychain = keychain
     }
 
-    /// First non-empty source wins. Blocking (Keychain) — call off the main actor.
+    /// 첫 non-empty source 승리. blocking(Keychain) — main actor 밖에서 호출.
     func loadToken() -> CopilotToken? {
         loadFromEditorConfig() ?? loadFromGhConfig() ?? loadFromGhKeychain()
     }
@@ -83,8 +79,7 @@ struct CopilotAuthStore: Sendable {
     }
 
     private func readGhKeychainRaw() -> String? {
-        // `gh` stores its Keychain item under the GitHub username as the account. Read it scoped to that
-        // account when we can recover it from hosts.yml; otherwise fall back to a service-only lookup.
+        // `gh`는 Keychain 항목의 account로 GitHub username 사용 — hosts.yml에서 복구 가능하면 그 account로 조회, 아니면 service 단독 조회로 fallback.
         if let account = ghUsername(),
            let raw = try? keychain.readGenericPassword(service: Self.ghKeychainService, account: account) {
             return raw
@@ -103,11 +98,8 @@ struct CopilotAuthStore: Sendable {
 
     // MARK: - Parsing (pure)
 
-    /// Pull a github.com `oauth_token` from the Copilot editor config. The file is a JSON object keyed by
-    /// host — `"github.com"` (older `hosts.json`) or `"github.com:<appId>"` (newer `apps.json`) — each
-    /// value an object carrying `oauth_token`. Only github.com entries are used: another host's token
-    /// (e.g. GitHub Enterprise) must not be sent to api.github.com, and returning `nil` lets the chain
-    /// fall through to gh config / keychain, which may hold a valid github.com token.
+    /// Copilot 에디터 config에서 github.com `oauth_token` 추출. 파일은 host로 key된 JSON 객체 — `"github.com"`(구 `hosts.json`) 또는 `"github.com:<appId>"`(신 `apps.json`), 값마다 `oauth_token` 보유.
+    /// github.com 항목만 사용: 다른 host(GitHub Enterprise 등)의 token을 api.github.com에 보내면 안 되고, nil 반환으로 chain이 gh config/keychain으로 진행.
     static func oauthToken(fromEditorJSON text: String) -> String? {
         guard let data = text.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -131,18 +123,14 @@ struct CopilotAuthStore: Sendable {
         return nil
     }
 
-    /// Read an indented `key: value` from within a specific host block of the `hosts.yml` GitHub CLI
-    /// writes. `gh` keys each host block by a top-level (unindented) `<host>:` line; reading must be
-    /// scoped to the `github.com` block, because a GitHub Enterprise block in the same file would
-    /// otherwise let its `oauth_token` win and get sent to api.github.com (a guaranteed 401/403).
-    /// `users:` (the nested map) doesn't match `user:` because the colon position differs.
+    /// GitHub CLI `hosts.yml`의 특정 host 블록 안 들여쓰기된 `key: value` 읽기. `github.com` 블록으로 한정 필수 — 같은 파일의 GitHub Enterprise 블록 `oauth_token`이 api.github.com으로 전송되면 확정 401/403.
+    /// 중첩 map인 `users:`는 콜론 위치가 달라 `user:`와 매칭되지 않음.
     static func yamlValue(_ text: String, key: String, host: String = "github.com") -> String? {
         let prefix = key + ":"
         let hostHeader = host + ":"
         var inHost = false
         for line in text.split(whereSeparator: \.isNewline) {
-            // An unindented line starts a new top-level block (a host header or other root key); only
-            // the github.com block's children should be read.
+            // 비들여쓰기 줄은 새 최상위 블록(host header 또는 root key) 시작 — github.com 블록의 자식만 읽음.
             if let first = line.first, !first.isWhitespace {
                 inHost = line.trimmingCharacters(in: .whitespaces).hasPrefix(hostHeader)
                 continue

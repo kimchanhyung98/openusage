@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// The Customize provider list (L1): every known provider as a row, in the user's saved order —
-/// including disabled ones (greyed), so the user can re-enable them or open their detail. Each row
-/// carries an on/off toggle, a metric-count label, and a chevron into the provider's detail (L2).
-/// Enabled providers drag-reorder by the leading grip; tapping a row opens
-/// L2 (`layout.customizeProviderID = id`).
+/// Customize 프로바이더 목록 (L1). 비활성 프로바이더도 회색으로 포함.
+/// 행 탭은 L2 진입, 활성 프로바이더만 grip 드래그로 재정렬 가능.
 struct CustomizeProviderListView: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(AppContainer.self) private var container
@@ -25,8 +22,6 @@ struct CustomizeProviderListView: View {
                 }
             }
             .cardSurface()
-            // App behavior/appearance options live on the other screen; catch users who came here
-            // hunting for them once they've scanned past the provider list.
             ScreenCrossLinkRow(
                 systemImage: "gearshape",
                 title: "Settings",
@@ -42,9 +37,7 @@ struct CustomizeProviderListView: View {
             provider: row.provider,
             isEnabled: row.isEnabled,
             metricCount: row.metricCount,
-            // The grip leads the tappable bar; a tap opens L2, a drag reorders. Drag-reorder is enabled
-            // only for active providers — `reorderProvider` operates on the enabled set, so a disabled
-            // row's grip stays inert (the row still opens/toggles).
+            // 드래그 재정렬은 활성 프로바이더만 — 비활성 행의 grip은 무반응 (탭·토글은 동작)
             handle: { grip in
                 if row.isEnabled {
                     AnyView(grip.highPriorityGesture(providerDragGesture(for: row)))
@@ -67,8 +60,7 @@ struct CustomizeProviderListView: View {
             active: $activeProviderID,
             lift: $reorderLift,
             makeLift: { makeProviderLift(for: row, value: $0) },
-            // Hit-test only enabled providers (the set `reorderProvider` can actually move); disabled
-            // rows keep their tail position and aren't reorder targets.
+            // 재정렬 hit-test 대상은 활성 프로바이더만 — 비활성 행은 대상 제외
             orderedIDs: { layout.customizeGroups.map(\.provider.id) },
             reorder: { layout.reorderProvider(dragged: row.id, target: $0) }
         )

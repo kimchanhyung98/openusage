@@ -1,26 +1,15 @@
 import Foundation
 
-/// The authenticated-fetch sequence every OAuth-style provider ports from its JS plugin, written
-/// once: attempt → on 401/403 refresh the token → retry once → a second 401/403 is a hard auth
-/// failure. Anything that isn't an auth failure (success, 429, 5xx) returns untouched for the
-/// provider's mapper to interpret, so rate-limit and server-error handling stay per-provider.
-///
-/// The `refreshAccessToken` closure owns everything provider-specific about refreshing: loading
-/// the refresh token (throw the provider's auth error when there isn't one), calling the token
-/// endpoint, interpreting its body (`invalid_grant`, `shouldLogout`, …), and persisting rotated
-/// credentials. Devin deliberately does not use this — its 401/403 path switches auth *sources*
-/// (credentials file → app state) rather than refreshing a token.
+/// OAuth형 provider 공통 authenticated-fetch 시퀀스: 시도 → 401/403이면 token refresh 후 1회 재시도 → 재차 401/403은 hard auth 실패. auth 실패가 아닌 응답(성공, 429, 5xx)은 그대로 반환 — 해석은 provider mapper 소관.
+/// `refreshAccessToken` closure가 provider별 refresh 전부(refresh token 로드, token endpoint 호출, body 해석, rotated credential 저장)를 소유. Devin은 의도적 미사용 — 401/403 시 token refresh가 아니라 auth source 전환.
 @MainActor
 enum ProviderAuthRetry {
-    /// The statuses that mean "the token is bad" rather than "the request failed".
+    /// "요청 실패"가 아니라 "token 불량"을 뜻하는 status.
     nonisolated static func isAuthFailure(_ response: HTTPResponse) -> Bool {
         response.statusCode == 401 || response.statusCode == 403
     }
 
-    /// Triage a response that should carry a usable body: a 401/403 means the token went bad (throw
-    /// `authExpired`), any other non-2xx is a request failure (throw `requestFailed(status)`), and a
-    /// 2xx returns without throwing. Centralizes the guard the Claude/Codex/Grok mappers and
-    /// `CursorProvider` each re-spelled inline, routing the auth-status check through `isAuthFailure`.
+    /// 사용 가능한 body를 기대하는 응답의 triage: 401/403은 `authExpired`, 그 외 non-2xx는 `requestFailed(status)`, 2xx는 통과.
     nonisolated static func requireSuccess(
         _ response: HTTPResponse,
         authExpired: Error,
@@ -30,14 +19,7 @@ enum ProviderAuthRetry {
         guard (200..<300).contains(response.statusCode) else { throw requestFailed(response.statusCode) }
     }
 
-    /// - Parameters:
-    ///   - token: access token for the first attempt.
-    ///   - attempt: performs the request with the given token; called at most twice.
-    ///   - refreshAccessToken: returns a fresh access token or throws the provider's auth error.
-    ///   - connectionFailed: thrown when `attempt` itself fails (transport, not status).
-    ///   - retriedConnectionFailed: optional distinct error for a transport failure on the retry
-    ///     (Cursor reports these separately); defaults to `connectionFailed`.
-    ///   - authExpired: thrown when the retried request still comes back 401/403.
+    /// `attempt`는 최대 2회 호출. `retriedConnectionFailed`는 재시도 중 transport 실패용 별도 오류(Cursor) — 생략 시 `connectionFailed`.
     static func fetch(
         token: String,
         attempt: (_ accessToken: String) async throws -> HTTPResponse,

@@ -37,8 +37,7 @@ struct SystemProcessRunner: ProcessRunning {
             process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
         }
 
-        // Debug-only, basename + arg count only: arg *values* can carry paths/identifiers, so they
-        // are never logged here.
+        // Debug 전용, basename + arg 개수만 — arg 값에 경로·식별자 포함 가능, 로깅 금지.
         AppLog.debug(.subprocess, "launch \((executable as NSString).lastPathComponent) (\(arguments.count) args)")
 
         let stdoutPipe = Pipe()
@@ -46,17 +45,13 @@ struct SystemProcessRunner: ProcessRunning {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        // Drain both pipes on background queues, started BEFORE the child runs. A child that writes
-        // more than the OS pipe buffer (~64KB) would otherwise block on write, never exit, and trip the
-        // timeout below — reading only after exit deadlocks. (`ps -ax -o command=` alone is ~240KB.)
+        // 두 pipe를 child 실행 전 background queue에서 drain 시작 — OS pipe buffer(~64KB) 초과 출력 child의 write blocking·timeout 오작동 방지, exit 후 read는 deadlock.
         let output = SubprocessOutput()
         let drained = DispatchGroup()
         drain(stdoutPipe.fileHandleForReading, into: output, isStdout: true, group: drained)
         drain(stderrPipe.fileHandleForReading, into: output, isStdout: false, group: drained)
 
-        // One kernel-level wait instead of a 50ms poll loop: the termination handler trips the
-        // group (registered before `run()` so an instantly-exiting child can't race it), and
-        // `wait` blocks this thread exactly once until exit or the deadline.
+        // 50ms poll loop 대신 kernel-level wait 1회 — termination handler를 `run()` 전에 등록해 즉시 종료 child와의 race 차단, `wait`는 exit 또는 deadline까지 1회 blocking.
         let exited = DispatchGroup()
         exited.enter()
         process.terminationHandler = { _ in exited.leave() }
@@ -71,7 +66,7 @@ struct SystemProcessRunner: ProcessRunning {
                 kill(process.processIdentifier, SIGKILL)
             }
             process.waitUntilExit()
-            drained.wait() // the killed child closed its pipes, so the drains hit EOF and finish
+            drained.wait() // kill된 child가 pipe를 닫아 drain이 EOF로 종료.
             throw ProcessRunnerError.timedOut(executable: executable, timeout: timeout)
         }
 
@@ -81,9 +76,8 @@ struct SystemProcessRunner: ProcessRunning {
         return ProcessResult(exitCode: process.terminationStatus, stdout: output.stdoutString, stderr: output.stderrString)
     }
 
-    /// Read a pipe to EOF on a background queue, accumulating into `output`. Started before the child
-    /// runs so the pipe is continuously drained and can never fill (EOF arrives when the child exits and
-    /// closes its write end).
+    /// background queue에서 pipe를 EOF까지 read해 `output`에 축적.
+    /// child 실행 전 시작으로 pipe 포화 불가 — EOF는 child exit·write end 닫힘 시 도달.
     private func drain(_ handle: FileHandle, into output: SubprocessOutput, isStdout: Bool, group: DispatchGroup) {
         let box = FileHandleBox(handle)
         group.enter()
@@ -137,14 +131,13 @@ enum ProcessRunnerError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Passes a non-Sendable `FileHandle` into the background drain closure under Swift 6 strict
-/// concurrency. The handle is read by exactly one queue, so the unchecked conformance is sound.
+/// Swift 6 strict concurrency에서 non-Sendable `FileHandle`을 background drain closure로 전달 — 단일 queue만 read하므로 unchecked 적합.
 private final class FileHandleBox: @unchecked Sendable {
     let handle: FileHandle
     init(_ handle: FileHandle) { self.handle = handle }
 }
 
-/// Lock-guarded accumulator for the two concurrently-drained pipes.
+/// 동시 drain되는 두 pipe의 lock 보호 accumulator.
 private final class SubprocessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var stdout = Data()

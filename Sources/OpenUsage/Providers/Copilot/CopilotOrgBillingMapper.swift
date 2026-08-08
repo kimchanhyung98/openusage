@@ -1,13 +1,9 @@
 import Foundation
 
-/// Normalizes GitHub organization billing responses into org-level Copilot meters. The billing usage
-/// summary (`/orgs/{org}/settings/billing/usage/summary`) reports month-to-date usage per product; the
-/// Copilot AI-credit items become **Org Credits** (credits consumed this month, an unbounded count — the
-/// endpoint exposes no allotment, so no percentage is fabricated) and **Org Spend** (dollars actually
-/// billed beyond included credits). Both are organization-wide totals, not the individual seat's usage —
-/// GitHub doesn't expose per-seat numbers for org-managed Copilot.
+/// GitHub organization billing 응답을 org 단위 Copilot meter로 normalize. billing usage summary(`/orgs/{org}/settings/billing/usage/summary`)의 Copilot AI-credit 항목이 **Org Credits**(이달 소비 credit, allotment 미노출이라 percentage 조작 없음)와 **Org Spend**(포함 credit 초과로 실제 청구된 달러)가 됨.
+/// 둘 다 organization 전체 합계 — GitHub은 org 관리 Copilot의 per-seat 수치를 노출하지 않음.
 enum CopilotOrgBillingMapper {
-    /// Org slugs from a `/user/orgs` response, in GitHub's order. Empty for a garbled body.
+    /// `/user/orgs` 응답의 org slug, GitHub 순서 그대로. 깨진 body는 빈 배열.
     static func orgLogins(_ response: HTTPResponse) -> [String] {
         guard let array = try? JSONSerialization.jsonObject(with: response.body) as? [[String: Any]] else {
             return []
@@ -17,10 +13,8 @@ enum CopilotOrgBillingMapper {
         }
     }
 
-    /// Metric lines from a billing usage summary, or `nil` when the summary carries no Copilot AI-credit
-    /// items (the org doesn't use Copilot credits — callers keep probing other orgs). Only items whose
-    /// `unitType` is credit-based (`ai-units` / `ai-credits`) are counted, so seat-fee line items with
-    /// other units can't pollute the totals.
+    /// billing usage summary → metric line, Copilot AI-credit 항목이 없으면 nil(그 org는 Copilot credit 미사용 — 호출자가 다른 org 계속 probe).
+    /// `unitType`이 credit 계열(`ai-units`/`ai-credits`)인 항목만 집계 — 다른 단위의 seat-fee 항목이 합계를 오염시키지 못함.
     static func usageLines(_ response: HTTPResponse) -> [MetricLine]? {
         guard let body = ProviderParse.jsonObject(response.body) else { return nil }
         return usageLines(body: body)

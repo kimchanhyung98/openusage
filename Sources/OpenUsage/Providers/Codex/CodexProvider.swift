@@ -2,9 +2,7 @@ import Foundation
 
 @MainActor
 final class CodexProvider: ProviderRuntime {
-    /// The default card's identity. Extra account cards inject their own `Provider` with an
-    /// `@`-suffixed id and an account-derived display name; everything else about the runtime is
-    /// identical. (Mirror of `ClaudeProvider.makeProvider`.)
+    /// 기본 카드의 identity. 추가 계정 카드는 `@` suffix id와 계정 기반 display name만 주입, runtime은 동일. (`ClaudeProvider.makeProvider` mirror.)
     static func makeProvider(id: String = "codex", displayName: String = "Codex") -> Provider {
         Provider(
             id: id,
@@ -57,8 +55,7 @@ final class CodexProvider: ProviderRuntime {
                 ),
             .values(id: "\(provider.id).rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
                 .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
-            // Model-specific Spark limits (GPT-5.3-Codex-Spark), parsed from `additional_rate_limits`.
-            // Seeded On Demand (below the caret), disabled, and unpinned in `DefaultLayout`.
+            // `additional_rate_limits`의 Spark 전용 limit (GPT-5.3-Codex-Spark) — `DefaultLayout`에서 On Demand·비활성·unpinned로 seed.
             .percent(id: "\(provider.id).spark", provider: provider, title: "Spark")
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: "\(provider.id).sparkWeekly", provider: provider, title: "Spark Weekly")
@@ -70,9 +67,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same sources as `refresh()`: auth.json candidates first, keychain as the fallback. Only a
-        // usable access token counts (see `hasUsableAccessToken`) — an API-key-only auth.json can't
-        // serve the usage API, so seeding it on would just show an error row.
+        // `refresh()`와 동일한 source 순서(auth.json 후보 → keychain), usable access token만 인정 — API-key-only auth.json은 usage API 사용 불가.
         let fileCandidates = authStore.loadAuthCandidates()
         if fileCandidates.contains(where: \.hasUsableAccessToken) {
             return true
@@ -120,9 +115,7 @@ final class CodexProvider: ProviderRuntime {
         }
 
         if authStore.needsRefresh(authState.auth) {
-            // The `codex` CLI may have rotated the token on disk since we loaded it. Re-read the live
-            // credential first and adopt its (newer) access token — refreshing our stale copy would send
-            // an already-rotated refresh_token and trip `refresh_token_reused` (issue #516).
+            // `codex` CLI가 디스크의 token을 이미 회전시켰을 수 있음 — live credential을 먼저 재판독해 최신 access token 채택 (stale 사본 refresh 시 `refresh_token_reused`, issue #516).
             if let live = reloadLiveAuth(source: authState.source),
                let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty {
                 authState = live
@@ -138,7 +131,7 @@ final class CodexProvider: ProviderRuntime {
         }
 
         let response = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
-        // The access token may have rotated during the usage fetch's refresh-and-retry; read the live one.
+        // usage fetch의 refresh-and-retry 중 access token 회전 가능 — live token 재판독.
         let currentToken = authState.auth.tokens?.accessToken ?? accessToken
         let resetCredits = await fetchResetCreditsBestEffort(
             accessToken: currentToken,
@@ -146,17 +139,14 @@ final class CodexProvider: ProviderRuntime {
         )
         var mapped = try CodexUsageMapper.mapUsageResponse(response, resetCredits: resetCredits, now: now())
 
-        // Local spend tiles, scanned natively from the Codex CLI's session rollouts and priced through
-        // the shared pricing store, merged with Codex usage that happened inside pi (attributed back
-        // here). Both scans run on their scanner actors, off the main actor.
+        // Local spend tile — Codex CLI session rollout native 스캔 + pi 안에서 발생한 Codex usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
         let pricing = await pricing()
         let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
         let piScan = includePiUsage
             ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
             : nil
         var usageHistory: ProviderUsageHistory?
-        // Cancellation can land between the native and pi scans. Treat the pair as one unit so a
-        // partial result cannot replace the last-good combined history in WidgetDataStore.
+        // native·pi 스캔 사이 cancellation 가능 — 부분 결과가 WidgetDataStore의 last-good combined history를 대체하지 않도록 쌍을 한 단위로 처리.
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
@@ -185,10 +175,8 @@ final class CodexProvider: ProviderRuntime {
         )
     }
 
-    /// Fetches the on-demand reset-credit balance (and per-credit expiry) without ever failing the
-    /// refresh: this is supplementary to the usage metrics, so a network error, timeout, or non-2xx just
-    /// yields `nil` and the mapper falls back to the count embedded in the usage body. Logged, not thrown —
-    /// the user still gets Session/Weekly/Credits even if this endpoint is down.
+    /// On-demand reset-credit 잔액(및 per-credit expiry) 조회 — best-effort, refresh 전체를 실패시키지 않음.
+    /// 실패는 log 후 `nil`, mapper가 usage body에 내장된 count로 fallback — endpoint가 죽어도 Session/Weekly/Credits 유지.
     private func fetchResetCreditsBestEffort(accessToken: String, accountID: String?) async -> HTTPResponse? {
         do {
             return try await usageClient.fetchResetCredits(accessToken: accessToken, accountID: accountID)
@@ -221,10 +209,8 @@ final class CodexProvider: ProviderRuntime {
         )
     }
 
-    /// Re-reads the credential from its original source (the same on-disk file or keychain entry) so a
-    /// token the `codex` CLI rotated out-of-band is picked up before we attempt our own refresh. Reads
-    /// only that one source — matching how `codex` reads the single `auth.json` from `CODEX_HOME` —
-    /// rather than re-scanning every candidate path.
+    /// 원래 source(같은 파일 또는 keychain entry)에서 credential 재판독 — `codex` CLI가 out-of-band로 회전시킨 token을 자체 refresh 전에 수용.
+    /// 그 source 하나만 읽고 후보 경로 재스캔 없음 — `codex`가 `CODEX_HOME`의 단일 `auth.json`만 읽는 방식과 일치.
     private func reloadLiveAuth(source: CodexAuthState.Source) -> CodexAuthState? {
         switch source {
         case .file(let path):
@@ -246,10 +232,7 @@ final class CodexProvider: ProviderRuntime {
             authState.auth.tokens?.idToken = idToken
         }
         authState.auth.lastRefresh = OpenUsageISO8601.string(from: now())
-        // Fail loudly: a swallowed save strands the rotated token on disk (next launch re-refreshes /
-        // can surface a false "token expired"). The refreshed token works for this session, so log and
-        // continue. This is also the only call site of authStore.save, so a genuinely undecodable
-        // payload (CodexAuthError.invalidAuthPayload) now surfaces in the log instead of vanishing.
+        // save 실패는 loud log 후 계속 — 삼키면 회전된 token이 디스크에 남아 다음 실행에서 false "token expired" 유발, refreshed token은 이번 세션에서 유효.
         do {
             try authStore.save(authState)
         } catch {

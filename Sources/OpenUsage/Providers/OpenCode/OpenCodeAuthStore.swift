@@ -1,8 +1,7 @@
 import Foundation
 
-/// Reads the OpenCode Go/Zen credential already on the machine. Local-only — never the network. The
-/// `opencode-go` key is both the first-run detection signal and (for a future `/zen/go/v1/usage` API)
-/// the Bearer token, so it lives behind one loader.
+/// 머신에 이미 있는 OpenCode Go/Zen credential 읽기 — local 전용, network 접근 없음.
+/// `opencode-go` key는 first-run 감지 신호이자 (향후 `/zen/go/v1/usage` API의) Bearer token — 단일 loader로 관리.
 struct OpenCodeAuthStore: Sendable {
     var files: TextFileAccessing
     var environment: EnvironmentReading
@@ -26,11 +25,9 @@ struct OpenCodeAuthStore: Sendable {
         OpenCodePaths.authFilePath(dataDirectory: dataDirectory)
     }
 
-    /// The non-empty `opencode-go` API key from `auth.json`, or `nil` when the user has not logged into
-    /// OpenCode Go. Reads only that one entry — tolerant of unrelated sibling entries (other providers, or
-    /// a future non-object field like a schema marker) so one odd value can't hide a valid key. A present
-    /// file that can't be read or parsed throws `credentialsUnreadable` so broken storage is never
-    /// mistaken for logout; an absent file is the normal "not logged in" `nil`.
+    /// `auth.json`의 비어 있지 않은 `opencode-go` API key, 미로그인 시 `nil`.
+    /// 해당 entry만 읽고 무관한 sibling entry에는 관대 — 이상 값 하나가 유효 key를 가리지 못하게 함.
+    /// 파일이 있는데 읽기·parse 불가면 `credentialsUnreadable` throw — 손상 storage를 logout으로 오인 금지, 파일 부재는 정상 `nil`.
     func goAPIKey() throws -> String? {
         let text: String?
         do {

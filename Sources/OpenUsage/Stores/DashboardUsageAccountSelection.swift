@@ -14,9 +14,8 @@ enum DashboardUsageAccountSelection {
         return defaults.string(forKey: key) ?? ""
     }
 
-    /// Collapse only cards backed by Settings-managed profiles. Existing config-directory cards
-    /// that were discovered independently remain ordinary dashboard cards unless their identity is
-    /// attached to a managed profile.
+    /// Settings 관리 profile 기반 card만 선택된 하나로 축약
+    /// 독립 발견된 config-directory card는 managed profile에 연결되기 전까지 일반 card로 유지
     static func visibleCardIDs(
         orderedCardIDs: [String],
         managedCardIDs: Set<String>,
@@ -33,9 +32,8 @@ enum DashboardUsageAccountSelection {
         }
     }
 
-    /// A confirmed Settings switch applies the selected authentication to the family's shared
-    /// runtime home. Point the dashboard at that bare runtime rather than an ambient config-dir
-    /// card that may still hold an older copy of the same account's rotating credential.
+    /// 계정 전환 확정 후 dashboard 선택을 family 공유 runtime으로 지정
+    /// 구 credential 사본을 들고 있을 수 있는 ambient config-dir card 대신 bare runtime을 가리키는 규칙
     @discardableResult
     static func selectAfterAccountSwitch(
         family: String,

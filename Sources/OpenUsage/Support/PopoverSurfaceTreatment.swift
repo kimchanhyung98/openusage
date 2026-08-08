@@ -1,19 +1,12 @@
 import SwiftUI
 
-/// How the popover's page tray and grouped cards paint their base.
-///
-/// `.opaque` is the default and keeps today's solid panel (and the windowless `ShareCardView`
-/// `ImageRenderer` export, which never injects a non-default value). `.translucent` clears the opaque
-/// page base so the AppKit behind-window vibrancy backdrop — the desktop — shows through. The value is
-/// driven from `PopoverTransparencyStore.surfaceTreatment` and read by `PopoverSurface` (the tray) and
-/// `CardSurfaceModifier` (the grouped cards).
+/// popover의 page tray와 grouped card가 base를 칠하는 방식.
+/// `.opaque`가 기본(windowless `ShareCardView` export 포함); 값은 `PopoverTransparencyStore.surfaceTreatment`가 공급.
 enum PopoverSurfaceTreatment: Equatable, Sendable {
-    /// Today's solid panel: opaque tray, opaque card base.
+    /// 불투명 tray·card base의 solid panel.
     case opaque
-    /// The page clears to whatever is behind the window (the behind-window vibrancy desktop, the party
-    /// tint over it, or the drunk haze); cards drop their opaque base for a frosted `.regularMaterial`
-    /// so text stays legible over it — the HIG-correct "translucent but legible" content material, not a
-    /// bare fill. Shared by Increase Transparency, party, and drunk.
+    /// page base를 비워 behind-window vibrancy backdrop이 비침; card는 가독성을 위해 frosted `.regularMaterial`로 교체.
+    /// Increase Transparency·party·drunk가 공유.
     case translucent
 }
 

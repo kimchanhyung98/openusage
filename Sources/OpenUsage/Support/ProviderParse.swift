@@ -1,13 +1,9 @@
 import Foundation
 
-/// Shared, behavior-free parsing chores used by more than one provider. Consolidated here so a new
-/// provider reuses the same JSON/number/percent handling instead of copying it.
+/// 여러 provider가 공유하는 동작 없는 파싱 유틸 — 새 provider가 JSON/숫자/percent 처리를 복사하지 않고 재사용.
 enum ProviderParse {
-    /// Decode a top-level JSON object from raw response data. An empty body is a silent `nil` (the
-    /// common no-content case callers tolerate); a non-empty body that fails to parse is logged at
-    /// the boundary so a malformed external-API response (HTML error page, truncated/garbled JSON)
-    /// leaves a diagnostic instead of vanishing into an indistinguishable `nil`. A valid-but-non-object
-    /// payload (e.g. a JSON array) returns `nil` without a log — it parsed fine, it just isn't an object.
+    /// raw response data에서 top-level JSON object 디코드.
+    /// 빈 body는 조용한 `nil`; 파싱 실패한 비어 있지 않은 body는 boundary에서 로그; 유효하지만 object가 아닌 payload는 로그 없이 `nil`.
     static func jsonObject(_ data: Data) -> [String: Any]? {
         guard !data.isEmpty else { return nil }
         do {
@@ -18,9 +14,8 @@ enum ProviderParse {
         }
     }
 
-    /// Permissive numeric read: accepts JSON numbers and numeric strings, rejecting booleans and
-    /// non-finite values. `JSONSerialization` bridges booleans through `NSNumber`, so the Core
-    /// Foundation type check is required to keep `true`/`false` from becoming `1`/`0`.
+    /// 관대한 숫자 읽기 — JSON 숫자와 숫자 문자열 허용, boolean·non-finite 거부.
+    /// `JSONSerialization`이 boolean을 `NSNumber`로 브리지하므로 `true`/`false`가 `1`/`0`이 되지 않도록 CF 타입 검사 필수.
     static func number(_ value: Any?) -> Double? {
         if let number = value as? NSNumber {
             guard CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
@@ -34,10 +29,8 @@ enum ProviderParse {
         return nil
     }
 
-    /// Permissive boolean read for `JSONSerialization` output: accepts real `Bool`s, numeric `NSNumber`s
-    /// (nonzero → true, via `boolValue`), and the strings "true"/"1"/"false"/"0" (case-insensitive).
-    /// Returns `nil` for anything else, so an absent or unrecognized field stays distinguishable from an
-    /// explicit false. `Bool` is tried before `NSNumber` so a JSON `0`/`1` bridges the same way either path.
+    /// `JSONSerialization` 출력용 관대한 boolean 읽기 — `Bool`, 숫자 `NSNumber`, "true"/"1"/"false"/"0"(대소문자 무관) 허용.
+    /// 그 외에는 `nil` — 부재·비인식 필드가 명시적 false와 구분되도록 함.
     static func bool(_ value: Any?) -> Bool? {
         if let bool = value as? Bool { return bool }
         if let number = value as? NSNumber { return number.boolValue }
@@ -51,20 +44,18 @@ enum ProviderParse {
         return nil
     }
 
-    /// Clamp a percentage into 0...100, treating non-finite input as 0.
+    /// 백분율의 0...100 clamp — non-finite 입력은 0 처리.
     static func clampPercent(_ value: Double) -> Double {
         guard value.isFinite else { return 0 }
         return min(max(value, 0), 100)
     }
 
-    /// Convert integer cents to dollars: snap to whole cents, then scale. Inputs are already integer
-    /// cents from the providers' APIs; rounding guards against float drift before the divide.
+    /// 정수 cents의 달러 변환 — 나누기 전 반올림으로 float drift 방지.
     static func centsToDollars(_ cents: Double) -> Double {
         cents.rounded() / 100
     }
 
-    /// Decode `T` from JSON text, falling back to a hex-encoded JSON blob — some providers store their
-    /// credentials/auth file as hex (optionally `0x`-prefixed) rather than plain JSON.
+    /// JSON 텍스트에서 `T` 디코드, hex 인코딩 JSON blob으로 fallback — 일부 provider는 자격 증명 파일을 hex(`0x` prefix 허용)로 저장.
     static func decodeJSONWithHexFallback<T: Decodable>(_ text: String, as type: T.Type) -> T? {
         if let decoded = decodeJSON(text, as: type) { return decoded }
 
@@ -93,8 +84,7 @@ enum ProviderParse {
         return try? JSONDecoder().decode(type, from: data)
     }
 
-    /// Decode a JWT's payload (the middle dot-separated segment) as a JSON object. Base64url is
-    /// translated to standard base64 and padded before decoding.
+    /// JWT payload(가운데 segment)의 JSON object 디코드 — base64url을 표준 base64로 변환·패딩 후 디코드.
     static func jwtPayload(_ token: String) -> [String: Any]? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }
@@ -112,9 +102,8 @@ enum ProviderParse {
         return json
     }
 
-    /// Unwrap a `go-keyring-base64:`-prefixed value — how Go tools (`gh`, `agy`) store secrets in the
-    /// macOS Keychain — returning the decoded string. A value without the prefix is returned trimmed
-    /// as-is; an empty result is `nil`. Shared by every provider that reads a go-keyring-stored token.
+    /// `go-keyring-base64:` prefix 값 unwrap — Go 도구(`gh`, `agy`)의 macOS Keychain 저장 방식.
+    /// prefix 없는 값은 trim만 해 반환; 빈 결과는 `nil`.
     static func unwrapGoKeyring(_ raw: String) -> String? {
         var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefix = "go-keyring-base64:"
@@ -132,9 +121,8 @@ enum ProviderParse {
 }
 
 extension String {
-    /// Percent-encode one `application/x-www-form-urlencoded` value. Only the ASCII characters
-    /// RFC 3986 defines as unreserved pass through; spaces use `%20` so a literal `+` remains
-    /// distinguishable from a form-space separator.
+    /// `application/x-www-form-urlencoded` 값 1개의 percent-encode.
+    /// RFC 3986 unreserved ASCII만 통과; 공백은 `%20`이라 literal `+`가 form-space와 구분됨.
     var urlFormEncoded: String {
         var encoded = ""
         encoded.reserveCapacity(utf8.count)
@@ -150,12 +138,12 @@ extension String {
         return encoded
     }
 
-    /// `nil` when the string is empty, otherwise the string itself — for treating "" as "missing".
+    /// 빈 문자열이면 `nil`, 아니면 자기 자신 — ""를 "없음"으로 다루기 위함.
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
 
-    /// Drop any trailing slashes, for joining base URLs and paths.
+    /// 끝의 slash 제거 — base URL과 path 결합용.
     var trimmingTrailingSlashes: String {
         var copy = self
         while copy.hasSuffix("/") {
@@ -164,9 +152,8 @@ extension String {
         return copy
     }
 
-    /// Title-case a provider plan name: split on `isSeparator`, upper-case each word's first character,
-    /// and re-join with single spaces. When `lowercasingTail` is true the rest of each word is
-    /// lower-cased (e.g. "PRO PLAN" → "Pro Plan"); otherwise it's preserved (e.g. "pro_plus" → "Pro Plus").
+    /// provider plan 이름의 title-case — `isSeparator`로 분할, 각 단어 첫 글자 대문자화, 단일 공백으로 재결합.
+    /// `lowercasingTail`이 true면 나머지를 소문자화("PRO PLAN" → "Pro Plan"), 아니면 보존("pro_plus" → "Pro Plus").
     func titleCased(separator isSeparator: (Character) -> Bool, lowercasingTail: Bool = false) -> String {
         split(whereSeparator: isSeparator)
             .map { word in

@@ -1,9 +1,7 @@
 import Foundation
 
-/// One parsed row from Cursor's CSV usage export. `imputedCostDollars` is the locally priced dollar
-/// amount (server CSV tokens × the shared model pricing); `nil` when no pricing source knows the
-/// model — those rows contribute tokens but flag the day's cost as incomplete. Ported from
-/// `../cursorcat/Sources/CursorCat/API/UsageCSV.swift`, dropping the actual-cost / CostMode path for v1.
+/// Cursor CSV usage export의 파싱된 행 하나. `imputedCostDollars`는 로컬 산정 달러(server CSV tokens × 공유 모델 pricing) — 어떤 pricing source도 모델을 모르면 nil, 그 행은 tokens만 기여하고 그날 cost를 불완전으로 표시.
+/// `../cursorcat/Sources/CursorCat/API/UsageCSV.swift`에서 이식, v1에서는 actual-cost/CostMode 경로 제외.
 struct CursorUsageCSVRow: Sendable, Equatable {
     var date: Date
     var model: String
@@ -32,10 +30,7 @@ enum CursorUsageCSV {
         static let required = [date, model, cacheWrite, input, cacheRead, output]
     }
 
-    // Date parsing runs once per row of a potentially large export; the three fixed-format parsers are
-    // stateless after configuration, so they're built once instead of per call. DateFormatter and
-    // ISO8601DateFormatter are thread-safe for parsing; `nonisolated(unsafe)` shares the immutable
-    // instances without per-call allocation.
+    // 날짜 파싱은 큰 export의 행마다 실행 — 고정 형식 parser 3개는 설정 후 stateless라 호출마다 대신 1회 생성. DateFormatter·ISO8601DateFormatter는 파싱에 thread-safe, `nonisolated(unsafe)`로 불변 인스턴스 공유.
     private nonisolated(unsafe) static let isoFractional: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -53,12 +48,8 @@ enum CursorUsageCSV {
         return f
     }()
 
-    /// Pure boundary parser: maps Cursor's exported CSV text into priced rows, rejects malformed rows,
-    /// and fails when the export schema itself is unusable. Empty numeric cells are valid zeroes; a
-    /// non-empty non-integer or negative token count rejects that row instead of silently becoming zero.
-    ///
-    /// Cursor's CSV rows are aggregates, not individual requests, so long-context thresholds and Max
-    /// Mode uplift cannot be applied reliably from row totals; rows bill at the base model API rate.
+    /// 순수 boundary parser: Cursor의 export CSV 텍스트를 priced 행으로 매핑, 잘못된 행은 거부, export schema 자체가 못 쓰면 실패. 빈 숫자 셀은 유효한 0 — 비어 있지 않은 비정수·음수 token 수는 조용히 0이 되는 대신 그 행을 거부.
+    /// Cursor CSV 행은 개별 요청이 아닌 집계라 long-context threshold·Max Mode uplift를 행 합계에 신뢰성 있게 적용 불가 — 행은 base 모델 API rate로 과금.
     static func parse(csv: String, pricing: ModelPricing) throws -> CursorUsageCSVParseResult {
         var rows: [CursorUsageCSVRow] = []
         var rejectedRowCount = 0
@@ -91,9 +82,7 @@ enum CursorUsageCSV {
             }
             acceptedTokenCount = aggregate.partialValue
 
-            // The CSV's "Input (w/ Cache Write)" tokens were written to the prompt cache; Anthropic
-            // bills those at the 5-minute cache-write rate, other providers at the input rate (their
-            // pricing entries carry cacheWrite == input).
+            // CSV의 "Input (w/ Cache Write)" tokens는 prompt cache에 기록된 것 — Anthropic은 5분 cache-write rate, 다른 provider는 input rate로 과금(그들의 pricing entry는 cacheWrite == input).
             let tokens = TokenBreakdown(
                 input: input,
                 cacheWrite5m: cacheWrite,

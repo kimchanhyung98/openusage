@@ -1,17 +1,10 @@
 import Foundation
 
-/// The installed provider set and its canonical order. Both the menu-bar app and one-shot CLI build
-/// their runtimes here so credentials, refresh behavior, pricing, and normalization can never drift.
+/// 설치된 provider 집합과 canonical 순서. 메뉴바 앱과 one-shot CLI가 모두 여기서 runtime을 구성 — credential·refresh·pricing·normalization의 drift 방지.
 @MainActor
 enum ProviderCatalog {
-    /// `claudeCards` carries the extra Claude account cards found by the launch account pass
-    /// (`ProviderAccountAssembly`). Each becomes an ordinary runtime inserted right after the default
-    /// Claude card, with credentials and usage logs pinned to exactly its own config dir.
-    /// `snapshotCards` are inactive managed profiles rendered read-only from their Keychain
-    /// snapshots. `codexSharedAuthHome`, set while managed Codex switching is active, pins the
-    /// default Codex card to the shared `auth.json` the switch transaction owns — a stale
-    /// `Codex Auth` Keychain item must never fall back to another account. The empty defaults keep
-    /// the historical single-card set for focused tests and callers that skip the account pass.
+    /// `claudeCards`는 launch account pass(`ProviderAccountAssembly`)가 찾은 추가 Claude 카드(기본 카드 뒤 삽입, 자기 config dir에 고정), `snapshotCards`는 Keychain snapshot을 read-only로 렌더하는 비활성 managed profile.
+    /// `codexSharedAuthHome`은 관리형 Codex 전환 중 기본 Codex 카드를 switch transaction 소유의 shared `auth.json`에 고정 — 낡은 `Codex Auth` Keychain 항목의 다른 account fallback 금지. 빈 기본값은 기존 단일 카드 구성 유지.
     static func make(
         defaults: UserDefaults = .standard,
         claudeCards: [ClaudeAccountCard] = [],
@@ -20,24 +13,12 @@ enum ProviderCatalog {
         codexSharedAuthHome: String? = nil,
         claudeManagedSwitchActive: Bool = false
     ) -> [ProviderRuntime] {
-        // Default provider order (see AGENTS.md "## Providers"): the three established providers first,
-        // then every other provider alphabetically by display name. Account cards slot in right after
-        // their family's default card.
-        //
-        // Every baked `Provider.displayName` here is the DERIVED default — renames live only in the
-        // account registry and are resolved at render time (`ProviderAccountRecord.resolvedDisplayName`),
-        // so a baked name can never be a stale copy of one.
+        // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
+        // 여기 박힌 `Provider.displayName`은 DERIVED 기본값 — rename은 account registry에만 살고 렌더 시 해석(`ProviderAccountRecord.resolvedDisplayName`)되므로 stale 복사본 불가.
         var runtimes: [ProviderRuntime] = []
         runtimes.append(ClaudeProvider(
-            // Once extra Claude cards exist, an unpinned Desktop fallback could borrow a login that
-            // belongs to one of them — fetching that account's usage onto the default card. Desktop
-            // returns as its own properly-pinned source kind in Phase 3. The same rule applies while
-            // managed switching is active: the Desktop login can be a different account than the one
-            // switched into the shared home, and an auth failure must surface as re-login rather
-            // than another account's usage.
-            // While managed switching is active the switch transaction owns `~/.claude`, so the
-            // card's credential reads and spend scan pin there too — an ambient CLAUDE_CONFIG_DIR
-            // must not point the bare card at a different home than the one being managed.
+            // 추가 Claude 카드가 있으면 unpinned Desktop fallback이 그 카드의 로그인을 빌려 기본 카드에 남의 usage를 표시할 수 있음 — 관리형 전환 중에도 동일하며, auth 실패는 다른 account의 usage가 아닌 재로그인으로 표면화되어야 함.
+            // 관리형 전환 중에는 switch transaction이 `~/.claude`를 소유 — credential 읽기와 spend scan도 거기에 고정, ambient CLAUDE_CONFIG_DIR가 다른 home을 가리키게 두지 않음.
             authStore: ClaudeAuthStore(
                 allowsDesktopFallback: claudeCards.isEmpty && !claudeManagedSwitchActive,
                 pinsSharedHome: claudeManagedSwitchActive
@@ -75,9 +56,7 @@ enum ProviderCatalog {
         return runtimes
     }
 
-    /// An extra Claude account card: same provider machinery, credentials and logs pinned to one
-    /// login. The scanner's parse cache is partitioned per card so distinct homes never share
-    /// records.
+    /// 추가 Claude account 카드: 같은 provider 기계장치에 credential·log만 한 로그인에 고정. parse cache는 카드별 partition — 서로 다른 home이 record를 공유하지 않음.
     private static func claudeAccountRuntime(card: ClaudeAccountCard) -> ClaudeProvider {
         ClaudeProvider(
             provider: ClaudeProvider.makeProvider(id: card.id, displayName: card.displayName),

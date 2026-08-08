@@ -47,7 +47,7 @@ final class OpenRouterProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same source as `refresh()`: a stored or environment-exported API key.
+        // `refresh()`와 동일 소스 — 저장되었거나 환경 변수로 export된 API key
         await loadOffMainActor { [authStore] in authStore.loadAPIKey() } != nil
     }
 
@@ -56,9 +56,8 @@ final class OpenRouterProvider: ProviderRuntime {
             return ProviderSnapshot.error(provider: provider, error: OpenRouterAuthError.missingKey)
         }
 
-        // Both endpoints are fetched independently and mapped from whatever succeeds. `/credits` carries
-        // the balance and `/key` the tier + period spend; OpenRouter gates some endpoints to specific key
-        // types, so one returning 403 must not blank out the data the other returned.
+        // 두 endpoint를 독립 fetch해 성공한 쪽만 매핑 — `/credits`는 balance, `/key`는 tier + period spend
+        // OpenRouter가 key 타입별로 endpoint를 gate하므로 한쪽의 403이 다른 쪽 데이터를 지우면 안 됨
         let credits = await load { try await usageClient.fetchCredits(apiKey: auth.apiKey) }
         let key = await load { try await usageClient.fetchKey(apiKey: auth.apiKey) }
 
@@ -77,9 +76,8 @@ final class OpenRouterProvider: ProviderRuntime {
             return ProviderSnapshot.make(provider: provider, plan: plan, lines: lines, refreshedAt: now())
         }
 
-        // Nothing usable came back. Only call the key invalid when BOTH endpoints rejected it
-        // (401/403) — OpenRouter gates some endpoints to specific key types, so a single 403 (e.g.
-        // `/credits` forbidden) while `/key` succeeded means the key is valid but gated, not invalid.
+        // 사용 가능한 응답 전무 — 두 endpoint 모두 401/403일 때만 invalid key 판정
+        // 한쪽만 403이면 key 타입별 gate일 뿐 유효한 key — invalid 처리 금지
         if credits.isAuthFailure && key.isAuthFailure {
             return ProviderSnapshot.error(provider: provider, error: OpenRouterAuthError.invalidKey)
         }
@@ -87,8 +85,7 @@ final class OpenRouterProvider: ProviderRuntime {
         return ProviderSnapshot.error(provider: provider, error: error)
     }
 
-    /// Run one endpoint call and classify the outcome: a parsed data object on 2xx, an auth failure on
-    /// 401/403, or a typed failure for any other non-2xx, transport error, or unparsable body.
+    /// endpoint 호출 1회 실행 후 결과 분류 — 2xx는 parse된 data object, 401/403은 auth failure, 그 외는 typed failure.
     private func load(_ call: () async throws -> HTTPResponse) async -> EndpointResult {
         do {
             let response = try await call()

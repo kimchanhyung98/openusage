@@ -1,39 +1,31 @@
 import Foundation
 
-/// Matches synced peer histories to this Mac's cards by ACCOUNT identity instead of by card id.
-///
-/// The same account can be the default card on one Mac and an extra account card on another (which
-/// login holds a family's default home differs per machine), so card ids don't travel: a peer's
-/// `claude` entry may belong to the account this Mac shows as `claude@ab12cd34`, and vice versa. v2
-/// documents carry a per-card identity map that makes the match exact; v1 documents (no identities)
-/// keep the legacy same-card-id merge for bare ids. Peer accounts with no card on this Mac at all
-/// become `remoteOnly` entries — surfaced in Total Spend only, never as ghost cards.
+/// 동기화된 peer history를 카드 id가 아닌 계정 identity로 이 Mac의 카드에 매칭.
+/// 같은 계정이 Mac마다 default/추가 카드로 달라 카드 id는 이동 불가 — v2 문서는 카드별 identity map으로 정확 매칭, v1 문서는 bare id에 legacy same-card-id merge 유지.
+/// 이 Mac에 카드 없는 peer 계정은 `remoteOnly` — Total Spend에만 표시, ghost 카드 금지.
 enum PeerHistoryRemapper {
     struct Remapped {
-        /// Peer histories addressed to a LOCAL card id, ready for the same-id day merge.
+        /// 로컬 카드 id로 주소 지정된 peer history — same-id day merge 대상.
         var histories: [(cardID: String, history: ProviderUsageHistory)] = []
-        /// Peer accounts with no local card, keyed by identity.
+        /// 로컬 카드 없는 peer 계정 — identity 기준 그룹.
         var remoteOnly: [RemoteOnlyHistory] = []
     }
 
     struct RemoteOnlyHistory {
         var identityKey: String
         var family: String
-        /// The account's identity-derived card id (`claude@ab12cd34`) — the same id the account
-        /// gets as a card on any Mac it's signed in on. Names the Total Spend slice; which Mac the
-        /// spend came from is deliberately not part of the name (irrelevant to the total).
+        /// 계정의 identity 파생 카드 id (`claude@ab12cd34`) — 어느 Mac에서든 동일.
+        /// Total Spend slice 이름 — 출처 Mac은 의도적 미포함(합계에 무관).
         var cardID: String
         var histories: [ProviderUsageHistory]
     }
 
-    /// `localIdentityByCardID` is this Mac's card → identity map (the launch account pass's
-    /// `identityKeysByCard`).
+    /// `localIdentityByCardID`: 이 Mac의 카드 → identity map (launch 계정 pass의 `identityKeysByCard`).
     static func remap(
         documents: [UsageHistoryDocument],
         localIdentityByCardID: [String: String]
     ) -> Remapped {
-        // Invert to identity → card, preferring the bare (default) card when an identity appears on
-        // two local cards at once (transiently possible around a swap).
+        // identity → 카드로 역전 — 한 identity가 로컬 카드 2개에 동시 등장 시(swap 전후 일시 가능) bare(default) 카드 우선.
         var localCardByIdentity: [String: String] = [:]
         for (cardID, identity) in localIdentityByCardID.sorted(by: { $0.key < $1.key }) {
             if let existing = localCardByIdentity[identity], !ProviderAccountID.isAccountCard(existing) {
@@ -62,11 +54,8 @@ enum PeerHistoryRemapper {
                     if let localCard = localCardByIdentity[identity] {
                         result.histories.append((localCard, history))
                     } else if !ProviderAccountID.isAccountCard(peerCardID), localIdentityByCardID[peerCardID] == nil {
-                        // The peer named its bare card's account, but this Mac's own bare card has
-                        // an UNRESOLVED identity this launch — we can't prove a mismatch, so keep
-                        // the legacy same-card-id merge rather than splitting what is most likely
-                        // the same account into a separate Total Spend slice. A genuinely different
-                        // account separates on the next launch that resolves the local identity.
+                        // peer는 bare 카드 계정을 특정했으나 이 Mac의 bare 카드 identity는 이번 launch 미해석 — mismatch 증명 불가.
+                        // legacy same-card-id merge 유지 — 같은 계정일 공산이 큰 history의 Total Spend 분리 방지; 실제 다른 계정은 identity 해석되는 다음 launch에 분리.
                         result.histories.append((peerCardID, history))
                     } else {
                         collectRemoteOnly(
@@ -78,11 +67,8 @@ enum PeerHistoryRemapper {
                     }
                     continue
                 }
-                // No identity recorded (v1 document, or a card this peer couldn't identify): bare
-                // ids keep the legacy same-card-id merge; account-card ids still match when this Mac
-                // has the same identity-derived card id, else they're remote-only. The peer's card
-                // id doubles as both the grouping key and the display id — it IS the account's
-                // identity-derived id, just minted on the peer.
+                // identity 미기록(v1 문서, 또는 peer가 미식별한 카드): bare id는 legacy same-card-id merge, account-card id는 이 Mac에 같은 id 있으면 매칭, 없으면 remote-only.
+                // peer의 카드 id가 grouping 키 겸 표시 id — peer에서 발급된 identity 파생 id.
                 if !ProviderAccountID.isAccountCard(peerCardID) || localIdentityByCardID[peerCardID] != nil {
                     result.histories.append((peerCardID, history))
                 } else {

@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// Shared chrome for the branded, off-screen share-card PNGs (`ShareCardView`, `TotalSpendShareCardView`):
-/// the authored width, opaque tray background (an `ImageRenderer` has no window backdrop), forced
-/// appearance, tooltip suppression (the tooltips' AppKit anchors rasterize as yellow boxes otherwise),
-/// and the centered watermark footer. Callers supply just their header + body; wrapping them here keeps
-/// every exported card one family and these settings in one place.
+/// 공유 카드 PNG 공용 chrome (`ShareCardView`, `TotalSpendShareCardView`).
+/// `ImageRenderer`에 window 배경이 없어 불투명 배경 필수, tooltip은 AppKit 앵커가 노란 박스로 래스터화되어 차단.
 struct ShareCardChrome<Content: View>: View {
     let appearance: ColorScheme
     @ViewBuilder var content: Content
@@ -21,7 +18,6 @@ struct ShareCardChrome<Content: View>: View {
         .environment(\.hoverTooltipsDisabled, true)
     }
 
-    /// The brand mark + tagline, centered at the bottom. Quiet (secondary) so it reads as a watermark.
     private var watermarkFooter: some View {
         HStack(spacing: 6) {
             ProviderIcon(source: .providerMark("openusage"), inset: 0)

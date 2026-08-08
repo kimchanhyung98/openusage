@@ -1,22 +1,17 @@
 import Foundation
 
-/// Finds a running Codeium-derived language server (Antigravity's bundled `language_server`, or the
-/// `agy` CLI) and returns the CSRF token + listening ports needed to call its local Connect-RPC service.
-///
-/// This is a native Swift port of the Tauri host's `ls.discover`: scan `ps` for the process, match it by
-/// name + marker flags, pull `--csrf_token` / `--extension_server_port` from its argv, and read its
-/// listening TCP ports via `lsof`. All work is blocking subprocess I/O, so call `discover` off the main
-/// actor (e.g. via `loadOffMainActor`).
+/// 실행 중인 Codeium 계열 language server(Antigravity 번들 `language_server`, `agy` CLI) 탐지 — 로컬 Connect-RPC 호출용 CSRF token + listening port 반환.
+/// Tauri 호스트 `ls.discover`의 Swift port — `ps` 스캔, 이름+marker flag 매칭, argv에서 flag 추출, `lsof`로 port read.
+/// 전부 blocking subprocess I/O — `discover`는 main actor 밖에서 호출.
 struct LanguageServerDiscovery: Sendable {
     struct Options: Sendable {
-        /// Executable name to match (e.g. `language_server`, `agy`).
+        /// 매칭할 실행 파일 이름 (e.g. `language_server`, `agy`).
         var processName: String
-        /// Lowercased marker values matched against `--app_data_dir` / `--ide_name` / `--override_ide_name`
-        /// (exact), falling back to a `/marker/` path substring. Empty means "match any instance".
+        /// `--app_data_dir`/`--ide_name`/`--override_ide_name`에 정확 매칭하는 소문자 marker — 실패 시 `/marker/` 경로 substring fallback, 빈 배열은 "아무 인스턴스나 매칭".
         var markers: [String]
-        /// Flag whose value is the CSRF token (e.g. `--csrf_token`). Empty means the process has none.
+        /// CSRF token 값을 담는 flag (e.g. `--csrf_token`) — 빈 값은 token 없음.
         var csrfFlag: String
-        /// Optional flag carrying an HTTP fallback port (e.g. `--extension_server_port`).
+        /// HTTP fallback port를 담는 선택적 flag (e.g. `--extension_server_port`).
         var portFlag: String?
     }
 
@@ -85,8 +80,7 @@ struct LanguageServerDiscovery: Sendable {
 
     // MARK: - Pure helpers (port of the Rust host logic; unit-tested directly)
 
-    /// Parse `ps -ax -o pid=,command=` output into the candidates that match the process + markers,
-    /// sorted by marker rank (exact flag match before path-substring match).
+    /// `ps -ax -o pid=,command=` 출력을 process+marker 매칭 candidate로 파싱 — marker rank 순 정렬(정확 flag 매칭이 경로 substring보다 우선).
     static func rankedCandidates(psOutput: String, options: Options) -> [(pid: Int32, command: String)] {
         let processNameLower = options.processName.lowercased()
         let markersLower = options.markers
@@ -113,7 +107,7 @@ struct LanguageServerDiscovery: Sendable {
             .map { (pid: $0.pid, command: $0.command) }
     }
 
-    /// Extract the value of a CLI flag from a command string. Handles `--flag value` and `--flag=value`.
+    /// command 문자열에서 CLI flag 값 추출 — `--flag value`와 `--flag=value` 지원.
     static func extractFlag(command: String, flag: String) -> String? {
         let parts = command.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         let flagEq = flag + "="
@@ -127,9 +121,8 @@ struct LanguageServerDiscovery: Sendable {
         return nil
     }
 
-    /// Marker match priority: exact `--ide_name` / `--override_ide_name` / `--app_data_dir` value (rank 0,
-    /// prevents "antigravity" matching "antigravity-next"); else `/marker/` path substring (rank 1). No
-    /// markers means match any instance (rank 0). Returns nil when nothing matches.
+    /// marker 매칭 우선순위 — 정확한 `--ide_name`/`--override_ide_name`/`--app_data_dir` 값은 rank 0("antigravity"의 "antigravity-next" 오매칭 방지), `/marker/` 경로 substring은 rank 1.
+    /// marker 없음은 rank 0(모든 인스턴스 매칭), 무매칭은 nil.
     static func markerRank(command: String, markersLower: [String]) -> Int? {
         if markersLower.isEmpty { return 0 }
 
@@ -148,7 +141,7 @@ struct LanguageServerDiscovery: Sendable {
         return matches ? 1 : nil
     }
 
-    /// First argv token, honoring a quoted executable path.
+    /// 첫 argv token — 따옴표로 감싼 실행 경로 지원.
     static func argv0(command: String) -> String {
         let trimmed = command.drop { $0 == " " || $0 == "\t" }
         guard let quote = trimmed.first, quote == "\"" || quote == "'" else {
@@ -176,12 +169,12 @@ struct LanguageServerDiscovery: Sendable {
             || commandLower.contains("/\(processNameLower)\t")
     }
 
-    /// Parse listening port numbers from `lsof -nP -iTCP -sTCP:LISTEN` output (deduped, ascending).
+    /// `lsof -nP -iTCP -sTCP:LISTEN` 출력에서 listening port 파싱 (dedupe, 오름차순).
     static func parseListeningPorts(_ output: String) -> [Int] {
         var ports = Set<Int>()
         for line in output.split(whereSeparator: \.isNewline) {
             guard line.contains("LISTEN") else { continue }
-            // e.g. "... TCP 127.0.0.1:52168 (LISTEN)" — scan tokens in reverse for the address:port.
+            // e.g. "... TCP 127.0.0.1:52168 (LISTEN)" — address:port를 찾아 token 역순 스캔.
             for token in line.split(separator: " ").reversed() {
                 if let colon = token.lastIndex(of: ":"),
                    let port = Int(token[token.index(after: colon)...]),

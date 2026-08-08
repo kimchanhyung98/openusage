@@ -1,19 +1,16 @@
 import Foundation
 
-/// Antigravity surfaces three user-facing failures. Every per-strategy error (LS not running, a decode
-/// miss) is swallowed and the next strategy is tried; only when all strategies are exhausted does one of
-/// these reach the UI.
+/// Antigravity의 user-facing 실패. 전략별 오류(LS 미실행, decode miss)는 삼키고 다음 전략 시도 — 모든 전략 소진 시에만 이 중 하나가 UI 도달.
 enum AntigravityError: Error, LocalizedError, Equatable {
-    /// No usable credentials anywhere (no LS running, no keychain token, nothing cached).
+    /// 어디에도 사용 가능한 credential 없음 (LS 미실행, keychain token 없음, cache 없음).
     case notSignedIn
-    /// The Keychain credential may exist, but macOS would not let OpenUsage read it.
+    /// Keychain credential이 있을 수 있으나 macOS가 읽기를 거부.
     case credentialStoreUnreadable
-    /// The Keychain item was present but did not contain usable Antigravity credential data.
+    /// Keychain 항목은 있으나 사용 가능한 Antigravity credential 데이터가 없음.
     case invalidCredentialData
-    /// A token was found but rejected (401/403) and a refresh couldn't recover it.
+    /// token이 있었지만 거부(401/403)되고 refresh로도 복구 실패.
     case authExpired
-    /// Credentials exist and look valid, but every endpoint was unreachable (network / server outage).
-    /// Distinct from `notSignedIn` so a signed-in user isn't told to start Antigravity during an outage.
+    /// credential은 유효해 보이나 모든 endpoint 접근 불가 (네트워크/서버 장애). `notSignedIn`과 구분 — 장애 중 로그인된 사용자에게 Antigravity 시작을 안내하지 않기 위함.
     case unavailable
 
     var errorDescription: String? {

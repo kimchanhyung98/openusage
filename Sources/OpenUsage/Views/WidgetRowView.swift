@@ -1,42 +1,26 @@
 import SwiftUI
 
-/// One metric as a row inside a provider's grouped list container. The provider icon is drawn once in the
-/// section header (not per row), so a row shows only the metric. Two layouts:
-/// - **Bounded** (`limit != nil`, meter row): a label line (right-aligned flame + run-out time when
-///   projected to run out before reset, or "~3% spare" when cutting it close), then a full-width
-///   capsule meter (color = pace verdict; in the amber state a tick splits the projected spare
-///   cushion off the bar; hovering shows the verdict), then a primary text row ("50% left" ⟷ "Resets in 4d 17h").
-///   Mirrors the original OpenUsage card.
-/// - **Unbounded** (`limit == nil`, text-only row): **no bar**. Label on the left, a single right-aligned
-///   descriptive line ("1,503 left") and an optional secondary line ("on-device estimate").
-/// Rows size to their own content (variable height). Same `WidgetData` the menu bar uses — only layout differs.
+/// Provider 카드 안의 metric 한 줄: bounded(`limit != nil`)는 label+meter+텍스트 행, unbounded는 bar 없는 text-only 행.
+/// 메뉴 바와 동일한 `WidgetData` 사용 — layout만 다름.
 struct WidgetRowView: View {
     let data: WidgetData
-    /// Flips the global relative/absolute reset display. Supplied where the row has the data store
-    /// (the dashboard list); `nil` in static contexts like the drag-reorder preview, where the reset
-    /// label stays plain text.
+    /// 전역 relative/absolute reset 표시 토글 — 정적 컨텍스트(drag-reorder preview 등)에서는 `nil`이라
+    /// reset label이 plain text로 렌더링.
     var onToggleResetDisplay: (() -> Void)?
-    /// Flips the global Used/Left meter style — the headline's counterpart to the reset toggle.
-    /// Same supply rules as `onToggleResetDisplay`.
+    /// 전역 Used/Left meter 스타일 토글 — `onToggleResetDisplay`와 동일한 공급 규칙.
     var onToggleMeterStyle: (() -> Void)?
-    /// True when this text-only row sits directly under another text-only row. Rows don't know
-    /// their neighbors — the list supplies it — and both densities use it to pull consecutive
-    /// one-liners into a single cluster (Compact a step harder).
+    /// 이 text-only 행이 다른 text-only 행 바로 아래에 있는지 여부 — 행은 이웃을 모르므로 리스트가 공급.
     var condensedTop: Bool = false
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @State private var modelHover = HoverPopoverState()
-    /// Routes the resets popover's claim flow to this row's own card; `nil` outside the live
-    /// dashboard (previews, share renders), which renders the timeline read-only.
+    /// resets popover의 claim 흐름을 이 행의 카드로 라우팅 — live dashboard 밖(preview, share render)에서는
+    /// `nil`이라 timeline이 read-only.
     @Environment(\.codexResetClaim) private var codexResetClaim
-    /// Party easter egg: fill meter bars with the party gradient instead of the severity color. Off by
-    /// default everywhere else.
+    /// Party easter egg — meter bar를 severity 색 대신 party gradient로 채움.
     @Environment(\.popoverPartyMode) private var partyMode
 
-    /// Both row fonts come from the density setting: point sizes — not just padding — are what make
-    /// Compact read as a denser mode. The sizes are explicit because semantic
-    /// `.headline.weight(.regular)` does not match `.headline` on macOS, and `minimumScaleFactor`
-    /// was shrinking only the trailing value.
+    /// 행 폰트는 density 설정에서 결정 — padding이 아닌 point size 차이가 Compact를 실제 밀도 높은 모드로 만듦.
     private var labelFont: Font {
         .system(size: density.labelPointSize, weight: .semibold)
     }
@@ -46,10 +30,8 @@ struct WidgetRowView: View {
     }
 
     var body: some View {
-        // A row with a concrete reset date derives time-sensitive state (reset countdown, pace marker,
-        // "Runs out in …") from the current clock, so it re-renders on a 30s tick — the cadence the
-        // original app uses — instead of waiting for the next data refresh. TimelineView only schedules
-        // ticks while the popover is actually visible. Rows without a reset date are static.
+        // reset 날짜가 있는 행은 시계 기반 상태를 위해 30초 tick으로 re-render — TimelineView는 popover 표시 중에만
+        // tick 스케줄, 날짜 없는 행은 static.
         Group {
             if data.resetsAt != nil || !data.expiriesAt.isEmpty {
                 TimelineView(.periodic(from: .now, by: 30)) { _ in
@@ -61,11 +43,7 @@ struct WidgetRowView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
-        // Bar rows are multi-line and earn breathing room; single-line text rows (Today / Yesterday /
-        // Last 30 Days) stay tighter so consecutive ones read as a cluster, not evenly-spaced
-        // full-height rows. This differentiation — not the fonts — is what kills the "jumpy" rhythm.
-        // All values come from the global density setting; a text row pulls up against a preceding
-        // text row (`condensedTop`) in both densities.
+        // bar 행은 넓게, 한 줄 text 행은 좁게 — 연속 한 줄 행이 cluster로 읽히게 하는 rhythm.
         .padding(.top, topPadding)
         .padding(.bottom, bottomPadding)
     }
@@ -82,8 +60,7 @@ struct WidgetRowView: View {
     @ViewBuilder
     private var rowContent: some View {
         if data.isChart, data.hasData {
-            // The sparkline owns its own label + bars; a chart with no real points falls through to the
-            // unbounded "No data" row below (and so descriptor template data never leaks here).
+            // 실데이터 없는 chart는 unbounded "No data" 행으로 fall through — descriptor template 데이터 누출 방지.
             UsageSparkline(data: data)
         } else if data.isBounded {
             boundedRow
@@ -92,10 +69,6 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Bounded: label (+ run-out warning) → meter → primary text row.
-    /// The label, bar, and reading are one perceptual unit, so they sit on the tight step of the
-    /// grid (`rowInnerSpacing`); the row's vertical padding provides the separation from
-    /// neighboring rows.
     private var boundedRow: some View {
         let state = data.meterState()
         return VStack(alignment: .leading, spacing: density.rowInnerSpacing) {
@@ -105,16 +78,8 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Label with the pace warning right-aligned on the same line — one slot, escalating with the
-    /// `MeterState`. Spent: a flame + "Limit reached",
-    /// the terminal state that outranks any pace projection. Running out: a flame + projected
-    /// run-out time, read as "Limit in 3h 45m" ⟷ "Limit today at 11:49 PM" (following the global
-    /// countdown/exact mode) — clicking the time flips the global mode like the reset label. Close
-    /// to limit: a quiet "~3% spare" — the cushion projected at reset. Healthy / level / no-data:
-    /// nothing unless "always show pacing" surfaces projection on blue. Only the flame carries
-    /// flame carries the severity color — tint on glass is reserved for the symbol while copy
-    /// stays secondary like the row's other supporting text; the bar below carries the color.
-    /// Hovering shows the pace projection at reset. The warning gets the space; the title truncates.
+    /// Label과 같은 줄 오른쪽의 단일 pace 경고 slot — `MeterState`에 따라 escalate. flame만 severity 색을 갖고
+    /// copy는 secondary. 경고가 공간을 우선하고 제목이 truncate.
     private func boundedLabelRow(_ state: WidgetData.MeterState) -> some View {
         HStack(spacing: 6) {
             Text(data.title)
@@ -125,20 +90,15 @@ struct WidgetRowView: View {
         }
     }
 
-    /// The single escalating warning slot, switching exhaustively over the state so the copy can
-    /// never contradict the bar. The flame cases share one builder; the amber and (always-show-pacing)
-    /// blue cases are plain text.
+    /// 상태별 경고 표시 — state를 exhaustive하게 switch해 copy가 bar와 모순되지 않게 보장.
     @ViewBuilder
     private func warning(_ state: WidgetData.MeterState) -> some View {
         switch state {
         case .spent:
             flameWarning(text: "Limit reached", state: state, accessibility: "Limit reached")
         case .runningOut(let eta, _):
-            // `eta == nil` is the float-edge case: the flame stands alone (the projection lives in
-            // the tooltip), rather than printing a misleading time. A shown time reads "Limit in 3h
-            // 45m" (or the exact "Limit today at …"), carrying its own verb and following the global
-            // countdown/exact mode, so — exactly like the reset label — clicking it flips that mode
-            // (lifted reorder previews pass no toggle and render it inert).
+            // `eta == nil`(float-edge)이면 flame 단독 표시 — projection은 tooltip에. 시간이 보이면
+            // reset label처럼 클릭으로 전역 countdown/exact 모드 토글.
             flameWarning(text: eta, state: state,
                          accessibility: eta ?? "Will reach limit",
                          action: eta == nil ? nil : onToggleResetDisplay)
@@ -151,10 +111,7 @@ struct WidgetRowView: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .hoverTooltip(state.tooltip)
         case .healthy where data.alwaysShowPacing:
-            // "Always show pacing" surfaces the projection on the otherwise-silent on-track row: the
-            // same quiet secondary note as the amber case, but the cushion ("~33% left at reset")
-            // rather than the spare. No flame (blue isn't a warning) and no hover tooltip — the copy
-            // already *is* the projection the amber case hides in its tooltip.
+            // "always show pacing": on-track 행에도 projection 표시 — copy 자체가 projection이므로 flame/tooltip 없음.
             if let projection = state.tooltip {
                 Spacer(minLength: 8)
                 Text(projection)
@@ -168,10 +125,7 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Flame icon + optional label text, carrying the state's projection tooltip — shared by the
-    /// spent and running-out cases. Only the flame is severity-tinted; the copy stays secondary
-    /// (tint on glass is reserved for the symbol). An optional `action` wraps the warning in a
-    /// plain button (the run-out time's countdown/exact toggle).
+    /// Flame 아이콘 + 선택적 경고 텍스트 — spent/running-out 공용. `action`이 있으면 plain button으로 wrap.
     @ViewBuilder
     private func flameWarning(text: String?, state: WidgetData.MeterState,
                               accessibility: String, action: (() -> Void)? = nil) -> some View {
@@ -180,7 +134,7 @@ struct WidgetRowView: View {
             Image(systemName: "flame.fill")
                 .font(.system(size: density.supportingPointSize - 1))
                 .foregroundStyle(severityColor(state.severity))
-                .accessibilityHidden(true) // the warning text alongside carries the message
+                .accessibilityHidden(true) // 옆의 경고 텍스트가 메시지를 전달
             if let text {
                 Text(text)
                     .font(supportingFont)
@@ -200,14 +154,10 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Bar/copy color for a severity, or the inactive gray when there's none (the no-data track).
     private func severityColor(_ severity: WidgetData.MeterSeverity?) -> AnyShapeStyle {
         severity.map(Theme.meterFill) ?? AnyShapeStyle(Color.secondary)
     }
 
-    /// Primary line under the bar: value+mode word on the left ("50% left"), reset/limit context on
-    /// the right. The headline is the Used/Left toggle (click to flip the global meter style, with
-    /// the opposite reading in its tooltip) — the exact counterpart of the reset label's toggle.
     private var primaryTextRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             headlineText
@@ -218,9 +168,7 @@ struct WidgetRowView: View {
         .lineLimit(1)
     }
 
-    // The headline value is the row's payload — the number the user opened the popover to read —
-    // so it sits at `.primary` (vibrant full-contrast on the popover glass); the surrounding
-    // context (reset countdown, deficit) stays `.secondary`.
+    // headline 값은 행의 payload — `.primary`, 주변 컨텍스트는 `.secondary`.
     @ViewBuilder
     private var headlineText: some View {
         if data.hasMeterStyleToggle, let onToggleMeterStyle {
@@ -238,9 +186,6 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Reset/limit context on the trailing edge. When it's a concrete reset countdown it becomes a
-    /// click target that flips the global relative/absolute mode (with the opposite format in its
-    /// tooltip), mirroring the original. Otherwise it's plain text.
     @ViewBuilder
     private var trailingContext: some View {
         if let text = data.boundedTrailingText() {
@@ -257,38 +202,26 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Unbounded: no bar. Label on the left, with a single right-aligned descriptive line ("1,503 left")
-    /// and an optional secondary line ("on-device estimate") beneath it.
     private var unboundedRow: some View {
         unboundedRowContent
             .onChange(of: data.modelBreakdown) { _, _ in modelHover.dismiss() }
-            // A refresh can replace the reset credits (count and expiries) while the popover is open;
-            // drop it so it never lingers over a stale timeline — except while the claim flow has the
-            // popover pinned: the claim's own forced refresh is what changes the credits, and dismissing
-            // on it would close the popover before the claim's result banner ever renders. The pinned
-            // popover re-renders from the new data instead (the detail view reconciles its own state).
+            // refresh가 credits를 교체하면 stale timeline 위의 popover를 dismiss — 단 claim이 pin 중이면 유지:
+            // claim의 강제 refresh가 원인이므로 닫으면 결과 banner가 렌더링되지 못함.
             .onChange(of: data.expiriesAt) { _, _ in
                 if !modelHover.isPinned { modelHover.dismiss() }
             }
             .onDisappear { modelHover.dismiss() }
     }
 
-    /// The value column reveals the model breakdown on hover, so it lights up under the pointer the way
-    /// a Finder / System Settings list row does — the native cue that "this is a target." Lit the moment
-    /// the pointer arrives (`overInline`, before the reveal dwell) and held lit while the popover is open,
-    /// so the value reads as the popover's source. Both flags live on `modelHover`, so the panel's close
-    /// path (`dismissAll`) clears the highlight even though this view's state survives `orderOut`. Only
-    /// rows that actually have a breakdown light up.
+    /// 값 column의 hover highlight 여부 — pointer 진입 즉시 점등, popover가 열려 있는 동안 유지.
+    /// 두 flag 모두 `modelHover` 소유라 panel close 경로(`dismissAll`)가 highlight까지 정리.
     private var showValueHighlight: Bool {
         hasHoverPopover && (modelHover.overInline || modelHover.isPresented)
     }
 
-    /// Whether the value column reveals a hover popover: the model breakdown on spend rows, or the
-    /// resets timeline on the Codex rate-limit-resets row. One `modelHover` coordinator drives both — a
-    /// row is only ever one kind — so lighting the value and anchoring the popover share the spend
-    /// row's machinery. The resets row qualifies even at "0 available" (empty `expiriesAt`), so its
-    /// empty-state popover stays reachable — but only with real data: a "No data" tile must not open a
-    /// popover that reads as "zero credits" (`hasModelBreakdown` already carries its own `hasData`).
+    /// 값 column이 hover popover를 여는지 — spend 행의 model breakdown 또는 Codex resets 행의 timeline.
+    /// resets 행은 "0 available"(빈 `expiriesAt`)에도 열리되 실데이터 필수 — "No data" tile이
+    /// "zero credits"로 읽히는 popover를 열면 안 됨.
     private var hasHoverPopover: Bool {
         data.hasModelBreakdown || (data.showsResetExpiries && data.hasData)
     }
@@ -302,23 +235,15 @@ struct WidgetRowView: View {
                     expiryStatusDot
                     Text(data.unboundedDetail)
                         .font(supportingFont)
-                        .foregroundStyle(.primary) // the value is the row's payload — match the bounded headline
+                        .foregroundStyle(.primary) // 값은 행의 payload — bounded headline과 동일
                         .contentTransition(.numericText())
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
-                        // Hover target is the value text itself, not the whole row — the same
-                        // per-element pattern the bounded row uses for "x left" and "Resets in …". Reveals
-                        // the exact figures the compact value shortens, or "No usage in this period" on a
-                        // zero row; nil (no tooltip) on a small, already-full, non-zero row. Suppressed
-                        // when the model-breakdown popover is wired up — a text bubble and a popover
-                        // fighting over the same hover reads as two competing surfaces, and the panel's
-                        // per-model tooltips carry the exact figures instead. The resets row likewise
-                        // drops its tooltip — the timeline popover replaces it.
+                        // hover 대상은 행 전체가 아닌 값 텍스트. popover가 wire된 행은 tooltip 억제 —
+                        // 같은 hover를 두 surface가 다투지 않게 처리.
                         .hoverTooltip(hasHoverPopover ? nil : data.unboundedValueTooltip)
                 }
                 if let subtitle = data.unboundedSubtitle {
-                    // Secondary, not tertiary: the subtitle is informational ("on-device estimate"),
-                    // and tertiary is reserved for inactive content on glass.
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -326,11 +251,7 @@ struct WidgetRowView: View {
                 }
             }
             .multilineTextAlignment(.trailing)
-            // A quaternary chip behind the value — the app's subtle-fill token, in the shared 6pt
-            // continuous corner — signals the value is interactive before the breakdown even opens.
-            // Negative-inset so it hugs the figure without changing the row's height (the text-row
-            // rhythm that clusters Today / Yesterday / Last 30 Days must not shift), and a quick
-            // opacity fade in/out matches macOS hover states.
+            // hover 시 값 뒤의 quaternary chip — negative inset이라 행 높이 불변.
             .background {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(.quaternary)
@@ -339,10 +260,8 @@ struct WidgetRowView: View {
                     .opacity(showValueHighlight ? 1 : 0)
             }
             .animation(.easeOut(duration: 0.12), value: showValueHighlight)
-            // Both the hover trigger and the popover anchor live on the value column, not the whole
-            // row: hovering the label (or empty gap) shouldn't reveal the breakdown — only the figure
-            // it explains should — and the arrow then centers on that figure, matching the trend
-            // popover's anchoring off the sparkline strip.
+            // hover trigger와 popover anchor 모두 값 column에 부착 — label hover로는 breakdown이 열리지 않고
+            // 화살표가 값에 center.
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 guard hasHoverPopover else {
@@ -358,8 +277,7 @@ struct WidgetRowView: View {
             .popover(
                 isPresented: Binding(
                     get: { hasHoverPopover && modelHover.isPresented },
-                    // A click-outside dismiss removes the detail view without an `.ended` hover event,
-                    // so a plain assignment would strand `overDetail == true` and block future hides.
+                    // click-outside dismiss는 `.ended` hover 없이 detail을 제거하므로 dismiss()로 상태 정리.
                     set: { if !$0 { modelHover.dismiss() } }
                 ),
                 arrowEdge: .top
@@ -373,10 +291,8 @@ struct WidgetRowView: View {
                         count: data.resetCreditCount, expiries: data.expiriesAt,
                         onHoverChange: { inside in modelHover.detailHover(inside) },
                         onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // Rows with reset expiries are Codex-only today. The claim runs through THIS
-                        // row's card service, so an irreversible claim spends the same account's
-                        // credential the card shows; absent from the environment (previews, share
-                        // renders) — or unstamped (no provider id) — the timeline is read-only.
+                        // claim은 이 행의 card service로 실행 — 비가역 claim이 카드가 보여주는 계정의 credential을 소비.
+                        // environment 부재(preview, share render)나 provider id 미지정이면 timeline은 read-only.
                         claim: codexResetClaim
                             .flatMap { router in data.providerID.flatMap { router.service(for: $0) } }
                             .map { service in
@@ -390,10 +306,6 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Small blue/yellow/red status dot shown just before the value when the row carries reset-credit
-    /// expiries — colored by the soonest expiry. The per-credit detail (which credits, expiring when)
-    /// lives in the resets popover the value column now reveals on hover, so the dot carries no tooltip
-    /// of its own. Renders nothing when no credit is available (an empty `expiriesAt`).
     @ViewBuilder
     private var expiryStatusDot: some View {
         if let severity = data.expirySeverity() {
@@ -415,8 +327,6 @@ struct WidgetRowView: View {
     private var labelColumn: some View {
         HStack(spacing: 4) {
             Text(data.title)
-                // Same point size as the trailing value so the single-line row reads tight;
-                // semibold alone keeps the name/value hierarchy.
                 .font(.system(size: density.supportingPointSize, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -425,9 +335,6 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Amber warning triangle shown just after a spend tile's label (Today / Yesterday / Last 30 Days)
-    /// when the period used a model the pricing manifest can't price, so its cost is incomplete. Hovering
-    /// lists the unknown model names. Renders nothing otherwise.
     @ViewBuilder
     private var unknownModelWarningIcon: some View {
         if data.hasUnknownModels {
@@ -439,26 +346,14 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Full-width capsule meter — the Tahoe-era level-indicator form (capsule, full-height
-    /// leading-anchored fill, like the redesigned Slider / Control Center). Deliberately NOT the
-    /// native linear `Gauge`/`ProgressView`, which Tahoe left as the thin legacy bar. The fill is
-    /// a flat **system color** carrying the pace verdict (blue = well within limits, yellow =
-    /// projected to land inside the last 10%, red = projected to run out; `Theme.meterFill` /
-    /// `MeterState.severity`) at full strength on the opaque popover surface; the earlier
-    /// provider-brand gradient was removed deliberately so the bar's color always reads as state.
-    /// Empty + colorless without data. A thin tick marks the even-pace line — where usage would sit
-    /// if it burned evenly across the reset window — on yellow and red bars always, and on blue when
-    /// "always show pacing" is on. The tick rides in an overlay so it pokes out top and bottom without
-    /// changing the bar's height. Hovering shows the pace projection (`MeterState.tooltip`).
+    /// Full-width capsule meter — fill 색이 pace verdict를 표현(의도적으로 native Gauge/ProgressView가 아님),
+    /// 데이터 없으면 비어 있고 무색. pace tick은 overlay로 얹혀 bar 높이를 바꾸지 않음.
     private func meter(_ state: WidgetData.MeterState) -> some View {
         let tick = data.paceTick(for: state)
         return GeometryReader { proxy in
-            // Track + fill define the bar's height; the tick rides in an `.overlay` so its taller frame
-            // pokes out top and bottom without stretching the capsules. (As a ZStack sibling it grew the
-            // stack and the flexible capsules stretched with it, so a tick'd bar read as a thicker bar.)
+            // tick은 `.overlay`로 상하 돌출 — ZStack sibling이면 stack이 자라 bar가 두꺼워짐.
             ZStack(alignment: .leading) {
-                // Semantic quaternary fill (not an opacity-faded color) so the track stays vibrant
-                // on glass and adapts to Increase Contrast / Reduce Transparency.
+                // semantic quaternary fill — glass 위에서 vibrant 유지, 접근성 설정에 적응.
                 Capsule().fill(.quaternary)
                 Capsule()
                     .fill(partyMode ? PartyMode.meterFill : severityColor(state.severity))
@@ -480,20 +375,16 @@ struct WidgetRowView: View {
     }
 
     private static let paceTickWidth: CGFloat = 2
-    /// How much taller than the bar the tick is, so it pokes out slightly above and below (half each
-    /// end). The bar itself stays at `meterHeight` regardless — the tick lives in an overlay.
     private static let paceTickOverhang: CGFloat = 4
 
-    /// Leading offset that centers the tick on its fraction, clamped so the tick never pokes past
-    /// either rounded end of the track.
+    /// tick을 fraction 중심에 배치하되 track의 rounded 양 끝을 넘지 않게 clamp.
     private func paceTickOffset(track: CGFloat, fraction: Double) -> CGFloat {
         let centered = track * fraction - Self.paceTickWidth / 2
         return min(max(centered, 0), max(track - Self.paceTickWidth, 0))
     }
 
-    /// Fill width with a minimum-visible rule: any non-zero fraction renders at least a full circle
-    /// (width = bar height) so 1–2% never squashes into an invisible sliver — the same idea as the
-    /// menu-bar bars' minimum fill.
+    /// 최소 가시 규칙이 적용된 fill 폭 — 0이 아닌 fraction은 최소 원 하나(bar 높이) 폭으로 렌더링해
+    /// 1–2%가 보이지 않는 sliver가 되지 않게 보장.
     private func fillWidth(track: CGFloat) -> CGFloat {
         guard data.hasData, data.fraction > 0 else { return 0 }
         return max(density.meterHeight, track * data.fraction)

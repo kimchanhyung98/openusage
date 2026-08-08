@@ -1,23 +1,20 @@
 import SwiftUI
 
-/// A provider's copied vector mark, keyed by provider id.
+/// provider id로 키가 되는 복사된 vector mark.
 struct IconSource: Hashable {
     let providerID: String
 
-    /// Named constructor retained at call sites so the stored string's meaning stays explicit.
+    /// 저장된 문자열의 의미가 호출부에서 드러나도록 유지하는 named constructor.
     static func providerMark(_ providerID: String) -> IconSource {
         IconSource(providerID: providerID)
     }
 }
 
-/// Renders an `IconSource` in monochrome (`Theme.iconGray`): on the glass popover, icon color
-/// reads as noise (WWDC25 — monochrome reduces it), and provider identity comes from the name
-/// beside the mark.
+/// `IconSource`의 monochrome(`Theme.iconGray`) 렌더 — glass popover에서 아이콘 색은 noise로 읽히고, provider 식별은 옆의 이름이 담당.
 struct ProviderIcon: View {
     let source: IconSource
-    /// Margin kept around a vector provider mark, forwarded to `ProviderIconShape`. Defaults to the
-    /// breathing-room value used in list contexts (e.g. Settings); callers that want the mark to
-    /// fill its box — like the section header matching the menu-bar strip glyph — pass a smaller value.
+    /// vector provider mark 주변 여백 — `ProviderIconShape`로 전달.
+    /// 기본값은 리스트 문맥용; mark가 box를 채워야 하는 호출자는 더 작은 값 전달.
     var inset: CGFloat = 0.14
 
     var body: some View {
@@ -31,15 +28,12 @@ struct ProviderIcon: View {
     }
 }
 
-/// A SwiftUI `Shape` built from an SVG path `d` string, scaled to fit the frame and centered.
-///
-/// It normalizes by the artwork's **true bounding box** (not the declared `viewBox`): some source SVGs
-/// bake whitespace into their viewBox (Claude/Codex/Cursor sit ~10% inside a 100×100 box) while others
-/// run edge-to-edge (Devin, Grok). Fitting the real path bounds gives every provider mark the same
-/// optical weight, then a single shared `inset` adds consistent breathing room so none touch the edge.
+/// SVG path `d` 문자열로 만든 SwiftUI `Shape` — frame에 맞게 scale·중앙 정렬.
+/// 선언된 `viewBox`가 아닌 실제 bounding box로 정규화 — 소스 SVG의 여백이 달라도 모든 provider mark가
+/// 같은 optical weight를 갖고, 공유 `inset`이 균일한 여백 부여.
 struct ProviderIconShape: Shape {
     let pathData: String
-    /// Fraction of the frame kept as margin on every side, so normalized marks have uniform padding.
+    /// 모든 변에 여백으로 남기는 frame 비율 — 정규화된 mark의 균일한 padding.
     var inset: CGFloat = 0.14
 
     func path(in rect: CGRect) -> Path {
@@ -56,13 +50,12 @@ struct ProviderIconShape: Shape {
     }
 }
 
-/// A provider vector mark: the combined SVG path data. `ProviderIconShape` normalizes by the path's
-/// true bounding box, so the source `viewBox` isn't needed.
+/// provider vector mark — 합쳐진 SVG path data. `ProviderIconShape`가 실제 bounding box로 정규화하므로 `viewBox` 불필요.
 struct ProviderMark: Hashable {
     let path: String
 }
 
-/// Loads copied provider SVGs from the bundle and extracts their path data (cached).
+/// bundle의 복사된 provider SVG를 로드해 path data 추출(캐시됨).
 @MainActor
 enum ProviderMarks {
     private static var cache: [String: ProviderMark] = [:]
@@ -111,8 +104,8 @@ enum ProviderMarks {
     }
 }
 
-/// Minimal SVG path parser supporting M/L/H/V/C/S/Q/T/Z (absolute + relative, implicit repeats).
-/// Sufficient for the single-path provider marks; arcs (A) are not used by them.
+/// M/L/H/V/C/S/Q/T/Z(절대·상대, implicit repeat)를 지원하는 최소 SVG path parser.
+/// 단일 path provider mark에는 충분 — arc(A)는 미사용.
 enum SVGPath {
     static func parse(_ d: String) -> Path {
         var path = Path()

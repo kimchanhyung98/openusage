@@ -1,13 +1,10 @@
 import Foundation
 
-/// Shared descriptor factories — the one place that knows how a descriptor's template `WidgetData`
-/// is assembled, so providers declare flat metric lists instead of re-implementing the same private
-/// builders. Template numbers are structural only (a row without real data renders the no-data marker,
-/// never the template), so every factory seeds `used: 0`.
+/// 공용 descriptor factory — template `WidgetData` 조립 방법을 아는 유일한 곳.
+/// template 숫자는 구조용(실데이터 없는 row는 no-data marker 렌더) — 모든 factory가 `used: 0`로 seed.
 extension WidgetDescriptor {
-    /// Bounded 0–100% meter (session/weekly-style quotas). `isSessionWindow` opts the tile into the
-    /// "Not started" fresh-window treatment (rolling 5-hour session pools), replacing a hardcoded
-    /// widget-ID list in the model.
+    /// bounded 0–100% meter (session/weekly형 quota).
+    /// `isSessionWindow`는 "Not started" fresh-window 처리 opt-in (rolling 5시간 session pool).
     static func percent(
         id: String,
         provider: Provider,
@@ -20,10 +17,8 @@ extension WidgetDescriptor {
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 
-    /// Bounded dollar meter whose subtitle reads "$<limit> <limitNoun>" (noun defaults to "limit").
-    /// `valueWord` is the trailing word for the *uncapped* fallback: a tile like Claude's Extra Usage is a
-    /// meter when the provider reports a monthly cap (`.progress`) but an unbounded "$1.2K spent" row
-    /// (`.values`) when it doesn't, and that row needs a word. It's inert for the bounded rendering.
+    /// subtitle이 "$<limit> <limitNoun>"인 bounded dollar meter (noun 기본값 "limit").
+    /// `valueWord`는 uncapped fallback(`.values` row)의 trailing word — bounded 렌더에서는 무효.
     static func boundedDollars(
         id: String,
         provider: Provider,
@@ -39,8 +34,7 @@ extension WidgetDescriptor {
                                 unboundedValueWord: valueWord))
     }
 
-    /// Bounded count meter (e.g. requests per billing cycle). `periodDurationMs` lets the subtitle
-    /// show the cycle's reset cadence instead of the bare suffix.
+    /// bounded count meter (예: billing cycle당 request 수) — `periodDurationMs` 지정 시 subtitle에 reset 주기 표시.
     static func boundedCount(
         id: String,
         provider: Provider,
@@ -56,10 +50,8 @@ extension WidgetDescriptor {
                                 periodDurationMs: periodDurationMs))
     }
 
-    /// Unbounded numeric row backed by a provider `.values` line. `selection` decides which of the
-    /// row's values this tile renders (cost-only, tokens-only, or the combined `.all`); `valueWord` is
-    /// the trailing word for a lone dollar value ("spent", "left"). The ⓘ for a locally-estimated
-    /// dollar amount is data-driven (set when a shown value is `estimated`), so it isn't a parameter.
+    /// provider `.values` line 기반 unbounded 숫자 row.
+    /// `selection`은 렌더할 값 선택, `valueWord`는 단독 dollar 값의 trailing word. 추정치 ⓘ는 데이터 주도라 parameter 아님.
     static func values(
         id: String,
         provider: Provider,
@@ -71,8 +63,7 @@ extension WidgetDescriptor {
         traySuffix: String? = nil,
         showsResetExpiries: Bool = false
     ) -> WidgetDescriptor {
-        // `kind` is unused for `.values` rendering (each value carries its own), but a count-only tile
-        // reads tidier seeded as `.count`; everything else defaults to `.dollars`.
+        // `kind`는 `.values` 렌더에 미사용(값마다 자체 kind 보유) — count 전용 tile만 `.count`, 그 외 `.dollars`로 seed.
         let kind: MetricKind = { if case .kind(let only) = selection { return only }; return .dollars }()
         var sample = WidgetData(title: title, icon: provider.icon, kind: kind, used: 0, limit: nil,
                                 unboundedValueWord: valueWord)
@@ -83,8 +74,7 @@ extension WidgetDescriptor {
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 
-    /// Combined tile reading "$4.08 · 1.2M tokens" (spend) or "$32.84 · 821 credits" (Codex credits) —
-    /// every value of a `.values` row, joined.
+    /// `.values` row의 모든 값을 이어 붙인 combined tile (예: "$4.08 · 1.2M tokens").
     static func combined(
         id: String,
         provider: Provider,
@@ -96,17 +86,15 @@ extension WidgetDescriptor {
                isUsagePeriod: isUsagePeriod)
     }
 
-    /// The three local-spend tiles every spend-tracking provider exposes — Today / Yesterday / Last 30
-    /// Days — each a combined "cost · tokens" row, backed by `SpendTileMapper`. Ids are
-    /// `<provider>.today|yesterday|last30`, so the set is identical across Claude / Codex / Cursor / Grok.
+    /// 모든 spend-tracking provider 공통의 local-spend tile 3종 (Today / Yesterday / Last 30 Days) — `SpendTileMapper` 기반.
+    /// id는 `<provider>.today|yesterday|last30` — Claude / Codex / Cursor / Grok에서 동일 집합.
     static func spendTiles(provider: Provider, valueTooltipNote: String? = nil) -> [WidgetDescriptor] {
         let descriptors: [WidgetDescriptor] = [
             .combined(id: "\(provider.id).today", provider: provider, title: "Today", isUsagePeriod: true),
             .combined(id: "\(provider.id).yesterday", provider: provider, title: "Yesterday", isUsagePeriod: true),
             .combined(id: "\(provider.id).last30", provider: provider, title: "Last 30 Days", isUsagePeriod: true)
         ]
-        // Mark the whole set as the local spend tiles — the Total Spend card's capability and
-        // contribution signal.
+        // 전체 집합을 local spend tile로 표시 — Total Spend 카드의 capability·기여 신호.
         return descriptors.map { descriptor in
             var sample = descriptor.sample
             sample.valueTooltipNote = valueTooltipNote
@@ -123,7 +111,7 @@ extension WidgetDescriptor {
         }
     }
 
-    /// Unbounded dollar balance with a custom trailing word (e.g. "$1,503.00 left").
+    /// custom trailing word를 갖는 unbounded dollar balance (예: "$1,503.00 left").
     static func dollarBalance(
         id: String,
         provider: Provider,
@@ -136,8 +124,7 @@ extension WidgetDescriptor {
                                 kind: .dollars, used: 0, limit: nil, unboundedValueWord: valueWord))
     }
 
-    /// Unbounded count resolved from a provider `.badge` line via `valueTextOverride`
-    /// (e.g. Grok pay-as-you-go).
+    /// `valueTextOverride`로 provider `.badge` line에서 resolve되는 unbounded count (예: Grok pay-as-you-go).
     static func badge(
         id: String,
         provider: Provider,
@@ -149,9 +136,8 @@ extension WidgetDescriptor {
                                 kind: .count, used: 0, limit: nil))
     }
 
-    /// The Usage Trend row: a day-by-day token sparkline backed by a provider `.chart` line. Not
-    /// pinnable — the tray can't draw a chart — but otherwise a normal Customize metric (toggle,
-    /// reorder, hide). `isChart` tells the dashboard how to render live chart points.
+    /// Usage Trend row — provider `.chart` line 기반 일별 token sparkline.
+    /// tray가 chart를 못 그려 pin 불가, 그 외는 일반 Customize metric. `isChart`가 live chart point 렌더 신호.
     static func usageTrend(provider: Provider) -> WidgetDescriptor {
         var sample = WidgetData(title: "Usage Trend", icon: provider.icon, kind: .count, used: 0, limit: nil)
         sample.isChart = true

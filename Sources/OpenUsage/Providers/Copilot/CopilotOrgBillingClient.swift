@@ -1,17 +1,12 @@
 import Foundation
 
-/// Calls GitHub's public REST billing endpoints to find the organization that provides an org-managed
-/// Copilot seat and read its month-to-date usage. Used only when `/copilot_internal/user` reports a
-/// token-based-billing seat with no per-seat quota (Copilot Business/Enterprise managed by an org) —
-/// the usage then lives in *organization* billing, which the user-scoped endpoint never carries.
-///
-/// Reading an org's billing requires the caller to be an org owner or billing manager; a plain member
-/// gets 403. That's an expected state, handled by the provider, not an error here.
+/// GitHub 공개 REST billing endpoint로 org 관리 Copilot seat의 organization을 찾고 월누적 usage 읽기. `/copilot_internal/user`가 per-seat quota 없는 token-based-billing seat(org 관리 Copilot Business/Enterprise)를 보고할 때만 사용 — usage는 organization billing에만 존재.
+/// org billing 읽기는 org owner/billing manager 권한 필요 — 일반 member는 403. 이는 오류가 아닌 기대 상태로 provider가 처리.
 struct CopilotOrgBillingClient: Sendable {
     static let userOrgsURL = "https://api.github.com/user/orgs?per_page=100"
 
     static func usageSummaryURL(org: String) -> URL? {
-        // Org slugs are alphanumeric-plus-hyphen, but encode defensively before splicing into the path.
+        // org slug는 영숫자+하이픈이지만 경로 삽입 전 방어적으로 encode.
         guard let encoded = org.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             return nil
         }
@@ -24,7 +19,7 @@ struct CopilotOrgBillingClient: Sendable {
         self.http = http
     }
 
-    /// The organizations the token's user belongs to (first page, 100 max — plenty for this purpose).
+    /// token 사용자가 속한 organization (첫 페이지, 최대 100 — 용도상 충분).
     func fetchUserOrgs(token: String) async throws -> HTTPResponse {
         guard let url = URL(string: Self.userOrgsURL) else {
             throw CopilotUsageError.invalidResponse
@@ -32,7 +27,7 @@ struct CopilotOrgBillingClient: Sendable {
         return try await send(url: url, token: token)
     }
 
-    /// Month-to-date billing usage summary for one organization.
+    /// organization 하나의 월누적 billing usage summary.
     func fetchUsageSummary(org: String, token: String) async throws -> HTTPResponse {
         guard let url = Self.usageSummaryURL(org: org) else {
             throw CopilotUsageError.invalidResponse

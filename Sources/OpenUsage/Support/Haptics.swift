@@ -1,27 +1,11 @@
 import AppKit
 
-/// Trackpad haptics via the Force Touch Taptic Engine (`NSHapticFeedbackManager`). Silent no-op on
-/// hardware without one (regular mice, older trackpads). Per the HIG these fire only in direct
-/// response to a user-driven gesture — the system only delivers them while fingers are on the
-/// trackpad anyway, so a drag is exactly the sanctioned moment.
-///
-/// Drags only — never fire a haptic from a mouse-click action. A Force Touch click is itself
-/// simulated by the Taptic Engine (press pulse at mouse-down, release pulse at mouse-up), and a
-/// button action runs at mouse-up, so an app pulse there lands milliseconds after the release
-/// click. The two don't fuse (same hardware finding as the reverted 30ms double pulse below):
-/// every pin click read as a double vibration (tried, reverted). The click is its own feedback.
+/// Force Touch Taptic Engine 기반 trackpad haptics — 미지원 하드웨어에서는 조용한 no-op.
+/// drag 전용 — mouse-click 액션에서 발화 금지. Force Touch 클릭 자체가 Taptic pulse라 앱 pulse가 겹치면 이중 진동으로 읽힘.
 @MainActor
 enum Haptics {
-    /// The "snapped into place" tap — fire when a drag actually commits a new order, never on
-    /// plain drag movement.
-    ///
-    /// Exactly one `.levelChange` pulse per commit. A double pulse ~30ms apart was tried to
-    /// render a firmer thunk, but on hardware the pulses don't fuse — every action read as two
-    /// distinct vibrations (reverted). `.alignment` is imperceptible (also tried, reverted);
-    /// stronger than a single `.levelChange` means private APIs, which we don't do.
-    /// Minimum spacing between taps: rapid slot-crossings during a fast drag would otherwise
-    /// run pulses together into a buzz. With the floor, every snap renders identically
-    /// everywhere — reorder on the dashboard, reorder in Customize.
+    /// "snap" tap — drag이 실제로 새 순서를 commit할 때만 발화, 단순 drag 이동에서는 금지.
+    /// commit당 `.levelChange` pulse 정확히 1회; 최소 간격 floor는 빠른 drag의 연속 pulse가 buzz로 뭉개지는 것 방지.
     private static let minimumSnapInterval: TimeInterval = 0.12
     private static var lastSnapAt: TimeInterval = 0
 

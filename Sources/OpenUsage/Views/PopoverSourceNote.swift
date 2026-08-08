@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The centered source-note footer the hover popovers share (model breakdown, usage trend), so the
-/// two panels can't drift apart in style.
+/// 호버 팝오버(모델 분해, 사용 추세)가 공유하는 중앙 정렬 source-note 푸터.
 struct PopoverSourceNote: View {
     let text: String
 

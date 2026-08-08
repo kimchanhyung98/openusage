@@ -1,23 +1,13 @@
 import SwiftUI
 import AppKit
 
-/// Central palette + surface styles. Surfaces stay adaptive (light/dark).
-///
-/// By default the popover is a solid, opaque panel; the opt-in Increase Transparency mode (and the
-/// secret-code egg) make it translucent. Either way, Liquid Glass is reserved for the footer/top-bar
-/// chrome — the controls/navigation layer — and never the data cards: Apple's guidance is to keep
-/// Liquid Glass out of the content layer and back content with standard materials instead. The data
-/// region mirrors the macOS System Settings grouped look: a page "tray" with borderless grouped cards
-/// lifted off it by the system's own `.fill.quaternary` (no hand-tuned values), so it adapts to
-/// light/dark like every other Mac app. Under the translucent treatment the cards swap their opaque
-/// base for a frosted standard material so text stays legible (see `cardSurface`).
+/// 중앙 팔레트 + surface 스타일 — surface는 light/dark 적응형 유지.
+/// Liquid Glass는 footer/top-bar chrome 전용, 데이터 카드에는 금지 — 콘텐츠 레이어는 표준 material로 받치는 Apple 가이드 준수.
+/// 데이터 영역은 macOS System Settings의 grouped look(`.fill.quaternary`)을 따르고 수동 튜닝 값 없음.
 enum Theme {
-    /// Hierarchical secondary tint for the provider marks.
     static let iconGray = AnyShapeStyle(.secondary)
 
-    /// Meter fill for a severity band — the macOS system palette (the battery-style traffic light),
-    /// never hand-tuned hexes, so the bars track light/dark and accessibility settings like every
-    /// other system meter. Full strength: on the opaque surface there's no glass to temper against.
+    /// severity band별 meter fill — 수동 hex 없이 macOS 시스템 팔레트 사용으로 light/dark·접근성 설정 자동 추적.
     static func meterFill(_ severity: WidgetData.MeterSeverity) -> AnyShapeStyle {
         AnyShapeStyle(meterColor(severity))
     }
@@ -30,62 +20,43 @@ enum Theme {
         }
     }
 
-    /// Inline notice/alert tint (refresh warning triangle, pin-limit notice, settings errors) — the
-    /// system orange at full strength, matching the meter fills.
     static let notice = AnyShapeStyle(Color(nsColor: .systemOrange))
 
-    /// Inline success tint (the "screenshot copied to clipboard" confirmation) — the system green at
-    /// full strength, the positive counterpart to `notice`'s orange.
     static let positive = AnyShapeStyle(Color(nsColor: .systemGreen))
 
     // MARK: - Surfaces
 
-    /// The popover's opaque backdrop ("tray") behind the grouped cards — `textBackgroundColor`, the
-    /// bright page surface document/Notes views use (white in light, near-black in dark; it does not
-    /// pick up desktop wallpaper tint). Exposed as an `NSColor` so the panel's AppKit backdrop
-    /// (`StatusItemController`) and the SwiftUI surface (`DashboardView.PopoverSurface`) are one color.
-    /// The footer's frosted glass bar samples this opaque tray (in-window), so it reads as glass chrome
-    /// over solid content, never a hole to the desktop. The grouped cards sit on it (see `cardSurface`).
+    /// grouped card 뒤 popover의 불투명 backdrop("tray") — 문서 view가 쓰는 밝은 page surface인 `textBackgroundColor`.
+    /// `NSColor`로 노출해 AppKit backdrop(`StatusItemController`)과 SwiftUI surface가 한 색을 공유.
     static let trayNSColor: NSColor = .textBackgroundColor
     static var traySurface: Color { Color(nsColor: trayNSColor) }
 
-    /// The semantic fill that lifts a grouped card off the `traySurface` page — `.fill.quaternary`, the
-    /// system's own subtle grouped fill (≈ the macOS System Settings grouped box: `#F9F9F9` over white
-    /// in light, a step lighter than the page in dark). No hand-tuned values; it tracks light/dark and
-    /// Increase Contrast. Composited over the opaque page in `cardSurface`, so the card is opaque (a
-    /// lifted drag preview stays solid while it floats).
+    /// grouped card를 `traySurface` 위로 띄우는 semantic fill — 시스템 자체의 `.fill.quaternary`.
+    /// 수동 튜닝 값 없음 — light/dark와 Increase Contrast 자동 추적.
     static let cardFill = AnyShapeStyle(.fill.quaternary)
 
-    /// The single corner radius for every metric/settings card surface and its lifted twin, so the
-    /// floating drag preview always matches the live card's shape.
     static let cardCornerRadius: CGFloat = 12
 
-    /// The rounded rectangle shared by every card surface (live and lifted), so the shape is defined once.
     static var cardShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
     }
 }
 
 extension View {
-    /// The grouped-card surface used for provider/settings cards, in the shared rounded shape: the
-    /// bright page base lifted by the system's `.fill.quaternary` (the System Settings grouped-box
-    /// look), borderless — the subtle fill carries the grouping the way Settings does, in both light
-    /// and dark. Drawing the opaque page base first keeps a lifted drag preview solid while it floats;
-    /// the preview's depth comes from `ReorderLiftPreview`'s shadow, not a different card surface.
+    /// provider/settings 카드의 grouped-card surface — System Settings grouped-box look, borderless.
+    /// 불투명 page base를 먼저 그려 lifted drag preview가 떠 있는 동안에도 solid 유지.
     func cardSurface() -> some View {
         modifier(CardSurfaceModifier())
     }
 
-    /// A single-row lifted preview surface: the card surface plus a thin separator hairline that fences
-    /// a free-floating one-row chip off from the rows beneath it (the multi-row provider previews don't
-    /// take the hairline — their shadow alone reads as detached).
+    /// 단일 행 lifted preview surface — 카드 surface + 아래 행들과 구분하는 얇은 separator hairline.
+    /// 여러 행 provider preview는 hairline 없이 그림자만으로 분리감 표현.
     func liftedRowSurface() -> some View {
         cardSurface()
             .overlay { Theme.cardShape.strokeBorder(.separator, lineWidth: 0.5) }
     }
 
-    /// The trailing on/off switch styling shared by every settings + Customize row toggle: no inline
-    /// label (the row's leading text is the label), the native switch style, small control size.
+    /// settings·Customize 행 토글이 공유하는 trailing 스위치 스타일 — inline 라벨 없음, native switch, small 크기.
     func settingsSwitchStyle() -> some View {
         labelsHidden()
             .toggleStyle(.switch)
@@ -93,15 +64,8 @@ extension View {
     }
 }
 
-/// Backs `cardSurface`. The grouped card surface: the opaque page base (`traySurface`) with the
-/// system's `.fill.quaternary` composited on top — borderless, matching the macOS System Settings
-/// grouped box in both light and dark. The opaque base means a lifted drag preview stays solid while
-/// it floats; the page base under a live card is the same color as the tray behind it, so it's
-/// invisible there. Live cards and drag previews share the same surface.
-///
-/// Under the translucent surface treatment (Increase Transparency / the secret-code egg) the opaque page base
-/// is dropped so the behind-window vibrancy backdrop shows through, while the system grouped fill stays
-/// so cards still read as grouped boxes over the desktop.
+/// `cardSurface`의 구현 — 불투명 page base(`traySurface`) 위에 `.fill.quaternary` 합성, borderless grouped box.
+/// translucent 처리에서는 page base를 제거해 behind-window vibrancy가 비치되, grouped fill은 유지해 카드 구분 보존.
 private struct CardSurfaceModifier: ViewModifier {
     @Environment(\.popoverSurfaceTreatment) private var treatment
 
@@ -113,13 +77,7 @@ private struct CardSurfaceModifier: ViewModifier {
                     .fill(Theme.traySurface)
                     .overlay { Theme.cardShape.fill(Theme.cardFill) }
             case .translucent:
-                // Increase Transparency, party, and drunk: the card carries its own frosted
-                // `.regularMaterial` so metric text stays legible over whatever shows through the
-                // behind-window backdrop (the desktop, or the party tint over it), with `.fill.quaternary`
-                // on top preserving the grouped-card hierarchy. HIG: back content-layer surfaces with a
-                // standard material — a bare low-opacity fill over the desktop is the "washed out"
-                // anti-pattern. This is a standard material, not `glassEffect`: Liquid Glass stays in the
-                // chrome layer, not the content cards.
+                // translucent 모드: 카드가 frosted `.regularMaterial`을 직접 실어 텍스트 가독성 유지 — HIG의 표준 material, `glassEffect` 아님.
                 Theme.cardShape
                     .fill(.regularMaterial)
                     .overlay { Theme.cardShape.fill(Theme.cardFill) }

@@ -32,24 +32,16 @@ enum ZAIAuthError: Error, LocalizedError, Equatable {
     }
 }
 
-/// Reads a [Z.ai](https://z.ai) (Zhipu AI) API key the user has already placed on the machine. Like
-/// OpenRouter, Z.ai has no companion CLI/app that stashes a credential in a known spot, so the key
-/// comes from an environment variable or a small config file. A GUI app launched from Finder/Dock
-/// doesn't inherit the interactive shell environment, so `ProcessEnvironmentReader` captures the
-/// login shell's environment at launch (see `LoginShellEnvironment`) — meaning an env var exported
-/// in a shell profile is honored even in a packaged build; the config file remains the explicit path.
-///
-/// `ZAI_API_KEY` is the primary name; `GLM_API_KEY` is accepted as a fallback (the older Zhipu name
-/// some users still export), mirroring the legacy plugin's lookup order.
+/// 사용자가 머신에 이미 둔 Z.ai(Zhipu AI) API key 읽기 — companion CLI/앱이 없어 환경 변수 또는 config 파일이 소스.
+/// Finder/Dock 실행 GUI 앱은 interactive shell 환경을 상속받지 못함 — `ProcessEnvironmentReader`가 실행 시
+/// login shell 환경을 capture하므로(`LoginShellEnvironment` 참고) shell profile의 export도 packaged build에서 유효.
 struct ZAIAuthStore: Sendable {
-    /// Config files checked in order; first readable key wins. JSON (`apiKey` / `api_key` / `key`) or a
-    /// plain-text file containing only the key.
+    /// 순서대로 확인하는 config 파일 — 처음 읽히는 key 사용. JSON(`apiKey`/`api_key`/`key`) 또는 key만 담긴 plain text.
     static let configPaths = [
         "~/.config/openusage/zai.json",
         "~/.config/zai/key.json"
     ]
-    /// Environment variables checked in order. `ZAI_API_KEY` is current; `GLM_API_KEY` is the legacy
-    /// Zhipu name some users still have exported.
+    /// 순서대로 확인하는 환경 변수 — `ZAI_API_KEY`가 현행, `GLM_API_KEY`는 아직 쓰이는 구 Zhipu 이름.
     static let environmentNames = ["ZAI_API_KEY", "GLM_API_KEY"]
 
     private let store: UserAPIKeyStore

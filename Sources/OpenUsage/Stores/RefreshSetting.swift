@@ -1,11 +1,7 @@
 import Foundation
 
-/// Single source of truth for the background refresh cadence.
-///
-/// The periodic refresh loop and the snapshot-cache TTL both read the cadence through here so they can
-/// never disagree: the cache treats a snapshot as fresh for exactly one refresh interval, and the loop
-/// re-fetches when that window elapses. The cadence is fixed — there's no user-facing control — so the
-/// two always line up.
+/// background refresh cadence의 단일 출처
+/// refresh loop와 snapshot-cache TTL이 같은 값을 읽어 불일치 불가 — cadence는 고정, 사용자 제어 없음
 enum RefreshSetting {
     static let defaultMinutes = 5
     static let interval = TimeInterval(defaultMinutes * 60)

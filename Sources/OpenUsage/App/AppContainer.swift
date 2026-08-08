@@ -1,88 +1,59 @@
 import Foundation
 import Observation
 
-/// Composition root: owns the (constant) registry and the (mutable) stores, injected
-/// into the SwiftUI environment.
+/// 상수 registry와 가변 store를 소유해 SwiftUI environment에 주입하는 composition root.
 @MainActor
 @Observable
 final class AppContainer {
     private(set) var registry: WidgetRegistry
     let layout: LayoutStore
     let dataStore: WidgetDataStore
-    /// Opt-in private iCloud document sync for additive machine-local daily history.
+    /// 머신 로컬 일간 히스토리의 opt-in iCloud 문서 동기화.
     let iCloudSync: ICloudUsageSyncStore
-    /// Single source of truth for which providers the user has turned off. Both stores consult it (via
-    /// injected closures) and the Customize provider list drives it.
+    /// 사용자가 끈 provider의 단일 source of truth. 두 store가 주입 closure로 참조, Customize provider 목록이 변경 주도.
     let enablement: ProviderEnablementStore
-    /// Providers that need a user-supplied API key (currently OpenRouter and Z.ai), conforming to
-    /// `APIKeyManaging`. Each matching Customize provider detail shows an API Key section and writes
-    /// changes through the capability. Empty when no installed provider needs a user key.
     let apiKeyProviders: [any APIKeyManaging]
-    /// Quota pace notification preferences (three independent triggers). Drives the Settings section
-    /// and is read by `WidgetDataStore.evaluateNotifications`.
+    /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
     let notificationSettings: NotificationSettingsStore
-    /// Anonymous, opt-in usage telemetry (daily rollups). Exposed so Settings can toggle it and the
-    /// app-termination hook can flush any queued events.
+    /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
-    /// Source of truth for the popover's transparency: the persisted Increase Transparency toggle, the
-    /// ephemeral secret-code easter-egg state, and the system accessibility flags it yields to. Read by both
-    /// the SwiftUI surface and the AppKit panel (`StatusItemController`).
+    /// SwiftUI surface와 AppKit panel이 공유하는 Popover 투명도 단일 상태.
     let transparency: PopoverTransparencyStore
-    /// The menu bar's screen-share privacy mode: the persisted Hide From Screen Share toggle
-    /// plus the live capture signal. Read by `StatusItemImageUpdater` to swap the strip for the
-    /// wordmark while the screen is shared or recorded.
+    /// 캡처 중 strip을 wordmark로 교체하도록 status item updater가 참조.
     let privacy: MenuBarPrivacyStore
-    /// One-time onboarding state (the first-run Customize hint card). Only ever marked pending by
-    /// `FirstRunSeeder` on a fresh install, so existing installs never see the card.
+    /// 1회성 onboarding 상태. 신규 설치에서만 `FirstRunSeeder`가 pending 표시 — 기존 설치는 hint 카드 미노출.
     let onboarding: OnboardingStore
-    /// Claims Codex rate-limit reset credits from the resets popover (the app's only provider-API
-    /// write), routed per card: every Codex card's claim runs through that card's own auth store and
-    /// usage client, so an irreversible claim always spends the same account's credential the card
-    /// shows. `nil` only if the Codex provider were ever removed from the registry. Injected into the
-    /// view tree via `\.codexResetClaim`.
+    /// Codex reset credit claim 라우터 (앱 유일의 provider-API 쓰기). 카드별 자체 auth store·usage client 경유 —
+    /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
-    /// The account registry the launch pass reconciled. The UI observes it live: a rename
-    /// (`customLabel`) re-titles the card everywhere without a relaunch.
+    /// 런치 패스가 reconcile한 account registry. rename(`customLabel`)이 재시작 없이 카드 제목에 반영.
     let accounts: ProviderAccountsStore
-    /// The managed launch-profile registry (`AccountProfilesStore`) the launch account pass scanned.
-    /// Kept as the single shared instance so the Settings account UI reads (and reloads) the same
-    /// state the pass used.
+    /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
-    /// Card id → managed profile id for cards that were assembled from a registered launch home.
-    /// The mapping is stable across label edits, so the dashboard can select the same Personal/Work
-    /// profile that Settings uses without making profile labels card IDs.
+    /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
-    /// The provider runtimes, kept so on-demand credential detection (the Customize "Reset All" reseed)
-    /// can re-probe `hasLocalCredentials()` the same way first-run seeding does.
+    /// 온디맨드 credential 재탐지(Customize "Reset All")용으로 보관하는 provider runtime 목록.
     private var providers: [ProviderRuntime]
-    /// Read-only usage API on 127.0.0.1:6736 for other local apps (silently off when the port is taken).
+    /// 127.0.0.1:6736의 읽기 전용 로컬 usage API (포트 점유 시 조용히 비활성).
     private let localAPI: LocalUsageServer
-    // A `let` of a `Sendable` `Task` is implicitly nonisolated, so the nonisolated `deinit` can cancel it.
+    // `Sendable` `Task`의 `let`은 암시적 nonisolated — nonisolated `deinit`에서 cancel 가능.
     private let refreshTask: Task<Void, Never>
-    /// The fresh-install credential-detection pass (see `FirstRunSeeder`); `nil` on every later launch.
+    /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
     private let seedTask: Task<Void, Never>?
-    /// The new-provider credential-detection pass (see `NewProviderSeeder`); `nil` unless this launch is
-    /// the first with a provider the install has never seen.
+    /// 신규 provider credential 탐지 패스 (`NewProviderSeeder` 참고); 처음 보는 provider가 없으면 `nil`.
     private let newProviderTask: Task<Void, Never>?
-    /// Persists a fresh `ShellEnvironmentSnapshot` once the login-shell capture completes, so the next
-    /// launch can read shell-exported facts (provider home overrides) even when its own capture is slow.
+    /// login-shell 캡처 완료 시 `ShellEnvironmentSnapshot` 영속화 — 다음 런치가 자체 캡처 완료 전에도 shell 정보 참조 가능.
     private let shellEnvironmentSnapshotTask: Task<Void, Never>
 
-    /// `isFreshInstall` must be captured by the caller BEFORE `SettingsMigrator.migrate()` runs (the
-    /// migrator's schema stamp makes the defaults domain non-empty). See `AppDelegate`.
+    /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
+    /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
     init(isFreshInstall: Bool = false) {
-        // Capture the user's login-shell environment off-main so provider keys exported in a shell
-        // profile (e.g. OPENROUTER_API_KEY) resolve in a Finder/Dock-launched build, not only when
-        // run from a terminal. Warmed here so the first refresh finds the cache ready.
+        // login-shell 환경 off-main 선캡처 — Finder/Dock 런치에서도 shell profile의 provider key 해석 가능.
         LoginShellEnvironment.shared.prewarm()
-        // Once the capture lands, persist its identity-relevant facts so the NEXT launch has them
-        // even if that launch's own capture is slow (see `ShellEnvironmentSnapshot`).
+        // 캡처 완료 시 identity 관련 사실 영속화 — 다음 런치용 (`ShellEnvironmentSnapshot` 참고).
         self.shellEnvironmentSnapshotTask = ShellEnvironmentSnapshotStore(defaults: .standard).startRefreshTask()
-        // The launch account pass: which account is signed in at each family's default home, plus
-        // the config-dir scan for extra Claude logins. Feeds the snapshot cache's account stamp,
-        // reconciles the account registry, and hands the catalog its extra-card build plan.
-        // `accountProfiles` is created here (before the pass) so the pass and the Settings account
-        // UI share one instance.
+        // 런치 account 패스: family별 기본 home의 로그인 계정 확인 + 추가 Claude 로그인의 config-dir 스캔.
+        // `accountProfiles`는 패스와 Settings 계정 UI가 한 인스턴스를 공유하도록 패스 이전에 생성.
         let accounts = ProviderAccountsStore()
         let accountProfiles = AccountProfilesStore()
         let accountAssembly = ProviderAccountAssembly.make(
@@ -123,15 +94,13 @@ final class AppContainer {
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
-        // Re-enabling a provider should fetch it promptly, so clear any leftover failure backoff before
-        // the enablement wake refreshes. `weak` breaks the cycle (dataStore already captures enablement).
+        // provider 재활성화 시 즉시 fetch되도록 잔여 failure backoff 제거. `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
         enablement.onProviderEnabled = { [weak dataStore] id in dataStore?.clearFailureBackoff(for: id) }
         enablement.onChange = { [weak dataStore, weak iCloudSync] in
             dataStore?.providerEnablementDidChange()
             iCloudSync?.scheduleWrite()
         }
-        // Fresh installs start minimal: seed the enabled-provider list (Claude/Codex/Kimi right away,
-        // then the detected set once the local credential probe finishes). No-op on every later launch.
+        // 신규 설치는 최소 구성으로 시작 — enabled-provider 목록 seed. 이후 런치에서는 no-op.
         let onboarding = OnboardingStore()
         self.seedTask = FirstRunSeeder.seedIfNeeded(
             isFreshInstall: isFreshInstall,
@@ -139,9 +108,7 @@ final class AppContainer {
             enablement: enablement,
             onboarding: onboarding
         )
-        // Providers added by an update get the same credential detection on their first launch — enabled
-        // only when the user actually has the tool. Runs every launch; a no-op unless the registry has a
-        // provider this install has never seen (fresh installs were just baselined by FirstRunSeeder).
+        // 업데이트로 추가된 provider도 첫 런치에 동일한 credential 탐지 적용. 처음 보는 provider가 없으면 no-op.
         self.newProviderTask = NewProviderSeeder.reconcileIfNeeded(
             providers: providers,
             enablement: enablement
@@ -156,25 +123,14 @@ final class AppContainer {
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
 
-        // The resets popover's claim router: one claim service per Codex card, each sharing ITS card's
-        // credential loading and HTTP client so a claim's auth can't drift from the provider it was
-        // tapped on — an irreversible claim must spend the same account's credential the card shows.
-        // A successful claim forces a refresh of that card so the meters and credit count reconcile
-        // before the popover shows its result. The forced refresh returns `.skipped` when another
-        // refresh already owns the provider — and that in-flight probe may carry *pre-claim* usage —
-        // so retry until this refresh actually runs (bounded; the racing probe finishes in seconds).
+        // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
+        // claim 성공 시 해당 카드 강제 refresh — in-flight refresh는 pre-claim 사용량일 수 있어 실제 실행까지 재시도 (bounded).
         let codexProviders = providers.compactMap { $0 as? CodexProvider }
         self.codexResetClaim = CodexResetClaimRouter(
             providers: codexProviders,
             refreshAfterClaim: { [weak dataStore] providerID in
-                // The bound must outlast the provider's slowest refresh: usage fetch (10s timeout)
-                // + token refresh (15s) + usage retry (10s) + reset-credit fetch (10s) ≈ 45s. The
-                // common race (the periodic timer's probe) clears in a couple of seconds; the
-                // pathological one keeps the popover's honest "Resetting…" up rather than showing
-                // a success banner over pre-claim meters. A `.failed` probe is retried a few times
-                // too — a transient flake right after the claim must not strand pre-claim meters
-                // behind a success banner — before giving up loudly (the provider error already
-                // shows on the card, so the staleness isn't silent).
+                // 재시도 한도는 provider의 최장 refresh(≈45s)보다 길게 유지 필수 — pre-claim meter 위에 성공 배너 방지.
+                // `.failed`도 수 회 재시도 후 loud하게 포기 (provider 오류가 카드에 표시되므로 staleness 비은폐).
                 var failures = 0
                 for attempt in 0..<45 {
                     guard let dataStore else { return }
@@ -197,18 +153,13 @@ final class AppContainer {
             }
         )
 
-        // Anonymous, opt-in usage telemetry (two daily-rollup events). Its state lives in a dedicated
-        // UserDefaults suite, kept separate from app settings so the user's sharing choice and the
-        // install id stay independent of any settings change. The snapshot closure reads the live
-        // layout/enablement so `app_daily_active` always reflects the current configuration.
+        // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
         let telemetryStore = TelemetryStore()
         let telemetry = TelemetryRecorder(
             sink: PostHogTelemetrySink(enabled: telemetryStore.enabled),
             store: telemetryStore,
             snapshot: { [enablement, layout, dataStore] in
-                // Report the *active* configuration: a metric whose provider is turned off is hidden
-                // from the dashboard and menu bar, so exclude it here too — keeping the metric arrays
-                // consistent with `enabledProviders` (which is also enablement-filtered).
+                // 활성 구성만 보고 — 꺼진 provider의 metric 제외로 `enabledProviders`와 일관 유지.
                 let providerOn: (String) -> Bool = { metricID in
                     guard let providerID = layout.registry.descriptor(id: metricID)?.providerID else { return false }
                     return enablement.isEnabled(providerID)
@@ -237,15 +188,12 @@ final class AppContainer {
                 limitDescriptors: dataStore.limitDescriptorsByProvider,
                 errors: dataStore.providerErrors
             )
-            // API output is human-read too: resolve card titles at respond time so renames show,
-            // exactly like every UI surface.
+            // 응답 시점에 카드 제목 resolve — rename이 UI surface와 동일하게 반영.
             .resolvingDisplayNames(accounts.resolvedDisplayNamesByCardID)
         })
         self.refreshTask = Self.startPeriodicRefresh(dataStore: dataStore, telemetry: telemetry)
         localAPI.start()
-        // Become the notification-center delegate so banners show while frontmost — a menu-bar accessory
-        // effectively always is. Notification authorization is requested the first time a trigger is
-        // turned on in Settings, not at launch — triggers default off. No-op under tests.
+        // notification-center delegate 등록 — frontmost 상태에서도 배너 표시. 권한 요청은 런치가 아니라 Settings의 트리거 첫 활성화 시.
         AppNotifications.shared.registerAsDelegate()
     }
 
@@ -256,30 +204,26 @@ final class AppContainer {
         shellEnvironmentSnapshotTask.cancel()
     }
 
-    /// The name a card renders under right now — the app-side face of the one resolver
-    /// (`ProviderAccountRecord.resolvedDisplayName`). Live: a rename in the account registry
-    /// re-titles the card everywhere without a relaunch. Non-account providers (no record) keep
-    /// their static display name; `Provider.displayName` itself only ever carries the derived
-    /// default, so the fallback can never be a stale rename.
+    /// 카드가 현재 렌더링되는 이름 — account registry의 rename이 재시작 없이 반영.
+    /// record 없는 provider는 정적 display name 유지; fallback이 stale rename일 수 없음.
     func displayName(for provider: Provider) -> String {
         accounts.resolvedDisplayName(cardID: provider.id) ?? provider.displayName
     }
 
-    /// The managed profile label for a usage card, if that card is backed by a managed profile.
+    /// 관리형 profile 기반 카드의 profile label; 아니면 `nil`.
     func accountProfileLabel(for cardID: String) -> String? {
         guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
         return accountProfiles.profile(id: profileID)?.label
     }
 
-    /// The visible account card backed by a family's currently selected managed profile.
+    /// family의 현재 선택된 관리형 profile이 backing하는 표시 카드.
     func preferredAccountCardID(for family: String, among cardIDs: [String]) -> String? {
         guard let profileID = accountProfiles.preferredProfileID(family: family) else { return nil }
         return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
     }
 
-    /// A successful Settings account switch updates both account-derived usage surfaces once: the
-    /// dashboard selector and the selected family's menu-bar stars. Later dashboard picker changes
-    /// stay view-only and never run the terminal switch or alter menu-bar stars again.
+    /// Settings 계정 전환 성공 시 dashboard selector와 해당 family의 메뉴 바 star를 1회 갱신.
+    /// 이후 dashboard picker 변경은 view 전용 — terminal 전환·star 변경 없음.
     func syncDashboardUsageAccount(to profile: AccountProfile) {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
@@ -291,9 +235,8 @@ final class AppContainer {
         Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
     }
 
-    /// Adds or removes account-scoped provider cards immediately after Settings changes a managed
-    /// profile. The root stores remain stable, so the already-open dashboard and status item pick up
-    /// the new registry without a process restart.
+    /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
+    /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
     func refreshAccountCatalog() {
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
@@ -338,8 +281,7 @@ final class AppContainer {
         }
     }
 
-    /// Account-specific runtimes are alternate views of one provider. The Customize master toggle
-    /// therefore always enables or disables every account card in that provider family together.
+    /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
     func setProviderEnabled(_ enabled: Bool, for providerID: String) {
         let family = ProviderAccountID.family(of: providerID)
         if ProviderAccountID.families.contains(family) {
@@ -351,15 +293,13 @@ final class AppContainer {
         }
     }
 
-    /// Whether the card has an account record a rename can attach to (accounts-model families only,
-    /// and only once the account's identity has been observed at least once).
+    /// rename을 붙일 account record 존재 여부 (accounts-model family에서 identity 관측 이후에만 true).
     func canRename(_ providerID: String) -> Bool {
         accounts.records.contains { $0.id == providerID }
     }
 
-    /// Re-runs first-launch credential detection on demand — the enablement half of the Customize
-    /// "Reset All" action (`LayoutStore.resetToDefault` handles metrics, order, pins, and expansion).
-    /// Delegates to `FirstRunSeeder.reseed`; returns its detection task so callers can await it.
+    /// Customize "Reset All"의 enablement 절반 — 첫 런치 credential 탐지 재실행.
+    /// `FirstRunSeeder.reseed`에 위임; await 가능한 탐지 task 반환.
     @discardableResult
     func reseedEnabledProviders() -> Task<Void, Never> {
         FirstRunSeeder.reseed(providers: providers, enablement: enablement)
@@ -369,16 +309,12 @@ final class AppContainer {
         assembly: ProviderAccountAssembly,
         profiles: AccountProfilesStore
     ) -> [String: String] {
-        // Profiles map to cards by identity, never by path. The selected profile answers for the
-        // bare family card (the shared-home runtime carries its authentication); every inactive
-        // profile owns its snapshot card. A card whose account matches a managed profile's identity
-        // — the ambient config-dir case — attaches by that identity too.
+        // profile은 path가 아닌 identity로 카드에 매핑 — 선택 profile은 bare family 카드, 비활성 profile은 각자의 snapshot 카드 담당.
         var result = assembly.profileIDsByCard
         for family in AccountProfilesStore.supportedFamilies {
             guard let selected = profiles.preferredProfile(family: family) else { continue }
             if let observed = assembly.identityKeysByCard[family], observed != selected.identityKey {
-                // Someone signed the shared home into a different account outside OpenUsage; the
-                // bare card shows that login, so the selected profile must not claim its label.
+                // 공유 home이 외부에서 다른 계정으로 로그인된 경우 — bare 카드가 그 로그인을 표시하므로 선택 profile의 label 미점유.
                 continue
             }
             result[family] = selected.id
@@ -392,36 +328,17 @@ final class AppContainer {
         return result
     }
 
-    /// Drives live updates: refresh on launch, then again every refresh interval. Each pass honors the
-    /// cache, so it only hits the network once a snapshot has actually expired. `@Observable` propagates
-    /// the resulting snapshot changes to the menu-bar label and any open widgets, so the UI refreshes on
-    /// its own instead of only when the popover opens.
-    ///
-    /// Between passes the loop sleeps via `RefreshWakeSignal`, which wakes it early when the user
-    /// enables/disables a provider so a newly-enabled provider is fetched promptly instead of waiting out
-    /// the full interval. The signal subscribes BEFORE the first pass and buffers, so an enablement change
-    /// landing while a pass is still running (first-run credential detection, `NewProviderSeeder`, the
-    /// Customize "Reset All" reseed — all of which typically finish faster than the network fetches) is
-    /// never lost. Each pass still honors the cache (and the per-provider failure backoff), so an early
-    /// wake only hits the network for a provider whose snapshot has actually expired.
-    ///
-    /// The wake is deliberately scoped to `ProviderEnablementStore.didChangeNotification` — NOT the
-    /// firehose `UserDefaults.didChangeNotification`, which fires for the app's own snapshot-cache writes,
-    /// Sparkle's update bookkeeping, and unrelated global-domain changes from other processes. Waking on
-    /// that, with no minimum interval before re-refreshing, collapsed the fixed 5-minute cadence into a
-    /// refresh storm.
+    /// 주기 refresh loop: 런치 직후 1회, 이후 매 interval 실행. 각 패스는 cache 준수 — 만료된 snapshot만 네트워크 요청.
+    /// 패스 사이 대기는 `RefreshWakeSignal` 경유 — 첫 패스 전 구독·buffer로 패스 도중의 enablement 변경도 무유실.
+    /// wake는 `ProviderEnablementStore.didChangeNotification` 한정 필수 — `UserDefaults.didChangeNotification` 구독은 refresh 폭주 유발.
     private static func startPeriodicRefresh(dataStore: WidgetDataStore, telemetry: TelemetryRecorder) -> Task<Void, Never> {
         Task {
             let wakeSignal = RefreshWakeSignal()
             while !Task.isCancelled {
                 await dataStore.refreshAll()
-                // Re-evaluate quota pace milestones every tick — after the refresh so it sees fresh data,
-                // and on every loop (not just on a fetch) so pace worsening from elapsed time alone still
-                // alerts even with the popover closed.
+                // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
                 await dataStore.evaluateNotifications()
-                // Day-rollover beat: emits `app_daily_active` once per local day and flushes any
-                // prior-day provider rollups. Runs on launch and every interval, so always-running
-                // instances still produce a daily-active signal.
+                // 일자 전환 beat: `app_daily_active` 1일 1회 발행 + 전일 provider rollup flush.
                 telemetry.tick()
                 await wakeSignal.waitForWake(timeout: RefreshSetting.interval)
             }

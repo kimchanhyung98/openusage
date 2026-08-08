@@ -1,7 +1,6 @@
 import Foundation
 
-/// The spend period the Total Spend card can show — matching the three per-provider spend tiles
-/// `SpendTileMapper` emits, whose line labels double as the lookup keys here.
+/// Total Spend 카드가 표시하는 spend period — `SpendTileMapper`의 per-provider spend tile 3종과 대응, line 라벨이 lookup key.
 enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable {
     case today = "Today"
     case yesterday = "Yesterday"
@@ -9,12 +8,10 @@ enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// The metric-line label this period sums across providers (identical to the raw value today,
-    /// but kept as its own accessor so the two meanings can diverge without a hunt).
+    /// 이 period가 provider 전반에서 합산하는 metric-line 라벨 — 현재 raw value와 동일하나 두 의미가 분기할 수 있어 별도 accessor 유지.
     var lineLabel: String { rawValue }
 
-    /// Compact segment title for the period switcher — "Last 30 Days" doesn't fit three-across
-    /// in the 320pt popover without shrinking every segment.
+    /// period 스위처용 compact segment 제목 — "Last 30 Days"는 320pt popover의 3분할에 안 들어감.
     var shortLabel: String {
         switch self {
         case .today: "Today"
@@ -24,11 +21,10 @@ enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Which quantity the Total Spend card's ring, center, and legend show. The title menu persists this
-/// choice; the aggregator always collects both dollars and tokens so flipping modes doesn't re-scan.
-/// Raw value `apiSpend` is kept so existing installs don't lose their stored Cost selection.
+/// Total Spend 카드의 ring·center·legend가 보여줄 수량. aggregator는 달러·token을 항상 함께 수집해 모드 전환에 재스캔 없음.
+/// raw value `apiSpend`는 기존 설치의 저장된 Cost 선택 보존용.
 enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
-    /// Menu order is declaration order: Cost → Cost/MTok → Tokens. Cost is the default.
+    /// 메뉴 순서는 선언 순서: Cost → Cost/MTok → Tokens. 기본값은 Cost.
     case cost = "apiSpend"
     case costPerMtok
     case tokens
@@ -43,7 +39,7 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Empty-state copy when no provider qualifies for this metric in the selected period.
+    /// 선택된 period에 해당 metric의 provider가 없을 때의 empty-state 문구.
     var emptyMessage: String {
         switch self {
         case .cost: "No cost data for this period"
@@ -52,7 +48,7 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Dollar-backed modes can inherit the local-estimate note when any contributor's spend is imputed.
+    /// 달러 기반 모드는 기여자의 spend가 imputed일 때 local-estimate 노트 상속 가능.
     var usesDollarEstimateNote: Bool {
         switch self {
         case .cost, .costPerMtok: true
@@ -61,13 +57,10 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// One provider's contribution to a period's total: dollars and tokens from the same spend line,
-/// plus whether the dollars are a local estimate (log-scanned providers) or measured (Cursor's CSV).
+/// period 총계에 대한 provider 한 곳의 기여 — 같은 spend line의 달러·token과 달러의 local estimate 여부.
 struct TotalSpendSlice: Identifiable, Equatable {
     let provider: Provider
-    /// The card title, resolved by the aggregation's caller through the one name resolver — so the
-    /// legend, the ranking tie-break, and the share-card export (which renders outside the SwiftUI
-    /// environment and can't resolve for itself) all show the same live name.
+    /// 집계 호출자가 단일 name resolver로 해석한 카드 제목 — legend·순위 tie-break·share-card export가 같은 live 이름 표시.
     let title: String
     let amountUSD: Double
     let tokenCount: Double
@@ -75,18 +68,17 @@ struct TotalSpendSlice: Identifiable, Equatable {
 
     var id: String { provider.id }
 
-    /// Dollars per million tokens for this provider alone. `nil` when either side is missing.
+    /// 이 provider 단독의 dollars per million tokens — 한쪽이라도 없으면 `nil`.
     var costPerMtok: Double? {
         guard amountUSD > 0, tokenCount > 0 else { return nil }
         return (amountUSD / tokenCount) * 1_000_000
     }
 }
 
-/// One provider's ready-to-draw contribution under a chosen metric: the amount that sizes the ring
-/// and ranks the legend, plus the formatted value surfaces read through `MetricFormatter`.
+/// 선택된 metric 하의 그리기 준비된 provider 기여 — ring 크기·legend 순위를 정하는 amount, 표시는 `MetricFormatter` 경유.
 struct TotalSpendProjectedSlice: Identifiable, Equatable {
     let provider: Provider
-    /// The already-resolved card title (see `TotalSpendSlice.title`) — what the legend renders.
+    /// 이미 해석된 카드 제목(`TotalSpendSlice.title` 참고) — legend가 렌더하는 값.
     let title: String
     let displayAmount: Double
     let estimated: Bool
@@ -94,7 +86,7 @@ struct TotalSpendProjectedSlice: Identifiable, Equatable {
     var id: String { provider.id }
 }
 
-/// A period's cross-provider totals under one metric: ranked slices, center value, and estimate flag.
+/// 한 metric 하의 period 교차 provider 총계 — 순위 매겨진 slice, center 값, estimate flag.
 struct TotalSpendProjection: Equatable {
     let metric: TotalSpendMetric
     let slices: [TotalSpendProjectedSlice]
@@ -104,20 +96,19 @@ struct TotalSpendProjection: Equatable {
     var isEmpty: Bool { slices.isEmpty }
 }
 
-/// A period's cross-provider raw totals: every spend-capable provider that contributed dollars and/or
-/// tokens. Presentation (include / rank / center) is `projection(for:)`.
+/// period의 교차 provider raw 총계 — 달러/token을 기여한 모든 spend-capable provider. 표시(포함/순위/center)는 `projection(for:)` 담당.
 struct TotalSpend: Equatable {
     let period: TotalSpendPeriod
     let slices: [TotalSpendSlice]
 
     var totalUSD: Double { slices.reduce(0) { $0 + $1.amountUSD } }
     var totalTokens: Double { slices.reduce(0) { $0 + $1.tokenCount } }
-    /// The combined number is an estimate as soon as any contributor's dollars are imputed locally.
+    /// 기여자 하나라도 달러가 locally imputed면 합산 숫자는 estimate.
     var isEstimated: Bool { slices.contains(where: \.estimated) }
-    /// Raw storage empty — no provider had dollars or tokens for the period.
+    /// raw 저장 비어 있음 — 이 period에 달러·token을 가진 provider 없음.
     var isEmpty: Bool { slices.isEmpty }
 
-    /// Filters, ranks, and computes the center value for the title menu's selected metric.
+    /// 제목 메뉴에서 선택된 metric의 필터·순위·center 값 계산.
     func projection(for metric: TotalSpendMetric) -> TotalSpendProjection {
         let included: [(slice: TotalSpendSlice, display: Double)] = slices.compactMap { slice in
             switch metric {
@@ -167,16 +158,12 @@ struct TotalSpend: Equatable {
     }
 }
 
-/// Sums per-provider daily spend into one cross-provider total — the data source for the dashboard's
-/// Total Spend ring card. Pure and synchronous: it reads already-refreshed `ProviderSnapshot`s and
-/// never fetches. A provider contributes when its snapshot carries a `.values` line with the period's
-/// label *and* that line has dollars and/or tokens — idle periods (no line) are excluded, never zero.
+/// per-provider 일일 spend를 하나의 교차 provider 총계로 합산 — 대시보드 Total Spend ring 카드의 데이터 소스.
+/// 순수·동기 — 이미 refresh된 `ProviderSnapshot`만 읽고 fetch하지 않음.
+/// provider는 period 라벨의 `.values` line에 달러/token이 있을 때만 기여 — idle period는 0이 아니라 제외.
 enum TotalSpendAggregator {
-    /// The total for one period across `providers` (pass them in display order; ties keep it).
-    /// Slices keep provider display order input only as a stable traversal; metric projection re-ranks.
-    /// `title` resolves each provider's card title — the live card passes the account-registry
-    /// resolver so slices carry renames; the default is the baked derived name for callers without
-    /// registry access (tests).
+    /// `providers` 전반의 한 period 총계 — 표시 순서로 전달 시 tie 유지, metric projection이 재순위.
+    /// `title`은 provider별 카드 제목 해석 — live 카드는 account-registry resolver를 넘겨 리네임 반영, 기본값은 baked 이름(테스트용).
     static func total(
         for period: TotalSpendPeriod,
         providers: [Provider],

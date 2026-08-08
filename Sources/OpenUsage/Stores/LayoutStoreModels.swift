@@ -1,19 +1,16 @@
-/// A provider and its placed (visible) widgets, split into Always Visible rows and On Demand rows
-/// behind the dashboard's caret. Drives the grouped dashboard list.
+/// provider와 배치된(visible) widget을 Always Visible·On Demand로 분할한 묶음 — dashboard 그룹 리스트 구동
 struct ProviderGroup: Identifiable {
     let provider: Provider
     let alwaysShownWidgets: [PlacedWidget]
     let expandedWidgets: [PlacedWidget]
     var id: String { provider.id }
 
-    /// Every visible widget in display order (always-shown first, then expanded). Used where the split
-    /// doesn't matter — reorder id lists and the lifted drag preview.
+    /// 표시 순서의 전체 visible widget (always-shown 먼저) — 분할이 무의미한 곳에서 사용
     var widgets: [PlacedWidget] { alwaysShownWidgets + expandedWidgets }
     var hasExpandedMetrics: Bool { !expandedWidgets.isEmpty }
 }
 
-/// A provider and every metric it supports, in the provider's custom order, split between Always
-/// Visible and On Demand. Drives the Customize screen and the menu-bar pin grouping.
+/// provider와 지원 metric 전체를 custom 순서로 Always Visible·On Demand 분할 — Customize 화면과 메뉴바 pin 그룹 구동
 struct ProviderMetrics: Identifiable {
     let provider: Provider
     let alwaysShownMetrics: [WidgetDescriptor]
@@ -26,19 +23,17 @@ struct ProviderMetrics: Identifiable {
         self.expandedMetrics = expandedMetrics
     }
 
-    /// Convenience for callers that don't partition (e.g. tests): everything is always-shown.
+    /// 분할하지 않는 호출자(테스트 등)용 convenience — 전부 always-shown 처리
     init(provider: Provider, metrics: [WidgetDescriptor]) {
         self.init(provider: provider, alwaysShownMetrics: metrics, expandedMetrics: [])
     }
 
-    /// Every supported metric in custom order (always-shown first, then expanded).
+    /// custom 순서의 지원 metric 전체 (always-shown 먼저)
     var metrics: [WidgetDescriptor] { alwaysShownMetrics + expandedMetrics }
 }
 
-/// One row in the Customize provider list (L1): the provider plus the derived bits the row renders —
-/// whether it's enabled (the master toggle + Active/Inactive label), how many metrics it supports
-/// (the badge), and how many are pinned. Drives `CustomizeProviderListView`. Unlike `ProviderMetrics`,
-/// this includes disabled providers so they stay visible in the list.
+/// Customize provider 리스트(L1)의 한 row — provider와 렌더링용 파생 값 묶음
+/// `ProviderMetrics`와 달리 비활성 provider도 포함해 리스트에 계속 노출
 struct ProviderRow: Identifiable {
     let provider: Provider
     let isEnabled: Bool
@@ -46,14 +41,13 @@ struct ProviderRow: Identifiable {
     var id: String { provider.id }
 }
 
-/// Tone for the transient in-Customize pill (`LayoutStore.customizationNotice`): green success or
-/// orange denial.
+/// Customize 내 transient pill(`LayoutStore.customizationNotice`)의 tone — 초록 성공·주황 거부
 enum CustomizationNoticeTone {
     case positive
     case notice
 }
 
-/// The message + tone carried by the Customize pill's `TransientNotice`, so its two fields clear together.
+/// Customize pill `TransientNotice`가 나르는 message+tone 묶음 — 두 필드 동시 clear 보장
 struct CustomizationNoticeContent {
     var message: String
     var tone: CustomizationNoticeTone

@@ -1,17 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// Renders a `ShareCardView` into a PNG and copies it to the clipboard. Mirrors `MenuBarStripRenderer`'s
-/// `ImageRenderer` → `cgImage` → `NSImage` path (×4 for a crisp, large export), then PNG-encodes it and
-/// writes it to the pasteboard.
+/// `ShareCardView`를 PNG로 렌더해 clipboard에 복사.
+/// `MenuBarStripRenderer`와 같은 `ImageRenderer` → `cgImage` → `NSImage` 경로(×4) 후 PNG 인코딩·pasteboard 기록.
 @MainActor
 enum ShareCardRenderer {
-    /// Off-screen render scale. ×4 turns the popover-scale card into a crisp, large PNG — a 360pt card
-    /// ships as a 1440px image — without authoring a separate large-format layout.
+    /// off-screen 렌더 배율 — ×4로 popover 스케일 카드가 별도 대형 레이아웃 없이 crisp한 대형 PNG(360pt → 1440px)가 됨.
     static let scale: CGFloat = 4
 
-    /// The card rendered to an `NSImage`, or `nil` if `ImageRenderer` produces no CGImage. The image's
-    /// point size is the card's natural (flexible) size; its pixel size is that times `scale`.
+    /// 카드의 `NSImage` 렌더 — `ImageRenderer`가 CGImage를 못 만들면 `nil`. point 크기는 카드 자연 크기, pixel 크기는 ×`scale`.
     static func image<Card: View>(for view: Card) -> NSImage? {
         let renderer = ImageRenderer(content: view)
         renderer.scale = scale
@@ -22,7 +19,7 @@ enum ShareCardRenderer {
         )
     }
 
-    /// PNG-encodes an `NSImage`, or `nil` if the bitmap can't be formed.
+    /// `NSImage`의 PNG 인코딩 — bitmap 형성 실패 시 `nil`.
     static func pngData(from image: NSImage) -> Data? {
         guard
             let tiff = image.tiffRepresentation,
@@ -31,10 +28,8 @@ enum ShareCardRenderer {
         return rep.representation(using: .png, properties: [:])
     }
 
-    /// Writes the card's PNG onto the general pasteboard (replacing its contents). Beeps and logs if the
-    /// PNG can't be encoded or the pasteboard rejects it, so a failed copy isn't silently swallowed.
-    /// Returns `true` only when the PNG actually landed on the pasteboard, so callers can gate a success
-    /// confirmation on it (and not claim "copied" when nothing was written).
+    /// 카드 PNG를 general pasteboard에 기록(기존 내용 대체). 인코딩·기록 실패 시 beep + 로그로 조용한 실패 방지.
+    /// PNG가 실제로 pasteboard에 실렸을 때만 `true` — 호출자의 성공 확인 gate용.
     @discardableResult
     static func copyToPasteboard(_ image: NSImage, pasteboard: NSPasteboard = .general) -> Bool {
         guard let png = pngData(from: image) else {
@@ -51,19 +46,9 @@ enum ShareCardRenderer {
         return true
     }
 
-    /// Orchestrates a Share Screenshot action end to end: resolve the provider's visible rows from the data
-    /// store, build the card with the effective appearance, render it, and copy the PNG to the clipboard.
-    /// On a successful copy it asks the layout store to surface a transient "Copied to clipboard" pill —
-    /// a clipboard write gives no other signal that it landed.
-    /// The rows mirror what the dashboard shows — always-shown plus expanded only when the provider's
-    /// caret is open — so the export matches what the user sees.
-    ///
-    /// The render is pinned to the regular density regardless of the user's popover density slider: the
-    /// rows read density via `@AppStorage`, so the saved value is swapped to `.regular` for the duration
-    /// of the render and restored on exit (synchronously), keeping the exported card consistent without
-    /// disturbing the live popover.
-    /// `displayName` carries the live card title (a rename can land mid-session, after the
-    /// `Provider`'s own name was baked at launch); `nil` falls back to the baked name.
+    /// Share Screenshot 액션의 end-to-end 오케스트레이션: 표시 중인 row 해석 → 카드 빌드 → 렌더 → clipboard 복사.
+    /// row는 대시보드 표시와 동일(always-shown + caret이 열린 경우 expanded)해 export가 화면과 일치.
+    /// `displayName`은 live 카드 제목(세션 중 리네임 반영); `nil`이면 launch 시 baked된 이름 사용.
     @discardableResult
     static func share(
         group: ProviderGroup,
@@ -93,12 +78,8 @@ enum ShareCardRenderer {
         return renderAndCopy(view, label: group.provider.id, layout: layout)
     }
 
-    /// The Total Spend counterpart to `share(group:…)`: renders the aggregate ring card for the
-    /// currently selected period and metric and copies the PNG to the clipboard, with the same
-    /// pinned-density render and the same "Copied to clipboard" confirmation. `total` is passed
-    /// already aggregated — the card computed it for the on-screen ring, so the export can't drift
-    /// from the display. Returns whether the PNG landed on the pasteboard, so the share button can
-    /// gate its own "copied" micro-animation on actual success.
+    /// `share(group:…)`의 Total Spend 대응 — 선택된 period·metric의 aggregate ring 카드를 렌더해 clipboard 복사.
+    /// `total`은 이미 집계된 값이라 export가 화면 ring과 어긋날 수 없음; pasteboard 기록 성공 여부 반환.
     @discardableResult
     static func shareTotalSpend(
         total: TotalSpend,
@@ -115,12 +96,9 @@ enum ShareCardRenderer {
         return renderAndCopy(view, label: metric.title.lowercased(), layout: layout)
     }
 
-    /// Shared render→copy pipeline for both share actions. Pins the render to regular density (the rows
-    /// read density via `@AppStorage`, so the saved value is swapped to `.regular` for the render and
-    /// restored on exit) so the export ignores the user's popover density slider; rasterizes `view`;
-    /// copies the PNG; and on a successful copy surfaces the transient "Copied to clipboard" pill (a
-    /// clipboard write gives no other signal). Beeps and logs (naming the card with `label`) on failure,
-    /// so a failed export is never silently swallowed. Returns whether the PNG landed on the pasteboard.
+    /// 두 share 액션이 공유하는 렌더→복사 파이프라인.
+    /// 렌더 동안 저장된 density를 `.regular`로 교체 후 복원해 export가 popover density slider를 무시; 성공 시 "Copied to clipboard" pill 표시.
+    /// 실패 시 beep + `label` 명시 로그로 조용한 실패 방지; pasteboard 기록 여부 반환.
     @discardableResult
     private static func renderAndCopy<Card: View>(_ view: Card, label: String, layout: LayoutStore) -> Bool {
         let densityKey = DensitySetting.key

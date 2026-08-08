@@ -1,10 +1,7 @@
 import Foundation
 
-/// Imports an already-signed-in provider account into the managed registry without any provider
-/// re-login: read the credential, prove its identity, snapshot it into the Keychain and the
-/// profile's Sign-In Workspace, and only then register the profile. Cancelled, failed, or
-/// identity-less reads register nothing — an authentication failure is never a silent empty
-/// account.
+/// 이미 로그인된 provider 계정을 provider re-login 없이 managed registry로 import — credential read, identity 증명, Keychain·Sign-In Workspace snapshot 후 profile 등록.
+/// 취소·실패·identity 부재 read는 아무것도 등록 안 함 — 인증 실패의 조용한 빈 계정화 금지.
 @MainActor
 struct AccountCredentialImporter {
     struct ImportedCredential: Sendable {
@@ -61,9 +58,8 @@ struct AccountCredentialImporter {
 
     // MARK: - Reading
 
-    /// The Shared Runtime Home's current sign-in, or `nil` when there is none. Codex also accepts
-    /// the legacy `~/.config/codex/auth.json` and the `Codex Auth` Keychain item as one-time import
-    /// sources — the first source that proves an identity wins, and nothing on disk is modified.
+    /// Shared Runtime Home의 현재 sign-in — 없으면 `nil`.
+    /// Codex는 legacy `~/.config/codex/auth.json`과 `Codex Auth` Keychain item도 1회성 import 소스로 수용 — identity를 증명하는 첫 소스 채택, 디스크 무변경.
     func readDefaultCredential(family: String) throws -> ImportedCredential? {
         var entries: [AccountCredentialVault.Entry] = []
         if let shared = try switcher.readSharedAuthentication(family: family) {
@@ -80,8 +76,7 @@ struct AccountCredentialImporter {
             }
         }
         guard !entries.isEmpty else { return nil }
-        // Evaluate the sources in order and use the FIRST one that proves an identity; a
-        // token-shaped source that can't name its account must not shadow a later one that can.
+        // 소스를 순서대로 평가해 identity를 증명하는 첫 소스 사용 — 계정 특정 못 하는 token 형태 소스가 뒤의 유효 소스를 가리는 것 금지.
         for entry in entries {
             if let (identityKey, label) = switcher.identity(of: entry, family: family) {
                 return ImportedCredential(entry: entry, identityKey: identityKey, label: label)
@@ -90,8 +85,7 @@ struct AccountCredentialImporter {
         throw ImportError.identityUnreadable(family: family)
     }
 
-    /// A completed official login inside a profile's Sign-In Workspace, or `nil` when the login
-    /// left no usable credential there.
+    /// profile의 Sign-In Workspace에서 완료된 공식 로그인 — 사용 가능한 credential 없으면 `nil`.
     func readWorkspaceCredential(family: String, profileID: String) throws -> ImportedCredential? {
         let home = try workspace.directory(family: family, profileID: profileID).path
         guard let entry = try switcher.readAuthentication(family: family, home: home) else {
@@ -105,9 +99,8 @@ struct AccountCredentialImporter {
 
     // MARK: - Registration
 
-    /// Snapshots a proven credential and registers its profile: workspace + Keychain first, then a
-    /// re-read verification against the original identity, and only then the registry entry. Any
-    /// failure removes what was staged and registers nothing.
+    /// 증명된 credential을 snapshot하고 profile 등록 — workspace + Keychain 먼저, 원본 identity 재검증 후에만 registry 등록.
+    /// 실패 시 staged 산출물 제거 — 아무것도 등록 안 함.
     @discardableResult
     func register(
         _ credential: ImportedCredential,
@@ -147,17 +140,15 @@ struct AccountCredentialImporter {
         }
     }
 
-    /// Deletes everything OpenUsage staged for a profile's sign-in workspace: the provider-scoped
-    /// login credential first, then the workspace directory. Shared Runtime Homes and legacy
-    /// directories are never in scope.
+    /// profile sign-in workspace에 staged된 전부 삭제 — provider-scoped 로그인 credential 먼저, 다음 workspace 디렉터리 (삭제 순서 계약).
+    /// Shared Runtime Home·legacy 디렉터리는 범위 밖.
     func removeSignInWorkspace(family: String, profileID: String) throws {
         try switcher.removeWorkspaceCredentialArtifacts(family: family, profileID: profileID)
         try workspace.remove(family: family, profileID: profileID)
     }
 
-    /// Removes a managed account without leaving a registered profile that has already lost its
-    /// switchable snapshot. The workspace goes first; if that fails, the snapshot and registry stay
-    /// intact. The registry preflight runs before any deletion.
+    /// managed 계정 제거 — switchable snapshot을 잃은 등록 profile 잔존 금지.
+    /// workspace 먼저 삭제, 실패 시 snapshot·registry 유지 — registry preflight는 모든 삭제 전 실행.
     func removeAccount(_ profile: AccountProfile, from store: AccountProfilesStore) throws {
         try store.validateArchive(profileID: profile.id)
         do {
@@ -187,11 +178,9 @@ struct AccountCredentialImporter {
         }
     }
 
-    /// Completes a **Sign In Again** that ran in the profile's workspace. The snapshot is replaced
-    /// only when the fresh credential proves the SAME account; a different identity restores the
-    /// workspace from the existing snapshot and fails, so a re-login can never quietly turn one
-    /// profile into another account. Re-signing the active profile also refreshes the Shared
-    /// Runtime Home so new terminals pick the new credential up immediately.
+    /// profile workspace에서 실행된 Sign In Again 완결.
+    /// snapshot 교체는 새 credential이 같은 계정을 증명할 때만 — 다른 identity면 기존 snapshot으로 workspace 복원 후 실패, re-login의 조용한 계정 전환 금지.
+    /// 활성 profile 재로그인은 Shared Runtime Home도 갱신 — 새 터미널이 즉시 새 credential 사용.
     func completeReSignIn(for profile: AccountProfile, isActive: Bool) throws {
         guard let credential = try readWorkspaceCredential(family: profile.family, profileID: profile.id) else {
             throw ImportError.noSignIn(family: profile.family)
@@ -208,9 +197,8 @@ struct AccountCredentialImporter {
         }
     }
 
-    /// The first-account import: bring the already-signed-in default account into the registry
-    /// without a provider re-login. Returns `nil` when the family has no default sign-in (the
-    /// caller then offers the official login). The Shared Runtime Home is read, never written.
+    /// 첫 계정 import — 이미 로그인된 기본 계정을 provider re-login 없이 registry에 등록.
+    /// family에 기본 sign-in 없으면 `nil`(caller가 공식 로그인 제안) — Shared Runtime Home은 read 전용.
     @discardableResult
     func importDefaultAccount(
         family: String,
@@ -224,7 +212,7 @@ struct AccountCredentialImporter {
         return profile
     }
 
-    /// A first label that reads well and never collides: the requested label, else " 2", " 3", …
+    /// 충돌 없는 첫 label — 요청 label 그대로, 충돌 시 " 2", " 3", ….
     private func uniqueLabel(_ label: String, family: String, store: AccountProfilesStore) -> String {
         let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let base = AccountProfilesStore.isValidLabel(trimmed) ? trimmed : "Account"

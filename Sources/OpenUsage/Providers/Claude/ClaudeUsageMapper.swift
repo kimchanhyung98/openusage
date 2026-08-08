@@ -3,8 +3,7 @@ import Foundation
 struct ClaudeMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
-    /// Provider header notice (amber triangle + tooltip) riding along with this usage, e.g. the
-    /// rate-limited warning. `nil` for a clean fetch.
+    /// usage에 동반되는 provider header notice(amber 삼각형 + tooltip) — clean fetch면 `nil`.
     var warning: String?
 }
 
@@ -36,8 +35,7 @@ enum ClaudeUsageMapper {
         )
     }
 
-    /// Snapshot shown when the usage endpoint rate-limits us and there is no last-good usage to fall back
-    /// on (e.g. the first fetch after launch): a status badge plus the staleness note, no live bars.
+    /// rate-limit 상태에서 last-good 부재 시의 snapshot — status badge + staleness note, 라이브 바 없음.
     static func rateLimitedUsage(credentials: ClaudeOAuth, retryAfterSeconds: Int?) -> ClaudeMappedUsage {
         let retryText = retryAfterSeconds.map(formatRateLimitMinutes)
         let waitText = retryText.map { "Rate limited, retry in ~\($0)" } ?? "Rate limited, try again later"
@@ -51,25 +49,19 @@ enum ClaudeUsageMapper {
         )
     }
 
-    /// Provider header warning (the amber triangle + tooltip) for the rate-limited state. The badge/note
-    /// lines above only render when their metrics are enabled in the layout, so without this the default
-    /// dashboard showed bare "No data" rows with no hint of why. Also warns the
-    /// user off manual refreshes, which extend Anthropic's rate limiting.
+    /// rate-limited 상태의 provider header 경고 — badge/note 라인이 레이아웃에 없어도 원인 표시,
+    /// 수동 refresh 자제 안내(rate limit 연장 방지).
     static func rateLimitedWarning(retryAfterSeconds: Int?) -> String {
         let base = "Updates blocked by Anthropic. Be patient — manual refreshes will make it worse."
         guard let retryText = retryAfterSeconds.map(formatRateLimitMinutes) else { return base }
         return "\(base) Retrying in ~\(retryText)."
     }
 
-    /// Provider warning shown on the Claude header (the amber triangle + tooltip, like Z.ai's "no coding
-    /// plan" notice) when the stored login can't read live usage because it lacks the `user:profile` scope
-    /// (an inference-only token, e.g. from `claude setup-token`). Without it the Session / Weekly bars just
-    /// read "No data" with no hint that a re-login restores them. The scanned spend tiles are unaffected
-    /// and still load.
+    /// `user:profile` scope 없는 로그인(inference 전용 토큰)의 header 경고 — 재로그인으로
+    /// Session/Weekly 복구 안내; 스캔된 spend 타일은 영향 없음.
     static let missingProfileScopeWarning = "Re-login for live usage. Run `claude` and sign in again to restore session and weekly limits."
 
-    /// The "live usage is rate limited" note appended to a last-good snapshot so the still-shown bars are
-    /// flagged as possibly stale. Shared with `rateLimitedUsage` so the wording stays in one place.
+    /// last-good snapshot에 덧붙는 rate-limited note(바의 stale 가능성 표시) — `rateLimitedUsage`와 문구 공유.
     static func rateLimitedNote(retryAfterSeconds: Int?) -> MetricLine {
         let retryText = retryAfterSeconds.map(formatRateLimitMinutes)
         let noteText = retryText.map { "Live usage rate limited - retry in ~\($0)" } ?? "Live usage rate limited - data may be stale"
@@ -123,10 +115,8 @@ enum ClaudeUsageMapper {
         ))
     }
 
-    /// A model-scoped weekly limit from the `limits` array — `kind: "weekly_scoped"` with
-    /// `scope.model.display_name` naming the model (e.g. "Fable"). Anthropic moved the per-model
-    /// weekly windows off the legacy top-level `seven_day_<model>` keys (which now come back null)
-    /// and into this array, so each scoped row is read by display name. `percent` is 0–100.
+    /// `limits` 배열의 model-scoped weekly limit(`kind: "weekly_scoped"`) — legacy top-level
+    /// `seven_day_<model>` 키는 null 회귀, display name으로 행 조회; `percent`는 0–100.
     private static func appendScopedWeeklyLimit(_ limits: Any?, modelName: String, label: String, to lines: inout [MetricLine]) {
         guard let array = limits as? [Any] else { return }
         for entry in array {
@@ -166,8 +156,7 @@ enum ClaudeUsageMapper {
                 format: .dollars
             ))
         } else if used > 0 {
-            // No monthly cap: an unbounded spend, carried raw so it formats through `MetricFormatter`
-            // (compact like the spend tiles, e.g. "$1.2K spent") instead of a baked full-currency string.
+            // monthly cap 없음: unbounded spend를 raw로 전달 — `MetricFormatter`의 compact 포맷 적용.
             lines.append(.values(label: "Extra usage spent", values: [MetricValue(number: used, kind: .dollars)]))
         }
     }

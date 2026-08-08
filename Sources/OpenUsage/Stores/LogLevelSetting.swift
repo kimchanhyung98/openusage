@@ -1,29 +1,20 @@
 import Foundation
 
-/// The persisted log level that gates the file log. A `String`-raw `UserDefaultsBacked` enum so it
-/// reads its stored choice through the same idiom as every other persisted setting.
-///
-/// The key (`logLevel`) and the lowercase raw values (`error`/`warn`/`info`/`debug`) mirror the
-/// original Tauri store so the strings stay grep-friendly and recognizable across the two editions.
-/// The fallback is `.info`, not the Tauri runtime's `Error` default: per issue #604 the release
-/// default stays quiet at Info, and Debug is something the user opts into. `Trace` is intentionally
-/// dropped — the issue's floor is Error/Warn/Info/Debug and `os.Logger` has no Trace tier — and
-/// `off` is not exposed (the tray never produced it).
+/// file log를 gate하는 persisted log level
+/// key와 raw value는 원본 Tauri store와 동일 유지 — 두 edition 간 grep 호환 목적
+/// `Trace`·`off` 미노출, fallback은 릴리스 기본값 `.info` (Debug는 opt-in 전용)
 enum LogLevelSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBacked {
     case error
     case warn
     case info
     case debug
 
-    /// Mirrors the Tauri store key. Harmless to share the name: the two editions never read each
-    /// other's store.
+    /// Tauri store key 공유 — 두 edition이 서로의 store를 읽지 않으므로 무해
     static let key = "logLevel"
 
-    /// The value used when the key is unset or holds an unrecognized raw value. `.info` is the
-    /// release default per issue #604; Debug is opt-in only and never the implicit default.
+    /// key 미설정·미인식 raw value 시 사용값 — Debug는 암묵 기본값이 될 수 없음
     static var fallback: LogLevelSetting { .info }
 
-    /// Title-case label for the Settings picker.
     var label: String {
         switch self {
         case .error: "Error"
@@ -33,8 +24,7 @@ enum LogLevelSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBack
         }
     }
 
-    /// Higher is more verbose. A line emitted at `lineLevel` is written to the file when
-    /// `lineLevel.severity <= self.severity` — i.e. the line is at least as severe as the floor.
+    /// 값이 클수록 verbose — `lineLevel.severity <= self.severity`일 때 file에 기록
     var severity: Int {
         switch self {
         case .error: 0

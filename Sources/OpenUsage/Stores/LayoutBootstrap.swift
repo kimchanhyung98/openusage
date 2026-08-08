@@ -1,6 +1,6 @@
 import Foundation
 
-/// The owner-approved defaults and the legacy baseline used when an existing user has no seed marker.
+/// owner 승인 기본값과 seed marker 없는 기존 사용자용 legacy baseline 묶음
 struct LayoutDefaultSet {
     let metricIDs: [String]
     let migrationBaselineMetricIDs: [String]
@@ -8,8 +8,7 @@ struct LayoutDefaultSet {
     let expandedMetricIDs: [String]
 }
 
-/// Everything `LayoutStore` needs at the end of startup, plus the small set of migration writes that
-/// should be made after its stored properties are initialized.
+/// startup 종료 시점에 `LayoutStore`가 필요로 하는 전체 상태와 초기화 후 수행할 migration 쓰기 목록
 struct LayoutInitialState {
     let placed: [PlacedWidget]
     let providerOrder: [String]
@@ -26,8 +25,8 @@ struct LayoutInitialState {
     let seededDefaultsToPersist: Set<String>?
 }
 
-/// Loads a layout for a fresh install or an existing user. This keeps startup/default-upgrade policy in
-/// one place and leaves `LayoutStore` responsible for live actions after initialization.
+/// 신규 설치·기존 사용자용 layout 로드
+/// startup·default-upgrade 정책을 한곳에 모으고, 초기화 이후 라이브 액션은 `LayoutStore` 담당
 @MainActor
 enum LayoutBootstrap {
     static func load(
@@ -36,10 +35,7 @@ enum LayoutBootstrap {
         defaults: LayoutDefaultSet
     ) -> LayoutInitialState {
         let hasStoredLayout = persistence.hasStoredLayout
-        // Keep widgets whose provider is absent from this launch's registry (an account card whose
-        // login wasn't found this launch). They remain invisible because rendering resolves through
-        // the live registry, but carrying the tombstones through unrelated layout writes lets the
-        // card recover its enabled state when its account returns.
+        // registry에 없는 provider의 widget(부재 중 계정 card)도 tombstone으로 유지 — 계정 복귀 시 enabled 상태 복원
         let savedPlaced = persistence.loadPlaced()
         let startingPlaced = savedPlaced ?? defaults.metricIDs
             .filter { registry.descriptor(id: $0) != nil }
@@ -57,8 +53,7 @@ enum LayoutBootstrap {
             LayoutOrdering.normalizedMetricOrder($0, registry: registry)
         } ?? LayoutOrdering.defaultMetricOrder(registry: registry)
 
-        // An existing value — including an empty array from a user who unpinned everything — wins.
-        // Unknown saved ids are retained as invisible tombstones for temporarily absent account cards.
+        // 저장값(모두 unpin한 빈 배열 포함) 우선, 미지의 저장 id는 부재 중 계정 card용 tombstone으로 보존
         let pinnedMetricIDs: Set<String>
         if let savedPins = persistence.loadPins() {
             pinnedMetricIDs = Set(savedPins)
@@ -66,8 +61,7 @@ enum LayoutBootstrap {
             pinnedMetricIDs = Set(defaults.pinnedMetricIDs.filter { registry.descriptor(id: $0) != nil })
         }
 
-        // Expanded membership is a fresh-install default only. Existing layouts that predate the feature
-        // keep every familiar metric above the caret unless the user later moves one.
+        // expanded 소속은 신규 설치 전용 default — 기능 도입 전 기존 layout은 전부 caret 위 유지
         var shouldPersistExpanded = false
         var expandedMetricIDs: Set<String>
         if let savedExpanded = persistence.loadExpandedMetrics() {
@@ -81,8 +75,7 @@ enum LayoutBootstrap {
 
         let expandedProviderIDs = Set(persistence.loadExpandedProviders() ?? [])
 
-        // A newly-shipped default metric is new to an existing user, so it may safely start below the
-        // caret when that is its declared default. Metrics they already had are never silently hidden.
+        // 새로 배포된 default metric만 caret 아래로 시작 가능 — 사용자가 이미 보던 metric은 숨기지 않는 규칙
         let newlyExpanded = Set(seededResult.newlyPlaced)
             .intersection(defaults.expandedMetricIDs)
             .filter { registry.descriptor(id: $0) != nil }
@@ -91,8 +84,7 @@ enum LayoutBootstrap {
             shouldPersistExpanded = true
         }
 
-        // Optional default-expanded metrics enter below the caret the first time they are enabled. The
-        // saved queue wins so an explicit user move is not recreated on the next launch.
+        // optional default-expanded metric은 최초 enable 시 caret 아래 진입 — 저장 queue 우선으로 사용자 이동 재생성 방지
         let placedIDs = Set(seededResult.placed.map(\.descriptorID))
         let expandedNow = expandedMetricIDs
         let isExpandOnEnableCandidate: (String) -> Bool = { [registry] id in
@@ -101,8 +93,7 @@ enum LayoutBootstrap {
         let savedOnEnable = persistence.loadExpandOnEnable()
         let defaultExpandedOnEnableIDs: Set<String>
         if let savedOnEnable {
-            // Known metrics still have to be valid candidates, but an unknown id may belong to a
-            // temporarily absent account card and must survive until its descriptor returns.
+            // 알려진 metric은 유효 후보여야 하나, 미지 id는 부재 중 계정 card 소속일 수 있어 descriptor 복귀까지 보존
             defaultExpandedOnEnableIDs = Set(savedOnEnable.filter { id in
                 registry.descriptor(id: id) == nil || isExpandOnEnableCandidate(id)
             })
@@ -150,10 +141,7 @@ enum LayoutBootstrap {
         let seededDefaults: Set<String>
         var shouldPersistSeededDefaults = false
         if let saved = persistence.loadSeededDefaults() {
-            // Keep markers for metrics whose provider is absent from this launch's registry (an
-            // account card whose login wasn't found). Pruning them would make a default metric the
-            // user disabled look newly introduced when the card returns, so startup would turn it
-            // back on. Permanently removed metric ids are harmless tombstones and can stay here.
+            // registry에 provider가 없는 metric의 marker도 유지 — prune하면 card 복귀 시 사용자가 끈 default metric이 신규로 오인되어 재활성화됨
             seededDefaults = Set(saved)
             shouldPersistSeededDefaults = seededDefaults.count != saved.count
         } else if hasStoredLayout {
@@ -181,7 +169,7 @@ enum LayoutBootstrap {
     }
 }
 
-/// Pure ordering/default helpers shared by startup and live layout mutations.
+/// startup과 라이브 layout 변경이 공유하는 순수 ordering·default helper
 enum LayoutOrdering {
     static func knownMetricIDs(_ ids: [String], registry: WidgetRegistry) -> [String] {
         var seen = Set<String>()
@@ -204,10 +192,8 @@ enum LayoutOrdering {
         _ saved: [String: [String]],
         registry: WidgetRegistry
     ) -> [String: [String]] {
-        // Start with every saved provider so a temporarily absent account card keeps its ordering
-        // entry. For providers present now, deduplicate the saved sequence (including unknown metric
-        // tombstones) and append newly introduced live metrics; `LayoutStore` filters this persisted
-        // superset through the live registry before rendering.
+        // 저장된 provider 전체에서 시작해 부재 중 계정 card의 ordering 유지, 현재 provider는 dedupe 후
+        // 신규 metric append — 렌더링 전 live registry 필터링은 `LayoutStore` 담당
         var fallback = saved
         for provider in registry.providers {
             let valid = registry.descriptors(for: provider.id).map(\.id)

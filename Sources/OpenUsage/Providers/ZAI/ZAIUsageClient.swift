@@ -10,13 +10,12 @@ struct ZAIUsageClient: Sendable {
         self.http = http
     }
 
-    /// The user's active subscription(s) — best-effort, used only to surface the plan name. A failure
-    /// here must not blank out the quota meters, so the provider treats it as optional.
+    /// 사용자의 활성 subscription 조회 — plan 이름 표시용 best-effort, 실패가 quota meter를 지우면 안 되므로 optional 취급.
     func fetchSubscription(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.subscriptionURL, apiKey: apiKey)
     }
 
-    /// Session token usage and web-search quotas. Required for a usable snapshot.
+    /// session token 사용량과 web-search quota 조회 — 유효한 snapshot에 필수.
     func fetchQuota(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.quotaURL, apiKey: apiKey)
     }
@@ -38,8 +37,8 @@ enum ZAIUsageError: Error, LocalizedError, Equatable {
     case connectionFailed
     case invalidResponse
     case requestFailed(Int)
-    /// The key is valid but the account has no GLM Coding Plan (the quota endpoint answers a 2xx with
-    /// `success:false`). Distinct from a malformed/failed request — there is simply nothing to meter.
+    /// key는 유효하나 계정에 GLM Coding Plan이 없는 상태 (quota endpoint가 2xx + `success:false` 응답).
+    /// malformed·실패 요청과 구분 — meter할 대상 자체가 없음.
     case noCodingPlan
 
     var errorDescription: String? {

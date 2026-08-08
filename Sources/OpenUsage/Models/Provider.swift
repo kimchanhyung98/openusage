@@ -1,13 +1,11 @@
 import Foundation
 
-/// A data source that can register widgets it knows how to feed.
+/// 자신이 공급할 widget을 등록하는 data source.
 struct Provider: Identifiable, Hashable {
     let id: String
     let displayName: String
     let icon: IconSource
-    /// Per-provider quick links (e.g. "Status", "Console") shown as buttons in the card's expanded area.
-    /// Declared inline by each provider; mirrors the legacy Tauri `PluginMeta.links`. Empty by default so
-    /// providers without links and the existing `Provider(id:displayName:icon:)` call sites need no change.
+    /// 카드 확장 영역에 버튼으로 표시되는 provider별 quick link — 기본값 빈 배열.
     let links: [ProviderLink]
 
     init(id: String, displayName: String, icon: IconSource, links: [ProviderLink] = []) {
@@ -17,8 +15,7 @@ struct Provider: Identifiable, Hashable {
         self.links = links
     }
 
-    /// Links safe to render: trimmed, non-empty label and URL, and an `http(s)` scheme only. Mirrors the
-    /// legacy `visibleLinks` filter so a malformed entry never ships a dead or no-op button.
+    /// 렌더 가능한 link만 필터 — trim 후 비어 있지 않은 label·URL, `http(s)` scheme 한정.
     var visibleLinks: [ProviderLink] {
         links.compactMap { link in
             let label = link.label.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -31,7 +28,7 @@ struct Provider: Identifiable, Hashable {
     }
 }
 
-/// One external quick-link button on a provider card: a label and a URL opened in the default browser.
+/// provider 카드의 외부 quick-link 버튼 하나 — label과 기본 브라우저로 여는 URL.
 struct ProviderLink: Hashable {
     let label: String
     let url: String

@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// The shared screenshot-copy control used by dashboard headers. The glyph stays compact, but the
-/// button owns a larger pointer target; a successful copy swaps it for a green, bouncing checkmark
-/// before returning to the copy symbol. Keeping the state and timer here makes every copy action use
-/// the same feedback instead of rebuilding the interaction at each call site.
+/// 대시보드 헤더 공용 스크린샷 복사 버튼. 복사 성공 시 체크마크 피드백 후 복귀.
+/// `action`이 false 반환 시 피드백 생략.
 struct CopyFeedbackButton: View {
     let accessibilityLabel: String
     var isRevealed = true
@@ -32,9 +30,7 @@ struct CopyFeedbackButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Preserve the header's compact 16pt layout slot while the button's 28pt hit rectangle extends
-        // around it. The visible glyph therefore aligns with the old provider-mark position instead of
-        // being pushed inward by the larger interaction target.
+        // 음수 padding으로 28pt 히트 영역을 두면서 헤더의 16pt 레이아웃 슬롯 유지
         .padding(-6)
         .opacity(isRevealed || copied ? 1 : 0)
         .allowsHitTesting(isRevealed || copied)

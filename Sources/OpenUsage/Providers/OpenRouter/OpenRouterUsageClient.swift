@@ -10,13 +10,12 @@ struct OpenRouterUsageClient: Sendable {
         self.http = http
     }
 
-    /// Account-wide credit balance and lifetime spend. Fetched independently from key metadata because
-    /// OpenRouter can gate either endpoint for a particular key type.
+    /// 계정 전체 credit balance와 누적 spend 조회 — key 타입별 endpoint gate 가능성 때문에 key metadata와 독립 fetch.
     func fetchCredits(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.creditsURL, apiKey: apiKey)
     }
 
-    /// Best-effort key metadata: tier, optional per-key spend cap, and daily/weekly/monthly spend.
+    /// best-effort key metadata 조회 — tier, per-key spend cap(선택), daily/weekly/monthly spend.
     func fetchKey(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.keyURL, apiKey: apiKey)
     }

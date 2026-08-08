@@ -1,8 +1,7 @@
 import Foundation
 
-/// Shared ISO-8601 date parsing/formatting used by multiple providers and the local API. Normalizes
-/// the various timestamp shapes providers return (space-separated, " UTC" suffix, variable fractional
-/// digits) before parsing.
+/// 여러 provider와 local API가 공유하는 ISO-8601 날짜 파싱/포맷.
+/// provider별 timestamp 변형(공백 구분, " UTC" suffix, 가변 fractional 자릿수)을 파싱 전 정규화.
 enum OpenUsageISO8601 {
     static func string(from date: Date) -> String {
         formatter(fractionalSeconds: true).string(from: date)
@@ -14,7 +13,7 @@ enum OpenUsageISO8601 {
         formatter(fractionalSeconds: false).date(from: normalized)
     }
 
-    /// Aligns with the JavaScript plugin `ctx.util.toIso` string normalization (Claude `resets_at`, etc.).
+    /// JavaScript plugin `ctx.util.toIso`의 문자열 정규화와 정렬(Claude `resets_at` 등).
     private static func normalizeTimestamp(_ raw: String) -> String {
         var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return s }
@@ -72,10 +71,7 @@ enum OpenUsageISO8601 {
         return head + frac + tz
     }
 
-    // ISO8601DateFormatter is expensive to construct and is hit on every snapshot decode and local-API
-    // encode, so the two fixed configurations are built once. `ISO8601DateFormatter` is thread-safe for
-    // parsing/formatting, and parsing here runs on the main-actor refresh path; `nonisolated(unsafe)`
-    // shares the immutable instances without per-call allocation.
+    // ISO8601DateFormatter는 생성 비용이 커 두 고정 구성을 1회 생성; 파싱/포맷은 thread-safe라 `nonisolated(unsafe)`로 불변 인스턴스 공유.
     private nonisolated(unsafe) static let fractionalFormatter = makeFormatter(fractionalSeconds: true)
     private nonisolated(unsafe) static let plainFormatter = makeFormatter(fractionalSeconds: false)
 

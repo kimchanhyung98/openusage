@@ -1,60 +1,21 @@
 import Foundation
 
-/// Builds daily token/cost estimates for Codex by scanning the Codex CLI's local session rollouts
-/// natively (`$CODEX_HOME/sessions/**/*.jsonl` + `archived_sessions/`), replacing the external
-/// `ccusage` CLI.
-///
-/// Ports ccusage's Codex adapter semantics:
-/// - Homes come from `CODEX_HOME` (comma-separated), else `~/.codex`. Each home contributes its
-///   `sessions/` and `archived_sessions/` dirs; when both hold the same relative file path the
-///   active `sessions/` copy wins.
-/// - A `turn_context` line updates the session's current model; an `event_msg`/`token_count` line
-///   carries the turn's usage — `last_token_usage` when present, else the delta against the previous
-///   cumulative `total_token_usage`.
-/// - Child sessions (subagents spawned via `thread_spawn`, and forks) replay the parent's entire
-///   `token_count` history at spawn with rewritten timestamps. Those replayed lines are skipped —
-///   they only seed the delta baseline — until the file's first live turn: a `task_started` whose
-///   `started_at` is at or after the child session's own creation time (replayed `task_started`
-///   lines carry the parent's original, older `started_at`). When the child's `session_meta` has no
-///   parseable creation timestamp, the same skip still arms and clears on the first `task_started`
-///   whose `started_at` is at or after that line's own wall-clock second. This is deliberately not
-///   a "same second as spawn" window over `token_count` timestamps: a large parent history takes
-///   multiple seconds to replay, so that heuristic undercuts it (that was the cause of a ~20x
-///   spend inflation).
-/// - A `token_count` line whose cumulative `total_token_usage` is unchanged from the previous line
-///   is a re-emitted stale snapshot, not new usage, and is skipped even when it carries a
-///   `last_token_usage`.
-/// - Early sessions without model metadata fall back to `gpt-5`; the retired `codex-auto-review`
-///   slug maps to the codex model that was current at the line's date.
-/// - Identical events (same timestamp + model + token counts) appearing in multiple files (copied
-///   session logs) count once.
-/// - Cost per event: `(input - cached) x input rate + cached x cache-read rate + output x output
-///   rate`, all x the model's Codex priority multiplier when the session ran on the fast/priority
-///   service tier. The tier is tracked per session from `thread_settings_applied` lines — never from
-///   the current `config.toml`, which would retroactively reprice the whole history when toggled.
-///   Events with no recorded tier price at standard rates. Supported GPT-5.4/5.5/5.6 requests above
-///   272k input tokens use OpenAI's higher rates for the whole request.
-///
-/// An actor for the same reasons as `ClaudeLogUsageScanner`: scans run off the main actor, and a
-/// versioned Application Support cache keyed by path + size + mtime makes both refreshes and relaunches
-/// re-parse only files that changed.
+/// Codex CLI의 local session rollout(`$CODEX_HOME/sessions/**/*.jsonl` + `archived_sessions/`)을 native 스캔해 일별 token/cost 추정 — 외부 `ccusage` CLI의 Codex adapter semantics 이식.
+/// 세부 계약은 각 method doc 참고: home 해석(`codexHomes`/`sessionFiles`), line 파싱·child replay gate(`parseFile`), model 해석(`resolveModel`), 집계·cost 계산(`aggregate`/`cost`).
+/// Actor인 이유는 `ClaudeLogUsageScanner`와 동일 — 스캔은 main actor 밖 실행, path+size+mtime 기반 versioned Application Support cache로 변경된 파일만 재파싱.
 actor CodexLogUsageScanner {
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Event>
-    /// Scoped provider instances pass their stable parse-source identity here, so distinct account
-    /// cards never share cache records over disjoint homes (mirror of `ClaudeLogUsageScanner`).
+    /// Scoped provider의 안정적 parse-source identity — 서로 다른 계정 카드가 disjoint home 위에서 cache record 공유 금지 (`ClaudeLogUsageScanner` mirror).
     private let cacheIdentityOverride: String?
-    /// Extra account cards pin the scan to exactly their managed home, replacing the standard
-    /// resolution (`CODEX_HOME`, `~/.codex`) entirely — another account's rollouts must never bleed
-    /// into a scoped card. `nil` keeps the standard walk byte-identical.
+    /// 추가 계정 카드의 scan을 자기 managed home으로만 고정 — 다른 계정 rollout의 유입 차단. `nil`은 표준 resolution(`CODEX_HOME`, `~/.codex`) 유지.
     private let rootsOverride: [URL]?
-    /// Same-account managed homes are folded into the default card as additional history roots.
+    /// 같은 계정의 managed home — 기본 카드의 추가 history root로 병합.
     private let additionalRoots: [URL]
 
-    /// One turn's token usage, normalized from a `token_count` line (deltas already applied).
-    /// `isFast` records whether the session was on the fast/priority service tier when the turn
-    /// ran, tracked from the session's own log; absent tier metadata means standard.
+    /// Turn 1개의 token usage — `token_count` line에서 정규화 (delta 적용 완료).
+    /// `isFast`는 turn 실행 시점의 fast/priority service tier 여부 — session 자체 log에서 추적, tier metadata 없으면 standard.
     struct Event: Codable, Sendable, Equatable {
         var timestamp: Date
         var model: String
@@ -66,8 +27,7 @@ actor CodexLogUsageScanner {
         var isFast: Bool = false
     }
 
-    /// Multi-account cards that resolve the same Codex homes share this actor and parse each rollout
-    /// once. The version is the parser schema version; bump it when `Event` semantics change.
+    /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱. schemaVersion은 `Event` semantics 변경 시 bump.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
         logTag: LogTag.plugin("codex"),
         persistence: JSONLScanCachePersistence(namespace: "codex", schemaVersion: 1)
@@ -86,8 +46,7 @@ actor CodexLogUsageScanner {
         additionalRoots: [URL] = []
     ) {
         precondition(cacheIdentityOverride?.isEmpty != true)
-        // A scoped root set must carry its own parse-source identity, or its cache records would
-        // collide with the default card's under the standard identity.
+        // scoped root set은 자체 parse-source identity 필수 — 표준 identity로는 기본 카드와 cache record 충돌.
         precondition(rootsOverride == nil || cacheIdentityOverride != nil)
         self.environment = environment
         self.homeDirectory = homeDirectory
@@ -97,13 +56,11 @@ actor CodexLogUsageScanner {
         self.additionalRoots = additionalRoots
     }
 
-    /// Scan the last `daysBack` days of Codex rollouts. Returns `nil` when no Codex home or no
-    /// session files exist (the spend tiles then render "No data").
+    /// 최근 `daysBack`일의 Codex rollout 스캔 — Codex home 또는 session 파일이 없으면 `nil` (spend tile은 "No data").
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
-        // A scoped card uses its stable per-card identity; the standard walk keys the cache by the
-        // resolved home set (see `ClaudeLogUsageScanner.parseCacheIdentity` for the why).
+        // scoped 카드는 안정적 per-card identity, 표준 walk는 resolve된 home set을 cache key로 사용 (`ClaudeLogUsageScanner.parseCacheIdentity` 참고).
         let identity: String
         if let cacheIdentityOverride {
             identity = cacheIdentityOverride
@@ -131,7 +88,7 @@ actor CodexLogUsageScanner {
 
     // MARK: - Discovery
 
-    /// `CODEX_HOME` entries (comma-separated) when set, else `~/.codex` — same as ccusage.
+    /// `CODEX_HOME` entry(comma 구분) 우선, 없으면 `~/.codex` — ccusage와 동일.
     private func codexHomes() -> [URL] {
         if let raw = environment.value(for: "CODEX_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
@@ -143,9 +100,8 @@ actor CodexLogUsageScanner {
         return [homeDirectory().appendingPathComponent(".codex")]
     }
 
-    /// Every rollout `*.jsonl` under each home's `sessions/` and `archived_sessions/` (a home with
-    /// neither is scanned directly, ccusage's fallback). When both dirs of one home contain the same
-    /// relative path, the `sessions/` copy wins — an archived duplicate must not double-count.
+    /// 각 home의 `sessions/`·`archived_sessions/` 아래 모든 rollout `*.jsonl` (둘 다 없으면 home 직접 스캔 — ccusage fallback).
+    /// 같은 relative path는 `sessions/` 사본 우선 — archived 중복의 이중 집계 금지.
     private static func sessionFiles(homes: [URL]) -> [JSONLScanning.DiscoveredFile] {
         var files: [JSONLScanning.DiscoveredFile] = []
         var seenDirs: Set<String> = []
@@ -162,9 +118,7 @@ actor CodexLogUsageScanner {
             if sourceDirs.isEmpty {
                 sourceDirs = [home]
             }
-            // `jsonlFiles` resolves symlinks before enumerating, so the discovered paths carry the
-            // resolved dir as their prefix — resolve here too or the relative keys (and the
-            // cross-home dir dedup) stop matching for symlinked Codex homes.
+            // `jsonlFiles`가 enumerate 전에 symlink를 resolve — 여기서도 resolve해야 symlinked home에서 relative key와 cross-home dir dedup이 일치.
             for dir in sourceDirs.map({ $0.resolvingSymlinksInPath() }) where seenDirs.insert(dir.path).inserted {
                 for file in JSONLScanning.jsonlFiles(under: dir) {
                     let relative = String(file.path.dropFirst(dir.path.count))
@@ -178,10 +132,9 @@ actor CodexLogUsageScanner {
 
     // MARK: - File parsing
 
-    /// Parse one rollout file: track the current model from `turn_context` and the current service
-    /// tier from `thread_settings_applied`, normalize each `token_count` into a delta event, and
-    /// skip a child session's replayed parent history (everything before the first live
-    /// `task_started` — see the type doc). A session that never records a tier is standard.
+    /// Rollout 파일 1개 파싱 — `turn_context`로 현재 model, `thread_settings_applied`로 service tier 추적, 각 `token_count`(`last_token_usage` 우선, 없으면 누적 `total_token_usage`와의 delta)를 event로 정규화.
+    /// Child session의 replay된 parent history는 첫 live `task_started`까지 skip. tier 기록이 없는 session은 standard.
+    /// Tier는 session 자체 log에서만 추적 — 현재 `config.toml` 참조 시 toggle이 전체 history를 소급 재산정.
     static func parseFile(_ data: Data) -> [Event] {
         let turnContextMarker = Data(#""type":"turn_context""#.utf8)
         let tokenCountMarker = Data(#""type":"token_count""#.utf8)
@@ -194,7 +147,7 @@ actor CodexLogUsageScanner {
         var currentModel: String?
         var currentTierIsFast = false
         var sawSessionMeta = false
-        // Non-nil while inside a child session's replayed parent history.
+        // child session의 replay된 parent history 구간 동안 non-nil.
         var replayGate: ChildReplayGate?
 
         for line in data.split(separator: UInt8(ascii: "\n")) {
@@ -216,8 +169,7 @@ actor CodexLogUsageScanner {
                 }
                 continue
             }
-            // Only the file's own (first) session_meta counts: a child file replays the parent's
-            // session_meta lines right after its own.
+            // 파일 자신의 (첫) session_meta만 인정 — child 파일은 자기 것 직후에 parent의 session_meta도 replay.
             if type == "session_meta", !sawSessionMeta {
                 sawSessionMeta = true
                 if let payload, isChildSessionMeta(payload) {
@@ -225,7 +177,7 @@ actor CodexLogUsageScanner {
                        let created = OpenUsageISO8601.date(from: timestampRaw) {
                         replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
                     } else {
-                        // Still a child — suppress replay even without a creation timestamp.
+                        // 생성 timestamp가 없어도 child — replay 억제 유지.
                         replayGate = .untilSelfTimedTaskStarted
                     }
                 }
@@ -240,8 +192,7 @@ actor CodexLogUsageScanner {
             }
             guard type == "event_msg", let payload else { continue }
 
-            // The first live task_started opens the child's own turns; replayed task_started lines
-            // carry the parent's original, older started_at.
+            // 첫 live task_started가 child 자신의 turn 시작 — replay된 task_started는 parent의 더 오래된 started_at 유지.
             if payload["type"] as? String == "task_started" {
                 if let gate = replayGate,
                    let startedAt = payload["started_at"] as? NSNumber,
@@ -258,14 +209,13 @@ actor CodexLogUsageScanner {
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
 
-            // Replayed parent history: seed the delta baseline from it but never emit usage.
+            // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
                 if let totals { previousTotals = totals }
                 continue
             }
 
-            // Unchanged cumulative totals mean a re-emitted stale snapshot (Codex does this), not
-            // new usage — even when the line repeats a last_token_usage.
+            // 누적 totals 불변이면 Codex가 재방출한 stale snapshot — last_token_usage가 있어도 신규 usage 아님.
             if let totals, let previous = previousTotals, totals.equalCounts(previous) {
                 continue
             }
@@ -302,8 +252,7 @@ actor CodexLogUsageScanner {
         return events
     }
 
-    /// The `service_tier` a `thread_settings_applied` payload carries in `thread_settings`
-    /// (tolerating a top-level spelling), e.g. `"default"`, `"fast"`, or `"priority"`.
+    /// `thread_settings_applied` payload의 `service_tier` — `thread_settings` 우선, top-level 표기 허용 (예: `"default"`, `"fast"`, `"priority"`).
     private static func serviceTier(in payload: [String: Any]?) -> String? {
         guard let payload else { return nil }
         let settings = payload["thread_settings"] as? [String: Any]
@@ -315,8 +264,7 @@ actor CodexLogUsageScanner {
         return nil
     }
 
-    /// Token fields of a `token_count` usage object, tolerating the older field spellings ccusage
-    /// accepts (`prompt_tokens`, `completion_tokens`, `cache_read_input_tokens`, …).
+    /// `token_count` usage object의 token 필드 — ccusage가 허용하는 구식 표기(`prompt_tokens`, `completion_tokens`, `cache_read_input_tokens`, …) 수용.
     struct RawUsage: Sendable {
         var input: Int
         var cached: Int
@@ -348,13 +296,13 @@ actor CodexLogUsageScanner {
             self.total = total
         }
 
-        /// Same token counts as `other` — an unchanged cumulative snapshot re-emitted by Codex.
+        /// `other`와 token count 동일 — Codex가 재방출한 불변 누적 snapshot 판정.
         func equalCounts(_ other: RawUsage) -> Bool {
             input == other.input && cached == other.cached && output == other.output
                 && reasoning == other.reasoning && total == other.total
         }
 
-        /// Recover a turn delta from cumulative totals (used when `last_token_usage` is absent).
+        /// 누적 totals에서 turn delta 복원 (`last_token_usage` 부재 시 사용).
         func subtracting(_ previous: RawUsage?) -> RawUsage {
             RawUsage(
                 input: max(0, input - (previous?.input ?? 0)),
@@ -375,13 +323,11 @@ actor CodexLogUsageScanner {
         return nil
     }
 
-    /// How a child session's replayed parent history is gated until the first live turn.
+    /// Child session의 replay된 parent history를 첫 live turn까지 gate하는 방식.
     private enum ChildReplayGate {
-        /// Clear when `task_started.started_at` is at/after the child's creation epoch.
+        /// `task_started.started_at`이 child 생성 epoch 이상이면 해제.
         case untilStartedAt(TimeInterval)
-        /// Child `session_meta` had no parseable creation timestamp: clear when `started_at` is
-        /// at/after that `task_started` line's own wall-clock second (replayed turns keep an older
-        /// `started_at`; live turns start near the line timestamp).
+        /// 생성 timestamp가 판독 불가한 child용 — `started_at`이 해당 `task_started` line 자신의 wall-clock 초 이상이면 해제 (replay turn은 parent의 더 오래된 `started_at` 유지).
         case untilSelfTimedTaskStarted
 
         func isCleared(byStartedAt startedAt: TimeInterval, lineTimestamp: String?) -> Bool {
@@ -397,11 +343,8 @@ actor CodexLogUsageScanner {
         }
     }
 
-    /// A session_meta payload marking the file as a child session (subagent spawn or fork) whose
-    /// leading `token_count` lines replay the parent's history.
-    ///
-    /// JSON `null` is `NSNull`, not Swift `nil` — treat null (and blank strings) as absent so a
-    /// root session that declares `forked_from_id: null` is not misclassified as a child.
+    /// 파일을 child session(subagent spawn 또는 fork)으로 표시하는 session_meta payload — 선행 `token_count` line들은 parent history replay.
+    /// JSON `null`은 `NSNull`(Swift `nil` 아님) — null·blank 문자열은 absent 취급, `forked_from_id: null`인 root session의 child 오분류 방지.
     static func isChildSessionMeta(_ payload: [String: Any]) -> Bool {
         if hasNonNullValue(payload["forked_from_id"]) { return true }
         if hasNonNullValue(payload["parent_thread_id"]) { return true }
@@ -412,7 +355,7 @@ actor CodexLogUsageScanner {
         return false
     }
 
-    /// `true` when JSONSerialization yielded a real value (not missing, not `null`, not blank text).
+    /// JSONSerialization이 실제 값을 반환했는지 여부 — missing·`null`·blank text 제외.
     private static func hasNonNullValue(_ value: Any?) -> Bool {
         switch value {
         case nil, is NSNull:
@@ -424,10 +367,8 @@ actor CodexLogUsageScanner {
         }
     }
 
-    /// ccusage's model resolution: an explicit model on the line updates the session's current
-    /// model; otherwise the tracked model applies; a session with no metadata at all falls back to
-    /// `gpt-5`. The retired `codex-auto-review` slug maps to whichever codex model was current at
-    /// the line's date.
+    /// ccusage의 model resolution — line의 명시적 model이 현재 model 갱신, 없으면 추적 중인 model, metadata 전무 시 `gpt-5` fallback.
+    /// 폐기된 `codex-auto-review` slug는 line 날짜 당시의 codex model로 매핑.
     static func resolveModel(
         parsed: String?,
         timestamp: String,
@@ -453,8 +394,7 @@ actor CodexLogUsageScanner {
 
     private static let autoReviewModel = "codex-auto-review"
 
-    /// `codex-auto-review` release timeline (newest first), from ccusage's embedded snapshot: a
-    /// line dated on/after a release prices as that codex model.
+    /// `codex-auto-review` release timeline(최신 우선, ccusage 내장 snapshot) — release일 이후의 line은 해당 codex model로 pricing.
     private static let autoReviewFallbacks: [(releasedOn: String, model: String)] = [
         ("2026-04-23", "gpt-5.5"),
         ("2026-03-05", "gpt-5.4"),
@@ -485,14 +425,9 @@ actor CodexLogUsageScanner {
         var total: Int
     }
 
-    /// Bucket events into local calendar days. Identical events across files (copied session logs)
-    /// count once. Cost is per-event codex math (see type doc).
-    ///
-    /// Events that can't be priced (an unknown model, or a blank slug) are excluded from every displayed
-    /// total — tokens, dollars, the trend, and the model breakdown — because mixing measured tokens with
-    /// unpriceable ones makes the figures incoherent. An unknown model's name lands in
-    /// `unknownModelsByDay` (the tile's warning triangle), the only place unpriceable usage surfaces.
-    /// A blank slug is unattributed, not unknown — there is no name to warn about.
+    /// Event를 local calendar day로 bucket — 파일 간 동일 event(복사된 session log)는 1회 집계, cost는 per-event codex 계산 (`cost` 참고).
+    /// Pricing 불가 event(unknown model, blank slug)는 모든 표시 합계(token·dollar·trend·model breakdown)에서 제외 — 측정값과 pricing 불가 값의 혼합 방지.
+    /// unknown model 이름은 `unknownModelsByDay`(tile의 경고 triangle)로만 노출; blank slug는 unattributed — 경고할 이름 자체가 없음.
     static func aggregate(
         events: [Event], since: Date, pricing: ModelPricing
     ) -> LogUsageScan {
@@ -507,8 +442,7 @@ actor CodexLogUsageScanner {
             guard seen.insert(key).inserted else { continue }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
-            // One trimmed slug for pricing, the unknown-model warning, and the breakdown key alike —
-            // diverging spellings would let the warning triangle and the hover panel disagree.
+            // pricing·unknown-model 경고·breakdown key에 단일 trimmed slug 사용 — 표기 분기 시 경고 triangle과 hover panel 불일치.
             let trimmedModel = event.model.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
 
             guard let model = trimmedModel else {
@@ -518,10 +452,8 @@ actor CodexLogUsageScanner {
             let isFastAlias = canonicalModel.hasSuffix("-fast")
             let rateModel = isFastAlias ? String(canonicalModel.dropLast("-fast".count)) : canonicalModel
 
-            // Codex speed is a provider tier, not Cursor's `-fast` price variant. Resolve a fast
-            // alias through its unscaled base rates, then apply the Codex multiplier exactly once.
-            // If a third-party fast-only model has no base entry, retain its already-scaled rate
-            // and do not apply a second speed multiplier.
+            // Codex 속도는 provider tier — Cursor의 `-fast` 가격 변형 아님. fast alias는 unscaled base rate로 resolve 후 Codex multiplier를 정확히 1회 적용.
+            // base entry 없는 third-party fast-only model은 이미 scaled된 rate 유지 — speed multiplier 이중 적용 금지.
             let baseRates = pricing.resolve(model: rateModel)
             let resolvedRates = baseRates ?? pricing.resolve(model: model)
             guard let rates = resolvedRates else {
@@ -544,9 +476,8 @@ actor CodexLogUsageScanner {
         return accumulator.build()
     }
 
-    /// Codex cost math (ccusage's): non-cached input at the input rate, cached input at the explicit
-    /// cache-read rate (or full input when the source publishes no discount), and output (reasoning
-    /// included) at the output rate. Supported OpenAI models switch the whole request above 272k.
+    /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.
+    /// 지원 OpenAI model은 272k 초과 시 request 전체를 상위 rate로 전환.
     static func cost(
         rates: ModelRates,
         event: Event,
@@ -579,8 +510,7 @@ actor CodexLogUsageScanner {
         ))
     }
 
-    /// Codex priority service-tier multipliers are provider-specific and intentionally do not use
-    /// the supplement's Cursor `-fast` multipliers. Unknown models retain the catalog/fallback rule.
+    /// Codex priority service-tier multiplier — provider 고유 값, supplement의 Cursor `-fast` multiplier 의도적 미사용. 미등재 model은 catalog/fallback 규칙 유지.
     private static func codexPriorityMultiplier(for model: String, rates: ModelRates) -> Double {
         let base = datedBaseModel(model)
         switch base {
@@ -591,8 +521,7 @@ actor CodexLogUsageScanner {
         }
     }
 
-    /// OpenAI explicitly publishes no cached-input discount for these Pro models. Keep this
-    /// provider rule even while an older bundled catalog lacks cache-rate provenance.
+    /// OpenAI가 cached-input 할인을 공표하지 않은 Pro model — 구식 bundled catalog에 cache-rate provenance가 없어도 유지하는 provider 규칙.
     private static func codexModelHasNoCacheDiscount(_ model: String) -> Bool {
         switch datedBaseModel(model) {
         case "gpt-5.4-pro", "gpt-5.5-pro": return true

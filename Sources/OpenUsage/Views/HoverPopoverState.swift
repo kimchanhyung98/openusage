@@ -1,46 +1,33 @@
 import Foundation
 
-/// Drives a hover-revealed popover (the usage-trend chart on sparkline rows, the model breakdown on
-/// spend rows): opens after a short dwell while the inline row is hovered, and closes once the cursor
-/// has left BOTH the row and the popover (a brief grace lets the cursor travel between them). An
-/// `@Observable` reference type so a SwiftUI `View` can hold it in `@State` and bind `isPresented` to
-/// the popover — value-type closure capture can't track this state reliably.
+/// 호버 팝오버(사용 추세 차트, 모델 분해) 개폐 상태 코디네이터.
+/// dwell 후 열림, 행과 팝오버 양쪽에서 커서 이탈 시 grace 후 닫힘.
+/// `@State` 보유와 `isPresented` 바인딩을 위한 `@Observable` 참조 타입.
 @MainActor
 @Observable
 final class HoverPopoverState {
     var isPresented = false
 
-    /// Every live coordinator, so the menu-bar panel's close path can dismiss any open hover popover —
-    /// the dashboard view tree (and this `@State`) survives the panel's `orderOut`, so `.onDisappear`
-    /// alone wouldn't fire and the popover could orphan or re-show on the next open.
+    /// 살아 있는 모든 코디네이터 추적 — 패널 close 경로의 일괄 dismiss용.
+    /// 뷰 트리가 패널 `orderOut`에도 생존하므로 `.onDisappear`만으로는 orphan 방지 불가.
     @ObservationIgnored private static let live = NSHashTable<HoverPopoverState>.weakObjects()
 
     static func dismissAll() {
         for state in live.allObjects { state.dismiss() }
     }
 
-    /// Whether the pointer is over the inline row/value. Unlike the rest of the hover bookkeeping this
-    /// is observed and readable, so a view can drive a hover affordance (the value's highlight chip) off
-    /// it. Crucially, `dismiss()` clears it, so `dismissAll()` on panel close clears the affordance too —
-    /// the dashboard view tree (and a view's own `@State`) survives the panel's `orderOut`, so a plain
-    /// `@State` flag would strand `true` and light the chip with no pointer over the value on reopen.
+    /// 포인터가 인라인 행/값 위에 있는지 여부 — 호버 어포던스 구동용으로 관찰 가능.
+    /// `dismiss()`가 반드시 클리어 — 패널 `orderOut` 후 재오픈 시 stale `true` 방지.
     private(set) var overInline = false
     @ObservationIgnored private var overDetail = false
-    /// While pinned, the popover stays open regardless of cursor position — set during a multi-step
-    /// interaction inside the popover (the resets claim confirm/in-flight flow) where a cursor slip
-    /// outside must not tear the flow down. `dismiss()` still wins (panel close), and clearing it
-    /// re-arms the normal hover-out hide. Readable (`isPinned`) so data-driven dismissals — the row's
-    /// "credits changed under the popover" onChange — can stand down while the claim flow owns the
-    /// popover: the claim itself changes the credits, and dismissing on that change would tear the
-    /// popover down before its result ever renders.
+    /// pin 동안 커서 위치와 무관하게 팝오버 유지 (resets claim confirm/in-flight 플로우용).
+    /// `dismiss()`는 pin보다 우선. `isPinned` 노출로 데이터 기반 dismissal이 claim 플로우 중 보류 가능.
     @ObservationIgnored private var pinned = false
     var isPinned: Bool { pinned }
     @ObservationIgnored private var showTask: Task<Void, Never>?
     @ObservationIgnored private var hideTask: Task<Void, Never>?
 
-    /// 400ms reveal matches the app's hover-tooltip dwell (see `HoverTooltip`), so the popover opens on
-    /// the same deliberate intent as every other hover affordance; 180ms grace lets the cursor cross
-    /// from the row into the popover without it closing. Injectable so tests drive it without sleeps.
+    /// 400ms 노출은 hover-tooltip dwell과 동일, 180ms grace는 행→팝오버 커서 이동 허용. 테스트 주입용.
     private let revealDelay: Duration
     private let hideGrace: Duration
 
@@ -51,8 +38,7 @@ final class HoverPopoverState {
     }
 
     func inlineHover(_ active: Bool) {
-        // `onContinuousHover` fires every pointer-move frame; only mutate on a real transition so the
-        // now-observed `overInline` doesn't post a change notification on every frame of a hover.
+        // `onContinuousHover`는 매 프레임 발화 — 실제 전이에만 변경해 프레임마다 알림 방지
         if overInline != active { overInline = active }
         active ? scheduleShow() : scheduleHide()
     }
@@ -62,15 +48,14 @@ final class HoverPopoverState {
         if inside { hideTask?.cancel(); hideTask = nil } else { scheduleHide() }
     }
 
-    /// Pin (or unpin) the popover open across a deliberate in-popover interaction. Pinning cancels any
-    /// pending hide; unpinning re-arms the normal hover-out grace so it closes once the cursor is away.
+    /// 팝오버 pin/unpin. pin은 대기 중 hide 취소, unpin은 hover-out grace 재가동.
     func setPinned(_ active: Bool) {
         guard pinned != active else { return }
         pinned = active
         if active { hideTask?.cancel(); hideTask = nil } else { scheduleHide() }
     }
 
-    /// Force the popover shut (popover/dashboard teardown), so it can't orphan on screen.
+    /// 강제 닫기 (팝오버/대시보드 teardown) — 화면 orphan 방지.
     func dismiss() {
         showTask?.cancel(); showTask = nil
         hideTask?.cancel(); hideTask = nil
@@ -93,7 +78,7 @@ final class HoverPopoverState {
     }
 
     private func scheduleHide() {
-        guard !pinned else { return }   // a pinned popover ignores hover-out until it's unpinned
+        guard !pinned else { return }   // pin 해제 전까지 hover-out 무시
         showTask?.cancel(); showTask = nil
         hideTask?.cancel()
         let delay = hideGrace

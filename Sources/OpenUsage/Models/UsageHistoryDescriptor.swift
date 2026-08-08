@@ -1,7 +1,7 @@
 import Foundation
 
-/// Whether a provider's daily spend history may be added across Macs. Every provider with shared
-/// spend tiles declares this explicitly so a future account-wide source cannot silently double-count.
+/// provider 일별 spend history의 Mac 간 합산 가능 여부.
+/// shared spend tile 보유 provider의 명시 선언 필수 — account-wide source의 이중 계산 방지.
 struct UsageHistoryDescriptor: Hashable, Sendable {
     enum Scope: String, Hashable, Sendable {
         case machineLocal
@@ -14,7 +14,7 @@ struct UsageHistoryDescriptor: Hashable, Sendable {
 }
 
 extension WidgetDescriptor {
-    /// Classifies the provider's normalized daily history beside its other machine-facing exports.
+    /// provider의 정규화 일별 history를 다른 machine-facing export와 나란히 분류.
     func exportingHistory(
         scope: UsageHistoryDescriptor.Scope,
         estimatedCost: Bool,

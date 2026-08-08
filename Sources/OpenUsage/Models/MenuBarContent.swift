@@ -1,21 +1,19 @@
 import Foundation
 
-/// Resolved, ordered, capped data for the menu-bar strip, built from the pinned metrics and their live
-/// values. The renderers consume this: `groups` drives the Text style (one segment per pinned provider,
-/// each with its 1–2 pinned metrics), `bars` drives the Bars style (the first four bounded metrics — any
-/// with a fill, not just percentages — in order). `isEmpty` means render the plain app icon.
+/// pinned metric과 live 값으로 만든 menu-bar strip용 데이터 — resolve·정렬·개수 제한 완료.
+/// `groups`는 Text style(1 pinned provider = 1 segment), `bars`는 Bars style(fill 있는 bounded metric 선착 4개), `isEmpty`면 기본 app icon 렌더.
 struct MenuBarContent: Equatable {
-    /// One resolved pinned metric.
+    /// resolve 완료된 pinned metric 하나.
     struct Metric: Equatable {
-        let id: String          // descriptor id
-        let label: String       // metric label, e.g. "Session" (shown when a provider has two metrics)
-        let value: String       // tray display: a "%" for bounded metrics, the raw value (e.g. "$5.23") for unbounded, or the no-data marker
-        let fraction: Double     // 0...1 fill, meaningful for bounded metrics (drives the bars)
-        let isBounded: Bool      // has a limit → has a fill, so it can render as a bar
+        let id: String
+        let label: String       // metric label — provider에 metric이 2개일 때 표시
+        let value: String       // tray 표시값 — bounded는 "%", unbounded는 raw 값, 없으면 no-data marker
+        let fraction: Double     // 0...1 fill — bounded metric에서만 유효 (bars 렌더 근거)
+        let isBounded: Bool      // limit 보유 → fill 보유 — bar 렌더 가능 여부
         let hasData: Bool
     }
 
-    /// A provider and its pinned metrics, in order. One segment of the Text strip.
+    /// provider 하나와 순서대로의 pinned metric — Text strip의 segment 하나.
     struct Group: Equatable {
         let providerID: String
         let displayName: String
@@ -23,19 +21,16 @@ struct MenuBarContent: Equatable {
         let metrics: [Metric]
     }
 
-    /// Provider groups for the Text style, in Customize order. Dynamic: only metrics that currently
-    /// have real data appear, and a provider whose pinned metrics all lack data drops out entirely
-    /// (no orphan icon) — so the strip never renders "—" placeholders.
+    /// Text style용 provider group (Customize 순서).
+    /// 실데이터 있는 metric만 포함, 전부 데이터 없는 provider는 icon째 제외 — strip에 "—" placeholder 없음.
     let groups: [Group]
-    /// Bounded metrics (those with a fill) for the Bars style, flattened in order and capped to four.
+    /// Bars style용 bounded metric(fill 보유) — 순서대로 평탄화, 최대 4개.
     let bars: [Metric]
 
-    /// Nothing is pinned, every pinned provider is disabled, or no pinned metric has data yet — the
-    /// menu bar falls back to the app icon.
+    /// pin 없음·pinned provider 전부 비활성·데이터 있는 pin 없음 — menu bar가 app icon으로 fallback.
     var isEmpty: Bool { groups.isEmpty }
 
-    /// VoiceOver summary for the rendered strip image, e.g.
-    /// "Claude Session 41%, Weekly 12%; Cursor Credits $12".
+    /// 렌더된 strip 이미지의 VoiceOver 요약 (예: "Claude Session 41%, Weekly 12%").
     var accessibilityText: String {
         groups.map { group in
             let metrics = group.metrics.map { "\($0.label) \($0.value)" }.joined(separator: ", ")
@@ -47,19 +42,12 @@ struct MenuBarContent: Equatable {
 
 @MainActor
 enum MenuBarContentBuilder {
-    /// Max bars the compact style renders (matches the original OpenUsage tray).
+    /// compact style이 렌더하는 최대 bar 수.
     static let maxBars = 4
 
-    /// Resolve pinned provider groups into menu-bar content. `groups` is `LayoutStore.pinnedGroups`
-    /// (already ordered, disabled providers excluded); `data` resolves each descriptor to its live
-    /// `WidgetData` (i.e. `WidgetDataStore.data(for:)`), so the values follow the global meter style
-    /// just like the dashboard tiles.
-    ///
-    /// The strip is dynamic: a pinned metric without data is dropped (one of two pins renders alone at
-    /// full size), and a provider with no data-carrying pins contributes no icon at all. Pins are
-    /// membership; the strip shows whatever subset is real right now.
-    /// `title` resolves each provider's card title (the VoiceOver summary is a human-facing name, so
-    /// the caller passes the account-registry resolver); defaults to the baked derived name.
+    /// pinned provider group을 menu-bar content로 resolve.
+    /// `groups`는 정렬·비활성 제외 완료(`LayoutStore.pinnedGroups`), `data`는 live `WidgetData` resolver, `title`은 카드 title resolver.
+    /// pin은 membership — 데이터 없는 metric은 탈락, 데이터 있는 pin 없는 provider는 icon째 제외.
     static func build(
         groups: [ProviderMetrics],
         data: (WidgetDescriptor) -> WidgetData,
@@ -75,8 +63,7 @@ enum MenuBarContentBuilder {
                 metrics: metrics
             )
         }
-        // Bars show any *bounded* metric (it has a fill), not just percentages. Unbounded values (raw
-        // spend/credits, no limit) have no fill and are dropped.
+        // bars는 bounded metric 전부 대상 — fill 없는 unbounded 값은 제외.
         let bars = resolvedGroups
             .flatMap(\.metrics)
             .filter(\.isBounded)
@@ -95,8 +82,7 @@ enum MenuBarContentBuilder {
         )
     }
 
-    /// Tray-only label shortening (the dashboard keeps the full names): the long time-window metrics
-    /// collapse to a single letter so a two-metric stack stays narrow. Unknown labels pass through.
+    /// tray 전용 label 축약(dashboard는 전체 이름 유지) — 긴 시간 window metric은 한 글자로, 미지정 label은 통과.
     private static func trayLabel(_ metricLabel: String) -> String {
         switch metricLabel.lowercased() {
         case "today": return "T"

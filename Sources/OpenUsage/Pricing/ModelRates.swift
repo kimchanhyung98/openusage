@@ -1,36 +1,32 @@
 import Foundation
 
-/// Per-million-token USD rates for one model, plus optional long-context tiers and a fast-variant
-/// multiplier. All spend imputation (Claude, Codex, Cursor, Grok) prices through these.
+/// model 1개의 per-million-token USD rates + 선택적 long-context tier·fast-variant multiplier.
+/// 모든 spend imputation (Claude, Codex, Cursor, Grok)의 공용 가격 기준.
 struct ModelRates: Sendable, Equatable {
     var inputPerMillion: Double
     var outputPerMillion: Double
-    /// 5-minute ephemeral cache writes (Anthropic-style). For providers without a separate
-    /// cache-write price this equals the input rate.
+    /// 5분 ephemeral cache write (Anthropic식) — 별도 cache-write 가격 없는 provider는 input rate와 동일.
     var cacheWritePerMillion: Double
     var cacheReadPerMillion: Double
 
-    /// Rates for requests whose prompt exceeds the model's long-context threshold, where the
-    /// provider prices the whole request at the higher tier. Field names retain the catalog's
-    /// common `above_200k` terminology; `longContextThresholdTokens` selects the actual boundary.
+    /// prompt가 long-context threshold를 넘는 request의 rates — request 전체를 상위 tier로 과금.
+    /// field명은 catalog 관례 `above_200k` 유지, 실제 경계는 `longContextThresholdTokens`가 결정.
     var inputAbove200kPerMillion: Double?
     var outputAbove200kPerMillion: Double?
     var cacheWriteAbove200kPerMillion: Double?
     var cacheReadAbove200kPerMillion: Double?
 
-    /// Whether the pricing source explicitly published the cache-read rate. Catalog codecs synthesize
-    /// a 10%-of-input fallback for general estimates, but Codex must charge full input when no prompt-
-    /// caching discount is actually published.
+    /// pricing source의 cache-read rate 명시 발행 여부.
+    /// codec은 일반 추정용으로 input 10% fallback을 합성 — Codex는 discount 미발행 시 full input 과금 필수.
     var cacheReadIsExplicit: Bool = true
 
-    /// Prompt-token threshold above which the optional long-context rates apply.
+    /// 선택적 long-context rates가 적용되는 prompt-token threshold.
     var longContextThresholdTokens: Int = 200_000
 
-    /// Rate multiplier for the model's "fast" variant (1 when the model has none).
+    /// "fast" variant의 rate multiplier (variant 없으면 1).
     var fastMultiplier: Double = 1
 
-    /// The same rates with every dollar figure scaled — used to price `-fast` model slugs off their
-    /// base entry.
+    /// 모든 dollar 수치에 배율 적용한 동일 rates — `-fast` slug를 base entry로 가격 산정할 때 사용.
     func scaled(by factor: Double) -> ModelRates {
         ModelRates(
             inputPerMillion: inputPerMillion * factor,
@@ -48,32 +44,30 @@ struct ModelRates: Sendable, Equatable {
     }
 }
 
-/// Token counts split into the buckets that price differently. Every scanner normalizes into this.
+/// 가격이 다르게 매겨지는 bucket별 token count — 모든 scanner의 정규화 대상.
 struct TokenBreakdown: Codable, Sendable, Equatable {
-    /// Input tokens billed at the plain input rate (not written to or read from cache).
+    /// cache 미사용 일반 input rate 과금 token.
     var input: Int = 0
-    /// Input tokens written to the 5-minute ephemeral cache.
+    /// 5분 ephemeral cache에 기록된 input token.
     var cacheWrite5m: Int = 0
-    /// Input tokens written to the 1-hour ephemeral cache (billed at 2x input).
+    /// 1시간 ephemeral cache에 기록된 input token — input 2배 과금.
     var cacheWrite1h: Int = 0
     var cacheRead: Int = 0
     var output: Int = 0
-    /// The request ran the model's "fast" variant (Claude logs carry a `speed` field).
+    /// request가 "fast" variant로 실행됨 (Claude log의 `speed` field).
     var isFast: Bool = false
 
-    /// Input that determines whether the request crosses the long-context threshold. Output does not
-    /// select the tier, but it is billed at the selected tier once the prompt crosses the threshold.
+    /// long-context threshold 판정 대상 input — output은 tier 선택에 미관여하나 선택된 tier로 과금.
     var promptTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead }
     var totalTokens: Int { input + cacheWrite5m + cacheWrite1h + cacheRead + output }
 }
 
 extension ModelRates {
-    /// 1-hour cache writes are billed at twice the input rate (ccusage's rule; matches LiteLLM's
-    /// explicit `above_1hr` fields where present).
+    /// 1시간 cache write는 input rate 2배 과금 (ccusage 규칙 — LiteLLM 명시 `above_1hr` field와 일치).
     private static let cacheWrite1hInputMultiplier = 2.0
 
-    /// Dollar cost of one request at these rates, applying the request-wide long-context tier and
-    /// fast multiplier. Aggregated sources can opt out when their totals do not preserve request boundaries.
+    /// 이 rates 기준 request 1건의 dollar cost — request 전체 long-context tier와 fast multiplier 적용.
+    /// request 경계를 보존하지 않는 집계 source는 long-context 적용 opt-out 가능.
     func costDollars(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
         let multiplier = tokens.isFast ? fastMultiplier : 1
         let useLongContextRates = applyLongContextRates && tokens.promptTokens > longContextThresholdTokens

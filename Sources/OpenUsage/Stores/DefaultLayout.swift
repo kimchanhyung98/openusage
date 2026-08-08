@@ -1,10 +1,8 @@
 import Foundation
 
-/// Metrics enabled on first launch. The personal-fork defaults mirror the owner's saved Customize
-/// layout; rows omitted here remain available to enable from the provider detail screen.
-/// `LayoutStore` filters this to whatever the active registry actually knows, so registries that don't
-/// define an ID (e.g. the test fixtures) silently ignore it. The provider-section order isn't seeded
-/// here: an empty saved order reconciles to plain registry order in `LayoutStore`.
+/// 최초 실행 시 활성화되는 metric 기본값
+/// `LayoutStore`가 활성 registry 기준으로 필터링 — 미정의 ID는 무시
+/// provider 섹션 순서는 여기서 시드하지 않음, 빈 저장 순서는 registry 순서로 정착
 enum DefaultLayout {
     static let metricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly", "antigravity.claude", "antigravity.claudeWeekly",
@@ -39,9 +37,8 @@ enum DefaultLayout {
         "zai.session", "zai.weekly", "zai.webSearches"
     ]
 
-    /// Frozen snapshot of the default-on metrics from the release that introduced default seeding.
-    /// Existing users without a seeded-defaults key are treated as if these were already offered, so
-    /// past opt-outs stay off while future additions to `metricIDs` can appear automatically once.
+    /// default 시딩 도입 릴리스 시점 default-on metric의 고정 snapshot
+    /// 시딩 키 없는 기존 사용자는 이미 제안받은 것으로 간주 — 과거 opt-out 유지, 이후 추가분만 자동 노출
     static let migrationBaselineMetricIDs: [String] = [
         "claude.session", "claude.weekly", "claude.trend",
         "claude.extra", "claude.today", "claude.yesterday", "claude.last30",
@@ -58,8 +55,7 @@ enum DefaultLayout {
         "cursor.onDemand", "cursor.today", "cursor.yesterday", "cursor.last30"
     ]
 
-    /// Metrics pinned to the menu bar on first launch, so the app shows real numbers out of the box
-    /// instead of a lone icon. Filtered to the active registry by `LayoutStore`, like `metricIDs`.
+    /// 최초 실행 시 메뉴바에 고정되는 metric — 아이콘만 남는 첫 화면 방지, `metricIDs`처럼 registry 필터링
     static let pinnedMetricIDs: [String] = [
         "antigravity.geminiPro", "antigravity.geminiWeekly",
         "claude.weekly",
@@ -72,12 +68,9 @@ enum DefaultLayout {
         "zai.session", "zai.weekly"
     ]
 
-    /// Account-card-aware default list: for every extra account card in the registry
-    /// (`claude@ab12cd34`), the family's entries are re-prefixed onto the card and appended, so a
-    /// newly discovered account seeds the same metric set (and caret split) as its family's default
-    /// card. Pins are deliberately NOT translated — an extra account never claims menu-bar space by
-    /// default. `migrationBaselineMetricIDs` is deliberately NOT translated either: account-card ids
-    /// must always read as never-offered so their defaults seed the first time the card appears.
+    /// registry의 추가 계정 card(`claude@ab12cd34`)마다 family 항목을 card prefix로 복제해 append
+    /// pin은 번역하지 않음 — 추가 계정이 기본으로 메뉴바를 점유하지 않는 규칙
+    /// `migrationBaselineMetricIDs`도 번역하지 않음 — card 최초 등장 시 default 시딩 보장
     static func translatedForAccountCards(_ ids: [String], providerIDs: [String]) -> [String] {
         let accountCardIDs = providerIDs.filter(ProviderAccountID.isAccountCard)
         guard !accountCardIDs.isEmpty else { return ids }
@@ -91,39 +84,29 @@ enum DefaultLayout {
         return result
     }
 
-    /// Metrics placed in the per-provider On Demand section on a fresh install. This is
-    /// membership, not enablement: optional disabled rows like Sonnet or Cursor Requests/Credits are
-    /// listed here so if the user enables them later they appear below the caret by default.
-    /// Filtered to the active registry by `LayoutStore`, and only seeded on a genuinely fresh launch
-    /// (existing layouts keep everything always-shown unless they reset customization).
+    /// 신규 설치 시 provider별 On Demand 섹션에 배치되는 metric
+    /// 활성화가 아닌 소속 목록 — 비활성 optional row도 나중에 켜면 caret 아래 등장
+    /// registry 필터링 적용, 순수 신규 설치에서만 시드
     static let expandedMetricIDs: [String] = [
-        // Antigravity: the Gemini pool pair (5h + weekly) stays above the fold; the non-Gemini
-        // (Claude) pool pair sits below the caret.
+        // Antigravity: Gemini pool 쌍은 fold 위, Claude pool 쌍은 caret 아래
         "antigravity.claude", "antigravity.claudeWeekly",
-        // Claude: Session, Weekly, and Fable stay above the fold. Usage Trend, optional limits,
-        // Extra Usage, and spend-history rows sit below the caret.
+        // Claude: Session·Weekly·Fable은 fold 위, Trend·optional limit·Extra Usage·spend history는 caret 아래
         "claude.trend", "claude.extra", "claude.sonnet",
         "claude.today", "claude.yesterday", "claude.last30",
-        // Codex: Session and Weekly stay above the fold. Usage Trend, reset details, optional Spark
-        // limits, Extra Usage, and spend-history rows sit below the caret.
+        // Codex: Session·Weekly는 fold 위, Trend·reset 상세·Spark·Extra Usage·spend history는 caret 아래
         "codex.trend", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
         "codex.credits", "codex.today", "codex.yesterday", "codex.last30",
         "cursor.onDemand", "cursor.requests", "cursor.credits",
         "cursor.today", "cursor.yesterday", "cursor.last30",
-        // Copilot: Credits (the metered premium pool) + Extra Usage stay above the fold; the org
-        // billing pair (org-managed Business/Enterprise seats) and Chat + Completions sit below the
-        // caret. Chat/Completions carry real counts on free only — on paid they're unlimited
-        // (suppressed), so they read "No data" there.
+        // Copilot: Credits·Extra Usage는 fold 위, org billing 쌍과 Chat·Completions는 caret 아래 — Chat·Completions는 free에서만 실측치
         "copilot.orgCredits", "copilot.orgSpend", "copilot.chat", "copilot.completions",
         "devin.extra",
         "grok.payAsYouGo", "grok.today", "grok.yesterday", "grok.last30",
-        // OpenCode: the three Go caps (Session/Weekly/Monthly) and Usage Trend stay above the fold —
-        // matching every other provider — with the spend tiles (Today/Yesterday/Last 30 Days) below.
+        // OpenCode: Go cap 3종과 Trend는 fold 위, spend tile은 caret 아래
         "opencode.today", "opencode.yesterday", "opencode.last30",
-        // OpenRouter: Credits meter + Balance stay above the fold; period spend and the per-key cap
-        // sit below the caret.
+        // OpenRouter: Credits meter·Balance는 fold 위, 기간 spend·key cap은 caret 아래
         "openrouter.today", "openrouter.week", "openrouter.month", "openrouter.keyLimit",
-        // Z.ai: Session meter stays above the fold; Web Searches (monthly count) sits below the caret.
+        // Z.ai: Session meter는 fold 위, Web Searches는 caret 아래
         "zai.webSearches"
     ]
 }

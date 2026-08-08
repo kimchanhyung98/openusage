@@ -1,20 +1,7 @@
 import SwiftUI
 
-/// The popover content: the provider/metric list (or the Customize / Settings screen) as a scroll
-/// view between fixed chrome — a top back/title bar on Customize/Settings and bottom identity/action
-/// chrome on Dashboard and Settings. Customize uses its top bar and scrolling content without footer
-/// controls.
-///
-/// The chrome is fixed: it's keyed off `layout.screen` and applied uniformly in `screenView`, so on a
-/// screen switch only the content slides while the footer and top bar stay put. Each screen's scroll
-/// content underlaps the footer with the native soft scroll-edge fade (`softBottomScrollEdge` →
-/// `.scrollEdgeEffectStyle(.soft)`, macOS 26+) — Apple's blurred boundary, not a custom gradient or a
-/// material bar. On macOS 15 the footer/top bar still pin via `safeAreaInset`, just without the blur
-/// (content scrolls flush). The panel **auto-fits its content**: each screen publishes its intrinsic
-/// height (`ScrollContentHeightKey` + the measured footer), and the host window is driven to that on
-/// SwiftUI's animation clock (`drivesPanelHeight` / `PanelHeightModifier`) — so a screen switch morphs
-/// the window height in lockstep with the slide (one spring), and the scroll views only take over once
-/// content exceeds the screen-height cap.
+/// popover 콘텐츠 루트 — Dashboard·Customize·Settings 콘텐츠만 전환하고 chrome은 고정.
+/// 화면별 auto-fit 높이와 수평 slide를 하나의 spring으로 구동.
 struct DashboardView: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout
@@ -22,62 +9,39 @@ struct DashboardView: View {
     @Environment(PopoverTransparencyStore.self) private var transparency
     @Environment(UpdaterController.self) private var updater
     @State private var reorderLift: ReorderLift?
-    /// The panel height SwiftUI drives — the single animation clock. `PanelHeightModifier` follows it
-    /// frame-by-frame onto the AppKit panel, so the window resize rides the same spring as the screen
-    /// slide (no second AppKit animation to fight). 0 means "not established yet": the panel keeps the
-    /// size the controller opened it at until the first measurement lands, then we snap un-animated.
+    /// SwiftUI가 구동하는 panel 높이 — 단일 animation clock.
+    /// 0은 미설정 sentinel: 첫 측정이 도착할 때까지 controller가 연 크기를 유지, 도착 시 애니메이션 없이 반영.
     @State private var animatedHeight: CGFloat = 0
-    /// Whether `animatedHeight` has been seeded for this open. Until then the first measurement (or a
-    /// reopen) establishes it without animation; afterwards, changes spring.
+    /// 이번 open에서 `animatedHeight`가 seed되었는지 여부 — seed 전 첫 establish는 un-animated, 이후 변경은 spring.
     @State private var didEstablishHeight = false
-    /// Popover auto-fit height computation: per-screen measured pieces summed into each screen's clamped
-    /// morph target (`heightCoordinator.measuredIdeal` / `.target(for:)`). Written from the geometry
-    /// actions below. The animation itself — `animatedHeight`, the slide, the `withAnimation` spring —
-    /// stays in this view; the coordinator holds only the deterministic measurement.
+    /// 화면별 측정치를 clamp된 morph 목표로 합산하는 coordinator — 애니메이션은 이 view 소유, coordinator는 측정만 담당.
     @State private var heightCoordinator = PanelHeightCoordinator(topBarHeight: Self.topBarHeight)
-    /// Horizontal screen-switch slide: 0 shows the outgoing screen, 1 the incoming one. Drives the
-    /// page offset so the screens slide between modes on one spring.
+    /// 화면 전환 slide 진행도 — 0은 outgoing, 1은 incoming 화면.
     @State private var slideProgress: CGFloat = 1
-    /// The `layout.screenSlideID` whose slide has begun animating. Until it catches up to the store's
-    /// id, a freshly-started transition pins to the outgoing screen so the first frame never flashes
-    /// the destination.
+    /// slide 애니메이션이 시작된 `layout.screenSlideID` — store의 id를 따라잡기 전에는 outgoing 화면에 고정되어
+    /// 첫 frame에 목적지가 flash되지 않음.
     @State private var animatedSlideID = 0
-    /// Reset to the top whenever the popover closes, so it never reopens mid-scroll.
+    /// popover close 시 최상단으로 reset — mid-scroll 재오픈 방지.
     @State private var dashboardScrollPosition = ScrollPosition(edge: .top)
-    /// Drives the macOS-native confirmation sheet for the Customize "reset all" button. The alert
-    /// attaches to this panel as a sheet (see `StatusItemController`'s attached-sheet guard), so a
-    /// click on its buttons can't be misread as an outside click that dismisses the popover.
+    /// Customize "reset all" 확인 sheet 표시 여부 — sheet가 이 panel에 attach되어 버튼 클릭이
+    /// popover를 닫는 outside click으로 오인되지 않음.
     @State private var isPresentingResetAllConfirm = false
-    /// Shared horizontal inset for dashboard content and fixed chrome.
     private static let outerPadding: CGFloat = 14
-    /// Breathing room between the bottom of the scrolling content and the pinned footer. Kept small
-    /// because the native scroll edge effect — not whitespace — provides the visual separation.
     private static let contentBottomGap: CGFloat = 12
-    /// Footer content starts at the same standard padding as the provider containers.
     private static let footerHorizontalPadding: CGFloat = outerPadding
     private static let reorderSpace = "popoverReorderSpace"
-    /// One width across both densities — switching density shouldn't move the popover's left edge.
+    /// 두 density 공통의 단일 폭 — density 전환 시 popover 왼쪽 edge 고정.
     private static let popoverWidth: CGFloat = 320
-    /// Fixed height of the Customize / Settings back nav bar — the bar pins itself to exactly this height.
     private static let topBarHeight: CGFloat = 44
 
     var body: some View {
         modeBody
             .frame(width: Self.popoverWidth)
-            // Fill the panel. The panel auto-fits its content (the window height is driven to each
-            // screen's measured ideal via `drivesPanelHeight`), so at rest the window is exactly the
-            // content's height and this fill is a no-op; when content exceeds the screen cap the window
-            // clamps and the scroll views inside take the overflow.
+            // panel이 콘텐츠에 auto-fit하므로 평시엔 no-op — 콘텐츠가 화면 cap을 넘으면 내부 scroll view가 overflow 처리.
             .frame(maxHeight: .infinity, alignment: .top)
-            // Paint the page surface behind all content (and the footer). Opaque by default so the
-            // popover reads as one solid panel; under Increase Transparency / the egg it clears so the
-            // behind-window backdrop (or party gradient) shows through. Outermost so the footer, header,
-            // and scroll content all sit on it; separation from the footer comes from the native soft
-            // scroll-edge fade (not a distinct bar).
+            // 모든 콘텐츠 뒤의 page surface — 기본 opaque, Increase Transparency/egg에서는 clear로 backdrop 노출.
             .background(PopoverSurface())
-            // Drive the host panel's height on SwiftUI's clock. At the body root, OUTSIDE `modeBody`'s
-            // `.animation(nil, value: layout.screenSlideID)`, so the height rides the active spring (the
-            // slide's, during a switch) instead of being snapped.
+            // `.animation(nil, ...)` 바깥의 body 루트에서 panel 높이 구동 — 높이가 slide의 spring에 함께 실림.
             .drivesPanelHeight(animatedHeight)
             .overlay(alignment: .topLeading) {
                 if let reorderLift {
@@ -86,16 +50,11 @@ struct DashboardView: View {
             }
             .coordinateSpace(name: Self.reorderSpace)
             .background(
-                // Esc backs out of Customize / Settings first; only from the dashboard does it close
-                // the popover. Return opens Customize from the dashboard (the same affordance the
-                // footer's Options ▸ Customize menu item carries) and returns to the
-                // dashboard from Customize or Settings — matching Esc and the back navigation,
-                // never jumping Settings → Customize. Always consumed, so a bare Return can't fall
-                // through and dismiss the popover.
+                // Esc/Return은 화면을 한 단계씩 되돌리고 dashboard에서만 popover를 닫음 — 항상 consume해
+                // bare Return이 popover를 닫지 못하게 보장.
                 PopoverKeyReader(
                     onEscape: {
-                        // From a provider's L2 detail, back out to the L1 list first; only from L1 /
-                        // Settings drop to the dashboard. Pressing Esc again from L1 closes the popover.
+                        // L2 detail → L1 → dashboard 순의 단계적 후퇴.
                         if layout.customizeProviderID != nil {
                             withAnimation(Motion.spring) { layout.customizeProviderID = nil }
                             return true
@@ -105,8 +64,7 @@ struct DashboardView: View {
                         return true
                     },
                     onReturn: {
-                        // From a provider's L2 detail, back out to the L1 list first — matching Esc —
-                        // so Return steps L2 → L1 → dashboard instead of jumping L2 → dashboard.
+                        // Esc와 동일하게 L2 → L1 → dashboard 단계 이동.
                         if layout.customizeProviderID != nil {
                             withAnimation(Motion.spring) { layout.customizeProviderID = nil }
                             return true
@@ -115,22 +73,16 @@ struct DashboardView: View {
                         withAnimation(Motion.modeSwitch) { layout.screen = target }
                         return true
                     },
-                    // ⌘, toggles Settings, on this always-on monitor so it fires from every screen —
-                    // including Settings, whose footer has no Settings action. Handling it here (and
-                    // consuming it) also lets the Options menu's Settings item carry ⌘, as a label
-                    // without a second SwiftUI registration fighting it.
+                    // ⌘,는 모든 화면에서 Settings 토글 — 여기서 consume해 Options 메뉴 항목의 ⌘, label과
+                    // 이중 등록 충돌 방지.
                     onSettings: {
                         withAnimation(Motion.modeSwitch) {
                             layout.screen = layout.screen == .settings ? .dashboard : .settings
                         }
                         return true
                     },
-                    // ⌘Z walks back the last customization step (remove/add, reorder, pin/unpin, caret
-                    // move) — app-wide, since Hide and Pin happen via the dashboard's context menus too,
-                    // not only in Customize. Always consumed here: by the time the monitor calls this it
-                    // has already confirmed the panel owns the keystroke and no text field is editing
-                    // (those keep their own ⌘Z), so returning false would only let AppKit beep on an empty
-                    // undo. With nothing to undo we swallow it silently instead.
+                    // ⌘Z는 마지막 customization 단계 undo — monitor가 panel 소유와 텍스트 편집 여부를 이미
+                    // 확인했으므로 항상 consume, undo 없음은 beep 없이 무시.
                     onUndo: {
                         guard layout.canUndo else { return true }
                         withAnimation(Motion.spring) { _ = layout.undo() }
@@ -138,13 +90,10 @@ struct DashboardView: View {
                     }
                 )
             )
-            // The controller already owns the exact show/hide moments. Reuse that signal here instead
-            // of asking AppKit window notifications to rediscover the same state a second time.
+            // controller가 소유한 show/hide 신호를 재사용 — AppKit window notification으로 재발견하지 않음.
             .onChange(of: transparency.popoverShown) { _, shown in
                 if shown {
-                    // Reopen: the SwiftUI tree survives a close, so re-seed the height for whatever
-                    // screen we're opening on. Un-animated, and ≈ the controller's opening guess, so
-                    // there's no visible jump. If not yet measured, the measurement onChange seeds it.
+                    // 재오픈: SwiftUI tree가 close를 넘어 살아남으므로 현재 화면 높이를 un-animated로 re-seed.
                     if let target = heightCoordinator.target(for: layout.screen) {
                         didEstablishHeight = true
                         animatedHeight = target
@@ -153,39 +102,25 @@ struct DashboardView: View {
                     resetTransientState()
                 }
             }
-            // A screen switch can tear the list down mid-drag, in which case the gesture's
-            // `onEnded` never fires — clear the lift here or its overlay survives onto the new
-            // screen.
+            // 화면 전환이 drag 도중 리스트를 해체하면 `onEnded`가 오지 않으므로 lift를 여기서 정리.
             .onChange(of: layout.screen) {
                 reorderLift = nil
                 layout.cancelDrag()
             }
-            // The Reset All alert attaches to the Customize L1 nav bar. Leaving the list — back to the
-            // dashboard or into a provider's L2 detail — unmounts that host, which dismisses the alert
-            // but leaves `isPresentingResetAllConfirm` `true`. Drop it whenever L1 stops being visible
-            // so the destructive confirmation can't reappear stale on return without a fresh tap.
+            // L1 이탈 시 stale한 Reset All 확인 상태 drop — 복귀 시 fresh tap 없는 재표시 방지.
             .onChange(of: layout.screen == .customize && layout.customizeProviderID == nil) { _, isL1Visible in
                 if !isL1Visible { isPresentingResetAllConfirm = false }
             }
-            // Each screen switch: pin to the outgoing screen for one render (`slideProgress = 0`),
-            // then spring to the incoming one on the next runloop tick. Deferring the animation one
-            // tick is what makes it animate — setting 0 then 1 in the same closure collapses to a
-            // no-op (SwiftUI animates from the last *committed* value). `slideProgress` drives the
-            // page offset so the screens slide between modes on one spring.
+            // 전환마다 outgoing에 고정(0) 후 다음 runloop tick에 spring — 같은 closure 안의 0→1 설정은
+            // no-op이 되므로(SwiftUI는 마지막 commit 값에서 애니메이션) 한 tick 지연이 필수.
             .onChange(of: layout.screenSlideID) { _, id in
                 guard id != 0 else { return }
                 slideProgress = 0
                 animatedSlideID = id
                 let destination = layout.screen
                 Task { @MainActor in
-                    // Co-animate the slide and the height on ONE spring → the coordinated morph: the
-                    // panel grows/shrinks to the destination's size as that screen slides in. The
-                    // destination is usually mounted+measured by now (it mounted on the slideProgress=0
-                    // render), so we morph to its ideal. If it ISN'T measured yet and the height was
-                    // never established (animatedHeight still the 0 sentinel — e.g. opening Settings
-                    // straight from the status-item menu), we must NOT morph to a clamped zero, which
-                    // floors to minPanelHeight and wrongly shrinks the panel: leave the height alone and
-                    // let the completion / measurement establish it once a real ideal lands.
+                    // slide와 높이를 하나의 spring으로 co-animate. 목적지가 미측정이고 높이가 0 sentinel이면
+                    // morph 금지 — clamp된 0으로 morph 시 panel이 잘못 줄어드므로 completion/측정이 establish.
                     let coTarget: CGFloat? = heightCoordinator.target(for: destination)
                         ?? (animatedHeight > 0 ? animatedHeight : nil)
                     if coTarget != nil { didEstablishHeight = true }
@@ -196,17 +131,15 @@ struct DashboardView: View {
                         guard let target = heightCoordinator.target(for: layout.screen) else { return }
                         if !didEstablishHeight {
                             didEstablishHeight = true
-                            animatedHeight = target            // un-animated establish — never grow from 0
+                            animatedHeight = target            // un-animated establish — 0에서 자라나지 않음
                         } else if abs(target - animatedHeight) > 1 {
                             withAnimation(Motion.spring) { animatedHeight = target }
                         }
                     }
                 }
             }
-            // In-screen growth/shrink (a provider card expands, the footer notice appears, a refresh
-            // loads rows): re-target the height on the same spring. Establishment is allowed even mid-
-            // slide (a measurement that lands during a switch must seed the height — there's nothing to
-            // fight yet); the animated *re-target* defers to the switch path while a slide is in flight.
+            // 화면 내 성장/축소는 같은 spring으로 re-target — establish는 slide 중에도 허용, 애니메이션
+            // re-target은 slide 진행 중이면 전환 경로에 양보.
             .onChange(of: heightCoordinator.measuredIdeal[layout.screen]) { _, _ in
                 guard let target = heightCoordinator.target(for: layout.screen) else { return }
                 if !didEstablishHeight {
@@ -216,67 +149,37 @@ struct DashboardView: View {
                     withAnimation(Motion.spring) { animatedHeight = target }
                 }
             }
-            // Watches for the secret transparency code while the panel is key and toggles the egg. A
-            // sibling of `PopoverKeyReader` that only observes (never consumes), so it can't disturb
-            // navigation or typing.
+            // secret transparency code 감시 — 관찰만 하고 consume하지 않아 내비게이션/입력을 방해하지 않음.
             .background(TooMuchTransparencyKeyReader { transparency.toggleSecretCode() })
-            // Reaches `modeBody`, the `PopoverSurface` background, and every card: drives whether surfaces
-            // paint their opaque base or clear to the behind-window vibrancy backdrop.
+            // 모든 surface가 opaque base를 칠할지 behind-window backdrop으로 clear할지 결정.
             .environment(\.popoverSurfaceTreatment, transparency.surfaceTreatment)
-            // The easter egg's visuals: the readable party (gradient backdrop + glowing rim, text crisp
-            // on frosted cards) for the secret code, or the woozy, barely-readable pink-glass drunk mode
-            // for "Drunk Mode". No-op for the normal/increased styles. Controls stay clickable (overlays
-            // don't hit-test), so the Settings "Drunk Mode" toggle is reachable while it's running.
+            // easter egg 시각 효과(party/drunk) — overlay는 hit-test하지 않아 실행 중에도 컨트롤 조작 가능.
             .tooMuchTransparency(transparency.effectiveStyle)
-            // Gate the egg's animation loops on whether the popover is on-screen. Applied OUTSIDE
-            // `.tooMuchTransparency` so it reaches both the gradient/rim/drunk layers that modifier adds
-            // and the in-content `partyPulse`. Hidden → the loops unmount their `TimelineView` clocks, so a
-            // left-on egg spends no CPU; a fresh mount on reopen / in-place activation starts them at once.
-            // Sourced from the controller's show/hide chokepoints (`popoverShown`), not occlusion — a
-            // `.canJoinAllSpaces` panel is briefly occluded mid Space-switch while still on-screen.
+            // egg 애니메이션 loop를 popover 표시 여부로 gate — `.tooMuchTransparency` 바깥이라 해당 layer까지 도달.
+            // occlusion이 아닌 controller의 show/hide 신호 기준(Space 전환 중 일시 occlusion 오판 방지).
             .environment(\.popoverIsVisible, transparency.popoverShown)
     }
 
     private func resetTransientState() {
-        // Backstop for any popover-close path the status-item controller's hide doesn't cover: clear a
-        // tooltip the cursor was resting on, since the closed popover fires no hover-exit. The Usage
-        // Trend hover popover rides the same backstop.
+        // popover-close 경로의 backstop — 닫힌 popover는 hover-exit을 보내지 않으므로 잔존 tooltip/hover popover 정리.
         HoverTooltips.dismissAll()
         HoverPopoverState.dismissAll()
         if layout.screen != .dashboard { layout.screen = .dashboard }
         reorderLift = nil
         layout.cancelDrag()
-        // A "Copied to clipboard" pill mid-countdown would otherwise reappear stale on the next open,
-        // since the layout store survives the popover and only the timer clears it.
+        // "Copied to clipboard" pill이 다음 open에 stale하게 재등장하는 것 방지.
         layout.clearShareConfirmation()
         layout.clearCustomizationNotice()
-        // Dismiss a pending Reset All confirmation if the popover closes mid-alert — the SwiftUI tree
-        // survives `orderOut`, so without this the sheet would reappear stale on the next open.
+        // alert 도중 popover가 닫히면 확인 상태 drop — sheet의 stale 재등장 방지.
         isPresentingResetAllConfirm = false
-        // Drop the driven height so the next open re-establishes it (un-animated) from the reopened
-        // screen's measurement instead of springing from this session's last value. Until then the
-        // 0 sentinel keeps `PanelHeightModifier` from pushing, so the controller's opening guess stands.
+        // 다음 open이 새 측정으로 un-animated re-establish하도록 0 sentinel로 reset.
         animatedHeight = 0
         didEstablishHeight = false
         dashboardScrollPosition.scrollTo(edge: .top)
     }
 
-    /// The popover's screens as a horizontal pager. At rest only the current screen is mounted (one
-    /// page at offset 0), so drag-reorder's coordinate math and the footer's scroll-edge underlap are
-    /// exactly what they'd be with the screen rendered alone. During a switch the outgoing and incoming
-    /// screens are both mounted, ordered left-to-right by `slideRank`, and slid by a pure offset — while
-    /// the chrome (top bar + footer), keyed off `layout.screen` in `screenView`, is identical on both
-    /// pages, so it stays visually fixed while only the content slides beneath it.
-    ///
-    /// Why an offset and not a SwiftUI `.transition`: the cards' fill is translucent `.quaternary`
-    /// glass. Any transition carrying `.opacity` composites a screen into a transparency layer where
-    /// that material has no vibrant backdrop to sample and resolves to its opaque near-white base — a
-    /// white flash across the grey cards (the regression this removes; it has no clean SwiftUI fix).
-    /// A pure offset never touches opacity, so the glass keeps sampling the live popover backdrop. The
-    /// pages are a `ForEach` keyed by screen, so the incoming page keeps its identity (and scroll
-    /// position) when the slide collapses back to one page. `.animation(nil, value:)` stops the
-    /// one-frame structural re-layout at the start of a switch from inheriting the footer buttons'
-    /// mode-switch animation — only `slideProgress` animates the offset.
+    /// 화면들을 수평 pager로 구성 — 평시 1페이지, 전환 중 outgoing/incoming 두 페이지를 순수 offset으로 slide.
+    /// `.transition` 대신 offset인 이유: opacity가 개입하면 `.quaternary` glass가 backdrop을 잃고 흰 flash 발생.
     private var modeBody: some View {
         let pages = slidePages
         return HStack(alignment: .top, spacing: 0) {
@@ -291,14 +194,13 @@ struct DashboardView: View {
         .animation(nil, value: layout.screenSlideID)
     }
 
-    /// True from the moment `layout.screen` changes until the slide reaches the incoming screen.
+    /// `layout.screen` 변경 시점부터 slide가 incoming 화면에 도달할 때까지 true.
     private var isSliding: Bool {
         layout.screenSlideID != 0
             && (layout.screenSlideID != animatedSlideID || slideProgress < 1)
     }
 
-    /// One page at rest (the current screen); the two involved screens in left-to-right rank order
-    /// while a switch animates.
+    /// 평시엔 현재 화면 1페이지, 전환 중엔 두 화면을 좌→우 rank 순으로 나열.
     private var slidePages: [PopoverScreen] {
         guard isSliding else { return [layout.screen] }
         let from = layout.screenSlideFrom
@@ -306,9 +208,8 @@ struct DashboardView: View {
         return from.slideRank < to.slideRank ? [from, to] : [to, from]
     }
 
-    /// Horizontal offset that places the outgoing screen at `slideProgress == 0` and the incoming one
-    /// at `1`. Pinned to the outgoing screen until this transition's animation has actually started, so
-    /// the first frame after a switch shows the screen being left — never a flash of the destination.
+    /// outgoing(0)→incoming(1)을 배치하는 수평 offset — 애니메이션 시작 전에는 outgoing에 고정되어
+    /// 첫 frame에 목적지가 flash되지 않음.
     private func slideOffset(_ pages: [PopoverScreen]) -> CGFloat {
         guard isSliding, pages.count > 1 else { return 0 }
         let fromOffset = -CGFloat(pages.firstIndex(of: layout.screenSlideFrom) ?? 0) * Self.popoverWidth
@@ -317,19 +218,12 @@ struct DashboardView: View {
         return fromOffset + progress * (toOffset - fromOffset)
     }
 
-    /// Builds one screen: its scroll body wrapped in the fixed chrome. The chrome (top bar + footer)
-    /// is keyed off `layout.screen` — the *destination* — not the per-page `screen`, so during a switch
-    /// both mounted pages render identical chrome pinned to the
-    /// same edges. The chrome therefore stays put while only the content offsets beneath it (the
-    /// "one fixed footer / top bar doesn't slide" behaviour). The soft scroll-edge styles and the
-    /// pinned bars attach to each page's scroll view (`PopoverScrollView`), the documented place for
-    /// them. Identity stays stable across the slide via the `ForEach` key in `modeBody`.
+    /// 한 화면 구성: scroll body + 고정 chrome. chrome은 per-page `screen`이 아닌 목적지(`layout.screen`) 기준 —
+    /// 전환 중 두 페이지가 동일한 chrome을 그려 콘텐츠만 slide하는 것으로 보임.
     @ViewBuilder
     private func screenView(_ screen: PopoverScreen) -> some View {
         scrollBody(for: screen)
-            // Auto-fit: the scroll content publishes its intrinsic height (invariant to the viewport),
-            // which we sum with the chrome into this screen's ideal window height. Keyed by the per-page
-            // `screen`, so during a slide each mounted page measures its own content.
+            // scroll 콘텐츠의 intrinsic 높이를 화면별 ideal로 합산 — per-page `screen` 기준으로 각자 측정.
             .onPreferenceChange(ScrollContentHeightKey.self) { height in
                 heightCoordinator.setScrollContent(height, for: screen)
             }
@@ -359,8 +253,7 @@ struct DashboardView: View {
             }
     }
 
-    /// The scrolling content for a screen, without chrome — this is the part that slides during a
-    /// switch (its `screen` is the per-page one, so each mounted page shows its own content).
+    /// chrome 없는 화면별 scroll 콘텐츠 — 전환 시 실제로 slide되는 부분.
     @ViewBuilder
     private func scrollBody(for screen: PopoverScreen) -> some View {
         switch screen {
@@ -387,12 +280,8 @@ struct DashboardView: View {
 
 }
 
-/// The popover's opaque backdrop tray, painted behind all content so the popover reads as one solid
-/// panel — the data region never shows the desktop through it. Matches the AppKit panel backdrop
-/// (`PopoverBackdropView`'s `NSBox`): SwiftUI uses `Theme.traySurface` here while AppKit uses the
-/// matching `Theme.trayNSColor`. The footer draws its own frosted glass bar on top of this (in-window),
-/// so glass stays chrome over solid content. Never hit-tests, so it can't steal clicks from the content
-/// above it.
+/// 모든 콘텐츠 뒤에 칠하는 popover의 opaque backdrop tray — AppKit panel backdrop(`Theme.trayNSColor`)과 일치.
+/// hit-test하지 않아 위 콘텐츠의 클릭을 가로채지 않음.
 private struct PopoverSurface: View {
     @Environment(\.popoverSurfaceTreatment) private var treatment
 
@@ -402,9 +291,7 @@ private struct PopoverSurface: View {
             case .opaque:
                 Theme.traySurface
             case .translucent:
-                // Clear so what's behind the page shows through: the behind-window vibrancy backdrop —
-                // the blurred desktop for increased/drunk, and the same desktop tinted by the party
-                // gradient for party mode.
+                // behind-window vibrancy backdrop(blurred desktop/party gradient)이 비치도록 clear.
                 Color.clear
             }
         }

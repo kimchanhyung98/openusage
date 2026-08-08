@@ -1,8 +1,7 @@
 import Foundation
 
-/// The three OpenCode Go plan windows, as observed-local spend against the published caps
-/// ($12 / rolling 5h, $30 / week, $60 / month). Built by `OpenCodeGoWindowMath` from the local
-/// `opencode-go` messages; only the meters read these (the spend tiles use combined hosted spend).
+/// OpenCode Go plan의 세 window — 공표 cap($12/rolling 5h, $30/week, $60/month) 대비 로컬 관측 spend.
+/// `OpenCodeGoWindowMath`가 로컬 `opencode-go` 메시지에서 생성 — meter 전용, spend tile은 hosted 합산 spend 사용.
 struct OpenCodeGoWindows: Sendable, Equatable {
     var sessionSpend: Double
     var sessionResetsAt: Date?
@@ -13,10 +12,8 @@ struct OpenCodeGoWindows: Sendable, Equatable {
     var monthlyPeriodMs: Int?
 }
 
-/// Window math ported faithfully from the legacy `opencode-go` plugin (and matching CodexBar): a rolling
-/// 5-hour session, a UTC-ISO week (Monday start), and a month anchored to the day-of-month of the
-/// earliest-ever local Go usage (calendar-month fallback when there is none). Pure and UTC-based so it is
-/// deterministic and unit-testable; `now`/anchor come from the caller.
+/// rolling 5시간 session, UTC-ISO week(월요일 시작), 최초 Go 사용일의 day-of-month에 anchor된 month의 window 계산.
+/// anchor 부재 시 calendar month fallback. 순수 UTC 기반 — `now`/anchor는 caller 주입으로 결정적·unit-test 가능.
 enum OpenCodeGoWindowMath {
     static let fiveHoursMs = Double(MetricPeriod.sessionMs)
     static let weekMs = Double(MetricPeriod.weekMs)
@@ -27,11 +24,9 @@ enum OpenCodeGoWindowMath {
         return calendar
     }()
 
-    /// - Parameters:
-    ///   - costs: `(timestampMs, cost)` for every local `opencode-go` assistant message in range; only
-    ///     rows inside a window contribute to that window.
-    ///   - anchorMs: earliest-ever `opencode-go` usage (ms) for the monthly cycle anchor; `nil` → UTC
-    ///     calendar month.
+    /// 세 plan window의 spend·reset 시각 계산.
+    /// `costs`: range 내 로컬 `opencode-go` assistant 메시지의 `(timestampMs, cost)` — window 안 행만 해당 window에 기여.
+    /// `anchorMs`: monthly cycle anchor가 되는 최초 `opencode-go` 사용 시각(ms), `nil`이면 UTC calendar month.
     static func compute(costs: [(ms: Double, cost: Double)], anchorMs: Double?, now: Date) -> OpenCodeGoWindows {
         let nowMs = ms(now)
 
@@ -62,7 +57,7 @@ enum OpenCodeGoWindowMath {
         let total = costs.reduce(0.0) { partial, row in
             (row.ms >= start && row.ms < end) ? partial + row.cost : partial
         }
-        // Snap to a hundredth of a cent to shed float-summation noise before the meter divides by the cap.
+        // meter가 cap으로 나누기 전 float 합산 noise 제거를 위해 1/100 cent 단위로 snap
         return (total * 10000).rounded() / 10000
     }
 
@@ -70,8 +65,8 @@ enum OpenCodeGoWindowMath {
 
     private static func startOfUtcWeek(_ nowMs: Double) -> Double {
         let startOfToday = utc.startOfDay(for: date(ms: nowMs))
-        let weekday = utc.component(.weekday, from: startOfToday) // 1=Sun ... 7=Sat
-        let daysSinceMonday = (weekday + 5) % 7                   // Mon→0, Sun→6
+        let weekday = utc.component(.weekday, from: startOfToday) // 1=일요일 … 7=토요일.
+        let daysSinceMonday = (weekday + 5) % 7                   // 월요일→0, 일요일→6.
         let monday = utc.date(byAdding: .day, value: -daysSinceMonday, to: startOfToday) ?? startOfToday
         return ms(monday)
     }
@@ -89,11 +84,10 @@ enum OpenCodeGoWindowMath {
         let anchor = date(ms: anchorMs)
         let nowComponents = utc.dateComponents([.year, .month], from: date(ms: nowMs))
         var year = nowComponents.year!
-        var month = nowComponents.month! // 1-based
+        var month = nowComponents.month! // 1부터 시작.
         var start = anchoredMonthStart(year: year, month: month, anchor: anchor)
 
-        // The current calendar month's anchored start can land in the future (anchor day-of-month is later
-        // than today) — then the live cycle actually started last month.
+        // anchor day-of-month가 오늘보다 뒤면 이번 달 anchored start가 미래에 위치 — 실제 live cycle은 지난달 시작
         if ms(start) > nowMs {
             (year, month) = shiftMonth(year: year, month: month, delta: -1)
             start = anchoredMonthStart(year: year, month: month, anchor: anchor)
@@ -103,8 +97,7 @@ enum OpenCodeGoWindowMath {
         return (ms(start), ms(end))
     }
 
-    /// The anchored cycle start within a given month: the anchor's day-of-month (clamped to the month's
-    /// length) at the anchor's time-of-day, in UTC.
+    /// 해당 월 내 anchored cycle 시작 — anchor의 day-of-month(월 길이로 clamp)와 time-of-day, UTC 기준.
     private static func anchoredMonthStart(year: Int, month: Int, anchor: Date) -> Date {
         let anchorParts = utc.dateComponents([.day, .hour, .minute, .second, .nanosecond], from: anchor)
         let day = min(anchorParts.day ?? 1, daysInMonth(year: year, month: month))
@@ -116,7 +109,7 @@ enum OpenCodeGoWindowMath {
     }
 
     private static func shiftMonth(year: Int, month: Int, delta: Int) -> (year: Int, month: Int) {
-        // `month` is 1-based; move to 0-based for the modular arithmetic, then back.
+        // 1-based `month`를 0-based로 바꿔 모듈러 연산 후 복원
         let total = year * 12 + (month - 1) + delta
         let normalizedMonth = ((total % 12) + 12) % 12
         return (Int((Double(total) / 12).rounded(.down)), normalizedMonth + 1)
@@ -133,7 +126,7 @@ enum OpenCodeGoWindowMath {
     ) -> Date {
         var components = DateComponents()
         components.year = year
-        components.month = month // Calendar normalizes out-of-range month/day (matches JS Date.UTC)
+        components.month = month // 범위 밖 month/day는 Calendar가 정규화 (JS Date.UTC와 동일 동작)
         components.day = day
         components.hour = hour
         components.minute = minute

@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Fixed popover navigation chrome. It always reads the destination screen, so both pages mounted
-/// during a slide draw the same bar and only the scrolling content moves.
+/// 고정 팝오버 내비게이션 chrome.
+/// 슬라이드 중 양쪽 페이지가 같은 바를 그리도록 항상 목적지 screen 기준 렌더링.
 struct PopoverTopBar: View {
     let layout: LayoutStore
     let height: CGFloat
@@ -10,7 +10,7 @@ struct PopoverTopBar: View {
 
     @Binding var isPresentingResetAllConfirm: Bool
 
-    /// Read for the live card name, so a renamed card's Customize detail title follows the rename.
+    /// 카드 이름 변경 시 Customize 상세 제목 동기화용.
     @Environment(AppContainer.self) private var container
 
     @ViewBuilder

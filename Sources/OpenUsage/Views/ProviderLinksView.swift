@@ -1,19 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// The row of per-provider quick-link buttons (e.g. "Status", "Console") shown in a provider card's
-/// expanded area. Lays out up to three across; extra links wrap to the next row. Each button opens its
-/// URL in the default browser. Mirrors the legacy Tauri `provider-card` quick-links row, adapted to the
-/// native card's expanded area (issue #596 — "bring back provider buttons").
+/// 프로바이더 카드 확장 영역의 퀵링크 버튼 행. 최대 3열, 초과분은 다음 행으로 래핑.
 struct ProviderLinksView: View {
     let links: [ProviderLink]
-    /// Matches the metric-row inset so the button row lines up with the rows above/below it.
+    /// 메트릭 행 inset과 일치 필수 — 위아래 행과의 정렬 유지.
     private static let horizontalInset: CGFloat = 14
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
-    /// Hard ceiling from #596: never more than three buttons across, regardless of how many links a
-    /// provider ships. Fewer links use fewer columns so a lone button isn't boxed into a third of the row.
+    /// 열 상한 — 링크 수와 무관하게 3열 초과 금지.
     private static let maxColumns = 3
 
     private var columns: [GridItem] {

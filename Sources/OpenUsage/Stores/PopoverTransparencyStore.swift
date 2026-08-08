@@ -1,19 +1,16 @@
 import AppKit
 import Observation
 
-/// Single source of truth for the popover's transparency: the persisted "Increase Transparency"
-/// preference, the ephemeral secret-code easter-egg state, and the live macOS accessibility flags that
-/// both the proper toggle and the egg must yield to. Both SwiftUI (via `surfaceTreatment`) and the AppKit panel
-/// (`StatusItemController`, via `effectiveStyle`) read this one store, so the SwiftUI surface and the
-/// window can't drift apart.
+/// popover transparency의 단일 출처 — persisted "Increase Transparency" 설정, ephemeral 이스터에그 상태,
+/// 둘 다 양보해야 하는 라이브 macOS 접근성 flag 묶음
+/// SwiftUI(`surfaceTreatment`)와 AppKit panel(`effectiveStyle`)이 같은 store를 읽어 표면·window 불일치 방지
 @MainActor
 @Observable
 final class PopoverTransparencyStore {
     static let key = "increaseTransparency"
 
-    /// The persisted preference (default off). Stored here rather than as a view-local `@AppStorage` so
-    /// the AppKit panel honors exactly the value the Settings toggle writes. The no-op guard avoids a
-    /// redundant defaults write (and the firehose `UserDefaults.didChangeNotification` it would emit).
+    /// persisted 설정 (기본 off) — view-local `@AppStorage` 대신 여기 저장해 AppKit panel과 값 일치 보장
+    /// no-op guard로 불필요한 defaults 쓰기와 `UserDefaults.didChangeNotification` 발생 방지
     var increaseTransparency: Bool {
         didSet {
             guard increaseTransparency != oldValue else { return }
@@ -21,24 +18,17 @@ final class PopoverTransparencyStore {
         }
     }
 
-    /// Ephemeral easter-egg state. Never persisted: it clears on quit, but survives panel open/close
-    /// within a run, so the only way out is re-typing the code.
+    /// ephemeral 이스터에그 상태 — 미persist로 종료 시 해제, run 내 panel 열닫음에는 유지
     private(set) var secretCodeActive = false
-    /// "Drunk Mode" — escalates the party into the woozy, barely-readable state. Only meaningful while
-    /// `secretCodeActive`; cleared whenever the egg turns off.
+    /// "Drunk Mode" — `secretCodeActive` 동안만 유효, egg 종료 시 함께 해제
     var drunkMode = false
 
-    /// Whether the popover is currently on-screen (ordered-on). Runtime-transient like `secretCodeActive`
-    /// — never persisted. Set by `StatusItemController` at its `showPanel`/`hidePanel` chokepoints (the
-    /// authoritative on-screen state, flipped synchronously with `makeKeyAndOrderFront`/`orderOut`) and
-    /// read by the SwiftUI egg via `\.popoverIsVisible` to **mount** its animation loops only while
-    /// visible — so a closed popover with the egg still active spends no CPU animating. Deliberately NOT
-    /// derived from occlusion or window key state: a `.canJoinAllSpaces` panel is briefly fully occluded
-    /// mid Space-switch while still following the user on-screen, so an occlusion gate would freeze the
-    /// animation on the very panel the user is now looking at.
+    /// popover의 현재 on-screen 여부 — runtime 전용, `StatusItemController` show/hide chokepoint에서 설정
+    /// SwiftUI egg가 visible 동안만 animation loop를 mount하는 gate
+    /// occlusion·window key 상태에서 파생하지 않는 규칙 — Space 전환 중 일시 occlusion이 animation을 얼릴 수 있음
     private(set) var popoverShown = false
 
-    /// Live system accessibility flags. Read from `NSWorkspace` and refreshed on the change notification.
+    /// 라이브 시스템 접근성 flag — `NSWorkspace`에서 읽고 변경 알림 시 갱신
     private(set) var reduceTransparency: Bool
     private(set) var increaseContrast: Bool
 
@@ -52,8 +42,7 @@ final class PopoverTransparencyStore {
     ) {
         self.defaults = defaults
         self.increaseTransparency = defaults.bool(forKey: Self.key)
-        // The flags default to the live `NSWorkspace` values (production) but are injectable so tests can
-        // pin them and exercise the accessibility clamp deterministically, independent of the test host.
+        // flag 기본값은 라이브 `NSWorkspace` 값, 테스트에서 접근성 clamp를 결정적으로 검증하도록 주입 가능
         self.reduceTransparency = reduceTransparency
         self.increaseContrast = increaseContrast
         startObservingAccessibility()
@@ -61,26 +50,20 @@ final class PopoverTransparencyStore {
 
     deinit { accessibilityObservation?.cancel() }
 
-    /// Toggled by `TooMuchTransparencyKeyReader` when the full code is entered — so a second entry turns
-    /// the egg off. Exiting drops back to the base state (Normal / Increase Transparency): the persisted
-    /// `increaseTransparency` is preserved untouched (its Settings toggle is disabled while the egg runs),
-    /// so the resolver returns to whichever base the user was in before.
+    /// 전체 code 입력 시 `TooMuchTransparencyKeyReader`가 호출 — 재입력으로 egg off
+    /// 종료 시 base 상태로 복귀, persisted `increaseTransparency`는 그대로 보존
     func toggleSecretCode() {
         setSecretCode(!secretCodeActive)
     }
 
-    /// The Settings "Party Mode" toggle (shown only while the egg is active). Reading mirrors the egg
-    /// state; setting it `false` exits the egg entirely — the only way *in* is the secret code, so the
-    /// toggle is never rendered while off and `set(true)` can't be reached from the UI. Turning it off
-    /// from "Party Mode + Drunk Mode" also clears Drunk Mode (you can't be drunk without the party), so
-    /// both rows disappear together.
+    /// Settings "Party Mode" toggle (egg 활성 중에만 노출) — `false` 설정은 egg 전체 종료
+    /// 진입 경로는 secret code뿐이라 UI에서 `set(true)` 도달 불가, off 시 Drunk Mode도 함께 해제
     var partyModeActive: Bool {
         get { secretCodeActive }
         set { setSecretCode(newValue) }
     }
 
-    /// Single point that flips the egg, so the cheat code and the Party Mode toggle share one exit path:
-    /// leaving the egg always clears Drunk Mode (state 4 → base, never a dangling drunk-without-party).
+    /// egg on/off의 단일 지점 — cheat code와 Party Mode toggle이 한 종료 경로 공유, 종료 시 Drunk Mode 해제
     private func setSecretCode(_ active: Bool) {
         guard active != secretCodeActive else { return }
         secretCodeActive = active
@@ -88,15 +71,14 @@ final class PopoverTransparencyStore {
         AppLog.info(.statusItem, "Too-much-transparency egg \(active ? "enabled" : "disabled")")
     }
 
-    /// Flips the on-screen flag from `StatusItemController`'s show/hide chokepoints. Guards on change so a
-    /// redundant set doesn't churn observers. Orthogonal to `effectiveStyle` (it never enters `resolve`),
-    /// so toggling it re-renders only the SwiftUI egg's mount gate, never the AppKit backdrop crossfade.
+    /// `StatusItemController` show/hide chokepoint에서 on-screen flag 반전 — 변경 시에만 반영
+    /// `effectiveStyle`과 직교 — SwiftUI egg mount gate만 재렌더, AppKit backdrop crossfade에는 무영향
     func setPopoverShown(_ shown: Bool) {
         guard shown != popoverShown else { return }
         popoverShown = shown
     }
 
-    /// The resolved level both the panel and the SwiftUI surface render.
+    /// panel과 SwiftUI 표면이 함께 렌더링하는 resolved level
     var effectiveStyle: PopoverTransparencyStyle {
         PopoverTransparencyStyle.resolve(
             increaseTransparency: increaseTransparency,
@@ -107,34 +89,26 @@ final class PopoverTransparencyStore {
         )
     }
 
-    /// SwiftUI surface treatment derived from the resolved style.
     var surfaceTreatment: PopoverSurfaceTreatment { effectiveStyle.surfaceTreatment }
 
-    /// True exactly when an egg animation loop should be mounted and ticking: the popover is on-screen
-    /// AND the resolved style is one of the animated egg states. The headless test seam for "no animation
-    /// work while the popover is hidden" — the SwiftUI loops gate on the same two inputs
-    /// (`\.popoverIsVisible` plus the party/drunk style). Reads `effectiveStyle`, so the accessibility
-    /// clamp (which resolves the egg to `.opaque`) correctly reports no animation even with the code on.
+    /// egg animation loop가 mount되어야 하는 정확한 조건 — popover on-screen이면서 resolved style이 party·drunk
+    /// `effectiveStyle`을 읽으므로 접근성 clamp 시 code가 켜져 있어도 animation 없음으로 판정
     var eggAnimationsActive: Bool {
         popoverShown && (effectiveStyle == .party || effectiveStyle == .drunk)
     }
 
-    /// True when the user turned the proper toggle on but a system accessibility setting is overriding it
-    /// — so Settings can show a friendly "paused" note instead of silently doing nothing.
+    /// toggle on인데 시스템 접근성 설정이 override 중인 상태 — Settings의 "paused" 안내 근거
     var isPaused: Bool {
         increaseTransparency && (reduceTransparency || increaseContrast)
     }
 
-    /// True when the egg is active but a system accessibility setting (Reduce Transparency / Increase
-    /// Contrast) is clamping the panel back to opaque — so Settings can explain why the party looks
-    /// normal rather than leaving the user puzzled that the code "did nothing".
+    /// egg 활성인데 접근성 설정이 opaque로 clamp 중인 상태 — party가 안 보이는 이유를 Settings에서 설명
     var partyPaused: Bool {
         secretCodeActive && (reduceTransparency || increaseContrast)
     }
 
-    /// Accessibility display options post to `NSWorkspace`'s OWN notification center (never `.default`).
-    /// The notification carries no payload, so we ignore it and re-read the flags on the main actor —
-    /// which also sidesteps the non-`Sendable` `Notification` under Swift 6 strict concurrency.
+    /// 접근성 display 옵션은 `NSWorkspace` 자체 notification center에 게시 (`.default` 아님)
+    /// payload 없는 알림이라 main actor에서 flag 재독 — Swift 6 strict concurrency의 non-`Sendable` `Notification`도 회피
     private func startObservingAccessibility() {
         let center = NSWorkspace.shared.notificationCenter
         let name = NSWorkspace.accessibilityDisplayOptionsDidChangeNotification

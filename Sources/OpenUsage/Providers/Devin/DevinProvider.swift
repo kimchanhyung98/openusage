@@ -37,8 +37,7 @@ final class DevinProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // Same sources as `refresh()`: the credentials file, then the Devin app's stored auth. Both are
-        // blocking disk/SQLite reads, so both run off the main actor (see `loadOffMainActor`).
+        // `refresh()`와 동일한 credential 소스(credentials 파일 → 앱 auth) 확인, blocking 디스크/SQLite 읽기라 main actor 밖에서 수행
         if await loadOffMainActor({ [authStore] in authStore.loadCredentialsFile() }) != nil { return true }
         return await loadOffMainActor { [authStore] in authStore.loadAppAuth() } != nil
     }

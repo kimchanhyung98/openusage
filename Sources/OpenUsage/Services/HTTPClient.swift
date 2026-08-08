@@ -22,35 +22,27 @@ protocol HTTPClient: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }
 
-// NOTE: headers and successful-response bodies are NEVER logged — `Authorization`, `Cookie`, `Bearer`
-// headers and token-bearing bodies would leak. The Debug line carries the method, the redacted URL, and
-// the status code. On an HTTP error (>= 400) a redacted, truncated (<= 500 byte) preview of the body is
-// added at Debug to aid diagnosis — never the full body, and always run through `LogRedaction.bodyPreview`
-// first (which strips JWTs, api keys, and sensitive JSON values exactly like the Tauri host API did).
+// header·성공 응답 body 로깅 금지 — `Authorization`/`Cookie`/`Bearer` header와 token 포함 body 유출 방지.
+// Debug 라인은 method + redacted URL + status code만; HTTP 에러(>= 400)는 `LogRedaction.bodyPreview`를 통과한 500 byte 이하 preview만 추가 — 전체 body 금지.
 
 struct URLSessionHTTPClient: HTTPClient {
-    /// When true, requests use a loopback session that accepts a self-signed TLS cert for `127.0.0.1`
-    /// only (see `LoopbackTLSDelegate`). The local language server serves HTTPS with a self-signed cert
-    /// on a random localhost port; nothing else needs this. Off by default so remote calls keep full
-    /// certificate validation.
+    /// true면 `127.0.0.1` 한정 self-signed TLS cert를 수용하는 loopback 세션 사용 (`LoopbackTLSDelegate`).
+    /// 로컬 language server의 self-signed HTTPS 전용 — 기본 off, 원격 호출은 전체 certificate 검증 유지.
     var allowsInsecureLoopback: Bool = false
 
-    /// One session for every provider request, built once with the optional `~/.openusage/config.json`
-    /// proxy applied (see `ProxyConfig`). Default configuration — same cookie/cache semantics as
-    /// `URLSession.shared` — when no valid proxy is configured.
+    /// 모든 provider 요청 공용 세션 — 선택적 `~/.openusage/config.json` proxy 적용해 1회 생성 (`ProxyConfig`).
+    /// 유효한 proxy 미설정 시 `URLSession.shared`와 동일한 cookie/cache 의미의 기본 configuration.
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         if let proxy = ProxyConfig.current {
             configuration.proxyConfigurations = [proxy.proxyConfiguration()]
-            // Record that a proxy is in effect (useful in a support log). Scheme/host/port only —
-            // any embedded `user:pass` lives in separate fields and is never logged.
+            // proxy 적용 사실 기록(지원 로그용) — scheme/host/port만, 내장 `user:pass`는 별도 필드로 로깅 금지.
             AppLog.info(.config, "proxy enabled \(proxy.scheme.rawValue)://\(proxy.host):\(proxy.port)")
         }
         return URLSession(configuration: configuration)
     }()
 
-    /// Loopback-only session: ephemeral (no shared cookie/cache state), no proxy (localhost), and a
-    /// delegate that trusts a self-signed cert exclusively for `127.0.0.1`. Built once.
+    /// loopback 전용 세션 — ephemeral(공유 cookie/cache 없음), proxy 없음, `127.0.0.1` 한정 self-signed cert 신뢰 delegate. 1회 생성.
     private static let loopbackSession: URLSession = {
         URLSession(configuration: .ephemeral, delegate: LoopbackTLSDelegate(), delegateQueue: nil)
     }()
@@ -92,9 +84,8 @@ enum HTTPClientError: Error, LocalizedError {
     }
 }
 
-/// Accepts a self-signed server cert ONLY for loopback (`127.0.0.1`). Every other host — and every
-/// non-server-trust challenge — falls through to default validation, so this never weakens trust for a
-/// real remote endpoint. Holds no mutable state, so it is safe to share across the loopback session.
+/// self-signed 서버 cert를 loopback(`127.0.0.1`)에만 수용 — 그 외 host·non-server-trust challenge는 기본 검증으로 통과, 원격 endpoint 신뢰 약화 없음.
+/// mutable 상태 없음 — loopback 세션 간 공유 안전.
 private final class LoopbackTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
     func urlSession(
         _ session: URLSession,

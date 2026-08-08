@@ -1,35 +1,27 @@
 import Foundation
 
-/// A stable, machine-readable bucket for a refresh failure, so telemetry can group "what kind of
-/// errors happen" without sending the free-form (localized, user-facing) error message — which is not
-/// groupable and risks leaking detail. Every provider error enum maps its cases to one of these via
-/// `CategorizedError`; the raw values are the strings reported to telemetry, so keep them stable.
-///
-/// `notLoggedIn` is split out deliberately: a large share of refresh "failures" are simply providers
-/// the user has not authenticated, which is expected noise rather than a bug — keeping it as its own
-/// category lets analysis filter it out.
+/// refresh 실패를 telemetry에서 그룹화하기 위한 안정적 bucket — free-form 오류 메시지는 그룹화 불가·정보 유출 위험이라 raw value만 전송. raw value는 telemetry에 보고되는 문자열이므로 변경 금지.
+/// `notLoggedIn`은 의도적 분리 — 미인증 provider의 실패는 버그가 아닌 기대 노이즈라 분석에서 필터링 가능해야 함.
 enum ErrorCategory: String, Sendable, CaseIterable, Codable {
     case notLoggedIn = "not_logged_in"
-    /// A previously-valid credential went bad (expired / revoked / conflicting session).
+    /// 유효했던 credential의 만료·폐기·세션 충돌.
     case authExpired = "auth_expired"
-    /// Auth is structurally wrong rather than stale (bad payload, misconfigured OAuth URL, unsupported key).
+    /// 만료가 아니라 구조적으로 잘못된 auth (payload 손상, OAuth URL 오설정, 미지원 key).
     case authInvalid = "auth_invalid"
-    /// Local credential material exists, but its file, database, or Keychain entry could not be read.
+    /// 로컬 credential은 존재하나 file·database·Keychain 항목 읽기 실패.
     case credentialAccess = "credential_access"
-    /// The request never completed (transport / connection failure).
+    /// 요청 자체가 완료되지 못한 경우 (transport/connection 실패).
     case network = "network"
-    /// A response came back but could not be parsed / a required field was missing.
+    /// 응답은 왔지만 파싱 실패 또는 필수 필드 누락.
     case decoding = "decoding"
     case http4xx = "http_4xx"
     case http5xx = "http_5xx"
     case rateLimited = "rate_limited"
-    /// Usage data is legitimately unavailable for this account/plan (no subscription, API-key-only, quota
-    /// endpoint absent) — not a malfunction.
+    /// 해당 account/plan에서 usage 데이터가 정당하게 없는 경우 (구독 없음, API-key 전용, quota endpoint 부재) — 오작동 아님.
     case notAvailable = "not_available"
     case other = "other"
 
-    /// Classify a non-2xx HTTP status. 429 is called out as rate limiting; everything else splits on the
-    /// 4xx/5xx boundary.
+    /// non-2xx HTTP status 분류 — 429는 rate limiting, 나머지는 4xx/5xx 경계로 구분.
     static func http(_ statusCode: Int) -> ErrorCategory {
         switch statusCode {
         case 429: return .rateLimited
@@ -40,16 +32,13 @@ enum ErrorCategory: String, Sendable, CaseIterable, Codable {
     }
 }
 
-/// An error that knows its own telemetry bucket. Conformed by every provider error enum below so the
-/// classification lives next to the cases it describes and stays exhaustive as cases are added.
+/// 자신의 telemetry bucket을 아는 error — 아래 모든 provider error enum이 conform.
 protocol CategorizedError: Error {
     var errorCategory: ErrorCategory { get }
 }
 
 // MARK: - Provider conformances
-//
-// Retroactive conformances kept in one file so the full mapping is reviewable at a glance and a new
-// error case forces a compile error here (exhaustive switches) rather than silently falling to `.other`.
+// retroactive conformance를 한 파일에 모음 — 새 error case가 `.other`로 조용히 떨어지는 대신 여기서 컴파일 오류 발생 (exhaustive switch).
 
 extension ClaudeAuthError: CategorizedError {
     var errorCategory: ErrorCategory {

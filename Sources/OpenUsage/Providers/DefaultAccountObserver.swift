@@ -1,18 +1,13 @@
 import Foundation
 
-/// Reads which account is signed in at a family's DEFAULT home — the proven identity slice of the
-/// account-first model, with no candidate scanning. An account that can't name itself is reported
-/// `unresolved`, never guessed: identity keys only ever come from the provider's own account
-/// metadata, so a wrong-account attribution is structurally impossible.
+/// family의 DEFAULT home에 로그인된 account를 읽는 관찰자 — account-first 모델의 proven identity 슬라이스, candidate 스캔 없음.
+/// identity key는 provider 자신의 account metadata에서만 나옴 — 스스로 이름을 못 대는 account는 추측 없이 `unresolved` 처리.
 struct DefaultAccountObserver: Sendable {
-    /// One family's default-home read this launch.
+    /// 이번 launch에서의 한 family default-home 판독 결과.
     enum Outcome: Equatable, Sendable {
-        /// The default home named its account.
         case resolved(identityKey: String, label: String?, anchor: String)
-        /// A credential footprint exists but nothing names the account (keyring-mode Codex, a
-        /// comma-list `CLAUDE_CONFIG_DIR`, a legacy auth file without an account id).
+        /// credential 흔적은 있지만 account 특정 불가 (keyring-mode Codex, 콤마 목록 `CLAUDE_CONFIG_DIR`, account id 없는 legacy auth file).
         case unresolved(reason: String)
-        /// No sign of a login at the default home.
         case absent
     }
 
@@ -20,13 +15,9 @@ struct DefaultAccountObserver: Sendable {
     var files: TextFileAccessing
     var keychain: KeychainAccessing
     var homeDirectory: @Sendable () -> URL
-    /// Managed account switching owns `~/.claude` as the Shared Runtime Home, so the observer must
-    /// resolve identity from that home even when an ambient `CLAUDE_CONFIG_DIR` names another
-    /// directory — otherwise the app would manage one account while observing a different one.
+    /// 관리형 account 전환이 `~/.claude`를 Shared Runtime Home으로 소유 — ambient `CLAUDE_CONFIG_DIR`가 다른 디렉토리를 가리켜도 그 home에서 identity 해석.
     var pinsClaudeSharedHome: Bool
-    /// Managed account switching pins the Codex provider to the shared `~/.codex/auth.json`, so the
-    /// observer must resolve identity from that same file — the keychain item and the legacy
-    /// `~/.config/codex` home can no longer produce the next snapshot and must not blur it.
+    /// 관리형 account 전환이 Codex를 shared `~/.codex/auth.json`에 고정 — keychain 항목과 legacy `~/.config/codex` home은 다음 snapshot을 만들 수 없으므로 배제.
     var pinsCodexSharedHome: Bool
 
     init(
@@ -45,7 +36,7 @@ struct DefaultAccountObserver: Sendable {
         self.pinsCodexSharedHome = pinsCodexSharedHome
     }
 
-    /// Expand a leading `~` against the injected home so tests never touch the real one.
+    /// 주입된 home 기준으로 선행 `~` 확장 — 테스트가 실제 home을 건드리지 않도록 함.
     private func expandTilde(_ path: String) -> String {
         guard path == "~" || path.hasPrefix("~/") else { return path }
         return homeDirectory().path + String(path.dropFirst(1))
@@ -53,7 +44,7 @@ struct DefaultAccountObserver: Sendable {
 
     // MARK: - Claude
 
-    /// Claude Code's per-install state file, which names the signed-in account (`oauthAccount`).
+    /// Claude Code의 per-install 상태 파일 — 로그인된 account를 명시 (`oauthAccount`).
     struct ClaudeStateFile: Codable {
         struct OAuthAccount: Codable {
             var accountUuid: String?
@@ -65,25 +56,23 @@ struct DefaultAccountObserver: Sendable {
         var oauthAccount: OAuthAccount?
     }
 
-    /// Claude identity key: account UUID plus the org UUID when present. Plans are org-scoped — one
-    /// human commonly has a personal Max org and a company Team org under the SAME account, and those
-    /// are different usage pools that must stay different accounts, never merge.
+    /// Claude identity key: account UUID + (있으면) org UUID.
+    /// plan은 org 단위 — 같은 account 아래 두 org는 서로 다른 usage pool이므로 절대 병합 금지.
     static func claudeIdentityKey(_ account: ClaudeStateFile.OAuthAccount) -> String? {
         guard let uuid = account.accountUuid?.nilIfEmpty?.lowercased() else { return nil }
         guard let org = account.organizationUuid?.nilIfEmpty?.lowercased() else { return uuid }
         return "\(uuid)|\(org)"
     }
 
-    /// "email (Org Name)" when both are known — the org is what tells two same-email logins apart.
+    /// 둘 다 알 때 "email (Org Name)" — 같은 email의 두 로그인을 구분하는 기준은 org.
     static func claudeIdentityLabel(_ account: ClaudeStateFile.OAuthAccount) -> String? {
         let email = account.emailAddress?.nilIfEmpty
         guard let org = account.organizationName?.nilIfEmpty else { return email }
         return email.map { "\($0) (\(org))" } ?? org
     }
 
-    /// The default Claude home, mirroring `ClaudeAuthStore`'s resolution exactly (the observer must
-    /// name the account whose credentials the provider actually refreshes with): `CLAUDE_CONFIG_DIR`
-    /// when exported, else `~/.claude`. A comma-separated list can't be assigned one identity.
+    /// 기본 Claude home 관찰 — `ClaudeAuthStore`의 해석과 동일 (`CLAUDE_CONFIG_DIR` export 시 그 경로, 아니면 `~/.claude`).
+    /// 콤마 목록은 하나의 identity로 귀속 불가.
     func observeClaude() -> Outcome {
         var configDir = "~/.claude"
         var hasConfigDirOverride = false
@@ -97,11 +86,8 @@ struct DefaultAccountObserver: Sendable {
             hasConfigDirOverride = true
         }
         let anchor = expandTilde(configDir)
-        // Without an override Claude keeps the default state next to `~/.claude`. Once
-        // CLAUDE_CONFIG_DIR is explicit — even when it names that same directory — Claude reads the
-        // state inside the directory, just like every other custom config home. Pinned mode mirrors
-        // the switcher's two-file rule: plain runs update `~/.claude.json`, wrapper runs (explicit
-        // CLAUDE_CONFIG_DIR) update the state inside the home — identity holds only when they agree.
+        // override 없으면 state는 `~/.claude.json`, 명시적 CLAUDE_CONFIG_DIR면 (같은 디렉토리라도) home 내부의 state 파일.
+        // pinned mode는 switcher의 two-file 규칙 그대로 — 두 파일이 같은 account를 가리킬 때만 identity 성립.
         let identityPaths: [String] = pinsClaudeSharedHome
             ? [expandTilde("~/.claude.json"), anchor + "/.claude.json"]
             : [hasConfigDirOverride ? anchor + "/.claude.json" : expandTilde("~/.claude.json")]
@@ -131,7 +117,7 @@ struct DefaultAccountObserver: Sendable {
         if sawStateFile {
             return .unresolved(reason: "identity file present but names no account")
         }
-        // No state file. A credential file without it can't be attributed; no footprint = absent.
+        // state file 없음 — credential file만으로는 귀속 불가, footprint조차 없으면 absent.
         return files.exists(anchor + "/.credentials.json")
             ? .unresolved(reason: "credentials present but no identity file")
             : .absent
@@ -139,12 +125,8 @@ struct DefaultAccountObserver: Sendable {
 
     // MARK: - Codex
 
-    /// The default Codex homes, mirroring `CodexAuthStore.authPaths()`: `CODEX_HOME` when exported,
-    /// else `~/.config/codex` then `~/.codex`. The first home that names its account wins.
-    ///
-    /// Identity is strict — `tokens.account_id`, or the id_token's ChatGPT account claim (the value
-    /// the CLI itself copies into `account_id`). No path-derived fallback: an auth file that can't
-    /// name its account (and keyring-mode logins, whose secret we never read here) stays unresolved.
+    /// 기본 Codex home 관찰 — `CodexAuthStore.authPaths()`와 동일 (`CODEX_HOME` export 시 그 경로, 아니면 `~/.config/codex` → `~/.codex`). account를 명시한 첫 home이 승리.
+    /// identity는 엄격 — `tokens.account_id` 또는 id_token의 ChatGPT account claim만 인정, 경로 기반 fallback 없음.
     func observeCodex() -> Outcome {
         let homes: [String]
         if pinsCodexSharedHome {
@@ -156,17 +138,8 @@ struct DefaultAccountObserver: Sendable {
             homes = ["~/.config/codex", "~/.codex"]
         }
 
-        // `CodexProvider.refresh` falls back to the keychain credential when file auth fails, so
-        // while a keychain item exists the file's identity is not provably the account that will
-        // produce the next snapshot. We never read the keychain secret here (launch path, prompt
-        // risk) — an attributes-only existence probe downgrades the whole family to unresolved,
-        // which just means "behave exactly as before account awareness". A later phase binds
-        // keyring-mode identities properly. Only a definite "no item" clears the family for file
-        // identity: a failed probe (`nil` — locked keychain, denied) is treated the same as
-        // "item present", because resolving from the file while the fallback is possible is the
-        // exact wrong-account stamp this rule exists to prevent. In managed-switching mode the
-        // provider is pinned to the shared auth file, so the fallback doesn't exist and the probe
-        // is skipped.
+        // `CodexProvider.refresh`는 file auth 실패 시 keychain으로 fallback — 항목이 있거나 probe 실패(nil)면 파일 identity를 증명할 수 없어 unresolved 처리. secret은 절대 읽지 않음(attributes-only 존재 probe, 프롬프트 위험 회피).
+        // 관리형 전환 모드는 shared auth file 고정이라 fallback이 없으므로 probe 생략.
         if !pinsCodexSharedHome,
            keychain.genericPasswordExists(service: CodexAuthStore.keychainService) != false {
             return .unresolved(reason: "keychain credential present or unverifiable — identity unresolved this launch")
@@ -179,7 +152,7 @@ struct DefaultAccountObserver: Sendable {
             do {
                 text = try files.readTextIfPresent(anchor + "/auth.json")
             } catch {
-                // An unreadable auth file is still a login footprint — just one we can't attribute.
+                // 읽기 실패한 auth file도 로그인 footprint — 귀속만 불가.
                 sawFootprint = true
                 continue
             }
@@ -194,10 +167,8 @@ struct DefaultAccountObserver: Sendable {
             : .absent
     }
 
-    /// The strict Codex file identity: `tokens.account_id`, else the id_token's ChatGPT account
-    /// claim. The single Codex identity rule — the observer, the switch transaction, and the
-    /// import/migration readers all resolve through here so an auth file is never attributed two
-    /// ways.
+    /// 엄격한 Codex file identity: `tokens.account_id`, 없으면 id_token의 ChatGPT account claim.
+    /// observer·switch transaction·import/migration이 모두 통과하는 단일 규칙 — 한 auth file이 두 가지로 귀속되는 일 방지.
     static func codexFileIdentity(authText: String) -> (identityKey: String, label: String?)? {
         guard let auth = CodexAuthStore.parseAuth(authText),
               auth.tokens?.accessToken?.nilIfEmpty != nil else { return nil }
@@ -213,9 +184,7 @@ struct DefaultAccountObserver: Sendable {
         return nil
     }
 
-    /// The account id inside a Codex id_token: `chatgpt_account_id` under the
-    /// `https://api.openai.com/auth` claim (the CLI's source for `tokens.account_id`), with the
-    /// bare top-level spelling accepted for older tokens.
+    /// Codex 계정 ID는 namespaced claim을 우선하고 구버전 토큰의 top-level 표기도 허용.
     static func chatGPTAccountID(inIDTokenPayload payload: [String: Any]?) -> String? {
         guard let payload else { return nil }
         let authClaim = payload["https://api.openai.com/auth"] as? [String: Any]

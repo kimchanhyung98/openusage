@@ -63,8 +63,7 @@ actor KimiCredentialLock {
                 throw KimiAuthError.credentialLockUnavailable
             }
             guard let existing = Self.identity(of: lockURL) else {
-                // The owner may release between our EEXIST result and lstat. That is a normal
-                // hand-off race: wait briefly, then retry mkdir instead of reporting a broken lock.
+                // EEXIST 결과와 lstat 사이에 owner가 해제 가능한 정상 hand-off race — broken lock 보고 대신 잠시 대기 후 mkdir 재시도
                 guard errno == ENOENT, clock.now < deadline else {
                     throw KimiAuthError.credentialLockUnavailable
                 }

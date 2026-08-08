@@ -50,15 +50,13 @@ struct CodexUsageClient: Sendable {
             case "refresh_token_invalidated":
                 throw CodexAuthError.tokenRevoked
             default:
-                // No recognized OAuth error code (often a non-JSON proxy/WAF page) — report the HTTP
-                // status rather than asserting token expiry the user can't fix by re-logging in.
+                // 인식된 OAuth error code 없음(대개 비-JSON proxy/WAF page) — 재로그인으로 못 고치는 token 만료 단정 대신 HTTP status 보고.
                 throw CodexUsageError.requestFailed(response.statusCode)
             }
         }
 
-        // A non-2xx that isn't a 400/401 (a 5xx, a gateway error) is a request failure, not an expired
-        // token — surface the status. A 2xx whose body carries no usable access token is treated as a
-        // dead session (re-login is the right remedy).
+        // 400/401 외 non-2xx(5xx, gateway 오류)는 token 만료가 아닌 request 실패 — status 노출.
+        // usable access token 없는 2xx body는 dead session 취급 — 재로그인이 올바른 해법.
         guard (200..<300).contains(response.statusCode) else {
             throw CodexUsageError.requestFailed(response.statusCode)
         }
@@ -94,10 +92,8 @@ struct CodexUsageClient: Sendable {
         ))
     }
 
-    /// On-demand rate-limit reset credits, including each credit's expiry — a separate endpoint from
-    /// `usage` (the usage body's `rate_limit_reset_credits` carries only the count, no expiry list). The
-    /// extra headers mirror the Codex desktop client, which the endpoint expects. Best-effort: the
-    /// provider tolerates a failure here and falls back to the usage body's count.
+    /// On-demand rate-limit reset credit 목록 조회 — per-credit expiry 포함 (usage body의 `rate_limit_reset_credits`는 count만 제공하는 별개 필드).
+    /// 추가 header는 endpoint가 기대하는 Codex desktop client mirror. Best-effort — 실패 시 provider가 usage body의 count로 fallback.
     func fetchResetCredits(accessToken: String, accountID: String?) async throws -> HTTPResponse {
         var headers = [
             "Authorization": "Bearer \(accessToken)",
@@ -118,13 +114,9 @@ struct CodexUsageClient: Sendable {
         ))
     }
 
-    /// Consumes (claims) one rate-limit reset credit — the protocol the Codex CLI uses, verified live
-    /// and documented in docs/research/codex-reset-credit-claim.md. `redeemRequestID` is the caller's
-    /// idempotency key (a UUID minted once per credit and reused on retry, so a retried claim can never
-    /// burn a second credit — the server answers `already_redeemed`); `creditID` targets exactly one
-    /// credit, never letting the server pick. The outcome rides in the 200 body's `code`
-    /// (reset / already_redeemed / nothing_to_reset / no_credit) — see
-    /// `CodexResetClaimService.outcome(fromConsume:)`.
+    /// Rate-limit reset credit 1개 consume — Codex CLI와 실계정에서 검증한 계약.
+    /// `redeemRequestID`는 caller의 idempotency key (credit당 UUID 1회 발급·retry 재사용 — 재시도가 두 번째 credit을 소모 불가, 서버는 `already_redeemed` 응답); `creditID`로 정확히 1개 지정 — 서버 선택 금지.
+    /// Outcome은 200 body의 `code` (reset / already_redeemed / nothing_to_reset / no_credit) — `CodexResetClaimService.outcome(fromConsume:)` 참고.
     func consumeResetCredit(
         accessToken: String,
         accountID: String?,
@@ -155,4 +147,3 @@ struct CodexUsageClient: Sendable {
     }
 
 }
-

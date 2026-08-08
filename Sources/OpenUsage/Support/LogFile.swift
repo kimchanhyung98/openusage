@@ -1,32 +1,20 @@
 import Foundation
 import os
 
-/// Resolves the log file URL and owns a serial, lock-guarded `FileHandle` appender with single-archive
-/// rotation. `@unchecked Sendable` because all mutable state is guarded by an internal `NSLock`, so it
-/// can be written to from any isolation (the `Sendable` provider structs, the `@MainActor` UI, etc.) —
-/// the `nonisolated`-static-`Logger` precedent in `LocalUsageServer`, plus the lock for the handle.
-///
-/// Rotation matches the Tauri cap (`.max_file_size(10_000_000)`): when a write would exceed 10 MB the
-/// current file becomes `OpenUsage.1.log` and a fresh `OpenUsage.log` opens — bounding disk to ~20 MB
-/// while keeping one archive of recent history for user-submitted reports (a deliberate, minor
-/// improvement over Tauri's KeepOne, which discards all history). On launch an already-oversize file is
-/// rotated once before the first write. If opening/rotating fails the sink fails loudly to `os.Logger`
-/// at error and disables itself for the session — never crashes, never silently spins.
+/// 로그 파일 URL 해석과 lock 보호 `FileHandle` appender 소유 — 단일 아카이브 rotation 포함.
+/// `@unchecked Sendable`: 모든 가변 상태를 내부 `NSLock`이 보호하므로 어떤 isolation에서도 쓰기 가능.
+/// 10 MB 초과 시 `OpenUsage.1.log`로 rotation(디스크 ~20 MB 상한); open/rotation 실패 시 `os.Logger`에 크게 알리고 세션 동안 자체 비활성화.
 final class LogFile: @unchecked Sendable {
-    /// The shared production sink. Other code logs through `AppLog`, which writes here. Resolves
-    /// `~/Library/Logs/OpenUsage/OpenUsage.log` via `FileManager`, never hardcoded from `$HOME`; the
-    /// `Logs/OpenUsage` subfolder is a literal (not bundle-id-keyed), so the dev and release builds
-    /// agree on the same file — acceptable since they are separate builds.
+    /// 공유 production sink — 다른 코드는 `AppLog`를 거쳐 여기에 기록.
+    /// `Logs/OpenUsage` 하위 폴더는 literal(bundle-id 미사용)이라 dev/release 빌드가 같은 파일 공유.
     static let shared = LogFile(directory: defaultDirectory(), fileName: "OpenUsage.log")
 
-    /// The advertised log path (logged at startup, copied/revealed from Settings). Derived from the
-    /// shared sink so the path shown to the user always equals where logs are actually written.
+    /// 외부에 알리는 로그 경로 — 공유 sink에서 파생되어 사용자에게 보이는 경로와 실제 기록 위치가 항상 일치.
     static let url: URL = shared.fileURL
 
     static let defaultMaxBytes = 10_000_000
 
-    /// Where this sink actually writes. Exposed (read-only) so `url` can derive the advertised path
-    /// from the single source of truth rather than recomputing it.
+    /// 이 sink의 실제 기록 위치 — `url`이 파생하는 단일 소스.
     let fileURL: URL
     private let archiveURL: URL
     private let directory: URL
@@ -39,10 +27,6 @@ final class LogFile: @unchecked Sendable {
     private var disabled = false
     private var opened = false
 
-    /// - Parameters:
-    ///   - directory: the folder the log file lives in (created on open if missing).
-    ///   - fileName: the log file name (the archive appends `.1` before the extension).
-    ///   - maxBytes: rotation cap; defaults to the 10 MB Tauri cap.
     init(directory: URL, fileName: String, maxBytes: Int = defaultMaxBytes) {
         self.directory = directory
         self.fileURL = directory.appendingPathComponent(fileName)
@@ -54,16 +38,13 @@ final class LogFile: @unchecked Sendable {
     }
 
     static func defaultDirectory() -> URL {
-        // `.first` with a fallback rather than `[0]`: the lookup effectively always resolves on stock
-        // macOS, but a force-index would crash the app at launch (this runs during `bootstrap()`) if it
-        // ever returned empty in an unusual container. A non-ideal-but-valid directory keeps the app alive.
+        // `[0]` 대신 `.first` + fallback — `bootstrap()` 중 실행되므로 빈 결과에서도 crash 대신 유효 디렉터리 유지.
         let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return library.appendingPathComponent("Logs/OpenUsage", isDirectory: true)
     }
 
-    /// Create the directory and file, seed the in-memory size from disk, and perform the launch-time
-    /// trim (rotate once if an already-oversize file is left over from a long-dead session). Idempotent.
+    /// 디렉터리·파일 생성, 디스크 기준 size seed, launch-time trim(남은 oversize 파일 1회 rotation). 멱등.
     func open() {
         lock.lock()
         defer { lock.unlock() }
@@ -76,8 +57,7 @@ final class LogFile: @unchecked Sendable {
         }
     }
 
-    /// Append one already-formatted line (a newline is added). Rotates first if the line would push the
-    /// file past the cap. No-op once the sink is disabled.
+    /// 포맷 완료된 라인 1줄 append(개행 자동 추가). 상한 초과 예상 시 rotation 선행; sink 비활성화 후에는 no-op.
     func append(_ line: String) {
         lock.lock()
         defer { lock.unlock() }
@@ -102,7 +82,7 @@ final class LogFile: @unchecked Sendable {
                 return
             }
         }
-        // Re-fetch after a possible rotation, which swaps the handle out.
+        // rotation이 handle을 교체했을 수 있어 재조회.
         guard let liveHandle = handle else { return }
         do {
             try liveHandle.write(contentsOf: data)
@@ -123,7 +103,7 @@ final class LogFile: @unchecked Sendable {
         let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
         self.handle = handle
         self.size = (attributes?[.size] as? Int) ?? 0
-        // Launch-time trim: a leftover oversize file is rotated once before the first write.
+        // launch-time trim: 남은 oversize 파일은 첫 write 전 1회 rotation.
         if self.size > maxBytes {
             try rotateLocked()
         } else {

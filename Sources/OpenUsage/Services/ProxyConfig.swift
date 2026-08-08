@@ -1,13 +1,8 @@
 import Foundation
 import Network
 
-/// Optional proxy routing for provider HTTP requests — the same contract as the original app
-/// (docs/proxy.md): `~/.openusage/config.json` containing
-/// `{"proxy": {"enabled": true, "url": "socks5://127.0.0.1:10808"}}`.
-///
-/// Loaded once at startup; restart the app after editing the file. Missing, disabled, invalid, or
-/// unreadable config leaves proxying off. Credentials may be embedded in the URL
-/// (`http://user:pass@host:port`). Loopback hosts always bypass the proxy.
+/// provider HTTP 요청의 선택적 proxy 라우팅 — `~/.openusage/config.json`의 `{"proxy": {"enabled": true, "url": ...}}` 사용.
+/// 시작 시 1회 로드 — 파일 수정 후 앱 재시작 필요. 부재·비활성·무효·읽기 불가 config는 proxy off. URL 내장 credential 지원, loopback host는 항상 proxy 우회.
 struct ProxyConfig: Equatable, Sendable {
     enum Scheme: String, Equatable, Sendable {
         case socks5
@@ -31,7 +26,7 @@ struct ProxyConfig: Equatable, Sendable {
 
     static let configPath = "~/.openusage/config.json"
 
-    /// The app-wide proxy, read from disk exactly once (first use).
+    /// 앱 전역 proxy — 첫 사용 시 디스크에서 정확히 1회 read.
     static let current: ProxyConfig? = load(
         text: try? String(
             contentsOfFile: NSString(string: configPath).expandingTildeInPath,
@@ -39,8 +34,7 @@ struct ProxyConfig: Equatable, Sendable {
         )
     )
 
-    /// Parses config-file text. `nil` unless `proxy.enabled == true` with a valid socks5/http/https
-    /// URL — the silent-disable behavior the original documents.
+    /// config 파일 텍스트 파싱 — `proxy.enabled == true` + 유효한 socks5/http/https URL이 아니면 `nil`(원본이 문서화한 silent-disable 동작).
     static func load(text: String?) -> ProxyConfig? {
         guard let text,
               let data = text.data(using: .utf8),
@@ -63,7 +57,7 @@ struct ProxyConfig: Equatable, Sendable {
         )
     }
 
-    /// The Network-framework proxy this config describes, with loopback always excluded.
+    /// 이 config가 기술하는 Network framework proxy — loopback 항상 제외.
     func proxyConfiguration() -> ProxyConfiguration {
         let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port)!)
         var configuration: ProxyConfiguration

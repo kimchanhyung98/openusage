@@ -1,22 +1,10 @@
 import Foundation
 
-/// Turns local daily token/cost data into the shared Today / Yesterday / Last 30 Days spend tiles.
-/// Every spend-tracking provider funnels through here so the tiles render identically regardless of
-/// source: Claude / Codex / Grok feed token/cost from their CLI logs, while Cursor feeds token/cost
-/// derived from its CSV export. The data shape
-/// (`DailyUsageSeries`) is a provider-neutral per-day carrier shared by every source.
+/// 로컬 일별 token/cost 데이터를 공용 Today / Yesterday / Last 30 Days spend 타일로 변환.
+/// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 CSV export가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
 enum SpendTileMapper {
-    /// Append the three spend tiles (Today / Yesterday / Last 30 Days). A period with no usage is left
-    /// unbacked so the tile reads "No data" — a zero here is indistinguishable from "the source hasn't
-    /// accounted for this day yet," and a confident `$0.00 · 0 tokens` contradicts a live session meter
-    /// that proves otherwise. This holds for every source (the Claude/Codex/Grok log scanners,
-    /// Cursor's CSV export); there's no per-source branching. "No data" is also what a tile shows when
-    /// the source couldn't be read at all (missing log, failed API/CSV), where the caller appends
-    /// nothing. `estimated` controls whether the dollar value carries the local-estimate marker (ⓘ).
-    /// `unknownModelsByDay` maps a `yyyy-MM-dd` day key to the set of model names used that day that no
-    /// pricing source can price. Today / Yesterday pick up their own day's set; Last 30 Days carries the
-    /// union across the whole window. Empty (the default) for sources without unknown-model detection, so
-    /// their tiles never carry unknown-model warnings.
+    /// 세 spend 타일(Today / Yesterday / Last 30 Days) 추가. usage 없는 기간은 타일을 만들지 않아 "No data" — 여기서의 0은 "아직 집계 전"과 구분 불가라 자신 있는 `$0.00 · 0 tokens`는 금지. source 읽기 실패 시에도 호출자가 아무것도 추가하지 않음.
+    /// `estimated`는 달러 값의 로컬 추정 마커(ⓘ) 여부. `unknownModelsByDay`는 `yyyy-MM-dd` day key → 가격 산정 불가 모델 집합 — Today/Yesterday는 자기 날의 집합, Last 30 Days는 window 전체의 합집합.
     static func appendTokenUsage(
         _ usage: DailyUsageSeries,
         to lines: inout [MetricLine],
@@ -70,29 +58,21 @@ enum SpendTileMapper {
         }
     }
 
-    /// A period with any real usage: tokens used, dollars priced, or both. A zero-token, zero-cost day
-    /// is idle and gets no tile (→ "No data"), not a fabricated `$0.00 · 0 tokens`.
+    /// 실사용이 있는 기간: tokens 사용, 달러 산정, 또는 둘 다. 0-token·0-cost 날은 idle — 타일 없이 "No data".
     private static func hasUsage(_ entry: DailyUsageEntry) -> Bool {
         entry.totalTokens > 0 || (entry.costUSD ?? 0) > 0
     }
 
-    /// Append the Usage Trend chart line: one bar per calendar day over the window, value = tokens used
-    /// that day. Tokens are always measured (no estimate flag), so the chart needs only the per-day
-    /// counts plus a source note. Appends nothing when the whole window is idle, so a source with no
-    /// usage leaves "No data" rather than a flat row of zero bars.
+    /// Usage Trend chart line 추가: window 안 하루당 막대 하나, 값은 그날 사용 tokens.
+    /// window 전체가 idle이면 아무것도 추가하지 않음 — 0 막대 행 대신 "No data".
     static func appendUsageTrend(_ usage: DailyUsageSeries, to lines: inout [MetricLine], now: Date = Date(), note: String) {
         let points = trendPoints(usage, now: now)
         guard !points.isEmpty else { return }
         lines.append(.chart(label: "Usage Trend", points: points, note: note))
     }
 
-    /// Per-day token points across the queried window (today + the previous 30 days), oldest first.
-    /// Tokens are summed per calendar day, so two source rows that normalize to the same date (mixed
-    /// formats) become one bar carrying their total rather than two bars splitting it. Idle days are
-    /// zero-filled, not dropped, so the sparkline stays calendar-true: a gap shows as a short bar in
-    /// place instead of collapsing two non-adjacent days into neighbors, and the cap is calendar days,
-    /// not active ones. Returns empty when nothing was used in the window — there's no trend to draw.
-    /// Each point carries a "Jun 21" axis label and a pre-formatted "222M tokens" readout.
+    /// 조회 window(오늘 + 이전 30일)의 일별 token point, 과거순. 같은 날짜로 normalize되는 source row들은 막대 하나로 합산.
+    /// idle 날은 drop이 아닌 0 채움 — sparkline이 calendar-true 유지(빈 날이 이웃으로 붕괴되지 않음). window에 사용이 없으면 빈 배열.
     private static func trendPoints(_ usage: DailyUsageSeries, now: Date) -> [MetricChartPoint] {
         var tokensByDay: [String: Double] = [:]
         for day in usage.daily {
@@ -110,7 +90,7 @@ enum SpendTileMapper {
             let tokens = tokensByDay[key] ?? 0
             return MetricChartPoint(
                 value: tokens,
-                // The app's localized "Jun 21" month/day, not a hardcoded "6/21".
+                // 하드코딩 "6/21"이 아닌 앱의 localized "Jun 21" 표기.
                 label: Formatters.monthDayLabel(day),
                 valueLabel: MetricFormatter.number(tokens, kind: .count, style: .row) + " tokens"
             )
@@ -164,18 +144,13 @@ enum SpendTileMapper {
                 unknownModels: unknownModels, modelBreakdown: modelBreakdown)
     }
 
-    /// Stable, de-duplicated display order for a period's unknown-model names (the set is unordered).
+    /// 기간의 unknown-model 이름의 안정적·중복 제거된 표시 순서 (집합은 무순서).
     private static func sortedModels(_ models: Set<String>?) -> [String] {
         (models ?? []).sorted()
     }
 
-    /// One period's spend as raw values: the estimated dollars followed by the measured token count,
-    /// rendered combined as "$4.08 · 1.2M tokens". The token value carries the "tokens" unit (the same
-    /// way Codex credits carry "credits"), so the three spend tiles read consistently.
-    ///
-    /// Only called for a period with real usage (see `hasUsage`). Some token-only callers may not provide
-    /// a dollar value. `estimated` flags locally calculated dollars with the ⓘ; token counts are always
-    /// measured, never flagged.
+    /// 한 기간의 spend raw 값: 추정 달러 + 측정 token 수, "$4.08 · 1.2M tokens"로 합쳐 렌더.
+    /// 실사용 있는 기간에만 호출(`hasUsage`). `estimated`는 로컬 계산 달러에만 ⓘ — token 수는 항상 측정값이라 표시 없음.
     private static func spendValues(tokens: Int, costUSD: Double?, estimated: Bool) -> [MetricValue] {
         var values: [MetricValue] = []
         if let costUSD {
@@ -187,14 +162,12 @@ enum SpendTileMapper {
 
     private static let namedModelCap = 5
 
-    /// Tracks the casings seen for one case-folded name and elects the one that carried the most
-    /// tokens (ties prefer the all-lowercase spelling, then alphabetical) — so `GLM-5.2` and `glm-5.2`
-    /// collapse into one row titled with whichever spelling dominated the period.
+    /// case-fold된 한 이름의 표기들을 추적해 tokens를 가장 많이 실은 표기 선출(동률은 소문자, 다음 알파벳순) — `GLM-5.2`와 `glm-5.2`가 우세한 표기 제목의 한 행으로 병합.
     private struct SpellingVote {
         private var tokensBySpelling: [String: Int] = [:]
 
         mutating func note(_ spelling: String, weight: Int) {
-            // Zero-token entries (cost-only lines) still get a say.
+            // 0-token 항목(cost-only line)도 투표권 보유.
             tokensBySpelling[spelling, default: 0] += max(weight, 1)
         }
 
@@ -213,14 +186,13 @@ enum SpendTileMapper {
         var tokens = 0
         var costUSD: Double?
         private var nameVote = SpellingVote()
-        /// Keyed by the case-folded slug; the vote inside restores a display spelling.
+        /// case-fold된 slug가 key — 내부 vote가 표시 표기를 복원.
         private var variants: [String: (tokens: Int, costUSD: Double?, vote: SpellingVote)] = [:]
 
-        /// The display spelling for this model, elected across every casing that merged into it.
+        /// 병합된 모든 casing에서 선출된 이 모델의 표시 표기.
         var displayName: String? { nameVote.best }
 
-        /// Merge a same-model day entry: variants (raw slugs) merge line-by-line so a multi-day period
-        /// keeps one line per slug.
+        /// 같은 모델의 day entry 병합 — variant(raw slug)는 line 단위로 합쳐 여러 날 기간에도 slug당 한 line 유지.
         mutating func add(_ entry: ModelUsageEntry, spelledAs name: String) {
             addTotals(of: entry, spelledAs: name)
             for variant in entry.variants ?? [ModelUsageVariant(model: name, totalTokens: entry.totalTokens, costUSD: entry.costUSD)] {
@@ -228,9 +200,7 @@ enum SpendTileMapper {
             }
         }
 
-        /// Fold a different model into this accumulator (the Other row): one variant per folded model —
-        /// its tooltip lists models, not their raw effort slugs. The Other row's own name is fixed, so
-        /// folded spellings only vote inside the variant lines.
+        /// 다른 모델을 이 accumulator(Other 행)로 흡수 — 흡수된 모델당 variant 하나, tooltip은 raw effort slug가 아닌 모델명 나열. Other 행 이름은 고정이라 흡수된 표기는 variant line 안에서만 투표.
         mutating func fold(_ entry: ModelUsageEntry) {
             tokens += entry.totalTokens
             if let cost = entry.costUSD {
@@ -263,7 +233,7 @@ enum SpendTileMapper {
                                       costUSD: value.costUSD.map(SpendTileMapper.roundToCents))
                 }
                 .sorted(by: variantSortPrecedes)
-            // One variant carrying the row's own name is no breakdown — nil keeps the tooltip on plain figures.
+            // 행 자신의 이름만 실은 variant 하나는 breakdown이 아님 — nil로 tooltip을 수치만으로 유지.
             let isTrivial = list.count == 1 && list[0].model.lowercased() == model.lowercased()
             return ModelUsageEntry(model: model, totalTokens: tokens,
                                    costUSD: costUSD.map(SpendTileMapper.roundToCents),
@@ -288,8 +258,7 @@ enum SpendTileMapper {
     ) -> ModelUsageBreakdown? {
         guard let usage, let sourceNote, !days.isEmpty else { return nil }
 
-        // Keyed by the case-folded name so `GLM-5.2` and `glm-5.2` land in one row; the accumulator's
-        // spelling vote decides which casing titles it.
+        // case-fold된 이름이 key — `GLM-5.2`와 `glm-5.2`가 한 행에 모이고, accumulator의 표기 투표가 제목 casing 결정.
         var byModel: [String: ModelAccumulator] = [:]
         for day in usage.daily where dayKey(fromUsageDate: day.date).map(days.contains) == true {
             for model in day.models where model.totalTokens > 0 || (model.costUSD ?? 0) > 0 {
@@ -323,14 +292,11 @@ enum SpendTileMapper {
         return lhs.model.localizedStandardCompare(rhs.model) == .orderedAscending
     }
 
-    /// Models below this share of the period fold into Other regardless of rank — a stack of sub-5%
-    /// slivers is noise, and Other's tooltip still names them.
+    /// 기간 내 이 비중 미만 모델은 순위와 무관하게 Other로 흡수 — 5% 미만 조각 더미는 노이즈, Other tooltip이 이름은 유지.
     private static let minVisibleShare = 0.05
 
     private static func foldModelList(_ entries: [ModelUsageEntry]) -> [ModelUsageEntry] {
-        // The threshold must use the same basis the panel's percent labels use (cost shares only when
-        // every model is priced, token shares otherwise — see `ModelUsageDetail.share`), or a folded
-        // model could have displayed as 5%+.
+        // threshold는 패널 percent 라벨과 같은 기준 사용(전 모델 priced면 cost 비중, 아니면 token 비중 — `ModelUsageDetail.share`) — 아니면 5%+로 표시될 모델이 접힐 수 있음.
         let allPriced = entries.allSatisfy { $0.costUSD != nil }
         let costTotal = entries.reduce(0.0) { $0 + ($1.costUSD ?? 0) }
         let tokenTotal = entries.reduce(0) { $0 + $1.totalTokens }
@@ -345,9 +311,7 @@ enum SpendTileMapper {
         var namedCount = 0
 
         for entry in entries {
-            // Tokens the logs couldn't tie to a model (Grok) read as noise under their own
-            // "Unattributed" row — the panel is an insight, not an accounting ledger, so they just
-            // count into Other however large they are.
+            // 로그가 모델에 귀속 못 한 tokens(Grok)는 "Unattributed" 행 대신 크기와 무관하게 Other로 — 패널은 회계 장부가 아니라 인사이트.
             let isUnattributed = entry.model.caseInsensitiveCompare(ModelUsageEntry.unattributedModelName) == .orderedSame
             if isUnattributed || share(entry) < minVisibleShare {
                 other.fold(entry)

@@ -1,21 +1,13 @@
 import SwiftUI
 
-/// The "wrong door" cross-link pinned under the last card of Customize (L1) and Settings.
-/// Customize and Settings sound alike, so people regularly open one while hunting for the other.
-/// This is the Apple-native shape for "go somewhere else" in a settings surface: a grouped-card
-/// navigation row — icon, label, trailing chevron — matching the provider rows above it, rather
-/// than a text link (footnote text is Apple's idiom for explanations, not navigation). The whole
-/// row is tappable and slides to the destination with the same animation as the footer buttons.
+/// Customize(L1)·Settings 마지막 카드 아래에 고정되는 상호 교차 링크 행.
+/// 두 화면을 혼동해 잘못 들어온 사용자를 목적지로 안내하는 용도.
 struct ScreenCrossLinkRow: View {
     @Environment(LayoutStore.self) private var layout
 
-    /// SF Symbol leading the row, e.g. "gearshape".
     let systemImage: String
-    /// The row's title, e.g. "App Settings".
     let title: String
-    /// One-line secondary description of what lives there.
     let subtitle: String
-    /// Where the row navigates.
     let destination: PopoverScreen
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue

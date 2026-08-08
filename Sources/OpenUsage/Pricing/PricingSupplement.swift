@@ -1,18 +1,16 @@
 import Foundation
 
-/// OpenUsage's own pricing feed: models that no public catalog carries (Cursor-native `auto`,
-/// `composer-*`, `github_bugbot`), fast-variant multipliers the catalogs omit, and the alias rules
-/// that map provider log/CSV slugs to canonical pricing keys. Ships bundled as
-/// `pricing_supplement.json` and refreshes from gh-pages, so entries update without an app release.
+/// OpenUsage 자체 pricing feed — 공개 catalog에 없는 model, catalog이 생략한 fast multiplier, log/CSV slug → canonical key alias 규칙.
+/// `pricing_supplement.json`으로 bundled, gh-pages에서 refresh — 앱 release 없이 entry 갱신.
 struct PricingSupplement: Sendable {
-    /// Models priced directly by the supplement (highest-precedence source).
+    /// supplement가 직접 가격 매기는 model — 최우선 source.
     let pricing: [String: ModelRates]
-    /// Base-model multiplier for fast variants and request-level fast signals.
+    /// fast variant·request 수준 fast 신호용 base-model multiplier.
     let fastMultipliers: [String: Double]
     let aliasRules: [AliasRule]
     let updatedAt: String?
 
-    /// Regex slug -> canonical pricing key. Rules apply in order; first match wins.
+    /// regex slug → canonical pricing key. 규칙 순서 적용 — 첫 일치 승리.
     struct AliasRule: @unchecked Sendable {
         let pattern: NSRegularExpression
         let canonical: String
@@ -30,7 +28,7 @@ struct PricingSupplement: Sendable {
         self.updatedAt = updatedAt
     }
 
-    /// The canonical pricing key for `model` per the alias rules, or nil when no rule matches.
+    /// alias 규칙 기준 `model`의 canonical pricing key — 일치 규칙 없으면 nil.
     func canonicalName(for model: String) -> String? {
         let range = NSRange(model.startIndex..., in: model)
         for rule in aliasRules where rule.pattern.firstMatch(in: model, range: range) != nil {
@@ -39,8 +37,7 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// Fast multiplier for a resolved base model. Exact key match first, then ccusage's
-    /// normalized-suffix matching so dated keys (`gpt-5.5-2026-04-23`) still find their base entry.
+    /// resolve된 base model의 fast multiplier — 정확 key 우선, 다음 ccusage식 정규화 suffix 매칭으로 dated key도 base entry 탐색.
     func fastMultiplier(for model: String) -> Double? {
         if let exact = fastMultipliers[model] { return exact }
         let normalized = PricingCatalog.normalizedKey(model)
@@ -54,7 +51,7 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// `base` occurs in `part` with nothing after it, or followed by a `-` separator.
+    /// `part` 안 `base` 뒤가 비어 있거나 `-` separator로 이어지는 경우만 일치.
     private static func matchesModelSuffix(part: String, base: String) -> Bool {
         guard let range = part.range(of: base, options: .backwards) else { return false }
         let suffix = part[range.upperBound...]
@@ -65,8 +62,7 @@ struct PricingSupplement: Sendable {
 // MARK: - JSON decoding
 
 extension PricingSupplement {
-    /// Decodes the supplement JSON (bundled resource or the gh-pages feed). Throws on malformed
-    /// JSON; individually invalid alias patterns are skipped loudly.
+    /// supplement JSON decode (bundled resource 또는 gh-pages feed) — 불량 JSON은 throw, 개별 불량 alias pattern은 log 후 skip.
     static func decode(from data: Data) throws -> PricingSupplement {
         let file = try JSONDecoder().decode(SupplementFile.self, from: data)
         var pricing: [String: ModelRates] = [:]
@@ -77,7 +73,7 @@ extension PricingSupplement {
                 cacheWritePerMillion: entry.cacheWritePerMillion ?? entry.inputPerMillion,
                 cacheReadPerMillion: entry.cacheReadPerMillion ?? entry.inputPerMillion * 0.1,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
-                // Preserve request-level fast signals such as Claude's `speed` field.
+                // Claude `speed` field 같은 request 수준 fast 신호 보존.
                 fastMultiplier: file.fastMultipliers?[model] ?? 1
             )
         }

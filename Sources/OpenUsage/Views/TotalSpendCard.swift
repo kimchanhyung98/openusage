@@ -1,13 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// The dashboard's cross-provider Total Spend section: a native segmented period picker
-/// (Today / Yesterday / Last 30 Days) over a donut ring whose segments are each provider's share of
-/// the selected metric, with the total in the center and a ranked legend beside it. The title is a
-/// pull-down menu for Cost / Cost/MTok / Tokens. Data comes from `TotalSpendAggregator` over
-/// the same snapshots the provider cards render. Shown whenever any enabled provider tracks spend
-/// (`LayoutStore.hasSpendCapableProvider`) and the toggle at the top of Settings is on; a period
-/// (or metric) with nothing to show uses a quiet empty state instead of hiding the card.
+/// 교차 프로바이더 Total Spend 카드 — 데이터 없는 조합은 empty state로 유지.
 struct TotalSpendCard: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(WidgetDataStore.self) private var dataStore
@@ -15,9 +9,9 @@ struct TotalSpendCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Namespace private var pickerNamespace
 
-    /// The selected period survives popover closes and relaunches, like the meter-style toggles.
+    /// 선택 기간 — 팝오버 닫힘·재실행에도 유지.
     @AppStorage("openusage.totalSpend.period") private var periodRawValue = TotalSpendPeriod.today.rawValue
-    /// The selected metric (Cost / Cost/MTok / Tokens) survives the same way.
+    /// 선택 메트릭 — 동일하게 유지.
     @AppStorage("openusage.totalSpend.metric") private var metricRawValue = TotalSpendMetric.cost.rawValue
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
@@ -29,25 +23,21 @@ struct TotalSpendCard: View {
         TotalSpendMetric(rawValue: metricRawValue) ?? .cost
     }
 
-    /// The spend-tile providers the card may aggregate — capability-based (see
-    /// `LayoutStore.spendCapableProviders`), so a provider stays counted even when its own rows are
-    /// hidden in Customize, and providers with merely similar-looking dollar rows never leak in.
+    /// 집계 대상 — capability 기반 (`LayoutStore.spendCapableProviders`).
+    /// Customize에서 행을 숨겨도 포함 유지, 유사 달러 행만 있는 프로바이더는 제외.
     private var providers: [Provider] {
         layout.spendCapableProviders
     }
 
     private var total: TotalSpend {
-        // Accounts that live only on other Macs (synced, no card here) count toward the total and
-        // get their own legend slice ("claude@ab12cd34") — the number should be the whole truth
-        // even when a login isn't set up on this machine.
+        // 다른 Mac에만 있는 동기화 계정도 합계·legend에 포함 — 이 기기 로그인 여부와 무관하게 전체 합 유지
         var aggregatedProviders = providers
         var aggregatedSnapshots = dataStore.snapshots
         for entry in dataStore.remoteOnlySpend {
             aggregatedProviders.append(entry.provider)
             aggregatedSnapshots[entry.provider.id] = entry.snapshot
         }
-        // Titles resolve here — the one place with registry access — so the legend AND the share
-        // export (rendered outside the environment) carry live renames.
+        // 제목은 registry 접근 가능한 이곳에서 해석 — legend와 share export 모두 라이브 rename 반영
         return TotalSpendAggregator.total(
             for: period,
             providers: aggregatedProviders,
@@ -69,8 +59,6 @@ struct TotalSpendCard: View {
 
     // MARK: - Header
 
-    /// Section header matching the provider headers' scale: title menu leading, the share control
-    /// trailing where a provider header shows its mark.
     private var header: some View {
         HStack(spacing: 5) {
             metricMenu
@@ -86,7 +74,6 @@ struct TotalSpendCard: View {
         .padding(.vertical, 2)
     }
 
-    /// Title that is itself the metric switch — a plain pull-down with zero extra chrome.
     private var metricMenu: some View {
         Menu {
             ForEach(TotalSpendMetric.allCases) { option in
@@ -117,9 +104,7 @@ struct TotalSpendCard: View {
         .accessibilityValue(metric.title)
     }
 
-    /// Names the providers actually feeding the ring — the enabled spend-capable set — instead of a
-    /// hardcoded list, so disabling a provider (or a new spend provider shipping) can't make the
-    /// tooltip lie about what the total reflects.
+    /// 링에 실제 반영되는 프로바이더 목록 표기 — 하드코딩 목록 금지, tooltip의 거짓 방지.
     private var infoTooltip: String {
         let names = providers.map { container.displayName(for: $0) }
         return "Only includes \(names.formatted(.list(type: .and)))."
@@ -165,10 +150,6 @@ struct TotalSpendCard: View {
         }
     }
 
-    /// A capsule segmented switcher in the app's own design language (the footer's glass capsule
-    /// controls), replacing the stock `.segmented` picker whose legacy rounded-rect chrome clashes
-    /// with the Tahoe look. The selected segment is a Liquid Glass capsule (frosted material on
-    /// macOS 15) that slides between segments via `matchedGeometryEffect`.
     private var periodPicker: some View {
         HStack(spacing: 2) {
             ForEach(TotalSpendPeriod.allCases) { candidate in
@@ -205,8 +186,7 @@ struct TotalSpendCard: View {
         .animation(Motion.spring, value: periodRawValue)
     }
 
-    /// A metric/period combination with nothing to show mirrors the spend tiles' "No data" rule —
-    /// never a fabricated zero ring.
+    /// 표시할 데이터 없는 조합은 spend 타일의 "No data" 규칙 준수 — 0 링 조작 금지.
     private var emptyState: some View {
         Text(metric.emptyMessage)
             .font(.system(size: density.supportingPointSize))
@@ -216,18 +196,8 @@ struct TotalSpendCard: View {
     }
 }
 
-/// The ring + legend body, shared by the live card and the share-card export so the PNG can't drift
-/// from what's on screen. Slices come ranked by the selected metric from `TotalSpend.projection`,
-/// so the ring reads clockwise from 12 o'clock in the same order the legend reads top-down.
-///
-/// A period or metric switch **morphs** the arcs: each provider's slice slides and resizes to its
-/// new share. Swift Charts' `SectorMark` can't do this — it matches sectors by array position when
-/// animating, so any re-sort smears one provider's arc into another's color mid-morph (there is no
-/// identity hook for sectors). The ring therefore draws its own sectors: one `RingSectorShape` per
-/// provider, identity-keyed by provider ID, with the start/end angles as `animatableData`. SwiftUI
-/// animates each provider's own arc, and the color can't swap because each arc view owns its
-/// provider's color. The shape reproduces the SectorMark look — golden-ratio hole, hairline gaps,
-/// rounded sector corners — so nothing changes visually at rest.
+/// 라이브 카드와 share export가 공유하는 링 본체.
+/// 프로바이더 ID로 섹터 identity를 고정해 기간 전환 때 각도만 애니메이션.
 struct TotalSpendRingContent: View {
     let projection: TotalSpendProjection
 
@@ -244,16 +214,12 @@ struct TotalSpendRingContent: View {
 
     // MARK: - Ring
 
-    /// Every slice is guaranteed at least this share of the circle, so a tiny provider next to a
-    /// dominant one still shows a visible sliver instead of vanishing. Presentation-only — the
-    /// legend and center keep the true amounts.
+    /// 슬라이스 최소 점유율 — 극소 프로바이더도 sliver 유지. 표시 전용, legend·중앙 값은 실제 금액.
     private static let minimumSliceShare = 0.025
 
     private var ring: some View {
         ZStack {
-            // Identity is the provider ID: a provider that exists in both states keeps its view,
-            // so a switch animates that arc's angles. A provider entering or leaving fades in/out
-            // (the default transition) while the survivors re-flow around it.
+            // identity는 프로바이더 ID — 양쪽 상태에 존재하면 arc 각도만 애니메이션, 입·퇴장은 fade
             ForEach(arcs) { arc in
                 RingSectorShape(startFraction: arc.start, endFraction: arc.end)
                     .fill(TotalSpendPalette.color(for: arc.providerID))
@@ -285,8 +251,7 @@ struct TotalSpendRingContent: View {
         var id: String { providerID }
     }
 
-    /// The ranked slices as cumulative ring fractions, with the minimum-sliver floor applied and the
-    /// result renormalized so the ring always closes exactly.
+    /// 누적 링 fraction으로 변환한 순위 슬라이스 — 최소 점유율 적용 후 재정규화로 링 폐합 보장.
     private var arcs: [RingArc] {
         let totalDisplay = projection.slices.reduce(0) { $0 + $1.displayAmount }
         guard totalDisplay > 0 else { return [] }
@@ -302,9 +267,6 @@ struct TotalSpendRingContent: View {
         }
     }
 
-    /// Quiet two-line center — short primary on top, unit underneath — so Cost/MTok (and big token
-    /// totals) never force a long one-liner into the hole. Legend and tooltip still carry the
-    /// exact one-line forms.
     private var centerLabel: some View {
         let center = MetricFormatter.totalSpendRingCenter(projection.centerValue, metric: projection.metric)
         return VStack(spacing: 1) {
@@ -333,8 +295,6 @@ struct TotalSpendRingContent: View {
 
     // MARK: - Legend
 
-    /// Rows in the ring's ranked order (largest first), so scanning the ring clockwise from
-    /// 12 o'clock matches reading the legend top-down.
     private var legend: some View {
         VStack(alignment: .leading, spacing: 7) {
             ForEach(projection.slices) { slice in
@@ -354,8 +314,7 @@ struct TotalSpendRingContent: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            // Tokens always abbreviate in the legend (12.4M), matching spend rows elsewhere —
-            // `.full` would spill every digit. Cost modes keep cents via `.row` / `.full`.
+            // 토큰은 legend에서 항상 축약 (`.full`은 자릿수 넘침), cost 모드는 센트 유지
             Text(formatValue(slice.displayAmount, style: legendValueStyle))
                 .font(.system(size: density.supportingPointSize, weight: .medium))
                 .foregroundStyle(.secondary)
@@ -365,7 +324,6 @@ struct TotalSpendRingContent: View {
         }
     }
 
-    /// Legend amounts: tokens always abbreviated; dollar modes keep exact cents like before.
     private var legendValueStyle: MetricFormatter.Style {
         switch projection.metric {
         case .tokens: .row
@@ -385,22 +343,18 @@ struct TotalSpendRingContent: View {
     }
 }
 
-/// Stable per-provider brand tints for the Total Spend ring and legend — the one place the app maps
-/// a provider to a color, so the chart, legend, and share card always agree. Colors are keyed by
-/// provider ID only (never by rank or position), so a provider keeps its color across period
-/// switches, re-sorts, and launches. Hexes come from the legacy edition's per-plugin `brandColor`
-/// values; brands whose color is plain black (Cursor, Grok) get adaptive near-black/near-white
-/// dynamic colors so they read on both appearances without both landing on the same gray.
+/// 프로바이더 ID에 고정된 브랜드 색상 — 기간·순위 변화에도 색 유지.
+/// 검정 브랜드는 양 appearance에서 읽히도록 동적 색상 사용.
 enum TotalSpendPalette {
     private static let byProviderID: [String: Color] = [
-        "claude": hex(0xDE7356),                             // Claude terracotta
-        "codex": hex(0x10A37F),                              // OpenAI green (#10A37F)
-        "cursor": dynamic(light: 0x13120A, dark: 0xF5F5F7),  // brand black (#13120A), flipped near-white in dark mode
-        "grok": dynamic(light: 0x8E8E93, dark: 0x98989D),    // brand black, offset to gray next to Cursor
-        "opencode": dynamic(light: 0x6E6E73, dark: 0xAEAEB2),  // OpenCode — grayscale brand, medium gray
-        "openrouter": hex(0x6467F2),                         // OpenRouter indigo
-        "antigravity": hex(0x4285F4),                        // Google blue
-        "copilot": hex(0xA855F7),                            // Copilot purple
+        "claude": hex(0xDE7356),
+        "codex": hex(0x10A37F),
+        "cursor": dynamic(light: 0x13120A, dark: 0xF5F5F7),  // 브랜드 블랙 (#13120A), 다크 모드에서 near-white 반전
+        "grok": dynamic(light: 0x8E8E93, dark: 0x98989D),    // 브랜드 블랙, Cursor와 구분 위해 gray 오프셋
+        "opencode": dynamic(light: 0x6E6E73, dark: 0xAEAEB2),  // OpenCode — grayscale 브랜드, medium gray
+        "openrouter": hex(0x6467F2),
+        "antigravity": hex(0x4285F4),
+        "copilot": hex(0xA855F7),
         "amp": hex(0xF34E3F),
         "factory": dynamic(light: 0x48484A, dark: 0xC7C7CC),
         "kimi": hex(0x0A66FF),
@@ -408,8 +362,7 @@ enum TotalSpendPalette {
         "zai": dynamic(light: 0x2D2D2D, dark: 0xD1D1D6)
     ]
 
-    /// Deterministic backstop hues for a provider that ships without a palette entry — keyed off the
-    /// provider ID (not rank), so the color holds steady across periods and launches.
+    /// 팔레트 미등록 프로바이더용 결정적 backstop 색 — ID 키잉으로 기간·재실행 간 색 고정.
     private static let fallback: [Color] = [
         hex(0x34C759), hex(0x5856D6), hex(0xFF2D55), hex(0xA2845E)
     ]
@@ -428,8 +381,7 @@ enum TotalSpendPalette {
         )
     }
 
-    /// A light/dark-adaptive color, for brands whose mark is pure black — invisible on a dark card
-    /// unless flipped.
+    /// 순수 검정 브랜드용 light/dark adaptive 색 — 다크 카드에서의 비가시성 방지.
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             let value = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light

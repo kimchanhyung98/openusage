@@ -1,17 +1,11 @@
 import Foundation
 
-/// Owns the quota pace-notification subsystem: the per-metric dedup state, the fire/deliver/commit
-/// decision, and the debug trace. Split out of `WidgetDataStore` (which orchestrates refresh + resolves
-/// `MetricLine`s) so the notification concern is self-contained. The store gathers each pass's enabled,
-/// bounded, visible metrics and calls `evaluate`; delivery + the provider display name come in as
-/// closures so this type stays independent of the store's providers.
-///
-/// Deduped per metric per reset window. No-data metrics never fire; bounded level-only metrics can fire
-/// Almost Out, but not pace-based milestones. State for metrics not passed this pass is pruned, so
-/// re-enabling/re-adding a metric starts fresh rather than carrying a stale "already fired" flag.
+/// quota pace-notification subsystem 소유 — metric별 dedup 상태, fire/deliver/commit 결정, debug trace
+/// `WidgetDataStore`에서 분리된 독립 관심사 — delivery와 provider 표시명은 closure로 주입
+/// metric·reset window 단위 dedup, no-data metric 미발화, 미전달 metric 상태는 prune되어 재등록 시 초기화
 @MainActor
 final class QuotaNotificationEvaluator {
-    /// One enabled, bounded, visible metric for this pass, already resolved by the store.
+    /// store가 이미 resolve한 이번 pass의 enabled·bounded·visible metric 하나
     struct Metric {
         let key: String
         let providerID: String
@@ -20,9 +14,7 @@ final class QuotaNotificationEvaluator {
 
     private var notificationState: [String: NotificationState] = [:]
 
-    /// Evaluate every metric for a quota pace milestone and deliver a notification for any that just
-    /// crossed one, via `post` (id-prefix, title, subtitle, body → delivered?). `providerName` maps a
-    /// provider id to its display name for the subtitle.
+    /// 전체 metric의 pace milestone 평가 후 신규 도달분을 `post`로 전달 — `providerName`은 subtitle용 표시명 매핑
     func evaluate(
         metrics: [Metric],
         toggles: PaceNotificationToggles,
@@ -52,11 +44,7 @@ final class QuotaNotificationEvaluator {
             if !result.fire.isEmpty || resetAdvanced || Self.isPositiveResetMovement(resetDelta) {
                 AppLog.debug(.notifications, "decision \(key): metric=\(data.title) state=\(Self.notificationStateDescription(state)) bucket=\(Self.bucketDescription(currentBucket)) previousBucket=\(Self.bucketDescription(previous.previousBucket)) remaining=\(Self.percentDescription(data.remainingFraction)) reset=\(Self.dateDescription(data.resetsAt)) previousReset=\(Self.dateDescription(previous.resetsAt)) resetDelta=\(Self.resetDeltaDescription(resetDelta)) resetReason=\(Self.resetReasonDescription(delta: resetDelta, advanced: resetAdvanced)) primed=\(previous.primed) wasUnderTen=\(previous.wasUnderTenPercent) firedBefore=\(Self.milestoneDescription(previous.firedMilestones)) fire=\(Self.milestoneDescription(result.fire)) newBucket=\(Self.bucketDescription(result.newState.previousBucket)) newFired=\(Self.milestoneDescription(result.newState.firedMilestones)) toggles=\(Self.toggleDescription(toggles))")
             }
-            // Deliver each fired milestone, then commit dedup state only for the ones that actually
-            // delivered. The logic doesn't mark milestones fired — that's done here, after delivery
-            // succeeds, so a skipped/failed delivery (not authorized, or `add` errored) leaves the
-            // milestone un-marked and the state advance reverted, re-firing on the next pass instead of
-            // being lost for the rest of the reset window.
+            // dedup 상태는 실제 전달 성공분만 commit — 실패·미인가 전달은 상태를 되돌려 다음 pass에 재발화
             var next = result.newState
             var paceDelivered = false
             var underDelivered = false
@@ -82,9 +70,7 @@ final class QuotaNotificationEvaluator {
         notificationState = nextState
     }
 
-    /// Build and post one milestone notification. The title is the trigger name (matches the Settings
-    /// row), the subtitle is "Provider Metric" so the user knows which quota worsened, and the body is
-    /// the plain-language verdict. Title Case per AGENTS.md. Returns whether delivery succeeded.
+    /// milestone 알림 1건 조립·게시 — title은 trigger명, subtitle은 "Provider Metric", 전달 성공 여부 반환
     private func deliver(
         _ milestone: PaceMilestone,
         data: WidgetData,

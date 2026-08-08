@@ -1,10 +1,7 @@
 import Foundation
 
-/// Stable, machine-facing metadata for one resource exported by `/v1/limits`.
-///
-/// Providers still produce `MetricLine` once. This metadata only names the subset that is useful to
-/// programs and says how to select a scalar from an already-normalized line; presentation-only rows
-/// simply have no descriptor and therefore cannot leak into the limits contract.
+/// `/v1/limits`가 export하는 resource 하나의 안정적 machine-facing metadata.
+/// 정규화된 `MetricLine`에서 scalar 선택 방법만 기술 — descriptor 없는 presentation 전용 row는 limits contract에 노출 불가.
 struct LimitResourceDescriptor: Hashable, Sendable {
     enum Kind: String, Hashable, Sendable, Encodable {
         case consumption
@@ -14,7 +11,7 @@ struct LimitResourceDescriptor: Hashable, Sendable {
     enum Source: Hashable, Sendable {
         case progress
         case value(kind: MetricKind, label: String? = nil)
-        /// A provider may report the same consumption as bounded progress or as an uncapped scalar.
+        /// 같은 consumption을 bounded progress 또는 uncapped scalar로 보고하는 provider용.
         case progressOrValue(kind: MetricKind, label: String? = nil)
     }
 
@@ -26,7 +23,7 @@ struct LimitResourceDescriptor: Hashable, Sendable {
 }
 
 extension WidgetDescriptor {
-    /// Adds one scalar to the public limits contract without changing the widget or provider mapper.
+    /// widget·provider mapper 변경 없이 scalar 하나를 public limits contract에 추가.
     func exportingLimit(
         _ key: String,
         kind: LimitResourceDescriptor.Kind = .consumption,

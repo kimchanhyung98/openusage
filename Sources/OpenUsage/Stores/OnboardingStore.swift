@@ -1,10 +1,8 @@
 import Foundation
 import Observation
 
-/// One-time onboarding state. Today that's a single bit: whether the dashboard should still show the
-/// first-run Customize hint card. `FirstRunSeeder` marks it pending when it seeds a fresh install's
-/// provider set (existing installs are never seeded, so they never see the card); it clears when the
-/// user dismisses the card or visits Customize.
+/// 1회성 onboarding 상태 — 현재는 첫 실행 Customize hint card 노출 여부 1bit
+/// `FirstRunSeeder`가 신규 설치 시딩 시 pending 표시, card 닫기·Customize 방문 시 해제 (기존 설치는 미노출)
 @MainActor
 @Observable
 final class OnboardingStore {

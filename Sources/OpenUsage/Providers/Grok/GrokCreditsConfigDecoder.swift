@@ -1,15 +1,15 @@
 import Foundation
 
-/// The slice of Grok's credits config OpenUsage renders: the shared-pool usage percent and the
-/// period it applies to. Decoded from `GET /v1/billing?format=credits` (proto-JSON).
+/// OpenUsage가 렌더링하는 Grok credits config 조각 — shared-pool 사용 percent와 적용 period.
+/// `GET /v1/billing?format=credits`(proto-JSON) 응답에서 decode.
 struct GrokCreditsConfig: Equatable, Sendable {
-    /// `USAGE_PERIOD_TYPE_*` enum name; see `GrokCreditsConfigDecoder.weeklyPeriodType`.
+    /// `USAGE_PERIOD_TYPE_*` enum 이름 (`GrokCreditsConfigDecoder.weeklyPeriodType` 참고).
     var periodType: String
-    /// Pool usage in 0...100 (validated finite; clamping to range happens at the mapper).
+    /// 0...100 범위의 pool 사용률 — finite만 검증, 범위 clamp는 mapper 담당.
     var usedPercent: Double
     var periodStart: Date
     var periodEnd: Date
-    /// Pay-as-you-go cap in credits; 0 when disabled (proto-JSON also omits the field at 0).
+    /// credit 단위 pay-as-you-go cap — 비활성 시 0 (proto-JSON은 0일 때 필드 자체를 생략).
     var onDemandCap: Double
 
     var periodDurationMs: Int {
@@ -17,27 +17,14 @@ struct GrokCreditsConfig: Equatable, Sendable {
     }
 }
 
-/// Shape observed live from `cli-chat-proxy.grok.com/v1/billing?format=credits` (2026-07-06),
-/// matching what the Grok CLI logs as "billing: fetched credits config":
-///
-///     { "config": {
-///         "creditUsagePercent": 99.0,          // proto-JSON: omitted entirely when 0
-///         "currentPeriod": { "type": "USAGE_PERIOD_TYPE_WEEKLY",
-///                            "start": "2026-07-03T04:01:09.238389+00:00",
-///                            "end":   "2026-07-10T04:01:09.238389+00:00" },
-///         "onDemandCap": { "val": 2500 },      // pay-as-you-go cap; 0/absent when disabled
-///         "isUnifiedBillingUser": true, ... } }
-///
-/// The response is a proto3 message serialized as JSON, so zero-valued fields are dropped:
-/// an absent `creditUsagePercent` means 0, not a schema change. Unknown fields are ignored by
-/// JSON parsing naturally.
+/// `cli-chat-proxy.grok.com/v1/billing?format=credits` 응답(proto-JSON) decoder.
+/// 응답은 proto3 메시지의 JSON 직렬화라 0 값 필드가 생략됨 — `creditUsagePercent` 부재는 schema 변화가 아닌 0.
 enum GrokCreditsConfigDecoder {
-    /// The shared weekly pool Grok migrated unified-billing users to.
+    /// unified-billing 사용자가 이전된 shared weekly pool의 period type.
     static let weeklyPeriodType = "USAGE_PERIOD_TYPE_WEEKLY"
 
-    /// Decode the JSON response body. A missing config/period, a non-finite percent, malformed
-    /// timestamps, or a period that doesn't move forward is `invalidResponse` — the server
-    /// answered, but not in the shape we know.
+    /// JSON 응답 body를 `GrokCreditsConfig`로 decode.
+    /// config/period 누락, 비유한 percent, 잘못된 timestamp, 진행하지 않는 period는 `invalidResponse`.
     static func decode(responseBody: Data) throws -> GrokCreditsConfig {
         guard let body = ProviderParse.jsonObject(responseBody),
               let config = body["config"] as? [String: Any],
@@ -51,8 +38,7 @@ enum GrokCreditsConfigDecoder {
             throw GrokUsageError.invalidResponse
         }
 
-        // proto-JSON omits zero values, so an absent percent is a genuine 0% — but a present,
-        // non-numeric or non-finite value is a schema change and must throw, not clamp to 0.
+        // percent 부재는 proto-JSON의 0 생략이라 실제 0% — 존재하는데 비숫자·비유한이면 schema drift로 throw (0 clamp 금지)
         let percent: Double
         if let raw = config["creditUsagePercent"] {
             guard let number = ProviderParse.number(raw), number.isFinite else {
@@ -63,7 +49,7 @@ enum GrokCreditsConfigDecoder {
             percent = 0
         }
 
-        // Like the percent: absent means 0 (disabled), but a present non-numeric value is drift.
+        // percent와 동일 — 부재는 0(비활성), 존재하는 비숫자 값은 drift로 throw
         let onDemandCap: Double
         if let capObject = config["onDemandCap"] {
             guard let object = capObject as? [String: Any] else {

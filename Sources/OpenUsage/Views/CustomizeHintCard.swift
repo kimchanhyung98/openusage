@@ -1,14 +1,8 @@
 import SwiftUI
 
-/// The one-time first-run hint card at the top of the dashboard. Fresh installs start with only the
-/// providers detected on the machine (see `FirstRunSeeder`), so this card tells the user why the list
-/// is short and where to change it. It appears only while `OnboardingStore.isCustomizeHintPending` is
-/// set — marked by the seeder on a fresh install, so existing installs never see it — and goes away
-/// for good only on its close button. Visiting Customize deliberately does NOT dismiss it: a quick
-/// look around shouldn't cost a new user the pointer.
-///
-/// A grouped content card (`cardSurface`), not chrome: it scrolls with the provider sections and uses
-/// the same surface they do.
+/// 신규 설치 첫 실행 시 대시보드 상단에 노출되는 Customize 안내 카드.
+/// `OnboardingStore.isCustomizeHintPending`이 설정된 동안만 표시, 닫기 버튼으로만 영구 해제.
+/// Customize 화면 방문만으로는 해제되지 않음.
 struct CustomizeHintCard: View {
     @Environment(AppContainer.self) private var container
     @Environment(LayoutStore.self) private var layout

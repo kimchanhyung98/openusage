@@ -1,49 +1,36 @@
 import Foundation
 
-/// Builds metric lines from the Z.ai `/api/monitor/usage/quota/limit` payload and the plan name from
-/// `/api/biz/subscription/list`. Ports and extends the legacy Tauri plugin's mapping:
-/// - a `TOKENS_LIMIT` entry whose window is sub-daily (`unit: 3`, hours) is the 5-hour session meter,
-/// - a `TOKENS_LIMIT` entry whose window is multi-day (`unit: 6`, weeks) is the weekly meter,
-/// - a `TIME_LIMIT` entry (`unit: 5`, monthly) is the web-search/reader count meter (used / limit).
-///
-/// Both endpoints are undocumented internal APIs used by Z.ai's own subscription UI; the response
-/// shapes are stable in practice. The mapper is pure (no I/O) so it tests cleanly against sample
-/// payloads, exactly like the legacy plugin's fixture-based tests.
+/// Z.ai `/api/monitor/usage/quota/limit` payload와 `/api/biz/subscription/list`의 plan 이름을 metric line으로 매핑.
+/// sub-daily `TOKENS_LIMIT`은 session meter, multi-day는 weekly meter, `TIME_LIMIT`은 web-search count meter.
+/// 두 endpoint 모두 Z.ai 자체 UI가 쓰는 비공개 내부 API — mapper는 순수(I/O 없음)라 sample payload로 테스트 가능.
 enum ZAIUsageMapper {
-    /// One monthly web-search cycle, in milliseconds (Z.ai reports `unit: 5, number: 1`). The session
-    /// and weekly meters instead carry the *payload's* actual window (see `classifyTokenWindow`), so
-    /// their cadence tracks the plan rather than a hardcoded assumption; this monthly constant is only a
-    /// fallback for the web-search line and the widget-descriptor default.
+    /// 월간 web-search cycle 1회의 밀리초 (Z.ai 보고값 `unit: 5, number: 1`).
+    /// session/weekly meter는 payload의 실제 window 사용(`classifyTokenWindow` 참고) — 이 상수는 web-search 행과 widget-descriptor 기본값 전용.
     static let monthlyPeriodMs = 30 * 24 * 60 * 60 * 1000
 
-    /// `(plan, lines)` from the quota + subscription payloads. `subscription` may be `nil` (the
-    /// request is best-effort) and the quota's `limits` array may carry one to three entries — only
-    /// what's present is mapped, so a plan without web searches still shows the session meter.
+    /// quota + subscription payload에서 `(plan, lines)` 생성.
+    /// `subscription`은 `nil` 가능(best-effort), `limits`는 1~3개 — 존재하는 것만 매핑해 web search 없는 plan도 session meter 표시.
     static func map(quotaBody: Data, subscriptionBody: Data?) throws -> (plan: String?, lines: [MetricLine]) {
         let plan = subscriptionBody.flatMap { planName(from: $0) }
         let lines = try mapQuota(quotaBody)
         return (plan, lines)
     }
 
-    /// True when a 2xx quota body is the "valid key, but no GLM Coding Plan" signal: Z.ai answers
-    /// `{"success":false,"code":500,"msg":"…coding plan"}` with no `data`. The provider turns this into a
-    /// clear `.notAvailable` error (a header warning) instead of three blank "No data" meters that don't
-    /// say why. Matched on the structured `success:false` plus the "coding plan" phrase the message
-    /// carries (ASCII even in the localized string), so an unrelated business failure doesn't trip it.
+    /// 2xx quota body가 "유효 key, GLM Coding Plan 없음" 신호(`{"success":false,…,"msg":"…coding plan"}`)인지 판정.
+    /// 구조화된 `success:false`와 메시지의 "coding plan" 문구(localize돼도 ASCII)를 함께 매칭 — 무관한 business 실패의 오탐 방지.
     static func isNoCodingPlan(_ body: Data) -> Bool {
         guard let root = ProviderParse.jsonObject(body),
               (root["success"] as? Bool) == false else { return false }
         return ((root["msg"] as? String) ?? "").lowercased().contains("coding plan")
     }
 
-    /// Session + weekly + web-search meters from the quota payload. Missing required values are an
-    /// invalid response rather than zero usage; an explicit empty array remains a valid no-data state.
+    /// quota payload에서 Session + Weekly + Web Searches meter 생성.
+    /// 필수 값 누락은 0 사용량이 아닌 invalid response — 명시적 빈 배열은 유효한 no-data 상태.
     static func mapQuota(_ body: Data) throws -> [MetricLine] {
         guard let root = ProviderParse.jsonObject(body) else {
             throw ZAIUsageError.invalidResponse
         }
-        // The limits array lives under `data.limits`; the legacy plugin also tolerated the root object
-        // being the container directly (no `data` wrapper), so honor both.
+        // limits 배열은 `data.limits` 하위 — legacy plugin처럼 `data` wrapper 없는 root 직접 형태도 허용
         let container: [String: Any]
         if let data = root["data"] {
             guard let data = data as? [String: Any] else { throw ZAIUsageError.invalidResponse }
@@ -61,8 +48,7 @@ enum ZAIUsageMapper {
         var lines: [MetricLine] = []
         var sawRecognizedLimit = false
 
-        // Split the TOKENS_LIMIT entries by window length: a sub-daily window is the session meter,
-        // a multi-day window is the weekly meter. Z.ai reports both, and both are percentage meters.
+        // TOKENS_LIMIT entry를 window 길이로 분리 — sub-daily는 session, multi-day는 weekly, 둘 다 percentage meter
         let tokenLimits = limits.filter { ($0["type"] as? String) == "TOKENS_LIMIT" || ($0["name"] as? String) == "TOKENS_LIMIT" }
         for entry in tokenLimits {
             guard let window = try classifyTokenWindow(entry) else { continue }
@@ -86,7 +72,7 @@ enum ZAIUsageMapper {
         return lines
     }
 
-    /// `productName` from the first valid subscription entry (e.g. "GLM Coding Max").
+    /// 첫 유효 subscription entry의 `productName` (예: "GLM Coding Max").
     static func planName(from body: Data) -> String? {
         guard let root = ProviderParse.jsonObject(body),
               let list = root["data"] as? [[String: Any]],
@@ -100,10 +86,9 @@ enum ZAIUsageMapper {
 
     // MARK: - Private
 
-    /// How a `TOKENS_LIMIT` entry's window maps to a meter. Z.ai encodes the window as a `(unit, number)`
-    /// pair: `unit: 3` is hours (session), `unit: 6` is weeks (weekly), `unit: 5` is months. A sub-daily
-    /// window is the session meter; a multi-day window is the weekly meter. Unknown units are ignored
-    /// so a future Z.ai window cannot hide meters whose units OpenUsage still understands.
+    /// `TOKENS_LIMIT` entry의 window가 매핑되는 meter 구분.
+    /// window는 `(unit, number)` 쌍으로 인코딩(`unit: 3` 시간, `unit: 6` 주, `unit: 5` 월) — sub-daily는 session, multi-day는 weekly.
+    /// 미지의 unit은 무시 — 새 Z.ai window가 이해 가능한 unit의 meter를 가리지 못하게 함.
     private enum TokenWindow {
         case session(periodMs: Int)
         case weekly(periodMs: Int)
@@ -128,15 +113,14 @@ enum ZAIUsageMapper {
             throw ZAIUsageError.invalidResponse
         }
         let periodMs = Int(duration)
-        // Sub-daily → session; multi-day → weekly. The computed window rides along so the meter's
-        // cadence reflects the payload instead of a hardcoded constant.
+        // sub-daily → session, multi-day → weekly — 계산된 window를 함께 실어 meter cadence가 하드코딩 상수 대신 payload를 반영
         if periodMs < 24 * 60 * 60 * 1000 {
             return .session(periodMs: periodMs)
         }
         return .weekly(periodMs: periodMs)
     }
 
-    /// A percentage meter (Session or Weekly) from a `TOKENS_LIMIT` entry.
+    /// `TOKENS_LIMIT` entry에서 percentage meter(Session 또는 Weekly) 생성.
     private static func percentLine(_ entry: [String: Any], label: String, periodMs: Int) throws -> MetricLine {
         guard let rawPercentage = ProviderParse.number(entry["percentage"]) else {
             throw ZAIUsageError.invalidResponse
@@ -153,7 +137,7 @@ enum ZAIUsageMapper {
         )
     }
 
-    /// TIME_LIMIT → a count meter (used / limit) for monthly web-search/reader calls.
+    /// TIME_LIMIT → 월간 web-search/reader 호출의 count meter(used/limit).
     private static func webSearchLine(from entry: [String: Any]) throws -> MetricLine {
         guard let used = ProviderParse.number(entry["currentValue"]),
               let limit = ProviderParse.number(entry["usage"]),
@@ -161,8 +145,7 @@ enum ZAIUsageMapper {
               limit >= 0 else {
             throw ZAIUsageError.invalidResponse
         }
-        // TIME_LIMIT carries a nextResetTime in current payloads (monthly renewal); honor it when
-        // present so the countdown shows the real reset, otherwise the period cadence reads "monthly".
+        // 현행 payload의 TIME_LIMIT에는 nextResetTime(월간 갱신) 존재 — 있으면 실제 reset countdown, 없으면 "monthly" cadence 표기
         let resetsAt = ProviderParse.number(entry["nextResetTime"]).map { epochMsToDate($0) }
         return .progress(
             label: "Web Searches",
@@ -174,8 +157,7 @@ enum ZAIUsageMapper {
         )
     }
 
-    /// A limit entry matches by `type` or `name`; the legacy plugin checked both because Z.ai's
-    /// payload has used either field across revisions.
+    /// limit entry는 `type` 또는 `name`으로 매칭 — Z.ai payload가 revision에 따라 두 필드를 혼용.
     private static func findLimit(_ limits: [[String: Any]], type: String) -> [String: Any]? {
         for entry in limits {
             if (entry["type"] as? String) == type || (entry["name"] as? String) == type {
@@ -185,7 +167,7 @@ enum ZAIUsageMapper {
         return nil
     }
 
-    /// `nextResetTime` arrives as epoch milliseconds (e.g. `1770648402389`).
+    /// `nextResetTime`은 epoch 밀리초로 도착 (예: `1770648402389`).
     private static func epochMsToDate(_ ms: Double) -> Date {
         Date(timeIntervalSince1970: ms / 1000)
     }

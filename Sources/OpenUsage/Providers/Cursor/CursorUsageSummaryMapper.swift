@@ -1,8 +1,6 @@
 import Foundation
 
-/// Combines the two REST payloads used by Cursor Enterprise/team dashboards. The request endpoint
-/// carries the included request allowance, while usage-summary carries structured percentages,
-/// user-scoped on-demand spend, and exact billing-cycle bounds. Neither response is sufficient alone.
+/// Cursor Enterprise/team dashboard가 쓰는 두 REST payload 결합. request endpoint는 포함 request allowance, usage-summary는 구조화 percentage·user 단위 on-demand spend·정확한 billing-cycle 경계 — 어느 한쪽만으로는 불충분.
 enum CursorUsageSummaryMapper {
     static func hasUsableSummaryPayload(_ summary: [String: Any]) -> Bool {
         let start = (summary["billingCycleStart"] as? String).flatMap(OpenUsageISO8601.date(from:))
@@ -57,9 +55,7 @@ enum CursorUsageSummaryMapper {
         )
     }
 
-    /// The default Total Usage widget must carry the included allowance on request-based Enterprise
-    /// plans. Keep the legacy Requests line too, so users who manually enabled that optional widget do
-    /// not lose it after upgrading.
+    /// request 기반 Enterprise plan에서 기본 Total Usage 위젯이 포함 allowance를 실어야 함. legacy Requests line도 유지 — 그 optional 위젯을 수동으로 켠 사용자가 업그레이드 후 잃지 않도록.
     private static func appendRequests(
         _ usage: [String: Any]?,
         cycle: BillingCycle,
@@ -90,8 +86,7 @@ enum CursorUsageSummaryMapper {
         return true
     }
 
-    /// Supports both the live `individualUsage.plan` shape and the pooled/overall variants reported by
-    /// other Enterprise accounts. A request allowance wins because it is the dashboard's included cap.
+    /// live `individualUsage.plan` 형태와 다른 Enterprise 계정의 pooled/overall variant 모두 지원. request allowance가 우선 — dashboard의 포함 cap이기 때문.
     private static func appendSummaryTotal(
         _ summary: [String: Any]?,
         cycle: BillingCycle,
@@ -144,8 +139,7 @@ enum CursorUsageSummaryMapper {
         }
     }
 
-    /// The dashboard's headline On-Demand card is user-scoped. Only use the organization aggregate
-    /// when Cursor omits the individual bucket for that account shape.
+    /// dashboard의 대표 On-Demand 카드는 user 단위. organization 집계는 Cursor가 그 계정 형태에서 individual bucket을 생략할 때만 사용.
     private static func appendOnDemand(
         _ summary: [String: Any]?,
         cycle: BillingCycle,
@@ -159,9 +153,7 @@ enum CursorUsageSummaryMapper {
         _ = appendOnDemandBucket(team?["onDemand"], cycle: cycle, to: &lines)
     }
 
-    /// Returns whether a usable row was emitted. An Enterprise response can include an individual
-    /// placeholder bucket (`enabled: false` or a zero limit) alongside a valid team bucket, so merely
-    /// finding the individual dictionary must not suppress the fallback.
+    /// 쓸 만한 행을 냈는지 반환. Enterprise 응답은 유효한 team bucket 옆에 individual placeholder bucket(`enabled: false` 또는 0 limit)을 실을 수 있음 — individual dictionary 발견만으로 fallback을 억제하면 안 됨.
     private static func appendOnDemandBucket(
         _ value: Any?,
         cycle: BillingCycle,

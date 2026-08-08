@@ -1,19 +1,8 @@
 import SwiftUI
 
-/// The Customize detail for one provider (L2): two distinct cards — **Always Visible** (shown on the
-/// dashboard card) and **On Demand** (tucked behind the card's caret). Drag a metric by its grip
-/// onto a row in the other card to move it across; an empty card shows a small dashed "Drag metrics
-/// here" drop zone that's also the drop target for moving a metric into it. Each metric row is
-/// grip · name · star · toggle (drag left, toggle right — same shape as the provider rows). The star
-/// is always visible: outline when not starred, filled accent when starred; tapping it pops a
-/// transient confirmation pill (and an orange denial pill over the per-provider cap). Providers that
-/// need an API key get their own "API Key" section here too.
-///
-/// The drag gesture lives on the container, not on each row. With a per-row gesture, SwiftUI tears
-/// down the dragged row (and its gesture) when it crosses between the two cards' `ForEach`es,
-/// dropping the drag mid-gesture. A single container-level gesture stays attached to the persistent
-/// section stack, so the drag survives the cross — no force-drop, no stuck overlay. Each row's grip
-/// publishes its own frame so the container gesture can tell which row a drag started on.
+/// 프로바이더 단일 Customize 상세 (L2) — Always Visible·On Demand 두 카드, grip 드래그로 카드 간 이동.
+/// 드래그 제스처는 행이 아닌 컨테이너 소유 — per-row 제스처는 행이 두 카드의 `ForEach` 사이를 건널 때
+/// SwiftUI가 행과 제스처를 함께 해제해 드래그 중단.
 struct CustomizeProviderDetailView: View {
     @Environment(LayoutStore.self) private var layout
     @Environment(AppContainer.self) private var container
@@ -40,7 +29,7 @@ struct CustomizeProviderDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .animation(Motion.spring, value: layout.expandedMetricIDs)
         } else {
-            // Unknown provider — L1 only lists known providers, so this is unreachable in practice.
+            // 미지의 프로바이더 — L1이 알려진 프로바이더만 노출하므로 실질적 도달 불가
             EmptyView()
         }
     }
@@ -73,9 +62,7 @@ struct CustomizeProviderDetailView: View {
         }
     }
 
-    /// A small dashed drop target shown when a section is empty, so there's always somewhere to drop
-    /// a metric into. It carries the divider's reorder frame — dropping a metric here moves it into
-    /// this section via `applyMetricDividerOrder` (the sentinel sits at the empty section's edge).
+    /// 빈 섹션의 대시 드롭 타깃. divider의 reorder frame 보유 — 드롭 시 `applyMetricDividerOrder`로 섹션 이동.
     private func emptyDropZone(providerID: String) -> some View {
         let yOutset = max(0, (density.estimatedMetricRowHeight - 30) / 2)
         return RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -96,9 +83,7 @@ struct CustomizeProviderDetailView: View {
         let isActive = activeMetricID == metric.id
         return CustomizeMetricRow(
             title: metric.title,
-            // The grip is visual-only and publishes its frame (id "grip:<metric>") so the container
-            // gesture can tell which row a drag started on. The drag gesture itself is on the section
-            // stack, not the grip — see `metricDragGesture`.
+            // grip은 시각 전용 + frame 발행 ("grip:<metric>") — 드래그 제스처는 섹션 스택 소유 (`metricDragGesture`)
             handle: { grip in
                 AnyView(grip.reorderFrame(id: "grip:\(metric.id)", in: .named(reorderSpaceName)))
             },
@@ -118,10 +103,8 @@ struct CustomizeProviderDetailView: View {
 
     // MARK: - Container drag-reorder
 
-    /// One drag gesture on the section stack (not per-row), so it survives a metric crossing between
-    /// the two cards. On start, the grip under the pointer identifies the dragged metric; afterwards
-    /// it tracks the pointer, hit-tests row + divider frames, and reorders through
-    /// `applyMetricDividerOrder`.
+    /// 섹션 스택 단일 드래그 제스처 — 메트릭이 두 카드 사이를 건너도 드래그 유지.
+    /// 시작 시 포인터 아래 grip으로 대상 식별, 이후 행·divider frame hit-test로 재정렬.
     private func metricDragGesture() -> some Gesture {
         DragGesture(minimumDistance: 4, coordinateSpace: .named(reorderSpaceName))
             .onChanged { value in
@@ -149,8 +132,7 @@ struct CustomizeProviderDetailView: View {
             }
     }
 
-    /// The metric a drag started on, by hit-testing the drag start against the grip frames
-    /// ("grip:<metric>" entries in `rowFrames`). Nil when the drag didn't start on a grip.
+    /// 드래그 시작점의 grip frame hit-test로 대상 메트릭 식별. grip 밖 시작이면 `nil`.
     private func metricID(at point: CGPoint) -> String? {
         for (key, frame) in rowFrames {
             guard key.hasPrefix("grip:"), frame.insetBy(dx: 0, dy: -2).contains(point) else { continue }
@@ -173,10 +155,9 @@ struct CustomizeProviderDetailView: View {
     }
 }
 
-/// The card-name editor shown at the top of an account card's Customize detail (Claude/Codex cards
-/// with an account record). The field holds the user's rename; the placeholder shows the derived
-/// name the card falls back to, so clearing the field reads as "back to the default". Commits on
-/// Return and when focus leaves the field — never per keystroke, so half-typed names don't persist.
+/// 계정 카드 Customize 상세 상단의 카드 이름 편집기.
+/// placeholder는 파생 기본 이름 — 필드 비우기가 "기본값 복귀"로 동작.
+/// Return·포커스 이탈 시에만 커밋 — 타이핑 중간 상태 미저장.
 private struct CardNameSection: View {
     let providerID: String
     @Environment(AppContainer.self) private var container
@@ -217,10 +198,7 @@ private struct CardNameSection: View {
     }
 }
 
-/// The star (menu-bar pin) control on a metric row — always visible: an outline star when not
-/// starred, a filled accent star when starred. Tapping it pops a transient confirmation pill (green
-/// "Starred for menu bar" / "Removed from menu bar"); a denied tap over the per-provider cap shakes
-/// the star and pops an orange denial pill. No tooltips.
+/// 메트릭 행의 star(메뉴바 pin) 컨트롤. 탭 시 확인 필, 프로바이더별 상한 초과 시 shake + 거부 필.
 private struct StarButton: View {
     let metric: WidgetDescriptor
     @Environment(LayoutStore.self) private var layout
