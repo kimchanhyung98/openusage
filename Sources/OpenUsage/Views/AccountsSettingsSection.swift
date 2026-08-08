@@ -113,6 +113,7 @@ struct AccountsSettingsSection: View {
         .onAppear {
             // 다른 창이 같은 defaults domain을 갱신한 뒤 재오픈될 수 있어 reload.
             store.reloadFromDefaults()
+            container.refreshAccountCatalog()
             refreshSignInStates()
         }
         .onChange(of: store.profiles) {
@@ -228,7 +229,10 @@ struct AccountsSettingsSection: View {
         let probe = AccountSignInProbe()
         var states: [String: AccountSignInProbe.State] = [:]
         for profile in store.profiles where !profile.isArchived {
-            states[profile.id] = probe.state(for: profile)
+            states[profile.id] = probe.state(
+                for: profile,
+                isSelected: store.preferredProfileID(family: profile.family) == profile.id
+            )
         }
         signInStates = states
     }

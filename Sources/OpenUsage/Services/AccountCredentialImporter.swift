@@ -14,7 +14,6 @@ struct AccountCredentialImporter {
         case noSignIn(family: String)
         case identityUnreadable(family: String)
         case verificationFailed(family: String)
-        case differentAccount(profileLabel: String)
 
         var errorDescription: String? {
             switch self {
@@ -24,8 +23,6 @@ struct AccountCredentialImporter {
                 "The current \(family) sign-in doesn't name its account, so it can't be imported."
             case .verificationFailed(let family):
                 "The imported \(family) sign-in could not be verified, so nothing was registered."
-            case .differentAccount(let profileLabel):
-                "That sign-in belongs to a different account. \(profileLabel) was left unchanged — add the other account separately."
             }
         }
     }
@@ -109,9 +106,6 @@ struct AccountCredentialImporter {
         id: String? = nil,
         into store: AccountProfilesStore
     ) throws -> AccountProfile {
-        if let existing = store.activeProfile(family: family, identityKey: credential.identityKey) {
-            throw AccountProfileError.duplicateAccount(existingLabel: existing.label)
-        }
         let staged = AccountProfile(
             id: id ?? UUID().uuidString,
             family: family,
@@ -178,22 +172,141 @@ struct AccountCredentialImporter {
         }
     }
 
-    /// profile workspace에서 실행된 Sign In Again 완결.
-    /// snapshot 교체는 새 credential이 같은 계정을 증명할 때만 — 다른 identity면 기존 snapshot으로 workspace 복원 후 실패, re-login의 조용한 계정 전환 금지.
-    /// 활성 profile 재로그인은 Shared Runtime Home도 갱신 — 새 터미널이 즉시 새 credential 사용.
-    func completeReSignIn(for profile: AccountProfile, isActive: Bool) throws {
+    enum ExternalReauthenticationResult: Equatable, Sendable {
+        case unchanged
+        case noUsableAuthentication
+        case updated(profileID: String)
+    }
+
+    /// 선택된 Claude profile에 Shared Runtime Home의 검증된 공식 CLI 로그인을 귀속.
+    /// 계정명·stable id·선택 불변, 같은 identity를 가진 다른 profile도 병합하지 않음.
+    func reconcileSelectedClaudeSharedAuthentication(
+        in store: AccountProfilesStore
+    ) throws -> ExternalReauthenticationResult {
+        guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
+        guard let shared = try switcher.readSharedClaudeExternalAuthentication(),
+              let identity = switcher.identity(of: shared, family: "claude")
+        else {
+            return .noUsableAuthentication
+        }
+
+        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let currentShared = try switcher.readSharedAuthentication(family: "claude")
+        let sharedNeedsNormalization = currentShared.flatMap {
+            switcher.identity(of: $0, family: "claude")?.identityKey
+        } != identity.identityKey
+        if previousSnapshot == shared,
+           profile.identityKey == identity.identityKey,
+           !sharedNeedsNormalization {
+            return .unchanged
+        }
+
+        do {
+            if sharedNeedsNormalization {
+                try switcher.applySharedAuthentication(shared, family: "claude")
+                guard let normalized = try switcher.readSharedAuthentication(family: "claude"),
+                      switcher.identity(of: normalized, family: "claude")?.identityKey == identity.identityKey
+                else {
+                    throw ImportError.verificationFailed(family: "claude")
+                }
+            }
+            try switcher.saveSnapshot(shared, for: profile)
+            try switcher.writeWorkspaceAuthentication(shared, for: profile)
+            _ = try store.replaceIdentity(profileID: profile.id, with: identity.identityKey)
+            return .updated(profileID: profile.id)
+        } catch {
+            rollbackExternalReauthentication(profile: profile, previousSnapshot: previousSnapshot)
+            throw error
+        }
+    }
+
+    /// profile workspace에서 실행된 Sign In Again 완결 — 검증된 credential이 해당 이름의 현재 provider binding 교체.
+    /// stable profile id·label·선택 상태 유지. 활성 profile이면 Shared Runtime Home도 같은 트랜잭션에서 갱신.
+    @discardableResult
+    func completeReSignIn(
+        profileID: String,
+        in store: AccountProfilesStore,
+        isActive: Bool
+    ) throws -> AccountProfile {
+        guard let profile = store.profile(id: profileID) else {
+            throw AccountProfileError.profileNotFound(profileID)
+        }
         guard let credential = try readWorkspaceCredential(family: profile.family, profileID: profile.id) else {
             throw ImportError.noSignIn(family: profile.family)
         }
-        guard credential.identityKey == profile.identityKey else {
-            if let snapshot = try? switcher.loadSnapshot(for: profile) {
-                try? switcher.writeWorkspaceAuthentication(snapshot, for: profile)
+
+        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let previousShared = isActive ? try switcher.readSharedAuthentication(family: profile.family) : nil
+        do {
+            try switcher.saveSnapshot(credential.entry, for: profile)
+            if isActive {
+                try switcher.applySharedAuthentication(credential.entry, family: profile.family)
+                guard let applied = try switcher.readSharedAuthentication(family: profile.family),
+                      switcher.identity(of: applied, family: profile.family)?.identityKey == credential.identityKey
+                else {
+                    throw ImportError.verificationFailed(family: profile.family)
+                }
             }
-            throw ImportError.differentAccount(profileLabel: profile.label)
+            return try store.replaceIdentity(profileID: profile.id, with: credential.identityKey)
+        } catch {
+            rollbackReSignIn(
+                profile: profile,
+                previousSnapshot: previousSnapshot,
+                previousShared: previousShared,
+                wasActive: isActive
+            )
+            throw error
         }
-        try switcher.saveSnapshot(credential.entry, for: profile)
-        if isActive {
-            try switcher.applySharedAuthentication(credential.entry, family: profile.family)
+    }
+
+    private func rollbackReSignIn(
+        profile: AccountProfile,
+        previousSnapshot: AccountCredentialVault.Entry?,
+        previousShared: AccountCredentialVault.Entry?,
+        wasActive: Bool
+    ) {
+        if let previousSnapshot {
+            do {
+                try switcher.saveSnapshot(previousSnapshot, for: profile)
+                try switcher.writeWorkspaceAuthentication(previousSnapshot, for: profile)
+            } catch {
+                AppLog.error(.auth, "account re-sign-in snapshot rollback failed: \(error.localizedDescription)")
+            }
+        } else {
+            do {
+                try AccountCredentialVault(keychain: keychain).delete(profile: profile)
+                try removeSignInWorkspace(family: profile.family, profileID: profile.id)
+            } catch {
+                AppLog.error(.auth, "account re-sign-in empty-state rollback failed: \(error.localizedDescription)")
+            }
+        }
+        if wasActive, let previousShared {
+            do {
+                try switcher.applySharedAuthentication(previousShared, family: profile.family)
+            } catch {
+                AppLog.error(.auth, "account re-sign-in shared-home rollback failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func rollbackExternalReauthentication(
+        profile: AccountProfile,
+        previousSnapshot: AccountCredentialVault.Entry?
+    ) {
+        if let previousSnapshot {
+            do {
+                try switcher.saveSnapshot(previousSnapshot, for: profile)
+                try switcher.writeWorkspaceAuthentication(previousSnapshot, for: profile)
+            } catch {
+                AppLog.error(.auth, "external reauthentication rollback failed: \(error.localizedDescription)")
+            }
+        } else {
+            do {
+                try AccountCredentialVault(keychain: keychain).delete(profile: profile)
+                try removeSignInWorkspace(family: profile.family, profileID: profile.id)
+            } catch {
+                AppLog.error(.auth, "external reauthentication empty-state rollback failed: \(error.localizedDescription)")
+            }
         }
     }
 

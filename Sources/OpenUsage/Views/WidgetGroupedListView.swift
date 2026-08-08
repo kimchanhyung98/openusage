@@ -170,7 +170,7 @@ struct WidgetGroupedListView: View {
             }
             Divider()
             Button("Refresh \(name)") {
-                Task { await dataStore.refresh(providerID: group.provider.id, force: true) }
+                Task { await container.refresh(providerID: group.provider.id, force: true) }
             }
             // rename은 기록할 account record가 필요 — identity가 한 번이라도 관측된 account-model 카드에만 표시.
             if container.canRename(group.provider.id) {
@@ -357,7 +357,7 @@ struct WidgetGroupedListView: View {
         Divider()
         if let provider = layout.provider(id: providerID) {
             Button("Refresh \(container.displayName(for: provider))") {
-                Task { await dataStore.refresh(providerID: providerID, force: true) }
+                Task { await container.refresh(providerID: providerID, force: true) }
             }
         }
         Button("Customize…") {

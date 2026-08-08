@@ -309,8 +309,8 @@ struct AccountProfileManagementSheet: View {
         }
     }
 
-    /// profile 자신의 Sign-In Workspace에서 공식 re-login. snapshot은 새 credential이 같은 계정을 증명할 때만
-    /// 교체 — 다른 identity는 아무것도 바꾸지 않음. active profile의 re-sign-in은 Shared Runtime Home도 갱신.
+    /// profile 자신의 Sign-In Workspace에서 공식 re-login. 검증된 credential은 이 계정명의 provider binding 교체.
+    /// active profile의 re-sign-in은 Shared Runtime Home도 갱신.
     private func signInAgain() {
         isSigningIn = true
         actionError = nil
@@ -327,7 +327,8 @@ struct AccountProfileManagementSheet: View {
                     return
                 }
                 try AccountCredentialImporter().completeReSignIn(
-                    for: profile,
+                    profileID: profile.id,
+                    in: store,
                     isActive: store.preferredProfileID(family: profile.family) == profile.id
                 )
                 onChanged()

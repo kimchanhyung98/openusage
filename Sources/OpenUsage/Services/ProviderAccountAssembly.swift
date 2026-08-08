@@ -202,6 +202,12 @@ struct ProviderAccountAssembly {
         // 추가 카드 빌드 계획 — 발견 계정별 1카드, reconcile된 record id 사용.
         var claudeCards: [ClaudeAccountCard] = []
         for account in foundClaudeAccounts {
+            if managedProfiles.contains(where: {
+                !$0.isArchived && $0.family == "claude" && $0.identityKey == account.identityKey
+            }) {
+                AppLog.info(.config, "discovery: config-dir account omitted because a managed profile already represents it")
+                continue
+            }
             guard let record = records.first(where: { $0.family == "claude" && $0.identityKey == account.identityKey }) else {
                 continue
             }
@@ -228,16 +234,12 @@ struct ProviderAccountAssembly {
         let preferredProfileIDs = Dictionary(uniqueKeysWithValues: ProviderAccountID.families.compactMap { family in
             accountProfiles?.preferredProfileID(family: family).map { (family, $0) }
         })
-        let observedIdentityKeys = Set(identityKeys.values)
         let snapshotCards = AccountUsageCardPlanner.snapshotCards(
             profiles: managedProfiles,
             preferredProfileIDs: preferredProfileIDs,
             availableSnapshotProfileIDs: snapshotProfileIDs,
             sharedHomeIdentityKeys: identityKeys
-        ).filter { card in
-            guard let profile = managedProfiles.first(where: { $0.id == card.profileID }) else { return false }
-            return !observedIdentityKeys.contains(profile.identityKey)
-        }
+        )
         let profileIDsByCard = Dictionary(uniqueKeysWithValues: snapshotCards.map { ($0.id, $0.profileID) })
         for card in snapshotCards {
             if let profile = managedProfiles.first(where: { $0.id == card.profileID }) {

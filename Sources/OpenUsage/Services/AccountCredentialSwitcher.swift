@@ -105,6 +105,48 @@ struct AccountCredentialSwitcher {
         try readAuthentication(family: family, home: sharedHomePath(family: family))
     }
 
+    /// OpenUsage wrapper 아래 Claude 공식 로그인이 갱신하는 scoped credential + 내부 state 쌍.
+    /// 기존 루트 state가 이전 identity인 과도 상태를 external reauthentication에서만 수용.
+    func readSharedClaudeExternalAuthentication() throws -> AccountCredentialVault.Entry? {
+        let home = sharedHomePath(family: "claude")
+        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: home,
+            environment: environment
+        )
+        let localState = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
+        if let scopedCredential = try keychain.readGenericPasswordForCurrentUser(service: scopedService)
+            ?? keychain.readGenericPassword(service: scopedService) {
+            guard isUsableClaudeCredential(scopedCredential),
+                  try readTextIfPresent(localState) != nil,
+                  let account = try claudeOAuthAccount(inFirstOf: [localState])
+            else {
+                return nil
+            }
+            return AccountCredentialVault.Entry(
+                credential: scopedCredential,
+                claudeOAuthAccount: account
+            )
+        }
+
+        // 관리형 scoped home이 한 번 만들어진 뒤 scoped credential만 사라진 상태는 로그아웃.
+        // OpenUsage가 이전 전환 때 남긴 base credential로 되살리지 않음.
+        guard !fileManager.fileExists(atPath: localState.path) else { return nil }
+
+        // 최초 관리형 등록 전 plain Claude 로그인은 base credential + 루트 state만 보유.
+        // 이 경우에만 reconciliation이 scoped shared home으로 이관할 수 있도록 수용.
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+        guard let baseCredential = try keychain.readGenericPasswordForCurrentUser(service: baseService)
+            ?? keychain.readGenericPassword(service: baseService),
+              isUsableClaudeCredential(baseCredential),
+              let account = try claudeOAuthAccount(
+                  inFirstOf: [homeDirectory.appendingPathComponent(".claude.json")]
+              )
+        else {
+            return nil
+        }
+        return AccountCredentialVault.Entry(credential: baseCredential, claudeOAuthAccount: account)
+    }
+
     /// 한 home의 인증 read (Shared Runtime Home·Sign-In Workspace·legacy profile home).
     /// Claude는 scoped Keychain credential 우선(macOS의 source of truth) 후 credential 파일, Codex는 `auth.json`만.
     func readAuthentication(family: String, home: String) throws -> AccountCredentialVault.Entry? {
@@ -162,6 +204,13 @@ struct AccountCredentialSwitcher {
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":
+            try keychain.writeGenericPasswordForCurrentUser(
+                service: ClaudeAuthStore.scopedKeychainServiceName(
+                    forConfigDirLiteral: directory.path,
+                    environment: environment
+                ),
+                value: entry.credential
+            )
             try writePrivateFile(entry.credential, to: directory.appendingPathComponent(".credentials.json"))
             if let oauthAccount = entry.claudeOAuthAccount {
                 try mergeClaudeOAuthAccount(oauthAccount, at: directory.appendingPathComponent(".claude.json"))
@@ -179,8 +228,7 @@ struct AccountCredentialSwitcher {
     func identity(of entry: AccountCredentialVault.Entry, family: String) -> (identityKey: String, label: String?)? {
         switch family {
         case "claude":
-            guard ClaudeAuthStore.parseCredentials(entry.credential)?
-                .claudeAiOauth?.accessToken?.nilIfEmpty != nil,
+            guard isUsableClaudeCredential(entry.credential),
                 let account = entry.claudeOAuthAccount,
                 let decoded = try? JSONDecoder().decode(
                     DefaultAccountObserver.ClaudeStateFile.OAuthAccount.self,
@@ -209,16 +257,16 @@ struct AccountCredentialSwitcher {
         }
         for service in services {
             if let value = try? keychain.readGenericPasswordForCurrentUser(service: service),
-               isValidClaudeCredential(value) {
+               isUsableClaudeCredential(value) {
                 return value
             }
             if let value = try? keychain.readGenericPassword(service: service),
-               isValidClaudeCredential(value) {
+               isUsableClaudeCredential(value) {
                 return value
             }
         }
         let fileURL = URL(fileURLWithPath: home).appendingPathComponent(".credentials.json")
-        if let value = try? readTextIfPresent(fileURL), isValidClaudeCredential(value) {
+        if let value = try? readTextIfPresent(fileURL), isUsableClaudeCredential(value) {
             return value
         }
         return nil
@@ -335,8 +383,18 @@ struct AccountCredentialSwitcher {
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
     }
 
-    private func isValidClaudeCredential(_ value: String) -> Bool {
-        ClaudeAuthStore.parseCredentials(value)?.claudeAiOauth?.accessToken?.nilIfEmpty != nil
+    private func isUsableClaudeCredential(_ value: String) -> Bool {
+        guard let oauth = ClaudeAuthStore.parseCredentials(value)?.claudeAiOauth,
+              oauth.accessToken?.nilIfEmpty != nil
+        else {
+            return false
+        }
+        guard let expiresAt = oauth.expiresAt,
+              expiresAt <= Date().timeIntervalSince1970 * 1_000
+        else {
+            return true
+        }
+        return oauth.refreshToken?.nilIfEmpty != nil
     }
 
     private func canonicalPath(_ path: String) -> String {
