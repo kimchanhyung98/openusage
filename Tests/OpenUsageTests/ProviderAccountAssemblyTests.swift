@@ -344,7 +344,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         XCTAssertEqual(assembly.identityKeysByCard[card.id], "acct-1")
     }
 
-    func testSnapshotCardIsSuppressedWhenTheAccountAlreadyHasAHomeBackedCard() throws {
+    func testManagedProfilesRemainSeparateWhenTheHomeMatchesAnInactiveIdentity() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let profiles = AccountProfilesStore(defaults: defaults)
@@ -362,9 +362,65 @@ final class ProviderAccountAssemblyTests: XCTestCase {
 
         XCTAssertEqual(
             assembly.snapshotCards.map(\.profileID),
-            [work.id],
-            "the inactive profile's account is the observed default login (no duplicate card), while the selected profile — unserved by the shared home — keeps its own card"
+            [personal.id, work.id],
+            "managed account names remain separate even when one identity is also visible in the shared home"
         )
+    }
+
+    func testDuplicateManagedIdentitiesKeepSeparateNamedSnapshotCards() throws {
+        let defaults = makeScratchDefaults()
+        let store = ProviderAccountsStore(defaults: defaults)
+        let profiles = AccountProfilesStore(defaults: defaults)
+        let alpha = try profiles.add(family: "codex", label: "alpha", identityKey: "codex-shared")
+        let beta = try profiles.add(family: "codex", label: "beta", identityKey: "codex-shared")
+        profiles.setPreferred(family: "codex", profileID: alpha.id)
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: makeCodexObserver(accountID: "CODEX-SHARED"),
+            accountsStore: store,
+            accountProfiles: profiles,
+            managedProfiles: profiles.profiles,
+            snapshotProfileIDs: [alpha.id, beta.id]
+        )
+
+        XCTAssertEqual(assembly.snapshotCards.map(\.profileID), [beta.id])
+        XCTAssertEqual(assembly.profileIDsByCard.values.sorted(), [beta.id])
+    }
+
+    func testManagedProfileSuppressesADiscoveredCardWithTheSameIdentity() throws {
+        let defaults = makeScratchDefaults()
+        let store = ProviderAccountsStore(defaults: defaults)
+        let profiles = AccountProfilesStore(defaults: defaults)
+        let alpha = try profiles.add(family: "claude", label: "alpha", identityKey: "acct-1")
+        let beta = try profiles.add(family: "claude", label: "beta", identityKey: "acct-2")
+        profiles.setPreferred(family: "claude", profileID: alpha.id)
+        let observer = DefaultAccountObserver(
+            environment: FakeEnvironment([:]),
+            files: FakeFiles([
+                "/Users/dev/.claude.json": #"{"oauthAccount":{"accountUuid":"acct-1"}}"#,
+            ]),
+            keychain: FakeKeychain(nil),
+            homeDirectory: { URL(fileURLWithPath: "/Users/dev") }
+        )
+        let discovery = makeDiscovery(
+            files: [
+                "/Users/dev/.claude-beta/.claude.json": #"{"oauthAccount":{"accountUuid":"acct-2"}}"#,
+                "/Users/dev/.claude-beta/.credentials.json": #"{"claudeAiOauth":{"accessToken":"token-2"}}"#,
+            ],
+            subdirectories: ["/Users/dev/.claude-beta"]
+        )
+
+        let assembly = ProviderAccountAssembly.make(
+            observer: observer,
+            accountsStore: store,
+            claudeDiscovery: discovery,
+            accountProfiles: profiles,
+            managedProfiles: profiles.profiles,
+            snapshotProfileIDs: [alpha.id, beta.id]
+        )
+
+        XCTAssertTrue(assembly.claudeCards.isEmpty)
+        XCTAssertEqual(assembly.snapshotCards.map(\.profileID), [beta.id])
     }
 
     func testPreferredProfileNeverGetsASnapshotCard() throws {

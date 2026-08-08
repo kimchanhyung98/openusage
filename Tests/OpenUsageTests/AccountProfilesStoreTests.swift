@@ -56,15 +56,19 @@ final class AccountProfilesStoreTests: XCTestCase {
         }
     }
 
-    func testAddRejectsADuplicateAccountIdentity() throws {
+    func testAddAllowsDuplicateIdentityUnderDifferentLabels() throws {
         let store = AccountProfilesStore(defaults: defaults)
-        _ = try store.add(family: "claude", label: "Personal", identityKey: "acct-a")
+        let alpha = try store.add(family: "claude", label: "alpha", identityKey: "acct-a")
 
-        XCTAssertThrowsError(try store.add(family: "claude", label: "Work", identityKey: "ACCT-A")) {
-            XCTAssertEqual($0 as? AccountProfileError, .duplicateAccount(existingLabel: "Personal"))
-        }
-        // 동일 identity라도 다른 family에서는 별개 account
-        XCTAssertNoThrow(try store.add(family: "codex", label: "Work", identityKey: "acct-a"))
+        let beta = try store.add(family: "claude", label: "beta", identityKey: "ACCT-A")
+
+        XCTAssertNotEqual(alpha.id, beta.id)
+        XCTAssertEqual(store.profiles(family: "claude").map(\.identityKey), ["acct-a", "acct-a"])
+        XCTAssertEqual(store.preferredProfileID(family: "claude"), alpha.id)
+
+        let reloaded = AccountProfilesStore(defaults: defaults)
+        XCTAssertEqual(reloaded.profiles(family: "claude").map(\.id), [alpha.id, beta.id])
+        XCTAssertEqual(reloaded.preferredProfileID(family: "claude"), alpha.id)
     }
 
     func testAddRejectsADuplicateLabelCaseInsensitively() throws {
@@ -233,7 +237,7 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), original)
     }
 
-    func testInvalidDuplicateAndOverLimitRecordsPreserveTheBlobAndBlockWrites() throws {
+    func testInvalidAndOverLimitRecordsPreserveTheBlobAndBlockWrites() throws {
         var profiles: [[String: Any]] = [
             profileJSON(id: "keep", family: "claude", label: "Personal", identityKey: "acct-a"),
             profileJSON(id: "dup-identity", family: "claude", label: "Copy", identityKey: "ACCT-A"),
