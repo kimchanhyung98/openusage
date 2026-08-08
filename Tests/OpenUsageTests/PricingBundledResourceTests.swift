@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Guards the shipped pricing resources: the bundled supplement and snapshots must load, and every
-/// alias canonical must resolve against them — so a LiteLLM/models.dev key rename or a supplement
-/// typo fails CI instead of silently pricing models at $0.
 final class PricingBundledResourceTests: XCTestCase {
     private static let pricing = TestPricing.bundled
 
@@ -32,8 +29,7 @@ final class PricingBundledResourceTests: XCTestCase {
         }
     }
 
-    /// Spot-check Cursor CSV slugs end to end against known rates (the old manifest's assertions,
-    /// now against live catalogs — update the constants if the providers themselves reprice).
+    /// Cursor CSV slug 실측 확인 — provider가 재가격 책정하면 상수 갱신 필요
     func testKnownCursorSlugsPriceCorrectly() {
         let pricing = Self.pricing
         XCTAssertEqual(pricing.resolve(model: "auto")?.inputPerMillion, 1.25)
@@ -62,7 +58,7 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "Premium (GPT-5.3-Codex)")?.inputPerMillion, 1.75)
     }
 
-    /// Raw model ids as they appear in Claude/Codex/Grok logs (no alias rewriting).
+    /// log에 그대로 등장하는 raw model id (alias rewriting 없음)
     func testKnownLogModelIDsPriceCorrectly() {
         let pricing = Self.pricing
         XCTAssertEqual(pricing.resolve(model: "claude-sonnet-4-5-20250929")?.inputPerMillion, 3)
@@ -72,8 +68,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "grok-4.3")?.inputPerMillion, 1.25)
     }
 
-    /// Claude Fable 5 (carried over from the old manifest tests): priced at 2x standard Claude 4.8
-    /// Opus, with thinking/effort slug variants resolving to the same rates.
     func testClaudeFable5PricingAndAliases() throws {
         let pricing = Self.pricing
         let fable = try XCTUnwrap(pricing.resolve(model: "claude-fable-5-thinking"))
@@ -86,8 +80,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(fable.outputPerMillion, opus48.outputPerMillion * 2)
     }
 
-    /// Claude Sonnet 5: same API pool rates as Claude 4.6 Sonnet; thinking/effort slugs resolve to
-    /// one canonical entry.
     func testClaudeSonnet5PricingAndAliases() throws {
         let pricing = Self.pricing
         let sonnet5 = try XCTUnwrap(pricing.resolve(model: "claude-sonnet-5-thinking-high"))
@@ -101,7 +93,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(sonnet5.outputPerMillion, sonnet46.outputPerMillion)
     }
 
-    /// Claude Opus 5 rates and Claude Code model-slug aliases, including the fast variant.
     func testClaudeOpus5PricingAndAliases() throws {
         let pricing = Self.pricing
         let opus5 = try XCTUnwrap(pricing.resolve(model: "claude-opus-5"))
@@ -124,7 +115,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(opus5.fastMultiplier, opus48.fastMultiplier)
     }
 
-    /// Native Claude fast requests keep the base model slug and use its multiplier.
     func testClaudeOpus5FastModeBillsAtTwiceBaseRate() throws {
         let pricing = Self.pricing
         let opus5 = try XCTUnwrap(pricing.resolve(model: "claude-opus-5"))
@@ -180,8 +170,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(lunaFast.outputPerMillion, 15.0)
     }
 
-    /// Opus 4.7/4.8 fast modes: Cursor's published rates (supplement overrides) win over the
-    /// stale models.dev entries. Per Cursor, 4.8 fast is 3x cheaper per token than 4.7 fast.
     func testOpusFastModeSupplementOverrides() throws {
         let pricing = Self.pricing
         let opus47Fast = try XCTUnwrap(pricing.resolve(model: "claude-opus-4-7-thinking-high-fast"))
@@ -195,9 +183,6 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(opus48Fast.outputPerMillion, opus47Fast.outputPerMillion / 3)
     }
 
-    /// GLM 5.2: the high/max effort slugs resolve to the shared entry (LiteLLM's Cloudflare listing);
-    /// no separate cache-write price, so cache writes bill at the input rate. Slugs outside the
-    /// high/max allowlist stay unpriced.
     func testGLM52PricingAndAliases() throws {
         let pricing = Self.pricing
         let glm = try XCTUnwrap(pricing.resolve(model: "glm-5.2-max"))
@@ -211,15 +196,12 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertNil(pricing.estimatedCostDollars(model: "glm-5.2-bogus", tokens: outputOnly))
     }
 
-    /// Grok CLI model ids route through the alias rules to their catalog entries.
     func testGrokCLIModelAliases() {
         let pricing = Self.pricing
         XCTAssertEqual(pricing.resolve(model: "grok-build")?.inputPerMillion, 1)
         XCTAssertEqual(pricing.resolve(model: "grok-composer-2.5-fast")?.inputPerMillion, 3)
     }
 
-    /// Grok 4.5 (Cursor + SpaceXAI first-party): standard and fast rates from Cursor docs, with
-    /// effort slugs collapsing to the same entries.
     func testGrok45PricingAndAliases() throws {
         let pricing = Self.pricing
         let standard = try XCTUnwrap(pricing.resolve(model: "grok-4.5-high"))
@@ -235,19 +217,18 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(fast.cacheWritePerMillion, 4.0)
         XCTAssertEqual(fast.cacheReadPerMillion, 1.0)
         XCTAssertEqual(fast.outputPerMillion, 18.0)
-        // Cursor CSV uses fast-before-effort (`grok-4.5-fast-high`); also accept effort-before-fast.
+        // Cursor CSV는 fast-before-effort 순서, effort-before-fast도 허용
         XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-high"), fast)
         XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-medium"), fast)
         XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-xhigh"), fast)
         XCTAssertEqual(pricing.resolve(model: "grok-4.5-xhigh"), standard)
         XCTAssertEqual(pricing.resolve(model: "grok-4.5-medium-fast"), fast)
-        // Cursor usage export sometimes prefixes first-party Grok with `cursor-`.
+        // Cursor usage export는 first-party Grok에 `cursor-` prefix를 붙이기도 함
         XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high-fast"), fast)
         XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-fast-high"), fast)
         XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high"), standard)
     }
 
-    /// Kimi K2.7 Code: Cursor's published rates override messy public-catalog entries.
     func testKimiK27CodePricingAndAliases() throws {
         let pricing = Self.pricing
         let kimi = try XCTUnwrap(pricing.resolve(model: "kimi-k2.7-code"))

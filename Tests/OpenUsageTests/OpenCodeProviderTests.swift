@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// End-to-end provider behavior: detection via the Go auth key or local usage, and a refresh that yields
-/// the Go meters + combined spend tiles + trend, plus the not-logged-in path.
 @MainActor
 final class OpenCodeProviderTests: XCTestCase {
     private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
@@ -90,8 +88,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testRefreshShowsZeroCapMetersWithGoKeyButNoDatabase() async {
-        // Freshly logged into Go, before the first local message: the key alone establishes the plan,
-        // so the published caps show at $0 instead of a bare "No usage data".
+        // Go 로그인 직후 첫 local message 이전 — key만으로 plan 확정, cap을 $0으로 표시
         let now = d("2026-07-12T12:00:00.000Z")
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),
@@ -111,7 +108,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testRefreshErrorsWhenAllDatabasesUnreadable() async {
-        // A valid Go key with a locked/corrupt database must surface a read error, not $0 meters.
+        // 유효한 Go key + locked/corrupt DB → $0 meter 대신 read error 노출
         let now = d("2026-07-12T12:00:00.000Z")
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),
@@ -127,7 +124,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testRefreshSurfacesUnreadableAuthFileInsteadOfNotLoggedIn() async {
-        // auth.json exists but can't be read, and there's no database: broken storage, not logout.
+        // auth.json 존재하나 읽기 불가 + DB 없음 → logout이 아니라 storage 고장
         let now = d("2026-07-12T12:00:00.000Z")
         let provider = OpenCodeProvider(
             authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
@@ -139,8 +136,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testHasLocalCredentialsTrueWhenAuthFileUnreadable() async {
-        // An unreadable auth.json is itself an OpenCode footprint — enable the provider so refresh()
-        // can show the actionable error rather than staying invisible.
+        // 읽기 불가 auth.json도 OpenCode footprint — provider를 켜서 refresh()가 actionable error 표시
         let provider = OpenCodeProvider(
             authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] })
@@ -150,7 +146,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testSpendTilesAreNotMarkedEstimated() async {
-        // OpenCode records its own per-message cost — the tiles must not carry the local-estimate ⓘ.
+        // OpenCode는 per-message cost를 자체 기록 — tile에 local-estimate ⓘ 미표시
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let provider = OpenCodeProvider(
@@ -169,8 +165,7 @@ final class OpenCodeProviderTests: XCTestCase {
     }
 
     func testStaleGoHistoryDoesNotShowGoPlanOrMeters() async {
-        // Zen-only recent usage + an old opencode-go anchor + no Go key: no "Go" badge, no cap meters,
-        // but the Zen spend still shows in the tiles.
+        // Zen-only 최근 usage + 오래된 opencode-go anchor + Go key 없음 — "Go" badge·cap meter 없이 Zen spend만 표시
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let provider = OpenCodeProvider(

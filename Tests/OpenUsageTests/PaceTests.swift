@@ -1,15 +1,11 @@
 import XCTest
 @testable import OpenUsage
 
-/// Locks the burn-rate pacing: the three-state thresholds (blue ahead / amber cutting-it-close /
-/// red behind), the even-pace tick on yellow/red (and blue when opted in), the "~N% spare" copy,
-/// the numeric projection-at-reset tooltip, and the run-out projection. All cases pin `now` and
-/// derive `resetsAt` from a target elapsed fraction so the math is deterministic.
 final class PaceTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     private let week: TimeInterval = 7 * 24 * 60 * 60
 
-    /// A reset date such that exactly `elapsed` of the window has gone by as of `now`.
+    /// `now` 기준으로 window의 `elapsed` 비율만큼 경과한 reset 시각
     private func resetsAt(elapsed: Double, period: TimeInterval) -> Date {
         now.addingTimeInterval(period * (1 - elapsed))
     }
@@ -31,31 +27,31 @@ final class PaceTests: XCTestCase {
     }
 
     func testAheadOnTrackBehindThresholds() {
-        let reset = resetsAt(elapsed: 0.5, period: week) // half the window gone → projected = used * 2
-        XCTAssertEqual(Pace.evaluate(used: 30, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .ahead)   // 60 ≤ 90
-        XCTAssertEqual(Pace.evaluate(used: 44, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .ahead)   // 88 ≤ 90
-        XCTAssertEqual(Pace.evaluate(used: 46, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .onTrack) // 92 in (90,100]
-        XCTAssertEqual(Pace.evaluate(used: 50, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .onTrack) // 100 lands exactly on the limit
-        XCTAssertEqual(Pace.evaluate(used: 60, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .behind)  // 120 > 100
+        let reset = resetsAt(elapsed: 0.5, period: week) // window 절반 경과 → 예상치 = used * 2
+        XCTAssertEqual(Pace.evaluate(used: 30, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .ahead)   // 계산: 60 ≤ 90
+        XCTAssertEqual(Pace.evaluate(used: 44, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .ahead)   // 계산: 88 ≤ 90
+        XCTAssertEqual(Pace.evaluate(used: 46, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .onTrack) // 92는 (90,100] 구간
+        XCTAssertEqual(Pace.evaluate(used: 50, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .onTrack) // 100은 limit과 정확히 일치
+        XCTAssertEqual(Pace.evaluate(used: 60, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .behind)  // 계산: 120 > 100
     }
 
     func testEvaluateProjectsEndOfPeriodUsage() {
-        let reset = resetsAt(elapsed: 0.5, period: week) // half elapsed → projected = used * 2
+        let reset = resetsAt(elapsed: 0.5, period: week) // 절반 경과 → 예상치 = used * 2
         let result = Pace.evaluate(used: 30, limit: 100, resetsAt: reset, periodDuration: week, now: now)
         XCTAssertEqual(result?.status, .ahead)
         XCTAssertEqual(result?.projectedUsage ?? 0, 60, accuracy: 0.01)
     }
 
     func testWindowAlreadyResetReturnsNil() {
-        let past = now.addingTimeInterval(-60) // reset already happened
+        let past = now.addingTimeInterval(-60)
         XCTAssertNil(Pace.evaluate(used: 50, limit: 100, resetsAt: past, periodDuration: week, now: now))
-        // Exact-reset boundary: resetsAt == now is already reset, not a live window.
+        // 경계: resetsAt == now는 live window가 아니라 이미 reset
         XCTAssertNil(Pace.evaluate(used: 50, limit: 100, resetsAt: now, periodDuration: week, now: now))
     }
 
     // MARK: MeterState (the view-facing projection of the pace verdict)
 
-    /// Half the window gone, `used` percent of 100 spent → projected = used * 2.
+    /// window 절반 경과 상태 — 예상치 = used * 2
     private func weeklyData(used: Double, displayMode: WidgetDisplayMode = .used) -> WidgetData {
         var data = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent,
                               used: used, limit: 100, displayMode: displayMode)
@@ -69,26 +65,25 @@ final class PaceTests: XCTestCase {
         return data.paceTick(for: state, now: now)
     }
 
-    /// The amber spare copy, present only in the `closeToLimit` state.
     private func spare(_ data: WidgetData) -> String? {
         if case .closeToLimit(let spare, _) = data.meterState(now: now) { return spare }
         return nil
     }
 
     func testEvenPaceTickOnAmberAndRedInBothDisplayModes() {
-        // Half the window gone → even-pace tick at 0.5 in Used view, 0.5 in Left (mirror of elapsed).
+        // window 절반 경과 → Used·Left 양쪽 모두 even-pace tick 0.5
         XCTAssertEqual(tick(weeklyData(used: 46)) ?? 0, 0.5, accuracy: 0.001)
         XCTAssertEqual(tick(weeklyData(used: 46, displayMode: .remaining)) ?? 0, 0.5, accuracy: 0.001)
         XCTAssertEqual(tick(weeklyData(used: 60)) ?? 0, 0.5, accuracy: 0.001)
-        XCTAssertNil(tick(weeklyData(used: 30))) // blue hides tick by default
+        XCTAssertNil(tick(weeklyData(used: 30))) // ahead 상태는 기본적으로 tick 숨김
     }
 
     func testNoTickWithoutAResetWindow() {
         var data = WidgetData(title: "Credits", icon: .providerMark("codex"), kind: .dollars,
                               used: 12, limit: 20)
-        XCTAssertNil(tick(data))                         // no reset window at all
+        XCTAssertNil(tick(data))
         data.resetsAt = now.addingTimeInterval(week)
-        XCTAssertNil(tick(data))                         // reset date but unknown period
+        XCTAssertNil(tick(data))
     }
 
     func testTooltipShowsNumericProjectionAtReset() {
@@ -173,7 +168,7 @@ final class PaceTests: XCTestCase {
 
     func testPlentyRemainingSuppressesFalseRunOutFlame() {
         let session: TimeInterval = 5 * 3600
-        let elapsed = 240 / session // four minutes into a five-hour window
+        let elapsed = 240 / session // 5시간 window에서 4분 경과
         var data = WidgetData(title: "Session", icon: .providerMark("codex"), kind: .percent,
                               used: 2, limit: 100)
         data.resetsAt = resetsAt(elapsed: elapsed, period: session)
@@ -181,7 +176,7 @@ final class PaceTests: XCTestCase {
         XCTAssertEqual(Pace.evaluate(used: 2, limit: 100,
                                      resetsAt: data.resetsAt!,
                                      periodDuration: session, now: now)?.status, .behind)
-        // Projection distrusted near-empty: a calm level bar, never a fabricated projection cushion.
+        // 사용량 극소 구간은 projection 불신 — level bar 유지
         XCTAssertEqual(data.meterState(now: now), .level(.normal))
     }
 
@@ -214,7 +209,7 @@ final class PaceTests: XCTestCase {
 
     func testPaceProjectionWaitsUntilWindowHasMateriallyStarted() {
         let session: TimeInterval = 5 * 3600
-        let elapsed = 60 / session // one minute in — too early to extrapolate
+        let elapsed = 60 / session // 1분 경과 — 외삽하기엔 이름
         let reset = resetsAt(elapsed: elapsed, period: session)
         XCTAssertNil(Pace.evaluate(used: 1, limit: 100, resetsAt: reset, periodDuration: session, now: now))
     }

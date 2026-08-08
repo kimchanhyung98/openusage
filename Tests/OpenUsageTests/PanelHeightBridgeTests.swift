@@ -55,9 +55,9 @@ final class PanelHeightBridgeTests: XCTestCase {
             openingApply.fulfill()
         }
 
-        PanelHeightBridge.push(480) // queued by the previous session
+        PanelHeightBridge.push(480) // 이전 session 대기값
         PanelHeightBridge.invalidate()
-        PanelHeightBridge.push(760) // measured for the display being opened on now
+        PanelHeightBridge.push(760) // 현재 열린 display 측정값
 
         await fulfillment(of: [openingApply], timeout: 1)
         XCTAssertEqual(applied, [760])

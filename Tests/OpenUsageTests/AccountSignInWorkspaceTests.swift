@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The app-owned sign-in workspace: profile-id-derived layout, user-private permissions, and no
-/// way out of the owned root.
 final class AccountSignInWorkspaceTests: XCTestCase {
     func testDirectoryLayoutDerivesFromFamilyAndProfileID() throws {
         let base = try makeBase()
@@ -67,7 +65,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
             .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.outside.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
-        // `<base>/claude` points outside the owned root — prepare must refuse to hand it out.
+        // `<base>/claude`가 소유 root 밖을 가리킴 — prepare가 반환 거부
         try FileManager.default.createSymbolicLink(
             at: base.appendingPathComponent("claude"),
             withDestinationURL: outside

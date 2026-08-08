@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// **Sign In Again** and the no-default-login Add flow: an official (fake) CLI login lands in the
-/// pinned home, and the importer registers or refreshes only same-account credentials.
 @MainActor
 final class AccountReSignInTests: XCTestCase {
     private var root: URL!
@@ -99,7 +97,7 @@ final class AccountReSignInTests: XCTestCase {
             )
         }
 
-        // The snapshot keeps the profile's own account, and the workspace was restored to it.
+        // snapshot은 profile 자기 account 유지, workspace도 그것으로 복원
         let snapshot = try XCTUnwrap(switcher.loadSnapshot(for: profile))
         XCTAssertEqual(CodexAuthStore.parseAuth(snapshot.credential)?.tokens?.accessToken, "own-token")
         let workspaceAuth = try String(

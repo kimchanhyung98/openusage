@@ -1,7 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Resolution and cost math for the pricing engine, against small fixture catalogs.
 final class ModelPricingTests: XCTestCase {
     private func makePricing(
         supplementJSON: String? = nil,
@@ -52,7 +51,7 @@ final class ModelPricingTests: XCTestCase {
     }
 
     func testNumericVersionsDoNotConflate() throws {
-        // claude-sonnet-4 must not price as claude-sonnet-4-5 (or vice versa).
+        // claude-sonnet-4와 claude-sonnet-4-5는 상호 매칭 금지
         let pricing = try makePricing(primary: ["claude-sonnet-4-5": rates(3, 15)])
         XCTAssertNil(pricing.resolve(model: "claude-sonnet-4"))
         let reverse = try makePricing(primary: ["claude-sonnet-4": rates(1, 2)])
@@ -65,7 +64,7 @@ final class ModelPricingTests: XCTestCase {
     }
 
     func testSeparatorNormalizationMatch() throws {
-        // Log slug grok-4-3 (dashes) matches catalog key xai/grok-4.3 (dot).
+        // log slug grok-4-3(dash)이 catalog key xai/grok-4.3(dot)에 매칭
         let pricing = try makePricing(primary: ["xai/grok-4.3": rates(1.25, 2.5)])
         XCTAssertEqual(pricing.resolve(model: "grok-4-3")?.inputPerMillion, 1.25)
     }
@@ -186,9 +185,7 @@ final class ModelPricingTests: XCTestCase {
     }
 
     func testLegacyCompactCatalogTreatsUnmarkedCacheReadAsExplicit() throws {
-        // Snapshots created before `cre` existed cannot distinguish source and synthesized rates.
-        // Treating omission as explicit preserves their historical behavior; refreshed snapshots
-        // carry `cre: false` whenever a source omits the rate.
+        // `cre` 도입 이전 snapshot은 source/synthesized 구분 불가 — 생략을 explicit으로 취급해 기존 동작 유지
         let legacy = Data(#"{"models":{"gpt-test":{"i":5,"o":30,"cw":5,"cr":0.5}}}"#.utf8)
 
         let decoded = try PricingCatalogCodecs.catalogFromCompact(legacy)
@@ -205,7 +202,7 @@ final class ModelPricingTests: XCTestCase {
         )
         let pricing = try makePricing(primary: ["claude-sonnet-4-5": entry])
         let tokens = TokenBreakdown(input: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 1_000_000, cacheRead: 1_000_000, output: 1_000_000)
-        // input 3 + cacheWrite5m 3.75 + cacheWrite1h (3x2=6) + cacheRead 0.3 + output 15 = 28.05
+        // 계산: 입력 3 + cacheWrite5m 3.75 + cacheWrite1h(3x2=6) + cacheRead 0.3 + 출력 15 = 28.05
         XCTAssertEqual(pricing.estimatedCostDollars(model: "claude-sonnet-4-5", tokens: tokens)!, 28.05, accuracy: 0.0001)
     }
 
@@ -226,7 +223,7 @@ final class ModelPricingTests: XCTestCase {
         let pricing = try makePricing(primary: ["claude-sonnet-4-5": entry])
         let tokens = TokenBreakdown(input: 100_000, cacheWrite5m: 60_000, cacheRead: 50_000, output: 20_000)
 
-        // The 210k prompt selects the higher tier for input, cache, and output alike.
+        // 210k prompt는 input·cache·output 전부 상위 tier 선택
         let expected = 0.6 + 0.45 + 0.03 + 0.45
         XCTAssertEqual(pricing.estimatedCostDollars(model: "claude-sonnet-4-5", tokens: tokens)!, expected, accuracy: 0.0001)
     }

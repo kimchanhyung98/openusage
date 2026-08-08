@@ -1,11 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the meter fill's severity color, read off `MeterState.severity`. With a live reset window
-/// the color is a pace verdict (blue ahead / yellow cutting-it-close / red projected to run out);
-/// without one it falls back to the absolute level bands (yellow at 80% used, red at 10% left);
-/// and a balance that rounds to empty is `spent` (red) ahead of either. It keys off the share
-/// *used*, regardless of the Used/Left display mode.
 final class MeterSeverityTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
     private let week: TimeInterval = 7 * 24 * 60 * 60
@@ -16,7 +11,7 @@ final class MeterSeverityTests: XCTestCase {
                    used: used, limit: limit, displayMode: displayMode)
     }
 
-    /// `elapsed` of a week-long window gone as of `now`.
+    /// now 기준 일주일 window 중 `elapsed` 비율이 경과한 fixture
     private func pacedData(used: Double, elapsed: Double) -> WidgetData {
         var data = percentData(used: used)
         data.resetsAt = now.addingTimeInterval(week * (1 - elapsed))
@@ -31,20 +26,17 @@ final class MeterSeverityTests: XCTestCase {
     // MARK: Pace-driven (a live reset window)
 
     func testBurningTooFastIsCriticalLongBeforeTheBarLooksFull() {
-        // 66% used but only a third of the week gone → projected ~182% → red, despite the
-        // absolute bands calling 66% "normal". This was the original complaint: a bar guaranteed
-        // to run out days early stayed calm blue.
+        // 66% 사용·1/3 경과 → 예상 ~182% — 절대 구간으로는 normal이지만 pace로는 red
         XCTAssertEqual(severity(pacedData(used: 66, elapsed: 0.363)), .critical)
     }
 
     func testCoastingToTheResetStaysNormalEvenWhenNearlyDrained() {
-        // 85% used with 96% of the window gone → projected ~89%, ≥10% to spare → blue, even
-        // though the absolute bands would call 85% "warning".
+        // 85% 사용·96% 경과 → 예상 ~89% — 절대 구간 warning 대신 blue
         XCTAssertEqual(severity(pacedData(used: 85, elapsed: 0.96)), .normal)
     }
 
     func testProjectedIntoTheLastTenPercentIsWarning() {
-        // 88% used with 90% of the window gone → projected ~97.8% → amber.
+        // 88% 사용·90% 경과 → 예상 ~97.8% → amber
         XCTAssertEqual(severity(pacedData(used: 88, elapsed: 0.9)), .warning)
     }
 
@@ -54,22 +46,19 @@ final class MeterSeverityTests: XCTestCase {
     }
 
     func testRemainderRoundingToZeroIsSpentOverACalmerPace() {
-        // 99.6% used with 99.7% of the window gone projects to ~99.9% → "Close to limit"/amber by
-        // pace. But the 0.4% remaining rounds to "0% left", so the balance reads empty — spent
-        // outranks the pace verdict, so the bar is red, not amber.
+        // pace로는 amber지만 잔량 0.4%가 "0% left"로 반올림 — spent가 pace 판정보다 우선
         XCTAssertEqual(pacedData(used: 99.6, elapsed: 0.997).meterState(now: now), .spent)
     }
 
     func testRemainderRoundingToZeroIsSpentWithoutAResetWindow() {
-        // No reset/period → no pace signal, but a dollar metric one rounding-step from empty
-        // ($0.004 of $100 left → "$0.00") still reads as spent.
+        // reset/period 없음 — $0.004 잔량이 "$0.00"으로 반올림돼 spent
         let dollars = WidgetData(title: "Credits", icon: .providerMark("codex"), kind: .dollars,
                                  used: 99.996, limit: 100)
         XCTAssertEqual(dollars.meterState(now: now), .spent)
     }
 
     func testEarlyInWindowUsesPaceVerdictNotAbsoluteBands() {
-        // Early in the window still projects pace — heavy usage at 2% elapsed is already behind.
+        // window 초반에도 pace 판정 적용 — 2% 경과 시점의 과사용은 이미 초과 pace
         XCTAssertEqual(severity(pacedData(used: 50, elapsed: 0.02)), .critical)
         XCTAssertEqual(severity(pacedData(used: 85, elapsed: 0.02)), .critical)
     }
@@ -89,20 +78,20 @@ final class MeterSeverityTests: XCTestCase {
 
     func testCriticalStartsAtTenPercentLeft() {
         XCTAssertEqual(severity(percentData(used: 90)), .critical)
-        // Exactly at/over the limit is spent (still a red bar).
+        // limit 도달·초과는 spent (red bar)
         XCTAssertEqual(percentData(used: 100).meterState(now: now), .spent)
         XCTAssertEqual(percentData(used: 130).meterState(now: now), .spent)
     }
 
     func testThresholdsUseTheHeadlinesWholePercentRounding() {
-        // 79.6% reads "80% used" in the headline, so it must already be yellow; same at 89.6% → red.
+        // headline이 "80% used"로 반올림되는 79.6%부터 yellow, 89.6%부터 red
         XCTAssertEqual(severity(percentData(used: 79.6)), .warning)
         XCTAssertEqual(severity(percentData(used: 89.4)), .warning)
         XCTAssertEqual(severity(percentData(used: 89.6)), .critical)
     }
 
     func testSeverityIgnoresTheUsedLeftDisplayMode() {
-        // In Left mode the bar *fill* shows the remaining share, but the color still keys off usage.
+        // Left 모드에서 fill은 잔여분 표시지만 색상은 사용량 기준
         XCTAssertEqual(severity(percentData(used: 95, displayMode: .remaining)), .critical)
         XCTAssertEqual(severity(percentData(used: 85, displayMode: .remaining)), .warning)
         XCTAssertEqual(severity(percentData(used: 5, displayMode: .remaining)), .normal)
@@ -111,11 +100,11 @@ final class MeterSeverityTests: XCTestCase {
     func testNonPercentKindsBandOnTheirShareOfTheLimit() {
         let dollars = WidgetData(title: "Credits", icon: .providerMark("codex"), kind: .dollars,
                                  used: 45, limit: 50)
-        XCTAssertEqual(severity(dollars), .critical) // $5 of $50 left = 10%
+        XCTAssertEqual(severity(dollars), .critical) // 잔액 $5 / $50 = 10%
 
         let counts = WidgetData(title: "Requests", icon: .providerMark("codex"), kind: .count,
                                 used: 400, limit: 500, countSuffix: "requests")
-        XCTAssertEqual(severity(counts), .warning) // 80% used
+        XCTAssertEqual(severity(counts), .warning) // 80% 사용
     }
 
     func testUnboundedAndZeroLimitMetricsStayNormal() {

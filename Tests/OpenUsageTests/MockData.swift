@@ -1,32 +1,28 @@
 import SwiftUI
 @testable import OpenUsage
 
-/// Test fixtures: sample providers and the widgets they register (mirroring OpenUsage's real
-/// metrics and units). Lives in the test target only — the app builds its registry from the
-/// live `ProviderRuntime`s.
+/// test fixture — 실제 metric·단위를 모사한 sample provider와 widget (test target 전용)
 enum MockData {
-    // MARK: - Providers (brand colors copied from OpenUsage plugin.json)
+    // MARK: - Providers
     static let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
     static let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
     static let cursor = Provider(id: "cursor", displayName: "Cursor", icon: .providerMark("cursor"))
 
     static let providers: [Provider] = [claude, codex, cursor]
 
-    // MARK: - Registered widgets (limit => donut; no limit => number)
+    // MARK: - Registered widgets
+    // limit 있음 → donut, 없음 → number
     static let descriptors: [WidgetDescriptor] = [
-        // Claude — percent limits (donuts) + dollar amounts (numbers)
         percent(id: "claude.session", provider: claude, title: "Session", used: 0),
         percent(id: "claude.weekly", provider: claude, title: "Weekly", used: 34),
         amount(id: "claude.extra", provider: claude, title: "Extra usage", used: 217.59),
         amount(id: "claude.today", provider: claude, title: "Today", used: 64.20),
 
-        // Codex — percent limits (donuts), credits as a counted limit (donut), dollars (number)
         percent(id: "codex.session", provider: codex, title: "Session", used: 80),
         percent(id: "codex.weekly", provider: codex, title: "Weekly", used: 20),
         countBounded(id: "codex.credits", provider: codex, title: "Extra Usage", used: 320, limit: 1000, suffix: "credits"),
         amount(id: "codex.today", provider: codex, title: "Today", used: 569.09),
 
-        // Cursor — usage % (donut), credits balance (number), requests count with cap (donut), dollars (number)
         percent(id: "cursor.usage", provider: cursor, title: "Usage", used: 98),
         amount(id: "cursor.credits", provider: cursor, title: "Credits", used: 12.48),
         countBounded(id: "cursor.requests", provider: cursor, title: "Requests", used: 412, limit: 500, suffix: "requests"),
@@ -39,7 +35,7 @@ enum MockData {
         descriptors.filter { $0.providerID == providerID }
     }
 
-    // MARK: - Descriptor builders (one display name = row + metric label)
+    // MARK: - Descriptor builders
     private static func percent(id: String, provider: Provider, title: String, used: Double) -> WidgetDescriptor {
         descriptor(
             id,
@@ -83,7 +79,7 @@ enum MockData {
 }
 
 extension WidgetRegistry {
-    /// The fixture-backed registry tests use in place of live providers.
+    /// live provider 대신 test가 사용하는 fixture registry
     static let mock = WidgetRegistry(
         providers: MockData.providers,
         descriptors: MockData.descriptors

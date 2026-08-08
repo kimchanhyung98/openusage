@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the `~/.openusage/config.json` proxy contract (ported from the original's docs/proxy.md):
-/// enabled + valid URL parses; everything else silently disables.
 final class ProxyConfigTests: XCTestCase {
     func testParsesEnabledSocks5Proxy() {
         let config = ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"socks5://127.0.0.1:10808"}}"#)
@@ -30,10 +28,10 @@ final class ProxyConfigTests: XCTestCase {
 
     func testDisabledMissingOrInvalidConfigTurnsProxyOff() {
         XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":false,"url":"socks5://127.0.0.1:1080"}}"#))
-        XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"ftp://127.0.0.1:21"}}"#)) // unsupported scheme
-        XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true}}"#))                            // no url
+        XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true,"url":"ftp://127.0.0.1:21"}}"#))
+        XCTAssertNil(ProxyConfig.load(text: #"{"proxy":{"enabled":true}}"#))
         XCTAssertNil(ProxyConfig.load(text: "not json"))
-        XCTAssertNil(ProxyConfig.load(text: nil))                                                       // no config file
+        XCTAssertNil(ProxyConfig.load(text: nil))
         XCTAssertNil(ProxyConfig.load(text: "{}"))
     }
 }

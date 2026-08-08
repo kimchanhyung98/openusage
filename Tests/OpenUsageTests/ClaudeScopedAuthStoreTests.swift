@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The `.configDir` credential scope: an extra account card may only ever see its own login —
-/// its own credentials file and its own computed keychain item, with no Desktop, environment-token,
-/// or default-service fallback.
 final class ClaudeScopedAuthStoreTests: XCTestCase {
     private let scope = ClaudeCredentialScope.configDir(
         path: "/Users/dev/.claude-work",
@@ -17,7 +14,7 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
         let store = ClaudeAuthStore(
             environment: FakeEnvironment([:]),
             files: FakeFiles([
-                // Another account's default-home file must stay invisible to the scoped card.
+                // 타 account의 default-home 파일은 scoped card에 비가시
                 "~/.claude/.credentials.json": #"{"claudeAiOauth": {"accessToken": "default-at"}}"#,
                 "/Users/dev/.claude-work/.credentials.json": #"{"claudeAiOauth": {"accessToken": "work-at"}}"#,
             ]),
@@ -31,9 +28,6 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
         XCTAssertEqual(load.desktopStatus, .notChecked, "a config-dir card never consults Desktop")
     }
 
-    /// The `.standard` store under managed switching: `pinsSharedHome` must make it read exactly
-    /// the shared `~/.claude` home — base keychain service and `~/.claude/.credentials.json` — even
-    /// when an ambient `CLAUDE_CONFIG_DIR` names another account's directory.
     func testPinnedStandardStoreIgnoresAnAmbientConfigDirOverride() {
         let pinned = ClaudeAuthStore(
             environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/Users/dev/.claude-work"]),
@@ -102,8 +96,7 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
     }
 
     func testStandardStoreDropsDesktopFallbackWhileExtraCardsExist() {
-        // With no CLI login and Desktop disallowed (extra Claude cards exist), the load reports
-        // `.notFound` instead of consulting Desktop — the caller keeps the honest CLI error.
+        // CLI login 없음 + Desktop 불허(추가 Claude card 존재) → Desktop 조회 없이 `.notFound` 보고
         let store = ClaudeAuthStore(
             environment: FakeEnvironment([:]),
             files: FakeFiles([:]),

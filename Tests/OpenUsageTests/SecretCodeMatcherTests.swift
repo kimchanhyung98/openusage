@@ -14,7 +14,6 @@ final class SecretCodeMatcherTests: XCTestCase {
 
     func testExtraLeadingKeysStillMatch() {
         var matcher = SecretCodeMatcher()
-        // Two stray ups before a clean entry: the sliding window keeps only the last N, so it matches.
         let stream: [SecretCodeKey] = [.up, .up] + code
         var matched = false
         for token in stream { matched = matcher.accept(token) }
@@ -26,7 +25,7 @@ final class SecretCodeMatcherTests: XCTestCase {
         _ = matcher.accept(.up)
         _ = matcher.accept(.up)
         _ = matcher.accept(.down)
-        _ = matcher.accept(.left) // wrong (expected .down) — run broken
+        _ = matcher.accept(.left) // 오입력(.down 기대) — 진행 중단
         var matched = false
         for token in code { matched = matcher.accept(token) }
         XCTAssertTrue(matched, "a clean entry after a fumble still matches")
@@ -44,11 +43,10 @@ final class SecretCodeMatcherTests: XCTestCase {
         _ = matcher.accept(.up)
         _ = matcher.accept(.up)
         matcher.reset()
-        // After reset the tail alone must not complete — progress was cleared.
+        // reset 후에는 tail만으로 완성 불가
         var matched = false
         for token in code.dropFirst(2) { matched = matcher.accept(token) || matched }
         XCTAssertFalse(matched)
-        // A fresh full entry still matches.
         matched = false
         for token in code { matched = matcher.accept(token) }
         XCTAssertTrue(matched)
@@ -57,7 +55,6 @@ final class SecretCodeMatcherTests: XCTestCase {
     func testReentryMatchesAgain() {
         var matcher = SecretCodeMatcher()
         for token in code { _ = matcher.accept(token) }
-        // The buffer clears after a match, so a second full entry matches again (re-type to toggle off).
         var matched = false
         for token in code { matched = matcher.accept(token) }
         XCTAssertTrue(matched)

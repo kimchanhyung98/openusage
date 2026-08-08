@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The Ready badge: a profile is ready exactly when its Keychain snapshot carries a usable
-/// credential that still proves the profile's own identity.
 final class AccountSignInProbeTests: XCTestCase {
     func testClaudeSnapshotProvingItsIdentityIsReady() throws {
         let keychain = ServiceKeychain()

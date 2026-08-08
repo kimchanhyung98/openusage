@@ -3,9 +3,6 @@ import XCTest
 @testable import OpenUsage
 @testable import OpenUsageCLI
 
-/// The read-only runner half of the account grammar: `list` and `current` reflect the shared
-/// registry exactly and never print a path or touch a credential. Store-level validation lives in
-/// `AccountProfilesStoreTests`.
 @MainActor
 final class AccountCommandRunnerTests: XCTestCase {
     private var suiteName: String!
@@ -36,8 +33,7 @@ final class AccountCommandRunnerTests: XCTestCase {
         return profile
     }
 
-    /// Captures fd 1 around a runner call: `print` (stdio-buffered) and direct
-    /// `FileHandle.standardOutput` writes both land in the pipe.
+    /// 실행 중 표준 출력 fd 1 캡처 — 버퍼링된 `print`와 직접 쓰기 모두 파이프로 수집.
     private func captureStandardOutput(_ body: () throws -> Int32) throws -> (code: Int32, output: String) {
         fflush(stdout)
         let pipe = Pipe()
@@ -94,7 +90,6 @@ final class AccountCommandRunnerTests: XCTestCase {
             Row(id: personal.id, family: "codex", label: "default", selected: false),
             Row(id: work.id, family: "codex", label: "Work", selected: true),
         ])
-        // The payload names no extra keys: no paths, identity keys, or credentials.
         let raw = try JSONSerialization.jsonObject(with: Data(result.output.utf8)) as? [[String: Any]]
         XCTAssertEqual(
             Set(raw?.first.map { Array($0.keys) } ?? []),

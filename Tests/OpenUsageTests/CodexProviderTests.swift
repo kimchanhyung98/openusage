@@ -1,9 +1,7 @@
 import XCTest
 @testable import OpenUsage
 
-/// Local-calendar noon on a `yyyy-MM-dd` day. Day-bucket fixtures (`Today`/`Yesterday`) compare
-/// entry date strings against `dayKey(now)` on the machine's own calendar, so the fixture `now`
-/// must be a LOCAL time on that day — a UTC `Z` timestamp lands on the next local day in KST.
+/// `yyyy-MM-dd` 날의 로컬 정오 — UTC `Z` timestamp가 KST에서 다음 날로 넘어가는 타임존 경계 함정 회피
 private func localNoon(_ day: String) -> Date {
     let parts = day.split(separator: "-").compactMap { Int($0) }
     return Calendar.current.date(from: DateComponents(
@@ -24,9 +22,7 @@ final class CodexAuthStoreTests: XCTestCase {
     // MARK: needsRefresh (issue #516 — refresh by JWT exp, not a hardcoded 8-day age)
 
     func testValidFutureExpAccessTokenDoesNotNeedRefresh() {
-        // A JWT whose `exp` is comfortably in the future must NOT trigger a proactive refresh, even
-        // when `last_refresh` is old/missing — the old 8-day rule refreshed a still-valid token and
-        // tripped refresh_token_reused.
+        // `exp`가 충분히 미래인 JWT는 `last_refresh`가 오래됐어도 선제 refresh 금지 — 구 8일 규칙의 refresh_token_reused 회귀
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let store = CodexAuthStore(now: { now })
         let auth = CodexAuth(
@@ -38,7 +34,7 @@ final class CodexAuthStoreTests: XCTestCase {
     }
 
     func testNearExpiryAccessTokenNeedsRefresh() {
-        // Within the 5-minute window of `exp` ⇒ refresh now.
+        // `exp` 5분 window 이내 ⇒ 즉시 refresh
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let store = CodexAuthStore(now: { now })
         let auth = CodexAuth(
@@ -50,7 +46,7 @@ final class CodexAuthStoreTests: XCTestCase {
     }
 
     func testNoExpClaimFallsBackToStaleLastRefresh() {
-        // No decodable `exp` ⇒ fall back to the 8-day `last_refresh` rule; 9 days old ⇒ refresh.
+        // `exp` 디코딩 불가 ⇒ 8일 `last_refresh` 규칙으로 fallback; 9일 경과 ⇒ refresh
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let store = CodexAuthStore(now: { now })
         let nineDaysAgo = OpenUsageISO8601.string(from: now.addingTimeInterval(-9 * 24 * 60 * 60))
@@ -63,8 +59,7 @@ final class CodexAuthStoreTests: XCTestCase {
     }
 
     func testNoExpClaimAndNoLastRefreshDoesNotForceRefresh() {
-        // A brand-new login (no readable `exp`, no `last_refresh`) must NOT be forced to refresh — the
-        // old code returned true here and refreshed immediately on first launch.
+        // 신규 로그인(`exp`·`last_refresh` 없음)은 강제 refresh 금지 — 구 코드는 첫 실행에 즉시 refresh
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let store = CodexAuthStore(now: { now })
         let auth = CodexAuth(tokens: CodexTokens(accessToken: "token"), lastRefresh: nil)
@@ -72,7 +67,7 @@ final class CodexAuthStoreTests: XCTestCase {
         XCTAssertFalse(store.needsRefresh(auth))
     }
 
-    /// Builds a real JWT-shaped token: `base64url(header).base64url({"exp":<epoch>}).sig`.
+    /// 실제 JWT 형태 token 생성: `base64url(header).base64url({"exp":<epoch>}).sig`
     private func jwt(exp date: Date) -> String {
         func b64url(_ string: String) -> String {
             Data(string.utf8).base64EncodedString()
@@ -232,7 +227,7 @@ final class CodexUsageMapperTests: XCTestCase {
         XCTAssertEqual(mapped.plan, "Pro 5x")
         XCTAssertEqual(progress(mapped.lines, "Session")?.used, 10)
         XCTAssertEqual(progress(mapped.lines, "Weekly")?.used, 20)
-        // Credits lead with the dollar value (4¢/credit), then the raw count — no inverted fake cap.
+        // Credits는 달러 값(4¢/credit) 선두 + 원시 count — 뒤집힌 가짜 cap 없음
         XCTAssertNil(progress(mapped.lines, "Credits"))
         XCTAssertEqual(values(mapped.lines, "Credits"),
                        [MetricValue(number: 4.0, kind: .dollars), MetricValue(number: 100, kind: .count, label: "credits")])
@@ -292,9 +287,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testSurfacesSparkLinesFromAdditionalRateLimits() throws {
-        // The usage body carries model-specific limits in `additional_rate_limits`; the Spark entry's
-        // primary/secondary windows become the Spark (5-hour) and Spark Weekly meters. Regression for
-        // issue #796 — the Swift edition dropped these when it didn't port the JS plugin's parsing.
+        // `additional_rate_limits`의 Spark 항목이 Spark(5시간)·Spark Weekly 미터가 됨 — issue #796 회귀
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let nowSec = Int(now.timeIntervalSince1970)
         let body = Data("""
@@ -335,7 +328,7 @@ final class CodexUsageMapperTests: XCTestCase {
                        Date(timeIntervalSince1970: TimeInterval(nowSec + 3600)))
         XCTAssertEqual(progress(mapped.lines, "Spark Weekly")?.used, 40)
         XCTAssertEqual(progress(mapped.lines, "Spark Weekly")?.periodDurationMs, 604_800_000)
-        // The core Session/Weekly windows are unaffected by the new parsing.
+        // 새 파싱이 핵심 Session/Weekly window에 영향 없음
         XCTAssertEqual(progress(mapped.lines, "Session")?.used, 5)
         XCTAssertEqual(progress(mapped.lines, "Weekly")?.used, 10)
     }
@@ -367,7 +360,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testMatchesSparkByMeteredFeatureWhenLimitNameLacksSpark() throws {
-        // `limit_name` wording can shift; matching `metered_feature` too keeps the row resolving.
+        // `limit_name` 문구는 변할 수 있음 — `metered_feature` 매칭으로 행 해석 유지
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let body = Data("""
         {
@@ -388,9 +381,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testIgnoresNonSparkAndMalformedAdditionalRateLimits() throws {
-        // Non-Spark model limits have no descriptors, so they aren't surfaced; a null/non-dictionary
-        // element is skipped without discarding its siblings; a Spark entry missing `rate_limit` yields
-        // no lines. None of this should ever throw.
+        // 비Spark 한도 미노출, null/비dictionary 요소는 sibling 유지한 채 skip, `rate_limit` 없는 Spark는 라인 없음 — throw 금지
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let body = Data("""
         {
@@ -426,7 +417,7 @@ final class CodexUsageMapperTests: XCTestCase {
         XCTAssertEqual(values(lines, "Today"),
                        [MetricValue(number: 0.75, kind: .dollars, estimated: true),
                         MetricValue(number: 150, kind: .count, label: "tokens")])
-        // No usage yesterday → "No data" (no backing line), not a fabricated "$0.00 · 0 tokens".
+        // 어제 usage 없음 → "No data"(백킹 라인 없음), 조작된 "$0.00 · 0 tokens" 아님
         XCTAssertNil(values(lines, "Yesterday"))
         XCTAssertEqual(values(lines, "Last 30 Days"),
                        [MetricValue(number: 1.75, kind: .dollars, estimated: true),
@@ -434,10 +425,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testZeroUsageLeavesTilesUnbacked() {
-        // A period with no usage is "No data" — no tile is appended, never a fabricated "$0.00 · 0 tokens".
-        // Fixed once in SpendTileMapper, so it holds for every provider that funnels through it. Here the
-        // only reported day is a zero-token Yesterday; Today is absent, Yesterday is idle, and the 30-day
-        // total is zero, so nothing is appended.
+        // usage 없는 기간은 "No data" — SpendTileMapper에서 한 번 수정되어 모든 provider에 적용, 타일 미추가
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-02-19", totalTokens: 0, costUSD: nil)]),
@@ -449,8 +437,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testUnpricedTokensShowTokensWithoutAFabricatedZeroDollar() {
-        // A day with real tokens the runner couldn't price omits the dollar — its cost is unknown, not
-        // zero — so the row shows just the labeled token count rather than a misleading "$0.00 ·".
+        // 가격 산정 불가한 날은 달러 생략(cost는 zero가 아닌 unknown) — 라벨된 token count만 표시
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
             DailyUsageSeries(daily: [DailyUsageEntry(date: "2026-02-20", totalTokens: 1_200_000, costUSD: nil)]),
@@ -461,13 +448,11 @@ final class CodexUsageMapperTests: XCTestCase {
         XCTAssertEqual(values(lines, "Today"), [MetricValue(number: 1_200_000, kind: .count, label: "tokens")])
     }
 
-    // Regression: dollar amounts must group thousands (e.g. "$1,200.00") consistently with the
-    // headline, which formats through `Formatters.currency`. Credit lines previously used a bare
-    // `$%.2f` that dropped the separator.
+    // 회귀: 달러 금액은 headline(`Formatters.currency`)과 동일하게 천 단위 구분 — 기존 `$%.2f`는 구분자 누락
     func testCreditValuesRenderGroupedThousands() {
         var data = WidgetData(title: "Extra Usage", icon: .providerMark("codex"), kind: .dollars, used: 0, limit: nil)
         data.values = CodexUsageMapper.creditValues(remaining: 30000)
-        // The row abbreviates ("$1.2K · 30K credits"); the hover tooltip keeps every digit.
+        // 행은 축약("$1.2K · 30K credits"), hover tooltip은 전체 자릿수 유지
         XCTAssertEqual(data.unboundedDetail, "$1.2K · 30K credits")
         XCTAssertEqual(data.unboundedTooltip, "$1,200.00 · 30,000 credits")
     }
@@ -512,9 +497,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testDedicatedEndpointSuppliesCountAndSortedExpiries() throws {
-        // The dedicated endpoint carries the per-credit expiry list the usage body lacks, so the count
-        // comes from it and `expiriesAt` holds every still-available credit's expiry, sorted soonest
-        // first. A non-"available" credit (the "consumed" one here) is excluded entirely.
+        // dedicated endpoint의 per-credit expiry 목록 사용 — available만 빠른 순 정렬, non-available 제외
         let usage = HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8))
         let resetCredits = HTTPResponse(statusCode: 200, headers: [:], body: Data("""
         {
@@ -544,10 +527,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testExpiriesPreservedWhenStatusOmitted() throws {
-        // `status` is optional upstream — a credit with `expires_at` but no `status` must still count
-        // toward the expiry list (otherwise the tooltip and the 24h warning vanish for that response
-        // shape). An explicitly non-available credit is still dropped. (Regression for the Codex-flagged
-        // "preserve expiries when status is omitted".)
+        // `status`는 optional — `expires_at`만 있는 credit도 expiry 목록에 포함, 명시적 non-available은 제외 (회귀)
         let usage = HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8))
         let resetCredits = HTTPResponse(statusCode: 200, headers: [:], body: Data("""
         {
@@ -569,7 +549,7 @@ final class CodexUsageMapperTests: XCTestCase {
         guard case .values(_, _, _, let expiriesAt, _, _) = mapped.lines.first(where: { $0.label == "Rate Limit Resets" }) else {
             return XCTFail("expected a Rate Limit Resets values line")
         }
-        // The two status-less credits are kept (sorted); the "consumed" one is dropped.
+        // status 없는 credit 2건 유지(정렬), "consumed"는 제외
         XCTAssertEqual(expiriesAt, [
             OpenUsageISO8601.date(from: "2026-02-20T17:30:00.000Z")!,
             OpenUsageISO8601.date(from: "2026-02-20T19:00:00.000Z")!
@@ -577,8 +557,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testFallsBackToUsageBodyCountWhenDedicatedFetchUnavailable() throws {
-        // No dedicated response (the fetch failed): the count falls back to the usage body's embedded
-        // object, and with no expiry list `expiriesAt` is empty.
+        // dedicated 응답 없음(fetch 실패): count는 usage body의 내장 객체로 fallback, `expiriesAt`은 빈 목록
         let usage = HTTPResponse(statusCode: 200, headers: [:],
                                  body: Data(#"{ "rate_limit_reset_credits": { "available_count": 3 } }"#.utf8))
 
@@ -596,9 +575,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testDedicatedNullCountFallsBackToUsageBodyCount() throws {
-        // A 2xx dedicated payload whose `available_count` is JSON null (NSNull, which is non-nil) must NOT
-        // be selected as the source — doing so would drop the whole row. It falls back to the usage body's
-        // valid embedded count instead. (Regression for the bot-flagged NSNull nil-check.)
+        // `available_count`가 JSON null(NSNull, non-nil)인 2xx payload는 source 선택 금지 — usage body count로 fallback
         let usage = HTTPResponse(statusCode: 200, headers: [:],
                                  body: Data(#"{ "rate_limit_reset_credits": { "available_count": 2 } }"#.utf8))
         let resetCredits = HTTPResponse(statusCode: 200, headers: [:],
@@ -615,8 +592,7 @@ final class CodexUsageMapperTests: XCTestCase {
     }
 
     func testDedicatedNon2xxFallsBackToUsageBodyCount() throws {
-        // A non-2xx dedicated response is ignored (treated as unavailable), so the count falls back to
-        // the usage body — never a dropped row just because the extra endpoint erred.
+        // non-2xx dedicated 응답은 무시 — count는 usage body로 fallback, 행 누락 금지
         let usage = HTTPResponse(statusCode: 200, headers: [:],
                                  body: Data(#"{ "rate_limit_reset_credits": { "available_count": 1 } }"#.utf8))
         let resetCredits = HTTPResponse(statusCode: 500, headers: [:], body: Data("<html>oops</html>".utf8))
@@ -663,7 +639,7 @@ final class CodexProviderTests: XCTestCase {
     func testNoUsageDataBadgeIsDroppedWhenLocalLogsHaveSpend() async throws {
         let now = localNoon("2026-02-20")
         let turnStart = now.addingTimeInterval(-2 * 3600)
-        // The live usage API returns nothing mappable (empty body -> no metric lines)...
+        // live usage API는 매핑 가능한 것 없음(빈 body -> metric 라인 없음)...
         let httpClient = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
         let home = try CodexLogFixture.makeHome(files: [
             "sessions/rollout-1.jsonl": [
@@ -686,7 +662,7 @@ final class CodexProviderTests: XCTestCase {
             logUsageScanner: CodexLogFixture.scanner(home: home),
             now: { now },
             pricing: {
-                // 150 tokens -> $0.25 at these fixture rates: (100 x 1000 + 50 x 3000) / 1M.
+                // 이 픽스처 요율로 150 tokens -> $0.25: (100 x 1000 + 50 x 3000) / 1M
                 ModelPricing(
                     supplement: PricingSupplement(),
                     primary: PricingCatalog(entries: ["gpt-5.2": ModelRates(
@@ -700,9 +676,7 @@ final class CodexProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        // ...but local scanned spend exists, so the snapshot shows the spend lines and NOT the
-        // "No usage data" badge. Regression: the mapper used to append the badge *before* the spend
-        // lines, leaving a contradictory badge-plus-spend snapshot.
+        // ...로컬 스캔 spend 존재 → spend 라인 표시, "No usage data" badge 없음 — badge가 spend보다 먼저 붙던 회귀
         XCTAssertEqual(values(snapshot.lines, "Today"),
                        [MetricValue(number: 0.25, kind: .dollars, estimated: true),
                         MetricValue(number: 150, kind: .count, label: "tokens")])
@@ -742,8 +716,7 @@ final class CodexUsageClientRefreshTests: XCTestCase {
     }
 
     func testRefreshReportsRequestFailureForUnrecognizedErrorBody() async {
-        // A 400 carrying a non-OAuth body (an HTML proxy/WAF page) must surface as a request failure,
-        // not "Token expired. Run `codex` to log in again." — re-login can't fix a transport/infra error.
+        // non-OAuth body(HTML proxy/WAF 페이지)의 400은 request failure로 노출 — re-login으로 해결 불가한 transport 오류
         let http = FakeHTTPClient(response: HTTPResponse(statusCode: 400, headers: [:], body: Data("<html>Bad Gateway</html>".utf8)))
         let client = CodexUsageClient(http: http)
         do {

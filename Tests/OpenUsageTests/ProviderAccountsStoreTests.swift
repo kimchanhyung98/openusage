@@ -59,7 +59,6 @@ final class ProviderAccountsStoreTests: XCTestCase {
         let store = ProviderAccountsStore(defaults: defaults)
         store.reconcile(with: [defaultHomeObservation(family: "codex", identityKey: "acct-c")])
 
-        // A launch that could not observe codex (logged out, unreadable identity) reports nothing.
         let records = store.reconcile(with: [])
 
         XCTAssertEqual(records.count, 1)
@@ -115,7 +114,7 @@ final class ProviderAccountsStoreTests: XCTestCase {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         store.reconcile(with: [defaultHomeObservation(family: "claude", identityKey: "acct-a", label: "old")])
-        // Simulate a future "Remove Account…" by tombstoning the persisted record directly.
+        // 향후 "Remove Account…" 경로 대신 persisted record를 직접 tombstone 처리
         var records = store.records
         records[0].removedTombstone = true
         defaults.set(try! JSONEncoder().encode(records), forKey: ProviderAccountsStore.storageKey)

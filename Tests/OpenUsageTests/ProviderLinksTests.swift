@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// `Provider.visibleLinks` is the boundary that keeps a malformed link entry from shipping a dead or
-/// no-op button on the card. It mirrors the legacy Tauri `visibleLinks` filter: trim, require a
-/// non-empty label and URL, and accept `http(s)` schemes only.
 final class ProviderLinksTests: XCTestCase {
     private func provider(_ links: [ProviderLink]) -> Provider {
         Provider(id: "test", displayName: "Test", icon: .providerMark("test"), links: links)
@@ -72,7 +69,6 @@ final class ProviderLinksTests: XCTestCase {
         XCTAssertEqual(provider(links).visibleLinks.map(\.label), ["Status", "Console"])
     }
 
-    /// Every installed provider ships at most two quick links with standard labels.
     @MainActor
     func testInstalledProvidersRespectQuickLinkCap() {
         let allowed = Set(["Status", "Dashboard", "API Keys", "Usage", "Activity", "Credits"])

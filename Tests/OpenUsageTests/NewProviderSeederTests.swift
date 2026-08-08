@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the new-provider detection pass that runs on every launch: only providers the install has
-/// never seen are credential-probed, a probe hit turns the provider on, a miss leaves it off forever
-/// (one shot), and providers the user already decided about are never touched.
 @MainActor
 final class NewProviderSeederTests: XCTestCase {
     func testNewProviderWithCredentialsIsEnabled() async {
@@ -33,7 +30,7 @@ final class NewProviderSeederTests: XCTestCase {
         XCTAssertFalse(enablement.isEnabled("windsurf"))
         XCTAssertEqual(newcomer.probeCount, 1)
 
-        // Next launch: windsurf is known now — no task, no second probe. Enabling it is the user's call.
+        // 다음 launch: windsurf는 이미 known — task·재probe 없음, 활성화는 사용자 몫
         let secondRun = NewProviderSeeder.reconcileIfNeeded(
             providers: [probe("claude", hasCredentials: true), newcomer], enablement: enablement
         )
@@ -42,8 +39,7 @@ final class NewProviderSeederTests: XCTestCase {
     }
 
     func testKnownButDisabledProviderIsNeverProbedOrReenabled() async {
-        // The user turned grok off at some point; it must never come back on its own — even though a
-        // credential probe would hit.
+        // 사용자가 끈 grok은 credential이 있어도 자동 재활성화 금지
         let enablement = seededStore("user-off", enabled: ["claude"], known: ["claude", "grok"])
         let grok = probe("grok", hasCredentials: true)
 
@@ -57,8 +53,7 @@ final class NewProviderSeederTests: XCTestCase {
     }
 
     func testLegacyModeStoreIsUntouched() {
-        // Legacy disabled-list installs get new providers on by default already; the seeder must not
-        // switch their mode or write anything.
+        // legacy disabled-list install은 새 provider가 기본 on — seeder는 mode 전환·쓰기 금지
         let enablement = ProviderEnablementStore(defaults: makeDefaults("legacy"))
 
         let task = NewProviderSeeder.reconcileIfNeeded(
@@ -71,8 +66,7 @@ final class NewProviderSeederTests: XCTestCase {
     }
 
     func testEmptyKnownSetIsBaselinedWithoutProbing() {
-        // An enabled-list store with no known set (an unbundled `swift run` seeded before this
-        // shipped): "new" can't be told apart from "user turned it off", so baseline and do nothing.
+        // known set 없는 enabled-list store — "new"와 "사용자 off" 구분 불가라 baseline만 기록
         let enablement = seededStore("baseline", enabled: ["claude"], known: [])
         let grok = probe("grok", hasCredentials: true)
 
@@ -93,8 +87,7 @@ final class NewProviderSeederTests: XCTestCase {
         let providers = [probe("claude", hasCredentials: true), probe("windsurf", hasCredentials: true)]
 
         let task = NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement)
-        // The user turns the newcomer on themselves while the probe is still running: the seeder must
-        // leave their toggle alone instead of re-setting it.
+        // probe 진행 중 사용자가 직접 on — seeder는 toggle 재설정 금지
         enablement.setEnabled(true, for: "windsurf")
         await task?.value
 

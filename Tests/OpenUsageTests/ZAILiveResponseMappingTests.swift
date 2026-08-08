@@ -1,12 +1,8 @@
 import XCTest
 @testable import OpenUsage
 
-/// Verifies the Swift mapper against a captured live Z.ai API response. Both endpoints are
-/// undocumented internal APIs, so this guards the mapping against the real shape — not just the
-/// fixtures in `ZAIProviderTests`. Anonymized: the key, customer id, and agreement number are gone;
-/// only the structural fields the mapper reads remain. Run locally with `swift test --filter ZAILive`.
 final class ZAILiveResponseMappingTests: XCTestCase {
-    // Captured from a GLM Coding Pro plan on 2026-06-29. Strips PII; keeps the fields the mapper reads.
+    // 실제 quota 응답 캡처본 — PII 제거, mapper가 읽는 필드만 유지
     private let liveQuota = #"""
     {"code":200,"msg":"Operation successful","data":{"limits":[
       {"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":17,"nextResetTime":1782724971179},

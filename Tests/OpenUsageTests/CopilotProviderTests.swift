@@ -52,7 +52,6 @@ final class CopilotAuthStoreTests: XCTestCase {
             keychain: FakeKeychain("go-keyring-base64:" + Data("gho_keychain".utf8).base64EncodedString())
         )
 
-        // Editor config wins over the keychain: the editor token is returned, not the keychain one.
         XCTAssertEqual(store.loadToken()?.value, "gho_editor")
     }
 
@@ -62,8 +61,7 @@ final class CopilotAuthStoreTests: XCTestCase {
     }
 
     func testEditorConfigIgnoresNonGithubDotComHost() {
-        // An Enterprise-only editor config must not yield a token for api.github.com; the chain should
-        // fall through to the gh keychain (which here holds the real github.com token).
+        // Enterprise 전용 editor config는 api.github.com token을 내지 않음 — gh keychain으로 fall through
         let store = CopilotAuthStore(
             files: FakeFiles([
                 CopilotAuthStore.editorAppsPath: #"{ "ghe.corp.example:Iv1.x": { "oauth_token": "gho_enterprise" } }"#
@@ -98,7 +96,7 @@ final class CopilotAuthStoreTests: XCTestCase {
     }
 
     func testYamlValueScopesToGithubDotComHost() {
-        // A GitHub Enterprise block precedes github.com; the github.com token must win.
+        // GitHub Enterprise 블록이 github.com보다 앞 — github.com token 우선
         let hosts = """
         ghe.corp.example:
             oauth_token: gho_enterprise
@@ -140,9 +138,7 @@ final class CopilotUsageMapperTests: XCTestCase {
     }
 
     func testSuppressesUnlimitedAndSentinelBuckets() throws {
-        // Paid plans report chat/completions as unlimited — both the explicit flag and the `-1`
-        // entitlement/remaining sentinel — which carry no real meter and must be suppressed, leaving
-        // just Credits.
+        // 유료 plan의 chat/completions unlimited 보고(명시 플래그 + `-1` sentinel)는 억제 — Credits만 유지
         var body = makePaidBody()
         var quota = body["quota_snapshots"] as! [String: Any]
         quota["chat"] = ["unlimited": true, "entitlement": 0, "remaining": 0, "quota_id": "chat"]
@@ -185,15 +181,13 @@ final class CopilotUsageMapperTests: XCTestCase {
     }
 
     func testSuppressesExtraUsageWhenNotPermitted() throws {
-        // makePaidBody's premium has no overage flag → extra usage is genuinely N/A.
+        // makePaidBody의 premium에 overage 플래그 없음 → extra usage는 실제 N/A
         let mapped = try CopilotUsageMapper.map(body: makePaidBody())
         XCTAssertNil(mapped.lines.first(where: { $0.label == "Extra Usage" }))
     }
 
     func testIgnoresLegacyLimitedQuotasWhenSnapshotsPresent() throws {
-        // A paid response with Credits present and chat/completions unlimited (-1) must NOT fall back to
-        // the legacy limited_user_quotas path, even if the payload still carries it — doing so would show
-        // free-tier Chat/Completions meters on a paid account alongside Credits.
+        // Credits 존재 + chat/completions unlimited(-1)인 유료 응답은 legacy limited_user_quotas 경로로 fallback 금지
         var body = makePaidBody()
         var quota = body["quota_snapshots"] as! [String: Any]
         quota["chat"] = ["entitlement": -1, "remaining": -1, "quota_id": "chat"]
@@ -225,9 +219,7 @@ final class CopilotUsageMapperTests: XCTestCase {
     }
 
     func testMapsLiveFreeAccountSnapshots() throws {
-        // The exact shape a free `individual` account returns today: real chat/completions counts in
-        // `quota_snapshots`, a zero-entitlement premium bucket, and `token_based_billing` on every bucket.
-        // Credits + Extra Usage suppress (no allotment / overage off); Chat + Completions render.
+        // 무료 `individual` 계정의 실제 응답 형태 — Credits + Extra Usage 억제, Chat + Completions 렌더
         let body: [String: Any] = [
             "copilot_plan": "individual",
             "access_type_sku": "free_limited_copilot",
@@ -282,10 +274,7 @@ final class CopilotUsageMapperTests: XCTestCase {
     }
 
     func testPlaceholderOveragePermittedDoesNotEmitExtraUsageOrBlockOrgFlag() throws {
-        // Regression for issue #839's second report: the org-managed placeholder carries
-        // `overage_permitted: true` on a zero-entitlement premium bucket. That must not render a
-        // meaningless "Extra Usage: 0" row — and must still flag the seat as org-managed so the
-        // provider runs the org-billing lookup.
+        // issue #839 2차 회귀: placeholder의 `overage_permitted: true`는 "Extra Usage: 0" 미렌더 + org-managed 유지
         var body: [String: Any] = [
             "copilot_plan": "business",
             "token_based_billing": true,
@@ -303,7 +292,7 @@ final class CopilotUsageMapperTests: XCTestCase {
         XCTAssertTrue(mapped.lines.isEmpty)
         XCTAssertTrue(mapped.isOrgManagedSeat)
 
-        // A paid account with a real credit pool keeps its Extra Usage row.
+        // 실제 credit pool 있는 유료 계정은 Extra Usage 행 유지
         body = makePaidBody()
         var quota = body["quota_snapshots"] as! [String: Any]
         var premium = quota["premium_interactions"] as! [String: Any]
@@ -339,8 +328,7 @@ final class CopilotOrgBillingMapperTests: XCTestCase {
     }
 
     func testMapsAICreditUsageFromSummary() throws {
-        // The exact shape reported in issue #839: one Copilot AI-unit item, fully covered by included
-        // credits (netAmount 0).
+        // issue #839 그대로의 형태: Copilot AI-unit 항목 1건, included credits로 전액 커버(netAmount 0)
         let lines = try XCTUnwrap(CopilotOrgBillingMapper.usageLines(body: makeOrgSummaryBody()))
 
         XCTAssertEqual(orgCount(lines, "Org Credits") ?? -1, 298.698546, accuracy: 0.0001)
@@ -361,7 +349,7 @@ final class CopilotOrgBillingMapperTests: XCTestCase {
     }
 
     func testNilWhenNoCopilotCreditItems() {
-        // Actions minutes and Copilot seat fees (non-credit units) must not produce org meters.
+        // Actions minutes·Copilot seat 요금(비credit 단위)은 org 미터 미생성
         var body = makeOrgSummaryBody()
         body["usageItems"] = [
             ["product": "Actions", "sku": "actions_linux", "unitType": "minutes", "grossQuantity": 120, "netAmount": 0.96],
@@ -449,14 +437,13 @@ final class CopilotProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.plan, "Business")
         XCTAssertEqual(orgCount(snapshot.lines, "Org Credits") ?? -1, 298.698546, accuracy: 0.0001)
         XCTAssertEqual(orgDollars(snapshot.lines, "Org Spend"), 0)
-        // The placeholder's `overage_permitted: true` must not leave a meaningless Extra Usage row.
+        // placeholder의 `overage_permitted: true`가 무의미한 Extra Usage 행을 남기지 않아야 함
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Extra Usage" }))
         XCTAssertEqual(defaults.string(forKey: CopilotProvider.billingOrgDefaultsKey), "acme")
     }
 
     func testOrgBillingForbiddenKeepsPlanOnlyCard() async {
-        // A plain org member (not owner/billing manager) gets 403 on org billing — the expected state,
-        // which must keep today's plan-only card rather than erroring the provider.
+        // 일반 org 멤버(owner/billing manager 아님)의 org billing 403은 예상 상태 — plan-only 카드 유지, provider 오류 아님
         let forbidden = HTTPResponse(statusCode: 403, headers: [:], body: Data())
         let http = routedClient([
             ("/copilot_internal/user", ok(makeBusinessPlaceholderBody())),
@@ -490,8 +477,7 @@ final class CopilotProviderTests: XCTestCase {
     }
 
     func testEvictsStaleCachedOrgAndReprobes() async {
-        // The cached org answers without Copilot usage (e.g. the user changed orgs) — it must be
-        // forgotten and discovery re-run.
+        // 캐시된 org에 Copilot usage 없음(예: org 변경) — 캐시 삭제 후 discovery 재실행
         let http = routedClient([
             ("/copilot_internal/user", ok(makeBusinessPlaceholderBody())),
             ("/orgs/oldorg/settings/billing/usage/summary", HTTPResponse(statusCode: 404, headers: [:], body: Data())),
@@ -509,8 +495,7 @@ final class CopilotProviderTests: XCTestCase {
     }
 
     func testDiscoveryKeepsProbingPastAFailingOrg() async {
-        // One org's billing endpoint having an outage (5xx) must not abort discovery — the next org's
-        // usage should still be found and cached.
+        // 한 org의 billing endpoint 장애(5xx)가 discovery를 중단시키지 않음 — 다음 org에서 발견·캐시
         let http = routedClient([
             ("/copilot_internal/user", ok(makeBusinessPlaceholderBody())),
             ("/user/orgs", okJSON([["login": "brokenorg"], ["login": "acme"]])),
@@ -527,8 +512,7 @@ final class CopilotProviderTests: XCTestCase {
     }
 
     func testTransientBillingFailureKeepsCachedOrg() async {
-        // A 5xx from the cached org's billing endpoint is a brief outage, not a stale org: the cache
-        // must survive (no re-discovery), and the refresh degrades to the plan-only card.
+        // 캐시된 org billing의 5xx는 일시 장애 — 캐시 유지(재discovery 없음), refresh는 plan-only 카드로 degrade
         let http = routedClient([
             ("/copilot_internal/user", ok(makeBusinessPlaceholderBody())),
             ("/orgs/acme/settings/billing/usage/summary", HTTPResponse(statusCode: 503, headers: [:], body: Data()))
@@ -583,8 +567,6 @@ final class CopilotProviderTests: XCTestCase {
 
 // MARK: - Helpers
 
-/// A `RoutingHTTPClient` answering with the first response whose URL-substring key matches; unmatched
-/// URLs 404.
 private func routedClient(_ routes: [(substring: String, response: HTTPResponse)]) -> RoutingHTTPClient {
     RoutingHTTPClient { request in
         routes.first(where: { request.url.absoluteString.contains($0.substring) })?.response
@@ -592,10 +574,7 @@ private func routedClient(_ routes: [(substring: String, response: HTTPResponse)
     }
 }
 
-/// The exact `/copilot_internal/user` shape of an org-managed Copilot Business seat from issue #839:
-/// plan is reported but every quota bucket is a zero-entitlement token-based-billing placeholder.
-/// Crucially, the premium bucket carries `overage_permitted: true` — the field that used to sneak an
-/// "Extra Usage: 0" row into the mapped lines and block the org-billing fallback.
+/// issue #839의 org-managed Business seat 응답 형태 — premium bucket의 `overage_permitted: true`가 함정
 private func makeBusinessPlaceholderBody() -> [String: Any] {
     func bucket(_ id: String, overagePermitted: Bool) -> [String: Any] {
         [
@@ -616,8 +595,7 @@ private func makeBusinessPlaceholderBody() -> [String: Any] {
     ]
 }
 
-/// The org billing usage summary from issue #839: one Copilot AI-unit item, fully covered by the
-/// included credits.
+/// issue #839의 org billing usage summary: Copilot AI-unit 1건, included credits로 전액 커버
 private func makeOrgSummaryBody() -> [String: Any] {
     [
         "timePeriod": ["year": 2026, "month": 7],

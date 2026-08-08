@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers `ProviderAuthRetry.requireSuccess`, the shared non-2xx triage the Claude/Codex/Grok mappers
-/// and `CursorProvider` route through: 401/403 → the provider's auth-expired error, any other non-2xx →
-/// the provider's request-failed error (carrying the status), and a 2xx returns without throwing.
 final class ProviderAuthRetryTests: XCTestCase {
     private enum SampleError: Error, Equatable {
         case authExpired

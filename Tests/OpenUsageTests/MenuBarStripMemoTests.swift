@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the strip renderer's single-entry memo (#18): equal (content, style) inputs return the
-/// previously rendered `NSImage` instance — so the hundreds of label re-evaluations between real
-/// data changes never re-run `ImageRenderer` — while a changed value or style renders fresh.
 @MainActor
 final class MenuBarStripMemoTests: XCTestCase {
     func testEqualContentReturnsSameImageInstance() throws {

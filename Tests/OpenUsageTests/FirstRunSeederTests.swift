@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the fresh-install seeding flow: only fresh installs are seeded (existing installs keep the
-/// legacy all-on default untouched), the fallback set lands synchronously, the detected set replaces it
-/// once the local credential probe finishes, and a user's toggle during the probe wins over detection.
 @MainActor
 final class FirstRunSeederTests: XCTestCase {
     func testFreshInstallSeedsFallbackSynchronouslyThenDetectedSet() async {
@@ -22,11 +19,10 @@ final class FirstRunSeederTests: XCTestCase {
             enablement: enablement, onboarding: onboarding
         )
 
-        // Before the probe finishes: the fallback set, synchronously — never a flash of all providers.
+        // probe 완료 전: fallback set 동기 반영 — 전체 provider 노출 방지
         XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
         XCTAssertTrue(onboarding.isCustomizeHintPending)
-        // Every provider shipping today is baselined as "seen", so `NewProviderSeeder` only ever
-        // probes providers added in a later release.
+        // 현재 출시 provider 전부 "seen" baseline 처리 — `NewProviderSeeder`는 이후 릴리스 추가분만 probe
         XCTAssertEqual(enablement.knownIDs, ["claude", "codex", "cursor", "grok", "kimi"])
 
         await task?.value
@@ -63,8 +59,7 @@ final class FirstRunSeederTests: XCTestCase {
     }
 
     func testAlreadySeededStoreIsNotReseeded() {
-        // An unbundled `swift run` reports fresh on every launch; the enabled-list guard keeps a
-        // second pass from overwriting the user's choices.
+        // unbundled `swift run`은 매 launch fresh 판정 — enabled-list guard로 재seed 방지
         let defaults = makeDefaults("idempotent")
         let enablement = ProviderEnablementStore(defaults: defaults)
         enablement.seedEnabledProviders(["grok"])
@@ -89,7 +84,7 @@ final class FirstRunSeederTests: XCTestCase {
             isFreshInstall: true, providers: providers,
             enablement: enablement, onboarding: onboarding
         )
-        // The user flips a toggle while the probe is still running: their arrangement must survive.
+        // probe 진행 중 사용자 toggle — 사용자 선택 우선
         enablement.setEnabled(false, for: "codex")
         await task?.value
 
@@ -99,8 +94,7 @@ final class FirstRunSeederTests: XCTestCase {
     // MARK: - Reset All reseed
 
     func testReseedOverwritesCurrentChoicesWithDetectedSet() async {
-        // The user had a hand-tuned set on; Reset All must re-detect and switch to exactly what's
-        // installed — even turning off a provider they had enabled that has no local credentials.
+        // Reset All은 재검지 후 설치된 set으로 교체 — credential 없는 기존 활성 provider도 off
         let enablement = ProviderEnablementStore(defaults: makeDefaults("reseed"))
         enablement.seedEnabledProviders(["codex", "grok"])
         let providers = [
@@ -113,7 +107,7 @@ final class FirstRunSeederTests: XCTestCase {
 
         let task = FirstRunSeeder.reseed(providers: providers, enablement: enablement)
 
-        // Snaps to the fallback synchronously so the dashboard reflects the reset immediately.
+        // fallback으로 동기 전환 — dashboard에 reset 즉시 반영
         XCTAssertEqual(enablement.enabledIDs, ["claude", "codex", "kimi"])
 
         await task.value
@@ -137,7 +131,7 @@ final class FirstRunSeederTests: XCTestCase {
                          stub("kimi", hasCredentials: false), stub("devin", hasCredentials: true)]
 
         let task = FirstRunSeeder.reseed(providers: providers, enablement: enablement)
-        // The user flips a toggle while the probe is still running: their arrangement must survive.
+        // probe 진행 중 사용자 toggle — 사용자 선택 우선
         enablement.setEnabled(false, for: "codex")
         await task.value
 
@@ -147,11 +141,7 @@ final class FirstRunSeederTests: XCTestCase {
     // MARK: - Concurrent detection
 
     func testDetectLocalProvidersProbesConcurrently() async {
-        // A single probe can block on a `security`/`sqlite3` subprocess for seconds, so probing
-        // sequentially made first-launch detection take the sum of all providers' waits. Each gated
-        // stub suspends until every probe has *started* (and reports a credential only then), so a
-        // sequential regression — where the first probe would finish before the second begins — fails
-        // the assertion instead of detecting anything.
+        // 순차 probe 회귀 방지 — gated stub은 모든 probe가 동시에 시작해야만 credential 보고
         let ids = ["claude", "codex", "cursor", "grok"]
         let gate = ProbeGate(expected: ids.count)
         let providers = ids.map { GatedCredentialProvider(id: $0, gate: gate) }
@@ -208,8 +198,7 @@ private final class CredentialStubProvider: ProviderRuntime {
     func hasLocalCredentials() async -> Bool { hasCredentials }
 }
 
-/// A provider whose credential probe suspends on a shared `ProbeGate` until all expected probes have
-/// started — "credentials found" therefore means "my probe overlapped every other probe".
+/// 모든 probe 시작까지 `ProbeGate`에서 suspend — "credential 발견"이 probe 동시 실행을 의미하는 stub
 @MainActor
 private final class GatedCredentialProvider: ProviderRuntime {
     let provider: Provider
@@ -228,9 +217,7 @@ private final class GatedCredentialProvider: ProviderRuntime {
     func hasLocalCredentials() async -> Bool { await gate.arrive() }
 }
 
-/// Suspends each arriver until `expected` arrivals are in flight, then resumes them all with `true`.
-/// A safety valve resumes stragglers with `false` after a few seconds, so a sequential-probing
-/// regression fails the test's assertion instead of hanging the suite.
+/// `expected` 도착까지 suspend 후 일괄 true resume — safety valve가 수 초 뒤 false resume해 suite hang 방지
 @MainActor
 private final class ProbeGate {
     private let expected: Int

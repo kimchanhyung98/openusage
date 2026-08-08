@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Locks OpenCode's default metric placement (owner-confirmed, consistent with every other provider):
-/// the three Go caps and the Usage Trend above the fold, the spend tiles below the caret, nothing pinned.
 final class OpenCodeLayoutTests: XCTestCase {
     private let aboveFold = ["opencode.session", "opencode.weekly", "opencode.monthly", "opencode.trend"]
     private let belowCaret = ["opencode.today", "opencode.yesterday", "opencode.last30"]

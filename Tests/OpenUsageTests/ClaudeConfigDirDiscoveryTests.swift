@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The config-dir candidate rules: identity-extraction-is-validation plus the exact credential
-/// shape, with the default homes excluded. Everything runs on fakes — no real filesystem/keychain.
 final class ClaudeConfigDirDiscoveryTests: XCTestCase {
     private let home = URL(fileURLWithPath: "/Users/dev")
 
@@ -45,8 +43,7 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
     }
 
     func testAcceptsAKeychainBackedDirThroughItsScopedServiceName() throws {
-        // Claude Code hashes the literal CLAUDE_CONFIG_DIR string; the `~` spelling must be probed
-        // alongside the absolute one, and the matched literal is what the scoped store reuses.
+        // Claude Code는 CLAUDE_CONFIG_DIR 문자열 리터럴을 해시 — `~` 표기도 절대 경로와 함께 probe, 일치한 리터럴을 scoped store가 재사용
         let literal = "~/.claude-alt"
         let service = ClaudeAuthStore.scopedKeychainServiceName(
             forConfigDirLiteral: literal, environment: FakeEnvironment([:])
@@ -69,9 +66,9 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
     func testRejectsIdentityWithoutCredentialAndCredentialWithoutIdentity() {
         let discovery = makeDiscovery(
             files: [
-                // Identity but no credential shape: a toy/fork state file.
+                // identity만 있고 credential shape 없음: toy/fork state 파일
                 "/Users/dev/.claude-toy/.claude.json": #"{"oauthAccount": {"accountUuid": "ACCT-4"}}"#,
-                // Credential but no identity: can't be routed to an account, must not become a card.
+                // credential만 있고 identity 없음: account 라우팅 불가 → card 생성 금지
                 "/Users/dev/.claude-anon/.credentials.json": #"{"claudeAiOauth": {"accessToken": "at-5"}}"#,
             ],
             subdirectories: ["/Users/dev/.claude-toy", "/Users/dev/.claude-anon"]
@@ -96,11 +93,10 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
             subdirectories: ["/Users/dev/.claude-main", "/Users/dev/.config/claude"]
         )
 
-        // The env-named home is the default card's and is excluded; the XDG dir is then a genuinely
-        // separate home and a legitimate candidate.
+        // env로 지정된 home은 default card 것이라 제외 → XDG dir이 별개 home이자 정당한 후보
         XCTAssertEqual(discovery.run().findings.map(\.identityKey), ["acct-xdg"])
 
-        // Without the override, XDG is a default home again and the env-named dir is the candidate.
+        // override 없으면 XDG가 다시 default home, env로 지정된 dir이 후보
         let withoutOverride = makeDiscovery(
             files: files,
             subdirectories: ["/Users/dev/.claude-main", "/Users/dev/.config/claude"]

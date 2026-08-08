@@ -1,20 +1,18 @@
 import XCTest
 @testable import OpenUsage
 
-/// The never-log-secrets regression guard. Each case mirrors a Rust test from
-/// `src-tauri/src/plugin_engine/host_api.rs` / `src-tauri/src/config.rs`, ported verbatim where a
-/// vector exists, so a subtle regex divergence (leak or over-redaction) trips here.
+/// never-log-secrets 회귀 방지 — 원본 Rust test vector를 그대로 이식해 regex 미세 divergence 검출
 final class LogRedactionTests: XCTestCase {
     // MARK: - redactValue
 
     func testRedactValueShortIsFullyRedacted() {
         XCTAssertEqual(LogRedaction.redactValue("short"), "[REDACTED]")
-        // Exactly 12 characters is still fully redacted (boundary: <= 12).
+        // 정확히 12자도 전체 redact (boundary: <= 12)
         XCTAssertEqual(LogRedaction.redactValue("abcdefghijkl"), "[REDACTED]")
     }
 
     func testRedactValueLongMasksEnds() {
-        // 13 characters: first4...last4. Mirrors the Rust `sk-1...cdef` vector.
+        // 13자부터 first4...last4 — Rust `sk-1...cdef` vector와 동일
         XCTAssertEqual(LogRedaction.redactValue("sk-1234567890abcdef"), "sk-1...cdef")
         XCTAssertEqual(LogRedaction.redactValue("abcdefghijklm"), "abcd...jklm")
     }
@@ -49,8 +47,8 @@ final class LogRedactionTests: XCTestCase {
 
     func testRedactURLPreservesNameCaseAndSkipsEmptyValue() {
         let redacted = LogRedaction.redactURL("https://x.com/a?Api_Key=&Token=secretsecretsecret")
-        XCTAssertTrue(redacted.contains("Api_Key="), redacted) // empty value left untouched
-        XCTAssertTrue(redacted.contains("Token=secr...cret"), redacted) // name casing preserved
+        XCTAssertTrue(redacted.contains("Api_Key="), redacted) // 빈 값은 그대로
+        XCTAssertTrue(redacted.contains("Token=secr...cret"), redacted) // 이름 casing 보존
     }
 
     func testRedactURLNoQueryUnchanged() {
@@ -146,7 +144,7 @@ final class LogRedactionTests: XCTestCase {
         let body = String(repeating: "a", count: 700)
         let preview = LogRedaction.bodyPreview(body)
         XCTAssertTrue(preview.hasSuffix("... (700 bytes total)"), preview)
-        // Truncated content is at most the limit (500) characters before the marker.
+        // marker 앞 내용은 limit(500자) 이하
         let beforeMarker = preview.replacingOccurrences(of: "... (700 bytes total)", with: "")
         XCTAssertLessThanOrEqual(beforeMarker.count, 500)
     }
@@ -157,7 +155,7 @@ final class LogRedactionTests: XCTestCase {
     }
 
     func testBodyPreviewRedactsBeforeTruncating() {
-        // A secret straddling the cut must still be caught: redaction runs before truncation.
+        // 절단 지점에 걸친 secret도 검출 — redaction이 truncation보다 먼저 실행
         let secret = "sk-1234567890abcdefghij"
         let body = String(repeating: "x", count: 490) + secret + String(repeating: "y", count: 200)
         let preview = LogRedaction.bodyPreview(body)

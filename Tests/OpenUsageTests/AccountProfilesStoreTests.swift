@@ -63,7 +63,7 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.add(family: "claude", label: "Work", identityKey: "ACCT-A")) {
             XCTAssertEqual($0 as? AccountProfileError, .duplicateAccount(existingLabel: "Personal"))
         }
-        // The same identity is a separate account under the other family.
+        // 동일 identity라도 다른 family에서는 별개 account
         XCTAssertNoThrow(try store.add(family: "codex", label: "Work", identityKey: "acct-a"))
     }
 
@@ -74,7 +74,7 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.add(family: "claude", label: "work", identityKey: "acct-b")) {
             XCTAssertEqual($0 as? AccountProfileError, .duplicateLabel("work"))
         }
-        // The same label is fine on the other family.
+        // 동일 label도 다른 family에서는 허용
         XCTAssertNoThrow(try store.add(family: "codex", label: "Work", identityKey: "acct-b"))
     }
 
@@ -169,7 +169,7 @@ final class AccountProfilesStoreTests: XCTestCase {
 
         XCTAssertTrue(store.profiles(family: "claude").isEmpty)
         XCTAssertNil(store.preferredProfileID(family: "claude"))
-        // The account can be registered again after removal.
+        // 제거 후 동일 account 재등록 가능
         XCTAssertNoThrow(try store.add(family: "claude", label: "Personal", identityKey: "acct-a"))
     }
 
@@ -236,13 +236,9 @@ final class AccountProfilesStoreTests: XCTestCase {
     func testInvalidDuplicateAndOverLimitRecordsPreserveTheBlobAndBlockWrites() throws {
         var profiles: [[String: Any]] = [
             profileJSON(id: "keep", family: "claude", label: "Personal", identityKey: "acct-a"),
-            // Duplicate identity within the family is discarded.
             profileJSON(id: "dup-identity", family: "claude", label: "Copy", identityKey: "ACCT-A"),
-            // Duplicate label within the family is discarded.
             profileJSON(id: "dup-label", family: "claude", label: "personal", identityKey: "acct-b"),
-            // Unsupported family is discarded.
             profileJSON(id: "bad-family", family: "cursor", label: "X", identityKey: "acct-c"),
-            // Empty identity is discarded.
             profileJSON(id: "no-identity", family: "claude", label: "Empty", identityKey: "  "),
         ]
         for index in 0..<(AccountProfilesStore.maxProfilesPerFamily + 2) {

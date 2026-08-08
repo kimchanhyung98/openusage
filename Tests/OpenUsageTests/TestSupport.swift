@@ -1,9 +1,7 @@
 import XCTest
 @testable import OpenUsage
 
-/// The shipped pricing resources (supplement + LiteLLM/models.dev snapshots) as a ready-to-use
-/// `ModelPricing` — loaded once, entirely offline (no store, no network, no disk cache). Tests that
-/// price real model names use this the way production code uses `ModelPricingStore.current()`.
+/// 번들 pricing 리소스를 offline으로 1회 로드한 ModelPricing — production의 `ModelPricingStore.current()` 대응
 enum TestPricing {
     static let bundled: ModelPricing = {
         func resource(_ name: String) -> Data {
@@ -21,11 +19,9 @@ enum TestPricing {
     }()
 }
 
-/// Builds throwaway Claude config dirs (`<tmp>/…/projects/<file>.jsonl`) and canned usage lines for
-/// `ClaudeLogUsageScanner` tests, plus a scanner wired to read only the fixture (never the real
-/// `~/.claude` of the machine running the tests).
+/// `ClaudeLogUsageScanner` 테스트용 임시 config dir·usage line 빌더 — 실제 `~/.claude` 접근 없음
 enum ClaudeLogFixture {
-    /// A temp Claude config dir whose `projects/` contains `files` (relative path → JSONL content).
+    /// `projects/`에 files(상대 경로 → JSONL 내용)를 담은 임시 config dir
     static func makeHome(files: [String: String] = [:]) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("openusage-claude-\(UUID().uuidString)", isDirectory: true)
@@ -33,10 +29,7 @@ enum ClaudeLogFixture {
         return root
     }
 
-    /// A temp *user home* fixture for Cowork tests. `claudeFiles` land under
-    /// `<home>/.claude/projects/`; each `coworkSessions` entry (session dir relative to
-    /// `local-agent-mode-sessions`, e.g. `group/sub/local_x` → files) lands under that session's
-    /// `.claude/projects/` inside `<home>/Library/Application Support/Claude/local-agent-mode-sessions`.
+    /// Cowork 테스트용 임시 user home — claudeFiles는 `<home>/.claude/projects/`, coworkSessions는 `local-agent-mode-sessions` 아래 세션별 `.claude/projects/`에 배치
     static func makeUserHome(
         claudeFiles: [String: String] = [:],
         coworkSessions: [String: [String: String]] = [:]
@@ -68,7 +61,7 @@ enum ClaudeLogFixture {
         }
     }
 
-    /// A scanner pinned to the fixture home (or to nothing when `home` is nil → "No data").
+    /// fixture home에 고정된 scanner — home nil이면 "No data"
     static func scanner(home: URL?) -> ClaudeLogUsageScanner {
         ClaudeLogUsageScanner(
             environment: FakeEnvironment(home.map { ["CLAUDE_CONFIG_DIR": $0.path] } ?? [:]),
@@ -77,8 +70,7 @@ enum ClaudeLogFixture {
         )
     }
 
-    /// A scanner whose *user home* is the fixture from `makeUserHome` — exercises the default
-    /// `~/.claude` root plus Cowork session discovery, with no `CLAUDE_CONFIG_DIR` override.
+    /// user home을 fixture로 쓰는 scanner — 기본 `~/.claude` root + Cowork session discovery, `CLAUDE_CONFIG_DIR` override 없음
     static func scanner(userHome: URL) -> ClaudeLogUsageScanner {
         ClaudeLogUsageScanner(
             environment: FakeEnvironment([:]),
@@ -87,7 +79,7 @@ enum ClaudeLogFixture {
         )
     }
 
-    /// One Claude Code usage line in the modern log shape. Pass `nil` to omit a field.
+    /// modern log 형태의 usage line 1개 — nil 전달 시 해당 필드 생략
     static func usageLine(
         timestamp: String,
         model: String? = "claude-sonnet-4-5-20250929",
@@ -119,11 +111,9 @@ enum ClaudeLogFixture {
     }
 }
 
-/// Builds throwaway Codex homes (`<tmp>/…/sessions/<file>.jsonl`) and canned rollout lines for
-/// `CodexLogUsageScanner` tests, plus a scanner pinned to the fixture (never the real `~/.codex`).
+/// `CodexLogUsageScanner` 테스트용 임시 Codex home·rollout line 빌더 — 실제 `~/.codex` 접근 없음
 enum CodexLogFixture {
-    /// A temp Codex home whose `sessions/` (or another top-level dir) contains `files`
-    /// (relative path → JSONL content).
+    /// `sessions/`(또는 다른 top-level dir)에 files(상대 경로 → JSONL 내용)를 담은 임시 Codex home
     static func makeHome(files: [String: String] = [:]) throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("openusage-codex-\(UUID().uuidString)", isDirectory: true)
@@ -138,7 +128,7 @@ enum CodexLogFixture {
         return root
     }
 
-    /// A scanner pinned to the fixture home (or to nothing when `home` is nil → "No data").
+    /// fixture home에 고정된 scanner — home nil이면 "No data"
     static func scanner(home: URL?) -> CodexLogUsageScanner {
         CodexLogUsageScanner(
             environment: FakeEnvironment(home.map { ["CODEX_HOME": $0.path] } ?? [:]),
@@ -147,7 +137,6 @@ enum CodexLogFixture {
         )
     }
 
-    /// A `turn_context` line carrying the session's active model.
     static func turnContext(timestamp: String, model: String) -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -156,8 +145,7 @@ enum CodexLogFixture {
         ])
     }
 
-    /// An `event_msg`/`token_count` line. Pass `last` for the turn delta and/or `totals` for the
-    /// cumulative counter; either may be omitted like in real rollouts.
+    /// `event_msg`/`token_count` line — last(turn delta)·totals(누적) 각각 생략 가능
     static func tokenCount(
         timestamp: String,
         last: [String: Int]? = nil,
@@ -175,7 +163,6 @@ enum CodexLogFixture {
         ])
     }
 
-    /// Token-count dictionary in the rollout shape.
     static func usage(input: Int, cached: Int = 0, output: Int, reasoning: Int = 0) -> [String: Int] {
         [
             "input_tokens": input,
@@ -186,8 +173,7 @@ enum CodexLogFixture {
         ]
     }
 
-    /// An `event_msg`/`thread_settings_applied` line carrying the session's service tier, the way
-    /// Codex CLI ≥ July 2026 records tier changes.
+    /// service tier를 담은 `thread_settings_applied` line — Codex CLI 2026년 7월 이후 기록 방식
     static func threadSettingsApplied(timestamp: String, serviceTier: String, model: String = "gpt-5.2") -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -199,7 +185,6 @@ enum CodexLogFixture {
         ])
     }
 
-    /// A `session_meta` line marking the file as a `thread_spawn` subagent session.
     static func subagentSessionMeta(timestamp: String) -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -208,7 +193,6 @@ enum CodexLogFixture {
         ])
     }
 
-    /// A `session_meta` line marking the file as a fork (`forked_from_id`, no subagent source).
     static func forkSessionMeta(timestamp: String) -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -217,7 +201,6 @@ enum CodexLogFixture {
         ])
     }
 
-    /// A root session's `session_meta` line (no parent, nothing replayed).
     static func rootSessionMeta(timestamp: String) -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -226,9 +209,7 @@ enum CodexLogFixture {
         ])
     }
 
-    /// An `event_msg`/`task_started` line. `startedAt` is the turn's start as epoch seconds — a
-    /// replayed parent turn keeps its original (older) value; a live turn is at/after the child
-    /// session's creation.
+    /// `task_started` line — startedAt(epoch 초)이 child 세션 생성보다 이르면 replayed parent turn
     static func taskStarted(timestamp: String, startedAt: Int) -> String {
         jsonLine([
             "timestamp": timestamp,
@@ -243,7 +224,6 @@ enum CodexLogFixture {
     }
 }
 
-/// Shared test doubles used across provider and store tests.
 struct FakeEnvironment: EnvironmentReading {
     var values: [String: String]
 
@@ -345,8 +325,7 @@ final class FakeHTTPClient: HTTPClient, @unchecked Sendable {
     }
 }
 
-/// Test-target-only default so test doubles don't each need a stub. The app target has no such
-/// default on purpose: a real provider must decide its own credential probe (see `FirstRunSeeder`).
+/// test target 전용 기본값 — app target은 provider별 credential probe를 강제 (`FirstRunSeeder` 참고)
 extension ProviderRuntime {
     func hasLocalCredentials() async -> Bool { false }
 }
@@ -388,9 +367,7 @@ final class CountingProviderRuntime: ProviderRuntime {
     }
 }
 
-/// A runtime that returns `first` on the first refresh and `second` on every refresh after — for
-/// sequences like a success that later turns into a failure (e.g. testing that a hard error takes
-/// precedence over a stale soft warning from the prior success).
+/// 첫 refresh는 first, 이후는 second 반환 — 성공 후 실패 같은 시퀀스용
 @MainActor
 final class TogglingProviderRuntime: ProviderRuntime {
     let provider: Provider
@@ -413,8 +390,7 @@ final class TogglingProviderRuntime: ProviderRuntime {
     }
 }
 
-/// Routes each request through a handler and records every request — for multi-request flows like
-/// the 401 → token refresh → retry sequence, where a single canned response can't express the flow.
+/// handler로 요청을 routing하고 전 요청 기록 — 401 → token refresh → retry 같은 multi-request flow용
 final class RoutingHTTPClient: HTTPClient, @unchecked Sendable {
     var requests: [HTTPRequest] = []
     private let handler: @Sendable (HTTPRequest) async throws -> HTTPResponse

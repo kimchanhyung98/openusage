@@ -49,11 +49,10 @@ final class AntigravityProviderTests: XCTestCase {
         ]
         let lines = AntigravityUsageMapper.buildLines(configs)
 
-        // Pro and Flash share one pool since Antigravity's 2026-05-19 quota merge, so all Gemini
-        // models collapse into a single "Session" meter (worst fraction wins across the whole pool).
+        // 2026-05-19 quota 병합으로 Pro·Flash가 한 pool 공유 — 모든 Gemini model이 단일 "Session" 미터로 축약
         XCTAssertEqual(lines.map(\.label), ["Session", "Claude"])
-        XCTAssertEqual(used(lines[0]), 50)  // worst Gemini fraction (Pro Low 0.5) -> 50% used
-        XCTAssertEqual(used(lines[1]), 70)  // worst non-Gemini (Claude 0.3) -> 70% used
+        XCTAssertEqual(used(lines[0]), 50)  // 최악 Gemini fraction(Pro Low 0.5) -> 50% used
+        XCTAssertEqual(used(lines[1]), 70)  // 최악 non-Gemini(Claude 0.3) -> 70% used
     }
 
     func testBuildLinesDedupKeepsWorstFractionAndItsReset() {
@@ -65,8 +64,8 @@ final class AntigravityProviderTests: XCTestCase {
         ]
         let lines = AntigravityUsageMapper.buildLines(configs)
         XCTAssertEqual(lines.count, 1)
-        XCTAssertEqual(used(lines[0]), 80)              // worst fraction 0.2
-        XCTAssertEqual(resetsAt(lines[0]), earlier)     // reset of the kept (worst) entry
+        XCTAssertEqual(used(lines[0]), 80)              // 최악 fraction 0.2
+        XCTAssertEqual(resetsAt(lines[0]), earlier)     // 유지된(최악) entry의 reset
     }
 
     func testBuildLinesDropsBlacklistedAndEmptyLabels() {
@@ -86,19 +85,18 @@ final class AntigravityProviderTests: XCTestCase {
             AntigravityModelConfig(label: "Claude Opus", modelID: "b", remainingFraction: -0.2, resetTime: nil)
         ]
         let lines = AntigravityUsageMapper.buildLines(configs)
-        XCTAssertEqual(used(lines.first { $0.label == "Session" }), 0)   // clamped to full
-        XCTAssertEqual(used(lines.first { $0.label == "Claude" }), 100)  // clamped to empty
+        XCTAssertEqual(used(lines.first { $0.label == "Session" }), 0)   // full로 clamp
+        XCTAssertEqual(used(lines.first { $0.label == "Claude" }), 100)  // empty로 clamp
     }
 
     func testPoolLabelClassification() {
-        // Pro and Flash merged into one shared Gemini pool (2026-05-19 quota restructure), shown as
-        // the "Session" meter.
+        // 2026-05-19 quota 개편으로 Pro·Flash가 하나의 Gemini pool로 병합 — "Session" 미터로 표시
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("Gemini 3.1 Pro"), "Session")
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("Gemini 3.5 Flash"), "Session")
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("Gemini 3.1 Flash Lite"), "Session")
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("Claude Opus 4.6"), "Claude")
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("GPT-OSS 120B"), "Claude")
-        // Any Gemini model must stay in the Gemini pool, never Claude.
+        // 모든 Gemini model은 Gemini pool 유지, Claude 금지
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("Gemini Ultra"), "Session")
         XCTAssertEqual(AntigravityUsageMapper.poolLabel("gemini-3"), "Session")
     }
@@ -155,10 +153,10 @@ final class AntigravityProviderTests: XCTestCase {
         }}
         """
         let configs = AntigravityUsageMapper.parseCloudCodeModels(Data(json.utf8))
-        // isInternal (b) and empty-displayName (d) dropped at parse; blacklist (c) survives to buildLines.
+        // isInternal(b)·빈 displayName(d)은 파싱에서 제외, blacklist(c)는 buildLines까지 생존
         XCTAssertEqual(configs.count, 2)
         let lines = AntigravityUsageMapper.buildLines(configs)
-        XCTAssertEqual(lines.map(\.label), ["Session"])  // c filtered by blacklist
+        XCTAssertEqual(lines.map(\.label), ["Session"])  // c는 blacklist로 필터
     }
 
     func testParseCloudCodeModelsTreatsMissingQuotaAsDepleted() {
@@ -166,7 +164,7 @@ final class AntigravityProviderTests: XCTestCase {
         {"models":{"a":{"model":"MODEL_OK","displayName":"Gemini 3.1 Pro (High)"}}}
         """
         let lines = AntigravityUsageMapper.buildLines(AntigravityUsageMapper.parseCloudCodeModels(Data(json.utf8)))
-        XCTAssertEqual(used(lines.first), 100)  // no quotaInfo -> fully used
+        XCTAssertEqual(used(lines.first), 100)  // quotaInfo 없음 -> 전량 사용
     }
 
     func testParseLoadCodeAssistPlan() {
@@ -182,7 +180,7 @@ final class AntigravityProviderTests: XCTestCase {
                     {"modelId":"gemini-3-flash-preview","remainingFraction":1}]}
         """
         let lines = AntigravityUsageMapper.buildLines(AntigravityUsageMapper.parseQuotaBuckets(Data(json.utf8)))
-        // Pro and Flash buckets pool into the one "Session" meter; the worst fraction (0.5) wins.
+        // Pro·Flash bucket이 하나의 "Session" 미터로 pool — 최악 fraction(0.5) 승
         XCTAssertEqual(lines.map(\.label), ["Session"])
         XCTAssertEqual(used(lines[0]), 50)
     }
@@ -274,7 +272,7 @@ final class AntigravityProviderTests: XCTestCase {
             return store
         }
         let source = AntigravityKeychainToken(accessToken: nil, refreshToken: "refresh", expiry: nil)
-        // Within the 60s refresh buffer -> treated as expired (avoids a near-certain 401 + extra refresh).
+        // 60s refresh buffer 이내 -> 만료로 취급 (거의 확실한 401 + 추가 refresh 회피)
         XCTAssertNil(store(expiresInSeconds: 30).loadCachedToken(matching: source))
         XCTAssertEqual(store(expiresInSeconds: 7200).loadCachedToken(matching: source), "ya29.cached")
     }
@@ -303,7 +301,7 @@ final class AntigravityProviderTests: XCTestCase {
 
         let routing = RoutingHTTPClient { request in
             let path = request.url.path
-            // Builds without the summary RPC 404 it — this test also covers summary-404 → legacy.
+            // summary RPC 없는 빌드는 404 — summary-404 → legacy 경로도 함께 커버
             if path.contains("retrieveUserQuotaSummary") {
                 return HTTPResponse(statusCode: 404, headers: [:], body: Data())
             }
@@ -327,7 +325,7 @@ final class AntigravityProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.plan, "Pro")
-        // Legacy per-model data merges into the two pool meters (worst fraction per pool).
+        // legacy per-model 데이터가 두 pool 미터로 병합 (pool별 최악 fraction)
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Claude"])
         XCTAssertEqual(used(snapshot.lines[0]), 60)
         XCTAssertEqual(used(snapshot.lines[1]), 30)
@@ -348,8 +346,7 @@ final class AntigravityProviderTests: XCTestCase {
 
     @MainActor
     func testRefreshReportsUnavailableWhenSignedInButCloudCodeDown() async {
-        // Valid keychain token, but every Cloud Code endpoint is down. A signed-in user should see a
-        // transient failure (.network), not "not signed in" (.notLoggedIn).
+        // 유효한 keychain token + 모든 Cloud Code endpoint 다운 — 로그인 상태이므로 .notLoggedIn이 아닌 .network
         let routing = RoutingHTTPClient { _ in HTTPResponse(statusCode: 503, headers: [:], body: Data()) }
         let inner = #"{"token":{"access_token":"ya29.kc","refresh_token":"1//r","expiry":"2099-01-01T00:00:00Z"}}"#
         let wrapped = "go-keyring-base64:" + Data(inner.utf8).base64EncodedString()
@@ -365,8 +362,7 @@ final class AntigravityProviderTests: XCTestCase {
 
     @MainActor
     func testDeadRefreshTokenReportsAuthExpired() async {
-        // Access token already expired (skipped); refresh returns 400 invalid_grant. A dead refresh
-        // token is expired auth (.authExpired), not a transient outage.
+        // access token 만료(skip) + refresh 400 invalid_grant — 죽은 refresh token은 .authExpired, 일시 장애 아님
         let routing = RoutingHTTPClient { request in
             if request.url.host == "oauth2.googleapis.com" {
                 return HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
@@ -386,9 +382,7 @@ final class AntigravityProviderTests: XCTestCase {
 
     @MainActor
     func testAuthFailureThenThrottledRefreshReportsUnavailable() async {
-        // A usable token 401s (sawAuthFailure), then the OAuth refresh hits 503. An expired access token
-        // is normal and the refresh token may be fine, so this is a transient outage (.network), not
-        // authExpired.
+        // token 401(sawAuthFailure) 후 OAuth refresh 503 — refresh token은 유효할 수 있어 .network, authExpired 아님
         let routing = RoutingHTTPClient { request in
             if request.url.host == "oauth2.googleapis.com" {
                 return HTTPResponse(statusCode: 503, headers: [:], body: Data())
@@ -408,8 +402,7 @@ final class AntigravityProviderTests: XCTestCase {
 
     @MainActor
     func testRateLimitedRefreshReportsUnavailable() async {
-        // Access token expired; refresh hits 429 (rate limited). Transient, not a revoked token — so
-        // .network, not .authExpired.
+        // access token 만료 + refresh 429(rate limited) — 일시적이므로 .network, .authExpired 아님
         let routing = RoutingHTTPClient { request in
             if request.url.host == "oauth2.googleapis.com" {
                 return HTTPResponse(statusCode: 429, headers: [:], body: Data())
@@ -429,8 +422,7 @@ final class AntigravityProviderTests: XCTestCase {
 
     @MainActor
     func testRefreshAfterSuccessfulRefreshTreatsOutageAsUnavailable() async {
-        // First fetch 401 -> OAuth refresh succeeds -> retry fetch 503. The refreshed token is valid, so
-        // this is a transient outage (.network), not authExpired.
+        // 첫 fetch 401 -> refresh 성공 -> 재시도 fetch 503 — 갱신된 token은 유효하므로 .network, authExpired 아님
         let fetchCount = Counter()
         let routing = RoutingHTTPClient { request in
             if request.url.host == "oauth2.googleapis.com" {
@@ -454,15 +446,14 @@ final class AntigravityProviderTests: XCTestCase {
     }
 }
 
-/// Returns empty output for every subprocess — makes language-server discovery find nothing, so a
-/// provider test exercises the Cloud Code path deterministically.
+/// 모든 subprocess에 빈 출력 반환 — LS discovery가 아무것도 못 찾아 Cloud Code 경로를 결정적으로 검증
 private struct EmptyProcessRunner: ProcessRunning {
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         ProcessResult(exitCode: 0, stdout: "", stderr: "")
     }
 }
 
-/// Serial call counter for routing handlers that must vary their response across requests.
+/// request마다 응답을 바꿔야 하는 routing handler용 순차 call counter
 private final class Counter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0

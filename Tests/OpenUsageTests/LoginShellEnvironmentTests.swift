@@ -14,7 +14,7 @@ final class LoginShellEnvironmentTests: XCTestCase {
     }
 
     func testIgnoresBannerOutsideMarkers() {
-        // A login shell can print an MOTD/banner before our command runs; it must not be parsed.
+        // login shell이 명령 전에 출력하는 MOTD/banner는 parse 대상 제외
         let output = ["Welcome to your shell!", "MOTD=should-be-ignored\0" + begin,
                       "REAL=value", end, "trailing-noise"].joined(separator: "\0")
         let parsed = LoginShellEnvironment.parse(output)
@@ -45,8 +45,7 @@ final class LoginShellEnvironmentTests: XCTestCase {
         XCTAssertEqual(runner.callCount, 1)
     }
 
-    /// The Bugbot fix: a main-thread read before the cache is warm must not spawn or wait on the
-    /// subprocess, so the UI can't freeze. It returns nil until the prewarm fills the cache.
+    /// cache warm 전 main-thread 읽기는 subprocess spawn·대기 금지 (UI freeze 방지) — prewarm 전까지 nil 반환
     func testMainThreadReadDoesNotRunSubprocess() {
         let runner = RecordingRunner(stdout: [begin, "K=v", end].joined(separator: "\0"))
         let env = LoginShellEnvironment(runner: runner)
@@ -55,8 +54,7 @@ final class LoginShellEnvironmentTests: XCTestCase {
     }
 }
 
-/// Returns a fixed stdout and counts how many times it was invoked, so tests can assert the capture
-/// ran exactly once (or not at all on the main thread).
+/// 고정 stdout 반환 + 호출 횟수 집계 — capture 실행 횟수 검증용
 private final class RecordingRunner: ProcessRunning, @unchecked Sendable {
     let stdout: String
     private let lock = NSLock()

@@ -1,14 +1,10 @@
 import XCTest
 @testable import OpenUsage
 
-/// The reset-credit claim: request shape, outcome decoding, expiry→id matching, and the service's full
-/// list→consume flow — all through a stub HTTP client (the real endpoint is never touched; the protocol
-/// itself was verified live once, see docs/research/codex-reset-credit-claim.md).
 @MainActor
 final class CodexResetClaimTests: XCTestCase {
     private nonisolated static let expiry = Date(timeIntervalSince1970: 1_800_000_000)
 
-    /// Counts refreshAfterClaim invocations from the service's async context.
     private final class RefreshCounter: @unchecked Sendable {
         var count = 0
     }
@@ -28,7 +24,7 @@ final class CodexResetClaimTests: XCTestCase {
         Data(#"{"code": "\#(code)", "windows_reset": 2}"#.utf8)
     }
 
-    /// Routes the list GET and consume POST; anything else fails the test.
+    /// list GET·consume POST 라우팅 — 그 외 요청은 테스트 실패
     private func makeService(
         listStatus: Int = 200,
         listBody: Data = listBody(),
@@ -90,12 +86,12 @@ final class CodexResetClaimTests: XCTestCase {
                 HTTPResponse(statusCode: status, headers: [:], body: Self.consumeBody(code: code)))
         }
         XCTAssertEqual(outcome("reset"), .success)
-        // The idempotency key already spent this credit on a lost-response retry — still a success.
+        // lost-response 재시도에서 idempotency key가 이미 소비한 credit — 여전히 success
         XCTAssertEqual(outcome("already_redeemed"), .success)
         XCTAssertEqual(outcome("nothing_to_reset"), .nothingToReset)
         XCTAssertEqual(outcome("no_credit"), .noCredit)
-        XCTAssertEqual(outcome("something_new"), .failed)      // unknown code
-        XCTAssertEqual(outcome("reset", status: 500), .failed) // non-2xx wins over a parseable body
+        XCTAssertEqual(outcome("something_new"), .failed)      // 알 수 없는 code
+        XCTAssertEqual(outcome("reset", status: 500), .failed) // non-2xx가 파싱 가능한 body보다 우선
         XCTAssertEqual(
             CodexResetClaimService.outcome(fromConsume:
                 HTTPResponse(statusCode: 200, headers: [:], body: Data("not json".utf8))),
@@ -111,7 +107,7 @@ final class CodexResetClaimTests: XCTestCase {
             CodexResetClaimService.creditID(in: body, expiringAt: Self.expiry),
             "RateLimitResetCredit_target"
         )
-        // Sub-second truncation is tolerated; a different credit's expiry is not.
+        // sub-second 절삭은 허용, 다른 credit의 expiry는 불허
         XCTAssertEqual(
             CodexResetClaimService.creditID(in: body, expiringAt: Self.expiry.addingTimeInterval(0.5)),
             "RateLimitResetCredit_target"
@@ -123,7 +119,7 @@ final class CodexResetClaimTests: XCTestCase {
         let redeemed = try XCTUnwrap(ProviderParse.jsonObject(Self.listBody(status: "redeemed")))
         XCTAssertNil(CodexResetClaimService.creditID(in: redeemed, expiringAt: Self.expiry))
 
-        // No `status` field at all counts as available — mirrors the mapper's filter.
+        // `status` 필드 부재는 available로 간주 — mapper 필터와 동일
         let noStatus = try XCTUnwrap(ProviderParse.jsonObject(Data(
             #"{"credits": [{"id": "RateLimitResetCredit_bare", "expires_at": \#(Self.expiry.timeIntervalSince1970)}]}"#.utf8
         )))
@@ -169,19 +165,19 @@ final class CodexResetClaimTests: XCTestCase {
     func testClaimFailuresNeverRefreshAndNeverThrow() async {
         let refreshes = RefreshCounter()
 
-        // List fetch fails.
+        // list fetch 실패
         let (listFails, _) = makeService(listStatus: 503, refreshes: refreshes)
         let listOutcome = await listFails.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1")
         XCTAssertEqual(listOutcome, .failed)
 
-        // Consume returns a non-2xx.
+        // consume이 non-2xx 반환
         let (consumeFails, _) = makeService(
             consumeStatus: 500, consumeBody: Data("gateway error".utf8), refreshes: refreshes
         )
         let consumeOutcome = await consumeFails.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1")
         XCTAssertEqual(consumeOutcome, .failed)
 
-        // No credentials at all.
+        // credential 전무
         let noCredentials = CodexResetClaimService(
             usageClient: CodexUsageClient(http: RoutingHTTPClient { _ in
                 XCTFail("no request should be sent without credentials")
@@ -212,9 +208,7 @@ final class CodexResetClaimTests: XCTestCase {
     // MARK: - Idempotent replay
 
     func testRetryWithSameKeyReplaysTheConsumeInsteadOfNoCredit() async throws {
-        // First claim succeeds; the retry (same idempotency key) arrives after the credit has left the
-        // list — the lost-response scenario. The service must replay the consume with the cached credit
-        // id (the server answers `already_redeemed` → success), NOT re-match and misreport `.noCredit`.
+        // 같은 idempotency key의 재시도가 credit 소멸 후 도착 — 캐시된 credit id로 replay, `.noCredit` 오보 금지
         let listBodies = [Self.listBody(), Data(#"{"credits": [], "available_count": 0}"#.utf8)]
         let listCalls = RefreshCounter()
         let consumeCodes = ["reset", "already_redeemed"]
@@ -253,8 +247,7 @@ final class CodexResetClaimTests: XCTestCase {
     // MARK: - Credential fallback
 
     func testClaimFallsBackAcrossCredentialCandidatesOnAuthRejection() async throws {
-        // The first candidate is stale (401 on the list fetch); the provider's probe would fall back to
-        // the second, and so must the claim.
+        // 첫 후보가 stale(list fetch 401) — provider probe처럼 claim도 두 번째 후보로 fallback
         let http = RoutingHTTPClient { request in
             let stale = request.headers["Authorization"] == "Bearer stale-token"
             switch request.url {
@@ -283,10 +276,7 @@ final class CodexResetClaimTests: XCTestCase {
     }
 
     func testConsumeFallsBackToSameTokenDifferentAccountCandidate() async throws {
-        // ChatGPT-Account-Id changes what a token is authorized for: a same-token candidate with a
-        // different account is a distinct fallback and must not be deduplicated away. The list fetch
-        // authenticates with account A, the consume is rejected for A and must retry with account B —
-        // safe, because both attempts carry the same idempotency key.
+        // ChatGPT-Account-Id가 token의 권한 범위 결정 — 같은 token·다른 account 후보는 별개 fallback, dedup 금지
         let http = RoutingHTTPClient { request in
             switch request.url {
             case CodexUsageClient.resetCreditsURL:

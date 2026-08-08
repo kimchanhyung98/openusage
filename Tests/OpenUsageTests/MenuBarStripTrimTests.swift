@@ -1,15 +1,10 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the Text strip's transparent-margin trim: `visibleBounds(of:)` finds the opaque pixel box in
-/// `CGImage.cropping(to:)`'s coordinate space (top-left origin — an off-center mark pins the
-/// orientation), and `textImage(for:)` ships with zero transparent margins so the status item hugs its
-/// artwork and the menu bar's own padding is the only gap next to neighboring items.
 @MainActor
 final class MenuBarStripTrimTests: XCTestCase {
     func testVisibleBoundsFindsOffCenterContent() throws {
-        // A 3x2 opaque block near the top-left of a 20x10 canvas: rows 1...2 from the top, columns
-        // 4...6. If the scan or the crop were vertically flipped, the trim would land on empty pixels.
+        // fixture: 20x10 canvas의 top-left 쪽 3x2 불투명 block — 상하 반전 시 빈 pixel에 착지
         let image = try makeImage(width: 20, height: 10, opaqueRect: CGRect(x: 4, y: 1, width: 3, height: 2))
 
         let bounds = try XCTUnwrap(MenuBarStripRenderer.visibleBounds(of: image))
@@ -55,9 +50,7 @@ final class MenuBarStripTrimTests: XCTestCase {
         XCTAssertEqual(image.accessibilityDescription, content.accessibilityText)
     }
 
-    /// Draws an optional opaque rect (given in top-left-origin pixel coordinates) on a transparent
-    /// canvas. The fill converts to the context's bottom-left-origin user space, so the produced
-    /// `CGImage` has the block exactly where the test expects it.
+    /// top-left origin 좌표로 받은 불투명 rect를 투명 canvas에 그림 (내부에서 bottom-left user space로 변환)
     private func makeImage(width: Int, height: Int, opaqueRect: CGRect?) throws -> CGImage {
         let context = try XCTUnwrap(CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8,

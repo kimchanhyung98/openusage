@@ -1,35 +1,27 @@
 import XCTest
 @testable import OpenUsage
 
-/// Layout defaults and migration behavior for Antigravity's four metrics (merged quota pools +
-/// weekly limits fix). Uses the real provider's registry — `MockData` carries no Antigravity
-/// fixtures — with the real `DefaultLayout` seeds.
+/// `MockData`에 Antigravity 픽스처가 없어 실제 provider registry 사용
 @MainActor
 final class AntigravityLayoutTests: XCTestCase {
 
     func testFreshDefaultsSeedFourMetricsTwoPinsAndClaudePairSecondary() {
         let store = makeStore("FreshDefaults")
 
-        // All four metrics enabled, in declaration order.
         XCTAssertEqual(store.placed.map(\.descriptorID), [
             "antigravity.geminiPro", "antigravity.geminiWeekly",
             "antigravity.claude", "antigravity.claudeWeekly"
         ])
 
-        // The Gemini pair is pinned (2-per-provider cap), mirroring Claude/Codex Session+Weekly.
         XCTAssertEqual(store.pinnedMetricIDs, ["antigravity.geminiPro", "antigravity.geminiWeekly"])
 
-        // Gemini pair above the fold; the Claude pool pair below the caret.
         let group = store.customizeGroups.first { $0.provider.id == "antigravity" }
         XCTAssertEqual(group?.alwaysShownMetrics.map(\.id), ["antigravity.geminiPro", "antigravity.geminiWeekly"])
         XCTAssertEqual(group?.expandedMetrics.map(\.id), ["antigravity.claude", "antigravity.claudeWeekly"])
     }
 
     func testExistingUserLayoutAutoSeedsWeeklyMetricsBelowCaretForClaudePool() {
-        // A layout from before the weekly metrics shipped: Antigravity is absent from the migration
-        // baseline, so `seedNewDefaultMetrics` auto-enables both new weekly metrics once. Claude
-        // Weekly (a default-expanded metric) enters below the caret; metrics the user already lived
-        // with stay always-shown.
+        // weekly metric 출시 전 layout: 마이그레이션 baseline에 Antigravity 부재 → `seedNewDefaultMetrics`가 1회 자동 enable
         let defaults = makeDefaults("SeedWeeklies")
         saveStored([
             PlacedWidget(descriptorID: "antigravity.geminiPro"),
@@ -47,9 +39,7 @@ final class AntigravityLayoutTests: XCTestCase {
     }
 
     func testSavedGeminiFlashStateStaysInvisibleWhileItsTombstonesAreRetained() {
-        // `antigravity.geminiFlash` no longer exists, so live registry lookups keep it out of the UI.
-        // Its saved state remains as a harmless tombstone because an unknown descriptor can also be a
-        // temporarily absent account card, whose customization must return on the next launch.
+        // `antigravity.geminiFlash`는 폐기 — UI에서 제외되나, 일시 부재 account card일 수도 있어 저장 상태는 tombstone으로 유지
         let defaults = makeDefaults("FlashFilter")
         saveStored([
             PlacedWidget(descriptorID: "antigravity.geminiPro"),
@@ -76,9 +66,7 @@ final class AntigravityLayoutTests: XCTestCase {
     }
 
     func testAbsentPinsKeyAdoptsGeminiWeeklyPinOnUpgrade() {
-        // Pins re-derive from current defaults whenever the pins key is absent, and init never
-        // persists pins — so an existing user who never touched pins automatically gains the
-        // Gemini Weekly pin (still within the 2-per-provider cap).
+        // pins 키 부재 시 현재 기본값에서 재도출, init은 pin을 저장하지 않음 → 기존 사용자도 Gemini Weekly pin 획득
         let defaults = makeDefaults("PinsAbsent")
         saveStored([
             PlacedWidget(descriptorID: "antigravity.geminiPro"),
@@ -118,8 +106,7 @@ final class AntigravityLayoutTests: XCTestCase {
 }
 
 private extension WidgetRegistry {
-    /// A registry with just the live Antigravity provider, so `DefaultLayout`'s seeds filter down to
-    /// its four metrics.
+    /// Antigravity provider만 담은 registry — `DefaultLayout` seed가 4개 metric으로 좁혀짐
     @MainActor
     static var antigravityOnly: WidgetRegistry { .from([AntigravityProvider()]) }
 }

@@ -4,8 +4,7 @@ import XCTest
 final class LegacyLaunchAgentCleanupTests: XCTestCase {
     // MARK: - Removal decision (pure)
 
-    /// The real-world case from #874: the Tauri-era agent points at the lowercase binary name, which
-    /// case-insensitive APFS resolves into this edition's bundle.
+    /// #874 실사례 — Tauri 시절 agent의 lowercase binary 이름이 case-insensitive APFS에서 현 bundle로 resolve
     func testTauriLowercaseProgramInsideBundleIsRemoved() {
         XCTAssertTrue(LegacyLaunchAgentCleanup.shouldRemove(
             programPath: "/Applications/OpenUsage.app/Contents/MacOS/openusage",
@@ -20,7 +19,6 @@ final class LegacyLaunchAgentCleanupTests: XCTestCase {
         ))
     }
 
-    /// A hand-rolled agent pointing anywhere else must be left alone.
     func testProgramOutsideBundleIsKept() {
         XCTAssertFalse(LegacyLaunchAgentCleanup.shouldRemove(
             programPath: "/usr/local/bin/openusage",
@@ -35,8 +33,7 @@ final class LegacyLaunchAgentCleanupTests: XCTestCase {
         ))
     }
 
-    /// Unbundled runs (`swift run`) report a build directory as the bundle path; that must never
-    /// match, so a dev run can't delete a user's real agent by accident.
+    /// unbundled `swift run`의 build dir bundle path는 매칭 금지 — dev run이 실제 agent를 삭제하지 않도록
     func testNonAppBundlePathNeverMatches() {
         XCTAssertFalse(LegacyLaunchAgentCleanup.shouldRemove(
             programPath: "/Users/dev/openusage/.build/debug/OpenUsage",
@@ -44,8 +41,7 @@ final class LegacyLaunchAgentCleanupTests: XCTestCase {
         ))
     }
 
-    /// Prefix matching must be component-wise: a sibling like `OpenUsage.app2` shares the string
-    /// prefix but is a different bundle.
+    /// prefix 매칭은 component 단위 — `OpenUsage.app2` 같은 sibling은 다른 bundle
     func testSiblingDirectorySharingPrefixIsKept() {
         XCTAssertFalse(LegacyLaunchAgentCleanup.shouldRemove(
             programPath: "/Applications/OpenUsage.app2/Contents/MacOS/openusage",
@@ -53,7 +49,6 @@ final class LegacyLaunchAgentCleanupTests: XCTestCase {
         ))
     }
 
-    /// The bundle path itself (no inner component) is not a program inside the bundle.
     func testProgramEqualToBundlePathIsKept() {
         XCTAssertFalse(LegacyLaunchAgentCleanup.shouldRemove(
             programPath: "/Applications/OpenUsage.app",
@@ -64,7 +59,7 @@ final class LegacyLaunchAgentCleanupTests: XCTestCase {
     // MARK: - Plist parsing
 
     func testParseReadsFirstProgramArgument() throws {
-        // Shape-faithful to what tauri-plugin-autostart wrote (see #874).
+        // tauri-plugin-autostart가 쓰던 shape 그대로 (#874)
         let agent = try LegacyLaunchAgentCleanup.parse(plistData: plist([
             "Label": "OpenUsage",
             "ProgramArguments": ["/Applications/OpenUsage.app/Contents/MacOS/openusage"],

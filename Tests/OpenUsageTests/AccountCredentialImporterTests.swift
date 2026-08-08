@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// First-account import: the already-signed-in default account becomes a managed profile without
-/// any provider re-login, and nothing half-registers on failure.
 @MainActor
 final class AccountCredentialImporterTests: XCTestCase {
     func testClaudeFileCredentialImportsWithoutRelogin() throws {
@@ -22,7 +20,7 @@ final class AccountCredentialImporterTests: XCTestCase {
             .directory(family: "claude", profileID: profile.id)
             .appendingPathComponent(".credentials.json")
         XCTAssertEqual(posixPermissions(workspaceCredentials.path), 0o600)
-        // The Shared Runtime Home was read, never written.
+        // Shared Runtime Home은 읽기만 — 쓰기 없음
         XCTAssertEqual(
             try String(
                 contentsOf: fixture.home.appendingPathComponent(".claude/.credentials.json"),
@@ -79,7 +77,7 @@ final class AccountCredentialImporterTests: XCTestCase {
         )
 
         XCTAssertEqual(profile.identityKey, "acct-l")
-        // The legacy home is an import source only — it is never moved or deleted.
+        // legacy home은 import source 전용 — 이동·삭제 없음
         XCTAssertTrue(
             FileManager.default.fileExists(
                 atPath: fixture.home.appendingPathComponent(".config/codex/auth.json").path
@@ -112,7 +110,7 @@ final class AccountCredentialImporterTests: XCTestCase {
 
     func testCredentialWithoutIdentityRegistersNothing() throws {
         let fixture = try makeFixture()
-        // A credential file with no state file naming the account.
+        // account를 지목하는 state 파일이 없는 credential 파일
         try write(
             claudeCredential(token: "token-x"),
             to: fixture.home.appendingPathComponent(".claude/.credentials.json")
@@ -184,8 +182,7 @@ final class AccountCredentialImporterTests: XCTestCase {
     func testWorkspaceCredentialReadsACompletedScopedLogin() throws {
         let fixture = try makeFixture()
         let workspaceHome = try fixture.workspace.prepare(family: "claude", profileID: "profile-w")
-        // A scoped `claude auth login` lands the credential in the keychain item hashed from the
-        // literal CLAUDE_CONFIG_DIR value — the workspace path — and the state file inside it.
+        // scoped `claude auth login`은 CLAUDE_CONFIG_DIR 리터럴(workspace 경로)로 해시된 keychain item에 credential 기록
         fixture.keychain.currentUserValues[
             ClaudeAuthStore.scopedKeychainServiceName(
                 forConfigDirLiteral: workspaceHome.path,

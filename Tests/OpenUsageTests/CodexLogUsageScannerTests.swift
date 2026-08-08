@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// `CodexLogUsageScanner` against fixture rollout files — parsing, totals deltas, model tracking,
-/// subagent replay skipping, dedup, aggregation, and the end-to-end scan. Fixture semantics ported
-/// from ccusage's Codex adapter tests.
 final class CodexLogUsageScannerTests: XCTestCase {
     private let pricing = TestPricing.bundled
 
@@ -59,7 +56,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testTotalsOnlyLinesEmitDeltas() {
-        // Older rollouts carry only the cumulative counter; each line's usage is the delta.
+        // 구형 rollout은 누적 카운터만 기록 — 각 라인의 usage는 delta
         let lines = [
             CodexLogFixture.tokenCount(
                 timestamp: "2026-05-12T08:01:00.000Z",
@@ -87,7 +84,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
                 timestamp: "2026-05-12T08:01:00.000Z",
                 last: CodexLogFixture.usage(input: 0, output: 0)
             ),
-            // Totals repeat (no growth) -> zero delta -> skipped too.
+            // totals 반복(증가 없음) -> delta 0 -> 역시 skip
             CodexLogFixture.tokenCount(
                 timestamp: "2026-05-12T08:02:00.000Z",
                 totals: CodexLogFixture.usage(input: 100, output: 50)
@@ -126,7 +123,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
                 last: CodexLogFixture.usage(input: 10, output: 5),
                 model: "gpt-5.4"
             ),
-            // The inline model becomes the session's current model for later lines.
+            // inline model이 이후 라인의 세션 현재 model이 됨
             CodexLogFixture.tokenCount(
                 timestamp: "2026-05-12T08:02:00.000Z",
                 last: CodexLogFixture.usage(input: 20, output: 10)
@@ -139,8 +136,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testServiceTierTracksThreadSettingsAppliedLines() {
-        // The tier comes from the session's own thread_settings_applied lines, per event: turns
-        // before a priority switch stay standard, turns after a switch back to default do too.
+        // tier는 세션 자체의 thread_settings_applied 라인에서 event 단위로 결정
         let lines = [
             CodexLogFixture.turnContext(timestamp: "2026-07-12T08:00:00.000Z", model: "gpt-5.2"),
             CodexLogFixture.tokenCount(
@@ -165,9 +161,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testSessionWithoutServiceTierMetadataIsStandard() {
-        // Rollouts written before Codex recorded the tier (or by older CLIs) carry no
-        // thread_settings_applied line — they must price at standard rates, never at whatever
-        // the current config.toml happens to say.
+        // thread_settings_applied 없는 구형 rollout은 현재 config.toml과 무관하게 standard 요율로 책정
         let lines = [
             CodexLogFixture.turnContext(timestamp: "2026-05-12T08:00:00.000Z", model: "gpt-5.2"),
             CodexLogFixture.tokenCount(
@@ -224,14 +218,12 @@ final class CodexLogUsageScannerTests: XCTestCase {
 
     // MARK: - Child-session replay (subagents and forks)
 
-    /// Epoch seconds of the child sessions' creation instant used across the replay tests.
     private var childCreationEpoch: Int {
         Int(OpenUsageISO8601.date(from: "2026-05-12T08:03:00.000Z")!.timeIntervalSince1970)
     }
 
     func testSubagentReplayLinesAreSkippedButSeedTheDeltaBaseline() {
-        // A thread_spawn subagent file replays the parent's token_counts at spawn, then a live
-        // task_started opens its own turns. Only the subagent's own turns count.
+        // thread_spawn subagent 파일은 spawn 시점에 부모 token_counts를 replay — subagent 자체 turn만 집계
         let lines = [
             CodexLogFixture.subagentSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             CodexLogFixture.taskStarted(timestamp: "2026-05-12T08:03:00.100Z", startedAt: childCreationEpoch - 900),
@@ -267,9 +259,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testMultiSecondReplayIsFullySkipped() {
-        // Regression for the ~20x spend inflation: a large parent history takes several seconds to
-        // replay, so replayed lines land in many distinct timestamp seconds. All of them must be
-        // skipped — only the turns after the live task_started count.
+        // ~20x 지출 부풀림 회귀: 여러 초에 걸친 replay 라인 전부 skip, live task_started 이후 turn만 집계
         let lines = [
             CodexLogFixture.subagentSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             CodexLogFixture.taskStarted(timestamp: "2026-05-12T08:03:00.100Z", startedAt: childCreationEpoch - 900),
@@ -303,7 +293,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testForkSessionReplayIsSkippedToo() {
-        // A fork (forked_from_id, no subagent source) replays parent history the same way.
+        // fork(forked_from_id, subagent source 없음)도 동일하게 부모 history를 replay
         let lines = [
             CodexLogFixture.forkSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             CodexLogFixture.tokenCount(
@@ -323,7 +313,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testChildWithoutLiveTurnEmitsNothing() {
-        // A child file that never reaches a live task_started is all replay — nothing counts.
+        // live task_started에 도달하지 못한 child 파일은 전부 replay — 집계 없음
         let lines = [
             CodexLogFixture.subagentSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             CodexLogFixture.taskStarted(timestamp: "2026-05-12T08:03:00.100Z", startedAt: childCreationEpoch - 900),
@@ -337,8 +327,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testSubagentReplayBaselineMakesTotalsDeltasCorrect() {
-        // The subagent's own lines carry only totals: the replayed totals must seed the baseline
-        // so the first real turn doesn't re-count the parent's cumulative sum.
+        // replay된 totals가 baseline을 시드해야 첫 실제 turn이 부모 누적치를 재집계하지 않음
         let lines = [
             CodexLogFixture.subagentSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             CodexLogFixture.taskStarted(timestamp: "2026-05-12T08:03:00.100Z", startedAt: childCreationEpoch - 900),
@@ -366,8 +355,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testRootFileKeepsAllLines() {
-        // A root session (no parent in its session_meta) skips nothing, even when lines share a
-        // second and unrelated content mentions "thread_spawn".
+        // root 세션(session_meta에 parent 없음)은 초 공유·"thread_spawn" 언급과 무관하게 전부 유지
         let lines = [
             CodexLogFixture.rootSessionMeta(timestamp: "2026-05-12T08:03:00.000Z"),
             #"{"timestamp":"2026-05-12T08:03:00.000Z","type":"event_msg","payload":{"type":"agent_message","message":"about thread_spawn"}}"#,
@@ -385,8 +373,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testRootSessionMetaWithNullParentFieldsIsNotTreatedAsChild() {
-        // JSONSerialization represents JSON null as NSNull (not Swift nil). A root session that
-        // declares forked_from_id / parent_thread_id / source.subagent as null must keep all lines.
+        // JSONSerialization의 JSON null은 NSNull — parent 필드가 null인 root 세션은 모든 라인 유지
         let sessionMeta = #"{"timestamp":"2026-05-12T08:03:00.000Z","type":"session_meta","payload":{"id":"root-abc","forked_from_id":null,"parent_thread_id":null,"source":{"subagent":null}}}"#
         let lines = [
             sessionMeta,
@@ -410,9 +397,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testChildSessionMetaWithoutTimestampStillSkipsReplay() {
-        // A child session_meta with no parseable creation timestamp must still suppress replayed
-        // parent history. The gate clears on the first task_started whose started_at is at/after
-        // that line's own wall-clock second.
+        // 생성 timestamp 없는 child session_meta도 replay 억제 — 자기 초 이후 started_at의 task_started에서 gate 해제
         let sessionMeta = #"{"type":"session_meta","payload":{"id":"subagent-abc","forked_from_id":"parent-xyz"}}"#
         let lines = [
             sessionMeta,
@@ -432,7 +417,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testFileWithoutSessionMetaKeepsAllLines() {
-        // Older fixtures / truncated files with no session_meta at all: treat as a root session.
+        // session_meta가 아예 없는 구형/잘린 파일은 root 세션으로 취급
         let lines = [
             CodexLogFixture.tokenCount(
                 timestamp: "2026-05-12T08:03:00.000Z",
@@ -448,8 +433,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testUnchangedTotalsSnapshotIsSkippedEvenWithLastUsage() {
-        // Codex re-emits stale token_count snapshots: same cumulative totals, repeated
-        // last_token_usage, new timestamp. Only the first counts.
+        // Codex가 재방출하는 stale token_count 스냅샷(동일 totals·반복 last_token_usage)은 첫 번째만 집계
         let lines = [
             CodexLogFixture.tokenCount(
                 timestamp: "2026-05-12T08:01:00.000Z",
@@ -499,7 +483,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         )
 
         XCTAssertEqual(scan.series.daily.count, 2)
-        // (100 x $1000 + 50 x $3000) / 1M = $0.25 per event.
+        // event당 (100 x $1000 + 50 x $3000) / 1M = $0.25
         let may12 = scan.series.daily.first { $0.date == "2026-05-12" }
         XCTAssertEqual(may12?.totalTokens, 300)
         XCTAssertEqual(may12?.costUSD ?? 0, 0.5, accuracy: 0.0001)
@@ -541,7 +525,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testAggregateDropsIdenticalEventsAcrossFiles() {
-        // The same event parsed from a copied session file counts once.
+        // 복사된 세션 파일에서 파싱된 동일 event는 1회만 집계
         let event = makeEvent("2026-05-12T08:00:00.000Z")
         let scan = CodexLogUsageScanner.aggregate(
             events: [event, event], since: .distantPast, pricing: fixedRates()
@@ -556,7 +540,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
             since: .distantPast, pricing: fixedRates()
         )
 
-        // 600 non-cached x $1000/M + 400 cached x $100/M = 0.6 + 0.04.
+        // 캐시 미적용 600 x $1000/M + 캐시 적용 400 x $100/M = 0.6 + 0.04
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.64, accuracy: 0.0001)
     }
 
@@ -689,7 +673,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         )
         let cases: [(model: String, supplementMultiplier: Double, expected: Double)] = [
             ("gpt-5.5", 2.5, 2.5),
-            // Cursor's supplement currently says 2.5 for this model; Codex priority is 2x.
+            // Cursor supplement는 이 model에 2.5 지정 — Codex priority는 2x
             ("gpt-5.6-sol", 2.5, 2)
         ]
 
@@ -757,8 +741,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
             pricing: pricing
         )
 
-        // The alias itself selects Codex priority pricing: 2x the unscaled base/long-context
-        // rates, not Cursor's 2.5x supplement variant and never both multipliers at once.
+        // alias 자체가 Codex priority 요율 선택: unscaled 요율의 2x — Cursor의 2.5x 아님, 이중 적용 없음
         XCTAssertEqual(short.series.daily.first?.costUSD ?? 0, 1.6, accuracy: 0.000_001)
         XCTAssertEqual(long.series.daily.first?.costUSD ?? 0, 5.1, accuracy: 0.000_001)
     }
@@ -772,8 +755,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
             since: .distantPast, pricing: fixedRates()
         )
 
-        // Unpriceable tokens never enter the displayed totals — they surface only through the
-        // warning triangle, so the tile's tokens and dollars stay coherent.
+        // 가격 산정 불가 token은 표시 totals에서 제외 — warning triangle로만 노출
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
         XCTAssertNotNil(scan.series.daily.first?.costUSD)
         XCTAssertEqual(scan.unknownModelsByDay["2026-05-12"], ["mystery-model-9"])
@@ -786,8 +768,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
             since: .distantPast, pricing: fixedRates()
         )
 
-        // A day with nothing priceable produces no series entry at all (→ "No data"), but the
-        // unknown-model warning still names what was excluded.
+        // 가격 산정 가능한 것이 없는 날은 series 항목 자체가 없음(→ "No data"), unknown-model warning은 유지
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertEqual(scan.unknownModelsByDay["2026-05-12"], ["mystery-model-9"])
         XCTAssertEqual(scan.modelUsage?.daily ?? [], [])
@@ -836,16 +817,13 @@ final class CodexLogUsageScannerTests: XCTestCase {
 
         let scan = await scanner.scan(pricing: fixedRates())
 
-        // Same relative path in both dirs = the same session archived; identical events dedupe
-        // anyway, but the discovery-level rule keeps it to one parse.
+        // 두 dir의 동일 relative path = 같은 세션의 아카이브 — discovery 규칙으로 1회만 파싱
         XCTAssertEqual(scan?.series.daily.reduce(0) { $0 + $1.totalTokens }, 150)
     }
 
     func testScanKeepsDistinctFilesThroughSymlinkedHome() async throws {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
-        // The dedup keys are relative paths stripped of the source dir; discovery resolves symlinks,
-        // so the strip must resolve too. With a link path longer than its target, an unresolved
-        // strip overshoots and keys every file to "" — silently dropping all but the first.
+        // link 경로가 target보다 긴 픽스처: symlink 미해석 strip이면 dedup key가 전부 ""가 되어 첫 파일만 남는 회귀
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("openusage-codex-symlink-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -872,10 +850,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testScanIgnoresConfigTomlServiceTier() async throws {
-        // Regression: the tier used to be read from the *current* config.toml and applied to the
-        // entire 30-day history, so toggling priority for one task retroactively ~doubled every
-        // past day (and the synced iCloud history with it). The current config must not matter;
-        // only the tier recorded in each session's log does.
+        // 회귀: 현재 config.toml의 tier가 30일 history 전체에 소급 적용되던 문제 — 세션 로그에 기록된 tier만 유효
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         let home = try CodexLogFixture.makeHome(files: [
             "sessions/rollout-a.jsonl": CodexLogFixture.tokenCount(
@@ -889,7 +864,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
 
         let scan = await scanner.scan(pricing: fixedRates())
 
-        // Standard rates: (100 x $1000 + 50 x $3000) / 1M = $0.25 — no multiplier.
+        // standard 요율: (100 x $1000 + 50 x $3000) / 1M = $0.25 — multiplier 없음
         XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.25, accuracy: 0.0001)
     }
 
@@ -919,8 +894,6 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(second?.series.daily.reduce(0) { $0 + $1.totalTokens }, 200)
     }
 
-    /// Manual parity harness against the real logs on this machine: prints per-day totals to compare
-    /// with `ccusage codex daily --json --offline`. Gated like the other live tests.
     func testParityAgainstRealLocalLogs() async throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["OPENUSAGE_CODEX_PARITY"] == "1")
         let scanner = CodexLogUsageScanner()
@@ -950,16 +923,13 @@ final class CodexLogUsageScannerTests: XCTestCase {
         let scan = await scanner.scan(pricing: pricing)
         let today = scan?.series.daily.first
 
-        // gpt-5.3-codex must resolve in the bundled LiteLLM snapshot and price > $0.
+        // gpt-5.3-codex는 번들 LiteLLM snapshot에서 해석되고 $0 초과로 책정
         XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
         XCTAssertGreaterThan(today?.costUSD ?? 0, 0)
     }
 
     // MARK: - Scoped roots (account cards)
 
-    /// A scoped scanner — an account card's — reads exactly its override roots: never the
-    /// `CODEX_HOME` env resolution, never the default home, so another account's rollouts can't
-    /// bleed into the card.
     func testRootsOverridePinsTheScanToTheOverrideHome() async throws {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         let envHome = try CodexLogFixture.makeHome(files: [
@@ -985,7 +955,6 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan?.series.daily.reduce(0) { $0 + $1.totalTokens }, 150)
     }
 
-    /// An override home with no rollouts scans as "no data" even when the env home is full.
     func testRootsOverrideWithEmptyHomeReturnsNil() async throws {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         let envHome = try CodexLogFixture.makeHome(files: [
@@ -1007,8 +976,6 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertNil(scan)
     }
 
-    /// The default card may fold a same-account managed home into its history. Extra roots are
-    /// additive; a scoped account card still uses `rootsOverride` instead.
     func testAdditionalRootsMergeIntoTheDefaultScan() async throws {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         let defaultHome = try CodexLogFixture.makeHome(files: [
@@ -1033,9 +1000,6 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan?.series.daily.reduce(0) { $0 + $1.totalTokens }, 200)
     }
 
-    /// Two account cards sharing one process-wide parse cache must not share records: the per-card
-    /// `cacheIdentityOverride` is the cache key, so card A's rollouts never surface in card B's
-    /// scan (and vice versa) even when both cards scan back to back.
     func testPerCardCacheIdentitiesKeepScansSeparate() async throws {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         let homeA = try CodexLogFixture.makeHome(files: [

@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers that the enable/disable choice is actually *enforced* everywhere a provider is consulted:
-/// the refresh loop, the menu-bar value, and the dashboard / Customize layout.
 @MainActor
 final class ProviderEnablementEnforcementTests: XCTestCase {
     // MARK: - WidgetDataStore refresh
@@ -32,7 +30,6 @@ final class ProviderEnablementEnforcementTests: XCTestCase {
         XCTAssertNotNil(store.snapshots["claude"])
         XCTAssertNil(store.snapshots["codex"])
 
-        // A direct refresh of a disabled provider is also a no-op.
         await store.refresh(providerID: "codex")
         XCTAssertEqual(codex.runtime.refreshCount, 0)
         XCTAssertNil(store.snapshots["codex"])
@@ -101,8 +98,7 @@ final class ProviderEnablementEnforcementTests: XCTestCase {
         XCTAssertNil(store.localHistoryDocument(deviceID: "this-mac", deviceName: "This Mac").providers[provider.id])
     }
 
-    // Tray ownership by layout order + disabled-provider exclusion is exercised on the real tray path
-    // (LayoutStore.pinnedGroups + MenuBarContentBuilder) in MenuBarPinTests / MenuBarContentTests.
+    // layout 순서 기반 tray 소유권·disabled 제외는 MenuBarPinTests / MenuBarContentTests에서 검증
 
     // MARK: - Layout
 
@@ -115,7 +111,6 @@ final class ProviderEnablementEnforcementTests: XCTestCase {
             isProviderEnabled: { enablement.isEnabled($0) }
         )
 
-        // All enabled => visiblePlaced is byte-for-byte the full placed list.
         XCTAssertEqual(layout.visiblePlaced, layout.placed)
         XCTAssertTrue(layout.customizeGroups.contains { $0.provider.id == "cursor" })
 
@@ -123,7 +118,7 @@ final class ProviderEnablementEnforcementTests: XCTestCase {
 
         XCTAssertFalse(layout.visiblePlaced.contains { $0.descriptorID.hasPrefix("cursor.") })
         XCTAssertTrue(layout.visiblePlaced.contains { $0.descriptorID.hasPrefix("claude.") })
-        // Disabling hides but does not delete: the Cursor tiles are still parked in `placed`.
+        // disable은 숨김일 뿐 삭제 아님 — tile은 `placed`에 잔존
         XCTAssertTrue(layout.placed.contains { $0.descriptorID.hasPrefix("cursor.") })
         XCTAssertFalse(layout.customizeGroups.contains { $0.provider.id == "cursor" })
         XCTAssertEqual(layout.customizeProviderRows.first { $0.id == "cursor" }?.isEnabled, false)

@@ -1,9 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Compact must be tighter than Default on every density-driven dimension — the setting's whole
-/// point. A tweak that accidentally inverts or equalizes a pair would make Density "do nothing"
-/// again without any compile error.
 final class DensitySettingTests: XCTestCase {
     func testCompactIsTheDefaultDensity() {
         XCTAssertEqual(DensitySetting.defaultValue, .compact)
@@ -50,7 +47,7 @@ final class DensitySettingTests: XCTestCase {
     }
 
     func testSectionSpacingStaysWiderThanRowRhythm() {
-        // Groups must still read as groups: the section gap has to clearly beat the in-card step.
+        // group 구분 유지 — section gap이 in-card step보다 확실히 커야 함
         for density in DensitySetting.allCases {
             XCTAssertGreaterThan(density.sectionSpacing, density.textRowPadding)
             XCTAssertGreaterThan(density.sectionSpacing, density.headerToCardSpacing)

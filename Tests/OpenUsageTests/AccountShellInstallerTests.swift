@@ -1,8 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// The static shell wrapper: pins the Shared Runtime Home, strips auth environment overrides, and
-/// never encodes which account is selected.
 final class AccountShellInstallerTests: XCTestCase {
     func testZshClaudeWrapperPinsTheSharedHomeAndStripsAuthOverrides() throws {
         let home = try makeHome()

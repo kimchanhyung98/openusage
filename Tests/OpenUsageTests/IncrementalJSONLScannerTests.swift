@@ -380,8 +380,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
     }
 
     func testJsonlFilesFollowsSymlinkedRoot() throws {
-        // Users symlink log dirs into synced folders (`~/.claude/projects -> ~/Dropbox/...`);
-        // `FileManager.enumerator` yields nothing for a symlinked root, so discovery must resolve it.
+        // symlink된 log dir root에서 `FileManager.enumerator`가 빈 결과 — discovery가 symlink를 resolve해야 함
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("OpenUsageScannerSymlink-\(UUID().uuidString)", isDirectory: true)
         let real = base.appendingPathComponent("real", isDirectory: true)

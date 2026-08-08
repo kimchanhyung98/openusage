@@ -303,7 +303,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
         )
         await scanner.waitForPendingWritesForTesting()
 
-        // The failed debounce has no live task handle now, but its dirty source must still be drained.
+        // 실패한 debounce는 live task handle이 없어도 dirty source는 반드시 배출
         try FileManager.default.removeItem(at: cacheDirectory)
         await scanner.flushPendingWrites()
 

@@ -1,10 +1,6 @@
 import XCTest
 @testable import OpenUsage
 
-/// Covers the local HTTP API's routing and wire format (ported from the original's
-/// docs/local-http-api.md): collection ordering + enablement filtering, single-provider status
-/// codes, method/route errors, and the documented JSON keys (`providerId`, `fetchedAt`, tagged
-/// `lines` with `format.kind`).
 final class LocalUsageAPITests: XCTestCase {
     private func makeState() -> LocalUsageAPI.State {
         let refreshedAt = OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
@@ -30,7 +26,7 @@ final class LocalUsageAPITests: XCTestCase {
             refreshedAt: refreshedAt
         )
         return LocalUsageAPI.State(
-            enabledOrderedIDs: ["cursor", "claude"],          // user order, devin disabled
+            enabledOrderedIDs: ["cursor", "claude"],          // 사용자 순서, devin 비활성
             knownIDs: ["claude", "cursor", "devin"],
             snapshots: ["claude": claude, "cursor": cursor]
         )
@@ -64,7 +60,7 @@ final class LocalUsageAPITests: XCTestCase {
         XCTAssertEqual((progress["format"] as? [String: Any])?["kind"] as? String, "percent")
         XCTAssertEqual(progress["resetsAt"] as? String, "2026-03-26T13:00:00.161Z")
         XCTAssertEqual(progress["periodDurationMs"] as? Int, 18_000_000)
-        XCTAssertTrue(progress.keys.contains("color"))        // explicit null, like the original
+        XCTAssertTrue(progress.keys.contains("color"))        // 원본과 동일한 explicit null
 
         let text = try XCTUnwrap(lines.first { $0["type"] as? String == "text" })
         XCTAssertEqual(text["value"] as? String, "$5.17 · 9.2M tokens")
@@ -83,13 +79,12 @@ final class LocalUsageAPITests: XCTestCase {
     func testSingleTokenStatusCodes() throws {
         let state = makeState()
 
-        // Known but never fetched → 200 with an empty array (the shape never changes; "no data yet"
-        // is just zero elements).
+        // known이지만 미fetch → 빈 배열의 200 ("no data yet"은 요소 0개)
         let pending = LocalUsageAPI.respond(method: "GET", path: "/v1/usage/devin", state: state)
         XCTAssertEqual(pending.status, 200)
         XCTAssertEqual(try XCTUnwrap(try json(pending.body) as? [Any]).count, 0)
 
-        // A token naming no known card and no family → 404 provider_not_found.
+        // 어떤 card·family도 지칭하지 않는 token → 404 provider_not_found
         let unknown = LocalUsageAPI.respond(method: "GET", path: "/v1/usage/nope", state: state)
         XCTAssertEqual(unknown.status, 404)
         XCTAssertEqual((try json(unknown.body) as? [String: Any])?["error"] as? String, "provider_not_found")
@@ -99,8 +94,7 @@ final class LocalUsageAPITests: XCTestCase {
     }
 
     func testFamilyTokenMatchesEveryCardOfTheFamily() throws {
-        // Matching is plain string comparison — a token names an exact card id or, as a family id,
-        // every card of that family. Nothing about the answer depends on runtime state.
+        // 매칭은 단순 문자열 비교 — 정확한 card id 또는 family id로 해당 family 전체 지칭
         var state = makeState()
         let refreshedAt = OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
         state.knownIDs.insert("claude@ab12cd34")
@@ -116,12 +110,12 @@ final class LocalUsageAPITests: XCTestCase {
         let matched = try XCTUnwrap(try json(family.body) as? [[String: Any]])
         XCTAssertEqual(matched.compactMap { $0["providerId"] as? String }, ["claude", "claude@ab12cd34"])
 
-        // The exact card id names just that card.
+        // 정확한 card id는 해당 card만 지칭
         let exact = LocalUsageAPI.respond(method: "GET", path: "/v1/usage/claude@ab12cd34", state: state)
         let single = try XCTUnwrap(try json(exact.body) as? [[String: Any]])
         XCTAssertEqual(single.compactMap { $0["providerId"] as? String }, ["claude@ab12cd34"])
 
-        // The limits envelope is keyed by card id, so a family token carries every matched card too.
+        // limits envelope는 card id로 key — family token도 매칭 card 전부 포함
         let limits = LocalUsageAPI.respond(method: "GET", path: "/v1/limits/claude", state: state)
         XCTAssertEqual(limits.status, 200)
         let envelope = try XCTUnwrap(try json(limits.body) as? [String: Any])
@@ -130,8 +124,7 @@ final class LocalUsageAPITests: XCTestCase {
     }
 
     func testResolvedTitlesOverrideSnapshotDisplayNamesAtTheBoundary() throws {
-        // Snapshots always store the derived name; the boundary re-resolves against the account
-        // registry so API/CLI output carries renames without ever persisting them.
+        // snapshot은 파생 이름 저장 — boundary에서 account registry 기준으로 재해석해 rename을 영속 없이 반영
         let state = makeState().resolvingDisplayNames(["claude": "Claude Team"])
 
         let response = LocalUsageAPI.respond(method: "GET", path: "/v1/usage", state: state)
@@ -168,9 +161,7 @@ final class LocalUsageServerRequestLineTests: XCTestCase {
     }
 
     func testEmptyHeadDegradesToDefaultsInsteadOfCrashing() {
-        // A request that begins with the CRLFCRLF terminator (or carries invalid UTF-8, decoded to "")
-        // yields an empty head. The previous `head.split(...)[0]` force-index trapped here, crashing
-        // the whole menu-bar process; it must now degrade to ("", "/") so the router returns a 404.
+        // 빈 head에서 `head.split(...)[0]` force-index가 process를 trap시키던 회귀 방지 — ("", "/")로 degrade해 404 유도
         let (method, path) = LocalUsageServer.parseRequestLine("")
         XCTAssertEqual(method, "")
         XCTAssertEqual(path, "/")

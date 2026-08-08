@@ -121,7 +121,7 @@ final class LocalLimitsAPITests: XCTestCase {
             snapshots: [:],
             generatedAt: generatedAt
         )
-        // Known but never fetched → the shape never changes: 200 with an empty envelope.
+        // known이지만 미fetch → 형태 불변, 빈 envelope의 200
         let pending = LocalUsageAPI.respond(method: "GET", path: "/v1/limits/codex", state: state)
         XCTAssertEqual(pending.status, 200)
         let pendingRoot = try json(pending.body)
