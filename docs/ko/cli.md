@@ -55,3 +55,9 @@ Claude에서는 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_
 Codex에서는 `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 제거하고 파일 인증 정보 저장소를 유지.
 전환 자체가 공유 홈의 인증 정보를 교체하는 방식이므로, 함수는 선택된 계정을 직접 읽지 않음.
 처음 설정한 뒤에는 새 터미널을 열거나, 이미 열린 터미널에서 셸 시작 파일을 다시 읽기.
+
+wrapper는 Claude의 공식 인증 명령에도 똑같이 적용.
+선택된 관리형 Claude 계정으로 일반 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 OpenUsage가 관찰하는 같은 공유 홈에 기록.
+사용 가능한 프로바이더 신원을 검증한 뒤 OpenUsage가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
+새 로그인이 이전과 다른 프로바이더 신원이어도 계정명과 선택 상태는 유지하며, 다른 계정명을 조용히 다시 선택하지 않음.
+완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.

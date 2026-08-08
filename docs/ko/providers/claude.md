@@ -41,6 +41,8 @@ Desktop의 단기 토큰이 만료되면 Claude Desktop을 열어 로그인을 �
 환경 토큰이 *유일한* 인증 정보인 헤드리스 설정에서는 단독 사용하며 지출 타일은 계속 로컬 로그에서 로드.
 
 한 출처의 토큰이 만료되었거나 "잠김" 상태면 다른 출처로 전환 — 앱 밖에서 `claude`로 재로그인한 결과도 OpenUsage 재시작 없이 다음 새로 고침에 반영.
+선택된 관리형 Claude 계정에서는 이 감지를 다시 쓰기 경계로도 사용 — 공유 홈 로그인에서 사용 가능한 프로바이더 신원을 검증하면 해당 계정의 저장 스냅샷과 신원을 새 인증 정보로 교체하고 준비 상태 갱신.
+신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 기록하지 않음.
 Claude Code 토큰은 자동 갱신하며, 교체된 토큰은 로그인 후보의 순서와 값이 새로 고침 시작 시점과 여전히 일치할 때만 다시 기록하므로 새로 추가된 상위 우선순위 로그인 우선.
 Claude Desktop 토큰은 OpenUsage에서 갱신하거나 기록하지 않음.
 
@@ -93,13 +95,19 @@ Claude 상태 파일의 인증 정보와 계정 식별 정보는 바뀌지만 MC
 따라서 대시보드에서 비활성 스냅샷 계정을 볼 때 해당 행에 **No data** 표시 가능.
 계정 추가, 이름 변경, 재로그인, 제거 시 대시보드 즉시 갱신.
 선택기에는 Settings에 등록된 계정만 표시.
-독립적으로 자동 탐색된 커스텀 설정 디렉터리 계정은 등록 계정과 동일한 계정으로 확인되지 않는 한 기존 카드 유지.
-같은 계정이면 한 번만 표시.
+독립적으로 자동 탐색된 커스텀 설정 디렉터리 계정은 그 신원이 관리형 선택기에 이미 표시되지 않는 한 기존 카드 유지.
+이미 표시된 신원이면 자동 탐색 카드를 추가하지 않되, 관리형 계정명은 선택기에서 각각 유지.
+
+일반 터미널을 선택된 관리형 계정의 공식 재인증 경로로 지원.
+새 터미널에서 `claude`를 실행해 `/login`을 사용하거나 `claude auth login`을 실행한 뒤, Settings에서 선택한 계정명에 저장할 유효한 Claude 로그인 완료.
+OpenUsage가 공유 `~/.claude` 로그인을 검증하고 해당 계정명의 비공개 Keychain 스냅샷과 저장 프로바이더 신원을 교체 — **Sign In Again**이나 앱 재실행 불필요.
+다른 프로바이더 신원으로 로그인해도 계정명을 바꾸거나 다른 관리형 계정을 조용히 선택하지 않음.
 
 ## 문제 해결
 
-- **"Not logged in"** — 관리형 계정은 **Settings → Accounts → Manage… → Sign In Again** 사용.
-  그 외에는 `claude`를 실행해 로그인한 뒤 새로 고침.
+- **"Not logged in"** — 선택된 관리형 계정은 새 터미널에서 `claude`를 실행해 `/login`을 사용하거나 `claude auth login`을 실행한 뒤 해당 계정명에 저장할 로그인을 완료하고 OpenUsage 새로 고침.
+  `claude auth status`에서 `loggedIn: true`가 나와야 하며, 이후 OpenUsage가 관리형 스냅샷을 자동 갱신.
+  **Settings → Accounts → Manage… → Sign In Again**은 대체 복구 경로로 유지.
 - **"Claude Desktop login found"** — 수동으로 새로 고침하고 macOS에서 `Claude Safe Storage` 접근을 요청할 때 **Always Allow** 선택.
 - **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
 - **"Re-login for live usage"**(Claude 헤더의 황색 경고) — 저장된 로그인은 추론 인증이 가능하지만 `user:profile` 접근 권한이 없어 구독 한도 조회 불가(`claude setup-token`에서 발급한 추론 전용 토큰의 동작).

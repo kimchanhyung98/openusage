@@ -104,7 +104,8 @@ An inactive account's usage is read from its private Keychain authentication sna
 Adding, renaming, re-signing, or removing an account in Settings updates the selector immediately.
 Claude accounts found independently in custom configuration directories keep their existing separate cards and names.
 An unrelated discovered card is never hidden inside the managed selector.
-If a discovered login proves the same identity as a registered account, OpenUsage shows it once rather than duplicating it.
+Discovered cards are deduplicated by provider identity, but managed records are distinguished by their user-assigned account names.
+Two managed account names therefore remain separate selector entries even when their saved authentication currently proves the same provider identity; a discovered card for that identity is still shown only once.
 Local spend and trend logs stay attached to their configuration home rather than being attributed to managed accounts.
 Those rows can read **No data** while the selector is showing an inactive snapshot account.
 

@@ -20,9 +20,14 @@ The app now removes it automatically on launch — only when the file verifiably
 ## Accounts
 
 The Accounts section manages Claude and Codex accounts.
-An account is a named record of one provider sign-in — there are no folders to pick and no paths to edit.
+An account is a user-named record that stores a provider sign-in — there are no folders to pick and no paths to edit.
 Your existing `~/.claude` and `~/.codex` configuration (MCP settings, memory, plugins, skills, and session history) always stays in place.
 Switching accounts replaces only the sign-in that new terminal sessions use.
+
+An account name such as `alpha` or `beta` is a user-managed local title, not an email address or a permanent provider identity.
+A verified sign-in can replace the provider identity and authentication currently stored under that name.
+Two account names may therefore temporarily hold authentication for the same provider identity; the names, not provider identity, distinguish the managed records.
+For example, you can rename `beta` to `gamma` and sign in again under the renamed account, or select `alpha`, sign in with the provider account previously stored under `beta`, and then remove the old `beta` record.
 
 - The add (+) button opens the Add Account flow.
   If you are already signed in and no account is registered yet, the current sign-in is imported directly — no new browser login.
@@ -30,7 +35,8 @@ Switching accounts replaces only the sign-in that new terminal sessions use.
   An additional account signs in inside a private workspace owned by OpenUsage, so your current account and open terminals keep working while you sign in.
   A cancelled or failed sign-in registers nothing.
 - Each account's authentication is kept as a private snapshot in the macOS Keychain.
-  The row badge reads **Ready** while that saved sign-in still proves its account, and **Sign-In Needed** otherwise.
+  The row badge reads **Ready** while that saved sign-in is usable and its current provider identity can be verified, and **Sign-In Needed** otherwise.
+  For the selected Claude account, **Ready** also requires the login in the shared `~/.claude` home to be usable and to match the identity currently saved under that account name; a new verified login replaces that saved identity, while the presence of a saved or expired credential alone is not enough.
 - With two or more accounts for one provider, each row gains a toggle that picks the account new terminal sessions use.
   Switching asks for confirmation.
   Approval keeps the one shared Claude or Codex configuration home and replaces only its authentication with the selected account.
@@ -40,19 +46,23 @@ Switching accounts replaces only the sign-in that new terminal sessions use.
   See the [CLI](/docs/cli.md) page for details; the `openusage` command-line tool is not required.
   A toggle is enabled only while its row is **Ready**.
   While any registered accounts remain, one account stays selected even if it later needs sign-in.
-  Readiness controls only whether that row can be switched to.
+  Readiness controls the badge and whether that row can be switched to; it never changes the selected account automatically.
   Already-running sessions are never changed.
+  If the selected Claude account signs in again from an ordinary terminal — either with `/login` inside `claude` or with `claude auth login` — OpenUsage verifies the login in the shared home and replaces the authentication and provider identity stored under that same account name automatically.
+  This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
+  A login for a different Claude identity keeps the selected account name and selection; it never silently switches to another named account.
 - Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
   The dashboard's account selector lists only Settings-registered accounts and picks which account's usage the managed provider card shows.
-  Existing Claude accounts discovered from separate configuration directories remain separate cards unless they prove the same identity as a registered account.
+  Existing Claude accounts discovered from separate configuration directories remain separate cards unless their identity is already represented in the managed selector.
   A confirmed Settings switch moves the dashboard selector and the provider's menu-bar pins to that same account once.
   Changing the dashboard selector later is view-only and never runs another terminal switch.
   An inactive account's usage is read from its private Keychain snapshot.
   When that snapshot's token expires, the refreshed token is saved back into the same snapshot — never into the shared home or the active account.
 - **Manage…** renames an account, re-runs the official sign-in when the account's session expires, and removes the account.
   The account name is the only editable field.
-  **Sign In Again** replaces the saved snapshot only when the fresh sign-in proves the same account.
-  A different account is refused with a hint to add it separately.
+  **Sign In Again** remains an in-app recovery path, but it is not required when the selected Claude account was reauthenticated from an ordinary terminal.
+  **Sign In Again** accepts any complete, verifiable provider login and replaces that named account's saved authentication and provider identity.
+  It does not rename the account or select another account, even when the provider identity changes or is also stored under another account name.
   Removing deletes the account's OpenUsage sign-in workspace first, then its Keychain snapshot, and finally unregisters the record.
   Your `~/.claude` and `~/.codex` data is never touched.
   If either deletion fails, the account stays registered so you can retry.

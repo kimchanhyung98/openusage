@@ -5,6 +5,8 @@ Those branches stay alive as **cherry-pick material** — most of their auth-sto
 
 > Managed account switching in **Settings → Accounts** was implemented on top of this plan's record model; [Settings](/docs/settings.md) and [CLI](/docs/cli.md) document the current behavior.
 > Managed accounts have a Remove action that deletes only OpenUsage's snapshot and workspace, while unmanaged discovered cards still follow the no-Remove rule below.
+> This plan's identity-stable records describe discovered provider-account cards.
+> A managed account is instead a user-named authentication record: re-sign-in may replace its provider identity, and multiple managed names may temporarily carry the same identity.
 
 ## Why the restart
 
@@ -122,7 +124,7 @@ Estimated source LOC excludes tests.
   Verify that two or more managed profiles collapse only their own cards into the selector.
 - Run `script/build_and_run.sh`, then inspect `~/Library/Logs/OpenUsage/OpenUsage.log` for account registry, identity, switch, rollback, and refresh failures.
 - Exercise both Claude and Codex live: import the first account, add a second account, switch, start a fresh terminal session, view an inactive account, re-sign in, and remove it.
-  Verify that an expired credential either refreshes or fails without replacing the selected account.
+  Verify that an expired credential either refreshes or becomes **Sign-In Needed**, and that a completed re-sign-in replaces the selected managed account's authentication and provider identity without changing its name or selection.
 - Verify the read-only account CLI plus the existing card CLI/API ids and response shapes.
 - Repeat the two-Mac iCloud compatibility check before release.
   Managed account metadata and credentials remain local, while synced usage history must keep working with older readers.

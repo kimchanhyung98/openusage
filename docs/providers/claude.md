@@ -41,6 +41,8 @@ So when a real keychain or file login is present, OpenUsage uses that login for 
 If the environment token is your *only* credential (a headless setup), it's used on its own and the spend tiles still load from local logs.
 
 If one source holds an expired or "locked out" token, OpenUsage falls back to the others — so signing in again with `claude` outside the app is picked up on the next refresh, without restarting OpenUsage.
+For the selected managed Claude account, this is also a write-back boundary: after the shared-home login proves a usable provider identity, OpenUsage replaces that account's saved snapshot and stored identity and updates its readiness.
+The account name and selection stay unchanged when the identity changes; incomplete or unverifiable authentication is never written.
 Claude Code tokens are refreshed automatically; rotated tokens are written back only while the ordered login candidates still match the start of the refresh, so a newly added higher-priority login wins.
 Claude Desktop tokens are never refreshed or written by OpenUsage.
 
@@ -93,13 +95,19 @@ Local spend and trend logs stay with the shared configuration home and are not a
 Those rows can show **No data** while the dashboard is viewing an inactive snapshot account.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
 The picker lists only accounts registered in Settings.
-Independently discovered custom config-dir accounts keep their existing cards unless one proves the same identity as a registered account.
-When the identities match, OpenUsage shows that account once.
+Independently discovered custom config-dir accounts keep their existing cards unless their identity is already represented in the managed selector.
+When it is already represented, OpenUsage does not add another discovered card; managed account names remain separate selector entries.
+
+The ordinary terminal is a supported reauthentication path for the selected managed account.
+Start `claude` in a new terminal and use `/login`, or run `claude auth login`, then complete any valid Claude sign-in you want stored under the account name selected in Settings.
+OpenUsage verifies the shared `~/.claude` login, replaces that named account's private Keychain snapshot and stored provider identity, and refreshes its status without requiring **Sign In Again** or an app restart.
+Signing in as another provider identity does not rename the account or silently select another managed account.
 
 ## Troubleshooting
 
-- **"Not logged in"** — for a managed account, use **Settings → Accounts → Manage… → Sign In Again**.
-  Otherwise, run `claude`, sign in, and refresh.
+- **"Not logged in"** — for the selected managed account, start `claude` in a new terminal and use `/login`, or run `claude auth login`, complete the sign-in you want stored under that account name, and refresh OpenUsage.
+  `claude auth status` must report `loggedIn: true`; OpenUsage then updates the managed snapshot automatically.
+  **Settings → Accounts → Manage… → Sign In Again** remains an alternative recovery path.
 - **"Claude Desktop login found"** — refresh manually and choose **Always Allow** when macOS asks for access to `Claude Safe Storage`.
 - **"Claude Desktop login is stale"** — open Claude Desktop so it can renew the login, then refresh OpenUsage.
 - **"Re-login for live usage"** (an amber warning on the Claude header) — your saved login can authenticate for inference but can't read your subscription limits, because it lacks the `user:profile` access (this is what an inference-only token from `claude setup-token` carries).
