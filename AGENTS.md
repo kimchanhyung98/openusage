@@ -59,6 +59,11 @@ Every PR description must follow this structure so reviewers can skim it quickly
 
 - Logic changes must update any docs in `docs/` that describe the affected behavior.
 - Keep docs simple, less-technical, and easy to skim; exclude visual design details.
+- Break lines per sentence or list item in every docs page (EN and KO alike).
+- `docs/ko/` mirrors `docs/` content exactly; verify EN↔KO parity whenever either side changes.
+- Korean pages use the concise clipped style (개조식/명사형) — never "~합니다" endings. Example: "계정 전환 시 공유 홈의 인증만 교체. MCP 설정·메모리·세션 유지."
+- New internal doc links use repo-root absolute paths (`/docs/...`, `/docs/ko/...`); EN links EN, KO links KO.
+- External doc links point only to the official documentation for the relevant provider or feature.
 
 ## Code Conventions
 
@@ -66,6 +71,14 @@ Every PR description must follow this structure so reviewers can skim it quickly
 - Keep files under ~500 LOC; split or refactor as needed.
 - No new dependencies without justification.
 - When adding a provider, follow the conventions in "## Providers".
+
+### Comments
+
+- Comments are written in Korean, concise, in the clipped 개조식 style. Example: `/// 계정 전환 트랜잭션 — 공유 홈 인증만 교체, 실패 시 롤백.`
+- Declaration docs use `///` with a one-line summary; add detail lines only for a contract or invariant the code cannot show. Implementation notes use single-line `//`. Keep `// MARK: -` section dividers (labels stay English).
+- Comment only non-obvious contracts and invariants — no per-property narration, no restating what the next line does.
+- Comments are self-contained: never link to repository docs or external pages, and never replace an explanation with a link.
+- User-facing strings, log messages, and identifiers stay in English.
 
 ## Error Handling
 
