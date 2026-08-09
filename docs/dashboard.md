@@ -105,7 +105,8 @@ Adding, renaming, re-signing, or removing an account in Settings updates the sel
 Claude accounts found independently in custom configuration directories keep their existing separate cards and names.
 An unrelated discovered card is never hidden inside the managed selector.
 Discovered cards are deduplicated by provider identity, but managed records are distinguished by their user-assigned account names.
-Two managed account names therefore remain separate selector entries even when their saved authentication currently proves the same provider identity; a discovered card for that identity is still shown only once.
+Two managed account names therefore remain separate selector entries even when their saved authentication currently proves the same provider identity.
+Automatic discovery cards for an identity already represented in the managed selector are suppressed; otherwise, duplicate discovered cards for that identity are shown only once.
 Local spend and trend logs stay attached to their configuration home rather than being attributed to managed accounts.
 Those rows can read **No data** while the selector is showing an inactive snapshot account.
 

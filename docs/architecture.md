@@ -72,7 +72,7 @@ The UI reads from a few observable stores:
 - `ProviderEnablementStore` — which providers the user has turned on or off.
 - `ProviderAccountsStore` — the account-first registry for stable card ids, per-account sources, and renames for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
-  Each record contains a stable id, an editable account name, and the provider identity carried by its current saved authentication.
+  Each record contains a stable id, an editable account name, and the provider identity derived from its current saved authentication.
   Account names distinguish managed records; reauthentication may replace the stored identity, and more than one managed record may temporarily carry the same identity.
   The `openusage account` CLI reads the same records through the shared defaults domain.
   Account credentials live in per-account Keychain snapshots.

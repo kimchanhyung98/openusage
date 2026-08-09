@@ -106,7 +106,8 @@ Signing in as another provider identity does not rename the account or silently 
 ## Troubleshooting
 
 - **"Not logged in"** — for the selected managed account, start `claude` in a new terminal and use `/login`, or run `claude auth login`, complete the sign-in you want stored under that account name, and refresh OpenUsage.
-  `claude auth status` must report `loggedIn: true`; OpenUsage then updates the managed snapshot automatically.
+  `claude auth status` must report `loggedIn: true`, and the shared Claude home must resolve to one coherent identity before OpenUsage updates the managed snapshot automatically.
+  If its state files name different accounts, cannot be parsed, or are older than a new Keychain credential without belonging to the existing credential chain, OpenUsage preserves the existing snapshot.
   **Settings → Accounts → Manage… → Sign In Again** remains an alternative recovery path.
 - **"Claude Desktop login found"** — refresh manually and choose **Always Allow** when macOS asks for access to `Claude Safe Storage`.
 - **"Claude Desktop login is stale"** — open Claude Desktop so it can renew the login, then refresh OpenUsage.

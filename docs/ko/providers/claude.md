@@ -106,7 +106,8 @@ OpenUsage가 공유 `~/.claude` 로그인을 검증하고 해당 계정명의 �
 ## 문제 해결
 
 - **"Not logged in"** — 선택된 관리형 계정은 새 터미널에서 `claude`를 실행해 `/login`을 사용하거나 `claude auth login`을 실행한 뒤 해당 계정명에 저장할 로그인을 완료하고 OpenUsage 새로 고침.
-  `claude auth status`에서 `loggedIn: true`가 나와야 하며, 이후 OpenUsage가 관리형 스냅샷을 자동 갱신.
+  `claude auth status`에서 `loggedIn: true`가 나오고 공유 Claude 홈이 일관된 신원 하나로 해석될 때만 OpenUsage가 관리형 스냅샷을 자동 갱신.
+  상태 파일이 서로 다른 계정을 가리키거나, 파싱할 수 없거나, 새 Keychain 인증 정보보다 오래되고 기존 인증 정보 체인에도 속하지 않으면 기존 스냅샷 보존.
   **Settings → Accounts → Manage… → Sign In Again**은 대체 복구 경로로 유지.
 - **"Claude Desktop login found"** — 수동으로 새로 고침하고 macOS에서 `Claude Safe Storage` 접근을 요청할 때 **Always Allow** 선택.
 - **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
