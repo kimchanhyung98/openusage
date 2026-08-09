@@ -66,6 +66,7 @@ Adding, renaming, re-signing, or removing an account updates the dashboard immed
 ## Troubleshooting
 
 - **"Not logged in"** — for a managed account, use **Settings → Accounts → Manage… → Sign In Again**.
+  A complete, verifiable sign-in replaces the authentication and provider identity stored under that account name without renaming it or selecting another account.
   Otherwise, run `codex`, sign in, and refresh.
 - **API-key-only setups** can't read subscription usage — sign in with your ChatGPT account instead.
 - **Spend tiles show "No data"** — OpenUsage found no Codex session logs in the last 30 days.

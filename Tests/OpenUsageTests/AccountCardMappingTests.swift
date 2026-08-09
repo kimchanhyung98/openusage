@@ -68,15 +68,15 @@ final class AccountCardMappingTests: XCTestCase {
         XCTAssertEqual(mapping[cardID], personal.id)
     }
 
-    func testAmbientClaudeCardMapsToTheProfileProvingTheSameAccount() throws {
+    func testAmbientClaudeCardIsNotClaimedByAManagedProfile() throws {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
-        _ = try profiles.add(family: "claude", label: "default", identityKey: "acct-1")
-        let work = try profiles.add(family: "claude", label: "Work", identityKey: "acct-2")
+        _ = try profiles.add(family: "claude", label: "alpha", identityKey: "acct-1")
+        _ = try profiles.add(family: "claude", label: "beta", identityKey: "acct-2")
         let card = ClaudeAccountCard(
             id: "claude@ab12cd34",
-            displayName: "Claude — Work",
-            configDirPath: "/Users/dev/.claude-work",
-            keychainLiteral: "/Users/dev/.claude-work"
+            displayName: "Claude — Gamma",
+            configDirPath: "/Users/dev/.claude-gamma",
+            keychainLiteral: "/Users/dev/.claude-gamma"
         )
         let assembly = ProviderAccountAssembly(
             identityKeysByCard: ["claude": "acct-1", card.id: "acct-2"],
@@ -85,6 +85,6 @@ final class AccountCardMappingTests: XCTestCase {
 
         let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
 
-        XCTAssertEqual(mapping[card.id], work.id)
+        XCTAssertNil(mapping[card.id])
     }
 }

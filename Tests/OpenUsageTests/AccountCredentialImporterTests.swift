@@ -127,27 +127,31 @@ final class AccountCredentialImporterTests: XCTestCase {
         XCTAssertTrue(fixture.store.profiles.isEmpty)
     }
 
-    func testDuplicateIdentityIsRejectedAndNothingIsStaged() throws {
+    func testDuplicateIdentityRegistersAsASeparateNamedProfile() throws {
         let fixture = try makeFixture()
-        try fixture.store.add(family: "codex", label: "Existing", identityKey: "acct-c")
+        let alpha = try fixture.store.add(family: "codex", label: "alpha", identityKey: "acct-c")
         let credential = AccountCredentialImporter.ImportedCredential(
             entry: .init(credential: codexAuth(accountID: "acct-c", token: "token-c"), claudeOAuthAccount: nil),
             identityKey: "acct-c",
             label: nil
         )
 
-        XCTAssertThrowsError(
-            try fixture.importer.register(credential, family: "codex", label: "Work", id: "fixed-id", into: fixture.store)
-        ) { error in
-            XCTAssertEqual(
-                error as? AccountProfileError,
-                .duplicateAccount(existingLabel: "Existing")
-            )
-        }
-        XCTAssertNil(try fixture.vault.load(family: "codex", profileID: "fixed-id"))
-        XCTAssertFalse(
+        let beta = try fixture.importer.register(
+            credential,
+            family: "codex",
+            label: "beta",
+            id: "fixed-id",
+            into: fixture.store
+        )
+
+        XCTAssertEqual(fixture.store.profiles(family: "codex").map(\.id), [alpha.id, beta.id])
+        XCTAssertEqual(beta.label, "beta")
+        XCTAssertEqual(beta.identityKey, alpha.identityKey)
+        XCTAssertNotNil(try fixture.vault.load(profile: beta))
+        XCTAssertTrue(
             FileManager.default.fileExists(
-                atPath: (try fixture.workspace.directory(family: "codex", profileID: "fixed-id")).path
+                atPath: (try fixture.workspace.directory(family: "codex", profileID: beta.id))
+                    .appendingPathComponent("auth.json").path
             )
         )
     }

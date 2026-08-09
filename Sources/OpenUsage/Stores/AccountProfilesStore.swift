@@ -1,9 +1,8 @@
 import Foundation
 import Observation
 
-/// Claude/Codex account switching의 managed account record. profile은 폴더가 아니라 provider 계정
-/// 하나의 stable handle(그 provider의 credential metadata로 증명). 사용자 편집 필드는 `label`뿐 —
-/// 인증은 immutable `id`로 key된 Keychain snapshot과 sign-in workspace에 보관.
+/// Claude/Codex account switching의 managed account record. `id`는 snapshot·workspace의 stable handle,
+/// `label`은 사용자가 정한 family 내 유일 이름, `identityKey`는 현재 인증이 증명한 가변 provider binding.
 public struct AccountProfile: Codable, Equatable, Sendable, Identifiable {
     /// 등록 시 발급되는 stable id(신규는 UUID, 이관 profile은 기존 id 유지) — Keychain snapshot과
     /// Sign-In Workspace의 handle.
@@ -13,8 +12,8 @@ public struct AccountProfile: Codable, Equatable, Sendable, Identifiable {
     /// 표시 이름(Settings·dashboard selector·CLI) — 자유 rename, identity 입력이 아님.
     /// family 내 유일 — 두 행이 한 account로 읽히지 않도록.
     public var label: String
-    /// provider가 증명한 account identity(Claude: account+org UUID, Codex: ChatGPT account id) —
-    /// 사용자 편집 불가; switch transaction은 이 identity를 담지 않은 credential을 거부.
+    /// provider가 증명한 현재 account identity(Claude: account+org UUID, Codex: ChatGPT account id) —
+    /// 직접 편집 불가; 검증된 재로그인만 교체 가능하며 switch transaction은 snapshot과 일치하는지 확인.
     public var identityKey: String
     public var createdAt: Date
     /// 제거는 tombstone — 공유 runtime home은 삭제하지 않고, archived profile은 모든 picker·preferred
@@ -42,7 +41,6 @@ public enum AccountProfileError: Error, Equatable {
     case unknownFamily(String)
     case invalidLabel
     case duplicateLabel(String)
-    case duplicateAccount(existingLabel: String)
     case accountLimitReached(Int)
     case profileNotFound(String)
     case ambiguousReference(String)
@@ -60,8 +58,6 @@ extension AccountProfileError {
             return "Invalid account name."
         case .duplicateLabel(let label):
             return "An account named '\(label)' already exists. Choose a different name."
-        case .duplicateAccount(let existingLabel):
-            return "This provider account is already registered as '\(existingLabel)'."
         case .accountLimitReached(let limit):
             return "All \(limit) account slots are in use. Remove an account first."
         case .profileNotFound(let reference):
@@ -124,11 +120,6 @@ public final class AccountProfilesStore {
         profiles.first { $0.id == id && !$0.isArchived }
     }
 
-    /// 한 provider account에 이미 등록된 active profile — add의 duplicate gate이자 same-account 재로그인의 target.
-    public func activeProfile(family: String, identityKey: String) -> AccountProfile? {
-        profiles(family: family).first { $0.identityKey == identityKey }
-    }
-
     /// 새 세션이 인증에 사용할 profile id — 저장된 선택이 여전히 그 family의 active profile을 가리킬 때만.
     public func preferredProfileID(family: String) -> String? {
         guard let id = preferredByFamily[family],
@@ -161,7 +152,7 @@ public final class AccountProfilesStore {
         persist()
     }
 
-    /// 증명된 provider account의 profile 등록 — identity key가 dedupe key(계정 하나 = profile 하나).
+    /// 증명된 provider account의 profile 등록 — family 내 `label`만 유일, provider identity 중복 허용.
     /// `id` 지정 시 sign-in flow가 공식 로그인 전에 발급한 workspace 유지; 생략하면 새 UUID 발급.
     @discardableResult
     public func add(family: String, label: String, identityKey: String, id: String? = nil) throws -> AccountProfile {
@@ -176,9 +167,6 @@ public final class AccountProfilesStore {
         let normalizedIdentity = identityKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !normalizedIdentity.isEmpty else {
             throw AccountProfileError.profileNotFound(identityKey)
-        }
-        if let existing = activeProfile(family: family, identityKey: normalizedIdentity) {
-            throw AccountProfileError.duplicateAccount(existingLabel: existing.label)
         }
         guard !hasActiveLabel(trimmedLabel, family: family, excludingProfileID: nil) else {
             throw AccountProfileError.duplicateLabel(trimmedLabel)
@@ -220,6 +208,23 @@ public final class AccountProfilesStore {
         guard profiles[index].label != trimmedLabel else { return }
         profiles[index].label = trimmedLabel
         persist()
+    }
+
+    /// 검증된 재로그인의 provider binding 교체 — stable id·label·생성 시각·선택 상태 불변.
+    @discardableResult
+    func replaceIdentity(profileID: String, with identityKey: String) throws -> AccountProfile {
+        try ensureRegistryWritable()
+        guard let index = profiles.firstIndex(where: { $0.id == profileID && !$0.isArchived }) else {
+            throw AccountProfileError.profileNotFound(profileID)
+        }
+        let normalizedIdentity = identityKey.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalizedIdentity.isEmpty else {
+            throw AccountProfileError.profileNotFound(identityKey)
+        }
+        guard profiles[index].identityKey != normalizedIdentity else { return profiles[index] }
+        profiles[index].identityKey = normalizedIdentity
+        persist()
+        return profiles[index]
     }
 
     /// profile tombstone 처리 — 다른 active profile이 있는 동안 선택된 profile의 archive는 거부, switchable
@@ -282,7 +287,6 @@ public final class AccountProfilesStore {
         do {
             let blob = try JSONDecoder().decode(Blob.self, from: data)
             var seenIDs = Set<String>()
-            var seenIdentities = Set<String>()
             var seenLabels = Set<String>()
             var activeCounts: [String: Int] = [:]
             var sanitized: [AccountProfile] = []
@@ -294,7 +298,6 @@ public final class AccountProfilesStore {
                       Self.isValidLabel(label),
                       !identityKey.isEmpty,
                       seenIDs.insert(profile.id).inserted,
-                      profile.isArchived || seenIdentities.insert("\(profile.family)\u{1F}\(identityKey)").inserted,
                       profile.isArchived || seenLabels.insert("\(profile.family)\u{1F}\(label.lowercased())").inserted
                 else {
                     throw RegistryValidationError.invalidProfile

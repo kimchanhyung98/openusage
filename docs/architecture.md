@@ -53,6 +53,9 @@ The dashboard selector collapses only cards mapped to managed profiles.
 Unrelated discovered config-dir cards remain independent.
 Shared pi logs cannot identify which Claude login produced them, so they are omitted while Claude has split account cards rather than assigned to the wrong account.
 When a config dir is re-authenticated as a different account, reconciliation moves that source edge to the new identity while retaining the old record and its history.
+For the selected managed Claude account, shared-home reconciliation is verification-guarded and bidirectional.
+Any complete, verifiable login produced by the official Claude CLI replaces the selected record's saved authentication and current provider identity while preserving its stable id, account name, and selection.
+Provider identity isolates credentials and cached usage during that replacement; it is not the immutable key or uniqueness constraint of a managed account.
 
 Credential/cache identity and iCloud history attribution are separate.
 A managed bare Claude/Codex runtime can have one current authentication identity while its shared-home logs contain sessions from several switched accounts.
@@ -69,10 +72,12 @@ The UI reads from a few observable stores:
 - `ProviderEnablementStore` — which providers the user has turned on or off.
 - `ProviderAccountsStore` — the account-first registry for stable card ids, per-account sources, and renames for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
-  Each record contains a stable id, a provider-proven account identity, and an editable account name.
+  Each record contains a stable id, an editable account name, and the provider identity carried by its current saved authentication.
+  Account names distinguish managed records; reauthentication may replace the stored identity, and more than one managed record may temporarily carry the same identity.
   The `openusage account` CLI reads the same records through the shared defaults domain.
   Account credentials live in per-account Keychain snapshots.
-  Official re-logins run in an app-owned sign-in workspace under Application Support, never in the shared configuration homes.
+  Re-logins started by OpenUsage run in an app-owned sign-in workspace under Application Support.
+  A selected Claude account may also reauthenticate through the official CLI in the shared configuration home; verification-checked reconciliation replaces the existing snapshot and stored provider identity with that result.
   The managed-account model — registry, Keychain snapshots, sign-in workspaces, and the switch transaction — is family-neutral, so account switching for additional providers extends the same mechanism instead of adding a parallel one.
 - `ICloudUsageSyncStore` — one coordinated, atomic history file per Mac, iCloud metadata notifications, and the visible device/error state.
   File access is injected for lifecycle and failure tests.

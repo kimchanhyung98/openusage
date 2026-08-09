@@ -36,7 +36,9 @@ It never uses Desktop's rotating refresh token and never modifies Desktop's conf
 
 Managed account switching ([**Settings → Accounts**](/docs/settings.md)) keeps one authentication snapshot per account in your macOS Keychain under a service name that starts with `OpenUsage Account Authentication`.
 This snapshot lets OpenUsage restore the previous sign-in when you switch back.
-Each snapshot holds that account's own credential file contents, stays private to your macOS login Keychain, and is never sent anywhere.
+Each snapshot holds the credential file contents currently saved under that account name, stays private to your macOS login Keychain, and is never sent anywhere.
+When the selected managed Claude account signs in through the official CLI in an ordinary terminal, OpenUsage verifies the new shared-home credential and replaces that account's snapshot and stored provider identity.
+The account name and selection remain unchanged even if the verified provider identity changes; an incomplete or unverifiable credential is not copied.
 Official sign-ins for additional accounts run in an app-owned workspace under `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/`.
 Workspace directories use `0700`, and credential files use `0600`.
 Removing an account deletes that workspace first and then its Keychain snapshot.
@@ -45,7 +47,7 @@ Your `~/.claude` and `~/.codex` data is never moved or deleted.
 A confirmed switch also updates a small `claude`/`codex` function in `~/.zshrc` or `~/.config/fish/config.fish`.
 The function is wrapped in `>>> OpenUsage` comment markers, and deleting that marked block removes it.
 
-Managed account names, selected-account state, sign-in readiness, and authentication snapshots are local to this Mac and are not included in iCloud Sync.
+Managed account names, current provider-identity bindings, selected-account state, sign-in readiness, and authentication snapshots are local to this Mac and are not included in iCloud Sync.
 Only normalized usage history is eligible for iCloud.
 Shared managed-home history is synced as a provider-family total, not under the currently selected account.
 

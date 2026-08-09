@@ -1,6 +1,15 @@
 import Foundation
 import Observation
 
+/// 메인 액터에서 한 번 설정되는 장수 task의 nonisolated 종료 소유자.
+private final class AccountRefreshTaskHolder: @unchecked Sendable {
+    var task: Task<Void, Never>?
+
+    deinit {
+        task?.cancel()
+    }
+}
+
 /// 상수 registry와 가변 store를 소유해 SwiftUI environment에 주입하는 composition root.
 @MainActor
 @Observable
@@ -36,8 +45,8 @@ final class AppContainer {
     private var providers: [ProviderRuntime]
     /// 127.0.0.1:6736의 읽기 전용 로컬 usage API (포트 점유 시 조용히 비활성).
     private let localAPI: LocalUsageServer
-    // `Sendable` `Task`의 `let`은 암시적 nonisolated — nonisolated `deinit`에서 cancel 가능.
-    private let refreshTask: Task<Void, Never>
+    /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
+    private let refreshTask = AccountRefreshTaskHolder()
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
     private let seedTask: Task<Void, Never>?
     /// 신규 provider credential 탐지 패스 (`NewProviderSeeder` 참고); 처음 보는 provider가 없으면 `nil`.
@@ -56,6 +65,11 @@ final class AppContainer {
         // `accountProfiles`는 패스와 Settings 계정 UI가 한 인스턴스를 공유하도록 패스 이전에 생성.
         let accounts = ProviderAccountsStore()
         let accountProfiles = AccountProfilesStore()
+        do {
+            _ = try AccountCredentialImporter().reconcileSelectedClaudeSharedAuthentication(in: accountProfiles)
+        } catch {
+            AppLog.error(.auth, "launch external reauthentication reconciliation failed: \(error.localizedDescription)")
+        }
         let accountAssembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
@@ -191,14 +205,19 @@ final class AppContainer {
             // 응답 시점에 카드 제목 resolve — rename이 UI surface와 동일하게 반영.
             .resolvingDisplayNames(accounts.resolvedDisplayNamesByCardID)
         })
-        self.refreshTask = Self.startPeriodicRefresh(dataStore: dataStore, telemetry: telemetry)
+        self.refreshTask.task = Self.startPeriodicRefresh(
+            dataStore: dataStore,
+            telemetry: telemetry,
+            reconcileAccounts: { [weak self] in
+                self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            }
+        )
         localAPI.start()
         // notification-center delegate 등록 — frontmost 상태에서도 배너 표시. 권한 요청은 런치가 아니라 Settings의 트리거 첫 활성화 시.
         AppNotifications.shared.registerAsDelegate()
     }
 
     deinit {
-        refreshTask.cancel()
         seedTask?.cancel()
         newProviderTask?.cancel()
         shellEnvironmentSnapshotTask.cancel()
@@ -237,7 +256,10 @@ final class AppContainer {
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
-    func refreshAccountCatalog() {
+    func refreshAccountCatalog(reconcilesExternalAuthentication: Bool = true) {
+        if reconcilesExternalAuthentication {
+            _ = reconcileExternalClaudeAuthentication()
+        }
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
@@ -281,6 +303,41 @@ final class AppContainer {
         }
     }
 
+    /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
+    func refreshAll(force: Bool = false) async {
+        reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        await dataStore.refreshAll(force: force)
+    }
+
+    /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
+    func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
+        if ProviderAccountID.family(of: providerID) == "claude" {
+            reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        }
+        return await dataStore.refresh(providerID: providerID, force: force)
+    }
+
+    @discardableResult
+    private func reconcileExternalClaudeAuthentication() -> Bool {
+        do {
+            switch try AccountCredentialImporter().reconcileSelectedClaudeSharedAuthentication(in: accountProfiles) {
+            case .updated(let profileID):
+                AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
+                return true
+            case .unchanged, .noUsableAuthentication:
+                return false
+            }
+        } catch {
+            AppLog.error(.auth, "external Claude reauthentication reconciliation failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    private func reconcileExternalClaudeAuthenticationAndRefreshCatalog() {
+        guard reconcileExternalClaudeAuthentication() else { return }
+        refreshAccountCatalog(reconcilesExternalAuthentication: false)
+    }
+
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
     func setProviderEnabled(_ enabled: Bool, for providerID: String) {
         let family = ProviderAccountID.family(of: providerID)
@@ -309,7 +366,7 @@ final class AppContainer {
         assembly: ProviderAccountAssembly,
         profiles: AccountProfilesStore
     ) -> [String: String] {
-        // profile은 path가 아닌 identity로 카드에 매핑 — 선택 profile은 bare family 카드, 비활성 profile은 각자의 snapshot 카드 담당.
+        // 선택 profile은 bare family 카드, 비활성 profile은 명시적인 snapshot 카드만 담당.
         var result = assembly.profileIDsByCard
         for family in AccountProfilesStore.supportedFamilies {
             guard let selected = profiles.preferredProfile(family: family) else { continue }
@@ -319,22 +376,21 @@ final class AppContainer {
             }
             result[family] = selected.id
         }
-        for card in assembly.claudeCards {
-            guard let identityKey = assembly.identityKeysByCard[card.id],
-                  let profile = profiles.profiles(family: "claude").first(where: { $0.identityKey == identityKey })
-            else { continue }
-            result[card.id] = profile.id
-        }
         return result
     }
 
     /// 주기 refresh loop: 런치 직후 1회, 이후 매 interval 실행. 각 패스는 cache 준수 — 만료된 snapshot만 네트워크 요청.
     /// 패스 사이 대기는 `RefreshWakeSignal` 경유 — 첫 패스 전 구독·buffer로 패스 도중의 enablement 변경도 무유실.
     /// wake는 `ProviderEnablementStore.didChangeNotification` 한정 필수 — `UserDefaults.didChangeNotification` 구독은 refresh 폭주 유발.
-    private static func startPeriodicRefresh(dataStore: WidgetDataStore, telemetry: TelemetryRecorder) -> Task<Void, Never> {
+    private static func startPeriodicRefresh(
+        dataStore: WidgetDataStore,
+        telemetry: TelemetryRecorder,
+        reconcileAccounts: @escaping @MainActor () -> Void
+    ) -> Task<Void, Never> {
         Task {
             let wakeSignal = RefreshWakeSignal()
             while !Task.isCancelled {
+                reconcileAccounts()
                 await dataStore.refreshAll()
                 // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
                 await dataStore.evaluateNotifications()

@@ -55,3 +55,9 @@ For Claude, it strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_
 For Codex, it strips `OPENAI_API_KEY`, `CODEX_API_KEY`, and `CODEX_ACCESS_TOKEN` and keeps the file credential store.
 The function never reads the selected account itself because switching is implemented by replacing authentication in the shared home.
 Open a new terminal after the first setup, or reload the shell's startup file in an already-open terminal.
+
+The wrapper also applies to Claude's official authentication commands.
+When the selected managed Claude account signs in through `/login` in an ordinary `claude` session or through `claude auth login`, the result is written to the same shared home that OpenUsage observes.
+After verifying a usable provider identity, OpenUsage replaces the selected account's Keychain snapshot and stored provider identity automatically; **Sign In Again** and an app restart are not required.
+The account name and selection stay unchanged even when the new login belongs to a different provider identity, and OpenUsage never silently reselects another named account.
+An incomplete or unverifiable login leaves the saved snapshot unchanged.

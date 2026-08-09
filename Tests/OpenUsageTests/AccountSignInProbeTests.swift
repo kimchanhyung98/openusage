@@ -69,13 +69,103 @@ final class AccountSignInProbeTests: XCTestCase {
         XCTAssertEqual(makeProbe(keychain: keychain).state(for: profile), .needsSignIn)
     }
 
+    func testExpiredClaudeSnapshotWithoutARefreshTokenNeedsSignIn() throws {
+        let keychain = ServiceKeychain()
+        let profile = profile(id: "p6", family: "claude", identityKey: "acct-a|org-a")
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(
+                credential: #"{"claudeAiOauth":{"accessToken":"expired-token","expiresAt":1}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"acct-a","organizationUuid":"org-a"}"#
+            ),
+            profile: profile
+        )
+
+        XCTAssertEqual(makeProbe(keychain: keychain).state(for: profile), .needsSignIn)
+    }
+
+    func testExpiredClaudeSnapshotWithARefreshTokenRemainsReady() throws {
+        let keychain = ServiceKeychain()
+        let profile = profile(id: "p7", family: "claude", identityKey: "acct-a|org-a")
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(
+                credential: #"{"claudeAiOauth":{"accessToken":"expired-token","refreshToken":"refresh-token","expiresAt":1}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"acct-a","organizationUuid":"org-a"}"#
+            ),
+            profile: profile
+        )
+
+        XCTAssertEqual(
+            makeProbe(keychain: keychain).state(for: profile),
+            .ready(identityKey: "acct-a|org-a", label: nil)
+        )
+    }
+
+    func testSelectedClaudeSnapshotIsNotReadyWhenTheSharedHomeIsLoggedOut() throws {
+        let keychain = ServiceKeychain()
+        let profile = profile(id: "p8", family: "claude", identityKey: "acct-a|org-a")
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(
+                credential: #"{"claudeAiOauth":{"accessToken":"token-a"}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"acct-a","organizationUuid":"org-a"}"#
+            ),
+            profile: profile
+        )
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountSignInProbeTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(".claude"),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: home) }
+        try Data(#"{"claudeAiOauth":{"accessToken":"stale-file-token"}}"#.utf8)
+            .write(to: home.appendingPathComponent(".claude/.credentials.json"))
+        try Data(#"{"oauthAccount":{"accountUuid":"acct-a","organizationUuid":"org-a"}}"#.utf8)
+            .write(to: home.appendingPathComponent(".claude.json"))
+        try Data(#"{"oauthAccount":{"accountUuid":"acct-a","organizationUuid":"org-a"}}"#.utf8)
+            .write(to: home.appendingPathComponent(".claude/.claude.json"))
+        keychain.currentUserValues[
+            ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
+        ] = #"{"claudeAiOauth":{"accessToken":"stale-base-token"}}"#
+
+        let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
+
+        XCTAssertEqual(state, .needsSignIn)
+    }
+
+    func testSelectedClaudeAcceptsTheBaseLoginBeforeTheManagedHomeIsInitialized() throws {
+        let keychain = ServiceKeychain()
+        let profile = profile(id: "p9", family: "claude", identityKey: "acct-a|org-a")
+        let credential = #"{"claudeAiOauth":{"accessToken":"token-a"}}"#
+        let account = #"{"accountUuid":"acct-a","organizationUuid":"org-a"}"#
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(credential: credential, claudeOAuthAccount: account),
+            profile: profile
+        )
+        keychain.currentUserValues[
+            ClaudeAuthStore.baseKeychainServiceName(environment: FakeEnvironment([:]))
+        ] = credential
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountSignInProbeTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        try Data(#"{"oauthAccount":\#(account)}"#.utf8)
+            .write(to: home.appendingPathComponent(".claude.json"))
+
+        let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
+
+        XCTAssertEqual(state, .ready(identityKey: "acct-a|org-a", label: nil))
+    }
+
     // MARK: - Fixtures
 
-    private func makeProbe(keychain: KeychainAccessing) -> AccountSignInProbe {
+    private func makeProbe(
+        keychain: KeychainAccessing,
+        home: URL = URL(fileURLWithPath: "/Users/dev")
+    ) -> AccountSignInProbe {
         AccountSignInProbe(
             environment: FakeEnvironment([:]),
             keychain: keychain,
-            homeDirectory: { URL(fileURLWithPath: "/Users/dev") }
+            homeDirectory: { home }
         )
     }
 

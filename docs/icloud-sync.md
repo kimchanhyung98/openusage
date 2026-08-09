@@ -10,7 +10,7 @@ It does not contain credentials, account limits, raw logs, or provider responses
 Cursor's history is already account-wide, so it stays local and is never added across Macs.
 Disabling a provider immediately removes its peer contributions from the combined view and omits it from this Mac's next iCloud write, while its local cached snapshot remains.
 
-Managed account names, selected terminal/dashboard accounts, sign-in readiness, and Keychain authentication snapshots stay on this Mac and are never included.
+Managed account names, their current provider-identity bindings, selected terminal/dashboard accounts, sign-in readiness, and Keychain authentication snapshots stay on this Mac and are never included.
 A discovered configuration home whose logs belong to one proven account keeps an opaque identity for cross-Mac matching.
 Managed `~/.claude` and `~/.codex` histories can contain sessions from several switched accounts.
 They therefore sync only as a provider-family total and are not assigned to the currently selected managed account.
