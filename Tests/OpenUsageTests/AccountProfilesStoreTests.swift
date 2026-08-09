@@ -237,6 +237,17 @@ final class AccountProfilesStoreTests: XCTestCase {
         XCTAssertEqual(defaults.data(forKey: AccountProfilesStore.storageKey), original)
     }
 
+    func testUnreadableIdentityReplacementJournalIsClearedAfterReportingFailure() throws {
+        defaults.set(Data("not json".utf8), forKey: AccountProfilesStore.identityReplacementKey)
+        let store = AccountProfilesStore(defaults: defaults)
+
+        XCTAssertThrowsError(try store.pendingIdentityReplacement()) { error in
+            XCTAssertEqual(error as? AccountIdentityReplacementError, .invalidTransaction)
+        }
+        XCTAssertNil(defaults.data(forKey: AccountProfilesStore.identityReplacementKey))
+        XCTAssertNil(try store.pendingIdentityReplacement())
+    }
+
     func testInvalidAndOverLimitRecordsPreserveTheBlobAndBlockWrites() throws {
         var profiles: [[String: Any]] = [
             profileJSON(id: "keep", family: "claude", label: "Personal", identityKey: "acct-a"),

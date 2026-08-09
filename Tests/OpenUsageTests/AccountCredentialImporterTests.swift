@@ -147,12 +147,13 @@ final class AccountCredentialImporterTests: XCTestCase {
         XCTAssertEqual(fixture.store.profiles(family: "codex").map(\.id), [alpha.id, beta.id])
         XCTAssertEqual(beta.label, "beta")
         XCTAssertEqual(beta.identityKey, alpha.identityKey)
-        XCTAssertNotNil(try fixture.vault.load(profile: beta))
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: (try fixture.workspace.directory(family: "codex", profileID: beta.id))
-                    .appendingPathComponent("auth.json").path
-            )
+        XCTAssertEqual(try fixture.vault.load(profile: beta), credential.entry)
+        let workspaceAuth = try fixture.workspace
+            .directory(family: "codex", profileID: beta.id)
+            .appendingPathComponent("auth.json")
+        XCTAssertEqual(
+            try String(contentsOf: workspaceAuth, encoding: .utf8),
+            credential.entry.credential
         )
     }
 

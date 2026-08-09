@@ -3,6 +3,24 @@ import XCTest
 
 @MainActor
 final class WidgetDataStoreTests: XCTestCase {
+    func testExternalProviderErrorUsesTheDashboardErrorSurface() {
+        let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("claude"))
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [],
+            snapshot: ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: []),
+            providers: [runtime],
+            defaults: makeUserDefaults("external-provider-error")
+        )
+
+        store.setExternalProviderError("Sign-in update failed.", for: provider.id)
+
+        XCTAssertEqual(store.errorMessage(for: provider.id), "Sign-in update failed.")
+    }
+
     func testResolvesProgressSnapshotIntoWidgetData() async {
         let provider = Provider(id: "test", displayName: "Test", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor(

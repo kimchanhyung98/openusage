@@ -41,6 +41,12 @@ final class AccountSignInProbeTests: XCTestCase {
         XCTAssertEqual(makeProbe(keychain: ServiceKeychain()).state(for: profile), .needsSignIn)
     }
 
+    func testSnapshotReadFailureNeedsSignIn() {
+        let profile = profile(id: "p-read-failure", family: "claude", identityKey: "acct-a|org-a")
+
+        XCTAssertEqual(makeProbe(keychain: ThrowingProbeKeychain()).state(for: profile), .needsSignIn)
+    }
+
     func testSnapshotForADifferentAccountNeedsSignIn() throws {
         let keychain = ServiceKeychain()
         let profile = profile(id: "p4", family: "codex", identityKey: "acct-b")
@@ -156,6 +162,33 @@ final class AccountSignInProbeTests: XCTestCase {
         XCTAssertEqual(state, .ready(identityKey: "acct-a|org-a", label: nil))
     }
 
+    func testSelectedClaudeSharedHomeReadFailureNeedsSignIn() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AccountSignInProbeTests-\(UUID().uuidString)")
+        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: home.appendingPathComponent(".claude").path,
+            environment: FakeEnvironment([:])
+        )
+        let keychain = SharedReadThrowingProbeKeychain(failingService: scopedService)
+        let profile = profile(id: "p-shared-read-failure", family: "claude", identityKey: "acct-a|org-a")
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(
+                credential: #"{"claudeAiOauth":{"accessToken":"token-a"}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"acct-a","organizationUuid":"org-a"}"#
+            ),
+            profile: profile
+        )
+        try FileManager.default.createDirectory(
+            at: home.appendingPathComponent(".claude"),
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let state = makeProbe(keychain: keychain, home: home).state(for: profile, isSelected: true)
+
+        XCTAssertEqual(state, .needsSignIn)
+    }
+
     // MARK: - Fixtures
 
     private func makeProbe(
@@ -182,5 +215,41 @@ final class AccountSignInProbeTests: XCTestCase {
                 .replacingOccurrences(of: "=", with: "")
         }
         return "\(segment(["alg": "none"])).\(segment(payload)).sig"
+    }
+}
+
+private struct ThrowingProbeKeychain: KeychainAccessing {
+    private struct ReadFailure: Error {}
+
+    func readGenericPassword(service: String) throws -> String? { throw ReadFailure() }
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
+}
+
+private final class SharedReadThrowingProbeKeychain: KeychainAccessing, @unchecked Sendable {
+    private struct ReadFailure: Error {}
+
+    private var values: [String: String] = [:]
+    private let failingService: String
+
+    init(failingService: String) {
+        self.failingService = failingService
+    }
+
+    func readGenericPassword(service: String) throws -> String? {
+        values[service]
+    }
+
+    func writeGenericPassword(service: String, value: String) throws {
+        values[service] = value
+    }
+
+    func deleteGenericPassword(service: String) throws {
+        values.removeValue(forKey: service)
+    }
+
+    func readGenericPasswordForCurrentUser(service: String) throws -> String? {
+        if service == failingService { throw ReadFailure() }
+        return values[service]
     }
 }

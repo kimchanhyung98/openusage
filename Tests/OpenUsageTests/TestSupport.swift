@@ -283,6 +283,8 @@ final class FakeKeychain: KeychainAccessing, @unchecked Sendable {
 final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
     var values: [String: String]
     var currentUserValues: [String: String]
+    var modificationDates: [String: Date] = [:]
+    var currentUserModificationDates: [String: Date] = [:]
 
     init(values: [String: String] = [:], currentUserValues: [String: String] = [:]) {
         self.values = values
@@ -295,11 +297,14 @@ final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
 
     func writeGenericPassword(service: String, value: String) throws {
         values[service] = value
+        modificationDates[service] = Date()
     }
 
     func deleteGenericPassword(service: String) throws {
         values.removeValue(forKey: service)
         currentUserValues.removeValue(forKey: service)
+        modificationDates.removeValue(forKey: service)
+        currentUserModificationDates.removeValue(forKey: service)
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
@@ -308,6 +313,15 @@ final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
         currentUserValues[service] = value
+        currentUserModificationDates[service] = Date()
+    }
+
+    func genericPasswordModificationDate(service: String) throws -> Date? {
+        modificationDates[service]
+    }
+
+    func genericPasswordModificationDateForCurrentUser(service: String) throws -> Date? {
+        currentUserModificationDates[service]
     }
 }
 
