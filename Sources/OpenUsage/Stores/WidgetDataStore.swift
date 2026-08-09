@@ -223,6 +223,15 @@ final class WidgetDataStore {
         rebuildRenderedSnapshots()
     }
 
+    /// provider refresh 밖의 계정 reconciliation 실패를 같은 dashboard 오류 surface에 노출.
+    func setExternalProviderError(_ message: String, for providerID: String) {
+        guard providersByID[providerID] != nil else {
+            AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
+            return
+        }
+        providerErrors[providerID] = message
+    }
+
     var knownProviderIDs: [String] { registry.providers.map(\.id) }
     var limitDescriptorsByProvider: [String: [WidgetDescriptor]] { registry.limitDescriptorsByProvider }
 

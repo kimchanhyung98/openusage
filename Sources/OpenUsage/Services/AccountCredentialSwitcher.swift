@@ -2,12 +2,14 @@ import Foundation
 
 /// 계정 전환의 유일한 credential 이동 경로 — 한 profile의 인증만 family의 Shared Runtime Home(`~/.claude`, `~/.codex`)에 적용.
 /// configuration·MCP·memory·plugin·세션 history 불변. reader는 첫 import·re-login·registry migration이 재사용 — 제2의 credential parser 금지.
-struct AccountCredentialSwitcher {
+/// 내부 `FileManager` delegate 미사용 — background credential read와 main-actor transaction에서 공유 가능.
+struct AccountCredentialSwitcher: @unchecked Sendable {
     enum Error: LocalizedError, Equatable {
         case unsupportedFamily(String)
         case missingSnapshot(String)
         case snapshotIdentityMismatch(String)
         case invalidClaudeState(URL)
+        case incompleteClaudeAuthentication
         case switchVerificationFailed(String)
 
         var errorDescription: String? {
@@ -20,6 +22,8 @@ struct AccountCredentialSwitcher {
                 "The saved sign-in for \(label) no longer matches its account. Sign in again and retry."
             case .invalidClaudeState(let url):
                 "Claude account state is invalid: \(url.path)"
+            case .incompleteClaudeAuthentication:
+                "Claude sign-in has not finished updating its account state. Finish signing in and try again."
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified, so the previous account was restored."
             }
@@ -105,26 +109,91 @@ struct AccountCredentialSwitcher {
         try readAuthentication(family: family, home: sharedHomePath(family: family))
     }
 
-    /// OpenUsage wrapper 아래 Claude 공식 로그인이 갱신하는 scoped credential + 내부 state 쌍.
-    /// 기존 루트 state가 이전 identity인 과도 상태를 external reauthentication에서만 수용.
-    func readSharedClaudeExternalAuthentication() throws -> AccountCredentialVault.Entry? {
+    /// 선택된 Claude의 터미널 준비 상태용 scoped credential + 내부 state 쌍.
+    /// 영구 snapshot 교체와 달리 쓰기 세대 검증 없이 현재 CLI가 사용할 로그인만 확인.
+    func readSharedClaudeAuthenticationForReadiness() throws -> AccountCredentialVault.Entry? {
+        try sharedClaudeAuthentication()?.entry
+    }
+
+    /// snapshot 교체용 Claude 로그인 — state가 새 credential을 반영한 완료 상태일 때만 반환.
+    func readSharedClaudeExternalAuthentication(
+        comparedTo previousSnapshot: AccountCredentialVault.Entry?
+    ) throws -> AccountCredentialVault.Entry? {
+        guard let observed = try sharedClaudeAuthentication() else { return nil }
+        guard observed.entry != previousSnapshot else { return observed.entry }
+        if let previousSnapshot,
+           sameClaudeCredentialChain(previousSnapshot, observed.entry) {
+            return observed.entry
+        }
+        guard let credentialModifiedAt = observed.credentialModifiedAt,
+              let stateModifiedAt = observed.stateModifiedAt,
+              stateModifiedAt >= credentialModifiedAt
+        else {
+            AppLog.error(.auth, "shared Claude account state predates its credential; preserving the managed snapshot")
+            throw Error.incompleteClaudeAuthentication
+        }
+        return observed.entry
+    }
+
+    private func sameClaudeCredentialChain(
+        _ previous: AccountCredentialVault.Entry,
+        _ observed: AccountCredentialVault.Entry
+    ) -> Bool {
+        guard identity(of: previous, family: "claude")?.identityKey
+                == identity(of: observed, family: "claude")?.identityKey,
+              let previousRefreshToken = ClaudeAuthStore.parseCredentials(previous.credential)?
+                .claudeAiOauth?.refreshToken?.nilIfEmpty,
+              let observedRefreshToken = ClaudeAuthStore.parseCredentials(observed.credential)?
+                .claudeAiOauth?.refreshToken?.nilIfEmpty
+        else {
+            return false
+        }
+        return previousRefreshToken == observedRefreshToken
+    }
+
+    private struct SharedClaudeAuthentication {
+        var entry: AccountCredentialVault.Entry
+        var credentialModifiedAt: Date?
+        var stateModifiedAt: Date?
+    }
+
+    private func sharedClaudeAuthentication() throws -> SharedClaudeAuthentication? {
         let home = sharedHomePath(family: "claude")
         let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
             forConfigDirLiteral: home,
             environment: environment
         )
         let localState = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
-        if let scopedCredential = try keychain.readGenericPasswordForCurrentUser(service: scopedService)
-            ?? keychain.readGenericPassword(service: scopedService) {
+        if let scopedCredential = try keychain.readGenericPasswordForCurrentUser(service: scopedService) {
             guard isUsableClaudeCredential(scopedCredential),
-                  try readTextIfPresent(localState) != nil,
                   let account = try claudeOAuthAccount(inFirstOf: [localState])
             else {
                 return nil
             }
-            return AccountCredentialVault.Entry(
-                credential: scopedCredential,
-                claudeOAuthAccount: account
+            return SharedClaudeAuthentication(
+                entry: AccountCredentialVault.Entry(
+                    credential: scopedCredential,
+                    claudeOAuthAccount: account
+                ),
+                credentialModifiedAt: try keychain.genericPasswordModificationDateForCurrentUser(
+                    service: scopedService
+                ),
+                stateModifiedAt: try modificationDateIfPresent(localState)
+            )
+        }
+        if let scopedCredential = try keychain.readGenericPassword(service: scopedService) {
+            guard isUsableClaudeCredential(scopedCredential),
+                  let account = try claudeOAuthAccount(inFirstOf: [localState])
+            else {
+                return nil
+            }
+            return SharedClaudeAuthentication(
+                entry: AccountCredentialVault.Entry(
+                    credential: scopedCredential,
+                    claudeOAuthAccount: account
+                ),
+                credentialModifiedAt: try keychain.genericPasswordModificationDate(service: scopedService),
+                stateModifiedAt: try modificationDateIfPresent(localState)
             )
         }
 
@@ -135,16 +204,34 @@ struct AccountCredentialSwitcher {
         // 최초 관리형 등록 전 plain Claude 로그인은 base credential + 루트 state만 보유.
         // 이 경우에만 reconciliation이 scoped shared home으로 이관할 수 있도록 수용.
         let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
-        guard let baseCredential = try keychain.readGenericPasswordForCurrentUser(service: baseService)
-            ?? keychain.readGenericPassword(service: baseService),
-              isUsableClaudeCredential(baseCredential),
-              let account = try claudeOAuthAccount(
-                  inFirstOf: [homeDirectory.appendingPathComponent(".claude.json")]
-              )
-        else {
-            return nil
+        let rootState = homeDirectory.appendingPathComponent(".claude.json")
+        if let baseCredential = try keychain.readGenericPasswordForCurrentUser(service: baseService) {
+            guard isUsableClaudeCredential(baseCredential),
+                  let account = try claudeOAuthAccount(inFirstOf: [rootState])
+            else { return nil }
+            return SharedClaudeAuthentication(
+                entry: AccountCredentialVault.Entry(
+                    credential: baseCredential,
+                    claudeOAuthAccount: account
+                ),
+                credentialModifiedAt: try keychain.genericPasswordModificationDateForCurrentUser(
+                    service: baseService
+                ),
+                stateModifiedAt: try modificationDateIfPresent(rootState)
+            )
         }
-        return AccountCredentialVault.Entry(credential: baseCredential, claudeOAuthAccount: account)
+        guard let baseCredential = try keychain.readGenericPassword(service: baseService),
+              isUsableClaudeCredential(baseCredential),
+              let account = try claudeOAuthAccount(inFirstOf: [rootState])
+        else { return nil }
+        return SharedClaudeAuthentication(
+            entry: AccountCredentialVault.Entry(
+                credential: baseCredential,
+                claudeOAuthAccount: account
+            ),
+            credentialModifiedAt: try keychain.genericPasswordModificationDate(service: baseService),
+            stateModifiedAt: try modificationDateIfPresent(rootState)
+        )
     }
 
     /// 한 home의 인증 read (Shared Runtime Home·Sign-In Workspace·legacy profile home).
@@ -367,6 +454,11 @@ struct AccountCredentialSwitcher {
     private func readTextIfPresent(_ url: URL) throws -> String? {
         guard fileManager.fileExists(atPath: url.path) else { return nil }
         return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private func modificationDateIfPresent(_ url: URL) throws -> Date? {
+        guard fileManager.fileExists(atPath: url.path) else { return nil }
+        return try fileManager.attributesOfItem(atPath: url.path)[.modificationDate] as? Date
     }
 
     private func writePrivateFile(_ text: String, to url: URL) throws {

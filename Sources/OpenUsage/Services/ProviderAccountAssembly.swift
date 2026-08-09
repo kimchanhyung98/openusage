@@ -19,7 +19,7 @@ struct ClaudeAccountCard: Equatable, Sendable {
 /// account registry reconcile 후 카드별 identity map과 추가 카드 빌드 계획 노출.
 /// launch(앱)·invocation(CLI)당 1회 실행 — 실행 중 계정 swap은 다음 launch에 반영.
 @MainActor
-struct ProviderAccountAssembly {
+struct ProviderAccountAssembly: Equatable {
     /// 카드 id → 이번 launch에 로그인된 계정 identity — identity 미해석 카드는 부재.
     let identityKeysByCard: [String: String]
     /// family → bare/default 카드를 뒷받침하는 canonical home — identity와 같은 observer 결과에서 도출.
@@ -205,7 +205,8 @@ struct ProviderAccountAssembly {
             if managedProfiles.contains(where: {
                 !$0.isArchived && $0.family == "claude" && $0.identityKey == account.identityKey
             }) {
-                AppLog.info(.config, "discovery: config-dir account omitted because a managed profile already represents it")
+                let cardID = ProviderAccountID.make(family: "claude", identityKey: account.identityKey)
+                AppLog.info(.config, "discovery: config-dir account \(cardID) omitted because a managed profile already represents it")
                 continue
             }
             guard let record = records.first(where: { $0.family == "claude" && $0.identityKey == account.identityKey }) else {

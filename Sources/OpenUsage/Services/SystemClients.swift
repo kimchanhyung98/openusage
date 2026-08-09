@@ -218,6 +218,9 @@ protocol KeychainAccessing: Sendable {
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
     /// 명시적 account(`-a`) 스코프의 generic password read — 타 앱이 특정 account 이름으로 저장한 item용.
     func readGenericPassword(service: String, account: String) throws -> String?
+    /// secret을 읽지 않고 generic password item의 마지막 수정 시각 조회.
+    func genericPasswordModificationDate(service: String) throws -> Date?
+    func genericPasswordModificationDateForCurrentUser(service: String) throws -> Date?
 }
 
 extension KeychainAccessing {
@@ -232,6 +235,12 @@ extension KeychainAccessing {
     /// account 미모델 mock용 기본 구현 — service-only 조회 fallback; 실제 `SecurityKeychainAccessor`는 `-a <account>` 전달.
     func readGenericPassword(service: String, account: String) throws -> String? {
         try readGenericPassword(service: service)
+    }
+
+    func genericPasswordModificationDate(service: String) throws -> Date? { nil }
+
+    func genericPasswordModificationDateForCurrentUser(service: String) throws -> Date? {
+        try genericPasswordModificationDate(service: service)
     }
 
     /// secret 읽기 없이 `service` item 존재 여부 probe — `nil`은 probe 자체 실패(잠긴 Keychain·거부), 안전한 해석은 caller별 판단.
@@ -281,6 +290,38 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 
     func readGenericPassword(service: String, account: String) throws -> String? {
         try readPassword(["find-generic-password", "-a", account, "-s", service, "-w"], service: service)
+    }
+
+    func genericPasswordModificationDate(service: String) throws -> Date? {
+        try modificationDate(service: service, account: nil)
+    }
+
+    func genericPasswordModificationDateForCurrentUser(service: String) throws -> Date? {
+        try modificationDate(service: service, account: currentUserAccount())
+    }
+
+    private func modificationDate(service: String, account: String?) throws -> Date? {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true,
+            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+        ]
+        if let account {
+            query[kSecAttrAccount as String] = account
+        }
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            return (result as? [String: Any])?[kSecAttrModificationDate as String] as? Date
+        case errSecItemNotFound:
+            return nil
+        default:
+            AppLog.warn(.keychain, "keychain modification-date read failed (status \(status))")
+            throw KeychainError.readFailed("Keychain metadata read failed (status \(status)).")
+        }
     }
 
     private func readPassword(_ arguments: [String], service: String) throws -> String? {

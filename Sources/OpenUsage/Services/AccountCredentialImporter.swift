@@ -178,44 +178,111 @@ struct AccountCredentialImporter {
         case updated(profileID: String)
     }
 
+    private struct ExternalClaudeObservation: Sendable {
+        var previousSnapshot: AccountCredentialVault.Entry?
+        var shared: AccountCredentialVault.Entry
+        var identityKey: String
+        var currentShared: AccountCredentialVault.Entry?
+        var sharedNeedsNormalization: Bool
+    }
+
     /// 선택된 Claude profile에 Shared Runtime Home의 검증된 공식 CLI 로그인을 귀속.
     /// 계정명·stable id·선택 불변, 같은 identity를 가진 다른 profile도 병합하지 않음.
     func reconcileSelectedClaudeSharedAuthentication(
         in store: AccountProfilesStore
     ) throws -> ExternalReauthenticationResult {
+        _ = try recoverInterruptedIdentityReplacement(in: store)
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
-        guard let shared = try switcher.readSharedClaudeExternalAuthentication(),
-              let identity = switcher.identity(of: shared, family: "claude")
-        else {
+        guard let observation = try observeExternalClaudeAuthentication(for: profile) else {
             return .noUsableAuthentication
         }
+        return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
+    }
 
+    /// 런치 후 자동 reconciliation — Keychain secret 관찰은 main actor 밖에서 실행.
+    func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
+        in store: AccountProfilesStore
+    ) async throws -> ExternalReauthenticationResult {
+        _ = try recoverInterruptedIdentityReplacement(in: store)
+        guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
+        let authenticationRevision = store.authenticationRevision
+        let observation = try await Task.detached(priority: .utility) {
+            try observeExternalClaudeAuthentication(for: profile)
+        }.value
+        guard let observation else { return .noUsableAuthentication }
+        guard store.preferredProfileID(family: "claude") == profile.id,
+              store.profile(id: profile.id)?.identityKey == profile.identityKey,
+              store.authenticationRevision == authenticationRevision
+        else {
+            return .unchanged
+        }
+        return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
+    }
+
+    nonisolated private func observeExternalClaudeAuthentication(
+        for profile: AccountProfile
+    ) throws -> ExternalClaudeObservation? {
         let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        guard let shared = try switcher.readSharedClaudeExternalAuthentication(
+            comparedTo: previousSnapshot
+        ),
+              let identityKey = switcher.identity(of: shared, family: "claude")?.identityKey
+        else {
+            return nil
+        }
         let currentShared = try switcher.readSharedAuthentication(family: "claude")
         let sharedNeedsNormalization = currentShared.flatMap {
             switcher.identity(of: $0, family: "claude")?.identityKey
-        } != identity.identityKey
-        if previousSnapshot == shared,
-           profile.identityKey == identity.identityKey,
-           !sharedNeedsNormalization {
+        } != identityKey
+        return ExternalClaudeObservation(
+            previousSnapshot: previousSnapshot,
+            shared: shared,
+            identityKey: identityKey,
+            currentShared: currentShared,
+            sharedNeedsNormalization: sharedNeedsNormalization
+        )
+    }
+
+    private func applyExternalClaudeAuthentication(
+        _ observation: ExternalClaudeObservation,
+        to profile: AccountProfile,
+        in store: AccountProfilesStore
+    ) throws -> ExternalReauthenticationResult {
+        if observation.previousSnapshot == observation.shared,
+           profile.identityKey == observation.identityKey,
+           !observation.sharedNeedsNormalization {
             return .unchanged
         }
 
+        let transaction = try store.beginIdentityReplacement(
+            profileID: profile.id,
+            with: observation.identityKey,
+            replacesSharedAuthentication: observation.sharedNeedsNormalization
+        )
         do {
-            if sharedNeedsNormalization {
-                try switcher.applySharedAuthentication(shared, family: "claude")
+            try switcher.saveSnapshot(observation.shared, for: profile)
+            try switcher.writeWorkspaceAuthentication(observation.shared, for: profile)
+            if observation.sharedNeedsNormalization {
+                try switcher.applySharedAuthentication(observation.shared, family: "claude")
                 guard let normalized = try switcher.readSharedAuthentication(family: "claude"),
-                      switcher.identity(of: normalized, family: "claude")?.identityKey == identity.identityKey
+                      switcher.identity(of: normalized, family: "claude")?.identityKey == observation.identityKey
                 else {
                     throw ImportError.verificationFailed(family: "claude")
                 }
             }
-            try switcher.saveSnapshot(shared, for: profile)
-            try switcher.writeWorkspaceAuthentication(shared, for: profile)
-            _ = try store.replaceIdentity(profileID: profile.id, with: identity.identityKey)
+            _ = try store.commitIdentityReplacement(transaction)
             return .updated(profileID: profile.id)
         } catch {
-            rollbackExternalReauthentication(profile: profile, previousSnapshot: previousSnapshot)
+            let restored = rollbackCredentialTransaction(
+                profile: profile,
+                previousSnapshot: observation.previousSnapshot,
+                previousShared: observation.sharedNeedsNormalization ? observation.currentShared : nil,
+                restoresSharedAuthentication: observation.sharedNeedsNormalization,
+                context: "external reauthentication"
+            )
+            if restored {
+                try? store.cancelIdentityReplacement(transaction)
+            }
             throw error
         }
     }
@@ -228,6 +295,7 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore,
         isActive: Bool
     ) throws -> AccountProfile {
+        _ = try recoverInterruptedIdentityReplacement(in: store)
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
         }
@@ -237,6 +305,11 @@ struct AccountCredentialImporter {
 
         let previousSnapshot = try switcher.loadSnapshot(for: profile)
         let previousShared = isActive ? try switcher.readSharedAuthentication(family: profile.family) : nil
+        let transaction = try store.beginIdentityReplacement(
+            profileID: profile.id,
+            with: credential.identityKey,
+            replacesSharedAuthentication: isActive
+        )
         do {
             try switcher.saveSnapshot(credential.entry, for: profile)
             if isActive {
@@ -247,67 +320,104 @@ struct AccountCredentialImporter {
                     throw ImportError.verificationFailed(family: profile.family)
                 }
             }
-            return try store.replaceIdentity(profileID: profile.id, with: credential.identityKey)
+            return try store.commitIdentityReplacement(transaction)
         } catch {
-            rollbackReSignIn(
+            let restored = rollbackCredentialTransaction(
                 profile: profile,
                 previousSnapshot: previousSnapshot,
                 previousShared: previousShared,
-                wasActive: isActive
+                restoresSharedAuthentication: isActive,
+                context: "account re-sign-in"
             )
+            if restored {
+                try? store.cancelIdentityReplacement(transaction)
+            }
             throw error
         }
     }
 
-    private func rollbackReSignIn(
-        profile: AccountProfile,
-        previousSnapshot: AccountCredentialVault.Entry?,
-        previousShared: AccountCredentialVault.Entry?,
-        wasActive: Bool
-    ) {
-        if let previousSnapshot {
-            do {
-                try switcher.saveSnapshot(previousSnapshot, for: profile)
-                try switcher.writeWorkspaceAuthentication(previousSnapshot, for: profile)
-            } catch {
-                AppLog.error(.auth, "account re-sign-in snapshot rollback failed: \(error.localizedDescription)")
+    /// 중단된 identity 교체 journal을 snapshot 기준으로 완결하거나 쓰기 전 상태로 폐기.
+    @discardableResult
+    func recoverInterruptedIdentityReplacement(in store: AccountProfilesStore) throws -> Bool {
+        guard let transaction = try store.pendingIdentityReplacement() else { return false }
+        guard let profile = store.profile(id: transaction.profileID) else {
+            try store.cancelIdentityReplacement(transaction)
+            return false
+        }
+        let savedSnapshot = try switcher.loadSnapshot(for: profile)
+        guard let snapshot = savedSnapshot,
+              switcher.identity(of: snapshot, family: profile.family)?.identityKey
+                == transaction.replacementIdentityKey
+        else {
+            if transaction.replacesSharedAuthentication, let savedSnapshot {
+                try switcher.applySharedAuthentication(savedSnapshot, family: profile.family)
+                try switcher.writeWorkspaceAuthentication(savedSnapshot, for: profile)
             }
-        } else {
-            do {
-                try AccountCredentialVault(keychain: keychain).delete(profile: profile)
-                try removeSignInWorkspace(family: profile.family, profileID: profile.id)
-            } catch {
-                AppLog.error(.auth, "account re-sign-in empty-state rollback failed: \(error.localizedDescription)")
+            if profile.identityKey != transaction.previousIdentityKey {
+                _ = try store.replaceIdentity(
+                    profileID: profile.id,
+                    with: transaction.previousIdentityKey
+                )
+            }
+            try store.cancelIdentityReplacement(transaction)
+            return false
+        }
+
+        try switcher.writeWorkspaceAuthentication(snapshot, for: profile)
+        if transaction.replacesSharedAuthentication {
+            try switcher.applySharedAuthentication(snapshot, family: profile.family)
+            guard let applied = try switcher.readSharedAuthentication(family: profile.family),
+                  switcher.identity(of: applied, family: profile.family)?.identityKey
+                    == transaction.replacementIdentityKey
+            else {
+                throw ImportError.verificationFailed(family: profile.family)
             }
         }
-        if wasActive, let previousShared {
-            do {
-                try switcher.applySharedAuthentication(previousShared, family: profile.family)
-            } catch {
-                AppLog.error(.auth, "account re-sign-in shared-home rollback failed: \(error.localizedDescription)")
-            }
-        }
+        _ = try store.commitIdentityReplacement(transaction)
+        AppLog.info(.auth, "recovered an interrupted account identity replacement")
+        return true
     }
 
-    private func rollbackExternalReauthentication(
+    @discardableResult
+    private func rollbackCredentialTransaction(
         profile: AccountProfile,
-        previousSnapshot: AccountCredentialVault.Entry?
-    ) {
+        previousSnapshot: AccountCredentialVault.Entry?,
+        previousShared: AccountCredentialVault.Entry? = nil,
+        restoresSharedAuthentication: Bool = false,
+        context: String
+    ) -> Bool {
+        var restored = true
         if let previousSnapshot {
             do {
                 try switcher.saveSnapshot(previousSnapshot, for: profile)
                 try switcher.writeWorkspaceAuthentication(previousSnapshot, for: profile)
             } catch {
-                AppLog.error(.auth, "external reauthentication rollback failed: \(error.localizedDescription)")
+                restored = false
+                AppLog.error(.auth, "\(context) snapshot rollback failed: \(error.localizedDescription)")
             }
         } else {
             do {
                 try AccountCredentialVault(keychain: keychain).delete(profile: profile)
                 try removeSignInWorkspace(family: profile.family, profileID: profile.id)
             } catch {
-                AppLog.error(.auth, "external reauthentication empty-state rollback failed: \(error.localizedDescription)")
+                restored = false
+                AppLog.error(.auth, "\(context) empty-state rollback failed: \(error.localizedDescription)")
             }
         }
+        if restoresSharedAuthentication {
+            if let previousShared {
+                do {
+                    try switcher.applySharedAuthentication(previousShared, family: profile.family)
+                } catch {
+                    restored = false
+                    AppLog.error(.auth, "\(context) shared-home rollback failed: \(error.localizedDescription)")
+                }
+            } else {
+                restored = false
+                AppLog.error(.auth, "\(context) shared-home rollback requires crash recovery")
+            }
+        }
+        return restored
     }
 
     /// 첫 계정 import — 이미 로그인된 기본 계정을 provider re-login 없이 registry에 등록.

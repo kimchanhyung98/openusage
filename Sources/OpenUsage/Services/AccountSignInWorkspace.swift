@@ -2,7 +2,8 @@ import Foundation
 
 /// Shared Runtime Home을 건드리지 않고 공식 provider sign-in을 완료하는 앱 소유 home — `~/Library/Application Support/OpenUsage/AccountSignIn/<family>/<profile-id>/`.
 /// 경로는 불변 profile id에서 파생, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
-struct AccountSignInWorkspace {
+/// 내부 `FileManager` delegate 미사용 — credential read task로 안전하게 전달 가능.
+struct AccountSignInWorkspace: @unchecked Sendable {
     enum WorkspaceError: LocalizedError {
         case invalidComponent(String)
         case outsideOwnedRoot(String)

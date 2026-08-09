@@ -72,6 +72,27 @@ extension AccountProfileError {
     }
 }
 
+struct AccountIdentityReplacement: Codable, Equatable, Sendable {
+    var profileID: String
+    var previousIdentityKey: String
+    var replacementIdentityKey: String
+    var replacesSharedAuthentication: Bool
+}
+
+enum AccountIdentityReplacementError: LocalizedError {
+    case pendingTransaction
+    case invalidTransaction
+
+    var errorDescription: String? {
+        switch self {
+        case .pendingTransaction:
+            "Another account sign-in update is still being recovered. Try again after the next refresh."
+        case .invalidTransaction:
+            "The saved account sign-in update could not be recovered. Check the app log and try again."
+        }
+    }
+}
+
 /// managed account registry(`openusage.accountProfiles.v2`) — 공유 defaults domain이라 앱과 read-only
 /// `openusage account` CLI가 같은 상태 공유(CLI는 launch마다 fresh read, 앱은 panel open 시 `reloadFromDefaults()`).
 /// profile metadata만 보유 — credential은 각 profile의 Keychain snapshot, 카드 identity는 `ProviderAccountsStore`.
@@ -79,6 +100,7 @@ extension AccountProfileError {
 @Observable
 public final class AccountProfilesStore {
     public static let storageKey = "openusage.accountProfiles.v2"
+    static let identityReplacementKey = "openusage.accountIdentityReplacement.v1"
     public static let maxProfilesPerFamily = 10
     nonisolated static let maxLabelLength = 60
 
@@ -102,6 +124,7 @@ public final class AccountProfilesStore {
 
     public private(set) var profiles: [AccountProfile] = []
     public private(set) var hasUnreadableRegistry = false
+    public private(set) var authenticationRevision = 0
     private var preferredByFamily: [String: String] = [:]
 
     public init(defaults: UserDefaults = .standard) {
@@ -225,6 +248,66 @@ public final class AccountProfilesStore {
         profiles[index].identityKey = normalizedIdentity
         persist()
         return profiles[index]
+    }
+
+    /// snapshot·workspace와 profile identity 사이의 crash recovery journal 시작.
+    func beginIdentityReplacement(
+        profileID: String,
+        with identityKey: String,
+        replacesSharedAuthentication: Bool
+    ) throws -> AccountIdentityReplacement {
+        try ensureRegistryWritable()
+        guard let profile = profile(id: profileID) else {
+            throw AccountProfileError.profileNotFound(profileID)
+        }
+        guard try pendingIdentityReplacement() == nil else {
+            throw AccountIdentityReplacementError.pendingTransaction
+        }
+        let replacementIdentityKey = identityKey
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !replacementIdentityKey.isEmpty else {
+            throw AccountProfileError.profileNotFound(identityKey)
+        }
+        let transaction = AccountIdentityReplacement(
+            profileID: profile.id,
+            previousIdentityKey: profile.identityKey,
+            replacementIdentityKey: replacementIdentityKey,
+            replacesSharedAuthentication: replacesSharedAuthentication
+        )
+        defaults.set(try JSONEncoder().encode(transaction), forKey: Self.identityReplacementKey)
+        return transaction
+    }
+
+    func pendingIdentityReplacement() throws -> AccountIdentityReplacement? {
+        guard let data = defaults.data(forKey: Self.identityReplacementKey) else { return nil }
+        guard let transaction = try? JSONDecoder().decode(AccountIdentityReplacement.self, from: data) else {
+            AppLog.error(.auth, "account identity replacement journal is unreadable")
+            defaults.removeObject(forKey: Self.identityReplacementKey)
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        return transaction
+    }
+
+    @discardableResult
+    func commitIdentityReplacement(_ transaction: AccountIdentityReplacement) throws -> AccountProfile {
+        guard try pendingIdentityReplacement() == transaction else {
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        let profile = try replaceIdentity(
+            profileID: transaction.profileID,
+            with: transaction.replacementIdentityKey
+        )
+        defaults.removeObject(forKey: Self.identityReplacementKey)
+        authenticationRevision &+= 1
+        return profile
+    }
+
+    func cancelIdentityReplacement(_ transaction: AccountIdentityReplacement) throws {
+        guard try pendingIdentityReplacement() == transaction else {
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        defaults.removeObject(forKey: Self.identityReplacementKey)
     }
 
     /// profile tombstone 처리 — 다른 active profile이 있는 동안 선택된 profile의 archive는 거부, switchable

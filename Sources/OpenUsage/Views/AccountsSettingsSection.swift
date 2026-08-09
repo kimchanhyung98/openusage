@@ -115,8 +115,15 @@ struct AccountsSettingsSection: View {
             store.reloadFromDefaults()
             container.refreshAccountCatalog()
             refreshSignInStates()
+            Task {
+                _ = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+                refreshSignInStates()
+            }
         }
         .onChange(of: store.profiles) {
+            refreshSignInStates()
+        }
+        .onChange(of: store.authenticationRevision) {
             refreshSignInStates()
         }
     }

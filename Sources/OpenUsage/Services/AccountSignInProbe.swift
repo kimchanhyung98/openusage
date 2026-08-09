@@ -32,14 +32,28 @@ struct AccountSignInProbe: Sendable {
             environment: environment,
             homeDirectory: homeDirectory()
         )
-        guard let entry = try? switcher.loadSnapshot(for: profile),
-              let (identityKey, label) = switcher.identity(of: entry, family: profile.family),
+        let snapshot: AccountCredentialVault.Entry?
+        do {
+            snapshot = try switcher.loadSnapshot(for: profile)
+        } catch {
+            AppLog.error(.auth, "account snapshot read failed during readiness probe: \(error.localizedDescription)")
+            return .needsSignIn
+        }
+        guard let snapshot,
+              let (identityKey, label) = switcher.identity(of: snapshot, family: profile.family),
               identityKey == profile.identityKey
         else {
             return .needsSignIn
         }
         if isSelected, profile.family == "claude" {
-            guard let shared = try? switcher.readSharedClaudeExternalAuthentication(),
+            let shared: AccountCredentialVault.Entry?
+            do {
+                shared = try switcher.readSharedClaudeAuthenticationForReadiness()
+            } catch {
+                AppLog.error(.auth, "shared Claude home read failed during readiness probe: \(error.localizedDescription)")
+                return .needsSignIn
+            }
+            guard let shared,
                   switcher.identity(of: shared, family: profile.family)?.identityKey == profile.identityKey
             else {
                 return .needsSignIn

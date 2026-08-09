@@ -41,12 +41,16 @@ final class AppContainer {
     let accountProfiles: AccountProfilesStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
+    /// 현재 provider catalog를 만든 account 입력 — 동일 입력의 재조립은 in-flight refresh를 무효화하지 않음.
+    private var accountAssembly: ProviderAccountAssembly
     /// 온디맨드 credential 재탐지(Customize "Reset All")용으로 보관하는 provider runtime 목록.
     private var providers: [ProviderRuntime]
     /// 127.0.0.1:6736의 읽기 전용 로컬 usage API (포트 점유 시 조용히 비활성).
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
+    /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
+    private var isReconcilingExternalClaudeAuthentication = false
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
     private let seedTask: Task<Void, Never>?
     /// 신규 provider credential 탐지 패스 (`NewProviderSeeder` 참고); 처음 보는 provider가 없으면 `nil`.
@@ -65,11 +69,6 @@ final class AppContainer {
         // `accountProfiles`는 패스와 Settings 계정 UI가 한 인스턴스를 공유하도록 패스 이전에 생성.
         let accounts = ProviderAccountsStore()
         let accountProfiles = AccountProfilesStore()
-        do {
-            _ = try AccountCredentialImporter().reconcileSelectedClaudeSharedAuthentication(in: accountProfiles)
-        } catch {
-            AppLog.error(.auth, "launch external reauthentication reconciliation failed: \(error.localizedDescription)")
-        }
         let accountAssembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
@@ -77,6 +76,7 @@ final class AppContainer {
         )
         self.accounts = accounts
         self.accountProfiles = accountProfiles
+        self.accountAssembly = accountAssembly
         self.accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
             assembly: accountAssembly,
             profiles: accountProfiles
@@ -209,7 +209,7 @@ final class AppContainer {
             dataStore: dataStore,
             telemetry: telemetry,
             reconcileAccounts: { [weak self] in
-                self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+                _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
         localAPI.start()
@@ -256,15 +256,14 @@ final class AppContainer {
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
-    func refreshAccountCatalog(reconcilesExternalAuthentication: Bool = true) {
-        if reconcilesExternalAuthentication {
-            _ = reconcileExternalClaudeAuthentication()
-        }
+    func refreshAccountCatalog() {
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
             accountProfiles: accountProfiles
         )
+        guard assembly != accountAssembly else { return }
+        accountAssembly = assembly
         let nextProviders = ProviderCatalog.make(
             claudeCards: assembly.claudeCards,
             defaultClaudeExtraLogRoots: assembly.defaultClaudeExtraLogRoots,
@@ -305,37 +304,58 @@ final class AppContainer {
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
-        reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        let reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         await dataStore.refreshAll(force: force)
+        if let reconciliationError {
+            dataStore.setExternalProviderError(reconciliationError, for: "claude")
+        }
     }
 
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
+        var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
-            reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
-        return await dataStore.refresh(providerID: providerID, force: force)
+        let outcome = await dataStore.refresh(providerID: providerID, force: force)
+        if let reconciliationError {
+            dataStore.setExternalProviderError(reconciliationError, for: "claude")
+        }
+        return outcome
     }
 
     @discardableResult
-    private func reconcileExternalClaudeAuthentication() -> Bool {
+    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error> {
+        guard !isReconcilingExternalClaudeAuthentication else { return .success(false) }
+        isReconcilingExternalClaudeAuthentication = true
+        defer { isReconcilingExternalClaudeAuthentication = false }
         do {
-            switch try AccountCredentialImporter().reconcileSelectedClaudeSharedAuthentication(in: accountProfiles) {
+            switch try await AccountCredentialImporter()
+                .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
             case .updated(let profileID):
                 AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
-                return true
+                return .success(true)
             case .unchanged, .noUsableAuthentication:
-                return false
+                return .success(false)
             }
         } catch {
             AppLog.error(.auth, "external Claude reauthentication reconciliation failed: \(error.localizedDescription)")
-            return false
+            return .failure(error)
         }
     }
 
-    private func reconcileExternalClaudeAuthenticationAndRefreshCatalog() {
-        guard reconcileExternalClaudeAuthentication() else { return }
-        refreshAccountCatalog(reconcilesExternalAuthentication: false)
+    /// 외부 Claude 로그인 반영 — 실패 시 log와 함께 수동 refresh가 카드에 표시할 친화적 메시지 반환.
+    @discardableResult
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async -> String? {
+        switch await reconcileExternalClaudeAuthentication() {
+        case .success(true):
+            refreshAccountCatalog()
+            return nil
+        case .success(false):
+            return nil
+        case .failure:
+            return "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        }
     }
 
     /// account runtime은 한 provider의 대체 view — Customize 마스터 토글은 family 전체 카드를 함께 on/off.
@@ -385,12 +405,12 @@ final class AppContainer {
     private static func startPeriodicRefresh(
         dataStore: WidgetDataStore,
         telemetry: TelemetryRecorder,
-        reconcileAccounts: @escaping @MainActor () -> Void
+        reconcileAccounts: @escaping @MainActor () async -> Void
     ) -> Task<Void, Never> {
         Task {
             let wakeSignal = RefreshWakeSignal()
             while !Task.isCancelled {
-                reconcileAccounts()
+                await reconcileAccounts()
                 await dataStore.refreshAll()
                 // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
                 await dataStore.evaluateNotifications()
