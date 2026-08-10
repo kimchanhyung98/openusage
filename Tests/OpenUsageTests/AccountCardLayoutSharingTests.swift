@@ -61,6 +61,31 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         )
     }
 
+    func testEveryCardsMetricsFeedRefreshAndNotifications() {
+        let store = makeStore(defaults: makeDefaults("RenderedDescriptors"))
+
+        let ids = store.orderedRenderedDescriptors().map(\.id)
+
+        XCTAssertTrue(ids.contains("claude.session"))
+        XCTAssertTrue(
+            ids.contains("\(cardID).session"),
+            "an account card's metrics must still reach quota notifications"
+        )
+    }
+
+    func testReorderingAProviderMovesItsWholeAccountBlock() {
+        let store = makeStore(defaults: makeDefaults("ReorderFamilyBlock"))
+        store.providerOrder = ["claude", cardID, "codex"]
+
+        XCTAssertTrue(store.reorderProvider(dragged: "codex", target: "claude"))
+
+        XCTAssertEqual(
+            store.providerOrder,
+            ["codex", "claude", cardID],
+            "accounts of a provider stay together, so switching accounts never moves the section"
+        )
+    }
+
     // MARK: - Migration of layouts saved per account card
 
     func testStoredAccountCardEntriesFoldIntoTheProviderLayout() {
@@ -87,6 +112,43 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         XCTAssertEqual(persistence.loadPlaced()?.map(\.descriptorID), ["claude.session", "claude.trend"])
         XCTAssertEqual(persistence.loadExpandedMetrics().map(Set.init), ["claude.trend"])
         XCTAssertEqual(persistence.loadExpandedProviders().map(Set.init), ["claude"])
+    }
+
+    func testACardOnlyCaretSplitIsPromotedInsteadOfDropped() {
+        // 카드 화면에서만 caret을 편집한 설치 — family 항목이 없으면 그 선택이 provider 설정이 됨
+        let defaults = makeDefaults("PromoteCardOnlyExpansion")
+        defaults.set(["\(cardID).trend"], forKey: "layout.expandedMetrics")
+        defaults.set(["\(cardID).today"], forKey: "layout.expandOnEnable")
+        saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
+
+        let store = makeStore(defaults: defaults)
+
+        XCTAssertEqual(store.expandedMetricIDs, ["claude.trend"], "the card's split is kept as the provider's")
+        XCTAssertEqual(store.defaultExpandedOnEnableIDs, ["claude.today"])
+    }
+
+    func testAFamilyCaretSplitWinsOverCardEntries() {
+        let defaults = makeDefaults("FamilyExpansionWins")
+        defaults.set(["claude.trend", "\(cardID).today"], forKey: "layout.expandedMetrics")
+        saveStored([PlacedWidget(descriptorID: "claude.session")], forKey: "layout", in: defaults)
+
+        let store = makeStore(defaults: defaults)
+
+        XCTAssertEqual(
+            store.expandedMetricIDs,
+            ["claude.trend"],
+            "once the provider has its own entry, card copies are dropped"
+        )
+    }
+
+    func testFoldingStarsIsDeterministicWithoutARanking() {
+        let pins = ["claude.today", "claude.trend", "claude.session"]
+
+        let first = LayoutOrdering.foldingPins(pins, order: [:], limit: 2)
+        let second = LayoutOrdering.foldingPins(pins.reversed(), order: [:], limit: 2)
+
+        XCTAssertEqual(first, ["claude.today", "claude.trend"], "with no ranking the saved order decides")
+        XCTAssertEqual(second, ["claude.session", "claude.trend"])
     }
 
     func testFoldedMenuBarStarsStayWithinThePerProviderLimit() {
@@ -135,10 +197,11 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 }
 
 private extension WidgetRegistry {
-    /// 기본 Claude 카드 + 관리형 계정 카드 하나 — 두 카드가 같은 metric 3종을 제공
+    /// 기본 Claude 카드 + 등록 계정 카드 하나(+ 순서 검증용 Codex) — 카드들이 같은 metric 3종을 제공
     static var claudeWithAccountCard: WidgetRegistry {
         let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let card = Provider(id: "claude@profile-work", displayName: "Claude — Work", icon: .providerMark("claude"))
+        let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         func descriptors(_ provider: Provider) -> [WidgetDescriptor] {
             ["session", "trend", "today"].map { suffix in
                 WidgetDescriptor(
@@ -156,8 +219,8 @@ private extension WidgetRegistry {
             }
         }
         return WidgetRegistry(
-            providers: [claude, card],
-            descriptors: descriptors(claude) + descriptors(card)
+            providers: [claude, card, codex],
+            descriptors: descriptors(claude) + descriptors(card) + descriptors(codex)
         )
     }
 }

@@ -788,7 +788,7 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertEqual(store.pinnedMetricIDs, expected)
     }
 
-    func testProviderReorderPreservesAnAbsentAccountCardSlot() {
+    func testProviderReorderMovesAnAbsentAccountCardWithItsFamily() {
         let defaults = makeDefaults("ReorderAbsentAccountCard")
         let storageKey = "layout"
         let hidden = "claude@hidden"
@@ -799,11 +799,15 @@ final class LayoutStoreTests: XCTestCase {
 
         XCTAssertTrue(store.reorderProvider(dragged: "cursor", target: "claude"))
 
-        XCTAssertEqual(Array(store.providerOrder.prefix(3)), ["cursor", hidden, "claude"])
+        XCTAssertEqual(
+            Array(store.providerOrder.prefix(3)),
+            ["cursor", "claude", hidden],
+            "the family block moves together, so the card returns beside its provider"
+        )
         XCTAssertEqual(
             LayoutPersistence(defaults: defaults, storageKey: storageKey).loadProviderOrder()?.contains(hidden),
             true,
-            "the absent card keeps its slot for the launch it returns on"
+            "the absent card keeps its place for the launch it returns on"
         )
     }
 
