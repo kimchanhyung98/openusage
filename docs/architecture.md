@@ -47,11 +47,11 @@ Provider instances reading the same home share one scanner actor, which avoids d
 The disk store provides reuse across process launches.
 Scans drop source-file records as their modification dates leave the requested history window.
 Aggregation and pricing still run on every refresh from the cached events.
-The launch account pass assembles extra Claude account cards, their log roots, and read-only snapshot cards for inactive managed accounts.
+The launch account pass assembles log roots for the shared home and read-only snapshot cards for inactive registered accounts.
 Settings account actions repeat that pass, so cards follow account changes without a relaunch.
-The dashboard selector collapses only cards mapped to managed profiles.
-Unrelated discovered config-dir cards remain independent.
-Shared pi logs cannot identify which Claude login produced them, so they are omitted while Claude has split account cards rather than assigned to the wrong account.
+A Claude login found in a config directory that is not registered produces no card and no registry record; it only records that another login exists on this Mac.
+The dashboard selector collapses every card of a provider into one, so each provider renders a single card.
+Shared pi logs cannot identify which Claude login produced them, so they are omitted while another Claude login exists rather than assigned to the wrong account.
 When a config dir is re-authenticated as a different account, reconciliation moves that source edge to the new identity while retaining the old record and its history.
 For the selected managed Claude account, shared-home reconciliation is verification-guarded and bidirectional.
 Any complete, verifiable login produced by the official Claude CLI replaces the selected record's saved authentication and current provider identity while preserving its stable id, account name, and selection.
@@ -60,7 +60,7 @@ Provider identity isolates credentials and cached usage during that replacement;
 Credential/cache identity and iCloud history attribution are separate.
 A managed bare Claude/Codex runtime can have one current authentication identity while its shared-home logs contain sessions from several switched accounts.
 That history is exported as a family total without the selected profile's identity.
-Discovery cards whose log roots are pinned to one proven account keep identity-keyed history.
+Snapshot cards for registered accounts read one proven account's authentication, so their history stays identity-keyed.
 
 ## Stores
 

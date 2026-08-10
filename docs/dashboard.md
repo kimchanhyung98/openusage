@@ -97,7 +97,8 @@ Rows with a reset date tick every 30 seconds, so countdowns and pace stay live b
 
 Claude and Codex always get exactly one card, titled **Claude** or **Codex**, no matter how many accounts you have.
 With two or more accounts, a small account selector in the card header chooses which account's usage that card displays.
-The selector lists the account signed in to the provider's shared home (`~/.claude`, `~/.codex`) as **Default**, plus every account registered in [**Settings → Accounts**](/docs/settings.md) under its account name.
+The selector lists the account signed in to the provider's shared home (`~/.claude`, `~/.codex`) as **Default**, plus each account registered in [**Settings → Accounts**](/docs/settings.md) that has usable saved authentication on this Mac, under its account name.
+A registered account whose saved authentication is missing has no usage to show, so it stays out of the selector until it is signed in again.
 A Claude login kept in some other configuration directory is not listed until you register it there.
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
 Terminal switching remains in Settings.
