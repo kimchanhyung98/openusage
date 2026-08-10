@@ -807,8 +807,8 @@ final class LayoutStoreTests: XCTestCase {
         )
     }
 
-    func testTranslatedDefaultsSeedAnAccountCardTheFirstTimeItAppears() {
-        // translated id는 seeded-defaults baseline에 없어 account card 최초 등장 시 family default가 seed됨
+    func testAnAccountCardInheritsTheProvidersSavedLayout() {
+        // 카드 전용 설정은 없음 — 새 카드는 사용자가 family에 남긴 선택을 그대로 렌더
         let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let work = Provider(id: "claude@work", displayName: "Claude — Work", icon: .providerMark("claude"))
         func descriptor(_ id: String, _ provider: Provider) -> WidgetDescriptor {
@@ -845,9 +845,14 @@ final class LayoutStoreTests: XCTestCase {
             store.isMetricEnabled("claude.sonnet"),
             "the family's own disabled default stays exactly as the user left it"
         )
-        XCTAssertTrue(
-            store.defaultExpandedOnEnableIDs.contains("claude@work.sonnet"),
-            "the caret split translates with the metric set"
+        XCTAssertFalse(
+            store.isMetricEnabled("claude@work.sonnet"),
+            "the card follows the family's choice instead of re-seeding its own copy"
+        )
+        XCTAssertEqual(
+            store.defaultExpandedOnEnableIDs,
+            ["claude.sonnet"],
+            "the caret split stays a single family entry"
         )
     }
 

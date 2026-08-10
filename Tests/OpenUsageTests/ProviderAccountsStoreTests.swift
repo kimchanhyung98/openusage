@@ -150,35 +150,28 @@ final class ProviderAccountsStoreTests: XCTestCase {
         XCTAssertTrue(ProviderAccountsStore(defaults: defaults).records.isEmpty)
     }
 
-    func testRenamePersistsAndAClearedNameFallsBackToTheDerivedOne() {
+    func testCardNamesAreAlwaysDerivedFromTheAccount() {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         store.reconcile(with: [defaultHomeObservation(family: "claude", identityKey: "acct-a", label: "a@example.com")])
 
-        store.rename(cardID: "claude", to: "  Work  ")
-        XCTAssertEqual(store.records[0].customLabel, "Work", "renames are trimmed")
-        XCTAssertEqual(store.records[0].resolvedDisplayName, "Work", "the resolver surfaces the rename")
-        XCTAssertEqual(ProviderAccountsStore(defaults: defaults).records[0].customLabel, "Work", "renames persist")
-
-        store.rename(cardID: "claude", to: "   ")
-        XCTAssertNil(store.records[0].customLabel, "a blank rename clears back to the derived name")
-        XCTAssertEqual(store.records[0].resolvedDisplayName, "Claude", "the bare card derives the stock family name")
-
-        store.rename(cardID: "missing", to: "X")
-        XCTAssertEqual(store.records.count, 1, "renaming an unknown card is a no-op")
+        XCTAssertEqual(store.records[0].resolvedDisplayName, "Claude", "the bare card carries the stock family name")
+        XCTAssertEqual(
+            ProviderAccountsStore(defaults: defaults).records[0].resolvedDisplayName,
+            "Claude",
+            "names are derived on every launch, never stored per card"
+        )
     }
 
-    func testReconcileNeverTouchesACustomLabel() {
+    func testReconcileKeepsTheNameFollowingTheAccountLabel() {
         let store = ProviderAccountsStore(defaults: makeScratchDefaults())
         store.reconcile(with: [defaultHomeObservation(family: "claude", identityKey: "acct-a", label: "old")])
-        store.rename(cardID: "claude", to: "Work")
 
         let records = store.reconcile(with: [
             defaultHomeObservation(family: "claude", identityKey: "acct-a", label: "new"),
         ])
 
-        XCTAssertEqual(records[0].label, "new")
-        XCTAssertEqual(records[0].customLabel, "Work", "rescans update the label but never the rename")
+        XCTAssertEqual(records[0].label, "new", "rescans update the account label")
     }
 
     func testFamilyHelperSplitsCardIDs() {

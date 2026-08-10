@@ -3,54 +3,48 @@ import XCTest
 
 @MainActor
 final class ProviderSectionHeaderTests: XCTestCase {
-    func testManagedAccountCardHeaderKeepsTheProviderFamilyTitle() {
-        let provider = Provider(
-            id: "claude@abc12345",
-            displayName: "Claude — Personal",
-            icon: .providerMark("claude")
-        )
-
+    func testAnAccountCardIsTitledAfterItsProvider() {
         XCTAssertEqual(
-            ProviderSectionHeader.headerTitle(
-                for: provider,
-                resolvedDisplayName: "Claude — Personal",
-                usesManagedAccountTitle: true
-            ),
+            ProviderAccountID.cardTitle(providerID: "claude@abc12345", fallback: "Claude — Personal"),
+            "Claude"
+        )
+        XCTAssertEqual(
+            ProviderAccountID.cardTitle(providerID: "claude", fallback: "Claude"),
             "Claude"
         )
     }
 
-    func testDiscoveredAccountCardKeepsItsExistingTitle() {
-        let provider = Provider(
-            id: "claude@abc12345",
-            displayName: "Claude — Personal",
-            icon: .providerMark("claude")
-        )
-
+    func testANonAccountProviderKeepsItsOwnTitle() {
         XCTAssertEqual(
-            ProviderSectionHeader.headerTitle(
-                for: provider,
-                resolvedDisplayName: "Claude — Work",
-                usesManagedAccountTitle: false
-            ),
-            "Claude — Work"
+            ProviderAccountID.cardTitle(providerID: "cursor", fallback: "Cursor"),
+            "Cursor"
         )
     }
 
-    func testMultipleManagedProfilesKeepThePickerForOneSharedRuntimeCard() {
+    func testMultipleAccountsKeepThePickerForOneSharedRuntimeCard() {
         XCTAssertTrue(
             ProviderSectionHeader.shouldShowAccountPicker(
-                managedProfileCount: 2,
+                accountCount: 2,
                 runtimeOptionCount: 1
             )
         )
     }
 
-    func testDiscoveredRuntimeOptionsDoNotShowAManagedPicker() {
+    func testDiscoveredAccountsAlsoGetThePicker() {
+        XCTAssertTrue(
+            ProviderSectionHeader.shouldShowAccountPicker(
+                accountCount: 2,
+                runtimeOptionCount: 2
+            ),
+            "a config-dir login is an account of the same card, so it belongs in the picker"
+        )
+    }
+
+    func testASingleAccountShowsNoPicker() {
         XCTAssertFalse(
             ProviderSectionHeader.shouldShowAccountPicker(
-                managedProfileCount: 0,
-                runtimeOptionCount: 2
+                accountCount: 1,
+                runtimeOptionCount: 1
             )
         )
     }

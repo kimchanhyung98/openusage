@@ -44,41 +44,85 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
         XCTAssertEqual(DashboardUsageAccountSelection.selectedID(for: "claude", defaults: defaults), "claude")
     }
 
-    func testNoManagedCardsLeavesAllDiscoveredCardsVisible() {
-        let cards = ["claude", "claude@ambient-work"]
+    func testASingleCardStaysVisible() {
+        let cards = ["claude", "codex"]
 
         XCTAssertEqual(
             DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: cards,
-                managedCardIDs: [],
-                selectedManagedCardID: nil
+                familyCardIDs: ["claude"],
+                selectedCardID: "claude"
             ),
             cards
         )
     }
 
-    func testManagedSelectionHidesOnlyOtherManagedCards() {
-        let cards = ["claude", "claude@ambient-work", "claude@profile-personal"]
+    func testEveryAccountOfAProviderCollapsesIntoTheSelectedCard() {
+        let cards = ["claude", "claude@ambient-work", "claude@profile-personal", "codex"]
 
         XCTAssertEqual(
             DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: cards,
-                managedCardIDs: ["claude", "claude@profile-personal"],
-                selectedManagedCardID: "claude"
+                familyCardIDs: ["claude", "claude@ambient-work", "claude@profile-personal"],
+                selectedCardID: "claude@ambient-work"
             ),
-            ["claude", "claude@ambient-work"],
-            "an unmanaged discovered card must retain its existing dashboard section"
+            ["claude@ambient-work", "codex"],
+            "a discovered config-dir login is an account of the same card, not a second card"
         )
     }
 
-    func testOneManagedCardDoesNotCollapseDiscoveredCards() {
+    func testARegisteredAccountIsListedByItsAccountName() {
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.optionTitle(
+                cardID: "claude@profile-personal",
+                profileLabel: "personal",
+                accountName: "Claude — Personal Org"
+            ),
+            "personal"
+        )
+    }
+
+    func testADiscoveredAccountDropsTheProviderPrefix() {
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.optionTitle(
+                cardID: "claude@ab12cd34",
+                profileLabel: nil,
+                accountName: "Claude — Work Org"
+            ),
+            "Work Org"
+        )
+    }
+
+    func testTheSharedHomeAccountIsListedAsDefault() {
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.optionTitle(
+                cardID: "claude",
+                profileLabel: nil,
+                accountName: "Claude"
+            ),
+            "Default"
+        )
+    }
+
+    func testADiscoveredAccountWithoutANameFallsBackToItsCardID() {
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.optionTitle(
+                cardID: "claude@ab12cd34",
+                profileLabel: nil,
+                accountName: nil
+            ),
+            "claude@ab12cd34"
+        )
+    }
+
+    func testAnUnknownSelectionLeavesEveryCardVisible() {
         let cards = ["claude", "claude@ambient-work"]
 
         XCTAssertEqual(
             DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: cards,
-                managedCardIDs: ["claude"],
-                selectedManagedCardID: "claude"
+                familyCardIDs: Set(cards),
+                selectedCardID: "claude@gone"
             ),
             cards
         )
