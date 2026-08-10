@@ -14,9 +14,6 @@ struct WidgetGroupedListView: View {
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
-    /// "Rename…" alert가 편집 중인 카드 — alert가 닫히면 `nil`.
-    @State private var renameCardID: String?
-    @State private var renameDraft = ""
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @AppStorage(DashboardUsageAccountSelection.claudeKey) private var selectedClaudeUsageAccountID = ""
     @AppStorage(DashboardUsageAccountSelection.codexKey) private var selectedCodexUsageAccountID = ""
@@ -30,42 +27,14 @@ struct WidgetGroupedListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
-        .alert("Rename Card", isPresented: isRenamePresented) {
-            TextField("Name", text: $renameDraft)
-            Button("Rename") {
-                if let renameCardID {
-                    // 빈 필드는 카드를 derived name으로 복원.
-                    container.accounts.rename(cardID: renameCardID, to: renameDraft)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Leave the name empty to go back to the default.")
-        }
-    }
-
-    private var isRenamePresented: Binding<Bool> {
-        Binding(
-            get: { renameCardID != nil },
-            set: { if !$0 { renameCardID = nil } }
-        )
     }
 
     private var dashboardGroups: [ProviderGroup] {
         let groups = layout.displayGroups
-        var visibleIDs = groups.map(\.provider.id)
-        for family in accountFamilies {
-            let managedGroups = managedAccountGroups(for: family, in: groups)
-            let selected = managedGroups.isEmpty
-                ? nil
-                : selectedAccountID(for: family, groups: managedGroups)
-            visibleIDs = DashboardUsageAccountSelection.visibleCardIDs(
-                orderedCardIDs: visibleIDs,
-                managedCardIDs: Set(managedGroups.map(\.provider.id)),
-                selectedManagedCardID: selected
-            )
-        }
-        let visible = Set(visibleIDs)
+        let visible = Set(container.collapsingAccountCards(
+            groups.map(\.provider.id),
+            selectionByFamily: storedUsageAccountIDs
+        ))
         return groups.filter { visible.contains($0.provider.id) }
     }
 
@@ -76,34 +45,25 @@ struct WidgetGroupedListView: View {
         return accountFamilies.contains(family) ? family : nil
     }
 
-    private func managedAccountGroups(for family: String, in groups: [ProviderGroup]) -> [ProviderGroup] {
-        let familyGroups = groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
-        return familyGroups.filter { container.accountProfileLabel(for: $0.provider.id) != nil }
+    private func accountGroups(for family: String, in groups: [ProviderGroup]) -> [ProviderGroup] {
+        groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
     }
 
     private func selectedAccountID(for family: String, groups: [ProviderGroup]) -> String {
-        let storedID = storedUsageAccountID(for: family)
-        if groups.contains(where: { $0.provider.id == storedID }) {
-            return storedID
-        }
-        if let selected = container.preferredAccountCardID(
+        container.visibleAccountCardID(
             for: family,
-            among: groups.map(\.provider.id)
-        ) {
-            return selected
-        }
-        if let defaultGroup = groups.first(where: { $0.provider.id == family }) {
-            return defaultGroup.provider.id
-        }
-        return groups[0].provider.id
+            among: groups.map(\.provider.id),
+            stored: storedUsageAccountID(for: family)
+        ) ?? ""
+    }
+
+    /// `@AppStorage` 값을 읽는 지점 — picker 변경이 dashboard 재계산을 트리거.
+    private var storedUsageAccountIDs: [String: String] {
+        ["claude": selectedClaudeUsageAccountID, "codex": selectedCodexUsageAccountID]
     }
 
     private func storedUsageAccountID(for family: String) -> String {
-        switch family {
-        case "claude": selectedClaudeUsageAccountID
-        case "codex": selectedCodexUsageAccountID
-        default: ""
-        }
+        storedUsageAccountIDs[family] ?? ""
     }
 
     private func selectUsageAccount(_ providerID: String, for family: String) {
@@ -126,16 +86,16 @@ struct WidgetGroupedListView: View {
     private func header(_ group: ProviderGroup) -> some View {
         let allGroups = layout.displayGroups
         let family = accountFamily(for: group.provider.id)
-        let familyGroups = family.map { self.managedAccountGroups(for: $0, in: allGroups) } ?? []
-        let isManagedAccountGroup = familyGroups.contains { $0.provider.id == group.provider.id }
-        let managedProfileCount = isManagedAccountGroup
-            ? family.map { container.accountProfiles.profiles(family: $0).count } ?? 0
+        let familyGroups = family.map { self.accountGroups(for: $0, in: allGroups) } ?? []
+        let isAccountFamilyGroup = familyGroups.contains { $0.provider.id == group.provider.id }
+        // 등록 profile 수가 런타임 카드 수를 넘을 수 있음(여러 계정이 공유 home 하나를 쓰는 경우).
+        let accountCount = isAccountFamilyGroup
+            ? max(familyGroups.count, family.map { container.accountProfiles.profiles(family: $0).count } ?? 0)
             : 0
-        let options = isManagedAccountGroup ? familyGroups.map {
+        let options = isAccountFamilyGroup ? familyGroups.map {
             AccountUsageOption(
                 id: $0.provider.id,
-                title: container.accountProfileLabel(for: $0.provider.id)
-                    ?? container.displayName(for: $0.provider)
+                title: container.accountOptionTitle(for: $0.provider.id)
             )
         } : []
         return ProviderSectionHeader(
@@ -146,10 +106,10 @@ struct WidgetGroupedListView: View {
             staleness: dataStore.stalenessHint(for: group.provider.id),
             onCopyScreenshot: { shareCard(group) },
             accountOptions: options,
-            selectedAccountID: isManagedAccountGroup
+            selectedAccountID: isAccountFamilyGroup
                 ? family.map { selectedAccountID(for: $0, groups: familyGroups) }
                 : nil,
-            onSelectAccount: isManagedAccountGroup ? family.map { family in
+            onSelectAccount: isAccountFamilyGroup ? family.map { family in
                 { providerID in
                     selectUsageAccount(providerID, for: family)
                     // periodic refresh가 이 카드를 이미 소유했을 수 있음 — plain `refresh`는 skip되어
@@ -157,8 +117,7 @@ struct WidgetGroupedListView: View {
                     Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
                 }
             } : nil,
-            usesManagedAccountTitle: isManagedAccountGroup,
-            managedProfileCount: managedProfileCount
+            accountCount: accountCount
         )
         .padding(.horizontal, 8)
         .highPriorityGesture(providerDragGesture(for: group))
@@ -171,16 +130,6 @@ struct WidgetGroupedListView: View {
             Divider()
             Button("Refresh \(name)") {
                 Task { await container.refresh(providerID: group.provider.id, force: true) }
-            }
-            // rename은 기록할 account record가 필요 — identity가 한 번이라도 관측된 account-model 카드에만 표시.
-            if container.canRename(group.provider.id) {
-                Button("Rename…") {
-                    // derived title이 아닌 저장된 rename(없으면 빈 값)으로 seed — 미수정 확인이 "no rename"으로
-                    // 남아야 이후 account-label 업데이트가 반영됨.
-                    renameDraft = container.accounts.records
-                        .first { $0.id == group.provider.id }?.customLabel ?? ""
-                    renameCardID = group.provider.id
-                }
             }
             Button("Customize…") {
                 openCustomize(for: group.provider.id)
@@ -366,9 +315,10 @@ struct WidgetGroupedListView: View {
     }
 
     /// dashboard에서 해당 provider의 Customize metric(L2)으로 직행 — provider 리스트를 거치지 않음.
+    /// 계정 카드는 family 화면으로 — metric 설정은 provider 단위 1벌이라 카드별 화면이 없음.
     private func openCustomize(for providerID: String) {
         withAnimation(Motion.modeSwitch) {
-            layout.customizeProviderID = providerID
+            layout.customizeProviderID = ProviderAccountID.family(of: providerID)
             layout.isEditing = true
         }
     }

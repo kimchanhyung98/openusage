@@ -30,18 +30,18 @@ final class LayoutStore {
     var draggingID: UUID?
     /// Persist되는 provider 표시 순서(provider id) — dashboard group과 Customize section 공용.
     var providerOrder: [String]
-    /// Persist되는 provider별 metric 순서 — toggle이 이를 바꾸지 않아 on/off로 행이 이동하지 않음.
+    /// Persist되는 family별 metric 순서(canonical id) — toggle이 이를 바꾸지 않아 on/off로 행이 이동하지 않음.
     var metricOrderByProvider: [String: [String]]
 
-    /// 메뉴바 pin된 descriptor id — membership만 저장, 표시 순서는 provider+metric 순서에서 파생.
+    /// 메뉴바 pin된 canonical metric id — membership만 저장, 표시 순서는 provider+metric 순서에서 파생.
     /// `canPin`으로 provider당 최대 `maxPinsPerProvider`개 제한(strip이 값을 pair로 쌓는 구조).
     private(set) var pinnedMetricIDs: Set<String>
 
-    /// per-provider "Shown on expand" divider 아래의 descriptor id — membership만 저장, section 내 순서는
+    /// per-provider "Shown on expand" divider 아래의 canonical metric id — membership만 저장, section 내 순서는
     /// metric 순서를 따름. disabled 동안에도 membership 유지 — 재활성화 시 원래 section 복원.
     var expandedMetricIDs: Set<String>
 
-    /// expanded metric을 펼쳐 둔 provider — 사용자 preference라 popover 닫힘·앱 재시작에도 유지.
+    /// expanded metric을 펼쳐 둔 family — 사용자 preference라 popover 닫힘·앱 재시작에도 유지.
     private(set) var expandedProviderIDs: Set<String>
 
     private let pinNotice = TransientNotice<String?>(clearedValue: nil, timeout: .seconds(3))
@@ -72,12 +72,10 @@ final class LayoutStore {
 
     private(set) var registry: WidgetRegistry
     private let persistence: LayoutPersistence
-    private let baseDefaultMetricIDs: [String]
     private let migrationBaselineMetricIDs: [String]
-    private let baseDefaultExpandedMetricIDs: [String]
-    private var defaultMetricIDs: [String]
+    private let defaultMetricIDs: [String]
     private let defaultPinnedMetricIDs: [String]
-    private var defaultExpandedMetricIDs: [String]
+    private let defaultExpandedMetricIDs: [String]
     var defaultExpandedOnEnableIDs: Set<String>
     let isProviderEnabled: @MainActor (String) -> Bool
 
@@ -94,27 +92,21 @@ final class LayoutStore {
         self.registry = registry
         let persistence = LayoutPersistence(defaults: defaults, storageKey: storageKey)
         self.persistence = persistence
-        // extra account 카드는 family의 default metric set(과 caret split)을 seed — pin과 migration
-        // baseline은 의도적으로 미번역(`translatedForAccountCards` 참고).
-        self.baseDefaultMetricIDs = defaultMetricIDs
+        // default는 family 기준 canonical id 그대로 — account 카드는 저장된 family 설정을 렌더 시점에 공유.
         self.migrationBaselineMetricIDs = migrationBaselineMetricIDs
-        self.baseDefaultExpandedMetricIDs = defaultExpandedMetricIDs
-        let registryProviderIDs = registry.providers.map(\.id)
-        let translatedMetricIDs = DefaultLayout.translatedForAccountCards(defaultMetricIDs, providerIDs: registryProviderIDs)
-        let translatedExpandedIDs = DefaultLayout.translatedForAccountCards(defaultExpandedMetricIDs, providerIDs: registryProviderIDs)
-        self.defaultMetricIDs = translatedMetricIDs
+        self.defaultMetricIDs = defaultMetricIDs
         self.defaultPinnedMetricIDs = defaultPinnedMetricIDs
-        self.defaultExpandedMetricIDs = translatedExpandedIDs
+        self.defaultExpandedMetricIDs = defaultExpandedMetricIDs
         self.isProviderEnabled = isProviderEnabled
 
         let initial = LayoutBootstrap.load(
             registry: registry,
             persistence: persistence,
             defaults: LayoutDefaultSet(
-                metricIDs: translatedMetricIDs,
+                metricIDs: defaultMetricIDs,
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
                 pinnedMetricIDs: defaultPinnedMetricIDs,
-                expandedMetricIDs: translatedExpandedIDs
+                expandedMetricIDs: defaultExpandedMetricIDs
             )
         )
         placed = initial.placed
@@ -128,37 +120,30 @@ final class LayoutStore {
 
         if initial.shouldPersistExpandOnEnable { persistExpandOnEnable() }
         if initial.shouldPersistExpanded { persistExpanded() }
+        if initial.shouldPersistPins { persistPins() }
+        if initial.shouldPersistMetricOrder { persistMetricOrder() }
+        if initial.shouldPersistExpandedProviders { persistExpandedProviders() }
         if let seededDefaults = initial.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
         syncPlacedOrder(persistChanges: initial.shouldPersistPlaced)
     }
 
     /// 새로 발견된 account 카드를 기존 레이아웃에 reconcile — launch와 같은 bootstrap 경로로 재로드해
-    /// 저장된 선택은 보존하고 새 account의 family default만 seed; store 객체는 유지되어 popover 연결 지속.
+    /// 저장된 선택 보존; store 객체는 유지되어 popover 연결 지속. account 카드는 저장된 family 설정을
+    /// 그대로 물려받으므로 카드 전용 seeding은 없음.
     func replaceRegistry(_ registry: WidgetRegistry) {
         guard registry.providers != self.registry.providers || registry.descriptors != self.registry.descriptors else {
             return
         }
         self.registry = registry
-        let providerIDs = registry.providers.map(\.id)
-        let translatedMetricIDs = DefaultLayout.translatedForAccountCards(
-            baseDefaultMetricIDs,
-            providerIDs: providerIDs
-        )
-        let translatedExpandedIDs = DefaultLayout.translatedForAccountCards(
-            baseDefaultExpandedMetricIDs,
-            providerIDs: providerIDs
-        )
-        defaultMetricIDs = translatedMetricIDs
-        defaultExpandedMetricIDs = translatedExpandedIDs
 
         let reloaded = LayoutBootstrap.load(
             registry: registry,
             persistence: persistence,
             defaults: LayoutDefaultSet(
-                metricIDs: translatedMetricIDs,
+                metricIDs: defaultMetricIDs,
                 migrationBaselineMetricIDs: migrationBaselineMetricIDs,
                 pinnedMetricIDs: defaultPinnedMetricIDs,
-                expandedMetricIDs: translatedExpandedIDs
+                expandedMetricIDs: defaultExpandedMetricIDs
             )
         )
         placed = reloaded.placed
@@ -174,22 +159,32 @@ final class LayoutStore {
 
         if reloaded.shouldPersistExpandOnEnable { persistExpandOnEnable() }
         if reloaded.shouldPersistExpanded { persistExpanded() }
+        if reloaded.shouldPersistPins { persistPins() }
+        if reloaded.shouldPersistMetricOrder { persistMetricOrder() }
+        if reloaded.shouldPersistExpandedProviders { persistExpandedProviders() }
         if let seededDefaults = reloaded.seededDefaultsToPersist { persistSeededDefaults(seededDefaults) }
         syncPlacedOrder(persistChanges: reloaded.shouldPersistPlaced)
     }
 
+    /// metric·provider id의 저장 key — account 카드는 family 설정 1벌을 공유(`ProviderAccountID.canonicalMetricID`).
+    static func canonical(_ metricID: String) -> String {
+        ProviderAccountID.canonicalMetricID(metricID)
+    }
+
     func isProviderExpanded(_ providerID: String) -> Bool {
-        registry.provider(id: providerID) != nil && expandedProviderIDs.contains(providerID)
+        registry.provider(id: providerID) != nil
+            && expandedProviderIDs.contains(ProviderAccountID.family(of: providerID))
     }
 
     @discardableResult
     func setProviderExpanded(_ expanded: Bool, for providerID: String) -> Bool {
         guard registry.provider(id: providerID) != nil else { return false }
-        guard expandedProviderIDs.contains(providerID) != expanded else { return false }
+        let family = ProviderAccountID.family(of: providerID)
+        guard expandedProviderIDs.contains(family) != expanded else { return false }
         if expanded {
-            expandedProviderIDs.insert(providerID)
+            expandedProviderIDs.insert(family)
         } else {
-            expandedProviderIDs.remove(providerID)
+            expandedProviderIDs.remove(family)
         }
         persistExpandedProviders()
         return true
@@ -198,16 +193,18 @@ final class LayoutStore {
     // MARK: - Customize mutations
 
     /// metric on/off toggle — Customize 스위치가 구동하는 단일 seam, 앱의 add/remove 경로와 공유.
+    /// account 카드 id로 들어와도 family 설정을 바꾸므로 같은 family의 모든 카드가 함께 반영.
     func setMetricEnabled(_ descriptorID: String, _ enabled: Bool) {
+        let canonicalID = Self.canonical(descriptorID)
         recordingUndoStep {
             if enabled {
-                if defaultExpandedOnEnableIDs.remove(descriptorID) != nil {
-                    expandedMetricIDs.insert(descriptorID)
+                if defaultExpandedOnEnableIDs.remove(canonicalID) != nil {
+                    expandedMetricIDs.insert(canonicalID)
                     persistExpanded()
                     persistExpandOnEnable()
                 }
                 add(descriptorID)
-            } else if let widget = placed.first(where: { $0.descriptorID == descriptorID }) {
+            } else if let widget = placed.first(where: { $0.descriptorID == canonicalID }) {
                 remove(widget.id)
             }
         }
@@ -278,16 +275,20 @@ final class LayoutStore {
     static let maxPinsPerProvider = 2
 
     func isPinned(_ descriptorID: String) -> Bool {
-        registry.descriptor(id: descriptorID) != nil && pinnedMetricIDs.contains(descriptorID)
+        registry.descriptor(id: descriptorID) != nil && pinnedMetricIDs.contains(Self.canonical(descriptorID))
     }
 
+    /// family의 pin 수 — pin은 canonical이라 카드 수와 무관하게 family당 한 번만 셈.
     func pinnedCount(forProvider providerID: String) -> Int {
-        pinnedMetricIDs.count { registry.descriptor(id: $0)?.providerID == providerID }
+        let family = ProviderAccountID.family(of: providerID)
+        return pinnedMetricIDs.count {
+            ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: $0)) == family
+        }
     }
 
     /// cap을 깨지 않고 새로 pin 가능한지 — 이미 pin된 id는 true(unpin toggle 유지).
     func canPin(_ descriptorID: String) -> Bool {
-        if pinnedMetricIDs.contains(descriptorID) { return true }
+        if pinnedMetricIDs.contains(Self.canonical(descriptorID)) { return true }
         guard let descriptor = registry.descriptor(id: descriptorID), descriptor.pinnable else { return false }
         if pinnedCount(forProvider: descriptor.providerID) >= Self.maxPinsPerProvider { return false }
         return true
@@ -335,12 +336,13 @@ final class LayoutStore {
     /// 메뉴바 pin/unpin — cap 초과 pin은 no-op이라 `canPin`으로 gate한 호출자는 over-pin 불가.
     /// 다른 레이아웃 action처럼 undoable — no-op guard 덕에 거부·중복 pin은 step 미기록.
     func setPinned(_ pinned: Bool, for descriptorID: String) {
+        let canonicalID = Self.canonical(descriptorID)
         recordingUndoStep {
             if pinned {
                 guard canPin(descriptorID), registry.descriptor(id: descriptorID) != nil else { return }
-                guard pinnedMetricIDs.insert(descriptorID).inserted else { return }
+                guard pinnedMetricIDs.insert(canonicalID).inserted else { return }
             } else {
-                guard pinnedMetricIDs.remove(descriptorID) != nil else { return }
+                guard pinnedMetricIDs.remove(canonicalID) != nil else { return }
             }
             persistPins()
         }
@@ -348,50 +350,6 @@ final class LayoutStore {
 
     func togglePin(_ descriptorID: String) {
         setPinned(!isPinned(descriptorID), for: descriptorID)
-    }
-
-    /// managed account family의 기존 메뉴바 star를 선택된 카드로 re-target — account-switch 전용 action
-    /// (dashboard-picker 아님), 같은 metric kind를 per-provider 상한 내로 이전.
-    func retargetMenuBarPins(for family: String, to providerID: String) {
-        guard ProviderAccountID.family(of: providerID) == family,
-              registry.provider(id: providerID) != nil else {
-            return
-        }
-
-        let familyPins = pinnedMetricIDs.filter { descriptorID in
-            guard let descriptor = registry.descriptor(id: descriptorID) else { return false }
-            return ProviderAccountID.family(of: descriptor.providerID) == family
-        }
-        guard !familyPins.isEmpty else { return }
-
-        let pinnedMetricKinds = Set(familyPins.compactMap { descriptorID in
-            registry.descriptor(id: descriptorID).flatMap(Self.accountMetricKind)
-        })
-        let selectedPins = Set(
-            metricOrder(for: providerID)
-                .filter { descriptorID in
-                    guard let descriptor = registry.descriptor(id: descriptorID), descriptor.pinnable,
-                          let kind = Self.accountMetricKind(descriptor) else {
-                        return false
-                    }
-                    return pinnedMetricKinds.contains(kind)
-                }
-                .prefix(Self.maxPinsPerProvider)
-        )
-
-        var updatedPins = pinnedMetricIDs
-        updatedPins.subtract(familyPins)
-        updatedPins.formUnion(selectedPins)
-        guard updatedPins != pinnedMetricIDs else { return }
-
-        pinnedMetricIDs = updatedPins
-        persistPins()
-    }
-
-    private static func accountMetricKind(_ descriptor: WidgetDescriptor) -> String? {
-        let prefix = descriptor.providerID + "."
-        guard descriptor.id.hasPrefix(prefix) else { return nil }
-        return String(descriptor.id.dropFirst(prefix.count))
     }
 
     func persistPins() {
@@ -414,9 +372,10 @@ final class LayoutStore {
 
     func add(_ descriptorID: String) {
         guard registry.descriptor(id: descriptorID) != nil else { return }
-        guard !placed.contains(where: { $0.descriptorID == descriptorID }) else { return }
+        let canonicalID = Self.canonical(descriptorID)
+        guard !placed.contains(where: { $0.descriptorID == canonicalID }) else { return }
         cancelDrag()
-        placed.append(PlacedWidget(descriptorID: descriptorID))
+        placed.append(PlacedWidget(descriptorID: canonicalID))
         syncPlacedOrder()
     }
 
@@ -432,15 +391,15 @@ final class LayoutStore {
         // reset은 그 자체로 deliberate action — pre-reset 레이아웃을 가리키는 undo stack 전체 폐기.
         undoHistory.clear()
         placed = defaultMetricIDs
-            .filter { registry.descriptor(id: $0) != nil }
+            .filter { registry.hasCanonicalMetric($0) }
             .map { PlacedWidget(descriptorID: $0) }
         providerOrder = registry.providers.map(\.id)
         persistProviderOrder()
         metricOrderByProvider = LayoutOrdering.defaultMetricOrder(registry: registry)
         persistMetricOrder()
-        pinnedMetricIDs = Set(defaultPinnedMetricIDs.filter { registry.descriptor(id: $0) != nil })
+        pinnedMetricIDs = Set(defaultPinnedMetricIDs.filter { registry.hasCanonicalMetric($0) })
         persistPins()
-        expandedMetricIDs = Set(defaultExpandedMetricIDs.filter { registry.descriptor(id: $0) != nil })
+        expandedMetricIDs = Set(defaultExpandedMetricIDs.filter { registry.hasCanonicalMetric($0) })
         defaultExpandedOnEnableIDs = []
         persistExpanded()
         persistExpandOnEnable()
@@ -452,28 +411,31 @@ final class LayoutStore {
 
     /// 한 provider의 customization만 default로 reset(enabled metric·metric 순서·pin·caret membership) —
     /// 다른 provider와 전체 provider 순서는 유지. `resetToDefault`의 per-provider 대응; 미지 provider는 no-op.
+    /// account 카드 id로 호출해도 family 설정 1벌을 reset — 같은 family의 모든 카드가 함께 복귀.
     func resetProvider(_ providerID: String) {
         guard registry.provider(id: providerID) != nil else { return }
         cancelDrag()
         // reset은 undoable edit이 아님 — snapshot이 whole-layout이라 per-provider trim 대신 stack 전체 clear.
         undoHistory.clear()
 
-        // 이 provider의 descriptor 전집 — 아래 membership set들의 scope.
-        let owned = Set(registry.descriptors(for: providerID).map(\.id))
+        // 이 family의 canonical metric 전집 — 아래 membership set들의 scope.
+        let family = ProviderAccountID.family(of: providerID)
+        let canonicalIDs = registry.canonicalMetricIDs(family: family)
+        let owned = Set(canonicalIDs)
         func defaults(_ ids: [String]) -> [String] {
-            ids.filter { owned.contains($0) && registry.descriptor(id: $0) != nil }
+            ids.filter { owned.contains($0) }
         }
 
-        // enabled metric: 이 provider의 placed 제거 후 default-on set 재seed — 타 provider widget은
+        // enabled metric: 이 family의 placed 제거 후 default-on set 재seed — 타 provider widget은
         // identity·위치 유지, 마지막 `syncPlacedOrder`가 전체를 provider+metric 순서로 재정렬.
         placed = placed.filter { !owned.contains($0.descriptorID) }
             + defaults(defaultMetricIDs).map { PlacedWidget(descriptorID: $0) }
 
-        // metric 순서는 이 provider만 registry 순서로 복귀.
-        metricOrderByProvider[providerID] = registry.descriptors(for: providerID).map(\.id)
+        // metric 순서는 이 family만 registry 순서로 복귀.
+        metricOrderByProvider[family] = canonicalIDs
         persistMetricOrder()
 
-        // pin·expanded·expand-on-enable carry: 이 provider entry만 default로 교체, 나머지 set 유지.
+        // pin·expanded·expand-on-enable carry: 이 family entry만 default로 교체, 나머지 set 유지.
         pinnedMetricIDs.subtract(owned)
         pinnedMetricIDs.formUnion(defaults(defaultPinnedMetricIDs))
         persistPins()
@@ -485,7 +447,7 @@ final class LayoutStore {
         persistExpandOnEnable()
 
         // default는 collapsed 카드.
-        if expandedProviderIDs.remove(providerID) != nil {
+        if expandedProviderIDs.remove(family) != nil {
             persistExpandedProviders()
         }
 
@@ -512,9 +474,18 @@ final class LayoutStore {
         persistence.saveSeededDefaults(ids)
     }
 
+    /// 카드가 렌더할 metric 순서 — 저장된 family 순서를 그 카드의 descriptor id로 확장.
     func metricOrder(for providerID: String) -> [String] {
         let valid = registry.descriptors(for: providerID).map(\.id)
-        let saved = metricOrderByProvider[providerID] ?? []
+        let saved = canonicalMetricOrder(for: providerID)
+        return LayoutOrdering.normalizedMetricIDs(saved, validIDs: valid)
+    }
+
+    /// 저장 표현 그대로의 family metric 순서 — persist·placed 정렬이 사용하는 canonical 목록.
+    func canonicalMetricOrder(for providerID: String) -> [String] {
+        let family = ProviderAccountID.family(of: providerID)
+        let valid = registry.canonicalMetricIDs(family: family)
+        let saved = metricOrderByProvider[family] ?? []
         return LayoutOrdering.normalizedMetricIDs(saved, validIDs: valid)
     }
 
@@ -524,8 +495,11 @@ final class LayoutStore {
             uniquingKeysWith: { first, _ in first }
         )
         var ordered: [PlacedWidget] = []
+        var seenFamilies = Set<String>()
         for providerID in orderedProviderIDs() {
-            ordered.append(contentsOf: metricOrder(for: providerID).compactMap { byDescriptor[$0] })
+            // placed는 canonical — 같은 family의 카드가 여러 장이어도 한 번만 정렬(첫 카드 위치 기준).
+            guard seenFamilies.insert(ProviderAccountID.family(of: providerID)).inserted else { continue }
+            ordered.append(contentsOf: canonicalMetricOrder(for: providerID).compactMap { byDescriptor[$0] })
         }
         let orderedIDs = Set(ordered.map(\.id))
         ordered.append(contentsOf: placed.filter { !orderedIDs.contains($0.id) })

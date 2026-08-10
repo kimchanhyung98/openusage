@@ -10,14 +10,12 @@ struct ProviderSectionHeader: View {
     /// 신선도 창을 넘긴 스냅샷의 "Outdated" 힌트 (대시보드 전용, 프리뷰는 `nil`). 정확한 경과는 tooltip.
     var staleness: StalenessHint?
     var onCopyScreenshot: (() -> Bool)?
-    /// 관리 계정 선택지 — selector는 대시보드 사용량 뷰만 변경.
+    /// 계정 선택지 — selector는 대시보드 사용량 뷰만 변경.
     var accountOptions: [AccountUsageOption] = []
     var selectedAccountID: String?
     var onSelectAccount: ((String) -> Void)?
-    /// Settings 관리 프로필에 연결된 카드만 true. 독립 발견 카드는 기존 계정 파생 제목 유지.
-    var usesManagedAccountTitle = false
-    /// 프로바이더 패밀리의 등록 프로필 수 — 공유 config home 사용 시 런타임 카드 수 초과 가능.
-    var managedProfileCount = 0
+    /// 프로바이더 패밀리의 계정 수 — 공유 config home 사용 시 런타임 카드 수 초과 가능.
+    var accountCount = 0
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     /// 카드 rename 반영용 — `Provider` 자체 이름은 launch 시 고정.
@@ -35,8 +33,7 @@ struct ProviderSectionHeader: View {
         accountOptions: [AccountUsageOption] = [],
         selectedAccountID: String? = nil,
         onSelectAccount: ((String) -> Void)? = nil,
-        usesManagedAccountTitle: Bool = false,
-        managedProfileCount: Int = 0
+        accountCount: Int = 0
     ) {
         self.provider = provider
         self.plan = plan
@@ -47,8 +44,7 @@ struct ProviderSectionHeader: View {
         self.accountOptions = accountOptions
         self.selectedAccountID = selectedAccountID
         self.onSelectAccount = onSelectAccount
-        self.usesManagedAccountTitle = usesManagedAccountTitle
-        self.managedProfileCount = managedProfileCount
+        self.accountCount = accountCount
     }
 
     var body: some View {
@@ -59,11 +55,7 @@ struct ProviderSectionHeader: View {
                 .partyPulse(partyMode)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 // 폭 압박 시 우선순위 낮은 stale 태그부터 truncate — 이름의 2줄 래핑 방지
-                Text(Self.headerTitle(
-                    for: provider,
-                    resolvedDisplayName: container.displayName(for: provider),
-                    usesManagedAccountTitle: usesManagedAccountTitle
-                ))
+                Text(container.displayName(for: provider))
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -101,7 +93,7 @@ struct ProviderSectionHeader: View {
                 )
             }
             if Self.shouldShowAccountPicker(
-                managedProfileCount: managedProfileCount,
+                accountCount: accountCount,
                 runtimeOptionCount: accountOptions.count
             ),
                let selectedAccountID,
@@ -122,19 +114,9 @@ struct ProviderSectionHeader: View {
 }
 
 extension ProviderSectionHeader {
-    static func shouldShowAccountPicker(managedProfileCount: Int, runtimeOptionCount: Int) -> Bool {
-        managedProfileCount > 1 && runtimeOptionCount > 0
-    }
-
-    /// Settings 관리 카드는 프로바이더 패밀리 제목 공유, 독립 발견 카드는 계정 파생 제목 유지.
-    static func headerTitle(
-        for provider: Provider,
-        resolvedDisplayName: String,
-        usesManagedAccountTitle: Bool
-    ) -> String {
-        guard usesManagedAccountTitle else { return resolvedDisplayName }
-        let family = ProviderAccountID.family(of: provider.id)
-        return ProviderAccountID.families.contains(family) ? family.capitalized : resolvedDisplayName
+    /// 계정이 둘 이상이면 selector 노출 — 공유 config home 때문에 런타임 카드가 하나로 접힌 경우도 포함.
+    static func shouldShowAccountPicker(accountCount: Int, runtimeOptionCount: Int) -> Bool {
+        accountCount > 1 && runtimeOptionCount > 0
     }
 }
 

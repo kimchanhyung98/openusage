@@ -14,22 +14,41 @@ enum DashboardUsageAccountSelection {
         return defaults.string(forKey: key) ?? ""
     }
 
-    /// Settings 관리 profile 기반 card만 선택된 하나로 축약
-    /// 독립 발견된 config-directory card는 managed profile에 연결되기 전까지 일반 card로 유지
+    /// 저장된 family별 선택 — dashboard는 `@AppStorage`로 관찰하고, 메뉴 바는 렌더마다 이걸 읽음
+    static func storedSelections(defaults: UserDefaults = .standard) -> [String: String] {
+        var result: [String: String] = [:]
+        for family in AccountProfilesStore.supportedFamilies {
+            result[family] = selectedID(for: family, defaults: defaults)
+        }
+        return result
+    }
+
+    /// family의 모든 card를 선택된 하나로 축약 — 등록 계정도 독립 발견된 config-directory 로그인도 동일 취급
+    /// 대시보드에는 provider당 card 1장만 남고, 나머지 계정은 header selector 항목이 됨
     static func visibleCardIDs(
         orderedCardIDs: [String],
-        managedCardIDs: Set<String>,
-        selectedManagedCardID: String?
+        familyCardIDs: Set<String>,
+        selectedCardID: String?
     ) -> [String] {
-        guard managedCardIDs.count > 1,
-              let selectedManagedCardID,
-              managedCardIDs.contains(selectedManagedCardID)
+        guard familyCardIDs.count > 1,
+              let selectedCardID,
+              familyCardIDs.contains(selectedCardID)
         else {
             return orderedCardIDs
         }
         return orderedCardIDs.filter {
-            !managedCardIDs.contains($0) || $0 == selectedManagedCardID
+            !familyCardIDs.contains($0) || $0 == selectedCardID
         }
+    }
+
+    /// selector 항목 이름 — 등록 계정은 계정명, 자동 발견 계정은 파생 이름에서 provider 접두를 뗀 부분,
+    /// 공유 home 계정은 "Default". 카드 제목은 provider 고정이라 계정 구분은 여기서만 드러남
+    static func optionTitle(cardID: String, profileLabel: String?, accountName: String?) -> String {
+        if let label = profileLabel?.nilIfEmpty { return label }
+        guard ProviderAccountID.isAccountCard(cardID) else { return "Default" }
+        guard let accountName = accountName?.nilIfEmpty else { return cardID }
+        let prefix = "\(ProviderAccountID.family(of: cardID).capitalized) — "
+        return accountName.hasPrefix(prefix) ? String(accountName.dropFirst(prefix.count)) : accountName
     }
 
     /// 계정 전환 확정 후 dashboard 선택을 family 공유 runtime으로 지정

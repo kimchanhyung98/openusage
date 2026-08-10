@@ -1,22 +1,7 @@
 import Foundation
 
-/// 이번 launch에 추가로 빌드할 Claude 계정 카드 — 기본 카드와 다른 계정의 custom config dir 로그인.
-/// 소스가 발견된 launch에만 카드 빌드 — finding 없는 record는 카드 미생성.
-struct ClaudeAccountCard: Equatable, Sendable {
-    /// 계정의 안정적 record id (`claude@ab12cd34`) — layout·cache·CLI/API 매칭에 쓰는 카드 id.
-    var id: String
-    /// launch `Provider`에 새겨지는 파생 표시명 — rename은 registry에서 render 시점에 해석되므로 stale 복사 불가.
-    var displayName: String
-    /// 카드의 credential과 spend log가 고정되는 config dir.
-    var configDirPath: String
-    /// 해당 dir의 Keychain item 이름을 만드는 해시의 원본 literal (`ClaudeCredentialScope` 참고).
-    var keychainLiteral: String
-    /// 같은 계정의 추가 config dir — 추가 spend-log root 전용, credential 소스 아님.
-    var extraLogRoots: [URL] = []
-}
-
-/// launch 시점 계정 pass — 기본 home의 로그인 계정 read, custom config dir의 추가 Claude 로그인 스캔,
-/// account registry reconcile 후 카드별 identity map과 추가 카드 빌드 계획 노출.
+/// launch 시점 계정 pass — 기본 home의 로그인 계정 read, custom config dir 스캔,
+/// account registry reconcile 후 카드별 identity map 노출.
 /// launch(앱)·invocation(CLI)당 1회 실행 — 실행 중 계정 swap은 다음 launch에 반영.
 @MainActor
 struct ProviderAccountAssembly: Equatable {
@@ -24,8 +9,9 @@ struct ProviderAccountAssembly: Equatable {
     let identityKeysByCard: [String: String]
     /// family → bare/default 카드를 뒷받침하는 canonical home — identity와 같은 observer 결과에서 도출.
     var defaultHomePathsByFamily: [String: String] = [:]
-    /// 이번 launch에 발견된 추가 Claude 계정 카드 (id 순 정렬).
-    var claudeCards: [ClaudeAccountCard] = []
+    /// 공유 home과 다른 계정의 Claude 로그인이 custom config dir에 존재 — 카드는 만들지 않고
+    /// Desktop fallback 금지·pi 합산 제외의 gate로만 사용(그 로그인이 남의 usage를 끌어올 수 있으므로).
+    var hasUnregisteredClaudeLogins: Bool = false
     /// 기본 카드와 같은 계정으로 판명된 custom config dir — 추가 spend-log root 전용, credential 소스 아님.
     var defaultClaudeExtraLogRoots: [URL] = []
     /// 비활성 managed profile 카드 — credential은 OpenUsage 전용 Keychain snapshot 보관, 대시보드 전용(터미널 redirect 없음).
@@ -169,67 +155,30 @@ struct ProviderAccountAssembly: Equatable {
                 }
                 for identityKey in order {
                     let findings = grouped[identityKey] ?? []
-                    let sources = findings.map {
-                        ProviderAccountSource(
-                            kind: .configDir,
-                            anchor: $0.anchorPath,
-                            holdsDefaultSource: false,
-                            keychainLiteral: $0.keychainLiteral
-                        )
-                    }
                     if identityKey == defaultKey {
-                        // 기본 카드와 같은 계정: dir은 그 카드의 추가 spend-log root — identity가 소스를 기존 record로 라우팅하므로 중복 카드 불가.
+                        // 공유 home과 같은 계정: dir은 그 카드의 추가 spend-log root — 이미 화면에 있는 계정의 로그.
                         defaultClaudeExtraLogRoots += findings.map { URL(fileURLWithPath: $0.anchorPath) }
                         if let index = observations.firstIndex(where: { $0.family == "claude" && $0.identityKey == identityKey }) {
-                            observations[index].sources += sources
+                            observations[index].sources += findings.map {
+                                ProviderAccountSource(
+                                    kind: .configDir,
+                                    anchor: $0.anchorPath,
+                                    holdsDefaultSource: false,
+                                    keychainLiteral: $0.keychainLiteral
+                                )
+                            }
                         }
                         AppLog.info(.config, "discovery: \(findings.count) config dir(s) fold onto the default claude card (same account)")
                     } else {
-                        observations.append(ProviderAccountsStore.AccountObservation(
-                            family: "claude",
-                            identityKey: identityKey,
-                            label: findings.first?.label,
-                            sources: sources
-                        ))
+                        // 등록하지 않은 계정 — 카드도 record도 만들지 않음. Settings 등록이 노출의 유일한 경로.
                         foundClaudeAccounts.append((identityKey, findings.first?.label, findings))
+                        AppLog.info(.config, "discovery: config-dir login \(ProviderAccountID.make(family: "claude", identityKey: identityKey)) is not registered → not shown")
                     }
                 }
             }
         }
 
-        let records = accountsStore.reconcile(with: observations)
-
-        // 추가 카드 빌드 계획 — 발견 계정별 1카드, reconcile된 record id 사용.
-        var claudeCards: [ClaudeAccountCard] = []
-        for account in foundClaudeAccounts {
-            if managedProfiles.contains(where: {
-                !$0.isArchived && $0.family == "claude" && $0.identityKey == account.identityKey
-            }) {
-                let cardID = ProviderAccountID.make(family: "claude", identityKey: account.identityKey)
-                AppLog.info(.config, "discovery: config-dir account \(cardID) omitted because a managed profile already represents it")
-                continue
-            }
-            guard let record = records.first(where: { $0.family == "claude" && $0.identityKey == account.identityKey }) else {
-                continue
-            }
-            guard record.id != "claude" else {
-                // bare record의 계정이 config dir로 이동하고 기본 home은 다른 로그인이 점유한 상태.
-                // bare 카드는 기본 home의 runtime — 이 record는 자체 id로 렌더 불가, swap 지원 전까지 숨김.
-                AppLog.warn(.config, "discovery: the claude record's account now lives in a config dir; its card is unavailable until swap support lands")
-                continue
-            }
-            guard let primary = account.dirs.first else { continue }
-            claudeCards.append(ClaudeAccountCard(
-                id: record.id,
-                displayName: record.derivedDisplayName,
-                configDirPath: primary.anchorPath,
-                keychainLiteral: primary.keychainLiteral,
-                extraLogRoots: account.dirs.dropFirst().map { URL(fileURLWithPath: $0.anchorPath) }
-            ))
-            identityKeys[record.id] = account.identityKey
-            AppLog.info(.config, "accounts: extra claude card \(record.id) from \(account.dirs.count) config dir(s)")
-        }
-        claudeCards.sort { $0.id < $1.id }
+        _ = accountsStore.reconcile(with: observations)
 
         // 비활성 managed profile은 Keychain snapshot 기반 snapshot 카드로 렌더 — home-backed 카드로 이미 보이는 계정은 중복 생성 금지.
         let preferredProfileIDs = Dictionary(uniqueKeysWithValues: ProviderAccountID.families.compactMap { family in
@@ -251,7 +200,7 @@ struct ProviderAccountAssembly: Equatable {
         return ProviderAccountAssembly(
             identityKeysByCard: identityKeys,
             defaultHomePathsByFamily: defaultHomePaths,
-            claudeCards: claudeCards,
+            hasUnregisteredClaudeLogins: !foundClaudeAccounts.isEmpty,
             defaultClaudeExtraLogRoots: defaultClaudeExtraLogRoots,
             snapshotCards: snapshotCards,
             familyTotalHistoryCardIDs: Set(managedProfiles.filter { !$0.isArchived }.map(\.family)),
