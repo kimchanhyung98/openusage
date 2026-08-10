@@ -5,8 +5,10 @@ extension LayoutStore {
         registry.descriptor(id: widget.descriptorID)
     }
 
+    /// placed는 canonical id — family provider id를 돌려주고, registry가 모르는 tombstone은 nil.
     private func providerID(of widget: PlacedWidget) -> String? {
-        registry.descriptor(id: widget.descriptorID)?.providerID
+        guard registry.hasCanonicalMetric(widget.descriptorID) else { return nil }
+        return ProviderAccountID.providerID(ofMetric: widget.descriptorID)
     }
 
     var visiblePlaced: [PlacedWidget] {
@@ -18,7 +20,12 @@ extension LayoutStore {
 
     func isMetricEnabled(_ descriptorID: String) -> Bool {
         registry.descriptor(id: descriptorID) != nil
-            && placed.contains { $0.descriptorID == descriptorID }
+            && placed.contains { $0.descriptorID == Self.canonical(descriptorID) }
+    }
+
+    /// caret 아래(On Demand) 소속 여부 — 카드 id로 물어도 family 설정 1벌을 조회.
+    func isExpandedMetric(_ descriptorID: String) -> Bool {
+        expandedMetricIDs.contains(Self.canonical(descriptorID))
     }
 
     /// Total Spend 카드의 capability gate — local spend tile을 제공하는 enabled provider 존재 여부.
@@ -49,23 +56,32 @@ extension LayoutStore {
     /// provider별로 묶인 enabled widget(사용자 provider 순서·custom metric 순서) — grouped dashboard
     /// 목록 구동, visible metric 없는 provider는 제외.
     var displayGroups: [ProviderGroup] {
-        orderedProviders().compactMap { provider in
-            let widgetsByDescriptor = Dictionary(
-                visiblePlaced
-                    .filter { providerID(of: $0) == provider.id }
-                    .map { ($0.descriptorID, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let widgets = metricOrder(for: provider.id).compactMap { widgetsByDescriptor[$0] }
+        let widgetsByCanonical = Dictionary(
+            placed.map { ($0.descriptorID, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        return orderedProviders().compactMap { provider in
+            guard isProviderEnabled(provider.id) else { return nil }
+            // 저장된 family 설정을 이 카드의 descriptor id로 확장 — UUID는 재사용해 행 애니메이션 identity 유지.
+            let widgets = metricOrder(for: provider.id).compactMap { descriptorID -> PlacedWidget? in
+                guard let widget = widgetsByCanonical[Self.canonical(descriptorID)] else { return nil }
+                return PlacedWidget(id: widget.id, descriptorID: descriptorID)
+            }
             guard !widgets.isEmpty else { return nil }
-            let alwaysShown = widgets.filter { !expandedMetricIDs.contains($0.descriptorID) }
-            let expanded = widgets.filter { expandedMetricIDs.contains($0.descriptorID) }
+            let alwaysShown = widgets.filter { !isExpandedMetric($0.descriptorID) }
+            let expanded = widgets.filter { isExpandedMetric($0.descriptorID) }
             // enabled metric이 전부 expanded인 provider는 빈 카드+caret이 되므로 always-shown으로 승격.
             if alwaysShown.isEmpty {
                 return ProviderGroup(provider: provider, alwaysShownWidgets: expanded, expandedWidgets: [])
             }
             return ProviderGroup(provider: provider, alwaysShownWidgets: alwaysShown, expandedWidgets: expanded)
         }
+    }
+
+    /// 렌더 중인 모든 카드의 descriptor(표시 순서) — refresh 순서와 quota 알림 평가의 입력.
+    /// `placed`는 canonical이라 여기서 카드별 id로 확장 — 그러지 않으면 선택 계정의 metric이 알림에서 빠짐.
+    func orderedRenderedDescriptors() -> [WidgetDescriptor] {
+        displayGroups.flatMap(\.widgets).compactMap { descriptor(for: $0) }
     }
 
     /// enabled provider 전체와 각자가 지원하는 *모든* metric(저장된 metric 순서) — enabled/disabled 행
@@ -77,8 +93,8 @@ extension LayoutStore {
             guard !metrics.isEmpty else { return nil }
             return ProviderMetrics(
                 provider: provider,
-                alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-                expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+                alwaysShownMetrics: metrics.filter { !isExpandedMetric($0.id) },
+                expandedMetrics: metrics.filter { isExpandedMetric($0.id) }
             )
         }
     }
@@ -108,8 +124,8 @@ extension LayoutStore {
         guard !metrics.isEmpty else { return nil }
         return ProviderMetrics(
             provider: provider,
-            alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-            expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+            alwaysShownMetrics: metrics.filter { !isExpandedMetric($0.id) },
+            expandedMetrics: metrics.filter { isExpandedMetric($0.id) }
         )
     }
 
@@ -120,9 +136,9 @@ extension LayoutStore {
 
     func metricOrderWithDivider(for providerID: String, dividerID: String) -> [String] {
         let ordered = orderedSupportedMetrics(for: providerID).map(\.id)
-        return ordered.filter { !expandedMetricIDs.contains($0) }
+        return ordered.filter { !isExpandedMetric($0) }
             + [dividerID]
-            + ordered.filter { expandedMetricIDs.contains($0) }
+            + ordered.filter { isExpandedMetric($0) }
     }
 
     /// provider별로 묶인 pin된 metric(Customize 순서) — 일시 disabled provider는 렌더 그룹에서 빠지되
@@ -131,35 +147,53 @@ extension LayoutStore {
         orderedProviders().compactMap { provider in
             guard isProviderEnabled(provider.id) else { return nil }
             // strip 순서를 Customize와 일치 — always-shown pin 먼저, expanded pin 다음.
-            let metrics = orderedSupportedMetrics(for: provider.id).filter { pinnedMetricIDs.contains($0.id) }
+            let metrics = orderedSupportedMetrics(for: provider.id).filter { isPinned($0.id) }
             return metrics.isEmpty ? nil : ProviderMetrics(
                 provider: provider,
-                alwaysShownMetrics: metrics.filter { !expandedMetricIDs.contains($0.id) },
-                expandedMetrics: metrics.filter { expandedMetricIDs.contains($0.id) }
+                alwaysShownMetrics: metrics.filter { !isExpandedMetric($0.id) },
+                expandedMetrics: metrics.filter { isExpandedMetric($0.id) }
             )
         }
     }
 
     /// provider header drag drop으로 provider 전체 reorder — 현재 표시 중(enabled) 순서 기준.
+    /// 이동 단위는 family — 한 provider의 계정 카드가 흩어지면 선택 계정에 따라 섹션 위치가 달라짐.
     /// 반환값은 실제 변경 여부(drag gesture의 haptics 키).
     @discardableResult
     func reorderProvider(dragged: String, target: String) -> Bool {
         recordingUndoStep {
-            let shown = customizeGroups.map(\.provider.id)
-            guard let next = Self.reordered(shown, dragged: dragged, target: target) else { return false }
+            var shown: [String] = []
+            for providerID in customizeGroups.map(\.provider.id) {
+                let family = ProviderAccountID.family(of: providerID)
+                if !shown.contains(family) { shown.append(family) }
+            }
+            let draggedFamily = ProviderAccountID.family(of: dragged)
+            let targetFamily = ProviderAccountID.family(of: target)
+            guard let next = Self.reordered(shown, dragged: draggedFamily, target: targetFamily) else { return false }
+
             // persist된 raw 순서에서 visible slot만 재배열 — unknown id(이 launch registry에 없는 account
-            // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible id만 그 사이를 이동.
+            // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible family만 그 사이를 이동.
+            var membersByFamily: [String: [String]] = [:]
+            for providerID in providerOrder {
+                membersByFamily[ProviderAccountID.family(of: providerID), default: []].append(providerID)
+            }
             let shownSet = Set(shown)
             var replacements = next.makeIterator()
             var rebuilt: [String] = []
+            var placedFamilies = Set<String>()
             for providerID in providerOrder {
-                if shownSet.contains(providerID) {
-                    if let replacement = replacements.next() { rebuilt.append(replacement) }
-                } else {
+                let family = ProviderAccountID.family(of: providerID)
+                guard shownSet.contains(family) else {
                     rebuilt.append(providerID)
+                    continue
                 }
+                // family 블록은 첫 등장 slot에서 통째로 배치 — 나머지 멤버는 그 블록에 이미 포함.
+                guard placedFamilies.insert(family).inserted, let replacement = replacements.next() else { continue }
+                rebuilt.append(contentsOf: membersByFamily[replacement] ?? [replacement])
             }
-            while let replacement = replacements.next() { rebuilt.append(replacement) }
+            while let replacement = replacements.next() {
+                rebuilt.append(contentsOf: membersByFamily[replacement] ?? [replacement])
+            }
             for providerID in orderedProviderIDs() where !rebuilt.contains(providerID) {
                 rebuilt.append(providerID)
             }
@@ -179,8 +213,12 @@ extension LayoutStore {
     }
 
     private func reorderMetricImpl(dragged: String, target: String, in providerID: String) -> Bool {
+        // drag는 카드 scoped id로 들어오고 저장은 canonical — 두 카드가 같은 family 설정을 편집.
+        let dragged = Self.canonical(dragged)
+        let target = Self.canonical(target)
+        let family = ProviderAccountID.family(of: providerID)
         guard dragged != target else { return false }
-        let ordered = metricOrder(for: providerID)
+        let ordered = canonicalMetricOrder(for: providerID)
         guard ordered.contains(dragged), ordered.contains(target) else { return false }
 
         var expanded = expandedMetricIDs
@@ -200,7 +238,7 @@ extension LayoutStore {
         let partitioned = ordered.filter { !expanded.contains($0) } + ordered.filter { expanded.contains($0) }
         guard let next = Self.reordered(partitioned, dragged: dragged, target: target) else {
             guard membershipChanged || consumedExpandOnEnable else { return false }
-            metricOrderByProvider[providerID] = partitioned
+            metricOrderByProvider[family] = partitioned
             expandedMetricIDs = expanded
             persistMetricOrder()
             persistExpanded()
@@ -208,7 +246,7 @@ extension LayoutStore {
             syncPlacedOrder()
             return true
         }
-        metricOrderByProvider[providerID] = next
+        metricOrderByProvider[family] = next
         expandedMetricIDs = expanded
         persistMetricOrder()
         if membershipChanged { persistExpanded() }
@@ -227,7 +265,11 @@ extension LayoutStore {
     }
 
     private func applyMetricDividerOrderImpl(_ orderedIDsWithDivider: [String], dragged: String, dividerID: String, in providerID: String) -> Bool {
-        let validIDs = metricOrder(for: providerID)
+        // 뷰는 카드 scoped id로 hit-test하고 저장은 canonical — divider sentinel만 그대로 통과.
+        let orderedIDsWithDivider = orderedIDsWithDivider.map { $0 == dividerID ? $0 : Self.canonical($0) }
+        let dragged = Self.canonical(dragged)
+        let family = ProviderAccountID.family(of: providerID)
+        let validIDs = canonicalMetricOrder(for: providerID)
         let validSet = Set(validIDs)
         guard orderedIDsWithDivider.contains(dividerID) else { return false }
 
@@ -266,11 +308,11 @@ extension LayoutStore {
         // 않은 disabled optional metric의 below-caret default까지 소실. `reorderMetric`과 동일 규칙.
         var nextDefaultExpandedOnEnableIDs = defaultExpandedOnEnableIDs
         let consumedExpandOnEnable = nextDefaultExpandedOnEnableIDs.remove(dragged) != nil
-        guard metricOrderByProvider[providerID] != nextOrder || expandedMetricIDs != nextExpanded || consumedExpandOnEnable else {
+        guard metricOrderByProvider[family] != nextOrder || expandedMetricIDs != nextExpanded || consumedExpandOnEnable else {
             return false
         }
 
-        metricOrderByProvider[providerID] = nextOrder
+        metricOrderByProvider[family] = nextOrder
         expandedMetricIDs = nextExpanded
         defaultExpandedOnEnableIDs = nextDefaultExpandedOnEnableIDs
         persistMetricOrder()

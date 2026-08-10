@@ -7,6 +7,7 @@ Those branches stay alive as **cherry-pick material** — most of their auth-sto
 > Managed accounts have a Remove action that deletes only OpenUsage's snapshot and workspace, while unmanaged discovered cards still follow the no-Remove rule below.
 > This plan's identity-stable records describe discovered provider-account cards.
 > A managed account is instead a user-named authentication record: re-sign-in may replace its provider identity, and multiple managed names may temporarily carry the same identity.
+> Since then the card model changed: a provider gets one card whose layout is stored once, a config-dir login is shown only after it is registered in Settings, and card rename was removed — see [Dashboard](/docs/dashboard.md).
 
 ## Why the restart
 
@@ -62,6 +63,8 @@ Estimated source LOC excludes tests.
 
 ### Phase 2 — Claude multi-account: config-dir discovery (~1,200 LOC)
 
+> Superseded: a config-dir login is no longer a card and cannot be renamed; a provider has one card whose layout is stored once, and only registered accounts appear in its selector.
+
 - Candidate scan (dot-dirs at `~`, dirs under `~/.config`), identity-extraction-is-validation, support-trail log lines.
   Port the discovery internals; **omit** fold/suppression plumbing — a candidate naming a known account just attaches as another source/log root on that record, so duplicate cards are structurally impossible.
 - New account → new record → new card named by account label ("Claude — Sunstory"), falling back to the short-hash id; user rename in the card's context menu and in Customize.
@@ -109,7 +112,8 @@ Estimated source LOC excludes tests.
 ## Owner decisions (locked 2026-07-19)
 
 1. **Bare id as the first account's record id** — yes (kills all migration).
-2. Label fallback when an account has no email/org name: the short-hash record id (`claude@ab12cd34`) — paired with a user rename, offered in the card's context menu and in Customize, so an ugly fallback is one click from a good name.
+2. Label fallback when an account has no email/org name: the short-hash record id (`claude@ab12cd34`).
+   Superseded: rename was removed, so the fallback stands on its own.
 3. Newly discovered accounts seed **enabled** (PR #1014 behavior).
 4. **No "Remove Account…" yet.**
    Only accounts found on this computer render as cards; a card whose account is no longer found anywhere simply stops rendering (its record, layout, and history are retained and reattach if the login reappears).

@@ -28,6 +28,26 @@ enum ProviderAccountID {
     static func isAccountCard(_ cardID: String) -> Bool {
         cardID.contains("@")
     }
+
+    /// 카드 제목 — account family 카드는 계정과 무관하게 provider 이름 고정, 계정 이름은 selector가 표시.
+    /// 카드 제목을 그리는 모든 표면(헤더·우클릭 메뉴·공유 이미지·메뉴 바)의 단일 규칙.
+    static func cardTitle(providerID: String, fallback: String) -> String {
+        let family = family(of: providerID)
+        return families.contains(family) ? family.capitalized : fallback
+    }
+
+    /// metric id의 provider 부분 — `claude@profile-x.trend` → `claude@profile-x`. card id에는 `.`이 없음.
+    static func providerID(ofMetric metricID: String) -> String {
+        metricID.firstIndex(of: ".").map { String(metricID[..<$0]) } ?? metricID
+    }
+
+    /// metric id를 family 기준으로 축약 — `claude@profile-x.trend` → `claude.trend`.
+    /// layout 설정(활성 metric·순서·caret 소속·pin)의 유일한 저장 key: 한 family의 카드는 설정 1벌을 공유하고,
+    /// 카드별 id는 렌더 시점에만 존재.
+    static func canonicalMetricID(_ metricID: String) -> String {
+        guard let dot = metricID.firstIndex(of: "."), metricID[..<dot].contains("@") else { return metricID }
+        return family(of: String(metricID[..<dot])) + metricID[dot...]
+    }
 }
 
 /// account가 로그인돼 있는 한 곳. "Default"는 source의 badge(`holdsDefaultSource`)일 뿐 key가 아님 —
@@ -65,15 +85,12 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
     var family: String
     var identityKey: String
     var label: String?
-    /// 사용자 지정 카드 이름(카드 context menu/Customize의 Rename) — `label`·id 파생 폴백에 우선, reconciliation 불가침.
-    var customLabel: String?
     var sources: [ProviderAccountSource]
     /// 향후 "Remove Account…"가 설정 — tombstone된 account는 rescan으로 부활하지 않음.
     var removedTombstone: Bool = false
 
-    /// rename 없는 카드의 기본 이름 — bare 카드는 family명, extra 카드는 account label 파생
-    /// "Claude — <org|email>", label 없으면 record id 폴백. `customLabel`은 절대 미포함 —
-    /// launch `Provider`에 bake되는 값이라 rename을 넣는 순간 stale-name 버그.
+    /// 카드 이름 — bare 카드는 family명, extra 카드는 account label 파생 "Claude — <org|email>",
+    /// label 없으면 record id 폴백. 사용자 지정 이름은 없음 — 이름은 계정이 결정.
     var derivedDisplayName: String {
         guard ProviderAccountID.isAccountCard(id) else { return family.capitalized }
         guard let label = label?.nilIfEmpty else { return id }
@@ -86,16 +103,14 @@ struct ProviderAccountRecord: Codable, Equatable, Sendable {
         return "\(family.capitalized) — \(label)"
     }
 
-    /// THE name resolver — rename이 카드 title이 되는 유일한 지점. 카드 이름 표시는 전부 render 시점에
-    /// 여기로 해석(직접 또는 `AppContainer.displayName(for:)`); `Provider.displayName`은 derived 기본값만 보유.
-    var resolvedDisplayName: String {
-        customLabel?.nilIfEmpty ?? derivedDisplayName
-    }
+    /// THE name resolver — 카드 이름 표시는 전부 render 시점에 여기로 해석(직접 또는
+    /// `AppContainer.displayName(for:)`); `Provider.displayName`은 derived 기본값만 보유.
+    var resolvedDisplayName: String { derivedDisplayName }
 }
 
 /// account-first registry(`openusage.providerAccounts.v1`) — 매 launch에 default-home identity 읽기와
-/// config-dir scan에서 reconcile. 시작부터 authoritative(drift할 병행 카드 모델 없음); extra account
-/// 카드는 이 record에서 직접 렌더, rename(`customLabel`)은 UI가 live 관찰.
+/// config-dir scan에서 reconcile. 시작부터 authoritative(drift할 병행 카드 모델 없음).
+/// 등록하지 않은 config-dir 로그인은 record를 만들지 않음 — 표시는 Settings 등록 계정 한정.
 @MainActor
 @Observable
 final class ProviderAccountsStore {
@@ -222,15 +237,6 @@ final class ProviderAccountsStore {
     /// 전 record의 card id → resolved title map — CLI/API boundary가 snapshot에 적용(`LocalUsageAPI.State.resolvingDisplayNames`).
     var resolvedDisplayNamesByCardID: [String: String] {
         Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.resolvedDisplayName) })
-    }
-
-    /// 카드 rename 저장 — nil·공백은 derived 이름으로 복귀.
-    func rename(cardID: String, to name: String?) {
-        guard let index = records.firstIndex(where: { $0.id == cardID }) else { return }
-        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        guard records[index].customLabel != trimmed else { return }
-        records[index].customLabel = trimmed
-        persist()
     }
 
     func defaultBadgeHolder(family: String) -> ProviderAccountRecord? {

@@ -17,9 +17,6 @@ struct CustomizeProviderDetailView: View {
     var body: some View {
         if let group = layout.customizeDetail(for: providerID) {
             VStack(alignment: .leading, spacing: density.sectionSpacing) {
-                if container.canRename(providerID) {
-                    CardNameSection(providerID: providerID)
-                }
                 metricSections(group)
                     .simultaneousGesture(metricDragGesture())
                 if let keyProvider = container.apiKeyProviders.first(where: { $0.provider.id == providerID }) {
@@ -152,49 +149,6 @@ struct CustomizeProviderDetailView: View {
     private func makeLift(metricID: String, value: DragGesture.Value) -> ReorderLift? {
         let title = layout.customizeDetail(for: providerID)?.metrics.first { $0.id == metricID }?.title ?? ""
         return ReorderLift.make(id: metricID, payload: .customizeMetric(title: title), value: value, frames: rowFrames)
-    }
-}
-
-/// 계정 카드 Customize 상세 상단의 카드 이름 편집기.
-/// placeholder는 파생 기본 이름 — 필드 비우기가 "기본값 복귀"로 동작.
-/// Return·포커스 이탈 시에만 커밋 — 타이핑 중간 상태 미저장.
-private struct CardNameSection: View {
-    let providerID: String
-    @Environment(AppContainer.self) private var container
-    @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-    @State private var draft = ""
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text("Name")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-            TextField(placeholder, text: $draft)
-                .textFieldStyle(.plain)
-                .focused($isFocused)
-                .onSubmit { commit() }
-                .padding(.horizontal, 12)
-                .padding(.vertical, density.controlRowPadding)
-                .cardSurface()
-        }
-        .onAppear { draft = record?.customLabel ?? "" }
-        .onChange(of: isFocused) { _, focused in
-            if !focused { commit() }
-        }
-    }
-
-    private var record: ProviderAccountRecord? {
-        container.accounts.records.first { $0.id == providerID }
-    }
-
-    private var placeholder: String {
-        record?.derivedDisplayName ?? ""
-    }
-
-    private func commit() {
-        container.accounts.rename(cardID: providerID, to: draft)
     }
 }
 

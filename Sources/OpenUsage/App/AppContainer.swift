@@ -35,7 +35,7 @@ final class AppContainer {
     /// Codex reset credit claim 라우터 (앱 유일의 provider-API 쓰기). 카드별 자체 auth store·usage client 경유 —
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
-    /// 런치 패스가 reconcile한 account registry. rename(`customLabel`)이 재시작 없이 카드 제목에 반영.
+    /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
@@ -65,7 +65,7 @@ final class AppContainer {
         LoginShellEnvironment.shared.prewarm()
         // 캡처 완료 시 identity 관련 사실 영속화 — 다음 런치용 (`ShellEnvironmentSnapshot` 참고).
         self.shellEnvironmentSnapshotTask = ShellEnvironmentSnapshotStore(defaults: .standard).startRefreshTask()
-        // 런치 account 패스: family별 기본 home의 로그인 계정 확인 + 추가 Claude 로그인의 config-dir 스캔.
+        // 런치 account 패스: family별 기본 home의 로그인 계정 확인 + config-dir 스캔(같은 계정 로그 합산·fallback gate용).
         // `accountProfiles`는 패스와 Settings 계정 UI가 한 인스턴스를 공유하도록 패스 이전에 생성.
         let accounts = ProviderAccountsStore()
         let accountProfiles = AccountProfilesStore()
@@ -83,7 +83,7 @@ final class AppContainer {
         )
 
         let providers = ProviderCatalog.make(
-            claudeCards: accountAssembly.claudeCards,
+            hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
             snapshotCards: accountAssembly.snapshotCards,
             codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
@@ -101,7 +101,7 @@ final class AppContainer {
             registry: registry,
             providers: providers,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
-            orderedDescriptors: { [layout] in layout.visiblePlaced.compactMap { layout.descriptor(for: $0) } },
+            orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
@@ -223,10 +223,13 @@ final class AppContainer {
         shellEnvironmentSnapshotTask.cancel()
     }
 
-    /// 카드가 현재 렌더링되는 이름 — account registry의 rename이 재시작 없이 반영.
-    /// record 없는 provider는 정적 display name 유지; fallback이 stale rename일 수 없음.
+    /// 카드가 렌더링되는 제목 — Claude·Codex는 계정과 무관하게 provider 이름 고정(`ProviderAccountID.cardTitle`).
+    /// 그 외 provider는 account registry 이름, 없으면 정적 display name.
     func displayName(for provider: Provider) -> String {
-        accounts.resolvedDisplayName(cardID: provider.id) ?? provider.displayName
+        ProviderAccountID.cardTitle(
+            providerID: provider.id,
+            fallback: accounts.resolvedDisplayName(cardID: provider.id) ?? provider.displayName
+        )
     }
 
     /// 관리형 profile 기반 카드의 profile label; 아니면 `nil`.
@@ -241,8 +244,59 @@ final class AppContainer {
         return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
     }
 
-    /// Settings 계정 전환 성공 시 dashboard selector와 해당 family의 메뉴 바 star를 1회 갱신.
-    /// 이후 dashboard picker 변경은 view 전용 — terminal 전환·star 변경 없음.
+    /// family가 지금 렌더하는 카드 — 저장된 dashboard 선택 → 선택 profile 카드 → 공유 runtime → 첫 카드.
+    func visibleAccountCardID(for family: String, among cardIDs: [String], stored: String) -> String? {
+        guard let first = cardIDs.first else { return nil }
+        if cardIDs.contains(stored) { return stored }
+        if let preferred = preferredAccountCardID(for: family, among: cardIDs) { return preferred }
+        return cardIDs.contains(family) ? family : first
+    }
+
+    /// family에 속한 카드 id — 등록 계정과 독립 발견 로그인을 구분하지 않음(모두 한 카드의 계정 선택지).
+    func accountCardIDs(for family: String, among orderedIDs: [String]) -> [String] {
+        orderedIDs.filter { ProviderAccountID.family(of: $0) == family }
+    }
+
+    /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
+    /// 메뉴 바 strip이 이 값을 읽어 refresh 성패와 무관하게 선택 계정으로 다시 그림.
+    private(set) var accountSelectionRevision = 0
+
+    func noteAccountSelectionChanged() {
+        accountSelectionRevision &+= 1
+    }
+
+    /// dashboard와 메뉴 바가 공유하는 표시 카드 필터 — provider당 카드 1장, 나머지 계정은 header selector로.
+    /// layout 설정도 family 단위 1벌이라 축약하지 않으면 같은 행이 카드 수만큼 중복 렌더됨.
+    func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
+        var visible = orderedIDs
+        for family in AccountProfilesStore.supportedFamilies {
+            let cards = accountCardIDs(for: family, among: orderedIDs)
+            guard cards.count > 1 else { continue }
+            visible = DashboardUsageAccountSelection.visibleCardIDs(
+                orderedCardIDs: visible,
+                familyCardIDs: Set(cards),
+                selectedCardID: visibleAccountCardID(
+                    for: family,
+                    among: cards,
+                    stored: selectionByFamily[family] ?? ""
+                )
+            )
+        }
+        return visible
+    }
+
+    /// 계정 selector에 표시할 이름 — 규칙은 `DashboardUsageAccountSelection.optionTitle`.
+    func accountOptionTitle(for cardID: String) -> String {
+        DashboardUsageAccountSelection.optionTitle(
+            cardID: cardID,
+            profileLabel: accountProfileLabel(for: cardID),
+            accountName: accounts.resolvedDisplayName(cardID: cardID)
+        )
+    }
+
+    /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
+    /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
+    /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
     func syncDashboardUsageAccount(to profile: AccountProfile) {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
@@ -250,7 +304,7 @@ final class AppContainer {
         ) else {
             return
         }
-        layout.retargetMenuBarPins(for: profile.family, to: cardID)
+        noteAccountSelectionChanged()
         Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
     }
 
@@ -265,7 +319,7 @@ final class AppContainer {
         guard assembly != accountAssembly else { return }
         accountAssembly = assembly
         let nextProviders = ProviderCatalog.make(
-            claudeCards: assembly.claudeCards,
+            hasUnregisteredClaudeLogins: assembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: assembly.defaultClaudeExtraLogRoots,
             snapshotCards: assembly.snapshotCards,
             codexSharedAuthHome: assembly.codexSharedAuthHome,
@@ -368,11 +422,6 @@ final class AppContainer {
         } else {
             enablement.setEnabled(enabled, for: providerID)
         }
-    }
-
-    /// rename을 붙일 account record 존재 여부 (accounts-model family에서 identity 관측 이후에만 true).
-    func canRename(_ providerID: String) -> Bool {
-        accounts.records.contains { $0.id == providerID }
     }
 
     /// Customize "Reset All"의 enablement 절반 — 첫 런치 credential 탐지 재실행.

@@ -68,22 +68,6 @@ enum DefaultLayout {
         "zai.session", "zai.weekly"
     ]
 
-    /// registry의 추가 계정 card(`claude@ab12cd34`)마다 family 항목을 card prefix로 복제해 append
-    /// pin은 번역하지 않음 — 추가 계정이 기본으로 메뉴바를 점유하지 않는 규칙
-    /// `migrationBaselineMetricIDs`도 번역하지 않음 — card 최초 등장 시 default 시딩 보장
-    static func translatedForAccountCards(_ ids: [String], providerIDs: [String]) -> [String] {
-        let accountCardIDs = providerIDs.filter(ProviderAccountID.isAccountCard)
-        guard !accountCardIDs.isEmpty else { return ids }
-        var result = ids
-        for cardID in accountCardIDs {
-            let prefix = ProviderAccountID.family(of: cardID) + "."
-            for id in ids where id.hasPrefix(prefix) {
-                result.append("\(cardID).\(id.dropFirst(prefix.count))")
-            }
-        }
-        return result
-    }
-
     /// 신규 설치 시 provider별 On Demand 섹션에 배치되는 metric
     /// 활성화가 아닌 소속 목록 — 비활성 optional row도 나중에 켜면 caret 아래 등장
     /// registry 필터링 적용, 순수 신규 설치에서만 시드

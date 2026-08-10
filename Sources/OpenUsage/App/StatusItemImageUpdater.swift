@@ -45,12 +45,29 @@ final class StatusItemImageUpdater {
                 ?? MenuBarStripRenderer.fallbackIcon
         }
         let content = MenuBarContentBuilder.build(
-            groups: container.layout.pinnedGroups,
+            groups: stripGroups(),
             data: { container.dataStore.data(for: $0) },
             title: { container.displayName(for: $0) }
         )
         return MenuBarStripRenderer.image(for: content, style: container.layout.menuBarStyle)
             ?? MenuBarIcon.image
             ?? MenuBarStripRenderer.fallbackIcon
+    }
+
+    /// strip은 provider당 한 segment — star는 family 설정이라 모든 계정 카드가 같은 pin을 들고 있음.
+    /// dashboard가 고른 카드를 먼저 남기고, 그래도 남는 같은 family 카드(관리형이 아닌 config-dir 카드)는 첫 카드만.
+    private func stripGroups() -> [ProviderMetrics] {
+        // 선택 자체는 `UserDefaults` 값이라 관찰 대상이 아님 — revision을 읽어 picker 변경에 re-arm.
+        _ = container.accountSelectionRevision
+        let groups = container.layout.pinnedGroups
+        let visible = Set(container.collapsingAccountCards(
+            groups.map(\.provider.id),
+            selectionByFamily: DashboardUsageAccountSelection.storedSelections()
+        ))
+        var seenFamilies = Set<String>()
+        return groups.filter { group in
+            guard visible.contains(group.provider.id) else { return false }
+            return seenFamilies.insert(ProviderAccountID.family(of: group.provider.id)).inserted
+        }
     }
 }

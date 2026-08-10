@@ -10,6 +10,8 @@ struct WidgetRegistry: Sendable {
     private let providersByID: [String: Provider]
     /// provider별 descriptor 목록 — 원본 `descriptors` 순서 보존 (UI metric 순서가 의존하는 sequence)
     private let descriptorsByProvider: [String: [WidgetDescriptor]]
+    /// family별 canonical metric id — 저장 layout의 key 공간, 카드 중복 제거 후 첫 등장 순서 보존
+    private let canonicalMetricIDsByFamily: [String: [String]]
 
     init(providers: [Provider], descriptors: [WidgetDescriptor]) {
         self.providers = providers
@@ -23,16 +25,34 @@ struct WidgetRegistry: Sendable {
             uniquingKeysWith: { first, _ in first }
         )
         var byProvider: [String: [WidgetDescriptor]] = [:]
+        var canonicalByFamily: [String: [String]] = [:]
+        var seenCanonical = Set<String>()
         for descriptor in descriptors {
             byProvider[descriptor.providerID, default: []].append(descriptor)
+            let canonicalID = ProviderAccountID.canonicalMetricID(descriptor.id)
+            if seenCanonical.insert(canonicalID).inserted {
+                canonicalByFamily[ProviderAccountID.family(of: descriptor.providerID), default: []].append(canonicalID)
+            }
         }
         self.descriptorsByProvider = byProvider
+        self.canonicalMetricIDsByFamily = canonicalByFamily
     }
 
     func descriptor(id: String) -> WidgetDescriptor? { descriptorsByID[id] }
     func provider(id: String) -> Provider? { providersByID[id] }
     func descriptors(for providerID: String) -> [WidgetDescriptor] {
         descriptorsByProvider[providerID] ?? []
+    }
+
+    /// family가 지원하는 canonical metric id — bare 카드가 없어도(추가 계정 카드만 있는 registry) 동일 목록
+    func canonicalMetricIDs(family: String) -> [String] {
+        canonicalMetricIDsByFamily[family] ?? []
+    }
+
+    /// canonical id를 지원하는 descriptor 존재 여부 — 저장된 layout 항목의 유효성 gate
+    func hasCanonicalMetric(_ canonicalID: String) -> Bool {
+        let family = ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: canonicalID))
+        return canonicalMetricIDsByFamily[family]?.contains(canonicalID) ?? false
     }
 
     /// 설치된 provider로 필터링한 저장 순서 + 신규 provider는 canonical registry 순서로 append

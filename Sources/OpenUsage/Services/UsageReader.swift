@@ -49,7 +49,7 @@ public struct UsageReader {
             : ProviderAccountAssembly(identityKeysByCard: [:])
         let providers = providersOverride ?? ProviderCatalog.make(
             defaults: defaults,
-            claudeCards: accountAssembly.claudeCards,
+            hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
             codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
             claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive

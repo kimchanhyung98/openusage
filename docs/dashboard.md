@@ -95,19 +95,20 @@ Rows with a reset date tick every 30 seconds, so countdowns and pace stay live b
 
 ## Account selector
 
-With two or more Claude or Codex accounts registered in [**Settings → Accounts**](/docs/settings.md), their managed usage views share one card titled **Claude** or **Codex**.
-A small account selector in the card header lists only those registered accounts and chooses which account's usage the card displays.
+Claude and Codex always get exactly one card, titled **Claude** or **Codex**, no matter how many accounts you have.
+With two or more accounts, a small account selector in the card header chooses which account's usage that card displays.
+The selector lists the account signed in to the provider's shared home (`~/.claude`, `~/.codex`) as **Default**, plus each account registered in [**Settings → Accounts**](/docs/settings.md) that has usable saved authentication on this Mac, under its account name.
+A registered account whose saved authentication is missing has no usage to show, so it stays out of the selector until it is signed in again.
+A Claude login kept in some other configuration directory is not listed until you register it there.
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
 Terminal switching remains in Settings.
-A confirmed Settings switch moves this selector and the provider's menu-bar stars to the same account once.
+A confirmed Settings switch moves this selector to the same account once.
+The card's layout — which metrics show, their order, the Always Visible / On Demand split, whether the caret is open, and the menu-bar stars — is one setting per provider that every account shares.
+Switching accounts therefore changes the numbers, never the rows.
 An inactive account's usage is read from its private Keychain authentication snapshot.
 Adding, renaming, re-signing, or removing an account in Settings updates the selector immediately.
-Claude accounts found independently in custom configuration directories keep their existing separate cards and names.
-An unrelated discovered card is never hidden inside the managed selector.
-Discovered cards are deduplicated by provider identity, but managed records are distinguished by their user-assigned account names.
-Two managed account names therefore remain separate selector entries even when their saved authentication currently proves the same provider identity.
-Automatic discovery cards for an identity already represented in the managed selector are suppressed; otherwise, duplicate discovered cards for that identity are shown only once.
-Local spend and trend logs stay attached to their configuration home rather than being attributed to managed accounts.
+Registered accounts are distinguished by their account names, so two of them remain separate selector entries even when their saved authentication currently proves the same provider identity.
+Local spend and trend logs stay attached to their configuration home rather than being attributed to registered accounts.
 Those rows can read **No data** while the selector is showing an inactive snapshot account.
 
 ## Right-click menus
@@ -115,9 +116,8 @@ Those rows can read **No data** while the selector is showing an inactive snapsh
 Every row: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…** (Customize opens straight to that provider's metrics.)
 Provider headers: **Hide \<provider\> · Refresh \<provider\> · Customize…** plus **Share Screenshot** (see below).
 Hide turns the whole provider off, and Customize turns it back on or opens directly to its metrics.
-A Claude or Codex card with its own account record — including the default card once its account has been observed — can also offer **Rename…**.
-Managed account names are separate and are edited from **Settings → Accounts → Manage…**.
-The dashboard card title stays **Claude** or **Codex**, and its selector shows the managed account name.
+Card titles are fixed — a Claude or Codex card is always titled after its provider, in the card header, these menu items, the shared screenshot, and the menu bar alike.
+Account names are edited only in **Settings → Accounts → Manage…**.
 
 ## Share
 
@@ -149,8 +149,7 @@ Drag enabled providers by their grip to reorder; tap a row to open its detail.
 On a fresh install only the providers detected on your Mac start on (see "First launch" above); this list is where you add the rest.
 
 A provider's **detail** has a back button and provider-specific Reset control in its top bar.
-A **Name** field appears only when the displayed provider id has its own account record — including the default Claude or Codex card once its account has been observed.
-It renames that card record and is separate from managed account names in Settings.
+There is one entry per provider — a Claude or Codex entry holds the layout for every account of that provider, and nothing here renames a card.
 Then come two metric sections: **Always Visible** (shown on the dashboard card) and **On Demand** (tucked behind the card's caret).
 Each metric row has a drag grip, its name, an always-visible star for the menu bar, and an on/off switch.
 Drag a metric into the other section or onto one of its rows to move it between Always Visible and On Demand.

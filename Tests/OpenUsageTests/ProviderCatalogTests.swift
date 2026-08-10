@@ -70,27 +70,17 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(unmanaged?.logUsageScanner.pinsSharedHome, false)
     }
 
-    func testSplitClaudeCardsDisableUnscopedPiUsage() {
-        let card = ClaudeAccountCard(
-            id: "claude@ab12cd34",
-            displayName: "Claude — Work",
-            configDirPath: "/tmp/claude-work",
-            keychainLiteral: "claude-work"
-        )
-
-        let claudeRuntimes = ProviderCatalog.make(claudeCards: [card]).compactMap { $0 as? ClaudeProvider }
+    func testAnotherClaudeLoginOnThisMacDisablesUnscopedPiUsage() {
+        let claudeRuntimes = ProviderCatalog.make(hasUnregisteredClaudeLogins: true)
+            .compactMap { $0 as? ClaudeProvider }
 
         XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.includePiUsage })
+        XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.authStore.allowsDesktopFallback })
     }
 
     func testCustomizeShowsOneRowForAProviderWithMultipleAccounts() {
-        let card = ClaudeAccountCard(
-            id: "claude@ab12cd34",
-            displayName: "Claude — Work",
-            configDirPath: "/tmp/claude-work",
-            keychainLiteral: "claude-work"
-        )
-        let registry = WidgetRegistry.from(ProviderCatalog.make(claudeCards: [card]))
+        let card = AccountUsageSnapshotCard(id: "claude@profile-work", profileID: "work", family: "claude")
+        let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
         let layout = LayoutStore(registry: registry, defaults: makeScratchDefaults(), storageKey: "layout")
 
         XCTAssertEqual(
@@ -101,26 +91,23 @@ final class ProviderCatalogTests: XCTestCase {
         )
     }
 
-    func testCodexSnapshotCardsSeedTheirFamilyDefaultLayout() {
+    func testCodexSnapshotCardsRenderTheirFamilyLayout() {
         let card = AccountUsageSnapshotCard(id: "codex@profile-p1", profileID: "p1", family: "codex")
         let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
-        let providerIDs = registry.providers.map(\.id)
-
-        let translatedMetrics = DefaultLayout.translatedForAccountCards(DefaultLayout.metricIDs, providerIDs: providerIDs)
-        XCTAssertTrue(translatedMetrics.contains("\(card.id).session"))
-        XCTAssertTrue(translatedMetrics.contains("\(card.id).weekly"))
-        let translatedExpanded = DefaultLayout.translatedForAccountCards(DefaultLayout.expandedMetricIDs, providerIDs: providerIDs)
-        XCTAssertTrue(translatedExpanded.contains("\(card.id).trend"))
-        XCTAssertTrue(translatedExpanded.contains("\(card.id).rateLimitResets"))
-        for id in translatedMetrics + translatedExpanded where id.hasPrefix("\(card.id).") {
-            XCTAssertNotNil(registry.descriptor(id: id), "translated id \(id) must exist in the registry")
-        }
-
         let layout = LayoutStore(registry: registry, defaults: makeScratchDefaults(), storageKey: "layout")
+
         XCTAssertTrue(layout.isMetricEnabled("\(card.id).session"))
+        XCTAssertTrue(layout.isMetricEnabled("\(card.id).weekly"))
+
+        let group = layout.displayGroups.first { $0.provider.id == card.id }
+        XCTAssertNotNil(group, "the snapshot card renders its own dashboard group")
+        let expandedIDs = group?.expandedWidgets.map(\.descriptorID) ?? []
+        XCTAssertTrue(expandedIDs.contains("\(card.id).trend"), "the family's caret split applies to the card")
+        XCTAssertTrue(expandedIDs.contains("\(card.id).rateLimitResets"))
+
         XCTAssertFalse(
             layout.pinnedMetricIDs.contains { ProviderAccountID.isAccountCard($0) },
-            "an extra account never claims menu-bar space by default"
+            "layout settings are stored per provider, never per account card"
         )
     }
 
@@ -163,14 +150,9 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertTrue(layout.displayGroups.contains { $0.provider.id == card.id })
     }
 
-    func testSwitchingAnAccountRetargetsOnlyThatFamilysMenuBarPins() {
-        let card = ClaudeAccountCard(
-            id: "claude@ab12cd34",
-            displayName: "Claude — Work",
-            configDirPath: "/tmp/claude-work",
-            keychainLiteral: "claude-work"
-        )
-        let registry = WidgetRegistry.from(ProviderCatalog.make(claudeCards: [card]))
+    func testMenuBarStarsAreSharedByEveryCardOfAProvider() {
+        let card = AccountUsageSnapshotCard(id: "claude@profile-work", profileID: "work", family: "claude")
+        let registry = WidgetRegistry.from(ProviderCatalog.make(snapshotCards: [card]))
         let layout = LayoutStore(
             registry: registry,
             defaults: makeScratchDefaults(),
@@ -178,11 +160,14 @@ final class ProviderCatalogTests: XCTestCase {
             defaultPinnedMetricIDs: ["claude.session", "claude.weekly", "codex.weekly"]
         )
 
-        layout.retargetMenuBarPins(for: "claude", to: card.id)
+        // star는 family 설정 — 계정 전환이 pin을 옮길 필요 없이 카드가 그대로 물려받음
+        XCTAssertTrue(layout.isPinned("\(card.id).session"))
+        XCTAssertTrue(layout.isPinned("\(card.id).weekly"))
+        XCTAssertEqual(layout.pinnedCount(forProvider: card.id), 2)
 
-        XCTAssertEqual(
-            layout.pinnedMetricIDs,
-            ["\(card.id).session", "\(card.id).weekly", "codex.weekly"]
-        )
+        layout.setPinned(false, for: "\(card.id).weekly")
+
+        XCTAssertFalse(layout.isPinned("claude.weekly"), "unstarring on a card unstars the provider")
+        XCTAssertEqual(layout.pinnedMetricIDs, ["claude.session", "codex.weekly"])
     }
 }

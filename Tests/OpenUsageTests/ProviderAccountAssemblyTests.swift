@@ -91,7 +91,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         )
     }
 
-    func testADistinctConfigDirAccountMintsAHashedRecordAndAnExtraCard() throws {
+    func testAnUnregisteredConfigDirAccountIsNotSurfaced() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let observer = DefaultAccountObserver(
@@ -114,16 +114,16 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
 
-        let card = try XCTUnwrap(assembly.claudeCards.first)
-        XCTAssertEqual(assembly.claudeCards.count, 1)
-        XCTAssertTrue(card.id.hasPrefix("claude@"), "a config-dir account never claims the bare id")
-        XCTAssertEqual(card.displayName, "Claude — Sunstory")
-        XCTAssertEqual(card.configDirPath, "/Users/dev/.claude-work")
         XCTAssertEqual(assembly.identityKeysByCard["claude"], "acct-1")
-        XCTAssertEqual(assembly.identityKeysByCard[card.id], "acct-2")
-        let record = try XCTUnwrap(store.records.first { $0.id == card.id })
-        XCTAssertEqual(record.sources.map(\.kind), [.configDir])
-        XCTAssertEqual(record.label, "work@example.com (Sunstory)")
+        XCTAssertEqual(
+            store.records.map(\.id),
+            ["claude"],
+            "an account that is not registered never enters the registry"
+        )
+        XCTAssertTrue(
+            assembly.hasUnregisteredClaudeLogins,
+            "the other login still gates the Desktop fallback and pi totals"
+        )
         XCTAssertTrue(assembly.defaultClaudeExtraLogRoots.isEmpty)
     }
 
@@ -150,7 +150,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
 
-        XCTAssertTrue(assembly.claudeCards.isEmpty, "one account never renders as two cards")
+        XCTAssertFalse(assembly.hasUnregisteredClaudeLogins, "the same account is not another login")
         XCTAssertEqual(assembly.defaultClaudeExtraLogRoots.map(\.path), ["/Users/dev/.claude-side"])
         let record = try XCTUnwrap(store.defaultBadgeHolder(family: "claude"))
         XCTAssertEqual(record.id, "claude")
@@ -181,14 +181,14 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
 
-        XCTAssertTrue(
-            assembly.claudeCards.isEmpty,
+        XCTAssertFalse(
+            assembly.hasUnregisteredClaudeLogins,
             "with a nameless default login, an accepted candidate could be that very account — skip"
         )
         XCTAssertTrue(store.records.isEmpty)
     }
 
-    func testNoDefaultLoginStillAcceptsAConfigDirOnlyAccount() throws {
+    func testNoDefaultLoginLeavesAConfigDirOnlyAccountHidden() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let observer = DefaultAccountObserver(
@@ -209,14 +209,11 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
 
-        let card = try XCTUnwrap(assembly.claudeCards.first)
-        XCTAssertTrue(
-            card.id.hasPrefix("claude@"),
-            "the bare id stays reserved for a future default-home login even when it is free"
-        )
+        XCTAssertTrue(store.records.isEmpty, "an unregistered login stays hidden even with no default login")
+        XCTAssertTrue(assembly.hasUnregisteredClaudeLogins)
     }
 
-    func testARenameNeverBakesIntoTheCardOnlyTheResolverCarriesIt() throws {
+    func testAnUnregisteredLoginStaysHiddenAcrossLaunches() throws {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let observer = DefaultAccountObserver(
@@ -236,9 +233,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let first = ProviderAccountAssembly.make(
             observer: observer, accountsStore: store, claudeDiscovery: discovery
         )
-        let cardID = try XCTUnwrap(first.claudeCards.first?.id)
-        XCTAssertEqual(first.claudeCards.first?.displayName, cardID, "no label → the short-hash id fallback")
-        store.rename(cardID: cardID, to: "Work Max")
+        XCTAssertTrue(first.hasUnregisteredClaudeLogins)
 
         let reloadedStore = ProviderAccountsStore(defaults: defaults)
         let second = ProviderAccountAssembly.make(
@@ -246,8 +241,8 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             accountsStore: reloadedStore,
             claudeDiscovery: discovery
         )
-        XCTAssertEqual(second.claudeCards.first?.displayName, cardID)
-        XCTAssertEqual(reloadedStore.resolvedDisplayName(cardID: cardID), "Work Max")
+        XCTAssertTrue(second.hasUnregisteredClaudeLogins, "the signal is recomputed from the scan each launch")
+        XCTAssertTrue(reloadedStore.records.isEmpty, "no registry entry survives for an unregistered login")
     }
 
     func testNothingObservedLeavesRegistryAndKeysEmpty() {
@@ -419,7 +414,6 @@ final class ProviderAccountAssemblyTests: XCTestCase {
             snapshotProfileIDs: [alpha.id, beta.id]
         )
 
-        XCTAssertTrue(assembly.claudeCards.isEmpty)
         XCTAssertEqual(assembly.snapshotCards.map(\.profileID), [beta.id])
     }
 
