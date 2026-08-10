@@ -7,6 +7,7 @@ Those branches stay alive as **cherry-pick material** — most of their auth-sto
 > Managed accounts have a Remove action that deletes only OpenUsage's snapshot and workspace, while unmanaged discovered cards still follow the no-Remove rule below.
 > This plan's identity-stable records describe discovered provider-account cards.
 > A managed account is instead a user-named authentication record: re-sign-in may replace its provider identity, and multiple managed names may temporarily carry the same identity.
+> Since then the card model changed: a provider gets one card whose layout is stored once, a config-dir login is shown only after it is registered in Settings, and card rename was removed — see [Dashboard](/docs/dashboard.md).
 
 ## Why the restart
 

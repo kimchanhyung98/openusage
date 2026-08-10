@@ -69,8 +69,9 @@ The UI reads from a few observable stores:
 - `WidgetDataStore` — the latest snapshot per provider, plus refresh and caching.
   It keeps machine-local cached snapshots separate from rendered snapshots so peer history can never be written back out and counted again.
 - `LayoutStore` — which metrics are shown, the provider/metric order, and which metrics are starred for the menu bar.
+  It stores all of that once per provider, so every account card of a provider renders the same layout from that single set.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
-- `ProviderAccountsStore` — the account-first registry for stable card ids, per-account sources, and renames for Claude/Codex sign-ins.
+- `ProviderAccountsStore` — the account-first registry for stable card ids and per-account sources for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
   Each record contains a stable id, an editable account name, and the provider identity derived from its current saved authentication.
   Account names distinguish managed records; reauthentication may replace the stored identity, and more than one managed record may temporarily carry the same identity.

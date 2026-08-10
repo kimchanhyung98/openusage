@@ -52,9 +52,8 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
   A login for a different Claude identity keeps the selected account name and selection; it never silently switches to another named account.
 - Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
-  The dashboard's account selector lists only Settings-registered accounts and picks which account's usage the managed provider card shows.
-  Existing Claude accounts discovered from separate configuration directories remain separate cards unless their identity is already represented in the managed selector.
-  A confirmed Settings switch moves the dashboard selector and the provider's menu-bar pins to that same account once.
+  The dashboard's account selector lists the shared home's account plus the accounts registered here, and picks whose usage the provider's single card shows.
+  A confirmed Settings switch moves the dashboard selector to that same account once; the menu-bar stars are a provider setting and stay put.
   Changing the dashboard selector later is view-only and never runs another terminal switch.
   An inactive account's usage is read from its private Keychain snapshot.
   When that snapshot's token expires, the refreshed token is saved back into the same snapshot — never into the shared home or the active account.

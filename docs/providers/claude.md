@@ -25,7 +25,7 @@ It checks these sources, preferring one that can read your subscription usage:
 3. Claude Desktop's encrypted login cache, when no working Claude Code login is available
 4. `CLAUDE_CODE_OAUTH_TOKEN` environment variable
 
-While managed accounts are registered in [**Settings → Accounts**](/docs/settings.md) (or extra discovered account cards exist), the Desktop fallback is not used — that login could belong to a different account, so an authentication failure surfaces as re-login instead.
+While accounts are registered in [**Settings → Accounts**](/docs/settings.md) (or another Claude login sits in a custom config dir), the Desktop fallback is not used — that login could belong to a different account, so an authentication failure surfaces as re-login instead.
 
 Claude Desktop support is read-only.
 OpenUsage decrypts its currently valid access token using the `Claude Safe Storage` item in your macOS Keychain.
@@ -63,22 +63,17 @@ The live Session and Weekly meters are unaffected.
 The dollars are estimated from token counts at API rates (that's the ⓘ) using the shared [model pricing](../pricing.md); the token counts themselves are measured.
 No log data leaves your Mac.
 
-When discovered config-directory Claude cards are present, pi entries are omitted because pi logs cannot identify which Claude login produced them.
+When another Claude login sits in a custom config directory, pi entries are omitted because pi logs cannot identify which Claude login produced them.
 This avoids assigning shared logs to the wrong account.
-With managed accounts only, pi usage stays in the shared family card's tiles like the rest of the shared home's logs.
+Otherwise pi usage stays in the Claude card's tiles like the rest of the shared home's logs.
 
-## Discovered config-directory accounts
+## Other config-directory logins
 
-If you keep more than one Claude login on this Mac using custom config dirs (separate `CLAUDE_CONFIG_DIR` homes, each with its own sign-in), OpenUsage finds them at launch and gives each **account** its own card, with its own limits, plan, and spend tiles read from that home.
-A custom dir signed into the same account as your main login doesn't become a second card — its session logs simply count into the main card's spend tiles.
+OpenUsage shows the account signed in to the shared home (`~/.claude`) plus the accounts you register in **Settings → Accounts** — nothing else.
+A Claude login sitting in a custom config dir (a separate `CLAUDE_CONFIG_DIR` home) is not a card, not an entry in the account selector, and not in the [CLI](../cli.md) or [local API](../local-http-api.md).
+Register that account in Settings to see it.
 
-Extra cards are named from the account ("Claude — Acme Corp"); right-click a card and choose **Rename…** (or use the Name field in Customize) to call it whatever you like.
-A card only shows while its login is still found on this Mac.
-Logging it out or deleting the directory hides the card while preserving its customization and history in case it returns.
-Customize lists Claude once.
-Its on/off setting applies to every Claude account card together rather than disabling one discovered card independently.
-
-In the [CLI](../cli.md) and [local API](../local-http-api.md), extra cards appear under ids like `claude@ab12cd34`; requesting `claude` returns every Claude card.
+A custom dir signed into the same account as the shared home is different: its session logs count into that account's spend tiles, since they belong to the account already on screen.
 
 ## Managed account switching
 
@@ -94,9 +89,8 @@ The dashboard account picker changes only which account's usage is shown and nev
 Local spend and trend logs stay with the shared configuration home and are not attributed to managed accounts.
 Those rows can show **No data** while the dashboard is viewing an inactive snapshot account.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
-The picker lists only accounts registered in Settings.
-Independently discovered custom config-dir accounts keep their existing cards unless their identity is already represented in the managed selector.
-When it is already represented, OpenUsage does not add another discovered card; managed account names remain separate selector entries.
+The picker lists the shared home's account plus the accounts registered in Settings.
+Registered account names stay separate selector entries even when two of them currently prove the same provider identity.
 
 The ordinary terminal is a supported reauthentication path for the selected managed account.
 Start `claude` in a new terminal and use `/login`, or run `claude auth login`, then complete any valid Claude sign-in you want stored under the account name selected in Settings.
@@ -119,7 +113,7 @@ Signing in as another provider identity does not rename the account or silently 
 - **Spend tiles show "No data"** — OpenUsage found no Claude Code logs in the last 30 days.
   Outside managed account switching, set `CLAUDE_CONFIG_DIR` when your logs live somewhere custom so Claude Code and OpenUsage look in the same place.
   Managed terminal switching uses the shared `~/.claude` home.
-  Independently discovered custom homes keep their own cards.
+  A login kept in another custom home is not shown at all until you register it in Settings.
 
 ## Under the hood
 

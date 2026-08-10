@@ -170,7 +170,7 @@ A `barChart` line carries a `points` array — one `{ label, value, valueLabel? 
 The in-app model breakdown shown when hovering spend rows is not included in this API yet.
 Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
 
-In both response shapes, `displayName` is the card's current name — if you renamed a card in the app, the rename shows here too.
+In both response shapes, `displayName` is the card's current name — for a Claude or Codex account it is the name derived from that account.
 Match on `providerId` (or the envelope key), never on the name.
 
 ## Errors
