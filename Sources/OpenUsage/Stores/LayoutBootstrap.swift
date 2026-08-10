@@ -78,9 +78,8 @@ enum LayoutBootstrap {
         var shouldPersistExpanded = false
         var expandedMetricIDs: Set<String>
         if let savedExpanded = persistence.loadExpandedMetrics() {
-            // family 설정이 곧 provider 설정 — 카드 scoped 항목은 버림(bare 항목이 승리)
-            expandedMetricIDs = Set(savedExpanded.filter { !ProviderAccountID.isAccountCard($0) })
-            shouldPersistExpanded = expandedMetricIDs.count != savedExpanded.count
+            expandedMetricIDs = LayoutOrdering.foldingExpansion(savedExpanded)
+            shouldPersistExpanded = expandedMetricIDs != Set(savedExpanded)
         } else if hasStoredLayout {
             expandedMetricIDs = []
         } else {
@@ -114,10 +113,9 @@ enum LayoutBootstrap {
         var shouldPersistExpandOnEnable = savedOnEnable == nil
         if let savedOnEnable {
             // 알려진 metric은 유효 후보여야 하나, 미지 id는 부재 중 계정 card 소속일 수 있어 descriptor 복귀까지 보존
-            let folded = savedOnEnable.filter { !ProviderAccountID.isAccountCard($0) }
-            defaultExpandedOnEnableIDs = Set(folded.filter { id in
+            defaultExpandedOnEnableIDs = LayoutOrdering.foldingExpansion(savedOnEnable).filter { id in
                 !registry.hasCanonicalMetric(id) || isExpandOnEnableCandidate(id)
-            })
+            }
             shouldPersistExpandOnEnable = defaultExpandedOnEnableIDs != Set(savedOnEnable)
         } else {
             defaultExpandedOnEnableIDs = Set(defaults.expandedMetricIDs.filter(isExpandOnEnableCandidate))
@@ -217,32 +215,52 @@ enum LayoutOrdering {
         }
     }
 
+    /// 카드별 caret 소속을 family 설정으로 축약 — family 자체 항목이 있으면 그것만, 없으면 카드 항목을 승격
+    /// (카드 화면에서만 caret을 편집한 설치가 fold 때문에 그 선택을 잃지 않도록)
+    static func foldingExpansion(_ saved: [String]) -> Set<String> {
+        let familiesWithOwnEntry = Set(
+            saved.filter { !ProviderAccountID.isAccountCard($0) }
+                .map { ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: $0)) }
+        )
+        var result = Set<String>()
+        for id in saved {
+            let canonicalID = ProviderAccountID.canonicalMetricID(id)
+            let family = ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: canonicalID))
+            guard !ProviderAccountID.isAccountCard(id) || !familiesWithOwnEntry.contains(family) else { continue }
+            result.insert(canonicalID)
+        }
+        return result
+    }
+
     /// 카드별 pin을 family pin으로 합치고 provider 상한을 metric 순서대로 재적용
+    /// 순위가 같거나 없으면 저장 순서로 결정 — 매 launch 같은 pin이 남도록
     static func foldingPins(
         _ pins: [String],
         order: [String: [String]],
         limit: Int
     ) -> Set<String> {
-        var byFamily: [String: [String]] = [:]
+        var byFamily: [String: [(id: String, position: Int)]] = [:]
         var seen = Set<String>()
-        for pin in pins {
+        for (position, pin) in pins.enumerated() {
             let canonicalID = ProviderAccountID.canonicalMetricID(pin)
             guard seen.insert(canonicalID).inserted else { continue }
             let family = ProviderAccountID.family(of: ProviderAccountID.providerID(ofMetric: canonicalID))
-            byFamily[family, default: []].append(canonicalID)
+            byFamily[family, default: []].append((canonicalID, position))
         }
         var result = Set<String>()
         for (family, familyPins) in byFamily {
             guard familyPins.count > limit else {
-                result.formUnion(familyPins)
+                result.formUnion(familyPins.map(\.id))
                 continue
             }
             // 상한 초과분은 metric 순서 앞쪽을 남김 — 메뉴바 strip이 그리는 순서와 동일
             let ranking = order[family] ?? []
             let sorted = familyPins.sorted { lhs, rhs in
-                (ranking.firstIndex(of: lhs) ?? Int.max) < (ranking.firstIndex(of: rhs) ?? Int.max)
+                let lhsRank = ranking.firstIndex(of: lhs.id) ?? Int.max
+                let rhsRank = ranking.firstIndex(of: rhs.id) ?? Int.max
+                return lhsRank == rhsRank ? lhs.position < rhs.position : lhsRank < rhsRank
             }
-            result.formUnion(sorted.prefix(limit))
+            result.formUnion(sorted.prefix(limit).map(\.id))
         }
         return result
     }

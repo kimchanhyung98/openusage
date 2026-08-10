@@ -112,6 +112,8 @@ struct WidgetGroupedListView: View {
             onSelectAccount: isAccountFamilyGroup ? family.map { family in
                 { providerID in
                     selectUsageAccount(providerID, for: family)
+                    // 메뉴 바는 `UserDefaults` 선택을 관찰하지 못하므로 명시적으로 알림 — refresh 성패와 무관.
+                    container.noteAccountSelectionChanged()
                     // periodic refresh가 이 카드를 이미 소유했을 수 있음 — plain `refresh`는 skip되어
                     // 선택 계정이 다음 주기까지 stale.
                     Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }

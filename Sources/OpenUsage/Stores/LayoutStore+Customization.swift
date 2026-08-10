@@ -78,6 +78,12 @@ extension LayoutStore {
         }
     }
 
+    /// 렌더 중인 모든 카드의 descriptor(표시 순서) — refresh 순서와 quota 알림 평가의 입력.
+    /// `placed`는 canonical이라 여기서 카드별 id로 확장 — 그러지 않으면 선택 계정의 metric이 알림에서 빠짐.
+    func orderedRenderedDescriptors() -> [WidgetDescriptor] {
+        displayGroups.flatMap(\.widgets).compactMap { descriptor(for: $0) }
+    }
+
     /// enabled provider 전체와 각자가 지원하는 *모든* metric(저장된 metric 순서) — enabled/disabled 행
     /// 자리 유지, switch는 가시성만 제어.
     var customizeGroups: [ProviderMetrics] {
@@ -151,25 +157,43 @@ extension LayoutStore {
     }
 
     /// provider header drag drop으로 provider 전체 reorder — 현재 표시 중(enabled) 순서 기준.
+    /// 이동 단위는 family — 한 provider의 계정 카드가 흩어지면 선택 계정에 따라 섹션 위치가 달라짐.
     /// 반환값은 실제 변경 여부(drag gesture의 haptics 키).
     @discardableResult
     func reorderProvider(dragged: String, target: String) -> Bool {
         recordingUndoStep {
-            let shown = customizeGroups.map(\.provider.id)
-            guard let next = Self.reordered(shown, dragged: dragged, target: target) else { return false }
+            var shown: [String] = []
+            for providerID in customizeGroups.map(\.provider.id) {
+                let family = ProviderAccountID.family(of: providerID)
+                if !shown.contains(family) { shown.append(family) }
+            }
+            let draggedFamily = ProviderAccountID.family(of: dragged)
+            let targetFamily = ProviderAccountID.family(of: target)
+            guard let next = Self.reordered(shown, dragged: draggedFamily, target: targetFamily) else { return false }
+
             // persist된 raw 순서에서 visible slot만 재배열 — unknown id(이 launch registry에 없는 account
-            // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible id만 그 사이를 이동.
+            // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible family만 그 사이를 이동.
+            var membersByFamily: [String: [String]] = [:]
+            for providerID in providerOrder {
+                membersByFamily[ProviderAccountID.family(of: providerID), default: []].append(providerID)
+            }
             let shownSet = Set(shown)
             var replacements = next.makeIterator()
             var rebuilt: [String] = []
+            var placedFamilies = Set<String>()
             for providerID in providerOrder {
-                if shownSet.contains(providerID) {
-                    if let replacement = replacements.next() { rebuilt.append(replacement) }
-                } else {
+                let family = ProviderAccountID.family(of: providerID)
+                guard shownSet.contains(family) else {
                     rebuilt.append(providerID)
+                    continue
                 }
+                // family 블록은 첫 등장 slot에서 통째로 배치 — 나머지 멤버는 그 블록에 이미 포함.
+                guard placedFamilies.insert(family).inserted, let replacement = replacements.next() else { continue }
+                rebuilt.append(contentsOf: membersByFamily[replacement] ?? [replacement])
             }
-            while let replacement = replacements.next() { rebuilt.append(replacement) }
+            while let replacement = replacements.next() {
+                rebuilt.append(contentsOf: membersByFamily[replacement] ?? [replacement])
+            }
             for providerID in orderedProviderIDs() where !rebuilt.contains(providerID) {
                 rebuilt.append(providerID)
             }

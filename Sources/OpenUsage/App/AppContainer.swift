@@ -101,7 +101,7 @@ final class AppContainer {
             registry: registry,
             providers: providers,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
-            orderedDescriptors: { [layout] in layout.visiblePlaced.compactMap { layout.descriptor(for: $0) } },
+            orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
@@ -257,6 +257,14 @@ final class AppContainer {
         orderedIDs.filter { ProviderAccountID.family(of: $0) == family }
     }
 
+    /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
+    /// 메뉴 바 strip이 이 값을 읽어 refresh 성패와 무관하게 선택 계정으로 다시 그림.
+    private(set) var accountSelectionRevision = 0
+
+    func noteAccountSelectionChanged() {
+        accountSelectionRevision &+= 1
+    }
+
     /// dashboard와 메뉴 바가 공유하는 표시 카드 필터 — provider당 카드 1장, 나머지 계정은 header selector로.
     /// layout 설정도 family 단위 1벌이라 축약하지 않으면 같은 행이 카드 수만큼 중복 렌더됨.
     func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
@@ -296,6 +304,7 @@ final class AppContainer {
         ) else {
             return
         }
+        noteAccountSelectionChanged()
         Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
     }
 

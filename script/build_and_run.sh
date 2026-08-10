@@ -25,17 +25,9 @@ APP_DISPLAY="OpenUsage"                 # user-facing app name
 BUNDLE_ID="${BUNDLE_ID:-com.kimchanhyung98.openusage.dev}"
 ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
-# 이 작업 트리가 향하는 버전을 표기 — dev 빌드가 릴리스된 번호를 사칭하지 않도록.
-# 최신 stable 태그의 patch를 하나 올리고, 최신 태그가 pre-release면 그 base 버전을 그대로 사용.
-LATEST_TAG="$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" tag --list 'v[0-9]*' \
-  --sort=-v:refname | head -n 1 | sed 's/^v//')"
-case "${LATEST_TAG:-0.0.0}" in
-  *-*) APP_VERSION="${LATEST_TAG%%-*}" ;;
-  *)
-    IFS=. read -r _major _minor _patch <<<"${LATEST_TAG:-0.0.0}"
-    APP_VERSION="${_major}.${_minor}.$((_patch + 1))"
-    ;;
-esac
+# 개발 중인 버전 — 소유자 승인 값만 사용. 버전 상승은 승인 사항이라 태그에서 유도하지 않음.
+# 릴리스를 자른 뒤 다음 개발 버전을 승인받아 여기서 갱신.
+APP_VERSION="0.9.3"
 APP_BUILD="$APP_VERSION"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
