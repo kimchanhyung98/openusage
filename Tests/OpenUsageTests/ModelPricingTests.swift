@@ -111,6 +111,14 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking")?.inputPerMillion, 3)
     }
 
+    func testBundledDaybreakAliasResolvesAsGPT56Sol() {
+        let pricing = TestPricing.bundled
+        XCTAssertEqual(
+            pricing.resolve(model: "gpt-daybreak-blue-latest"),
+            pricing.resolve(model: "gpt-5.6-sol")
+        )
+    }
+
     func testAliasMissFallsBackToRawName() throws {
         let supplement = """
         {"pricing": {}, "alias_rules": [{"pattern": "^gpt-x$", "canonical": "key-not-anywhere"}]}

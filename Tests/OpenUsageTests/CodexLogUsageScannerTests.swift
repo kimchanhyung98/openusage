@@ -928,6 +928,25 @@ final class CodexLogUsageScannerTests: XCTestCase {
         XCTAssertGreaterThan(today?.costUSD ?? 0, 0)
     }
 
+    func testScanPricesDaybreakBlueAsGPT56Sol() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let home = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-a.jsonl": [
+                CodexLogFixture.turnContext(timestamp: day, model: "gpt-daybreak-blue-latest"),
+                CodexLogFixture.tokenCount(
+                    timestamp: day,
+                    last: CodexLogFixture.usage(input: 100_000, output: 10_000)
+                )
+            ].joined(separator: "\n")
+        ])
+        let scanner = CodexLogFixture.scanner(home: home)
+
+        let scan = await scanner.scan(pricing: pricing)
+
+        XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
+        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.8, accuracy: 0.000_001)
+    }
+
     // MARK: - Scoped roots (account cards)
 
     func testRootsOverridePinsTheScanToTheOverrideHome() async throws {
