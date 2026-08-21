@@ -603,8 +603,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
             ("gpt-5.5", 2.55),
             ("gpt-5.5-pro-20260423", 20.7),
             ("gpt-5.6-sol", 2.55),
-            ("gpt-5.6-terra", 1.275),
-            ("gpt-5.6-luna", 0.51)
+            ("gpt-5.6-terra", 1.02),
+            ("gpt-5.6-luna", 0.102)
         ]
 
         for (model, expected) in expectedCosts {
@@ -673,8 +673,8 @@ final class CodexLogUsageScannerTests: XCTestCase {
         )
         let cases: [(model: String, supplementMultiplier: Double, expected: Double)] = [
             ("gpt-5.5", 2.5, 2.5),
-            // Cursor supplement는 이 model에 2.5 지정 — Codex priority는 2x
-            ("gpt-5.6-sol", 2.5, 2)
+            // supplement와 구분되는 가상 배율 — Codex provider 규칙 2x 우선 계약 검증
+            ("gpt-5.6-sol", 3, 2)
         ]
 
         for entry in cases {
@@ -717,7 +717,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         let pricing = ModelPricing(
             supplement: PricingSupplement(
                 pricing: ["gpt-5.6-sol": rates],
-                fastMultipliers: ["gpt-5.6-sol": 2.5],
+                fastMultipliers: ["gpt-5.6-sol": 3],
                 aliasRules: [alias]
             ),
             primary: PricingCatalog(entries: [:]),
@@ -741,7 +741,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
             pricing: pricing
         )
 
-        // alias 자체가 Codex priority 요율 선택: unscaled 요율의 2x — Cursor의 2.5x 아님, 이중 적용 없음
+        // alias 자체가 Codex fast 요율 선택 — unscaled 요율에 provider 배율 1회 적용
         XCTAssertEqual(short.series.daily.first?.costUSD ?? 0, 1.6, accuracy: 0.000_001)
         XCTAssertEqual(long.series.daily.first?.costUSD ?? 0, 5.1, accuracy: 0.000_001)
     }
@@ -945,6 +945,25 @@ final class CodexLogUsageScannerTests: XCTestCase {
 
         XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
         XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.8, accuracy: 0.000_001)
+    }
+
+    func testScanPricesDaybreakRedAsGPT56Cyber() async throws {
+        let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
+        let home = try CodexLogFixture.makeHome(files: [
+            "sessions/rollout-a.jsonl": [
+                CodexLogFixture.turnContext(timestamp: day, model: "gpt-daybreak-red-latest"),
+                CodexLogFixture.tokenCount(
+                    timestamp: day,
+                    last: CodexLogFixture.usage(input: 100_000, output: 10_000)
+                )
+            ].joined(separator: "\n")
+        ])
+        let scanner = CodexLogFixture.scanner(home: home)
+
+        let scan = await scanner.scan(pricing: pricing)
+
+        XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
+        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 2.0, accuracy: 0.000_001)
     }
 
     // MARK: - Scoped roots (account cards)
