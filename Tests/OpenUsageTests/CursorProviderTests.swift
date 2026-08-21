@@ -30,6 +30,8 @@ final class CursorAuthStoreTests: XCTestCase {
         try store.saveAccessToken("fresh-token", source: .sqlite)
 
         XCTAssertEqual(sqlite.writtenValues[CursorAuthStore.accessTokenKey], "fresh-token")
+        // 토큰이 SQL 텍스트(= argv 후보)에 유입 금지 (회귀)
+        XCTAssertFalse(sqlite.executedSQL.contains { $0.contains("fresh-token") })
     }
 }
 
@@ -268,6 +270,7 @@ private func makeCursorJWT(sub: String = "google-oauth2|user", exp: Double = 9_9
 private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     var values: [String: String]
     var writtenValues: [String: String] = [:]
+    private(set) var executedSQL: [String] = []
 
     init(values: [String: String] = [:]) {
         self.values = values
@@ -281,12 +284,19 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     }
 
     func execute(path: String, sql: String) throws {
+        executedSQL.append(sql)
         guard let key = sqlValue(after: "(key, value) VALUES ('", in: sql),
               let value = sqlValue(after: "', '", in: sql)
         else {
             return
         }
         writtenValues[key] = value
+    }
+
+    func execute(path: String, sql: String, bindings: [String]) throws {
+        executedSQL.append(sql)
+        guard bindings.count == 2 else { return try execute(path: path, sql: sql) }
+        writtenValues[bindings[0]] = bindings[1]
     }
 
     private func sqlValue(after marker: String, in sql: String) -> String? {
