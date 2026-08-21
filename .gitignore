@@ -1,12 +1,11 @@
-# OpenUsage stores shared Claude configuration in .agents via the .claude symlink.
-.agents/*
-!.agents/skills
-!.agents/settings.json
-!.agents/hookify.*.md
-
 # Swift and macOS build artifacts
 .build/
 .build-test/
+debug/
+Samples/
+xcuserdata/
+*.xcuserstate
+*.dSYM
 *.dmg
 *.app
 *.xcarchive
@@ -197,6 +196,8 @@ $RECYCLE.BIN/
 !.claude/skills
 
 # Codex
+.agents/*
+!.agents/skills
 .codex/*
 !.codex/config.toml
 !.codex/hooks.json
@@ -226,6 +227,7 @@ agent-os/
 
 # etc
 .cmux/
+.docs
 .omx/
 .remember
-.serena/
+.serena
