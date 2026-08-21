@@ -111,7 +111,7 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking")?.inputPerMillion, 3)
     }
 
-    func testBundledDaybreakAliasesResolveToCurrentModels() {
+    func testBundledDaybreakAliasesResolveToCurrentModels() throws {
         let pricing = TestPricing.bundled
         let aliasesByCanonical = [
             (
@@ -135,7 +135,7 @@ final class ModelPricingTests: XCTestCase {
         ]
 
         for entry in aliasesByCanonical {
-            let expected = pricing.resolve(model: entry.canonical)
+            let expected = try XCTUnwrap(pricing.resolve(model: entry.canonical))
             for alias in entry.aliases {
                 XCTAssertEqual(pricing.resolve(model: alias), expected, alias)
             }
@@ -151,7 +151,9 @@ final class ModelPricingTests: XCTestCase {
         let pricing = TestPricing.bundled
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6"), pricing.resolve(model: "gpt-5.6-sol"))
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-high"), pricing.resolve(model: "gpt-5.6-sol"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-ultra"), pricing.resolve(model: "gpt-5.6-sol"))
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-high-fast"), pricing.resolve(model: "gpt-5.6-sol-fast"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-ultra-fast"), pricing.resolve(model: "gpt-5.6-sol-fast"))
     }
 
     func testAliasMissFallsBackToRawName() throws {
