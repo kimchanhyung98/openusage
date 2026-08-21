@@ -1,6 +1,6 @@
 {
-  "$comment": "OpenUsage pricing supplement. Prices Cursor-native models that no public catalog carries, supplies fast-variant multipliers the catalogs omit, and maps provider log/CSV model slugs to canonical pricing keys (LiteLLM keys, models.dev ids, or entries in this file). Published to gh-pages by .github/workflows/pricing-supplement.yml on every change, so installed apps pick edits up within about an hour - no release needed. Rates are USD per million tokens. Sources: https://cursor.com/docs/models-and-pricing.md for Cursor-native entries.",
-  "updated_at": "2026-08-14",
+  "$comment": "OpenUsage pricing supplement. Prices models that no public catalog carries, supplies fast-variant multipliers the catalogs omit, and maps provider log/CSV model slugs to canonical pricing keys (LiteLLM keys, models.dev ids, or entries in this file). Published to gh-pages by .github/workflows/pricing-supplement.yml on every change, so installed apps pick edits up within about an hour - no release needed. Rates are USD per million tokens. Sources: https://cursor.com/docs/models-and-pricing.md for Cursor-native entries and https://developers.openai.com/api/docs/pricing for OpenAI entries.",
+  "updated_at": "2026-08-21",
   "pricing": {
     "auto": {
       "input_per_million": 1.25,
@@ -106,23 +106,30 @@
       "output_per_million": 22.5
     },
     "gpt-5.6-sol": {
-      "$comment": "OpenAI's GPT-5.6 preview pricing. Its public catalogs have not added these models yet.",
+      "$comment": "OpenAI's published GPT-5.6 Sol pricing. The bundled public catalogs do not carry this model yet.",
       "input_per_million": 5.0,
       "cache_write_per_million": 6.25,
       "cache_read_per_million": 0.5,
       "output_per_million": 30.0
     },
     "gpt-5.6-terra": {
-      "input_per_million": 2.5,
-      "cache_write_per_million": 3.125,
-      "cache_read_per_million": 0.25,
-      "output_per_million": 15.0
+      "input_per_million": 2.0,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 12.0
     },
     "gpt-5.6-luna": {
-      "input_per_million": 1.0,
-      "cache_write_per_million": 1.25,
-      "cache_read_per_million": 0.1,
-      "output_per_million": 6.0
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.25,
+      "cache_read_per_million": 0.02,
+      "output_per_million": 1.2
+    },
+    "gpt-5.6-cyber": {
+      "$comment": "OpenAI's published GPT-5.6 Cyber pricing. Daybreak Red currently resolves to this restricted-access model.",
+      "input_per_million": 12.5,
+      "cache_write_per_million": 15.625,
+      "cache_read_per_million": 1.25,
+      "output_per_million": 75.0
     }
   },
   "fast_multipliers": {
@@ -135,9 +142,9 @@
     "gpt-5.3-codex": 2.0,
     "gpt-5.4": 2.0,
     "gpt-5.5": 2.5,
-    "gpt-5.6-sol": 2.5,
-    "gpt-5.6-terra": 2.5,
-    "gpt-5.6-luna": 2.5
+    "gpt-5.6-sol": 2.0,
+    "gpt-5.6-terra": 2.0,
+    "gpt-5.6-luna": 2.0
   },
   "alias_rules": [
     { "pattern": "^agent_review$", "canonical": "gpt-5.4" },
@@ -209,7 +216,10 @@
     { "pattern": "^gpt-5\\.4-(?:low|medium|high|xhigh)$", "canonical": "gpt-5.4" },
     { "pattern": "^gpt-5\\.5(?:-(?:low|medium|high|xhigh|extra-high))?-fast$", "canonical": "gpt-5.5-fast" },
     { "pattern": "^gpt-5\\.5(?:-(?:low|medium|high|xhigh|extra-high))?$", "canonical": "gpt-5.5" },
-    { "pattern": "^gpt-daybreak-blue-latest$", "canonical": "gpt-5.6-sol" },
+    { "pattern": "(?i)^(?:openai/)?(?:gpt-)?daybreak-blue-latest$", "canonical": "gpt-5.6-sol" },
+    { "pattern": "(?i)^(?:openai/)?(?:gpt-)?daybreak-red-latest$", "canonical": "gpt-5.6-cyber" },
+    { "pattern": "^gpt-5\\.6(?:-(?:none|low|medium|high|xhigh|max|ultra))?-fast$", "canonical": "gpt-5.6-sol-fast" },
+    { "pattern": "^gpt-5\\.6(?:-(?:none|low|medium|high|xhigh|max|ultra))?$", "canonical": "gpt-5.6-sol" },
     { "pattern": "^gpt-5\\.6-sol(?:-(?:none|low|medium|high|xhigh|max|ultra))?-fast$", "canonical": "gpt-5.6-sol-fast" },
     { "pattern": "^gpt-5\\.6-sol(?:-(?:none|low|medium|high|xhigh|max|ultra))?$", "canonical": "gpt-5.6-sol" },
     { "pattern": "^gpt-5\\.6-terra(?:-(?:none|low|medium|high|xhigh|max))?-fast$", "canonical": "gpt-5.6-terra-fast" },
