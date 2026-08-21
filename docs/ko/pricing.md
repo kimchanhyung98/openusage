@@ -46,7 +46,7 @@ Claude 로그 줄에 `costUSD`가 명시돼 있으면 그 값을 그대로 사�
 
 ## 유지 관리자 노트
 
-- **보충 파일 변경**(새 Cursor 전용 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md)에서 항목을 동기화한 뒤 `updated_at` 갱신.
+- **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
   `main`에 병합되면 `.github/workflows/pricing-supplement.yml`이 gh-pages에 게시하고, 설치된 앱은 약 한 시간 안에 이를 받아감.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.

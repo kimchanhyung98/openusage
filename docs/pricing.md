@@ -46,7 +46,7 @@ These requests carry no usage or log data — nothing about your usage leaves yo
 
 ## Maintainer notes
 
-- **Supplement changes** (new Cursor-native model, price correction, new alias): edit `Sources/OpenUsage/Resources/pricing_supplement.json`, sync entries from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md), and update `updated_at`.
+- **Supplement changes** (new model, price correction, new alias): edit `Sources/OpenUsage/Resources/pricing_supplement.json`, sync Cursor-native entries from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md) and OpenAI entries from [OpenAI API pricing](https://developers.openai.com/api/docs/pricing), then update `updated_at`.
   On merge to `main`, `.github/workflows/pricing-supplement.yml` publishes it to gh-pages; installed apps pick it up within about an hour.
   The bundled copy ships with the next release for first launches.
   The **pricing-update skill** (`.agents/skills/pricing-update/`) walks an agent through the whole sync: pull the Cursor page, diff, edit, validate, and open a PR.
