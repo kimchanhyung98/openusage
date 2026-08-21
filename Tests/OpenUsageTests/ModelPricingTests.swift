@@ -111,12 +111,49 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking")?.inputPerMillion, 3)
     }
 
-    func testBundledDaybreakAliasResolvesAsGPT56Sol() {
+    func testBundledDaybreakAliasesResolveToCurrentModels() throws {
         let pricing = TestPricing.bundled
+        let aliasesByCanonical = [
+            (
+                canonical: "gpt-5.6-sol",
+                aliases: [
+                    "daybreak-blue-latest",
+                    "gpt-daybreak-blue-latest",
+                    "openai/daybreak-blue-latest",
+                    "openai/gpt-daybreak-blue-latest"
+                ]
+            ),
+            (
+                canonical: "gpt-5.6-cyber",
+                aliases: [
+                    "daybreak-red-latest",
+                    "gpt-daybreak-red-latest",
+                    "openai/daybreak-red-latest",
+                    "openai/gpt-daybreak-red-latest"
+                ]
+            )
+        ]
+
+        for entry in aliasesByCanonical {
+            let expected = try XCTUnwrap(pricing.resolve(model: entry.canonical))
+            for alias in entry.aliases {
+                XCTAssertEqual(pricing.resolve(model: alias), expected, alias)
+            }
+        }
+
         XCTAssertEqual(
-            pricing.resolve(model: "gpt-daybreak-blue-latest"),
+            pricing.resolve(model: "OpenAI/GPT-Daybreak-Blue-Latest"),
             pricing.resolve(model: "gpt-5.6-sol")
         )
+    }
+
+    func testBundledGPT56AliasResolvesAsSol() {
+        let pricing = TestPricing.bundled
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6"), pricing.resolve(model: "gpt-5.6-sol"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-high"), pricing.resolve(model: "gpt-5.6-sol"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-ultra"), pricing.resolve(model: "gpt-5.6-sol"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-high-fast"), pricing.resolve(model: "gpt-5.6-sol-fast"))
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-ultra-fast"), pricing.resolve(model: "gpt-5.6-sol-fast"))
     }
 
     func testAliasMissFallsBackToRawName() throws {
