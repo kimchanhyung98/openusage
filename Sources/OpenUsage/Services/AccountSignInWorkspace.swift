@@ -49,6 +49,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     @discardableResult
     func prepare(family: String, profileID: String) throws -> URL {
         let directory = try directory(family: family, profileID: profileID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
@@ -63,9 +64,27 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         return directory
     }
 
+    private func assertNoSymlinkComponents(family: String, profileID: String) throws {
+        var current = baseDirectory
+        for component in [family, profileID] {
+            current.appendPathComponent(component)
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: current.path)
+                guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+                    throw WorkspaceError.outsideOwnedRoot(current.path)
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                continue
+            } catch {
+                throw error
+            }
+        }
+    }
+
     /// 이 profile의 workspace만 삭제 — Shared Runtime Home·역사적 `~/.claude-*`/`~/.codex-*` 디렉터리는 범위 밖.
     func remove(family: String, profileID: String) throws {
         let directory = try directory(family: family, profileID: profileID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
     }
