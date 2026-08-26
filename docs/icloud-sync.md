@@ -42,6 +42,9 @@ Macs running an older OpenUsage read their own format but report this Mac's newe
 Settings lists each valid device file with the time that Mac generated it.
 To remove a Mac from the combined summary, turn sync off on that Mac; this deletes its file from iCloud.
 Turning sync off also stops that Mac from reading peers and immediately returns every surface there to local-only spend.
+If iCloud is unreachable at that moment, this Mac's device-file deletion is remembered and retried on later launches until it succeeds.
+If this Mac's saved device identity changes first, the earlier file stays excluded from the combined summary while its deletion is pending.
+Settings shows an error after each failed attempt even while sync is off.
 Malformed files are ignored and reported in Settings and the app log.
 
 ## Development and release setup
