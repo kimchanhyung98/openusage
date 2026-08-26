@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// 메뉴바 screen-share privacy mode의 단일 출처 — persisted "Hide From Screen Share" 설정과 라이브 캡처 신호
-/// `StatusItemImageUpdater`가 observation loop에서 `concealUsage`를 읽어 캡처 시작·종료 즉시 wordmark 전환
+/// 저장 완료된 conceal edge를 `StatusItemImageUpdater`에 전달해 캡처 시작·종료 즉시 wordmark 전환
 /// monitoring은 설정 on일 때만 — poll(보증)과 window server watcher 알림(fast path, best-effort) 병행
 @MainActor
 @Observable
@@ -23,6 +23,7 @@ final class MenuBarPrivacyStore {
             } else {
                 stopMonitoring()
             }
+            publishConcealUsageChange()
         }
     }
 
@@ -36,6 +37,8 @@ final class MenuBarPrivacyStore {
     @ObservationIgnored private let probe: @MainActor () -> Bool
     @ObservationIgnored private let installChangeNotifications: @MainActor (@escaping @Sendable () -> Void) -> Void
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private var concealUsageObserver: ((Bool) -> Void)?
+    @ObservationIgnored private var lastPublishedConcealUsage: Bool?
 
     /// probe·알림 installer는 실제 window-server 신호(`ScreenCaptureProbe`)가 기본값, 테스트 주입용으로 교체 가능
     init(
@@ -55,12 +58,22 @@ final class MenuBarPrivacyStore {
 
     deinit { pollTask?.cancel() }
 
-    /// watcher flag 재확인 후 변경 게시 — poll·window-server 알림·monitoring 시작이 호출
+    /// 메뉴바 image consumer 하나 등록 — 이후 derived conceal edge를 저장 완료 순서대로 전달.
+    func setConcealUsageObserver(_ observer: @escaping (Bool) -> Void) {
+        concealUsageObserver = observer
+        lastPublishedConcealUsage = concealUsage
+    }
+
+    /// watcher flag 재확인 후 변경 게시 — poll·monitoring 시작 경로
     /// 설정을 경유해 읽으므로 toggle off 후 도착한 stale 알림이 재은폐 불가
     func refreshCaptureState() {
-        let captured = hideUsageWhileScreenSharing && probe()
+        applyCaptureState(hideUsageWhileScreenSharing && probe())
+    }
+
+    private func applyCaptureState(_ captured: Bool) {
         guard captured != screenIsCaptured else { return }
         screenIsCaptured = captured
+        publishConcealUsageChange()
         AppLog.info(.menubar, captured
             ? "Screen capture detected; menu bar shows the wordmark"
             : "Screen capture ended; menu bar shows usage again")
@@ -89,5 +102,14 @@ final class MenuBarPrivacyStore {
         if screenIsCaptured {
             screenIsCaptured = false
         }
+        publishConcealUsageChange()
+    }
+
+    private func publishConcealUsageChange() {
+        guard let concealUsageObserver else { return }
+        let current = concealUsage
+        guard current != lastPublishedConcealUsage else { return }
+        lastPublishedConcealUsage = current
+        concealUsageObserver(current)
     }
 }
