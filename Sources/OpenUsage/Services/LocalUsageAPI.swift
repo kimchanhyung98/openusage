@@ -22,8 +22,8 @@ enum LocalUsageAPI {
             knownIDs.filter { $0 == token || ProviderAccountID.family(of: $0) == token }.sorted()
         }
 
-        /// snapshot에 live 카드 title을 입힌 복사본 — `titles`는 카드 id → 해석된 title(account registry 기반, rename 반영).
-        /// snapshot 자체는 항상 파생 이름 저장 — rename의 cache·iCloud 영속 금지. 항목 없는 카드는 기존 이름 유지.
+        /// 신뢰된 로컬 CLI용 snapshot에 live 계정 label을 입힌 복사본.
+        /// snapshot 자체는 항상 파생 이름 저장 — label의 cache·iCloud 영속 금지. 항목 없는 카드는 기존 이름 유지.
         func resolvingDisplayNames(_ titles: [String: String]) -> State {
             guard !titles.isEmpty else { return self }
             var state = self
@@ -31,6 +31,20 @@ enum LocalUsageAPI {
                 guard let title = titles[snapshot.providerID] else { return snapshot }
                 var snapshot = snapshot
                 snapshot.displayName = title
+                return snapshot
+            }
+            return state
+        }
+
+        /// wildcard CORS 응답용 복사본 — 계정 label은 고정 provider 카드 제목으로 교체.
+        func redactingAccountNamesForBrowserWire() -> State {
+            var state = self
+            state.snapshots = snapshots.mapValues { snapshot in
+                var snapshot = snapshot
+                snapshot.displayName = ProviderAccountID.cardTitle(
+                    providerID: snapshot.providerID,
+                    fallback: snapshot.displayName
+                )
                 return snapshot
             }
             return state

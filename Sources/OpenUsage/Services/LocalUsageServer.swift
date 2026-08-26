@@ -82,11 +82,15 @@ final class LocalUsageServer {
         }
     }
 
-    private func route(head: String) -> LocalUsageAPI.Response {
+    func route(head: String) -> LocalUsageAPI.Response {
         let (method, path) = Self.parseRequestLine(head)
         // path는 secret-free(loopback API는 정규화된 usage만 서빙) — Debug 전용.
         AppLog.debug(.localAPI, "\(method) \(path)")
-        return LocalUsageAPI.respond(method: method, path: path, state: state())
+        return LocalUsageAPI.respond(
+            method: method,
+            path: path,
+            state: state().redactingAccountNamesForBrowserWire()
+        )
     }
 
     /// HTTP request line을 `(method, path)`로 파싱 — 비어 있거나 malformed head 허용.
