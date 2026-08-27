@@ -187,9 +187,12 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
         guard !bindings.isEmpty else { return try execute(path: path, sql: sql) }
         var handle: OpaquePointer?
         let expanded = expandHome(path)
-        guard sqlite3_open_v2(expanded, &handle, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK, let handle else {
+        let openResult = sqlite3_open_v2(expanded, &handle, SQLITE_OPEN_READWRITE, nil)
+        guard openResult == SQLITE_OK, let handle else {
+            let message = handle.map { lastErrorMessage($0) }
+                ?? String(cString: sqlite3_errstr(openResult))
             sqlite3_close_v2(handle)
-            throw SQLiteError.queryFailed("could not open the database for writing")
+            throw SQLiteError.queryFailed(message)
         }
         defer { sqlite3_close_v2(handle) }
         sqlite3_busy_timeout(handle, 1000)

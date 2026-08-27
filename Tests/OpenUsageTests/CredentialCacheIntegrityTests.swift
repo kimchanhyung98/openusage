@@ -41,6 +41,25 @@ final class CredentialSystemClientIntegrityTests: XCTestCase {
         XCTAssertEqual(runner.callCount, 1)
         XCTAssertTrue(runner.lastArguments.contains("-readonly"))
     }
+
+    func testSQLiteBoundWritePreservesOpenFailureWithoutCreatingDatabase() {
+        let database = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenUsageTests.missing.\(UUID().uuidString).sqlite")
+
+        XCTAssertThrowsError(
+            try SQLiteCLIAccessor().execute(
+                path: database.path,
+                sql: "UPDATE ItemTable SET value = ? WHERE key = ?",
+                bindings: ["value", "key"]
+            )
+        ) { error in
+            guard case SQLiteError.queryFailed(let message) = error else {
+                return XCTFail("expected queryFailed, got \(error)")
+            }
+            XCTAssertTrue(message.localizedCaseInsensitiveContains("unable to open"))
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
+    }
 }
 
 @MainActor

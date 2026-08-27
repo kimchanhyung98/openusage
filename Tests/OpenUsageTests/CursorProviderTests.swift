@@ -33,6 +33,17 @@ final class CursorAuthStoreTests: XCTestCase {
         // 토큰이 SQL 텍스트(= argv 후보)에 유입 금지 (회귀)
         XCTAssertFalse(sqlite.executedSQL.contains { $0.contains("fresh-token") })
     }
+
+    func testSQLiteFakeRejectsBindingsOutsideCursorWriteContract() {
+        let sqlite = FakeSQLite()
+        let sql = "UPDATE ItemTable SET value = ? WHERE key = ?"
+
+        for bindings in [["key"], ["key", "value", "extra"]] {
+            XCTAssertThrowsError(try sqlite.execute(path: "/tmp/state.vscdb", sql: sql, bindings: bindings)) { error in
+                XCTAssertEqual(error as? FakeSQLiteError, .invalidBindingCount(bindings.count))
+            }
+        }
+    }
 }
 
 final class CursorUsageMapperTests: XCTestCase {
@@ -294,8 +305,9 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
     }
 
     func execute(path: String, sql: String, bindings: [String]) throws {
+        guard !bindings.isEmpty else { return try execute(path: path, sql: sql) }
         executedSQL.append(sql)
-        guard bindings.count == 2 else { return try execute(path: path, sql: sql) }
+        guard bindings.count == 2 else { throw FakeSQLiteError.invalidBindingCount(bindings.count) }
         writtenValues[bindings[0]] = bindings[1]
     }
 
@@ -307,4 +319,8 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
         }
         return String(sql[start..<end]).replacingOccurrences(of: "''", with: "'")
     }
+}
+
+private enum FakeSQLiteError: Error, Equatable {
+    case invalidBindingCount(Int)
 }
