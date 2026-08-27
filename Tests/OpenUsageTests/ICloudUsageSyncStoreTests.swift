@@ -82,6 +82,55 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         XCTAssertFalse(documents.contains { $0.deviceID == sync.deviceID })
     }
 
+    func testStaleEnableFailureDoesNotOverrideReenabledGeneration() async throws {
+        let defaults = makeDefaults("stale-enable-generation")
+        let fileStore = RecordingHistoryFileStore()
+        let sync = ICloudUsageSyncStore(
+            dataStore: makeDataStore(defaults),
+            defaults: defaults,
+            fileStore: fileStore,
+            deviceIDStore: MemoryDeviceIDStore(),
+            observesMetadataChanges: false
+        )
+
+        await fileStore.holdNextWrite()
+        await fileStore.failNextWrite()
+        sync.enabled = true
+        try await waitUntil { await fileStore.writeInFlight }
+
+        sync.enabled = false
+        sync.enabled = true
+        try await waitUntil {
+            let writeCount = await fileStore.writeCount
+            let documents = await fileStore.documents
+            return writeCount >= 2 && documents.contains { $0.deviceID == sync.deviceID }
+        }
+
+        await fileStore.releaseWrite()
+        try await waitUntil { !sync.isSyncing }
+
+        XCTAssertTrue(sync.enabled)
+        XCTAssertNil(sync.serviceError, "the superseded enable task must not surface its write failure")
+    }
+
+    func testHistoryFileStoreRejectsInvalidDeviceIDBeforeICloudAccess() async {
+        let fileStore = ICloudUsageHistoryFileStore()
+
+        do {
+            try await fileStore.delete(deviceID: "../outside")
+            XCTFail("expected an invalid device identifier error")
+        } catch let error as ICloudUsageSyncError {
+            switch error {
+            case .invalidDeviceID:
+                break
+            case .unavailable:
+                XCTFail("iCloud lookup happened before device identifier validation")
+            }
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+    }
+
     func testUnavailableStoreSurfacesFriendlyError() async throws {
         let defaults = makeDefaults("unavailable")
         let fileStore = RecordingHistoryFileStore(unavailable: true)
@@ -254,6 +303,7 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     private(set) var writeInFlight = false
     private var shouldHoldNextLoad = false
     private var shouldHoldNextWrite = false
+    private var shouldFailNextWrite = false
     private var loadGate: CheckedContinuation<Void, Never>?
     private var writeGate: CheckedContinuation<Void, Never>?
 
@@ -282,6 +332,8 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
 
     func write(_ document: UsageHistoryDocument) async throws {
         if unavailable { throw ICloudUsageSyncError.unavailable }
+        let shouldFail = shouldFailNextWrite
+        shouldFailNextWrite = false
         writeCount += 1
         writeInFlight = true
         defer { writeInFlight = false }
@@ -291,6 +343,7 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
                 writeGate = continuation
             }
         }
+        if shouldFail { throw ICloudUsageSyncError.unavailable }
         documents.removeAll { $0.deviceID == document.deviceID }
         documents.append(document)
     }
@@ -307,6 +360,10 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
 
     func holdNextWrite() {
         shouldHoldNextWrite = true
+    }
+
+    func failNextWrite() {
+        shouldFailNextWrite = true
     }
 
     func releaseLoad() {

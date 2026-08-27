@@ -126,6 +126,30 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
         )
     }
 
+    func testEnabledSyncPrioritizesOperationFailureOverRetryableDeletionFailure() async throws {
+        let defaults = makeDefaults("pending-deletion-error-priority")
+        defaults.set(true, forKey: "openusage.icloudSync.enabled.v1")
+        let previousDeviceID = UUID().uuidString.lowercased()
+        defaults.set(previousDeviceID, forKey: "openusage.icloudSync.pendingDeletionDeviceID.v1")
+        let fileStore = PendingDeletionHistoryFileStore()
+        await fileStore.failNextDeletes(1)
+        await fileStore.failNextWrites(1)
+
+        let sync = makeSync(
+            dataStore: makeDataStore(defaults),
+            defaults: defaults,
+            fileStore: fileStore
+        )
+
+        try await waitUntil {
+            let deleteAttempts = await fileStore.deleteAttempts.count
+            let writeCount = await fileStore.writeCount
+            return deleteAttempts == 1 && writeCount == 1 && !sync.isSyncing
+        }
+        XCTAssertNotNil(sync.deletionError)
+        XCTAssertEqual(sync.serviceError, ICloudUsageSyncError.unavailable.localizedDescription)
+    }
+
     func testDisabledLaunchDeletesPreviousThenCurrentDeviceWithOnePendingSlot() async throws {
         let suite = "OpenUsageTests.ICloudSync.pending-deletion-handoff.\(UUID().uuidString)"
         let defaults = RecordingPendingDeletionDefaults(suiteName: suite)!
@@ -281,6 +305,7 @@ private actor PendingDeletionHistoryFileStore: UsageHistoryFileStoring {
     private(set) var deletedDeviceIDs: [String] = []
     private(set) var deleteAttempts: [String] = []
     private var deleteFailuresRemaining = 0
+    private var writeFailuresRemaining = 0
 
     init(seedDocuments: [UsageHistoryDocument] = []) {
         self.documents = seedDocuments
@@ -292,12 +317,20 @@ private actor PendingDeletionHistoryFileStore: UsageHistoryFileStoring {
 
     func write(_ document: UsageHistoryDocument) async throws {
         writeCount += 1
+        if writeFailuresRemaining > 0 {
+            writeFailuresRemaining -= 1
+            throw ICloudUsageSyncError.unavailable
+        }
         documents.removeAll { $0.deviceID == document.deviceID }
         documents.append(document)
     }
 
     func failNextDeletes(_ count: Int) {
         deleteFailuresRemaining += count
+    }
+
+    func failNextWrites(_ count: Int) {
+        writeFailuresRemaining += count
     }
 
     func delete(deviceID: String) async throws {

@@ -196,7 +196,7 @@ final class ICloudUsageSyncStore {
     private(set) var isSyncing = false
     private var operationError: String?
     private(set) var deletionError: String?
-    var serviceError: String? { deletionError ?? operationError ?? identityError }
+    var serviceError: String? { operationError ?? deletionError ?? identityError }
     private(set) var invalidFileMessages: [String] = []
     private(set) var documents: [UsageHistoryDocument] = []
 
