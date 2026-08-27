@@ -3,7 +3,7 @@ import Observation
 
 /// 메뉴 바 strip 렌더 loop (`StatusItemController`에서 분리): pinned-metric strip 렌더 + 참조 값 변경 시 재렌더.
 /// `withObservationTracking`의 `onChange`는 one-shot이라 렌더마다 re-arm.
-/// capture 시작만 즉시 적용(지연 시 수치 노출), 나머지 변경은 짧게 병합.
+/// conceal 값 변경은 즉시 적용하고, 일반 UI 변경은 짧게 병합.
 @MainActor
 final class StatusItemImageUpdater {
     private let privacy: MenuBarPrivacyStore
@@ -60,6 +60,7 @@ final class StatusItemImageUpdater {
             return renderButtonImage(concealed ?? currentConcealment)
         } onChange: { [weak self] in
             // 일반 UI write는 저장 전 callback에서 렌더하지 않고 delay 뒤 최신 상태를 한 번 렌더.
+            // 생산 관찰 대상은 모두 `@MainActor`; 동기 scheduling이 post-mutation privacy observer의 취소 순서 보장.
             MainActor.assumeIsolated {
                 self?.scheduleDelayedUpdate()
             }

@@ -170,6 +170,15 @@ final class StatusItemImageUpdaterTests: XCTestCase {
 
         XCTAssertEqual(recorder.applied, ["strip-3"])
         XCTAssertEqual(recorder.renderCount, initialRenderCount + 1)
+
+        recorder.applied.removeAll()
+        state.label = "strip-4"
+        await waitForPendingDelay(gate)
+        gate.releaseAll()
+        await waitForAppliedCount(1, recorder: recorder)
+
+        XCTAssertEqual(recorder.applied, ["strip-4"])
+        XCTAssertEqual(recorder.renderCount, initialRenderCount + 2)
     }
 
     func testEnablingDuringCaptureAppliesPrivacyImmediately() {
