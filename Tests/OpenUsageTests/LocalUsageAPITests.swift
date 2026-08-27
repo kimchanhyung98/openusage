@@ -155,7 +155,17 @@ final class LocalUsageAPITests: XCTestCase {
         XCTAssertEqual((providers["claude"] as? [String: Any])?["displayName"] as? String, "Claude")
         XCTAssertEqual((providers["claude@ab12cd34"] as? [String: Any])?["displayName"] as? String, "Claude")
 
-        for body in [usage.body, limits.body] {
+        let familyUsage = server.route(head: "GET /v1/usage/claude HTTP/1.1\r\nHost: localhost\r\n")
+        let familyArray = try XCTUnwrap(try json(familyUsage.body) as? [[String: Any]])
+        XCTAssertEqual(familyArray.compactMap { $0["displayName"] as? String }, ["Claude", "Claude"])
+
+        let familyLimits = server.route(head: "GET /v1/limits/claude HTTP/1.1\r\nHost: localhost\r\n")
+        let familyEnvelope = try XCTUnwrap(try json(familyLimits.body) as? [String: Any])
+        let familyProviders = try XCTUnwrap(familyEnvelope["providers"] as? [String: Any])
+        XCTAssertEqual((familyProviders["claude"] as? [String: Any])?["displayName"] as? String, "Claude")
+        XCTAssertEqual((familyProviders["claude@ab12cd34"] as? [String: Any])?["displayName"] as? String, "Claude")
+
+        for body in [usage.body, limits.body, familyUsage.body, familyLimits.body] {
             let text = String(decoding: try XCTUnwrap(body), as: UTF8.self)
             XCTAssertFalse(text.contains("acme@example.com"), "account email reached the wire")
             XCTAssertFalse(text.contains("Acme Industries"), "organization name reached the wire")
