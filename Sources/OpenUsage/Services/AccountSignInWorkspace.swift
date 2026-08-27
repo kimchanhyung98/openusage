@@ -7,6 +7,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     enum WorkspaceError: LocalizedError {
         case invalidComponent(String)
         case outsideOwnedRoot(String)
+        case symlinkedComponent(String)
 
         var errorDescription: String? {
             switch self {
@@ -14,10 +15,13 @@ struct AccountSignInWorkspace: @unchecked Sendable {
                 "Invalid sign-in workspace component: \(component)"
             case .outsideOwnedRoot(let path):
                 "The sign-in workspace resolved outside OpenUsage's owned directory: \(path)"
+            case .symlinkedComponent(let path):
+                "OpenUsage can't use a symbolic link in its sign-in workspace: \(path)"
             }
         }
     }
 
+    /// 앱 소유 경로의 trust anchor — 하위 component만 symlink 검사, root 자체·상위 ancestor는 caller가 신뢰할 경로 제공.
     let baseDirectory: URL
     private let fileManager: FileManager
 
@@ -55,12 +59,12 @@ struct AccountSignInWorkspace: @unchecked Sendable {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let resolvedRoot = baseDirectory.resolvingSymlinksInPath().standardizedFileURL.path
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
         guard resolvedDirectory == resolvedRoot || resolvedDirectory.hasPrefix(resolvedRoot + "/") else {
             throw WorkspaceError.outsideOwnedRoot(resolvedDirectory)
         }
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         return directory
     }
 
@@ -71,7 +75,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
             do {
                 let attributes = try fileManager.attributesOfItem(atPath: current.path)
                 guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
-                    throw WorkspaceError.outsideOwnedRoot(current.path)
+                    throw WorkspaceError.symlinkedComponent(current.path)
                 }
             } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
                 continue
