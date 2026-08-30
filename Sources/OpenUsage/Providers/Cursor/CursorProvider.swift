@@ -241,11 +241,14 @@ final class CursorProvider: ProviderRuntime {
         guard let accessToken = (body["access_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
             return nil
         }
-        // 갱신 token은 bound parameter로 저장. 저장 실패는 token 없는 일반 오류로 기록하고 이번 세션에서만 사용.
+        // 선택된 credential source에 저장. SQLite write는 bound parameter 사용; 실패 시 token 없는 일반 오류만 기록.
         do {
             try authStore.saveAccessToken(accessToken, source: authState.source)
         } catch {
-            AppLog.error(LogTag.auth("cursor"), "failed to persist rotated access token to the Cursor state DB; using it for this session only")
+            AppLog.error(
+                LogTag.auth("cursor"),
+                "failed to persist rotated access token to the selected Cursor credential store; using it for this session only"
+            )
         }
         return accessToken
     }

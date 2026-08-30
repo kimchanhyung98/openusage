@@ -187,6 +187,7 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
         guard !bindings.isEmpty else { return try execute(path: path, sql: sql) }
         var handle: OpaquePointer?
         let expanded = expandHome(path)
+        // Credential DB 갱신 전용 — 부재 시 schema 없는 빈 DB 생성 대신 실패.
         let openResult = sqlite3_open_v2(expanded, &handle, SQLITE_OPEN_READWRITE, nil)
         guard openResult == SQLITE_OK, let handle else {
             let message = handle.map { lastErrorMessage($0) }
@@ -203,6 +204,12 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
             throw SQLiteError.queryFailed(lastErrorMessage(handle))
         }
         defer { sqlite3_finalize(statement) }
+        let expectedBindingCount = Int(sqlite3_bind_parameter_count(statement))
+        guard expectedBindingCount == bindings.count else {
+            throw SQLiteError.queryFailed(
+                "SQLite statement expected \(expectedBindingCount) bindings but received \(bindings.count)."
+            )
+        }
         for (index, binding) in bindings.enumerated() {
             guard sqlite3_bind_text(statement, Int32(index + 1), binding, -1, Self.transientDestructor) == SQLITE_OK else {
                 throw SQLiteError.queryFailed(lastErrorMessage(handle))

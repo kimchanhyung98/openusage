@@ -60,6 +60,56 @@ final class CredentialSystemClientIntegrityTests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
     }
+
+    func testSQLiteBoundWritePreservesQuotedUnicodeValueWithoutLaunchingProcess() throws {
+        let database = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenUsageTests.bound-write.\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: database) }
+        let schemaAccessor = SQLiteCLIAccessor()
+        try schemaAccessor.execute(
+            path: database.path,
+            sql: "CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);"
+        )
+        let runner = CredentialCountingProcessRunner()
+        let accessor = SQLiteCLIAccessor(processRunner: runner)
+        let value = "quote-'한글-🙂"
+
+        try accessor.execute(
+            path: database.path,
+            sql: "INSERT INTO ItemTable (key, value) VALUES (?, ?);",
+            bindings: ["token", value]
+        )
+
+        XCTAssertEqual(runner.callCount, 0)
+        XCTAssertEqual(
+            try schemaAccessor.queryValue(
+                path: database.path,
+                sql: "SELECT value FROM ItemTable WHERE key = 'token';"
+            ),
+            value
+        )
+    }
+
+    func testSQLiteBoundWriteRejectsBindingCountMismatch() throws {
+        let database = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenUsageTests.binding-count.\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: database) }
+        let accessor = SQLiteCLIAccessor()
+        try accessor.execute(
+            path: database.path,
+            sql: "CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value TEXT);"
+        )
+        let sql = "INSERT INTO ItemTable (key, value) VALUES (?, ?);"
+
+        for bindings in [["token"], ["token", "value", "extra"]] {
+            XCTAssertThrowsError(try accessor.execute(path: database.path, sql: sql, bindings: bindings)) { error in
+                guard case SQLiteError.queryFailed(let message) = error else {
+                    return XCTFail("expected queryFailed, got \(error)")
+                }
+                XCTAssertEqual(message, "SQLite statement expected 2 bindings but received \(bindings.count).")
+            }
+        }
+    }
 }
 
 @MainActor
