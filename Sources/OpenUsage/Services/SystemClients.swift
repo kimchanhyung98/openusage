@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SQLite3
 import Security
 
 protocol EnvironmentReading: Sendable {
@@ -146,6 +147,15 @@ struct LocalTextFileAccessor: TextFileAccessing {
 protocol SQLiteAccessing: Sendable {
     func queryValue(path: String, sql: String) throws -> String?
     func execute(path: String, sql: String) throws
+    /// 값은 SQL 텍스트가 아닌 바인딩으로 전달 — secret의 child process argv 유입 차단.
+    func execute(path: String, sql: String, bindings: [String]) throws
+}
+
+extension SQLiteAccessing {
+    func execute(path: String, sql: String, bindings: [String]) throws {
+        guard bindings.isEmpty else { throw SQLiteError.boundParametersUnsupported }
+        try execute(path: path, sql: sql)
+    }
 }
 
 struct SQLiteCLIAccessor: SQLiteAccessing {
@@ -171,6 +181,50 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
         guard result.succeeded else {
             throw SQLiteError.queryFailed(result.stderr)
         }
+    }
+
+    func execute(path: String, sql: String, bindings: [String]) throws {
+        guard !bindings.isEmpty else { return try execute(path: path, sql: sql) }
+        var handle: OpaquePointer?
+        let expanded = expandHome(path)
+        // Credential DB 갱신 전용 — 부재 시 schema 없는 빈 DB 생성 대신 실패.
+        let openResult = sqlite3_open_v2(expanded, &handle, SQLITE_OPEN_READWRITE, nil)
+        guard openResult == SQLITE_OK, let handle else {
+            let message = handle.map { lastErrorMessage($0) }
+                ?? String(cString: sqlite3_errstr(openResult))
+            sqlite3_close_v2(handle)
+            throw SQLiteError.queryFailed(message)
+        }
+        defer { sqlite3_close_v2(handle) }
+        sqlite3_busy_timeout(handle, 1000)
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+            sqlite3_finalize(statement)
+            throw SQLiteError.queryFailed(lastErrorMessage(handle))
+        }
+        defer { sqlite3_finalize(statement) }
+        let expectedBindingCount = Int(sqlite3_bind_parameter_count(statement))
+        guard expectedBindingCount == bindings.count else {
+            throw SQLiteError.queryFailed(
+                "SQLite statement expected \(expectedBindingCount) bindings but received \(bindings.count)."
+            )
+        }
+        for (index, binding) in bindings.enumerated() {
+            guard sqlite3_bind_text(statement, Int32(index + 1), binding, -1, Self.transientDestructor) == SQLITE_OK else {
+                throw SQLiteError.queryFailed(lastErrorMessage(handle))
+            }
+        }
+        let step = sqlite3_step(statement)
+        guard step == SQLITE_DONE || step == SQLITE_ROW else {
+            throw SQLiteError.queryFailed(lastErrorMessage(handle))
+        }
+    }
+
+    private static let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    private func lastErrorMessage(_ handle: OpaquePointer) -> String {
+        String(cString: sqlite3_errmsg(handle))
     }
 
     private func run(path: String, sql: String, readOnly: Bool = false) throws -> ProcessResult {
@@ -201,11 +255,14 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
 
 enum SQLiteError: Error, LocalizedError, Equatable {
     case queryFailed(String)
+    case boundParametersUnsupported
 
     var errorDescription: String? {
         switch self {
         case .queryFailed(let message):
             return message.isEmpty ? "SQLite query failed." : message
+        case .boundParametersUnsupported:
+            return "This SQLite accessor cannot run statements with bound parameters."
         }
     }
 }

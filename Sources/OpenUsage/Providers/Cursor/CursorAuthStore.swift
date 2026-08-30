@@ -120,10 +120,11 @@ struct CursorAuthStore: Sendable {
     }
 
     private func writeStateValue(_ key: String, _ value: String) throws {
-        let sql = """
-        INSERT OR REPLACE INTO ItemTable (key, value) VALUES ('\(Self.sqlEscaped(key))', '\(Self.sqlEscaped(value))');
-        """
-        try sqlite.execute(path: Self.stateDBPath, sql: sql)
+        try sqlite.execute(
+            path: Self.stateDBPath,
+            sql: "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?);",
+            bindings: [key, value]
+        )
     }
 
     private func readKeychainValue(_ service: String) -> String? {
