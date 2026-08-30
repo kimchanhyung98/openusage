@@ -117,7 +117,7 @@ public struct UsageReader {
                 .compactMap { id in errors[id].map { "\(id): \($0)" } }
         }
 
-        // CLI 출력은 사람이 읽는 용도 — persisted account registry로 카드 title 해석해 rename 반영(앱 UI·HTTP API와 일치). 주입 provider 테스트에서는 no-op.
+        // 신뢰된 로컬 CLI 출력 — persisted account registry의 계정 label 반영. 주입 provider 테스트에서는 보통 no-op.
         let accountTitles = ProviderAccountsStore(defaults: defaults).resolvedDisplayNamesByCardID
         let state = LocalUsageAPI.State(
             enabledOrderedIDs: enabledOrderedIDs,

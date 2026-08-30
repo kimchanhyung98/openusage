@@ -3,8 +3,8 @@ import Foundation
 /// provider refresh 1회의 최신 정규화 출력.
 struct ProviderSnapshot: Hashable, Sendable, Codable {
     let providerID: String
-    /// refresh 시점의 카드 title — 항상 baked DERIVED name (rename은 cache·iCloud 미도달).
-    /// CLI/API 경계가 응답 시점에 account registry로 재해석 — rename은 표출만 되고 영속되지 않는 계약.
+    /// refresh 시점의 provider 표시 이름 — 계정 label은 cache·iCloud에 영속하지 않고 신뢰된 로컬 CLI 복사본에만 적용.
+    /// 앱 카드와 브라우저 HTTP 응답은 계정과 무관한 고정 provider 제목 사용.
     var displayName: String
     var plan: String?
     var lines: [MetricLine]

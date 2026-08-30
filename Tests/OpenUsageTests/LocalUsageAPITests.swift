@@ -123,18 +123,53 @@ final class LocalUsageAPITests: XCTestCase {
         XCTAssertEqual(Set(providers.keys), ["claude", "claude@ab12cd34"])
     }
 
-    func testResolvedTitlesOverrideSnapshotDisplayNamesAtTheBoundary() throws {
-        // snapshot은 파생 이름 저장 — boundary에서 account registry 기준으로 재해석해 rename을 영속 없이 반영
-        let state = makeState().resolvingDisplayNames(["claude": "Claude Team"])
+    @MainActor
+    func testAccountNamesNeverReachTheBrowserReadableWire() throws {
+        var state = makeState()
+        // bare 카드는 조직명이 snapshot에 구워진 상태, extra 카드는 boundary에서 이메일 label로 해석되는 상태
+        state.snapshots["claude"]?.displayName = "Claude — Acme Industries"
+        state.knownIDs.insert("claude@ab12cd34")
+        state.enabledOrderedIDs.append("claude@ab12cd34")
+        state.snapshots["claude@ab12cd34"] = ProviderSnapshot(
+            providerID: "claude@ab12cd34",
+            displayName: "Claude",
+            lines: [.progress(label: "Session", used: 7, limit: 100, format: .percent)],
+            refreshedAt: OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
+        )
+        let resolved = state.resolvingDisplayNames(["claude@ab12cd34": "Claude — acme@example.com"])
+        let server = LocalUsageServer(state: { resolved })
 
-        let response = LocalUsageAPI.respond(method: "GET", path: "/v1/usage", state: state)
-        let array = try XCTUnwrap(try json(response.body) as? [[String: Any]])
-        XCTAssertEqual(array.first { $0["providerId"] as? String == "claude" }?["displayName"] as? String, "Claude Team")
+        let usage = server.route(head: "GET /v1/usage HTTP/1.1\r\nHost: localhost\r\n")
+        let array = try XCTUnwrap(try json(usage.body) as? [[String: Any]])
+        XCTAssertEqual(array.first { $0["providerId"] as? String == "claude" }?["displayName"] as? String, "Claude")
+        XCTAssertEqual(array.first { $0["providerId"] as? String == "claude@ab12cd34" }?["displayName"] as? String, "Claude")
         XCTAssertEqual(
             array.first { $0["providerId"] as? String == "cursor" }?["displayName"] as? String,
             "Cursor",
-            "cards without a record keep their baked name"
+            "providers without accounts keep their own name"
         )
+
+        let limits = server.route(head: "GET /v1/limits HTTP/1.1\r\nHost: localhost\r\n")
+        let envelope = try XCTUnwrap(try json(limits.body) as? [String: Any])
+        let providers = try XCTUnwrap(envelope["providers"] as? [String: Any])
+        XCTAssertEqual((providers["claude"] as? [String: Any])?["displayName"] as? String, "Claude")
+        XCTAssertEqual((providers["claude@ab12cd34"] as? [String: Any])?["displayName"] as? String, "Claude")
+
+        let familyUsage = server.route(head: "GET /v1/usage/claude HTTP/1.1\r\nHost: localhost\r\n")
+        let familyArray = try XCTUnwrap(try json(familyUsage.body) as? [[String: Any]])
+        XCTAssertEqual(familyArray.compactMap { $0["displayName"] as? String }, ["Claude", "Claude"])
+
+        let familyLimits = server.route(head: "GET /v1/limits/claude HTTP/1.1\r\nHost: localhost\r\n")
+        let familyEnvelope = try XCTUnwrap(try json(familyLimits.body) as? [String: Any])
+        let familyProviders = try XCTUnwrap(familyEnvelope["providers"] as? [String: Any])
+        XCTAssertEqual((familyProviders["claude"] as? [String: Any])?["displayName"] as? String, "Claude")
+        XCTAssertEqual((familyProviders["claude@ab12cd34"] as? [String: Any])?["displayName"] as? String, "Claude")
+
+        for body in [usage.body, limits.body, familyUsage.body, familyLimits.body] {
+            let text = String(decoding: try XCTUnwrap(body), as: UTF8.self)
+            XCTAssertFalse(text.contains("acme@example.com"), "account email reached the wire")
+            XCTAssertFalse(text.contains("Acme Industries"), "organization name reached the wire")
+        }
     }
 
     func testMethodAndRouteErrors() throws {

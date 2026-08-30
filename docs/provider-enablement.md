@@ -5,9 +5,9 @@ How OpenUsage decides which providers start on, what happens when an update adds
 ## First install
 
 A fresh install doesn't turn on every provider OpenUsage knows about.
-It starts with Claude, Codex, and Kimi, then quickly checks which providers have credentials available on your Mac — an existing local login, saved API key, or supported environment variable; nothing is sent anywhere — and switches to exactly that set.
+It starts with Claude and Codex, then quickly checks which providers have credentials available on your Mac — an existing local login, saved API key, or supported environment variable; nothing is sent anywhere — and switches to exactly that set.
 All providers are checked at once, so detection takes as long as the slowest single check, not the sum of them.
-If nothing is found, the Claude/Codex/Kimi starter set stays.
+If nothing is found, the Claude/Codex starter set stays.
 Providers the check turns on are fetched right away, so they appear with data instead of waiting for the next scheduled refresh.
 See [Dashboard § First launch](dashboard.md#first-launch) for how the dashboard presents this.
 
@@ -30,7 +30,7 @@ Everything you set in Customize — providers on or off, metric layout, menu-bar
 The only thing an update may ever change is turning **on** a provider you have never seen before, and only when you actually have that tool installed.
 
 The one exception is deliberate: the **Reset All Customization** button at the top of the Customize provider list.
-Because you asked for a clean slate, it re-runs the same local credential detection as first launch and switches the enabled set back to exactly the providers with credentials available on your Mac (Claude/Codex/Kimi if none are found) — so it can turn a provider off even if you had it on, or back on if you had turned it off.
+Because you asked for a clean slate, it re-runs the same local credential detection as first launch and switches the enabled set back to exactly the providers with credentials available on your Mac (Claude/Codex if none are found) — so it can turn a provider off even if you had it on, or back on if you had turned it off.
 It also asks for confirmation first.
 See [Dashboard](dashboard.md) for the metric side of that reset.
 
