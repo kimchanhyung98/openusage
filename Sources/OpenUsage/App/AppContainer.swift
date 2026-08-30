@@ -194,7 +194,7 @@ final class AppContainer {
         self.telemetry = telemetry
         self.transparency = PopoverTransparencyStore()
         self.privacy = MenuBarPrivacyStore()
-        self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore, accounts] in
+        self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore] in
             LocalUsageAPI.State(
                 enabledOrderedIDs: layout.orderedProviderIDs().filter { enablement.isEnabled($0) },
                 knownIDs: Set(dataStore.knownProviderIDs),
@@ -202,8 +202,6 @@ final class AppContainer {
                 limitDescriptors: dataStore.limitDescriptorsByProvider,
                 errors: dataStore.providerErrors
             )
-            // 응답 시점에 카드 제목 resolve — rename이 UI surface와 동일하게 반영.
-            .resolvingDisplayNames(accounts.resolvedDisplayNamesByCardID)
         })
         self.refreshTask.task = Self.startPeriodicRefresh(
             dataStore: dataStore,
