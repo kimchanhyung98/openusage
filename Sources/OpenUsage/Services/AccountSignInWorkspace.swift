@@ -21,23 +21,31 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         }
     }
 
-    /// 앱 소유 경로의 trust anchor — 하위 component만 symlink 검사, root 자체·상위 ancestor는 caller가 신뢰할 경로 제공.
+    /// Application Support 또는 주입 base의 parent를 trust anchor로 사용 — 앱 소유 root부터 하위 component까지 symlink 거부.
     let baseDirectory: URL
+    private let rootDirectoriesToValidate: [URL]
     private let fileManager: FileManager
 
     init(baseDirectory: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         if let baseDirectory {
-            self.baseDirectory = baseDirectory.standardizedFileURL
+            let standardizedBase = baseDirectory.standardizedFileURL
+            self.baseDirectory = standardizedBase
+            self.rootDirectoriesToValidate = [standardizedBase]
         } else {
             let applicationSupport = fileManager.urls(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
             ).first ?? fileManager.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support")
-            self.baseDirectory = applicationSupport
-                .appendingPathComponent("OpenUsage/AccountSignIn", isDirectory: true)
+            let openUsageDirectory = applicationSupport
+                .appendingPathComponent("OpenUsage", isDirectory: true)
                 .standardizedFileURL
+            let accountSignInDirectory = openUsageDirectory
+                .appendingPathComponent("AccountSignIn", isDirectory: true)
+                .standardizedFileURL
+            self.baseDirectory = accountSignInDirectory
+            self.rootDirectoriesToValidate = [openUsageDirectory, accountSignInDirectory]
         }
     }
 
@@ -69,9 +77,9 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     }
 
     private func assertNoSymlinkComponents(family: String, profileID: String) throws {
-        var current = baseDirectory
-        for component in [family, profileID] {
-            current.appendPathComponent(component)
+        let familyDirectory = baseDirectory.appendingPathComponent(family, isDirectory: true)
+        let profileDirectory = familyDirectory.appendingPathComponent(profileID, isDirectory: true)
+        for current in rootDirectoriesToValidate + [familyDirectory, profileDirectory] {
             do {
                 let attributes = try fileManager.attributesOfItem(atPath: current.path)
                 guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {

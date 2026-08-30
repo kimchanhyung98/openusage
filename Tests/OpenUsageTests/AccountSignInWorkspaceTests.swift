@@ -78,6 +78,58 @@ final class AccountSignInWorkspaceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("profile-1").path))
     }
 
+    func testPrepareRefusesASymlinkedBaseDirectory() throws {
+        let outside = try makeOutside()
+        let base = try makeSymlinkedBase(to: outside)
+        let workspace = AccountSignInWorkspace(baseDirectory: base)
+
+        XCTAssertThrowsError(try workspace.prepare(family: "claude", profileID: "profile-1")) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent(let path) = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+            XCTAssertEqual(path, base.path)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("claude/profile-1").path))
+    }
+
+    func testPrepareRefusesASymlinkedDefaultOpenUsageDirectory() throws {
+        let applicationSupport = try makeApplicationSupport()
+        let outside = try makeOutside()
+        let openUsage = applicationSupport.appendingPathComponent("OpenUsage")
+        try FileManager.default.createSymbolicLink(at: openUsage, withDestinationURL: outside)
+        let fileManager = ApplicationSupportFileManager(applicationSupport: applicationSupport)
+        let workspace = AccountSignInWorkspace(fileManager: fileManager)
+
+        XCTAssertThrowsError(try workspace.prepare(family: "claude", profileID: "profile-1")) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent(let path) = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+            XCTAssertEqual(path, openUsage.path)
+        }
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: outside.appendingPathComponent("AccountSignIn/claude/profile-1").path)
+        )
+    }
+
+    func testPrepareRefusesASymlinkedDefaultAccountSignInDirectory() throws {
+        let applicationSupport = try makeApplicationSupport()
+        let outside = try makeOutside()
+        let openUsage = applicationSupport.appendingPathComponent("OpenUsage")
+        try FileManager.default.createDirectory(at: openUsage, withIntermediateDirectories: true)
+        let accountSignIn = openUsage.appendingPathComponent("AccountSignIn")
+        try FileManager.default.createSymbolicLink(at: accountSignIn, withDestinationURL: outside)
+        let fileManager = ApplicationSupportFileManager(applicationSupport: applicationSupport)
+        let workspace = AccountSignInWorkspace(fileManager: fileManager)
+
+        XCTAssertThrowsError(try workspace.prepare(family: "claude", profileID: "profile-1")) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent(let path) = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+            XCTAssertEqual(path, accountSignIn.path)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("claude/profile-1").path))
+    }
+
     func testPrepareRefusesASymlinkedProfileComponent() throws {
         let base = try makeBase()
         let family = base.appendingPathComponent("claude")
@@ -136,6 +188,26 @@ final class AccountSignInWorkspaceTests: XCTestCase {
             guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
                 return XCTFail("expected symlinkedComponent, got \(error)")
             }
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+    }
+
+    func testRemoveRefusesASymlinkedBaseDirectory() throws {
+        let outside = try makeOutside()
+        let sentinel = outside.appendingPathComponent("claude/profile-1/keep.txt")
+        try FileManager.default.createDirectory(
+            at: sentinel.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("keep".utf8).write(to: sentinel)
+        let base = try makeSymlinkedBase(to: outside)
+        let workspace = AccountSignInWorkspace(baseDirectory: base)
+
+        XCTAssertThrowsError(try workspace.remove(family: "claude", profileID: "profile-1")) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent(let path) = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+            XCTAssertEqual(path, base.path)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
     }
@@ -216,6 +288,24 @@ final class AccountSignInWorkspaceTests: XCTestCase {
         return outside
     }
 
+    private func makeApplicationSupport() throws -> URL {
+        let applicationSupport = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.application-support.\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: applicationSupport) }
+        return applicationSupport
+    }
+
+    private func makeSymlinkedBase(to destination: URL) throws -> URL {
+        let parent = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.root.\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let base = parent.appendingPathComponent("AccountSignIn")
+        try FileManager.default.createSymbolicLink(at: base, withDestinationURL: destination)
+        addTeardownBlock { try? FileManager.default.removeItem(at: parent) }
+        return base
+    }
+
     private func posixPermissions(_ path: String) -> Int? {
         (try? FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber)?.intValue
     }
@@ -234,6 +324,22 @@ private final class AttributeFailureFileManager: FileManager, @unchecked Sendabl
             throw CocoaError(.fileReadNoPermission)
         }
         return try super.attributesOfItem(atPath: path)
+    }
+}
+
+private final class ApplicationSupportFileManager: FileManager, @unchecked Sendable {
+    private let applicationSupport: URL
+
+    init(applicationSupport: URL) {
+        self.applicationSupport = applicationSupport
+        super.init()
+    }
+
+    override func urls(for directory: SearchPathDirectory, in domainMask: SearchPathDomainMask) -> [URL] {
+        guard directory == .applicationSupportDirectory, domainMask == .userDomainMask else {
+            return super.urls(for: directory, in: domainMask)
+        }
+        return [applicationSupport]
     }
 }
 
