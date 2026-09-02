@@ -234,7 +234,7 @@ final class ProviderAccountsStore {
         records.first { $0.id == cardID }?.resolvedDisplayName
     }
 
-    /// 전 record의 card id → resolved title map — CLI/API boundary가 snapshot에 적용(`LocalUsageAPI.State.resolvingDisplayNames`).
+    /// 전 record의 card id → resolved title map — 신뢰된 로컬 CLI가 snapshot 복사본에 적용.
     var resolvedDisplayNamesByCardID: [String: String] {
         Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0.resolvedDisplayName) })
     }

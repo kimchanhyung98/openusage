@@ -7,6 +7,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     enum WorkspaceError: LocalizedError {
         case invalidComponent(String)
         case outsideOwnedRoot(String)
+        case symlinkedComponent(String)
 
         var errorDescription: String? {
             switch self {
@@ -14,26 +15,37 @@ struct AccountSignInWorkspace: @unchecked Sendable {
                 "Invalid sign-in workspace component: \(component)"
             case .outsideOwnedRoot(let path):
                 "The sign-in workspace resolved outside OpenUsage's owned directory: \(path)"
+            case .symlinkedComponent(let path):
+                "OpenUsage can't use a symbolic link in its sign-in workspace: \(path)"
             }
         }
     }
 
+    /// Application Support 또는 주입 base의 parent를 trust anchor로 사용 — 앱 소유 root부터 하위 component까지 symlink 거부.
     let baseDirectory: URL
+    private let rootDirectoriesToValidate: [URL]
     private let fileManager: FileManager
 
     init(baseDirectory: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
         if let baseDirectory {
-            self.baseDirectory = baseDirectory.standardizedFileURL
+            let standardizedBase = baseDirectory.standardizedFileURL
+            self.baseDirectory = standardizedBase
+            self.rootDirectoriesToValidate = [standardizedBase]
         } else {
             let applicationSupport = fileManager.urls(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
             ).first ?? fileManager.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support")
-            self.baseDirectory = applicationSupport
-                .appendingPathComponent("OpenUsage/AccountSignIn", isDirectory: true)
+            let openUsageDirectory = applicationSupport
+                .appendingPathComponent("OpenUsage", isDirectory: true)
                 .standardizedFileURL
+            let accountSignInDirectory = openUsageDirectory
+                .appendingPathComponent("AccountSignIn", isDirectory: true)
+                .standardizedFileURL
+            self.baseDirectory = accountSignInDirectory
+            self.rootDirectoriesToValidate = [openUsageDirectory, accountSignInDirectory]
         }
     }
 
@@ -49,23 +61,42 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     @discardableResult
     func prepare(family: String, profileID: String) throws -> URL {
         let directory = try directory(family: family, profileID: profileID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let resolvedRoot = baseDirectory.resolvingSymlinksInPath().standardizedFileURL.path
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
         guard resolvedDirectory == resolvedRoot || resolvedDirectory.hasPrefix(resolvedRoot + "/") else {
             throw WorkspaceError.outsideOwnedRoot(resolvedDirectory)
         }
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         return directory
+    }
+
+    private func assertNoSymlinkComponents(family: String, profileID: String) throws {
+        let familyDirectory = baseDirectory.appendingPathComponent(family, isDirectory: true)
+        let profileDirectory = familyDirectory.appendingPathComponent(profileID, isDirectory: true)
+        for current in rootDirectoriesToValidate + [familyDirectory, profileDirectory] {
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: current.path)
+                guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+                    throw WorkspaceError.symlinkedComponent(current.path)
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                continue
+            } catch {
+                throw error
+            }
+        }
     }
 
     /// 이 profile의 workspace만 삭제 — Shared Runtime Home·역사적 `~/.claude-*`/`~/.codex-*` 디렉터리는 범위 밖.
     func remove(family: String, profileID: String) throws {
         let directory = try directory(family: family, profileID: profileID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
     }
