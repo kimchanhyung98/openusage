@@ -40,9 +40,15 @@ struct KeychainICloudDeviceIDStore: ICloudDeviceIDStoring {
 
 enum ICloudUsageSyncError: Error, LocalizedError {
     case unavailable
+    case invalidDeviceID
 
     var errorDescription: String? {
-        "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on."
+        switch self {
+        case .unavailable:
+            "iCloud Drive isn’t available. Check that this Mac is signed into iCloud and iCloud Drive is on."
+        case .invalidDeviceID:
+            "The saved iCloud sync device identifier is invalid."
+        }
     }
 }
 
@@ -98,6 +104,9 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     }
 
     func delete(deviceID: String) async throws {
+        guard UUID(uuidString: deviceID) != nil else {
+            throw ICloudUsageSyncError.invalidDeviceID
+        }
         let directory = try historyDirectory(create: false)
         let url = directory.appendingPathComponent(deviceID).appendingPathExtension("json")
         guard FileManager.default.fileExists(atPath: url.path) else { return }
@@ -152,6 +161,7 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
 final class ICloudUsageSyncStore {
     private static let enabledKey = "openusage.icloudSync.enabled.v1"
     private static let deviceIDKey = "openusage.icloudSync.deviceID.v1"
+    private static let pendingDeletionDeviceIDKey = "openusage.icloudSync.pendingDeletionDeviceID.v1"
 
     private let defaults: UserDefaults
     private let fileStore: any UsageHistoryFileStoring
@@ -163,19 +173,30 @@ final class ICloudUsageSyncStore {
     private var metadataQuery: NSMetadataQuery?
     private var notificationTokens: [NSObjectProtocol] = []
     private var syncActivityCount = 0
+    private var enablementGeneration = 0
 
     let deviceID: String
     let deviceName: String
     var enabled: Bool {
         didSet {
             guard enabled != oldValue else { return }
-            defaults.set(enabled, forKey: Self.enabledKey)
-            Task { await applyEnabledChange() }
+            enablementGeneration &+= 1
+            let generation = enablementGeneration
+            let expectedEnabled = enabled
+            if enabled {
+                defaults.set(true, forKey: Self.enabledKey)
+                clearCurrentPendingDeletionIfReenabled()
+            } else {
+                persistCurrentDeletionRequestForDisable()
+                defaults.set(false, forKey: Self.enabledKey)
+            }
+            Task { await applyEnabledChange(expectedEnabled: expectedEnabled, generation: generation) }
         }
     }
     private(set) var isSyncing = false
     private var operationError: String?
-    var serviceError: String? { operationError ?? identityError }
+    private(set) var deletionError: String?
+    var serviceError: String? { operationError ?? deletionError ?? identityError }
     private(set) var invalidFileMessages: [String] = []
     private(set) var documents: [UsageHistoryDocument] = []
 
@@ -199,7 +220,71 @@ final class ICloudUsageSyncStore {
         self.enabled = defaults.bool(forKey: Self.enabledKey)
         dataStore.onLocalHistoryChanged = { [weak self] in self?.scheduleWrite() }
         if enabled {
-            Task { await applyEnabledChange() }
+            clearCurrentPendingDeletionIfReenabled()
+            let generation = enablementGeneration
+            Task { await applyEnabledChange(expectedEnabled: true, generation: generation) }
+        } else if defaults.object(forKey: Self.pendingDeletionDeviceIDKey) != nil {
+            let generation = enablementGeneration
+            Task { await retryPendingDeletion(expectedEnabled: false, generation: generation) }
+        }
+    }
+
+    private var pendingDeletionDeviceID: String? {
+        defaults.string(forKey: Self.pendingDeletionDeviceIDKey)
+    }
+
+    private func clearPendingDeletion() {
+        defaults.removeObject(forKey: Self.pendingDeletionDeviceIDKey)
+        deletionError = nil
+    }
+
+    private func clearCurrentPendingDeletionIfReenabled() {
+        guard Self.normalizedDeviceID(pendingDeletionDeviceID) == deviceID else { return }
+        clearPendingDeletion()
+    }
+
+    private func persistCurrentDeletionRequestForDisable() {
+        if let pendingDeviceID = Self.normalizedDeviceID(pendingDeletionDeviceID),
+           pendingDeviceID != deviceID {
+            return
+        }
+        defaults.set(deviceID, forKey: Self.pendingDeletionDeviceIDKey)
+    }
+
+    private func retryPendingDeletion(expectedEnabled: Bool, generation: Int) async {
+        guard isCurrent(expectedEnabled: expectedEnabled, generation: generation) else { return }
+        guard let persistedDeviceID = pendingDeletionDeviceID else {
+            if defaults.object(forKey: Self.pendingDeletionDeviceIDKey) != nil {
+                reportInvalidDeletionRequest()
+            }
+            return
+        }
+        guard let pendingDeviceID = Self.normalizedDeviceID(persistedDeviceID) else {
+            reportInvalidDeletionRequest()
+            return
+        }
+        await withSyncActivity {
+            do {
+                try await fileStore.delete(deviceID: pendingDeviceID)
+                guard isCurrent(expectedEnabled: expectedEnabled, generation: generation),
+                      pendingDeletionDeviceID == persistedDeviceID else {
+                    if enabled {
+                        await writeNow(generation: enablementGeneration)
+                    }
+                    return
+                }
+                if !expectedEnabled, pendingDeviceID != deviceID {
+                    defaults.set(deviceID, forKey: Self.pendingDeletionDeviceIDKey)
+                    deletionError = nil
+                    await retryPendingDeletion(expectedEnabled: false, generation: generation)
+                } else {
+                    clearPendingDeletion()
+                }
+            } catch {
+                guard isCurrent(expectedEnabled: expectedEnabled, generation: generation),
+                      pendingDeletionDeviceID == persistedDeviceID else { return }
+                reportDeletion(error, deviceID: pendingDeviceID)
+            }
         }
     }
 
@@ -214,71 +299,89 @@ final class ICloudUsageSyncStore {
     func scheduleWrite() {
         guard enabled else { return }
         writeTask?.cancel()
+        let generation = enablementGeneration
         writeTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: writeDebounce)
             guard !Task.isCancelled else { return }
-            await writeNow()
+            await writeNow(generation: generation)
         }
     }
 
-    private func applyEnabledChange() async {
-        if enabled {
+    private func applyEnabledChange(expectedEnabled: Bool, generation: Int) async {
+        guard isCurrent(expectedEnabled: expectedEnabled, generation: generation) else { return }
+        if expectedEnabled {
             startObserving()
-            await reload()
-            await writeNow()
+            await retryPendingDeletion(expectedEnabled: true, generation: generation)
+            guard isCurrent(expectedEnabled: true, generation: generation) else { return }
+            await reload(generation: generation)
+            await writeNow(generation: generation)
         } else {
             writeTask?.cancel()
             stopObserving()
             dataStore.clearPeerHistoryDocuments()
             documents = []
             invalidFileMessages = []
-            do {
-                try await fileStore.delete(deviceID: deviceID)
-                operationError = nil
-            } catch {
-                report(error, context: "disable")
-            }
+            operationError = nil
+            await retryPendingDeletion(expectedEnabled: false, generation: generation)
         }
     }
 
-    private func writeNow() async {
-        guard enabled else { return }
+    private func writeNow(generation: Int) async {
+        guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         await withSyncActivity {
+            guard isCurrent(expectedEnabled: true, generation: generation) else { return }
             let document = dataStore.localHistoryDocument(
                 deviceID: deviceID,
                 deviceName: deviceName
             )
             do {
                 try await fileStore.write(document)
-                // coordinated write 중 비활성화 가능성 대비 — opt-out 후 peer 재등장 방지 위해 방금 쓴 문서도 삭제
-                guard enabled else {
-                    try await fileStore.delete(deviceID: deviceID)
-                    return
-                }
-                operationError = nil
-                await reload()
             } catch {
-                report(error, context: "write")
+                if isCurrent(expectedEnabled: true, generation: generation) {
+                    report(error, context: "write")
+                } else if !enabled {
+                    persistCurrentDeletionRequestForDisable()
+                    await retryPendingDeletion(expectedEnabled: false, generation: enablementGeneration)
+                }
+                return
             }
+            guard isCurrent(expectedEnabled: true, generation: generation) else {
+                if !enabled {
+                    persistCurrentDeletionRequestForDisable()
+                    await retryPendingDeletion(expectedEnabled: false, generation: enablementGeneration)
+                }
+                return
+            }
+            operationError = nil
+            await reload(generation: generation)
         }
     }
 
-    private func reload() async {
-        guard enabled else { return }
+    private func reload(generation: Int) async {
+        guard isCurrent(expectedEnabled: true, generation: generation) else { return }
+        let pendingAtStart = Self.normalizedDeviceID(pendingDeletionDeviceID)
         await withSyncActivity {
             do {
                 let result = try await fileStore.loadDocuments()
-                // enabled 상태에서 시작된 read가 비활성화 후 peer 상태를 복원하지 않도록 하는 guard
-                guard enabled else { return }
-                documents = UsageHistoryDocument.newestByDevice(result.documents)
+                guard isCurrent(expectedEnabled: true, generation: generation) else { return }
+                let excludedDeviceIDs = Set([
+                    pendingAtStart,
+                    Self.normalizedDeviceID(pendingDeletionDeviceID)
+                ].compactMap { $0 })
+                let visibleDocuments = result.documents.filter { document in
+                    !excludedDeviceIDs.contains(document.deviceID.lowercased())
+                }
+                documents = UsageHistoryDocument.newestByDevice(visibleDocuments)
                 invalidFileMessages = result.invalidFileMessages
-                dataStore.setPeerHistoryDocuments(result.documents, ownDeviceID: deviceID)
+                dataStore.setPeerHistoryDocuments(visibleDocuments, ownDeviceID: deviceID)
                 operationError = result.invalidFileMessages.isEmpty
                     ? nil
                     : "Some synced usage data couldn’t be read. Check the log for details."
             } catch {
-                report(error, context: "read")
+                if isCurrent(expectedEnabled: true, generation: generation) {
+                    report(error, context: "read")
+                }
             }
         }
     }
@@ -294,6 +397,21 @@ final class ICloudUsageSyncStore {
     private func report(_ error: Error, context: String) {
         operationError = error.localizedDescription
         AppLog.warn(.config, "iCloud history \(context) failed: \(error.localizedDescription)")
+    }
+
+    private func reportDeletion(_ error: Error, deviceID: String) {
+        deletionError = "OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. "
+            + "It will try again automatically."
+        AppLog.warn(.config, "iCloud history delete failed for \(deviceID): \(error.localizedDescription)")
+    }
+
+    private func reportInvalidDeletionRequest() {
+        deletionError = "OpenUsage couldn’t read the saved iCloud history deletion request."
+        AppLog.error(.config, "iCloud history deletion request has an invalid device identifier")
+    }
+
+    private func isCurrent(expectedEnabled: Bool, generation: Int) -> Bool {
+        enabled == expectedEnabled && enablementGeneration == generation
     }
 
     private static func resolveDeviceID(
@@ -338,11 +456,14 @@ final class ICloudUsageSyncStore {
                 Task { @MainActor in
                     guard let self else { return }
                     self.metadataQuery?.enableUpdates()
-                    await self.reload()
+                    await self.reload(generation: self.enablementGeneration)
                 }
             },
             center.addObserver(forName: .NSMetadataQueryDidUpdate, object: query, queue: .main) { [weak self] _ in
-                Task { @MainActor in await self?.reload() }
+                Task { @MainActor in
+                    guard let self else { return }
+                    await self.reload(generation: self.enablementGeneration)
+                }
             }
         ]
         metadataQuery = query

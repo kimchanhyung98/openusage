@@ -44,6 +44,8 @@ struct ICloudSyncSettingsSection: View {
                 .padding(.bottom, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                if sync.enabled || sync.deletionError != nil { Divider() }
+                if let error = sync.enabled ? sync.serviceError : sync.deletionError { inlineNotice(error) }
                 if sync.enabled { enabledContent }
             }
             .cardSurface()
@@ -52,9 +54,6 @@ struct ICloudSyncSettingsSection: View {
 
     @ViewBuilder
     private var enabledContent: some View {
-        Divider()
-        if let error = sync.serviceError { inlineNotice(error) }
-
         if sync.displayedDocuments.isEmpty, !sync.isSyncing, sync.serviceError == nil {
             Text("Waiting for this Mac’s first iCloud update…")
                 .font(.caption)
