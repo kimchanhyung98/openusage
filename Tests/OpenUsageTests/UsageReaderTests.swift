@@ -132,4 +132,35 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertEqual(errors.first?["providerId"] as? String, "stub")
         XCTAssertEqual(errors.first?["message"] as? String, "Not logged in")
     }
+
+    func testTrustedCLIOutputKeepsResolvedAccountName() async throws {
+        let defaults = defaults()
+        let store = ProviderAccountsStore(defaults: defaults)
+        store.reconcile(with: [
+            ProviderAccountsStore.AccountObservation(
+                family: "claude",
+                identityKey: "acct-a",
+                label: "first@example.com",
+                sources: [ProviderAccountSource(kind: .defaultHome, anchor: "/test/a", holdsDefaultSource: true)]
+            ),
+            ProviderAccountsStore.AccountObservation(
+                family: "claude",
+                identityKey: "acct-b",
+                label: "second@example.com",
+                sources: [ProviderAccountSource(kind: .configDir, anchor: "/test/b", holdsDefaultSource: false)]
+            ),
+        ])
+        let providerID = ProviderAccountID.make(family: "claude", identityKey: "acct-b")
+        let provider = StubProvider(id: providerID)
+
+        let result = try await UsageReader(userDefaults: defaults, providers: [provider])
+            .read(providerID: providerID, force: true)
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: result.data) as? [String: Any])
+        let providers = try XCTUnwrap(root["providers"] as? [String: Any])
+
+        XCTAssertEqual(
+            (providers[providerID] as? [String: Any])?["displayName"] as? String,
+            "Claude — second@example.com"
+        )
+    }
 }

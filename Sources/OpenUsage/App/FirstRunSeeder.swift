@@ -1,12 +1,12 @@
 import Foundation
 
 /// 신규 설치의 enabled provider seeding — 첫 런치에 사용자가 실제 보유한 도구만 노출 (기존 설치 미접촉).
-/// 동기로 fallback set(Claude/Codex/Kimi)을 enabled-list 모드로 seed 후, 비동기 `hasLocalCredentials()` 로컬 probe
+/// 동기로 fallback set(Claude/Codex)을 enabled-list 모드로 seed 후, 비동기 `hasLocalCredentials()` 로컬 probe
 /// 결과로 교체. 미탐지 시 fallback 유지, probe 중 사용자 토글 우선.
 @MainActor
 enum FirstRunSeeder {
     /// 탐지 결과가 없을 때 사용하는 fallback provider set.
-    static let fallbackProviderIDs: Set<String> = ["claude", "codex", "kimi"]
+    static let fallbackProviderIDs: Set<String> = ["claude", "codex"]
 
     /// 탐지 task 반환 (테스트 await용), seeding 미발생 시 `nil`.
     /// `enabledIDs == nil` guard로 멱등 — 이미 seed된 store 미덮어쓰기.

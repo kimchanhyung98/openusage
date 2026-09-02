@@ -6,8 +6,8 @@ Providers are sections; each section shows the metrics you've enabled.
 ## First launch
 
 A fresh install doesn't turn on every provider OpenUsage knows about.
-It starts with Claude, Codex, and Kimi, then quickly checks which providers have credentials available on your Mac (existing local logins, saved API keys, or supported environment variables — nothing is sent anywhere) and switches to exactly that set.
-If nothing is found, the Claude/Codex/Kimi starter set stays.
+It starts with Claude and Codex, then quickly checks which providers have credentials available on your Mac (existing local logins, saved API keys, or supported environment variables — nothing is sent anywhere) and switches to exactly that set.
+If nothing is found, the Claude/Codex starter set stays.
 A one-time card at the top of the dashboard explains this and points to **Customize**, where you can turn any provider on or off; the card stays until you close it with its ✕ button.
 
 This full detection only happens on a brand-new install.

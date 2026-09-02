@@ -13,7 +13,7 @@ If the port is already in use, the feature is silently disabled for that session
 
 Returns a machine-facing envelope for all **enabled** providers.
 Providers and resources are keyed by stable IDs; values are raw scalars with explicit units.
-This is the preferred route for new integrations and the exact format printed by the `openusage` CLI.
+This is the preferred route for new integrations and uses the same schema as the `openusage` CLI.
 
 ### `GET /v1/limits/:id`
 
@@ -172,6 +172,7 @@ Spend rows continue to serialize as the same `text` lines so existing local inte
 
 In both response shapes, `displayName` is the card's current name — for Claude and Codex it is the fixed provider-card title, not the account.
 The account names shown in the dashboard selector are separate and never appear here.
+The trusted one-shot CLI uses the same schema but may keep the resolved Claude or Codex account name in `displayName`.
 Match on `providerId` (or the envelope key), never on the name.
 
 ## Errors

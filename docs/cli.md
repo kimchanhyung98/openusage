@@ -3,6 +3,7 @@
 OpenUsage ships a one-shot `openusage` command for agents and scripts.
 It prints the documented [`/v1/limits`](local-http-api.md#get-v1limits) JSON and exits; it never launches or leaves the menu-bar app running.
 The output contains stable scalar limits and balances, not UI rows, colors, subtitles, charts, or spend-history tiles.
+It uses the HTTP route's schema, but its trusted local output may keep the resolved Claude or Codex account name in `displayName`; integrations should match provider IDs instead.
 
 ```sh
 openusage                 # every enabled provider, refreshing stale cache entries
