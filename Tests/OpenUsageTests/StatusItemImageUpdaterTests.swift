@@ -3,7 +3,7 @@ import Observation
 import XCTest
 @testable import OpenUsage
 
-/// 캡처가 시작되면 지연 병합을 우회해 즉시 privacy 이미지로 교체해야 한다.
+/// conceal 전환 즉시 적용과 일반 렌더 병합·재무장 검증.
 @MainActor
 final class StatusItemImageUpdaterTests: XCTestCase {
     private final class Recorder {
@@ -29,11 +29,13 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         private var continuations: [CheckedContinuation<Void, Never>] = []
 
         var pendingCount: Int { continuations.count }
+        private(set) var resumedCount = 0
 
         func wait() async {
             await withCheckedContinuation { continuation in
                 continuations.append(continuation)
             }
+            resumedCount += 1
         }
 
         func releaseAll() {
@@ -97,6 +99,13 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         XCTAssertEqual(recorder.applied.count, count)
     }
 
+    private func waitForResumedDelay(_ gate: DelayGate) async {
+        for _ in 0..<100 where gate.resumedCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(gate.resumedCount, 1)
+    }
+
     func testCaptureTransitionsApplyPostMutationStateAndRearmObservation() async {
         let capture = CaptureFlag(isOn: false)
         let privacy = makePrivacyStore("captureTransitions", capture: capture)
@@ -141,7 +150,7 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         capture.isOn = true
         privacy.refreshCaptureState()
         gate.releaseAll()
-        for _ in 0..<10 { await Task.yield() }
+        await waitForResumedDelay(gate)
 
         XCTAssertEqual(recorder.applied, ["privacy"])
     }
