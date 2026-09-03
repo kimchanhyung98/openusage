@@ -44,8 +44,10 @@ final class CodexProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session")
+                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -57,8 +59,10 @@ final class CodexProvider: ProviderRuntime {
                 .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
             // `additional_rate_limits`의 Spark 전용 limit (GPT-5.3-Codex-Spark) — `DefaultLayout`에서 On Demand·비활성·unpinned로 seed.
             .percent(id: "\(provider.id).spark", provider: provider, title: "Spark")
+                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("spark", unit: "percent"),
             .percent(id: "\(provider.id).sparkWeekly", provider: provider, title: "Spark Weekly")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("sparkWeekly", unit: "percent"),
             .combined(id: "\(provider.id).credits", provider: provider, title: "Extra Usage", metricLabel: "Credits")
                 .exportingLimit("credits", kind: .balance, unit: "credits", source: .value(kind: .count, label: "credits"))

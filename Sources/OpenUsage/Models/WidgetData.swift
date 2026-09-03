@@ -21,6 +21,8 @@ struct WidgetData: Hashable {
     /// 전역 "always show pacing" opt-in — `WidgetDataStore`가 stamp.
     /// on이면 blue row에도 even-pace tick·projection 문구 표시 — yellow/red는 reset window 있으면 항상 tick 표시.
     var alwaysShowPacing: Bool = false
+    /// 사용자 soft-limit 안내선의 사용량 기준 위치 — 대상이 아니거나 설정이 꺼져 있으면 nil.
+    var softLimitUsedFraction: Double?
     var resetsAt: Date?
     /// row hover tooltip에 표시할 미래 expiry 시각들 (Codex reset credit — 가용 credit당 1개). 다른 row는 빈 배열.
     /// raw `Date` 유지 — tooltip이 live format하며 전역 relative/absolute mode 준수 (`expiryTooltip`).
@@ -159,7 +161,7 @@ struct WidgetData: Hashable {
 
     /// kind별 headline 표시 정밀도로 반올림 (whole percent / 소수 1자리 count / cent).
     /// "0%"로 읽히는 값은 0으로 등록 — meter geometry·spent 판정과 인쇄 숫자의 불일치 방지.
-    private func roundedAtDisplayPrecision(_ value: Double) -> Double {
+    func roundedAtDisplayPrecision(_ value: Double) -> Double {
         switch kind {
         case .percent: return value.rounded()
         case .count: return (value * 10).rounded() / 10

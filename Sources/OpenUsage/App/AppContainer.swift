@@ -24,6 +24,8 @@ final class AppContainer {
     let apiKeyProviders: [any APIKeyManaging]
     /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
     let notificationSettings: NotificationSettingsStore
+    /// Settings와 provider별 progress bar가 공유하는 머신 로컬 soft-limit 안내선 설정.
+    let softLimitSettings: SoftLimitSettingsStore
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
     /// SwiftUI surface와 AppKit panel이 공유하는 Popover 투명도 단일 상태.
@@ -93,6 +95,7 @@ final class AppContainer {
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
+        let softLimitSettings = SoftLimitSettingsStore()
         let layout = LayoutStore(
             registry: registry,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
@@ -103,6 +106,7 @@ final class AppContainer {
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
+            softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
@@ -133,6 +137,7 @@ final class AppContainer {
         self.enablement = enablement
         self.apiKeyProviders = apiKeyProviders
         self.notificationSettings = notificationSettings
+        self.softLimitSettings = softLimitSettings
         self.layout = layout
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync

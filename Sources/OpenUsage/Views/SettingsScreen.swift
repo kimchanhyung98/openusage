@@ -37,6 +37,7 @@ struct SettingsScreen: View {
         @Bindable var transparency = container.transparency
         @Bindable var privacy = container.privacy
         @Bindable var notifications = container.notificationSettings
+        @Bindable var softLimit = container.softLimitSettings
         return VStack(alignment: .leading, spacing: density.sectionSpacing) {
             section("General") {
                 // 활성 spend-capable 프로바이더 존재 시에만 카드 표시 — 이 토글 단독으로는 미노출
@@ -119,6 +120,26 @@ struct SettingsScreen: View {
                     Toggle("", isOn: $store.alwaysShowPacing)
                         .settingsSwitchStyle()
                         .hoverTooltip("Show how you're pacing on every metric, not just ones near their limit")
+                }
+                row("Soft Limit") {
+                    Toggle("", isOn: $softLimit.enabled)
+                        .settingsSwitchStyle()
+                }
+                if softLimit.enabled {
+                    row("Window") {
+                        picker($softLimit.window, options: SoftLimitWindow.allCases, label: \.label)
+                    }
+                    row("Threshold") {
+                        picker(
+                            $softLimit.thresholdPercent,
+                            options: Array(SoftLimitSettingsStore.thresholdRange),
+                            label: { "\($0)%" }
+                        )
+                    }
+                    inlineNotice(
+                        "This is an early guide only. Automatic stopping stays off until OpenUsage can safely "
+                            + "bind every matching AI app and CLI session to an exact stop control."
+                    )
                 }
             }
             notificationsSection
