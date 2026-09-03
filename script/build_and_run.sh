@@ -27,7 +27,7 @@ ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
 # 개발 중인 버전 — 소유자 승인 값만 사용. 버전 상승은 승인 사항이라 태그에서 유도하지 않음.
 # 릴리스를 자른 뒤 다음 개발 버전을 승인받아 여기서 갱신.
-APP_VERSION="0.9.3"
+APP_VERSION="0.9.5"
 APP_BUILD="$APP_VERSION"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
