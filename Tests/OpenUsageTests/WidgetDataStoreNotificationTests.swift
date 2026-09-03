@@ -235,4 +235,47 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         await store.evaluateNotifications(now: base)
         XCTAssertEqual(recorder.posts.count, 2, "failed delivery should retry on the next tick")
     }
+
+    func testResetWatchNeverEntersQuotaNotifications() async {
+        let settings = NotificationSettingsStore(defaults: makeUserDefaults("forecast-settings"))
+        allOn(settings)
+        let recorder = Recorder()
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: provider,
+            title: "Reset Watch"
+        )
+        let deadline = base.addingTimeInterval(3600)
+        let runtime = MutableRuntime(
+            provider: provider,
+            descriptors: [descriptor],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: []
+            )
+        )
+        let defaults = makeUserDefaults("forecast")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() }),
+            defaults: defaults,
+            orderedDescriptors: { [descriptor] },
+            now: { self.base },
+            notificationSettings: { settings },
+            postNotification: { idPrefix, title, subtitle, body in
+                recorder.posts.append((idPrefix, title, subtitle, body))
+                return true
+            }
+        )
+
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 80, deadline: deadline))
+        await store.evaluateNotifications(now: base)
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 100, deadline: deadline))
+        await store.evaluateNotifications(now: base)
+
+        XCTAssertTrue(recorder.posts.isEmpty)
+    }
 }

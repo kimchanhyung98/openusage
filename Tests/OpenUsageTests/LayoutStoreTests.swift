@@ -619,7 +619,7 @@ final class LayoutStoreTests: XCTestCase {
             "claude.sonnet", "claude.today", "claude.yesterday", "claude.last30"
         ])
         XCTAssertEqual(store.orderedSupportedMetrics(for: "codex").map(\.id), [
-            "codex.session", "codex.weekly", "codex.trend", "codex.rateLimitResets",
+            "codex.session", "codex.weekly", "codex.trend", "codex.resetWatch", "codex.rateLimitResets",
             "codex.spark", "codex.sparkWeekly", "codex.credits",
             "codex.today", "codex.yesterday", "codex.last30"
         ])
@@ -662,6 +662,8 @@ final class LayoutStoreTests: XCTestCase {
         XCTAssertFalse(store.isMetricEnabled("claude.extra"))
         XCTAssertFalse(store.isMetricEnabled("claude.sonnet"))
         XCTAssertFalse(store.isMetricEnabled("claude.last30"))
+        XCTAssertFalse(store.isMetricEnabled("codex.resetWatch"))
+        XCTAssertFalse(store.isPinned("codex.resetWatch"))
         XCTAssertFalse(store.isMetricEnabled("codex.spark"))
         XCTAssertFalse(store.isMetricEnabled("codex.sparkWeekly"))
         XCTAssertFalse(store.isMetricEnabled("codex.credits"))
@@ -683,7 +685,7 @@ final class LayoutStoreTests: XCTestCase {
         ])
         XCTAssertEqual(primaryByProvider["codex"], ["codex.session", "codex.weekly"])
         XCTAssertEqual(expandedByProvider["codex"], [
-            "codex.trend", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
+            "codex.trend", "codex.resetWatch", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
             "codex.credits", "codex.today", "codex.yesterday", "codex.last30"
         ])
         XCTAssertEqual(primaryByProvider["devin"], ["devin.daily", "devin.weekly"])

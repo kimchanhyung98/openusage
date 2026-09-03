@@ -3,7 +3,7 @@ import Observation
 import XCTest
 @testable import OpenUsage
 
-/// conceal 전환 즉시 적용과 일반 렌더 병합·재무장 검증.
+/// conceal 전환 즉시 적용, 일반 렌더 병합·재무장, 예측 deadline 1회 재렌더 검증.
 @MainActor
 final class StatusItemImageUpdaterTests: XCTestCase {
     private final class Recorder {
@@ -52,17 +52,28 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         return image
     }
 
+    private func rendered(
+        _ name: String,
+        nextInvalidation: Date? = nil
+    ) -> StatusItemImageUpdater.RenderedButtonImage {
+        StatusItemImageUpdater.RenderedButtonImage(image: image(named: name), nextInvalidation: nextInvalidation)
+    }
+
     private func makeUpdater(
         privacy: MenuBarPrivacyStore,
         state: RenderState,
         recorder: Recorder,
-        gate: DelayGate
+        gate: DelayGate,
+        nextInvalidation: @escaping (_ renderCount: Int) -> Date? = { _ in nil }
     ) -> StatusItemImageUpdater {
         StatusItemImageUpdater(
             privacy: privacy,
             renderButtonImage: { [self] concealed in
                 recorder.renderCount += 1
-                return image(named: concealed ? "privacy" : state.label)
+                return rendered(
+                    concealed ? "privacy" : state.label,
+                    nextInvalidation: concealed ? nil : nextInvalidation(recorder.renderCount)
+                )
             },
             delay: { await gate.wait() },
             apply: { recorder.applied.append($0.accessibilityDescription ?? "?") }
@@ -204,5 +215,103 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         privacy.hideUsageWhileScreenSharing = false
 
         XCTAssertEqual(recorder.applied, ["privacy", "strip"])
+    }
+
+    // MARK: - Deadline
+
+    func testDeadlineSchedulesOneTimeRender() async throws {
+        let capture = CaptureFlag(isOn: false)
+        let privacy = makePrivacyStore("deadlineOneTime", capture: capture)
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(0.02) : nil
+        }
+
+        updater.update()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(recorder.renderCount, 2)
+        XCTAssertEqual(recorder.applied, ["strip", "strip"])
+    }
+
+    func testNewRenderCancelsSupersededDeadline() async throws {
+        let capture = CaptureFlag(isOn: false)
+        let privacy = makePrivacyStore("supersededDeadline", capture: capture)
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(0.02) : nil
+        }
+
+        updater.update()
+        updater.update()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(recorder.renderCount, 2)
+    }
+
+    func testObservedRenderCancelsSupersededDeadline() async throws {
+        let capture = CaptureFlag(isOn: false)
+        let privacy = makePrivacyStore("observedRenderCancelsDeadline", capture: capture)
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(0.1) : nil
+        }
+
+        updater.update()
+        state.label = "updated-strip"
+        await waitForPendingDelay(gate)
+        gate.releaseAll()
+        await waitForAppliedCount(2, recorder: recorder)
+        try await Task.sleep(for: .milliseconds(150))
+
+        XCTAssertEqual(recorder.renderCount, 2)
+        XCTAssertEqual(recorder.applied, ["strip", "updated-strip"])
+    }
+
+    func testCaptureStartCancelsPendingDeadline() async throws {
+        let capture = CaptureFlag(isOn: false)
+        let privacy = makePrivacyStore("captureCancelsDeadline", capture: capture)
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { _ in
+            Date().addingTimeInterval(0.02)
+        }
+
+        updater.update()
+        capture.isOn = true
+        privacy.refreshCaptureState()
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertEqual(recorder.applied, ["strip", "privacy"])
+        XCTAssertEqual(recorder.renderCount, 2)
+    }
+
+    func testDeadlineRenderKeepsOneObservationSubscription() async {
+        let capture = CaptureFlag(isOn: false)
+        let privacy = makePrivacyStore("deadlineObservation", capture: capture)
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate)
+        updater.update()
+        updater.deadlineDidFire()
+
+        XCTAssertEqual(recorder.renderCount, 2)
+        XCTAssertEqual(recorder.applied, ["strip", "strip"])
+
+        state.label = "after-deadline"
+        await waitForPendingDelay(gate)
+        gate.releaseAll()
+        await waitForAppliedCount(3, recorder: recorder)
+
+        XCTAssertEqual(recorder.renderCount, 3)
+        XCTAssertEqual(recorder.applied.last, "after-deadline")
     }
 }
