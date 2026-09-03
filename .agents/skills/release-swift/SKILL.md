@@ -1,6 +1,6 @@
 ---
 name: release-swift
-description: Cut a release of OpenUsage (Swift menu-bar app): pick a version, generate a categorized changelog, tag from `main`, and publish the GitHub Release with notes. Use to ship an Early Access beta or a stable release.
+description: "Cut a release of OpenUsage (Swift menu-bar app): pick a version, generate a categorized changelog, tag from `main`, and publish the GitHub Release with notes. Use to ship an Early Access beta or a stable release."
 ---
 
 # Release Swift
@@ -49,7 +49,7 @@ Wait for explicit approval of the changelog before changing any files. Accept ed
 
 ### 4. Record it in CHANGELOG.md
 
-Prepend the approved section right after the `# Changelog` header. Commit on `main`:
+Prepend the approved section right after the `# Changelog` header and the preamble line under it. Commit on `main`:
 
 ```sh
 git switch main && git pull
@@ -122,12 +122,12 @@ Only include category sections that have entries.
 ---
 
 ### Changelog
-**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_tag}...v{version})
-
-- [{short_hash}](https://github.com/kimchanhyung98/openusage/commit/{full_hash}) {commit message} by @{author}
+**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_commit}...{commit})
 ~~~
 
 `{prev_tag}` is the previous release **in the same channel**: last stable for a stable cut, last beta (or last stable for the first beta in a lane) for a beta cut.
+
+The compare **link text** uses tag names, but the **URL** uses the two full commit SHAs the tags point at. Some fork tags exist only locally and were never pushed, so a tag-name URL would 404 for them; SHAs always resolve. A commit whose section has no earlier release to compare against uses `**Release Commit**: [{short_hash}](https://github.com/kimchanhyung98/openusage/commit/{full_hash})` instead.
 
 ## Rules
 
@@ -135,7 +135,7 @@ Only include category sections that have entries.
 - Stable changelogs span last-stable → this-stable (roll up the whole beta series); beta changelogs span previous-tag → this-beta.
 - Never push or tag automatically — ask the owner first.
 - Always publish notes to the GitHub Release — never blank.
-- The version is the tag; never edit version files.
+- The release artifact version is derived from the tag. Never edit `AppInfo` or `script/build_and_run.sh` for a release version.
 - The appcast is append-only: older installs and the other channel's latest build must keep working, so the workflow aborts rather than shrink it.
 
 Release secrets and one-time setup live in the README under [Release setup](../../../README.md#release-setup-one-time).
