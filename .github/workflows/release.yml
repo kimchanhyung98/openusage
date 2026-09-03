@@ -1,9 +1,9 @@
 name: Release
 
-# Tag a version to ship it: `git tag v0.7.0 && git push origin v0.7.0`.
-# A tag with a pre-release suffix (e.g. v0.7.0-beta.1) publishes to the Early Access channel; a plain
-# tag (v0.7.0) publishes to everyone. The one-time secret/Pages setup is documented in the
-# release-swift skill under .agents/skills/release-swift/.
+# 배포할 버전에 태그 지정: `git tag v0.7.0 && git push origin v0.7.0`.
+# pre-release 접미사 태그(예: v0.7.0-beta.1)는 Early Access channel에 배포.
+# 일반 태그(v0.7.0)는 전체 사용자에게 배포.
+# 최초 secret·Pages 설정은 .agents/skills/release-swift/의 release-swift skill 참고.
 on:
   push:
     tags: ["v*"]
@@ -17,9 +17,8 @@ on:
 permissions:
   contents: write
 
-# Serialize releases: each run reads appcast.xml from gh-pages, regenerates it with generate_appcast,
-# and force-publishes the branch. Without this, two tags pushed close together could race and drop a
-# feed entry.
+# 릴리스 직렬화. 각 실행에서 gh-pages의 appcast.xml을 읽어 generate_appcast로 재생성 후 branch 강제 배포.
+# 두 태그가 연이어 push될 때 race로 feed 항목이 누락되는 문제 방지.
 concurrency:
   group: release-appcast
   cancel-in-progress: false
@@ -30,23 +29,33 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Build the requested tag. On a tag push `inputs.tag` is empty and checkout defaults to the
-          # triggering tag; on workflow_dispatch this pins the tag instead of the default branch.
+          # 요청한 태그 빌드. 태그 push에서는 `inputs.tag`가 비어 있어 trigger 태그를 기본 checkout.
+          # workflow_dispatch에서는 기본 branch 대신 입력 태그로 고정.
           ref: ${{ inputs.tag }}
-          fetch-depth: 0          # full history so the CFBundleVersion (commit count) is correct
+          fetch-depth: 0          # CFBundleVersion인 commit 수 계산을 위한 전체 이력
           persist-credentials: true
 
       - name: Select Xcode
-        # The app icon is committed prebuilt (see script/compile_icon.sh) because no actool on GitHub's
-        # runners can compile its Liquid Glass `.icon` (Apple regression FB20183399), so the default
-        # runner Xcode is fine for the build/sign/notarize steps.
+        # GitHub runner의 actool이 Liquid Glass `.icon`을 컴파일하지 못해 앱 아이콘은 사전 빌드 후 commit
+        # (Apple regression FB20183399, script/compile_icon.sh 참고).
+        # 빌드·서명·공증 단계에는 runner 기본 Xcode 사용 가능.
         run: sudo xcode-select -s /Applications/Xcode.app
 
       - name: Resolve tag, version, and channel
         id: meta
+        # 위 checkout이 트리를 `inputs.tag`로 고정하므로 태그 pattern을 script/version.sh에서 source하지 않고
+        # inline으로 유지. script 추가 전 태그를 workflow_dispatch로 재빌드해도 source 실패 없음.
+        # script/version.sh의 pattern과 동기화 필요.
+        env:
+          # dispatch 입력이 shell로 해석되지 않도록 script에 직접 보간하지 않고 환경 변수로 전달.
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ inputs.tag }}"
+          TAG="$INPUT_TAG"
           [ -z "$TAG" ] && TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH with an optional pre-release suffix: $TAG" >&2
+            exit 1
+          fi
           VERSION="${TAG#v}"
           if [[ "$TAG" == *-* ]]; then CHANNEL=beta; PRERELEASE=true; else CHANNEL=stable; PRERELEASE=false; fi
           {
@@ -56,18 +65,18 @@ jobs:
             echo "prerelease=$PRERELEASE"
           } >> "$GITHUB_OUTPUT"
 
-      # Imports the Developer ID cert into a temporary keychain and adds it to the search list (cleaned up
-      # automatically in a post step). Replaces a hand-rolled `security create-keychain`/`import` block.
+      # Developer ID 인증서를 임시 keychain으로 가져오고 검색 목록에 추가(post 단계에서 자동 정리).
+      # 수동 `security create-keychain`/`import` block 대체.
       - name: Import Developer ID certificate
         uses: apple-actions/import-codesign-certs@v7
         with:
-          # Developer ID Application cert (.p12, base64) used to sign the app and DMG.
+          # 앱과 DMG 서명용 Developer ID Application 인증서(.p12, base64).
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Resolve signing identity
         run: |
-          # The cert is now in the search list; codesign needs the identity's display name.
+          # 검색 목록에 추가된 인증서에서 codesign에 필요한 ID 표시 이름 확인.
           IDENTITY="$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
           [ -n "$IDENTITY" ] || { echo "No Developer ID Application identity found in the imported cert" >&2; exit 1; }
           echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
@@ -88,23 +97,21 @@ jobs:
 
       - name: Carry forward the existing appcast
         run: |
-          # generate_appcast works on a folder: it reads the existing appcast.xml there and the new DMG,
-          # then writes a merged appcast. "feed/" is that folder. Seed it with the live appcast so prior
-          # versions and the OTHER channel's items are preserved (verified: items whose archive isn't in
-          # the folder keep their original enclosure URLs untouched).
+          # generate_appcast는 디렉터리의 기존 appcast.xml과 새 DMG를 읽어 병합 appcast 작성.
+          # feed/에 운영 appcast를 먼저 넣어 이전 버전과 다른 channel 항목 보존.
+          # 디렉터리에 archive가 없는 항목의 기존 enclosure URL 유지 확인됨.
           mkdir -p feed
-          # Distinguish "nothing published yet" (fresh feed) from "couldn't read it" (transient
-          # failure). Only start fresh when there is genuinely no appcast to carry forward; otherwise
-          # abort so a network blip can't replace the live feed's full history with a single item.
+          # 미배포 상태(fresh feed)와 일시적 읽기 실패 구분.
+          # 이어받을 appcast가 실제로 없을 때만 새 feed 시작.
+          # network 오류가 운영 feed 전체 이력을 단일 항목으로 교체하지 않도록 그 외에는 중단.
           set +e
           git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1
           rc=$?
           set -e
           if [ "$rc" -eq 0 ]; then
             git fetch origin gh-pages
-            # gh-pages can exist without an appcast: pricing-supplement.yml publishes to the same
-            # branch, so the first release finds the branch already created. An absent appcast.xml is
-            # that case, not a failure — but a present-yet-unreadable one still aborts.
+            # pricing-supplement.yml도 같은 branch에 배포하므로 appcast 없이 gh-pages만 존재 가능.
+            # 최초 릴리스에서 appcast.xml 부재는 정상이며, 파일이 존재하지만 읽을 수 없으면 중단.
             if git cat-file -e origin/gh-pages:appcast.xml 2>/dev/null; then
               git show origin/gh-pages:appcast.xml > feed/appcast.xml \
                 || { echo "gh-pages has appcast.xml but it could not be read — aborting to protect the feed." >&2; exit 1; }
@@ -122,23 +129,26 @@ jobs:
       - name: Build, sign, and notarize the DMG
         env:
           SPARKLE_PUBLIC_KEY: ${{ secrets.SPARKLE_PUBLIC_KEY }}
-          # Apple ID + app-specific password + team ID for notarytool.
+          # notarytool용 Apple ID, 앱 전용 비밀번호, team ID.
           NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARY_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          OPENUSAGE_TAG: ${{ steps.meta.outputs.tag }}
+          # OPENUSAGE_TAG 도입 전 태그를 workflow_dispatch로 재빌드할 때 당시 release.sh 요구 사항을
+          # 충족하도록 유도한 버전도 전달. 현재 release.sh에서는 무시.
           OPENUSAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: ./script/release.sh
 
-      # Upload the dSYM produced by release.sh so PostHog can symbolicate crash reports (the in-app
-      # crash autocapture is anonymous and honors the Share-Anonymous-Usage opt-out; see docs/privacy.md).
-      # posthog-cli is a CI-only build tool (npm), never shipped in the app bundle. Skips with a loud
-      # warning when POSTHOG_CLI_API_KEY is unset (e.g. forks), so a missing key never blocks a release;
-      # when the key IS set, an upload failure fails the step so we never silently ship unsymbolicated.
+      # PostHog crash report symbolication을 위해 release.sh가 생성한 dSYM 업로드.
+      # 앱 crash 자동 수집은 익명이며 Share-Anonymous-Usage opt-out 준수(docs/privacy.md 참고).
+      # posthog-cli는 CI 전용 npm build tool로 앱 bundle에 포함되지 않음.
+      # fork 등에서 POSTHOG_CLI_API_KEY가 없으면 명확한 경고 후 생략해 릴리스를 차단하지 않음.
+      # key가 있으면 업로드 실패 시 단계를 실패시켜 symbol 없는 배포 방지.
       - name: Upload dSYMs to PostHog
         env:
           POSTHOG_CLI_API_KEY: ${{ secrets.POSTHOG_CLI_API_KEY }}
           POSTHOG_CLI_PROJECT_ID: ${{ secrets.POSTHOG_CLI_PROJECT_ID }}
-          # US region, matching TelemetryConfig.host in the app.
+          # 앱의 TelemetryConfig.host와 일치하는 US region.
           POSTHOG_CLI_HOST: https://us.i.posthog.com
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
@@ -148,8 +158,8 @@ jobs:
           fi
           [ -d dist/dSYMs ] || { echo "dist/dSYMs missing — release.sh did not produce a dSYM." >&2; exit 1; }
           npm install -g @posthog/cli
-          # Symbolication matches a crash report to its symbols by the binary's Mach-O UUID (carried in
-          # the dSYM), so `--directory` is all that's required — no per-release flags to keep in sync.
+          # symbolication은 dSYM의 binary Mach-O UUID로 crash report와 symbol을 연결.
+          # 릴리스별 flag 동기화 없이 `--directory`만 필요.
           posthog-cli dsym upload --directory dist/dSYMs
 
       - name: Publish DMG to GitHub Releases
@@ -165,27 +175,27 @@ jobs:
         env:
           DMG: OpenUsage-${{ steps.meta.outputs.version }}.dmg
           CHANNEL: ${{ steps.meta.outputs.channel }}
-          # Per-tag GitHub release asset base. generate_appcast applies this prefix only to the new DMG
-          # in feed/; preserved items keep their own (older-tag) URLs.
+          # 태그별 GitHub Release asset base URL.
+          # generate_appcast는 feed/의 새 DMG에만 prefix를 적용하고 기존 항목은 이전 태그 URL 유지.
           DOWNLOAD_PREFIX: https://github.com/${{ github.repository }}/releases/download/${{ steps.meta.outputs.tag }}/
         run: |
-          # Locate generate_appcast from the Sparkle SwiftPM artifact that release.sh already fetched.
+          # release.sh가 이미 받은 Sparkle SwiftPM artifact에서 generate_appcast 탐색.
           GA="$(find .build/artifacts -type f -name generate_appcast 2>/dev/null | head -n1)"
           [ -x "$GA" ] || { echo "generate_appcast not found under .build/artifacts" >&2; exit 1; }
 
-          # How many feed items existed before (to confirm nothing is dropped). 0 on first release.
-          # Sparkle normally keeps only a few versions per branch; this release feed is intentionally
-          # append-only so older installs and the other channel's items remain available.
+          # 항목 누락 검증을 위한 기존 feed 항목 수. 최초 릴리스는 0.
+          # Sparkle은 일반적으로 branch별 소수 버전만 유지하지만 이 feed는 이전 설치와 다른 channel 항목을
+          # 계속 제공하도록 의도적으로 append-only 구성.
           before=0
           [ -f feed/appcast.xml ] && before=$(grep -c "<item>" feed/appcast.xml || true)
 
           cp "dist/$DMG" "feed/$DMG"
 
-          # Pre-release tags publish to the Early Access (beta) channel; plain tags publish to everyone.
+          # pre-release 태그는 Early Access(beta) channel, 일반 태그는 전체 사용자에게 배포.
           channel_arg=()
           [ "$CHANNEL" = "beta" ] && channel_arg=(--channel beta)
 
-          # The key file is base64 (it can contain '/'); pass it via stdin so it's never an argv/glob.
+          # key 파일은 '/'를 포함할 수 있는 base64이므로 argv/glob으로 해석되지 않게 stdin으로 전달.
           cat "$SPARKLE_PRIVATE_KEY_FILE" | "$GA" \
             --ed-key-file - \
             --download-url-prefix "$DOWNLOAD_PREFIX" \
@@ -193,9 +203,9 @@ jobs:
             "${channel_arg[@]}" \
             feed
 
-          # Fail loudly if the merge went wrong. The new DMG's enclosure must exist AND carry an EdDSA
-          # signature on the same line (generate_appcast silently omits it if SUPublicEDKey doesn't match
-          # the signing key), and the item count must not shrink (a dropped preserved/other-channel entry).
+          # 병합 오류를 명확히 실패 처리. 새 DMG enclosure가 존재하고 같은 줄에 EdDSA 서명을 포함해야 함.
+          # SUPublicEDKey와 서명 key가 다르면 generate_appcast가 서명을 조용히 생략.
+          # 기존 항목이나 다른 channel 항목 누락 방지를 위해 전체 항목 수도 감소하면 안 됨.
           after=$(grep -c "<item>" feed/appcast.xml || true)
           grep -Eq "$DMG\"[^>]*sparkle:edSignature" feed/appcast.xml \
             || { echo "New item for $DMG is missing or unsigned (SUPublicEDKey/private-key mismatch?)." >&2; exit 1; }
@@ -213,8 +223,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./public
-          # gh-pages also hosts pricing_supplement.json (see pricing-supplement.yml). Without
-          # keep_files, publishing the appcast would delete it from the branch.
+          # gh-pages는 pricing_supplement.json도 제공(pricing-supplement.yml 참고).
+          # keep_files가 없으면 appcast 배포 시 해당 파일이 branch에서 삭제됨.
           keep_files: true
-          # The feed is served from the custom domain, so gh-pages must carry its CNAME.
+          # custom domain에서 feed를 제공하므로 gh-pages에 CNAME 유지.
           cname: openusage.chanhyung.kim
