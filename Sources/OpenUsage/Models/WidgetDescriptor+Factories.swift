@@ -17,6 +17,18 @@ extension WidgetDescriptor {
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 
+    /// 공개 reset forecast용 0–100% meter — quota 동작(Used/Left·pace·알림) 미적용.
+    static func forecast(
+        id: String,
+        provider: Provider,
+        title: String,
+        metricLabel: String? = nil
+    ) -> WidgetDescriptor {
+        var sample = WidgetData(title: title, icon: provider.icon, kind: .percent, used: 0, limit: 100)
+        sample.isForecast = true
+        return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
+    }
+
     /// subtitle이 "$<limit> <limitNoun>"인 bounded dollar meter (noun 기본값 "limit").
     /// `valueWord`는 uncapped fallback(`.values` row)의 trailing word — bounded 렌더에서는 무효.
     static func boundedDollars(

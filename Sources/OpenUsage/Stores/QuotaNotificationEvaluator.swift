@@ -146,6 +146,7 @@ final class QuotaNotificationEvaluator {
         case .healthy: return "healthy"
         case .level(let severity):
             switch severity {
+            case .neutral: return "level.neutral"
             case .normal: return "level.normal"
             case .warning: return "level.warning"
             case .critical: return "level.critical"

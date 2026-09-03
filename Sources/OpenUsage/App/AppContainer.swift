@@ -49,6 +49,8 @@ final class AppContainer {
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
+    /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
+    private let resetWatchCoordinator: CodexResetWatchCoordinator
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
@@ -107,6 +109,9 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
+        let resetWatchCoordinator = CodexResetWatchCoordinator(
+            publish: { [dataStore] in dataStore.setCodexResetWatch($0) }
+        )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 시 즉시 fetch되도록 잔여 failure backoff 제거. `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
         enablement.onProviderEnabled = { [weak dataStore] id in dataStore?.clearFailureBackoff(for: id) }
@@ -136,6 +141,7 @@ final class AppContainer {
         self.layout = layout
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
+        self.resetWatchCoordinator = resetWatchCoordinator
 
         // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
         // claim 성공 시 해당 카드 강제 refresh — in-flight refresh는 pre-claim 사용량일 수 있어 실제 실행까지 재시도 (bounded).
@@ -203,6 +209,7 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
+        observeResetWatchActivity()
         self.refreshTask.task = Self.startPeriodicRefresh(
             dataStore: dataStore,
             telemetry: telemetry,
@@ -374,6 +381,20 @@ final class AppContainer {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
         return outcome
+    }
+
+    /// 배치·pin·provider enablement의 최종 활성 상태를 관찰해 독립 Reset Watch task에 전달.
+    private func observeResetWatchActivity() {
+        let active = withObservationTracking {
+            layout.orderedRefreshDescriptors().contains {
+                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeResetWatchActivity()
+            }
+        }
+        resetWatchCoordinator.setActive(active)
     }
 
     @discardableResult

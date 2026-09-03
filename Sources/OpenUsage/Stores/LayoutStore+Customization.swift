@@ -84,6 +84,13 @@ extension LayoutStore {
         displayGroups.flatMap(\.widgets).compactMap { descriptor(for: $0) }
     }
 
+    /// 외부 optional source를 구동하는 행 — dashboard 표시와 메뉴 막대 전용 pin을 순서대로 합치고 중복 제거.
+    func orderedRefreshDescriptors() -> [WidgetDescriptor] {
+        var seen = Set<String>()
+        return (orderedRenderedDescriptors() + pinnedGroups.flatMap(\.metrics))
+            .filter { seen.insert($0.id).inserted }
+    }
+
     /// enabled provider 전체와 각자가 지원하는 *모든* metric(저장된 metric 순서) — enabled/disabled 행
     /// 자리 유지, switch는 가시성만 제어.
     var customizeGroups: [ProviderMetrics] {

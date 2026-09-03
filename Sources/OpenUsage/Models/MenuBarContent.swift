@@ -26,6 +26,8 @@ struct MenuBarContent: Equatable {
     let groups: [Group]
     /// Bars style용 bounded metric(fill 보유) — 순서대로 평탄화, 최대 4개.
     let bars: [Metric]
+    /// 현재 strip 값이 시간만으로 무효화되는 가장 이른 시각. 상태 아이템의 1회성 재렌더 예약용.
+    var nextInvalidation: Date? = nil
 
     /// pin 없음·pinned provider 전부 비활성·데이터 있는 pin 없음 — menu bar가 app icon으로 fallback.
     var isEmpty: Bool { groups.isEmpty }
@@ -51,10 +53,20 @@ enum MenuBarContentBuilder {
     static func build(
         groups: [ProviderMetrics],
         data: (WidgetDescriptor) -> WidgetData,
-        title: (Provider) -> String = { $0.displayName }
+        title: (Provider) -> String = { $0.displayName },
+        now: Date = Date()
     ) -> MenuBarContent {
+        var invalidationDates: [Date] = []
         let resolvedGroups = groups.compactMap { group -> MenuBarContent.Group? in
-            let metrics = group.metrics.map { resolve($0, data($0)) }.filter(\.hasData)
+            let metrics = group.metrics.compactMap { descriptor -> MenuBarContent.Metric? in
+                let widgetData = data(descriptor)
+                let metric = resolve(descriptor, widgetData, at: now)
+                guard metric.hasData else { return nil }
+                if let deadline = widgetData.forecastDeadline, deadline > now {
+                    invalidationDates.append(deadline)
+                }
+                return metric
+            }
             guard !metrics.isEmpty else { return nil }
             return MenuBarContent.Group(
                 providerID: group.provider.id,
@@ -68,11 +80,20 @@ enum MenuBarContentBuilder {
             .flatMap(\.metrics)
             .filter(\.isBounded)
             .prefix(maxBars)
-        return MenuBarContent(groups: resolvedGroups, bars: Array(bars))
+        return MenuBarContent(
+            groups: resolvedGroups,
+            bars: Array(bars),
+            nextInvalidation: invalidationDates.min()
+        )
     }
 
-    private static func resolve(_ descriptor: WidgetDescriptor, _ data: WidgetData) -> MenuBarContent.Metric {
-        MenuBarContent.Metric(
+    private static func resolve(
+        _ descriptor: WidgetDescriptor,
+        _ data: WidgetData,
+        at now: Date
+    ) -> MenuBarContent.Metric {
+        let data = data.presented(at: now)
+        return MenuBarContent.Metric(
             id: descriptor.id,
             label: trayLabel(descriptor.metricLabel),
             value: data.menuBarValue,

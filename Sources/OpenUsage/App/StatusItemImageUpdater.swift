@@ -3,14 +3,15 @@ import Observation
 
 /// 메뉴 바 strip 렌더 loop (`StatusItemController`에서 분리): pinned-metric strip 렌더 + 참조 값 변경 시 재렌더.
 /// `withObservationTracking`의 `onChange`는 one-shot이라 렌더마다 re-arm.
-/// conceal 값 변경은 즉시 적용하고, 일반 UI 변경은 짧게 병합.
+/// conceal 값 변경은 즉시 적용하고, 일반 UI 변경은 짧게 병합. 예측 deadline은 observable write 없이 1회 재렌더.
 @MainActor
 final class StatusItemImageUpdater {
     private let privacy: MenuBarPrivacyStore
-    private let renderButtonImage: @MainActor (_ concealed: Bool) -> NSImage
+    private let renderButtonImage: @MainActor (_ concealed: Bool) -> RenderedButtonImage
     private let delay: @MainActor () async -> Void
     private let apply: (NSImage) -> Void
     private var delayedUpdateTask: Task<Void, Never>?
+    private var deadlineUpdateTask: Task<Void, Never>?
 
     /// - Parameter apply: 렌더된 image를 status-item button에 적용.
     convenience init(container: AppContainer, apply: @escaping (NSImage) -> Void) {
@@ -26,7 +27,7 @@ final class StatusItemImageUpdater {
 
     init(
         privacy: MenuBarPrivacyStore,
-        renderButtonImage: @escaping @MainActor (_ concealed: Bool) -> NSImage,
+        renderButtonImage: @escaping @MainActor (_ concealed: Bool) -> RenderedButtonImage,
         delay: @escaping @MainActor () async -> Void,
         apply: @escaping (NSImage) -> Void
     ) {
@@ -39,9 +40,19 @@ final class StatusItemImageUpdater {
         }
     }
 
+    deinit {
+        delayedUpdateTask?.cancel()
+        deadlineUpdateTask?.cancel()
+    }
+
     /// 즉시 렌더 + 다음 observable 변경에 re-arm.
     func update() {
         applyImmediately(concealed: privacy.concealUsage)
+    }
+
+    /// deadline은 기존 one-shot observation 구독을 소비하지 않음 — 재등록 없이 시간 기반 화면만 갱신.
+    func deadlineDidFire() {
+        applyRendered(renderButtonImage(privacy.concealUsage))
     }
 
     private func privacyDidChange(to concealed: Bool) {
@@ -51,11 +62,17 @@ final class StatusItemImageUpdater {
     private func applyImmediately(concealed: Bool) {
         delayedUpdateTask?.cancel()
         delayedUpdateTask = nil
-        apply(observeAndRender(concealed: concealed))
+        applyRendered(observeAndRender(concealed: concealed))
     }
 
-    private func observeAndRender(concealed: Bool? = nil) -> NSImage {
-        let image = withObservationTracking {
+    /// 모든 apply 경로가 경유 — 렌더마다 가장 가까운 deadline으로 예약을 교체.
+    private func applyRendered(_ rendered: RenderedButtonImage) {
+        scheduleDeadlineUpdate(at: rendered.nextInvalidation)
+        apply(rendered.image)
+    }
+
+    private func observeAndRender(concealed: Bool? = nil) -> RenderedButtonImage {
+        withObservationTracking {
             let currentConcealment = privacy.concealUsage
             return renderButtonImage(concealed ?? currentConcealment)
         } onChange: { [weak self] in
@@ -65,7 +82,6 @@ final class StatusItemImageUpdater {
                 self?.scheduleDelayedUpdate()
             }
         }
-        return image
     }
 
     private func scheduleDelayedUpdate() {
@@ -75,28 +91,48 @@ final class StatusItemImageUpdater {
             guard !Task.isCancelled else { return }
             await delay()
             guard !Task.isCancelled, let self else { return }
-            let image = self.observeAndRender()
-            self.apply(image)
+            self.applyRendered(self.observeAndRender())
             self.delayedUpdateTask = nil
         }
     }
 
+    /// 예측 deadline은 observable write 없이 도달 가능 — 가장 가까운 시각에만 1회 재렌더 예약.
+    private func scheduleDeadlineUpdate(at deadline: Date?) {
+        deadlineUpdateTask?.cancel()
+        guard let deadline else {
+            deadlineUpdateTask = nil
+            return
+        }
+        let delay = max(deadline.timeIntervalSinceNow, 0)
+        deadlineUpdateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self?.deadlineDidFire()
+        }
+    }
+
     /// 선택 style의 pinned-metric strip, pin 없으면 앱 icon.
-    private static func renderButtonImage(container: AppContainer, concealed: Bool) -> NSImage {
+    private static func renderButtonImage(container: AppContainer, concealed: Bool) -> RenderedButtonImage {
         // 화면 공유 중 strip을 wordmark로 대체 — post-mutation edge의 명시 값 사용.
         if concealed {
-            return MenuBarStripRenderer.privacyImage
-                ?? MenuBarIcon.image
-                ?? MenuBarStripRenderer.fallbackIcon
+            return RenderedButtonImage(
+                image: MenuBarStripRenderer.privacyImage
+                    ?? MenuBarIcon.image
+                    ?? MenuBarStripRenderer.fallbackIcon,
+                nextInvalidation: nil
+            )
         }
         let content = MenuBarContentBuilder.build(
             groups: stripGroups(container: container),
             data: { container.dataStore.data(for: $0) },
             title: { container.displayName(for: $0) }
         )
-        return MenuBarStripRenderer.image(for: content, style: container.layout.menuBarStyle)
-            ?? MenuBarIcon.image
-            ?? MenuBarStripRenderer.fallbackIcon
+        return RenderedButtonImage(
+            image: MenuBarStripRenderer.image(for: content, style: container.layout.menuBarStyle)
+                ?? MenuBarIcon.image
+                ?? MenuBarStripRenderer.fallbackIcon,
+            nextInvalidation: content.nextInvalidation
+        )
     }
 
     /// strip은 provider당 한 segment — star는 family 설정이라 모든 계정 카드가 같은 pin을 들고 있음.
@@ -114,5 +150,11 @@ final class StatusItemImageUpdater {
             guard visibleCardIDs.contains(group.provider.id) else { return false }
             return seenFamilies.insert(ProviderAccountID.family(of: group.provider.id)).inserted
         }
+    }
+
+    /// 렌더 결과 + 현재 strip 값이 시간만으로 무효화되는 가장 이른 시각.
+    struct RenderedButtonImage {
+        let image: NSImage
+        let nextInvalidation: Date?
     }
 }
