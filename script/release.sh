@@ -12,7 +12,7 @@ set -euo pipefail
 #   ICLOUD_PROVISIONING_PROFILE  운영 iCloud container용 Developer ID provisioning profile
 #   SPARKLE_PUBLIC_KEY           Info.plist의 SUPublicEDKey에 넣을 base64 EdDSA public key.
 #                                서명용 private key와 일치할 때만 generate_appcast가 DMG에 서명
-#   OPENUSAGE_TAG                릴리스 태그(예: v0.7.0)
+#   OPENUSAGE_TAG                릴리스 태그(예: v0.10.0)
 # 선택 환경 변수:
 #   OPENUSAGE_BUILD              단조 증가하는 CFBundleVersion. 기본값은 git commit 수
 #   FEED_URL                     앱에 넣을 appcast URL. 기본값은 GitHub Pages project URL
@@ -29,13 +29,13 @@ source "$ROOT_DIR/script/version.sh"
 : "${CODESIGN_IDENTITY:?set CODESIGN_IDENTITY to your Developer ID Application identity}"
 : "${ICLOUD_PROVISIONING_PROFILE:?set ICLOUD_PROVISIONING_PROFILE to the iCloud provisioning profile path}"
 : "${SPARKLE_PUBLIC_KEY:?set SPARKLE_PUBLIC_KEY to your base64 EdDSA public key}"
-: "${OPENUSAGE_TAG:?set OPENUSAGE_TAG, e.g. v0.7.0}"
+: "${OPENUSAGE_TAG:?set OPENUSAGE_TAG, e.g. v0.10.0}"
 
 APP_NAME="OpenUsage"
 BUNDLE_ID="com.kimchanhyung98.openusage"
 MIN_SYSTEM_VERSION="15.0"
 VERSION="$(openusage_version_from_tag "$OPENUSAGE_TAG")"
-# CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "0.7.0-beta.1") 저장.
+# CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "0.10.0-beta.1") 저장.
 # Sparkle 업데이트 안내와 앱 footer/About에 표시되는 문자열이므로 항상 동일해야 함.
 # Sparkle은 이 문자열이 아닌 아래 단조 증가 commit 수인 CFBundleVersion으로 빌드 비교.
 # Developer ID 공증은 숫자 형식을 요구하지 않음(Sparkle 문서의 beta short version 예: "2.0b1").

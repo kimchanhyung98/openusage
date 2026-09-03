@@ -1,8 +1,8 @@
 name: Release
 
-# 배포할 버전에 태그 지정: `git tag v0.7.0 && git push origin v0.7.0`.
-# pre-release 접미사 태그(예: v0.7.0-beta.1)는 Early Access channel에 배포.
-# 일반 태그(v0.7.0)는 전체 사용자에게 배포.
+# 배포할 버전에 태그 지정: `git tag v0.10.0 && git push origin v0.10.0`.
+# pre-release 접미사 태그(예: v0.10.0-beta.1)는 Early Access channel에 배포.
+# 일반 태그(v0.10.0)는 전체 사용자에게 배포.
 # 최초 secret·Pages 설정은 .agents/skills/release-swift/의 release-swift skill 참고.
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v0.7.0)"
+        description: "Tag to build (e.g. v0.10.0)"
         required: true
         type: string
 

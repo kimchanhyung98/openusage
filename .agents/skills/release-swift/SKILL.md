@@ -9,10 +9,10 @@ Pushing a `v*` tag on `main` runs `.github/workflows/release.yml`, which builds,
 
 ## Channels
 
-- **Beta (Early Access):** suffixed tag like `v0.7.1-beta.1`. Marked a GitHub pre-release and added to Sparkle's `beta` channel. Only users with Early Access enabled get it; GitHub "Latest" is untouched.
-- **Stable:** plain tag like `v0.7.1`. Marked non-prerelease, becomes GitHub "Latest", and ships to everyone.
+- **Beta (Early Access):** suffixed tag like `v0.10.0-beta.1`. Marked a GitHub pre-release and added to Sparkle's `beta` channel. Only users with Early Access enabled get it; GitHub "Latest" is untouched.
+- **Stable:** plain tag like `v0.10.0`. Marked non-prerelease, becomes GitHub "Latest", and ships to everyone.
 
-The tag IS the version: `v0.7.1-beta.1` becomes `CFBundleShortVersionString = 0.7.1-beta.1`, and `CFBundleVersion` is the git commit count. There are no version files to bump.
+The tag IS the version: `v0.10.0-beta.1` becomes `CFBundleShortVersionString = 0.10.0-beta.1`, and `CFBundleVersion` is the git commit count. There are no version files to bump.
 
 ## Cutting a release
 
@@ -24,7 +24,7 @@ Next number in the current lane (default bump: patch). Beta builds add a `-beta.
 
 Collect commits since the **previous release in the same channel** and categorize each:
 
-- **Stable cut:** span from the **last stable tag** to this one (e.g. `v0.7.0...v0.7.1`), so the notes roll up the entire beta series plus any post-beta commits. Never start a stable changelog at the last beta — that would omit every beta in the lane.
+- **Stable cut:** span from the **last stable tag** to this one (e.g. `v0.9.5...v0.10.0`), so the notes roll up the entire beta series plus any post-beta commits. Never start a stable changelog at the last beta — that would omit every beta in the lane.
 - **Beta cut:** span from the previous tag (the prior beta, or the last stable if it's the first beta in a lane) to this one.
 
 | Commit prefix | Category |
