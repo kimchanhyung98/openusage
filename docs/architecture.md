@@ -98,6 +98,7 @@ The boundary has four responsibilities:
   It downloads the script from the fixed official URL `https://bun.com/install` to a private temporary file, runs that file with `/bin/bash`, verifies `bunx` under the installer's selected `${BUN_INSTALL:-$HOME/.bun}` directory, and resolves the installed executable directly without waiting for the app environment to refresh.
   The installer child receives only the fixed installation values plus exported proxy and certificate settings needed for its download.
   Automatic installation accepts only a safe directory below the current user's home; an incompatible `BUN_INSTALL` fails before download and leaves manual installation as the recovery path.
+  Existing parent directories are resolved before appending missing folders, so symbolic links cannot redirect installation outside the home directory; broken links are rejected before download.
 - `TokscaleCommandRunner` accepts only `submit` or `login` and launches the resolved `bunx` directly with fixed argument arrays for `tokscale@latest submit` and `tokscale@latest login`.
   It never uses `shell -c`, AppleScript, or user-supplied command text.
   It merges the app and captured login-shell environments so `@latest` remains responsible for current and future source discovery rather than freezing a provider-specific allowlist in OpenUsage.

@@ -349,7 +349,7 @@ actor BunInstaller: BunInstalling {
     private func validatedAutomaticInstallRoot(_ path: String) throws -> URL {
         let candidate = try absoluteDirectory(path)
         let home = resolvedHomeDirectoryURL
-        let resolvedCandidate = candidate.resolvingSymlinksInPath()
+        let resolvedCandidate = try resolvingExistingInstallAncestor(candidate)
         let homeComponents = home.pathComponents
         let candidateComponents = resolvedCandidate.pathComponents
         guard candidateComponents.count > homeComponents.count,
@@ -361,6 +361,33 @@ actor BunInstaller: BunInstalling {
               })
         else { throw BunInstallerError.unsafeInstallDirectory }
         return resolvedCandidate
+    }
+
+    private func resolvingExistingInstallAncestor(_ candidate: URL) throws -> URL {
+        var ancestor = candidate
+        var missingComponents: [String] = []
+        var metadata = stat()
+        // 미생성 하위 경로는 분리하고 실제 존재하는 조상부터 해석. 끊어진 링크는 미생성 폴더로 취급하지 않음.
+        while ancestor.path.withCString({ Darwin.lstat($0, &metadata) }) != 0 {
+            guard errno == ENOENT, ancestor.pathComponents.count > 1 else {
+                throw BunInstallerError.unsafeInstallDirectory
+            }
+            missingComponents.append(ancestor.lastPathComponent)
+            ancestor.deleteLastPathComponent()
+        }
+        guard let path = ancestor.path.withCString({ Darwin.realpath($0, nil) }) else {
+            throw BunInstallerError.unsafeInstallDirectory
+        }
+        defer { free(path) }
+        var resolved = URL(fileURLWithPath: String(cString: path), isDirectory: true).standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: resolved.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+            throw BunInstallerError.unsafeInstallDirectory
+        }
+        for component in missingComponents.reversed() {
+            resolved.appendPathComponent(component, isDirectory: true)
+        }
+        return resolved
     }
 
     private var resolvedHomeDirectoryURL: URL {
