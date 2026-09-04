@@ -46,6 +46,10 @@ Conventions for the per-provider modules under `Sources/OpenUsage/Providers/<Nam
 
 ## Pull Requests
 
+- This project is maintained as the `kimchanhyung98/openusage` fork (`origin`). Create PRs against this fork's `main` branch by default.
+- The original repository, `robinebers/openusage` (`upstream`), is not the default PR target. Only create a PR there when the user explicitly requests an upstream contribution.
+- Always specify the repository in `gh pr` commands: `--repo kimchanhyung98/openusage` unless the user explicitly requested an upstream contribution. Do not rely on GitHub CLI's fork-parent default. Before creating a PR, verify the target repository, base branch, and head branch.
+
 Every PR description must follow this structure so reviewers can skim it quickly:
 
 - **TL;DR** — open with a one- or two-sentence plain-English summary of the change.
