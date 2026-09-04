@@ -147,6 +147,7 @@ struct SettingsScreen: View {
                     .padding(.bottom, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            TokscaleSettingsSection(store: container.tokscaleSync)
             commandLineSection
             advancedSection
             // 서명 릴리스 빌드만 feed 보유 — dev 빌드·`swift run`에선 숨김
