@@ -89,6 +89,41 @@ Providers with spend tiles carry an explicit history scope beside their export d
 Machine-local sources can be summed across device files; account-wide sources such as Cursor cannot.
 `WidgetDataStore` re-renders only the spend rows from the union, leaving quota and error state local.
 
+## Tokscale CLI boundary
+
+The integration is a narrow external-process boundary, not another provider pipeline or sync engine.
+The boundary has four responsibilities:
+
+- `BunInstaller` runs only when an explicit **Sync Now** cannot find a usable Bun runtime; a present runtime with a missing `bunx` alias fails without reinstalling or overwriting Bun.
+  It downloads the script from the fixed official URL `https://bun.com/install` to a private temporary file, runs that file with `/bin/bash`, verifies `bunx` under the installer's selected `${BUN_INSTALL:-$HOME/.bun}` directory, and resolves the installed executable directly without waiting for the app environment to refresh.
+  The installer child receives only the fixed installation values plus exported proxy and certificate settings needed for its download.
+  Automatic installation accepts only a safe directory below the current user's home; an incompatible `BUN_INSTALL` fails before download and leaves manual installation as the recovery path.
+- `TokscaleCommandRunner` accepts only `submit` or `login` and launches the resolved `bunx` directly with fixed argument arrays for `tokscale@latest submit` and `tokscale@latest login`.
+  It never uses `shell -c`, AppleScript, or user-supplied command text.
+  It merges the app and captured login-shell environments so `@latest` remains responsible for current and future source discovery rather than freezing a provider-specific allowlist in OpenUsage.
+  Known runtime-injection settings, Tokscale test hooks, and `TOKSCALE_API_URL` are removed; `HOME` and the working directory are anchored to the current macOS account, and package resolution otherwise keeps the user's Bun configuration.
+  The only value accepted from this UI and passed to a child is a validated submit-only `TOKSCALE_DEVICE_NAME` environment entry.
+- `TokscaleSyncStore` owns one active install or command for the app lifetime and persists the optional device name locally, so hiding or rebuilding Settings does not orphan the process or lose its result.
+- `TokscaleSettingsSection` renders the compact card, the **Name…** header action and sheet, the missing-login action, and the login sheet.
+
+Only the corresponding Settings buttons may start installation or a Tokscale command.
+App launch, Settings appearance, periodic or manual refresh, provider changes, iCloud callbacks, widget updates, the `openusage` executable, and local API requests never trigger either one.
+The submit action runs exactly `bunx tokscale@latest submit`; if the optional device name is set, it is supplied only through `TOKSCALE_DEVICE_NAME`.
+Saving **Name…** does not start a process or network request, and the next successful submit updates the display label associated with Tokscale's stable device ID.
+**Remove OpenUsage Override** removes only the local override and does not clear Tokscale's existing public name; later submissions let Tokscale's environment or stored device record supply the label.
+Only a verified missing-login submit result enables the separate login action, and login never receives the public device-name override.
+Login completion never starts submit, and there is no automatic retry or background submission.
+App termination waits for the runner-owned installer or Tokscale process group to settle after cancellation, so OpenUsage does not abandon its active operation while closing.
+Any detached follow-up work that Tokscale CLI starts outside that process group remains owned by Tokscale.
+
+The boundary does not read `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider accounts, or provider enablement to build or filter a submission.
+The boundary contains no provider collector, parser, contribution model, payload schema, direct Tokscale API client, token vault, or credential migration.
+Tokscale's CLI owns its source discovery, credentials, stable device ID and `device.json`, aggregation, and network request; OpenUsage never edits that file.
+
+Installer and Tokscale standard output and error are drained concurrently, stripped of ANSI and control sequences, and kept in a bounded in-memory command buffer.
+The Settings card shows that buffer while it is available, including completion or failure output until the next operation or app termination, and the login sheet also shows login output while it remains open.
+Raw output, inherited environment values, credentials, and authorization codes never enter OpenUsage logs, telemetry, files, or preferences.
+
 ## The AppKit bridge
 
 macOS menu-bar apps live in an `NSStatusItem`.
