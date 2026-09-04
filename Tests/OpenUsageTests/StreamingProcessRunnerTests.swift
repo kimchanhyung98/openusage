@@ -45,7 +45,11 @@ final class StreamingProcessRunnerTests: XCTestCase {
         let result = try await StreamingProcessRunner().run(request)
 
         XCTAssertEqual(result.exitCode, 0)
-        XCTAssertEqual(result.output.trimmingCharacters(in: .whitespacesAndNewlines), directory.path)
+        let reportedDirectory = URL(
+            fileURLWithPath: result.output.trimmingCharacters(in: .whitespacesAndNewlines),
+            isDirectory: true
+        )
+        XCTAssertEqual(reportedDirectory.resolvingSymlinksInPath(), directory.resolvingSymlinksInPath())
     }
 
     func testDrainsStdoutAndStderrWhileBoundingRetainedOutput() async throws {

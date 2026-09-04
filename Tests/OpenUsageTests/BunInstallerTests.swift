@@ -3,16 +3,6 @@ import XCTest
 
 @MainActor
 final class BunInstallerTests: XCTestCase {
-    private var temporaryRoots: [URL] = []
-
-    override func tearDown() {
-        for root in temporaryRoots {
-            try? FileManager.default.removeItem(at: root)
-        }
-        temporaryRoots.removeAll()
-        super.tearDown()
-    }
-
     func testAvailabilityFindsBunAndBunxTogetherOnProcessPath() async throws {
         let fixture = try makeFixture()
         let processBin = fixture.root.appendingPathComponent("process-bin", isDirectory: true)
@@ -221,10 +211,63 @@ final class BunInstallerTests: XCTestCase {
                 _ = try await installer.install(onOutput: { _ in })
                 XCTFail("Expected unsafe BUN_INSTALL to fail: \(path)")
             } catch {
-                XCTAssertEqual(error as? BunInstallerError, .unsafeInstallDirectory)
+                XCTAssertEqual(error as? BunInstallerError, .unsafeInstallDirectory, "BUN_INSTALL: \(path)")
             }
-            XCTAssertEqual(downloader.callCount, 0)
+            XCTAssertEqual(downloader.callCount, 0, "BUN_INSTALL: \(path)")
         }
+    }
+
+    func testSymlinkEscapesAndDanglingLinksFailBeforeDownloadOrExecution() async throws {
+        let fixture = try makeFixture()
+        let outside = fixture.root.appendingPathComponent("outside", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let link = fixture.home.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: outside)
+        let dangling = fixture.home.appendingPathComponent("dangling", isDirectory: true)
+        try FileManager.default.createSymbolicLink(
+            at: dangling,
+            withDestinationURL: outside.appendingPathComponent("missing", isDirectory: true)
+        )
+
+        for root in [link, link.appendingPathComponent("missing/bun"), dangling, dangling.appendingPathComponent("bun")] {
+            let downloader = BunDownloadStub(download: validDownload())
+            let runner = BunProcessStub()
+            let installer = makeInstaller(
+                fixture: fixture,
+                runner: runner,
+                downloader: downloader,
+                processEnvironment: ["BUN_INSTALL": root.path]
+            )
+
+            do {
+                _ = try await installer.install(onOutput: { _ in })
+                XCTFail("Expected unsafe BUN_INSTALL to fail: \(root.path)")
+            } catch {
+                XCTAssertEqual(error as? BunInstallerError, .unsafeInstallDirectory, root.path)
+            }
+            XCTAssertEqual(downloader.callCount, 0, root.path)
+            XCTAssertTrue(runner.requests.isEmpty, root.path)
+        }
+    }
+
+    func testInstallResolvesInHomeSymlinkBeforeAppendingMissingDirectories() async throws {
+        let fixture = try makeFixture()
+        let target = fixture.home.appendingPathComponent("tools", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let link = fixture.home.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let runner = BunProcessStub(createRuntimeOnInstall: true)
+        let installer = makeInstaller(
+            fixture: fixture,
+            runner: runner,
+            processEnvironment: ["BUN_INSTALL": link.appendingPathComponent("missing/bun").path]
+        )
+
+        let runtime = try await installer.install(onOutput: { _ in })
+
+        let expectedRoot = target.resolvingSymlinksInPath().appendingPathComponent("missing/bun", isDirectory: true)
+        XCTAssertEqual(runner.requests.first?.environment["BUN_INSTALL"], expectedRoot.path)
+        XCTAssertEqual(runtime.bunURL, expectedRoot.appendingPathComponent("bin/bun"))
     }
 
     func testRejectsInvalidDownloadBoundariesBeforeWritingOrRunning() async throws {
@@ -395,7 +438,7 @@ final class BunInstallerTests: XCTestCase {
         let temporary = root.appendingPathComponent("temporary", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: temporary, withIntermediateDirectories: true)
-        temporaryRoots.append(root)
+        addTeardownBlock { try FileManager.default.removeItem(at: root) }
         return BunFixture(root: root, home: home, temporary: temporary)
     }
 
