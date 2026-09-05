@@ -122,7 +122,7 @@ Only include category sections that have entries.
 ---
 
 ### Changelog
-**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_commit}...{commit})
+**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_commit}...{full_hash})
 ~~~
 
 `{prev_tag}` is the previous release **in the same channel**: last stable for a stable cut, last beta (or last stable for the first beta in a lane) for a beta cut.
