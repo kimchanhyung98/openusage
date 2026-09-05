@@ -115,7 +115,7 @@ final class StreamingProcessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private let deliveryLock = NSLock()
     private let headLimit: Int
-    private let tailLimit: Int
+    private let outputLimit: Int
     private let onOutput: @Sendable (String) -> Void
     private var headData = Data()
     private var tailData = Data()
@@ -127,7 +127,7 @@ final class StreamingProcessOutput: @unchecked Sendable {
 
     init(limit: Int, onOutput: @escaping @Sendable (String) -> Void) {
         self.headLimit = limit / 2 + limit % 2
-        self.tailLimit = limit / 2
+        self.outputLimit = limit
         self.onOutput = onOutput
     }
 
@@ -175,6 +175,7 @@ final class StreamingProcessOutput: @unchecked Sendable {
             headClosed = !incoming.isEmpty
         }
 
+        let tailLimit = outputLimit - headData.count
         guard tailLimit > 0, !incoming.isEmpty else { return }
         if incoming.count >= tailLimit {
             tailData = Self.validUTF8Suffix(of: incoming, maximumBytes: tailLimit)
@@ -235,12 +236,34 @@ private struct IncrementalUTF8Decoder: Sendable {
         let suffixLength = Self.incompleteSuffixLength(combined)
         let completeCount = combined.count - suffixLength
         pending = suffixLength == 0 ? Data() : Data(combined.suffix(suffixLength))
-        return String(decoding: combined.prefix(completeCount), as: UTF8.self)
+        return Self.decodePreservingC1Controls(combined.prefix(completeCount))
     }
 
     mutating func finish() -> String {
         defer { pending.removeAll(keepingCapacity: false) }
-        return String(decoding: pending, as: UTF8.self)
+        return Self.decodePreservingC1Controls(pending)
+    }
+
+    /// 유효한 UTF-8 continuation은 유지하고 단독 C1 byte만 sanitizer가 읽을 scalar로 변환.
+    private static func decodePreservingC1Controls(_ data: Data) -> String {
+        var normalized = Data()
+        normalized.reserveCapacity(data.count)
+        var continuations = 0
+        for byte in data {
+            if continuations > 0, byte & 0xC0 == 0x80 {
+                continuations -= 1
+            } else {
+                continuations = switch byte {
+                case 0xC2 ... 0xDF: 1
+                case 0xE0 ... 0xEF: 2
+                case 0xF0 ... 0xF4: 3
+                default: 0
+                }
+                if (0x80 ... 0x9F).contains(byte) { normalized.append(0xC2) }
+            }
+            normalized.append(byte)
+        }
+        return String(decoding: normalized, as: UTF8.self)
     }
 
     private static func incompleteSuffixLength(_ data: Data) -> Int {

@@ -6,10 +6,7 @@ final class ProcessTerminationController: @unchecked Sendable {
     private let forceCleanup: @Sendable () -> Void
     private var processGroupID: pid_t?
     private var terminationRequested = false
-    private var terminationStarted = false
     private var completed = false
-    private var terminationFinished = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(forceCleanup: @escaping @Sendable () -> Void) {
         self.forceCleanup = forceCleanup
@@ -26,92 +23,41 @@ final class ProcessTerminationController: @unchecked Sendable {
     func didLaunch(processGroupID: pid_t) {
         lock.lock()
         self.processGroupID = processGroupID
-        let shouldTerminate = terminationRequested && !terminationStarted
-        if shouldTerminate {
-            terminationStarted = true
-        }
+        let shouldTerminate = terminationRequested
+        if shouldTerminate { terminateLocked() }
         lock.unlock()
-        if shouldTerminate {
-            startTermination(processGroupID: processGroupID)
-        }
+        if shouldTerminate { forceCleanup() }
     }
 
     func requestTermination() {
         lock.lock()
-        guard !completed else {
-            lock.unlock()
-            forceCleanup()
-            return
-        }
         terminationRequested = true
-        let target = terminationStarted ? nil : processGroupID
-        if target != nil {
-            terminationStarted = true
-        }
+        let shouldCleanUp = completed || processGroupID != nil
+        terminateLocked()
         lock.unlock()
-        if let target {
-            startTermination(processGroupID: target)
-        }
+        if shouldCleanUp { forceCleanup() }
     }
 
     func didCompleteNaturally() {
-        lock.lock()
-        guard !terminationStarted else {
-            lock.unlock()
-            return
-        }
-        guard let processGroupID else {
-            completed = true
-            lock.unlock()
-            return
-        }
-        errno = 0
-        let groupStillExists = Darwin.kill(-processGroupID, 0) == 0 || errno == EPERM
-        if groupStillExists {
-            terminationStarted = true
-        } else {
-            completed = true
-            self.processGroupID = nil
-        }
-        lock.unlock()
-        if groupStillExists {
-            terminate(processGroupID: processGroupID)
-        }
+        requestTermination()
     }
 
-    func waitForTermination() async {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if !terminationStarted || terminationFinished {
-                lock.unlock()
-                continuation.resume()
-            } else {
-                waiters.append(continuation)
-                lock.unlock()
-            }
-        }
-    }
-
-    private func startTermination(processGroupID: pid_t) {
-        terminate(processGroupID: processGroupID)
-    }
-
-    private func terminate(processGroupID: pid_t) {
-        _ = Darwin.kill(-processGroupID, SIGKILL)
-        forceCleanup()
-        finishTermination()
-    }
-
-    private func finishTermination() {
+    /// wait 실패 시 소유권을 입증할 수 없는 숫자 PID에 추가 signal 금지.
+    func relinquishProcessGroup() {
         lock.lock()
         completed = true
         processGroupID = nil
-        terminationFinished = true
-        let waiters = self.waiters
-        self.waiters.removeAll()
         lock.unlock()
-        for waiter in waiters {
-            waiter.resume()
+        forceCleanup()
+    }
+
+    /// leader reap 전 lock 안에서 signal과 소유권 해제를 완료해 동시 cancel의 PID 재사용 방지.
+    private func terminateLocked() {
+        guard !completed, let processGroupID else { return }
+        if Darwin.kill(-processGroupID, SIGKILL) != 0, errno != ESRCH {
+            AppLog.error(.subprocess, "Failed to terminate command process group (errno \(errno))")
         }
+        self.processGroupID = nil
+        completed = true
     }
 }

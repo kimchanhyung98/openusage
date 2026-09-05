@@ -537,8 +537,8 @@ actor BunInstaller: BunInstalling {
             }
         }
         guard Darwin.fsync(descriptor) == 0 else { throw currentPOSIXError() }
-        guard Darwin.close(descriptor) == 0 else { throw currentPOSIXError() }
         isOpen = false
+        guard Darwin.close(descriptor) == 0 else { throw currentPOSIXError() }
     }
 
     private func currentPOSIXError() -> POSIXError {

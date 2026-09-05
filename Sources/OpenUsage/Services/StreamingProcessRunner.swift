@@ -55,8 +55,8 @@ struct StreamingProcessRunner: StreamingProcessRunning {
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        let stdoutRead = FileHandleBox(stdoutPipe.fileHandleForReading)
-        let stderrRead = FileHandleBox(stderrPipe.fileHandleForReading)
+        let stdoutRead = StreamingFileHandleBox(stdoutPipe.fileHandleForReading)
+        let stderrRead = StreamingFileHandleBox(stderrPipe.fileHandleForReading)
 
         let output = StreamingProcessOutput(limit: request.outputLimit, onOutput: onOutput)
         let drains = DrainCompletion(count: 2)
@@ -94,7 +94,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                     stderrPipe: stderrPipe
                 )
                 termination.didLaunch(processGroupID: pid)
-                Self.startWait(pid: pid, signal: exit)
+                Self.startWait(pid: pid, signal: exit, termination: termination)
             } catch {
                 Self.closeWriteEnds(stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
                 _ = await drains.wait()
@@ -119,7 +119,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                 termination.requestTermination()
                 let stopped = await exit.wait()
                 _ = await drains.wait()
-                await termination.waitForTermination()
                 AppLog.debug(.subprocess, "exit \(stopped.exitCode)")
                 throw error
             }
@@ -127,6 +126,9 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             switch outcome {
             case .completed(let stopped, let drainFailed):
                 AppLog.debug(.subprocess, "exit \(stopped.exitCode)")
+                if let waitError = stopped.waitError {
+                    throw StreamingProcessRunnerError.processWaitFailed(code: waitError)
+                }
                 if drainFailed {
                     throw StreamingProcessRunnerError.outputReadFailed
                 }
@@ -134,7 +136,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             case .timedOut:
                 let stopped = await exit.wait()
                 _ = await drains.wait()
-                await termination.waitForTermination()
                 AppLog.debug(.subprocess, "exit \(stopped.exitCode)")
                 throw StreamingProcessRunnerError.timedOut(timeout: request.timeout)
             }
@@ -178,7 +179,6 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         try await withThrowingTaskGroup(of: ProcessWaitOutcome.self) { group in
             group.addTask {
                 let stopped = await signal.wait()
-                termination.didCompleteNaturally()
                 let drainFailed = await drains.wait()
                 return .completed(stopped, drainFailed: drainFailed)
             }
@@ -283,19 +283,41 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         }
     }
 
-    private static func startWait(pid: pid_t, signal: ProcessExitSignal) {
+    private static func startWait(
+        pid: pid_t,
+        signal: ProcessExitSignal,
+        termination: ProcessTerminationController
+    ) {
         DispatchQueue.global(qos: .utility).async {
+            var info = siginfo_t()
+            var observed: Int32
+            repeat {
+                observed = waitid(P_PID, id_t(pid), &info, WEXITED | WNOWAIT)
+            } while observed == -1 && errno == EINTR
+            guard observed == 0 else {
+                let code = errno
+                termination.relinquishProcessGroup()
+                AppLog.error(.subprocess, "Failed to observe command exit (errno \(code))")
+                signal.finish(ProcessExit(waitStatus: 1 << 8, waitError: code))
+                return
+            }
+            // WNOWAIT로 leader PID를 유지한 채 원래 group 정리 후 reap.
+            termination.didCompleteNaturally()
             var status = Int32(0)
             var result: pid_t
             repeat {
                 result = waitpid(pid, &status, 0)
             } while result == -1 && errno == EINTR
-            signal.finish(ProcessExit(waitStatus: result == pid ? status : 1 << 8))
+            let waitError = result == pid ? nil : errno
+            if let waitError {
+                AppLog.error(.subprocess, "Failed to reap command process (errno \(waitError))")
+            }
+            signal.finish(ProcessExit(waitStatus: result == pid ? status : 1 << 8, waitError: waitError))
         }
     }
 
     private static func startDrain(
-        _ handle: FileHandleBox,
+        _ handle: StreamingFileHandleBox,
         channel: ProcessOutputChannel,
         output: StreamingProcessOutput,
         completion: DrainCompletion,
@@ -313,30 +335,41 @@ struct StreamingProcessRunner: StreamingProcessRunning {
             var failed = false
             var reachedEnd = false
             var buffer = [UInt8](repeating: 0, count: 4_096)
-            while !stop.isStopped, !reachedEnd {
+            var finalDrainBytes = 65_536
+            while !reachedEnd {
                 var descriptor = pollfd(
                     fd: fileDescriptor,
                     events: Int16(POLLIN | POLLHUP | POLLERR),
                     revents: 0
                 )
-                let pollResult = Darwin.poll(&descriptor, 1, 100)
+                let pollResult = Darwin.poll(&descriptor, 1, stop.isStopped ? 0 : 100)
                 if pollResult < 0 {
                     if errno == EINTR { continue }
                     failed = true
                     break
                 }
-                guard pollResult > 0 else { continue }
+                if pollResult == 0 {
+                    if stop.isStopped { break }
+                    continue
+                }
                 if descriptor.revents & Int16(POLLNVAL) != 0 {
                     failed = true
                     break
                 }
 
-                while !stop.isStopped {
+                while !reachedEnd {
+                    let isFinalRead = stop.isStopped
+                    // 이미 buffered된 끝부분은 보존하되 detached writer가 무한히 붙잡지 않도록 제한.
+                    if isFinalRead, finalDrainBytes <= 0 {
+                        reachedEnd = true
+                        break
+                    }
                     let byteCount = buffer.withUnsafeMutableBytes { bytes in
                         Darwin.read(fileDescriptor, bytes.baseAddress, bytes.count)
                     }
                     if byteCount > 0 {
                         output.append(Data(buffer.prefix(byteCount)), channel: channel)
+                        if isFinalRead { finalDrainBytes -= byteCount }
                     } else if byteCount == 0 {
                         reachedEnd = true
                         break
@@ -360,152 +393,5 @@ struct StreamingProcessRunner: StreamingProcessRunning {
     private static func closeWriteEnds(stdoutPipe: Pipe, stderrPipe: Pipe) {
         try? stdoutPipe.fileHandleForWriting.close()
         try? stderrPipe.fileHandleForWriting.close()
-    }
-}
-
-enum StreamingProcessRunnerError: Error, LocalizedError, Equatable {
-    case executableMustBeAbsolute
-    case currentDirectoryMustBeAbsolute
-    case invalidTimeout
-    case invalidOutputLimit
-    case invalidArgument
-    case invalidEnvironment
-    case outputReadFailed
-    case timedOut(timeout: TimeInterval)
-
-    var errorDescription: String? {
-        switch self {
-        case .executableMustBeAbsolute:
-            "The executable path must be absolute."
-        case .currentDirectoryMustBeAbsolute:
-            "The working-directory path must be absolute."
-        case .invalidTimeout:
-            "The command timeout must be finite and greater than zero."
-        case .invalidOutputLimit:
-            "The command output limit cannot be negative."
-        case .invalidArgument:
-            "Command arguments cannot contain null bytes."
-        case .invalidEnvironment:
-            "The command environment is malformed."
-        case .outputReadFailed:
-            "The command output could not be read."
-        case .timedOut(let timeout):
-            "The command timed out after \(timeout.formatted()) seconds."
-        }
-    }
-}
-
-private struct ProcessExit: Sendable {
-    var waitStatus: Int32
-
-    var exitCode: Int32 {
-        let signal = waitStatus & 0x7F
-        return signal == 0 ? (waitStatus >> 8) & 0xFF : 128 + signal
-    }
-}
-
-private enum ProcessWaitOutcome: Sendable {
-    case completed(ProcessExit, drainFailed: Bool)
-    case timedOut
-}
-
-private final class ProcessExitSignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var result: ProcessExit?
-    private var waiters: [CheckedContinuation<ProcessExit, Never>] = []
-
-    func finish(_ result: ProcessExit) {
-        lock.lock()
-        guard self.result == nil else {
-            lock.unlock()
-            return
-        }
-        self.result = result
-        let waiters = self.waiters
-        self.waiters.removeAll()
-        lock.unlock()
-        for waiter in waiters {
-            waiter.resume(returning: result)
-        }
-    }
-
-    func wait() async -> ProcessExit {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if let result {
-                lock.unlock()
-                continuation.resume(returning: result)
-            } else {
-                waiters.append(continuation)
-                lock.unlock()
-            }
-        }
-    }
-}
-
-private final class DrainCompletion: @unchecked Sendable {
-    private let lock = NSLock()
-    private var remaining: Int
-    private var failed = false
-    private var waiters: [CheckedContinuation<Bool, Never>] = []
-
-    init(count: Int) {
-        self.remaining = count
-    }
-
-    func finish(failed: Bool) {
-        lock.lock()
-        self.failed = self.failed || failed
-        remaining -= 1
-        guard remaining == 0 else {
-            lock.unlock()
-            return
-        }
-        let result = self.failed
-        let waiters = self.waiters
-        self.waiters.removeAll()
-        lock.unlock()
-        for waiter in waiters {
-            waiter.resume(returning: result)
-        }
-    }
-
-    func wait() async -> Bool {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if remaining == 0 {
-                let result = failed
-                lock.unlock()
-                continuation.resume(returning: result)
-            } else {
-                waiters.append(continuation)
-                lock.unlock()
-            }
-        }
-    }
-}
-
-private final class DrainStopSignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stopped = false
-
-    var isStopped: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return stopped
-    }
-
-    func requestStop() {
-        lock.lock()
-        stopped = true
-        lock.unlock()
-    }
-}
-
-private final class FileHandleBox: @unchecked Sendable {
-    let handle: FileHandle
-
-    init(_ handle: FileHandle) {
-        self.handle = handle
     }
 }
