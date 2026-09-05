@@ -69,7 +69,7 @@ The UI reads from a few observable stores:
 - `WidgetDataStore` — the latest snapshot per provider, plus refresh and caching.
   It keeps machine-local cached snapshots separate from rendered snapshots so peer history can never be written back out and counted again.
 - `LayoutStore` — which metrics are shown, the provider/metric order, and which metrics are starred for the menu bar.
-  It stores all of that once per provider, so every account card of a provider renders the same layout from that single set.
+  It stores all of that once per provider, so every account card of a provider shares the same layout settings.
 - Account presentation settings — one shared display mode and a managed account order for each provider family, stored locally and separately from authentication and layout.
   Order uses stable managed profile IDs, so account positions survive name, sign-in, and runtime card ID changes.
 - `ProviderEnablementStore` — which providers the user has turned on or off.

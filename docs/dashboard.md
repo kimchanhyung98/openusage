@@ -131,7 +131,11 @@ Reordering accounts preserves the selected account, active terminal login, provi
 The card's layout — which metrics show, their order, the Always Visible / On Demand split, whether the caret is open, and the menu-bar stars — is one setting per provider that every account shares.
 Opening or closing one separate card's caret applies to every card of the same provider.
 Local spend and trend logs stay attached to their configuration home rather than being attributed to registered accounts.
-Those rows can read **No data** while the selector is showing an inactive snapshot account.
+In **Single Card**, those rows can still read **No data** while the selector is showing an inactive snapshot account.
+In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** appear only on the active account card backed by the actual shared-home login, following the existing metric settings and regardless of the dashboard selection.
+Inactive cards omit these three rows entirely instead of showing **No data**.
+Quotas, **Rate Limit Resets**, **Last 30 Days**, and other metrics keep their existing behavior.
+This is a display-only rule; it changes neither saved metric layout nor the underlying statistics.
 
 ## Right-click menus
 

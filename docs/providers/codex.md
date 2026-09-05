@@ -54,7 +54,8 @@ An inactive account's card reads its limits and reset credits from that snapshot
 Its reset-credit **Use** action also claims through that snapshot without changing the active login or the account a new Codex session uses.
 Spend tiles aggregate the shared home's session logs as one family total.
 Past logs are never attributed to a specific account.
-An inactive snapshot card therefore has no account-specific local logs, so its spend and trend rows can show **No data**.
+An inactive snapshot card therefore has no account-specific local logs, so its spend and trend rows can still show **No data** in **Single Card**.
+In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
 
 Codex follows the shared **Usage Cards** setting in **Settings → Accounts**.
 The default **Single Card** keeps one **Codex** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.

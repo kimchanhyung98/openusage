@@ -93,7 +93,8 @@ See [Settings](/docs/settings.md) for account order and [Dashboard](/docs/dashbo
 
 The dashboard account picker changes only which account's usage is shown and never changes the account a new Claude session uses.
 Local spend and trend logs stay with the shared configuration home and are not attributed to managed accounts.
-Those rows can show **No data** while the dashboard is viewing an inactive snapshot account.
+In **Single Card**, those rows can still show **No data** while viewing an inactive snapshot account.
+In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
 The picker and separate cards show the shared home's account plus the accounts registered in Settings.
 Registered account names stay separate selector entries and individual cards even when two of them currently prove the same provider identity.
