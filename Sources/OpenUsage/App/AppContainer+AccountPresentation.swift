@@ -51,7 +51,13 @@ extension AppContainer {
             selectedCardIDsByFamily: selectedIDs
         )
         let groupsByID = Dictionary(uniqueKeysWithValues: groups.map { ($0.provider.id, $0) })
-        return presentedIDs.compactMap { groupsByID[$0] }
+        return presentedIDs.compactMap { cardID in
+            guard let group = groupsByID[cardID] else { return nil }
+            return AccountCardPresentationPlanner.presentedGroup(
+                group,
+                mode: modes[ProviderAccountID.family(of: cardID)] ?? .singleCard
+            )
+        }
     }
 
     func accountCardTitle(for provider: Provider) -> String {

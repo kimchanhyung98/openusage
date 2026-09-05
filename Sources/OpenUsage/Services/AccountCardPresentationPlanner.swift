@@ -73,6 +73,23 @@ enum AccountCardPresentationPlanner {
         }
     }
 
+    /// 공유 홈 runtime만 로컬 통계 보유 — 비활성 snapshot의 빈 통계 행은 분리 카드에서 제외.
+    static func presentedGroup(_ group: ProviderGroup, mode: AccountCardDisplayMode) -> ProviderGroup? {
+        guard mode == .separateCards,
+              ProviderAccountID.families.contains(ProviderAccountID.family(of: group.id)),
+              ProviderAccountID.isAccountCard(group.id)
+        else { return group }
+        let hiddenIDs = Set(["trend", "today", "yesterday"].map { "\(group.id).\($0)" })
+        let alwaysShown = group.alwaysShownWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
+        let expanded = group.expandedWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
+        guard !alwaysShown.isEmpty || !expanded.isEmpty else { return nil }
+        return ProviderGroup(
+            provider: group.provider,
+            alwaysShownWidgets: alwaysShown.isEmpty ? expanded : alwaysShown,
+            expandedWidgets: alwaysShown.isEmpty ? [] : expanded
+        )
+    }
+
     private static func groupingID(_ cardID: String) -> String {
         let family = ProviderAccountID.family(of: cardID)
         return ProviderAccountID.families.contains(family) ? family : cardID

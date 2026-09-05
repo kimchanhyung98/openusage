@@ -365,7 +365,7 @@ struct WidgetGroupedListView: View {
     }
 
     private func metricTargetIDs(for providerID: String) -> [String] {
-        guard let group = layout.displayGroups.first(where: { $0.provider.id == providerID }) else {
+        guard let group = dashboardGroups.first(where: { $0.provider.id == providerID }) else {
             return []
         }
         let alwaysShown = group.alwaysShownWidgets.compactMap { layout.descriptor(for: $0)?.id }
