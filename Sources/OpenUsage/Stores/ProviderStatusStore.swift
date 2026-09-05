@@ -27,17 +27,20 @@ final class ProviderStatusStore {
     @ObservationIgnored private let http: any HTTPClient
     @ObservationIgnored private let sourceFor: @MainActor (String) -> ProviderStatusSource?
     @ObservationIgnored private let now: @MainActor () -> Date
+    @ObservationIgnored private let onFlightJoined: @MainActor (String) -> Void
     @ObservationIgnored private var entries: [String: Entry] = [:]
     @ObservationIgnored private var inFlight: [String: Flight] = [:]
 
     init(
         http: any HTTPClient = ProviderStatusHTTPClient(),
         sourceFor: @escaping @MainActor (String) -> ProviderStatusSource? = ProviderStatusSourceCatalog.source(for:),
-        now: @escaping @MainActor () -> Date = Date.init
+        now: @escaping @MainActor () -> Date = Date.init,
+        onFlightJoined: @escaping @MainActor (String) -> Void = { _ in }
     ) {
         self.http = http
         self.sourceFor = sourceFor
         self.now = now
+        self.onFlightJoined = onFlightJoined
     }
 
     func status(for providerID: String) -> ProviderServiceStatus {
@@ -46,6 +49,7 @@ final class ProviderStatusStore {
 
     /// 같은 family의 card를 한 요청으로 합치고 서로 다른 family는 병렬 조회.
     func refresh(providerIDs: [String], force: Bool = false) async {
+        guard !Task.isCancelled else { return }
         var seenFamilies: Set<String> = []
         let families = providerIDs
             .map(ProviderAccountID.family(of:))
@@ -59,6 +63,7 @@ final class ProviderStatusStore {
 
             if let flight = inFlight[family] {
                 tasks.append(flight.task)
+                onFlightJoined(family)
                 continue
             }
             guard shouldAttempt(family: family, force: force) else { continue }
@@ -76,6 +81,12 @@ final class ProviderStatusStore {
         for task in tasks {
             await task.value
         }
+    }
+
+    /// 앱의 주기 갱신 소유자 종료 전용 — 개별 대기자 취소는 공유 요청을 유지.
+    func cancelRefreshes() {
+        for flight in inFlight.values { flight.task.cancel() }
+        inFlight.removeAll()
     }
 
     /// 재활성화 시 일반 실패 gate만 해제. 서버가 지정한 Retry-After와 fresh success TTL은 유지.
@@ -121,7 +132,7 @@ final class ProviderStatusStore {
             publish(status, for: source.familyID)
             AppLog.debug(.http, "provider-status \(source.familyID) \(source.endpointURL.host() ?? "unknown") ok")
         } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled {
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
                 logCancellation(source: source)
                 return
             }

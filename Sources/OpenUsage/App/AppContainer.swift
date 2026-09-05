@@ -482,18 +482,22 @@ final class AppContainer {
     ) -> Task<Void, Never> {
         Task {
             let wakeSignal = RefreshWakeSignal()
-            while !Task.isCancelled {
-                await reconcileAccounts()
-                let statusProviderIDs = enabledProviderIDs()
-                async let statusRefresh: Void = providerStatus.refresh(providerIDs: statusProviderIDs)
-                await dataStore.refreshAll()
-                // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
-                await dataStore.evaluateNotifications()
-                // 일자 전환 beat: `app_daily_active` 1일 1회 발행 + 전일 provider rollup flush.
-                telemetry.tick()
-                // usage 완료 시점에 다음 heartbeat를 시작 — status 응답 시간이 footer countdown cadence를 밀지 않도록 병렬 대기.
-                async let nextWake: Void = wakeSignal.waitForWake(timeout: RefreshSetting.interval)
-                _ = await (statusRefresh, nextWake)
+            await withTaskCancellationHandler {
+                while !Task.isCancelled {
+                    await reconcileAccounts()
+                    let statusProviderIDs = enabledProviderIDs()
+                    async let statusRefresh: Void = providerStatus.refresh(providerIDs: statusProviderIDs)
+                    await dataStore.refreshAll()
+                    // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
+                    await dataStore.evaluateNotifications()
+                    // 일자 전환 beat: `app_daily_active` 1일 1회 발행 + 전일 provider rollup flush.
+                    telemetry.tick()
+                    // usage 완료 시점에 다음 heartbeat를 시작 — status 응답 시간이 footer countdown cadence를 밀지 않도록 병렬 대기.
+                    async let nextWake: Void = wakeSignal.waitForWake(timeout: RefreshSetting.interval)
+                    _ = await (statusRefresh, nextWake)
+                }
+            } onCancel: {
+                Task { @MainActor in providerStatus.cancelRefreshes() }
             }
         }
     }

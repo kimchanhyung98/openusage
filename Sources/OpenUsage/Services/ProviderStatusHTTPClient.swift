@@ -16,8 +16,26 @@ struct ProviderStatusHTTPClient: HTTPClient {
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let urlRequest = try Self.urlRequest(from: request)
-        let (data, response) = try await session.data(for: urlRequest)
+        let (bytes, response) = try await session.bytes(for: urlRequest)
+        defer { bytes.task.cancel() }
+        guard response.expectedContentLength <= ProviderStatusSource.maximumBodySize else {
+            throw ProviderStatusSourceError.bodyTooLarge
+        }
+        let data = try await Self.readBody(bytes)
         return try Self.response(from: response, data: data)
+    }
+
+    static func readBody<Bytes: AsyncSequence>(_ bytes: Bytes) async throws -> Data where Bytes.Element == UInt8 {
+        try Task.checkCancellation()
+        var data = Data()
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            guard data.count < ProviderStatusSource.maximumBodySize else {
+                throw ProviderStatusSourceError.bodyTooLarge
+            }
+            data.append(byte)
+        }
+        return data
     }
 
     static func response(from response: URLResponse, data: Data) throws -> HTTPResponse {

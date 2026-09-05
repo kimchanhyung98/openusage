@@ -82,6 +82,7 @@ struct ProviderSectionHeader: View {
                                 .layoutPriority(4)
                                 .hoverTooltip(warning)
                                 .accessibilityLabel("Usage Issue")
+                                .accessibilityValue(warning)
                         }
                     case .service:
                         if case .disrupted(let issue) = serviceStatus {
