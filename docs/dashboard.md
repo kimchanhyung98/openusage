@@ -29,11 +29,12 @@ Buttons lay out up to three across, wrapping to a second row when there are more
 
 Transient status indicators follow the provider title: a yellow warning triangle for an authentication or usage-refresh problem, then a red skull for a problem reported on the provider's official status page.
 The warning and skull can appear together because they describe different failures.
+VoiceOver exposes the warning's detail as the Usage Issue value.
 
 For enabled Claude, Codex, Cursor, and Copilot cards, OpenUsage checks the relevant components on each provider's official status page.
 A component reporting degraded performance, a partial outage, or a major/full outage shows the skull.
 Scheduled maintenance, an unrelated component problem, and providers without status support do not create a skull.
-An unavailable, malformed, or changed status feed cannot create a new skull; a previously confirmed issue may remain for up to 15 minutes while checks fail, and a successful maintenance-only result clears it.
+An unavailable, malformed, or changed status feed cannot create a new skull; a previously confirmed issue remains until a refresh pass finds the last successful check at least 15 minutes old, or a successful maintenance-only result clears it.
 Server status belongs to the provider family rather than the selected account and stays in memory only.
 
 ## Total Spend

@@ -99,7 +99,8 @@ Signing in as another provider identity does not rename the account or silently 
 
 ## Service status
 
-While Claude is enabled, OpenUsage checks the Claude API and Claude Code components on [Claude Status](https://status.claude.com/) at launch, every five minutes, and during Dashboard manual refreshes.
+While Claude is enabled, OpenUsage checks the Claude API and Claude Code components on [Claude Status](https://status.claude.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
+Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
 The public request is unauthenticated and sends no Claude credentials or usage data.
 Degraded performance, a partial outage, or a major outage on either component shows the server skull; scheduled maintenance and unknown results do not.
 

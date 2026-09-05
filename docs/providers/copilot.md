@@ -55,7 +55,8 @@ Using Copilot in a supported editor is enough on its own — the editor writes t
 
 ## Service status
 
-While Copilot is enabled, OpenUsage checks the Copilot component on [GitHub Status](https://www.githubstatus.com/) at launch, every five minutes, and during Dashboard manual refreshes.
+While Copilot is enabled, OpenUsage checks the Copilot component on [GitHub Status](https://www.githubstatus.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
+Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
 The public request is unauthenticated and sends no GitHub credentials or usage data.
 Degraded performance, a partial outage, or a major outage on that component shows the server skull; scheduled maintenance and unknown results do not.
 

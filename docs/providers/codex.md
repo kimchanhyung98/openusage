@@ -65,7 +65,8 @@ Adding, renaming, re-signing, or removing an account updates the dashboard immed
 
 ## Service status
 
-While Codex is enabled, OpenUsage checks the Codex Web and CLI components on [OpenAI Status](https://status.openai.com/) at launch, every five minutes, and during Dashboard manual refreshes.
+While Codex is enabled, OpenUsage checks the Codex Web and CLI components on [OpenAI Status](https://status.openai.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
+Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
 The public request is unauthenticated and sends no OpenAI credentials or usage data.
 Degraded performance, a partial outage, or a full outage on either component shows the server skull; maintenance and unknown results do not.
 

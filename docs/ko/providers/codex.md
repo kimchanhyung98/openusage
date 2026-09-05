@@ -65,7 +65,8 @@ Fast/priority 추정에는 모델별 공개 Codex 배율 적용(예: GPT-5.5는 
 
 ## 서비스 상태
 
-Codex가 활성화돼 있으면 실행 시, 5분마다, 대시보드 수동 새로 고침 시 [OpenAI Status](https://status.openai.com/)의 Codex Web과 CLI 컴포넌트 확인.
+Codex가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [OpenAI Status](https://status.openai.com/)의 Codex Web과 CLI 컴포넌트 확인.
+활성화 시에도 5분 성공 캐시와 서버가 지정한 Retry-After 대기를 존중하며 상태 재확인.
 공개 요청은 인증 없이 실행되며 OpenAI 인증 정보나 사용량 데이터를 보내지 않음.
 두 컴포넌트 중 하나가 성능 저하, 부분 장애, 전체 장애를 보고하면 서버 해골 표시; 유지보수와 알 수 없는 결과에는 미표시.
 

@@ -90,6 +90,8 @@ The same launch, provider-enablement wake, five-minute, and Dashboard manual pas
 The status catalog explicitly covers Claude, Codex, Cursor, and Copilot; other families make no status request.
 Its client uses no provider authentication, and its exact component selectors turn only degraded, partial-outage, and major/full-outage states into a server issue.
 Maintenance and unknown states remain neutral.
+Status responses are limited to 64 KiB during transfer, and stopping the periodic refresh owner cancels all outstanding status requests.
+Cancelling one caller waiting on a shared request does not cancel that request for other callers.
 
 Providers with spend tiles carry an explicit history scope beside their export descriptors.
 Machine-local sources can be summed across device files; account-wide sources such as Cursor cannot.

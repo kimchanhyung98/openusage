@@ -34,7 +34,9 @@ Official server status has its own five-minute cache and is kept in memory only.
 Claude and Codex account cards share the result for their provider family instead of checking once per account.
 A relevant component reporting degraded performance, a partial outage, or a major/full outage produces the server skull.
 Scheduled maintenance and unknown results do not produce one.
-A failed status check cannot create a new skull, but it can retain a previously confirmed issue for up to 15 minutes; a successfully decoded maintenance-only result clears it immediately.
+A failed status check cannot create a new skull, but it can retain a previously confirmed issue.
+Each refresh pass clears a result whose last successful check is at least 15 minutes old; crossing that age during a request is handled on the next pass, not by a separate timer.
+A successfully decoded maintenance-only result clears it immediately.
 
 Claude, Codex, and pi spend history has a separate local-log parse cache under `~/Library/Application Support/OpenUsage/log-scan-cache/`.
 It stores parsed usage events before OpenUsage applies model-rate estimates, so pricing updates take effect without re-reading unchanged JSONL.
