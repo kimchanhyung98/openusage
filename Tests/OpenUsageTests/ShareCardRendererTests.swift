@@ -71,7 +71,10 @@ final class ShareCardRendererTests: XCTestCase {
         let providerTitlePixels = try pngPixels(provider: provider)
 
         XCTAssertEqual(overriddenPixels.count, exactTitlePixels.count)
-        let largestDifference = zip(overriddenPixels, exactTitlePixels).map { abs(Int($0) - Int($1)) }.max() ?? 0
+        var largestDifference = 0
+        for (overridden, exact) in zip(overriddenPixels, exactTitlePixels) {
+            largestDifference = max(largestDifference, abs(Int(overridden) - Int(exact)))
+        }
         XCTAssertLessThanOrEqual(
             largestDifference, 1,
             "the exact composite title should match within one rasterization quantization level"

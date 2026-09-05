@@ -127,10 +127,12 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testLast30DaysIsNotChangedByTheThreeRowFilter() throws {
         let layout = makeLayout()
-        layout.setMetricEnabled("codex.last30", true)
-        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
-        let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
-        XCTAssertTrue(presented.widgets.contains { $0.descriptorID == "\(group.id).last30" })
+        for (family, cardID) in [("claude", "claude@profile-work"), ("codex", "codex@profile-company")] {
+            layout.setMetricEnabled("\(family).last30", true)
+            let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+            let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
+            XCTAssertTrue(presented.widgets.contains { $0.descriptorID == "\(group.id).last30" })
+        }
     }
 
     func testOtherProviderHistoryIsUnchanged() throws {

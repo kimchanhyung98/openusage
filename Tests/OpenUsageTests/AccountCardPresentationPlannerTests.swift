@@ -113,6 +113,17 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
         ), ["claude", "codex@profile-second"])
     }
 
+    func testSeparateCardsIgnoreValidStaleAndCrossFamilySelections() {
+        let cards = ["claude", "claude@profile-work", "codex", "codex@profile-sub", "cursor"]
+        for selection in ["", "claude", "claude@profile-work", "removed", "codex@profile-sub"] {
+            XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
+                orderedCardIDs: cards,
+                modesByFamily: ["claude": .separateCards, "codex": .separateCards],
+                selectedCardIDsByFamily: ["claude": selection, "codex": selection]
+            ), cards)
+        }
+    }
+
     func testEmptyInputsAndUnsupportedProvidersRemainUnaffected() {
         XCTAssertTrue(AccountCardPresentationPlanner.orderedCardIDs(
             [], familyOrder: ["claude"], orderedProfileIDsByFamily: [:], profileIDsByCardID: [:]
