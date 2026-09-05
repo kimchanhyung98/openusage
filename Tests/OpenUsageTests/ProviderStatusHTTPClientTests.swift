@@ -1,4 +1,5 @@
 import Foundation
+import os
 import XCTest
 @testable import OpenUsage
 
@@ -104,5 +105,54 @@ final class ProviderStatusHTTPClientTests: XCTestCase {
         XCTAssertEqual(result.header("retry-after"), "120")
         XCTAssertEqual(result.body, body)
         XCTAssertTrue(result.headers.keys.allSatisfy { $0 == $0.lowercased() })
+    }
+
+    func testStreamingBodyAcceptsTheExactLimit() async throws {
+        let bytes = StatusTestBytes(remaining: ProviderStatusSource.maximumBodySize)
+        let result = try await ProviderStatusHTTPClient.readBody(bytes)
+        XCTAssertEqual(result.count, ProviderStatusSource.maximumBodySize)
+    }
+
+    func testStreamingBodyStopsReadingAtTheFirstExcessByte() async {
+        let readCount = OSAllocatedUnfairLock(initialState: 0)
+        let bytes = StatusTestBytes(remaining: 1_000_000, onNext: { readCount.withLock { $0 += 1 } })
+        do {
+            _ = try await ProviderStatusHTTPClient.readBody(bytes)
+            XCTFail("Oversized bodies must be rejected during transfer")
+        } catch {
+            XCTAssertEqual(error as? ProviderStatusSourceError, .bodyTooLarge)
+        }
+        XCTAssertEqual(readCount.withLock { $0 }, ProviderStatusSource.maximumBodySize + 1)
+    }
+
+    func testCancelledBodyReadDoesNotConsumeBytes() async {
+        let readCount = OSAllocatedUnfairLock(initialState: 0)
+        let bytes = StatusTestBytes(remaining: 10, onNext: { readCount.withLock { $0 += 1 } })
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await ProviderStatusHTTPClient.readBody(bytes)
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancellation must stop body reads")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertEqual(readCount.withLock { $0 }, 0)
+    }
+}
+
+private struct StatusTestBytes: AsyncSequence, AsyncIteratorProtocol, Sendable {
+    typealias Element = UInt8
+    var remaining: Int
+    var onNext: @Sendable () -> Void = {}
+
+    func makeAsyncIterator() -> Self { self }
+
+    mutating func next() async -> UInt8? {
+        guard remaining > 0 else { return nil }
+        remaining -= 1
+        onNext()
+        return 65
     }
 }

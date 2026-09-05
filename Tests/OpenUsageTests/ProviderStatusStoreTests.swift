@@ -84,6 +84,19 @@ final class ProviderStatusStoreTests: XCTestCase {
         XCTAssertEqual(store.status(for: "claude"), .operational)
     }
 
+    func testAlreadyCancelledRefreshDoesNotStartARequest() async {
+        let http = ProviderStatusHTTPStub(responses: [.success(Self.claudeResponse(status: "operational"))])
+        let store = ProviderStatusStore(http: http)
+        let refresh = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await store.refresh(providerIDs: ["claude"], force: true)
+        }
+        await refresh.value
+        let count = await http.requestCount()
+        XCTAssertEqual(count, 0)
+        XCTAssertEqual(store.status(for: "claude"), .unknown)
+    }
+
     func testRetryAfterBlocksForceAndSurvivesProviderEnablement() async {
         let clock = ProviderStatusTestClock(Date(timeIntervalSince1970: 1_800_000_000))
         let http = ProviderStatusHTTPStub(responses: [
@@ -233,13 +246,18 @@ final class ProviderStatusStoreTests: XCTestCase {
 
     func testOverlappingAliasesJoinTheSameFamilyFlight() async {
         let http = ProviderStatusGateHTTPStub()
-        let store = ProviderStatusStore(http: http)
+        let didJoin = expectation(description: "Alias joined shared flight")
+        var hasJoined = false
+        let store = ProviderStatusStore(http: http, onFlightJoined: { _ in
+            hasJoined = true
+            didJoin.fulfill()
+        })
 
         let first = Task { await store.refresh(providerIDs: ["claude"]) }
         await http.waitForRequestCount(1)
         let second = Task { await store.refresh(providerIDs: ["claude@work"], force: true) }
-        await Task.yield()
-        await Task.yield()
+        await fulfillment(of: [didJoin], timeout: 2)
+        if !hasJoined { second.cancel() }
         await http.releaseAll()
         await first.value
         await second.value
@@ -251,12 +269,13 @@ final class ProviderStatusStoreTests: XCTestCase {
 
     func testCancellingOneJoinedWaiterDoesNotCancelTheSharedFlight() async {
         let http = ProviderStatusGateHTTPStub()
-        let store = ProviderStatusStore(http: http)
+        let didJoin = expectation(description: "Waiter joined shared flight")
+        let store = ProviderStatusStore(http: http, onFlightJoined: { _ in didJoin.fulfill() })
 
         let first = Task { await store.refresh(providerIDs: ["claude"]) }
         await http.waitForRequestCount(1)
         let joined = Task { await store.refresh(providerIDs: ["claude@work"]) }
-        await Task.yield()
+        await fulfillment(of: [didJoin], timeout: 2)
         joined.cancel()
         await http.releaseAll()
         await first.value
@@ -266,6 +285,24 @@ final class ProviderStatusStoreTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
         XCTAssertEqual(store.status(for: "claude"), .operational)
         XCTAssertEqual(store.status(for: "claude@work"), .operational)
+    }
+
+    func testOwnerCancellationCancelsTransportAndAllowsAReplacementFlight() async {
+        let http = ProviderStatusGateHTTPStub()
+        let store = ProviderStatusStore(http: http)
+        let first = Task { await store.refresh(providerIDs: ["claude"]) }
+        await http.waitForRequestCount(1)
+
+        store.cancelRefreshes()
+        let replacement = Task { await store.refresh(providerIDs: ["claude"]) }
+        await http.waitForRequestCount(2)
+        await http.releaseAll()
+        await first.value
+        await replacement.value
+
+        let cancelledCount = await http.cancelledRequestCount()
+        XCTAssertEqual(cancelledCount, 1)
+        XCTAssertEqual(store.status(for: "claude"), .operational)
     }
 
     private static func claudeResponse(status: String) -> HTTPResponse {
@@ -316,6 +353,7 @@ private actor ProviderStatusGateHTTPStub: HTTPClient {
     private var activeRequestCount = 0
     private var maximumActive = 0
     private var requestCount = 0
+    private var cancelledCount = 0
     private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
     private var countWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
@@ -328,6 +366,7 @@ private actor ProviderStatusGateHTTPStub: HTTPClient {
             releaseContinuations.append(continuation)
         }
         activeRequestCount -= 1
+        if Task.isCancelled { cancelledCount += 1 }
 
         if request.url.host() == "status.cursor.com" {
             return HTTPResponse(
@@ -364,6 +403,10 @@ private actor ProviderStatusGateHTTPStub: HTTPClient {
 
     func currentRequestCount() -> Int {
         requestCount
+    }
+
+    func cancelledRequestCount() -> Int {
+        cancelledCount
     }
 
     private func resumeCountWaiters() {
