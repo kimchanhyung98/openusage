@@ -78,6 +78,33 @@ final class SoftLimitMarkerTests: XCTestCase {
         XCTAssertEqual(data.softLimitStatusText, "Soft limit reached at 95% used")
     }
 
+    func testPercentBoundaryIsStableAcrossDisplayModes() {
+        for (used, reached) in [(94.49, false), (94.5, true), (94.6, true), (95.0, true)] {
+            var data = data(used: used, softLimitUsedFraction: 0.95)
+            let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
+            XCTAssertEqual(data.softLimitStatusText, expected, "Used: \(used)")
+            data.displayMode = .remaining
+            XCTAssertEqual(data.softLimitStatusText, expected, "Left: \(used)")
+        }
+    }
+
+    func testDollarBoundaryUsesCentPrecision() {
+        for (used, reached) in [(94.994, false), (94.996, true), (95.0, true)] {
+            var data = WidgetData(
+                title: "Weekly",
+                icon: .providerMark("opencode"),
+                kind: .dollars,
+                used: used,
+                limit: 100
+            )
+            data.softLimitUsedFraction = 0.95
+            let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
+            XCTAssertEqual(data.softLimitStatusText, expected, "Used: \(used)")
+            data.displayMode = .remaining
+            XCTAssertEqual(data.softLimitStatusText, expected, "Left: \(used)")
+        }
+    }
+
     private func data(used: Double, softLimitUsedFraction: Double?) -> WidgetData {
         var data = WidgetData(
             title: "Weekly",
