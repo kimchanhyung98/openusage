@@ -61,6 +61,8 @@ Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
 - With **Soft Limit** on, an eligible 5-hour or weekly bar carries a thin guide at the configured 90%–95% threshold.
   The guide is the user's early-limit line, not the provider's hard limit, and it does not change the fill, usage value, pace verdict, or reset.
   Used and Left mirror its position: a 95% used threshold sits at 5% left in the opposite view.
+  The reached message compares usage rounded to its display precision, so 94.6% shown as 95% counts as reaching a 95% guide.
+  Switching to Left does not change that used-based comparison.
   Crossing the guide is visible in the bar's hover text, but this version does not automatically stop AI sessions because OpenUsage cannot yet prove complete, exact control of every related App and CLI session.
 - A reset label like `Resets in 3h 25m` or `Resets today at 6:38 PM`.
   **Click it** to flip between countdown and exact time everywhere — hovering shows the other format.
