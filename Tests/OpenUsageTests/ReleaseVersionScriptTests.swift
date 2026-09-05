@@ -8,7 +8,11 @@ final class ReleaseVersionScriptTests: XCTestCase {
     }
 
     func testRejectsTagsWithoutSemanticVersionPrefix() throws {
-        for tag in ["0.9.5", "v0.9", "v0.9.5-beta..1", "v0.9.5-"] {
+        for tag in [
+            "0.9.5", "v0.9", "v0.9.5-beta..1", "v0.9.5-",
+            "v0.6.29", "v0.5.0", "v0.10.0-rc.1", "v01.2.3", "v1.02.3",
+            "v1.2.03", "v1.2.3-beta.01", "v1.2.3-beta.0"
+        ] {
             XCTAssertThrowsError(try version(for: tag), "expected \(tag) to be rejected") { error in
                 guard case VersionScriptError.rejectedTag = error else {
                     return XCTFail("expected a rejection for \(tag), got \(error)")
@@ -44,6 +48,36 @@ final class ReleaseVersionScriptTests: XCTestCase {
         XCTAssertEqual(try developmentVersion(repositoryDirectory: repository), "0.0.0-dev")
     }
 
+    func testDevelopmentVersionRejectsAnUnusableRepository() throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        XCTAssertThrowsError(try developmentVersion(repositoryDirectory: missing)) { error in
+            guard case VersionScriptError.scriptFailure = error else {
+                return XCTFail("expected a Git failure, got \(error)")
+            }
+        }
+    }
+
+    func testDevelopmentVersionRejectsLegacyTags() throws {
+        let repository = try makeRepository(tag: "v0.6.28")
+        XCTAssertThrowsError(try developmentVersion(repositoryDirectory: repository))
+    }
+
+    func testReleaseTagMustExistAndMatchMainHistory() throws {
+        let repository = try makeRepository(tag: "v0.9.5")
+        try runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], in: repository)
+        XCTAssertEqual(try verifiedReleaseVersion("v0.9.5", in: repository), "0.9.5")
+        try runGit(["-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+                    "tag", "-a", "v0.9.6-beta.1", "-m", "beta"], in: repository)
+        XCTAssertEqual(try verifiedReleaseVersion("v0.9.6-beta.1", in: repository), "0.9.6-beta.1")
+        try runGit(["branch", "v0.9.7"], in: repository)
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.7", in: repository))
+        try runGit(["-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+                    "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "unmerged"], in: repository)
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.5", in: repository))
+        try runGit(["tag", "v0.9.8"], in: repository)
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.8", in: repository))
+    }
+
     /// checkout된 트리 의존을 피하려고 workflow에 복제한 패턴과 원본의 불일치 감지.
     func testReleaseWorkflowTagPatternMatchesTheScript() throws {
         let script = try String(contentsOf: Self.versionScript, encoding: .utf8)
@@ -62,7 +96,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
 
     /// `[[ ... =~ <pattern> ]]` 한 줄에서 pattern 추출.
     private static func tagPattern(in source: String) -> String? {
-        guard let line = source.split(separator: "\n").first(where: { $0.contains("=~ ^v[0-9]") }),
+        guard let line = source.split(separator: "\n").first(where: { $0.contains("=~ ^v") }),
               let afterOperator = line.components(separatedBy: "=~ ").last,
               let pattern = afterOperator.components(separatedBy: "]]").first
         else { return nil }
@@ -74,6 +108,10 @@ final class ReleaseVersionScriptTests: XCTestCase {
 
     private func version(for tag: String) throws -> String {
         try callFunction("openusage_version_from_tag", arguments: [tag])
+    }
+
+    private func verifiedReleaseVersion(_ tag: String, in repository: URL) throws -> String {
+        try callFunction("openusage_release_version", arguments: [repository.path, tag])
     }
 
     private func developmentVersion(
@@ -94,7 +132,6 @@ final class ReleaseVersionScriptTests: XCTestCase {
         workingDirectory: URL? = nil
     ) throws -> String {
         let output = Pipe()
-        let errorOutput = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = [
@@ -104,19 +141,18 @@ final class ReleaseVersionScriptTests: XCTestCase {
             Self.versionScript.path
         ] + arguments
         process.standardOutput = output
-        process.standardError = errorOutput
+        // 단일 pipe로 두 출력을 함께 비워 진단 출력 폭주에 의한 교착 방지.
+        process.standardError = output
         process.currentDirectoryURL = workingDirectory
 
         try process.run()
         let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = errorOutput.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
-        let message = String(data: stderr, encoding: .utf8) ?? ""
+        let message = String(data: stdout, encoding: .utf8) ?? ""
         switch process.terminationStatus {
         case 0:
-            let value = String(data: stdout, encoding: .utf8) ?? ""
-            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            return message.trimmingCharacters(in: .whitespacesAndNewlines)
         case 1:
             throw VersionScriptError.rejectedTag(message)
         default:
