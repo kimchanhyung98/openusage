@@ -34,7 +34,7 @@ source "$ROOT_DIR/script/version.sh"
 APP_NAME="OpenUsage"
 BUNDLE_ID="com.kimchanhyung98.openusage"
 MIN_SYSTEM_VERSION="15.0"
-VERSION="$(openusage_version_from_tag "$OPENUSAGE_TAG")"
+VERSION="$(openusage_release_version "$ROOT_DIR" "$OPENUSAGE_TAG")"
 # CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "0.10.0-beta.1") 저장.
 # Sparkle 업데이트 안내와 앱 footer/About에 표시되는 문자열이므로 항상 동일해야 함.
 # Sparkle은 이 문자열이 아닌 아래 단조 증가 commit 수인 CFBundleVersion으로 빌드 비교.
