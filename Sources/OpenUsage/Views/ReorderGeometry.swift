@@ -6,6 +6,12 @@ struct ReorderLift {
         case dashboardMetric(data: WidgetData)
         case customizeProviderRow(provider: Provider, isEnabled: Bool, metricCount: Int)
         case customizeMetric(title: String)
+        case settingsAccountRow(
+            label: String,
+            state: AccountSignInProbe.State,
+            isSelected: Bool,
+            showsSelectionToggle: Bool
+        )
     }
 
     let id: String
@@ -66,6 +72,14 @@ struct ReorderLiftPreview: View {
             customizeProviderRowPreview(provider: provider, isEnabled: isEnabled, metricCount: metricCount)
         case .customizeMetric(let title):
             customizeMetricPreview(title)
+        case .settingsAccountRow(let label, let state, let isSelected, let showsSelectionToggle):
+            AccountSettingsLiftRow(
+                label: label,
+                state: state,
+                isSelected: isSelected,
+                showsSelectionToggle: showsSelectionToggle
+            )
+            .liftedRowSurface()
         }
     }
 
@@ -145,15 +159,20 @@ func reorderDragGesture(
     lift: Binding<ReorderLift?>,
     makeLift: @escaping (DragGesture.Value) -> ReorderLift?,
     orderedIDs: @escaping () -> [String],
-    reorder: @escaping (_ target: String) -> Bool
+    reorder: @escaping (_ target: String) -> Bool,
+    shouldHandle: @escaping () -> Bool = { true },
+    onChanged: @escaping (DragGesture.Value) -> Void = { _ in },
+    onEnded: @escaping () -> Void = {}
 ) -> some Gesture {
     DragGesture(minimumDistance: 4, coordinateSpace: .named(coordinateSpaceName))
         .onChanged { value in
+            guard shouldHandle() else { return }
             active.wrappedValue = id
             if lift.wrappedValue?.id != id, let newLift = makeLift(value) {
                 lift.wrappedValue = newLift
             }
             lift.wrappedValue?.location = value.location
+            onChanged(value)
             guard let target = reorderTarget(
                 at: value.location,
                 in: rowFrames,
@@ -169,6 +188,7 @@ func reorderDragGesture(
         .onEnded { _ in
             active.wrappedValue = nil
             lift.wrappedValue = nil
+            onEnded()
         }
 }
 

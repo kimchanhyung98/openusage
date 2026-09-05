@@ -4,6 +4,7 @@ import SwiftUI
 /// 선택 요소: 호버 노출 스크린샷 복사, `warning`(최근 refresh 오류 삼각형), `staleness`("Outdated" 태그).
 struct ProviderSectionHeader: View {
     let provider: Provider
+    var title: String?
     var plan: String?
     var warning: String?
     var refreshing: Bool = false
@@ -25,6 +26,7 @@ struct ProviderSectionHeader: View {
 
     init(
         provider: Provider,
+        title: String? = nil,
         plan: String? = nil,
         warning: String? = nil,
         refreshing: Bool = false,
@@ -36,6 +38,7 @@ struct ProviderSectionHeader: View {
         accountCount: Int = 0
     ) {
         self.provider = provider
+        self.title = title
         self.plan = plan
         self.warning = warning
         self.refreshing = refreshing
@@ -55,7 +58,7 @@ struct ProviderSectionHeader: View {
                 .partyPulse(partyMode)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 // 폭 압박 시 우선순위 낮은 stale 태그부터 truncate — 이름의 2줄 래핑 방지
-                Text(container.displayName(for: provider))
+                Text(title ?? container.displayName(for: provider))
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -87,7 +90,7 @@ struct ProviderSectionHeader: View {
             Spacer(minLength: 8)
             if let onCopyScreenshot {
                 CopyFeedbackButton(
-                    accessibilityLabel: "Copy \(container.displayName(for: provider)) Screenshot",
+                    accessibilityLabel: "Copy \(title ?? container.displayName(for: provider)) Screenshot",
                     isRevealed: isHovered,
                     action: onCopyScreenshot
                 )

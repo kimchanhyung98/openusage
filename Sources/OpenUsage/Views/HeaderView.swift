@@ -88,11 +88,11 @@ struct HeaderView: View {
         .keyboardShortcut("q") // ⌘Q — 다른 소유자 없음, 항목 등록 안전
     }
 
-    /// 대시보드 표시 중인 프로바이더별 "Share Screenshot" 서브메뉴 (`displayGroups` 기준).
+    /// 대시보드와 동일한 카드 목록·순서·제목의 "Share Screenshot" 서브메뉴.
     /// 우클릭 공유와 동일 렌더 경로 — 브랜드 PNG 클립보드 복사.
     @ViewBuilder
     private var shareScreenshotMenu: some View {
-        let groups = layout.displayGroups
+        let groups = container.presentedAccountGroups()
         Menu {
             if groups.isEmpty {
                 // 스크린샷 대상 없음 — 빈 서브메뉴 대신 비활성 항목 표시
@@ -100,7 +100,7 @@ struct HeaderView: View {
                     .disabled(true)
             } else {
                 ForEach(groups) { group in
-                    Button(container.displayName(for: group.provider)) { shareCard(group) }
+                    Button(container.accountCardTitle(for: group.provider)) { shareCard(group) }
                 }
             }
         } label: {
@@ -116,7 +116,7 @@ struct HeaderView: View {
             dataStore: dataStore,
             layout: layout,
             appearance: colorScheme,
-            displayName: container.displayName(for: group.provider)
+            displayName: container.accountCardTitle(for: group.provider)
         )
     }
 

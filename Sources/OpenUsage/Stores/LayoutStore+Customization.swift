@@ -162,11 +162,7 @@ extension LayoutStore {
     @discardableResult
     func reorderProvider(dragged: String, target: String) -> Bool {
         recordingUndoStep {
-            var shown: [String] = []
-            for providerID in customizeGroups.map(\.provider.id) {
-                let family = ProviderAccountID.family(of: providerID)
-                if !shown.contains(family) { shown.append(family) }
-            }
+            let shown = customizeProviderRows.filter(\.isEnabled).map(\.id)
             let draggedFamily = ProviderAccountID.family(of: dragged)
             let targetFamily = ProviderAccountID.family(of: target)
             guard let next = Self.reordered(shown, dragged: draggedFamily, target: targetFamily) else { return false }
@@ -174,8 +170,11 @@ extension LayoutStore {
             // persist된 raw 순서에서 visible slot만 재배열 — unknown id(이 launch registry에 없는 account
             // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible family만 그 사이를 이동.
             var membersByFamily: [String: [String]] = [:]
-            for providerID in providerOrder {
-                membersByFamily[ProviderAccountID.family(of: providerID), default: []].append(providerID)
+            for providerID in providerOrder + orderedProviderIDs() {
+                let family = ProviderAccountID.family(of: providerID)
+                if membersByFamily[family]?.contains(providerID) != true {
+                    membersByFamily[family, default: []].append(providerID)
+                }
             }
             let shownSet = Set(shown)
             var replacements = next.makeIterator()

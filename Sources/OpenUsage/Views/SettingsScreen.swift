@@ -9,6 +9,9 @@ import UserNotifications
 struct SettingsScreen: View {
     @Environment(AppContainer.self) private var container
     @Environment(UpdaterController.self) private var updater
+    let reorderSpaceName: String
+    @Binding var reorderLift: ReorderLift?
+    @State private var scrollViewportFrame: CGRect = .zero
 
     @State private var launchAtLogin = LaunchAtLoginSetting()
     @State private var commandLineTool = CommandLineToolInstaller()
@@ -25,12 +28,21 @@ struct SettingsScreen: View {
     @State private var notificationsAuth: NotificationsAuthState = .authorized
 
     var body: some View {
-        PopoverScrollView {
-            content
+        ScrollViewReader { proxy in
+            PopoverScrollView {
+                content { id, direction in
+                    proxy.scrollTo(id, anchor: direction.scrollAnchor)
+                }
+            }
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(reorderSpaceName))
+            } action: { frame in
+                scrollViewportFrame = frame
+            }
         }
     }
 
-    private var content: some View {
+    private func content(scrollToAccount: @escaping (String, AccountSettingsReorderDirection) -> Void) -> some View {
         @Bindable var store = container.dataStore
         @Bindable var layout = container.layout
         @Bindable var updater = updater
@@ -59,7 +71,12 @@ struct SettingsScreen: View {
                         .hoverTooltip("Open OpenUsage from anywhere")
                 }
             }
-            AccountsSettingsSection()
+            AccountsSettingsSection(
+                reorderSpaceName: reorderSpaceName,
+                reorderLift: $reorderLift,
+                scrollViewportFrame: scrollViewportFrame,
+                scrollToAccount: scrollToAccount
+            )
             ICloudSyncSettingsSection(sync: container.iCloudSync)
             section("Appearance") {
                 row("Icon Style") {
