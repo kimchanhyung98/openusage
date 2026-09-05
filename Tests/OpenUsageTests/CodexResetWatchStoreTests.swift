@@ -373,6 +373,41 @@ final class CodexResetWatchStoreTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    func testNoStoreDoesNotRetainForecastOrETag() async {
+        let http = ResetWatchHTTPClient([
+            .init(response: Self.activeResponse(chance: 75, deadline: Self.start.addingTimeInterval(3_600),
+                headers: ["cache-control": "no-store, max-age=300", "etag": "private"])),
+            .init(response: HTTPResponse(statusCode: 503, headers: [:], body: Data()))
+        ])
+        let store = CodexResetWatchStore(http: http, now: { Self.start })
+        let initial = await store.current()
+        let failed = await store.current()
+        let requests = await http.recordedRequests()
+        XCTAssertNotNil(initial)
+        XCTAssertNil(failed)
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertNil(requests.last?.headers["If-None-Match"])
+    }
+
+    func testNoCacheRequiresValidationAndDoesNotServeFailedCache() async {
+        let http = ResetWatchHTTPClient([
+            .init(response: Self.activeResponse(chance: 75, deadline: Self.start.addingTimeInterval(3_600),
+                headers: ["cache-control": "no-cache, max-age=300", "etag": "validate"])),
+            .init(response: HTTPResponse(statusCode: 304, headers: [:], body: Data())),
+            .init(response: HTTPResponse(statusCode: 503, headers: [:], body: Data()))
+        ])
+        let store = CodexResetWatchStore(http: http, now: { Self.start })
+        let initial = await store.current()
+        let revalidated = await store.current()
+        let failed = await store.current()
+        let requests = await http.recordedRequests()
+        XCTAssertNotNil(initial)
+        XCTAssertNotNil(revalidated)
+        XCTAssertNil(failed)
+        XCTAssertEqual(requests.count, 3)
+        XCTAssertEqual(requests.last?.headers["If-None-Match"], "validate")
+    }
+
     private static func activeResponse(
         chance: Int,
         deadline: Date,

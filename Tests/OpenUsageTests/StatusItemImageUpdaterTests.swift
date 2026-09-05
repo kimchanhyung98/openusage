@@ -64,6 +64,7 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         state: RenderState,
         recorder: Recorder,
         gate: DelayGate,
+        deadlineGate: DelayGate? = nil,
         nextInvalidation: @escaping (_ renderCount: Int) -> Date? = { _ in nil }
     ) -> StatusItemImageUpdater {
         StatusItemImageUpdater(
@@ -76,6 +77,13 @@ final class StatusItemImageUpdaterTests: XCTestCase {
                 )
             },
             delay: { await gate.wait() },
+            deadlineDelay: { deadline in
+                if let deadlineGate {
+                    await deadlineGate.wait()
+                } else {
+                    try? await Task.sleep(for: .seconds(max(deadline.timeIntervalSinceNow, 0)))
+                }
+            },
             apply: { recorder.applied.append($0.accessibilityDescription ?? "?") }
         )
     }
@@ -225,12 +233,16 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         let state = RenderState()
         let recorder = Recorder()
         let gate = DelayGate()
-        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
-            renderCount == 1 ? Date().addingTimeInterval(0.02) : nil
+        let deadlineGate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate,
+                                  deadlineGate: deadlineGate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(60) : nil
         }
 
         updater.update()
-        try await Task.sleep(for: .milliseconds(100))
+        await waitForPendingDelay(deadlineGate)
+        deadlineGate.releaseAll()
+        await waitForAppliedCount(2, recorder: recorder)
 
         XCTAssertEqual(recorder.renderCount, 2)
         XCTAssertEqual(recorder.applied, ["strip", "strip"])
@@ -242,13 +254,17 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         let state = RenderState()
         let recorder = Recorder()
         let gate = DelayGate()
-        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
-            renderCount == 1 ? Date().addingTimeInterval(0.02) : nil
+        let deadlineGate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate,
+                                  deadlineGate: deadlineGate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(60) : nil
         }
 
         updater.update()
+        await waitForPendingDelay(deadlineGate)
         updater.update()
-        try await Task.sleep(for: .milliseconds(100))
+        deadlineGate.releaseAll()
+        await waitForResumedDelay(deadlineGate)
 
         XCTAssertEqual(recorder.renderCount, 2)
     }
@@ -259,16 +275,20 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         let state = RenderState()
         let recorder = Recorder()
         let gate = DelayGate()
-        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { renderCount in
-            renderCount == 1 ? Date().addingTimeInterval(0.1) : nil
+        let deadlineGate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate,
+                                  deadlineGate: deadlineGate) { renderCount in
+            renderCount == 1 ? Date().addingTimeInterval(60) : nil
         }
 
         updater.update()
+        await waitForPendingDelay(deadlineGate)
         state.label = "updated-strip"
         await waitForPendingDelay(gate)
         gate.releaseAll()
         await waitForAppliedCount(2, recorder: recorder)
-        try await Task.sleep(for: .milliseconds(150))
+        deadlineGate.releaseAll()
+        await waitForResumedDelay(deadlineGate)
 
         XCTAssertEqual(recorder.renderCount, 2)
         XCTAssertEqual(recorder.applied, ["strip", "updated-strip"])
@@ -280,14 +300,18 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         let state = RenderState()
         let recorder = Recorder()
         let gate = DelayGate()
-        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate) { _ in
-            Date().addingTimeInterval(0.02)
+        let deadlineGate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate,
+                                  deadlineGate: deadlineGate) { _ in
+            Date().addingTimeInterval(60)
         }
 
         updater.update()
+        await waitForPendingDelay(deadlineGate)
         capture.isOn = true
         privacy.refreshCaptureState()
-        try await Task.sleep(for: .milliseconds(100))
+        deadlineGate.releaseAll()
+        await waitForResumedDelay(deadlineGate)
 
         XCTAssertEqual(recorder.applied, ["strip", "privacy"])
         XCTAssertEqual(recorder.renderCount, 2)
@@ -313,5 +337,26 @@ final class StatusItemImageUpdaterTests: XCTestCase {
 
         XCTAssertEqual(recorder.renderCount, 3)
         XCTAssertEqual(recorder.applied.last, "after-deadline")
+    }
+
+    func testDeadlineConsumesPendingObservedRenderAndRearms() async {
+        let privacy = makePrivacyStore("deadlineCoalescing", capture: CaptureFlag(isOn: false))
+        let state = RenderState()
+        let recorder = Recorder()
+        let gate = DelayGate()
+        let updater = makeUpdater(privacy: privacy, state: state, recorder: recorder, gate: gate)
+        updater.update()
+        state.label = "pending"
+        await waitForPendingDelay(gate)
+        updater.deadlineDidFire()
+        gate.releaseAll()
+        await waitForResumedDelay(gate)
+        XCTAssertEqual(recorder.applied, ["strip", "pending"])
+
+        state.label = "rearmed"
+        await waitForPendingDelay(gate)
+        gate.releaseAll()
+        await waitForAppliedCount(3, recorder: recorder)
+        XCTAssertEqual(recorder.applied.last, "rearmed")
     }
 }

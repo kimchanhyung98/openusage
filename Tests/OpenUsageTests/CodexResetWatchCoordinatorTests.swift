@@ -16,8 +16,8 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = ResetWatchLoadProbe(result: nil)
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { await loader.load() },
-            publish: { published.append($0) }
+            load: { CodexResetWatchResult(watch: await loader.load()) },
+            publish: { published.append($0.watch) }
         )
 
         try? await Task.sleep(for: .milliseconds(10))
@@ -37,8 +37,8 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let waiter = ResetWatchWaitProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { await loader.load() },
-            publish: { published.append($0) },
+            load: { CodexResetWatchResult(watch: await loader.load()) },
+            publish: { published.append($0.watch) },
             wait: { await waiter.wait($0) }
         )
 
@@ -81,8 +81,8 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = BlockingResetWatchLoadProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { await loader.load() },
-            publish: { published.append($0) }
+            load: { CodexResetWatchResult(watch: await loader.load()) },
+            publish: { published.append($0.watch) }
         )
 
         coordinator.setActive(true)
@@ -112,8 +112,8 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = BlockingResetWatchLoadProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { await loader.load() },
-            publish: { published.append($0) }
+            load: { CodexResetWatchResult(watch: await loader.load()) },
+            publish: { published.append($0.watch) }
         )
 
         coordinator.setActive(true)

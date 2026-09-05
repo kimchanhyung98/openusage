@@ -172,12 +172,12 @@ final class ResetWatchPresentationTests: XCTestCase {
 
         let entries = Array(schedule.entries(from: start, mode: .normal).prefix(4))
 
-        XCTAssertEqual(entries, [
-            start,
-            deadline,
-            start.addingTimeInterval(30),
-            start.addingTimeInterval(60),
-        ])
+        XCTAssertEqual(entries, [start, deadline])
+        XCTAssertEqual(Array(schedule.entries(from: deadline.addingTimeInterval(1), mode: .normal)),
+                       [deadline.addingTimeInterval(1)])
+        let periodic = WidgetRowTimelineSchedule(deadline: nil, interval: 30)
+        XCTAssertEqual(Array(periodic.entries(from: start, mode: .normal).prefix(3)),
+                       [start, start.addingTimeInterval(30), start.addingTimeInterval(60)])
     }
 
     private func forecast(chance: Double, deadline: Date = .distantFuture) -> WidgetData {
