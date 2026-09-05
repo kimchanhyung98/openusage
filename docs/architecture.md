@@ -115,6 +115,7 @@ Saving **Name…** does not start a process or network request, and the next suc
 Only a verified missing-login submit result enables the separate login action, and login never receives the public device-name override.
 Login completion never starts submit, and there is no automatic retry or background submission.
 App termination waits for the runner-owned installer or Tokscale process group to settle after cancellation, so OpenUsage does not abandon its active operation while closing.
+The runner keeps the exited leader's process ID reserved until group cleanup finishes, then reaps it so late cancellation cannot target a reused process group.
 Any detached follow-up work that Tokscale CLI starts outside that process group remains owned by Tokscale.
 
 The boundary does not read `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider accounts, or provider enablement to build or filter a submission.
@@ -122,6 +123,8 @@ The boundary contains no provider collector, parser, contribution model, payload
 Tokscale's CLI owns its source discovery, credentials, stable device ID and `device.json`, aggregation, and network request; OpenUsage never edits that file.
 
 Installer and Tokscale standard output and error are drained concurrently, stripped of ANSI and control sequences, and kept in a bounded in-memory command buffer.
+Cleanup still reads buffered output, with a final 64 KiB allowance per pipe so detached writers cannot hold the runner open indefinitely.
+The retained beginning and end share unused space at UTF-8 boundaries, preserving complete characters that fit in the byte limit; raw C1 controls are sanitized too.
 The Settings card shows that buffer while it is available, including completion or failure output until the next operation or app termination, and the login sheet also shows login output while it remains open.
 Raw output, inherited environment values, credentials, and authorization codes never enter OpenUsage logs, telemetry, files, or preferences.
 

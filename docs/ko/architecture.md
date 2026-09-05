@@ -115,6 +115,7 @@ Submit 동작은 정확히 `bunx tokscale@latest submit`을 실행하고 optiona
 검증된 미로그인 submit 결과에서만 별도 login 동작을 활성화하고 login에는 public device name override를 전달하지 않음.
 Login 완료 뒤 submit을 시작하지 않으며 자동 retry와 background submit 없음.
 App 종료 시 runner가 소유한 active installer 또는 Tokscale process group을 cancel한 뒤 정리될 때까지 기다려 종료 중 active operation 방치 방지.
+종료한 leader의 process ID를 group 정리 완료까지 유지한 뒤 회수해 늦은 cancel이 재사용된 process group을 대상으로 삼지 않도록 보장.
 Tokscale CLI가 해당 process group 밖에서 시작하는 detached 후속 작업은 Tokscale 소유.
 
 제출 생성·filter를 위해 `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider account, provider enablement를 읽지 않는 경계.
@@ -122,6 +123,8 @@ Provider collector, parser, contribution model, payload schema, Tokscale 직접 
 Source 탐색, credential, stable device ID와 `device.json`, 집계, network request는 Tokscale CLI 소유이며 OpenUsage에서 해당 file을 편집하지 않음.
 
 Installer와 Tokscale standard output·error를 동시에 drain하고 ANSI/control sequence를 제거해 bounded memory command buffer에 보관.
+정리 중에도 buffered output을 읽되 pipe별 마지막 64 KiB로 제한해 detached writer의 무한 대기 방지.
+보존하는 앞·뒷부분은 UTF-8 경계의 남는 공간을 공유해 byte 상한 안의 완전한 문자 유지하며, raw C1 control도 제거.
 Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
 Raw output, 상속한 environment value, credential, authorization code를 OpenUsage log, telemetry, file, preference에 기록하지 않음.
 
