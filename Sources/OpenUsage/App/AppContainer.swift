@@ -110,7 +110,7 @@ final class AppContainer {
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
         let resetWatchCoordinator = CodexResetWatchCoordinator(
-            publish: { [dataStore] in dataStore.setCodexResetWatch($0) }
+            publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 시 즉시 fetch되도록 잔여 failure backoff 제거. `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).

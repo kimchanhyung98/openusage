@@ -5,7 +5,12 @@ struct CodexResetWatch: Equatable, Sendable {
     let deadline: Date
 }
 
-typealias CodexResetWatchLoading = @Sendable () async -> CodexResetWatch?
+struct CodexResetWatchResult: Equatable, Sendable {
+    var watch: CodexResetWatch?
+    var refreshFailed = false
+}
+
+typealias CodexResetWatchLoading = @Sendable () async -> CodexResetWatchResult
 
 /// Codex usage와 독립된 Reset Watch 활성 상태·15분 조회 주기 소유자.
 @MainActor
@@ -15,15 +20,15 @@ final class CodexResetWatchCoordinator {
     typealias Waiting = @Sendable (Duration) async -> Bool
 
     private let load: CodexResetWatchLoading
-    private let publish: @MainActor (CodexResetWatch?) -> Void
+    private let publish: @MainActor (CodexResetWatchResult) -> Void
     private let interval: Duration
     private let wait: Waiting
     private var isActive = false
     private var task: Task<Void, Never>?
 
     init(
-        load: @escaping CodexResetWatchLoading = { await CodexResetWatchStore.shared.current() },
-        publish: @escaping @MainActor (CodexResetWatch?) -> Void,
+        load: @escaping CodexResetWatchLoading = { await CodexResetWatchStore.shared.currentResult() },
+        publish: @escaping @MainActor (CodexResetWatchResult) -> Void,
         interval: Duration = .seconds(CodexResetWatchCoordinator.refreshInterval),
         wait: @escaping Waiting = { duration in
             do {
@@ -50,7 +55,7 @@ final class CodexResetWatchCoordinator {
         task = nil
 
         guard active else {
-            publish(nil)
+            publish(CodexResetWatchResult())
             return
         }
 
@@ -89,6 +94,8 @@ actor CodexResetWatchStore {
     private struct CachePolicy: Sendable {
         let freshAge: TimeInterval
         let staleAge: TimeInterval
+        var allowsStorage = true
+        var requiresValidation = false
 
         static let fallback = CachePolicy(
             freshAge: CodexResetWatchStore.fallbackFreshAge,
@@ -106,7 +113,8 @@ actor CodexResetWatchStore {
     private var staleUntil = Date.distantPast
     private var retryNotBefore = Date.distantPast
     private var lastPolicy = CachePolicy.fallback
-    private var refreshTask: Task<CodexResetWatch?, Never>?
+    private var refreshFailed = false
+    private var refreshTask: Task<CodexResetWatchResult, Never>?
 
     init(
         http: any HTTPClient = URLSessionHTTPClient(sendsCookies: false),
@@ -120,6 +128,10 @@ actor CodexResetWatchStore {
 
     /// 현재 유효한 forecast — 외부 장애 시 마지막 유효 값 유지, provider refresh와 분리.
     func current() async -> CodexResetWatch? {
+        await currentResult().watch
+    }
+
+    func currentResult() async -> CodexResetWatchResult {
         let readAt = now()
         if case .watch(let watch) = representation, readAt >= watch.deadline {
             representation = nil
@@ -128,27 +140,32 @@ actor CodexResetWatchStore {
             staleUntil = .distantPast
         }
         if readAt < freshUntil {
-            return watchIfUsable(at: readAt, validUntil: freshUntil)
+            return result(watchIfUsable(at: readAt, validUntil: freshUntil))
         }
         if readAt < retryNotBefore {
-            return watchIfUsable(at: readAt, validUntil: staleUntil)
+            return result(watchIfUsable(at: readAt, validUntil: staleUntil))
         }
 
         if refreshTask == nil {
             refreshTask = Task { await self.refresh() }
         }
-        guard let refreshTask else { return nil }
+        guard let refreshTask else { return result(nil) }
         return await refreshTask.value
     }
 
+    private func result(_ watch: CodexResetWatch?) -> CodexResetWatchResult {
+        CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed)
+    }
+
     private func watchIfUsable(at date: Date, validUntil: Date) -> CodexResetWatch? {
-        guard date < validUntil, case .watch(let watch) = representation, date < watch.deadline else {
+        guard !lastPolicy.requiresValidation,
+              date < validUntil, case .watch(let watch) = representation, date < watch.deadline else {
             return nil
         }
         return watch
     }
 
-    private func refresh() async -> CodexResetWatch? {
+    private func refresh() async -> CodexResetWatchResult {
         defer { refreshTask = nil }
 
         var request = HTTPRequest(method: "GET", url: endpoint, timeout: 8)
@@ -166,39 +183,47 @@ actor CodexResetWatchStore {
             switch response.statusCode {
             case 200:
                 let decoded = try Self.decodeRepresentation(response.body, at: receivedAt)
-                let policy = Self.cachePolicy(response.header("cache-control"), fallback: lastPolicy)
-                representation = decoded
-                etag = response.header("etag")
+                let policy = Self.cachePolicy(response.header("cache-control"), fallback: .fallback)
+                representation = policy.allowsStorage ? decoded : nil
+                etag = policy.allowsStorage ? response.header("etag") : nil
                 lastPolicy = policy
                 applyFreshness(policy, receivedAt: receivedAt, representation: decoded)
                 retryNotBefore = .distantPast
-                return watch(from: decoded, at: now())
+                refreshFailed = false
+                return result(watch(from: decoded, at: now()))
             case 304:
                 guard let representation else { throw FetchError.notModifiedWithoutCache }
                 let policy = Self.cachePolicy(response.header("cache-control"), fallback: lastPolicy)
                 if let responseETag = response.header("etag") { etag = responseETag }
                 lastPolicy = policy
                 applyFreshness(policy, receivedAt: receivedAt, representation: representation)
+                if !policy.allowsStorage {
+                    self.representation = nil
+                    etag = nil
+                }
                 retryNotBefore = .distantPast
-                return watch(from: representation, at: now())
+                refreshFailed = false
+                return result(watch(from: representation, at: now()))
             case 429:
                 let retrySeconds = Self.retryAfterSeconds(response, now: receivedAt)
                     ?? Self.rateLimitFallbackAge
                 retryNotBefore = receivedAt.addingTimeInterval(retrySeconds)
                 extendStaleUntilRetry()
+                refreshFailed = true
                 AppLog.warn(LogTag.plugin("codex"), "Reset Watch rate limited; retry deferred")
-                return representation.flatMap { watch(from: $0, at: now()) }
+                return result(lastPolicy.requiresValidation ? nil : representation.flatMap { watch(from: $0, at: now()) })
             default:
                 throw FetchError.httpStatus(response.statusCode)
             }
         } catch is CancellationError {
-            return nil
+            return result(nil)
         } catch {
             let failedAt = now()
             retryNotBefore = failedAt.addingTimeInterval(Self.failureRetryAge)
             extendStaleUntilRetry()
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch refresh failed; keeping valid cached data: \(error.localizedDescription)")
-            return representation.flatMap { watch(from: $0, at: now()) }
+            refreshFailed = true
+            AppLog.warn(LogTag.plugin("codex"), "Reset Watch refresh failed: \(error.localizedDescription)")
+            return result(lastPolicy.requiresValidation ? nil : representation.flatMap { watch(from: $0, at: now()) })
         }
     }
 
@@ -217,6 +242,11 @@ actor CodexResetWatchStore {
         receivedAt: Date,
         representation: Representation
     ) {
+        guard policy.allowsStorage, !policy.requiresValidation else {
+            freshUntil = .distantPast
+            staleUntil = .distantPast
+            return
+        }
         var nextFresh = receivedAt.addingTimeInterval(policy.freshAge)
         var nextStale = nextFresh.addingTimeInterval(policy.staleAge)
         if case .watch(let watch) = representation {
@@ -243,19 +273,26 @@ actor CodexResetWatchStore {
     }
 
     private static func cachePolicy(_ value: String?, fallback: CachePolicy) -> CachePolicy {
-        let directives = value?.split(separator: ",").reduce(into: [String: TimeInterval]()) { result, part in
+        guard let value else { return fallback }
+        let names = Set(value.split(separator: ",").map {
+            $0.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)[0]
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
+        let directives = value.split(separator: ",").reduce(into: [String: TimeInterval]()) { result, part in
             let pair = part.split(separator: "=", maxSplits: 1).map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             }
             guard pair.count == 2,
                   let seconds = TimeInterval(pair[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))),
-                  seconds >= 0
+                  seconds.isFinite, seconds >= 0
             else { return }
             result[pair[0]] = seconds
-        } ?? [:]
+        }
         let fresh = min(directives["max-age"] ?? fallback.freshAge, maximumFreshAge)
         let stale = min(directives["stale-while-revalidate"] ?? fallback.staleAge, maximumStaleAge)
-        return CachePolicy(freshAge: fresh, staleAge: stale)
+        return CachePolicy(freshAge: fresh, staleAge: stale,
+                           allowsStorage: !names.contains("no-store"),
+                           requiresValidation: names.contains("no-cache"))
     }
 
     private static func retryAfterSeconds(_ response: HTTPResponse, now: Date) -> TimeInterval? {

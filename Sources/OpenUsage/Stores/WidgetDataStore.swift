@@ -47,7 +47,7 @@ final class WidgetDataStore {
     /// 이 Mac이 생산한 last-good snapshot — 이것만 캐시·iCloud export되어 peer 기여의 echo 증식을 차단.
     private(set) var localSnapshots: [String: ProviderSnapshot] = [:]
     /// Codex 인증·usage snapshot과 분리된 전역 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
-    private var codexResetWatch: CodexResetWatch?
+    private var codexResetWatch = CodexResetWatchResult()
     var refreshingProviderIDs: Set<String> = []
     /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
     var lastRefreshAt: Date?
@@ -536,15 +536,16 @@ final class WidgetDataStore {
         return "Refresh failed"
     }
 
-    func setCodexResetWatch(_ watch: CodexResetWatch?) {
-        guard codexResetWatch != watch else { return }
-        codexResetWatch = watch
+    func setCodexResetWatch(_ watch: CodexResetWatch?, refreshFailed: Bool = false) {
+        let result = CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed)
+        guard codexResetWatch != result else { return }
+        codexResetWatch = result
     }
 
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
         var result: WidgetData
         if ProviderAccountID.canonicalMetricID(descriptor.id) == "codex.resetWatch" {
-            if let watch = codexResetWatch {
+            if let watch = codexResetWatch.watch {
                 result = WidgetData(
                     title: descriptor.sample.title,
                     icon: descriptor.sample.icon,
@@ -558,6 +559,7 @@ final class WidgetDataStore {
                 result = descriptor.sample
                 result.hasData = false
             }
+            result.forecastRefreshFailed = codexResetWatch.refreshFailed
         } else if let snapshot = snapshots[descriptor.providerID],
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {

@@ -9,6 +9,7 @@ final class StatusItemImageUpdater {
     private let privacy: MenuBarPrivacyStore
     private let renderButtonImage: @MainActor (_ concealed: Bool) -> RenderedButtonImage
     private let delay: @MainActor () async -> Void
+    private let deadlineDelay: @MainActor (Date) async -> Void
     private let apply: (NSImage) -> Void
     private var delayedUpdateTask: Task<Void, Never>?
     private var deadlineUpdateTask: Task<Void, Never>?
@@ -29,11 +30,15 @@ final class StatusItemImageUpdater {
         privacy: MenuBarPrivacyStore,
         renderButtonImage: @escaping @MainActor (_ concealed: Bool) -> RenderedButtonImage,
         delay: @escaping @MainActor () async -> Void,
+        deadlineDelay: @escaping @MainActor (Date) async -> Void = { deadline in
+            try? await Task.sleep(for: .seconds(max(deadline.timeIntervalSinceNow, 0)))
+        },
         apply: @escaping (NSImage) -> Void
     ) {
         self.privacy = privacy
         self.renderButtonImage = renderButtonImage
         self.delay = delay
+        self.deadlineDelay = deadlineDelay
         self.apply = apply
         privacy.setConcealUsageObserver { [weak self] concealed in
             self?.privacyDidChange(to: concealed)
@@ -50,9 +55,13 @@ final class StatusItemImageUpdater {
         applyImmediately(concealed: privacy.concealUsage)
     }
 
-    /// deadline은 기존 one-shot observation 구독을 소비하지 않음 — 재등록 없이 시간 기반 화면만 갱신.
+    /// 소비된 observation의 대기 렌더는 병합·재등록, 미소비 구독은 유지하며 시간 기반 화면만 갱신.
     func deadlineDidFire() {
-        applyRendered(renderButtonImage(privacy.concealUsage))
+        if delayedUpdateTask != nil {
+            applyImmediately(concealed: privacy.concealUsage)
+        } else {
+            applyRendered(renderButtonImage(privacy.concealUsage))
+        }
     }
 
     private func privacyDidChange(to concealed: Bool) {
@@ -103,9 +112,9 @@ final class StatusItemImageUpdater {
             deadlineUpdateTask = nil
             return
         }
-        let delay = max(deadline.timeIntervalSinceNow, 0)
+        let deadlineDelay = deadlineDelay
         deadlineUpdateTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
+            await deadlineDelay(deadline)
             guard !Task.isCancelled else { return }
             self?.deadlineDidFire()
         }

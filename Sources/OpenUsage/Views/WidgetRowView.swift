@@ -419,7 +419,7 @@ struct WidgetRowTimelineSchedule: TimelineSchedule {
     func entries(from startDate: Date, mode: Mode) -> Entries {
         Entries(
             nextPeriodic: startDate,
-            deadline: deadline.flatMap { $0 >= startDate ? $0 : nil },
+            deadline: deadline.map { max($0, startDate) },
             interval: interval
         )
     }
@@ -428,6 +428,7 @@ struct WidgetRowTimelineSchedule: TimelineSchedule {
         private var nextPeriodic: Date
         private var deadline: Date?
         private let interval: TimeInterval
+        private var finished = false
 
         fileprivate init(nextPeriodic: Date, deadline: Date?, interval: TimeInterval) {
             self.nextPeriodic = nextPeriodic
@@ -436,12 +437,13 @@ struct WidgetRowTimelineSchedule: TimelineSchedule {
         }
 
         mutating func next() -> Date? {
+            guard !finished else { return nil }
             let candidate = Swift.min(nextPeriodic, deadline ?? .distantFuture)
             if nextPeriodic <= candidate {
                 nextPeriodic = nextPeriodic.addingTimeInterval(interval)
             }
             if let deadline, deadline <= candidate {
-                self.deadline = nil
+                finished = true
             }
             return candidate
         }
