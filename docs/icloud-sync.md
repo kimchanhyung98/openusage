@@ -37,7 +37,8 @@ It has no profile identity and merges with the same bare provider family on peer
 An account you use on another Mac but have no login for here doesn't become a card: it appears as its own slice in **Total Spend**, named by its account code ("claude@ab12cd34") — so the number at the top is the whole truth across your Macs, and several such accounts stay tellable apart.
 That code is the same id the account's card carries on any Mac it's signed in on (the synced file holds no emails or names to label it with).
 The moment you log that account in locally, its usage is available under that same id with the full cross-machine history already attached.
-Whether its card appears depends on this Mac's Usage Cards mode and Single Card selection.
+In this Mac's **Single Card** mode, the account selection determines which available account card appears.
+**Separate Cards** shows all available account cards regardless of that selection.
 
 Macs running an older OpenUsage read their own format but report this Mac's newer file as "update OpenUsage" — update both sides to sync multi-account machines.
 

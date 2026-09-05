@@ -95,6 +95,7 @@ The dashboard account picker changes only which account's usage is shown and nev
 Local spend and trend logs stay with the shared configuration home and are not attributed to managed accounts.
 In **Single Card**, those rows can still show **No data** while viewing an inactive snapshot account.
 In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
+**Last 30 Days** is not part of that three-row filter and remains available on inactive cards according to the existing metric settings.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
 The picker and separate cards show the shared home's account plus the accounts registered in Settings.
 Registered account names stay separate selector entries and individual cards even when two of them currently prove the same provider identity.
