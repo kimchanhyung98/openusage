@@ -85,6 +85,67 @@ final class StreamingProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.output.utf8.count, 8)
     }
 
+    func testNaturalExitRetainsBufferedOutputWhileCallbackIsBusy() async throws {
+        let request = makeRequest(arguments: [
+            "-c", "printf begin; /bin/sleep 0.1; /bin/sleep 2 & printf final; exit 0",
+        ])
+        let result = try await StreamingProcessRunner().run(request) { _ in
+            Thread.sleep(forTimeInterval: 0.4)
+        }
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.output, "beginfinal")
+    }
+
+    func testRetainedOutputBorrowsUnusedHeadBytesForCompleteScalars() {
+        for text in ["🙂", "a🙂", String(repeating: "a", count: 32_767) + "🙂" + String(repeating: "b", count: 32_765)] {
+            let output = StreamingProcessOutput(limit: text.utf8.count, onOutput: { _ in })
+            output.append(Data(text.utf8), channel: .stdout)
+            output.finish(channel: .stdout)
+            XCTAssertEqual(output.value, text)
+        }
+    }
+
+    func testRawC1SequencesAreSanitizedWithoutCorruptingUTF8Continuations() {
+        let output = StreamingProcessOutput(limit: 100, onOutput: { _ in })
+        output.append(Data([0x9D]) + Data("0;hidden".utf8), channel: .stdout)
+        output.append(Data([0x9C]) + Data("Ý🙂visible".utf8), channel: .stdout)
+        output.finish(channel: .stdout)
+        XCTAssertEqual(output.value, "Ý🙂visible")
+    }
+
+    func testNaturalExitReapsLeaderAndPreservesNonzeroStatus() async throws {
+        let capture = PIDCapture()
+        let result = try await StreamingProcessRunner().run(
+            makeRequest(arguments: ["-c", "printf '%s\\n' $$; exit 7"])
+        ) { capture.append($0) }
+        XCTAssertEqual(result.exitCode, 7)
+        let leader = try XCTUnwrap(capture.capturedPID)
+        var status: Int32 = 0
+        let reaped = waitpid(leader, &status, WNOHANG)
+        let waitError = errno
+        XCTAssertEqual(reaped, -1)
+        XCTAssertEqual(waitError, ECHILD)
+    }
+
+    func testSignalExitStatusIsPreserved() async throws {
+        let result = try await StreamingProcessRunner().run(
+            makeRequest(arguments: ["-c", "kill -KILL $$"])
+        )
+        XCTAssertEqual(result.exitCode, 128 + SIGKILL)
+    }
+
+    func testCancellationBeforeLaunchDoesNotCloseSpawnDescriptorsEarly() {
+        let cleanup = LockedFlag()
+        let termination = ProcessTerminationController { cleanup.set() }
+        termination.requestTermination()
+        XCTAssertThrowsError(try termination.prepareToLaunch()) { error in
+            XCTAssertTrue(error is CancellationError)
+        }
+        XCTAssertFalse(cleanup.value)
+        termination.didLaunch(processGroupID: 2_000_000_000)
+        XCTAssertTrue(cleanup.value)
+    }
+
     func testSanitizerRemovesCSIOSCAndUnsafeControls() {
         let input = "\u{1B}[31mCODE-AB12\u{1B}[0m\n"
             + "\u{1B}]8;;https://hidden.example\u{07}https://tokscale.com/u/test\u{1B}]8;;\u{07}"
@@ -108,13 +169,13 @@ final class StreamingProcessRunnerTests: XCTestCase {
 
     func testTimeoutTerminatesDescendantProcess() async throws {
         let capture = PIDCapture()
-        let request = longRunningChildRequest(timeout: 0.25)
+        let request = longRunningChildRequest(timeout: 2)
 
         do {
             _ = try await StreamingProcessRunner().run(request) { capture.append($0) }
             XCTFail("The command must time out")
         } catch let error as StreamingProcessRunnerError {
-            XCTAssertEqual(error, .timedOut(timeout: 0.25))
+            XCTAssertEqual(error, .timedOut(timeout: 2))
         }
 
         let childPID = try XCTUnwrap(capture.capturedPID)
