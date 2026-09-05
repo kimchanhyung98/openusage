@@ -30,6 +30,13 @@ OpenUsage leaves isolated malformed rows out instead of silently counting broken
 A failed download, invalid export schema, or broken CSV structure leaves spend history unavailable for that refresh.
 Each failure is recorded in the diagnostic log without including the exported usage data.
 
+## Service status
+
+While Cursor is enabled, OpenUsage checks the IDE and cursor.com components on [Cursor Status](https://status.cursor.com/) at launch, every five minutes, and during Dashboard manual refreshes.
+The public request is unauthenticated and sends no Cursor credentials or usage data.
+These product components are the closest official match for Cursor usage, not endpoint-specific monitors for the usage API.
+Degraded performance, a partial outage, or a major outage on either component shows the server skull; scheduled maintenance and unknown results do not.
+
 ## Troubleshooting
 
 - **"Not logged in" / token errors** — open Cursor and make sure you're signed in, then refresh.

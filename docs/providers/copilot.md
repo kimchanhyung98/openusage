@@ -53,6 +53,12 @@ gh auth login     # choose GitHub.com and follow the prompts
 
 Using Copilot in a supported editor is enough on its own — the editor writes the token to `apps.json`.
 
+## Service status
+
+While Copilot is enabled, OpenUsage checks the Copilot component on [GitHub Status](https://www.githubstatus.com/) at launch, every five minutes, and during Dashboard manual refreshes.
+The public request is unauthenticated and sends no GitHub credentials or usage data.
+Degraded performance, a partial outage, or a major outage on that component shows the server skull; scheduled maintenance and unknown results do not.
+
 ## Troubleshooting
 
 - **"Sign in to GitHub Copilot…"** — no token was found.

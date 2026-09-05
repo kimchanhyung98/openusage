@@ -39,5 +39,5 @@ When the URL has no port, the scheme's default applies (socks5 â†’ 1080, http â†
 
 ## Scope
 
-Applies to provider HTTP requests made by the app, including the daily [model pricing](pricing.md) refresh.
+Applies to provider usage requests, public provider-status checks, and the daily [model pricing](/docs/pricing.md) refresh made by the app.
 It is not a system-wide proxy.
