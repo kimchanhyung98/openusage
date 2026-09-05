@@ -76,6 +76,8 @@ Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
 It shows a chance and a fixed `By …` deadline, and does not react to Used/Left, reset-format, pacing, or quota-notification settings.
 The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
 Higher bands warn you to use available tokens before a likely reset.
+Failed checks show an unavailable or cached-forecast notice instead of the deadline; successful empty responses still show **No data**.
+The row stops its timer after the forecast deadline until another forecast arrives.
 
 **Metrics without a limit** (daily spend, balances) show as a single line like `$4.08 spent` or `1.2M tokens`.
 The Today / Yesterday / Last 30 Days rows combine cost and tokens (`$4.08 · 1.2M tokens`) and can be turned on or off in Customize.

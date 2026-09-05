@@ -32,6 +32,9 @@ Codex sign-in is not required: Reset Watch can update when account usage cannot,
 The request sends no Codex token, account ID, usage values, local logs, or cookies.
 The active watch's chance and deadline are shared across all Codex account cards.
 If there is no active watch, its chance is absent, or its deadline has passed, the row shows **No data**.
+If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
+The next successful check clears that notice.
+Responses marked `no-store` are displayed for the current check only; `no-cache` forecasts require successful revalidation before reuse, including after a failed check.
 
 The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
 The escalating warning is a prompt to use available tokens before a likely reset.
