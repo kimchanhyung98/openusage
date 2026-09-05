@@ -16,8 +16,13 @@ Star a metric from any row's right-click menu, or from the always-visible star b
   Only providers that are turned on render in the strip — and a fresh install starts with just the providers detected on your Mac (see [Dashboard § First launch](dashboard.md#first-launch)) — so the default stars don't crowd the menu bar with tools you don't use.
 - At most **2 stars per provider**.
 - When a star isn't allowed, the star button stays clickable — clicking it shakes and shows the reason in a temporary pill over the bottom of Customize (for example, "Up to 2 stars per provider").
-- Stars belong to the provider, not to one account: every Claude or Codex account shares the same stars, and the strip shows the values of the account the dashboard is currently displaying.
-  Choosing an account from the dashboard header therefore switches the strip's numbers, but never the terminal account or which metrics are starred.
+- Stars belong to the provider, not to one account: every Claude or Codex account shares the same stars, and the strip shows the values of the account selected in the dashboard.
+  Choosing an account from the **Single Card** header switches the strip's numbers, but never the terminal account or which metrics are starred.
+
+In **Separate Cards**, the menu bar keeps the same selected account without adding a separate segment for every account.
+Segment names remain provider names such as `Claude` and `Codex`, not account-card titles.
+To change the strip's account, return to **Single Card**, use the dashboard account selector, then switch back to **Separate Cards** if needed.
+Reordering accounts in Settings changes neither this selection nor the strip's provider order.
 
 ## Styles
 

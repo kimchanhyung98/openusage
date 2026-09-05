@@ -44,21 +44,27 @@ Fast/priority estimates use each model's published Codex multiplier (for example
 Register additional Codex accounts in [**Settings → Accounts**](/docs/settings.md).
 The first account imports your current sign-in from `~/.codex/auth.json`, legacy `~/.config/codex/auth.json`, or the `Codex Auth` Keychain item without a new login.
 An additional account signs in through the official flow inside an app-owned workspace, so the active login is never disturbed.
-Selecting an account keeps the shared Codex configuration home in place and replaces only its `auth.json`.
+Switching accounts in **Settings → Accounts** keeps the shared Codex configuration home in place and replaces only its `auth.json`.
 The existing `config.toml`, skills, and session history stay shared.
-While accounts are managed and the shared `auth.json` exists, that file is the card's only credential source.
-A switch writes the file, and file-mode Codex logins keep it fresh.
+While accounts are managed and the shared `auth.json` exists, that file is the credential source only for the **Default** (shared-home) card.
+A Settings switch writes the file, and file-mode Codex logins keep it fresh.
 This prevents a stale `Codex Auth` Keychain item from answering for another account.
 Each account's authentication snapshot is stored in the macOS Keychain.
-An inactive account's card reads its limits from that snapshot.
+An inactive account's card reads its limits and reset credits from that snapshot.
+Its reset-credit **Use** action also claims through that snapshot without changing the active login or the account a new Codex session uses.
 Spend tiles aggregate the shared home's session logs as one family total.
 Past logs are never attributed to a specific account.
 An inactive snapshot card therefore has no account-specific local logs, so its spend and trend rows can show **No data**.
 
-The provider card keeps the title **Codex**.
-The dashboard account selector lists only accounts registered in Settings, shows the account name, and changes only which account's usage is shown.
-It never changes the account a new Codex session uses.
-When a card shows the reset credits row, its **Use** action always claims with that card's own login and never another account's.
+Codex follows the shared **Usage Cards** setting in **Settings → Accounts**.
+The default **Single Card** keeps one **Codex** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.
+Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Codex: sub**.
+See [Settings](/docs/settings.md) for account order and [Dashboard](/docs/dashboard.md) for card display and sharing behavior.
+
+The dashboard account selector lists the shared-home account and registered accounts with an authentication snapshot saved on this Mac.
+It shows account names and changes only the account whose usage and reset popover are displayed.
+It never signs in, switches the active login, or changes the account a new Codex session uses.
+When a card shows the reset credits row, its **Use** action claims through that card's credential source.
 Inactive account cards appear in the [local API](/docs/local-http-api.md) under ids like `codex@profile-…`.
 Requesting `codex` through the one-shot [CLI](/docs/cli.md) or local API returns every currently assembled Codex card.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.

@@ -51,6 +51,12 @@ Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의
 iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
 공유 관리형 홈의 히스토리는 현재 선택된 계정이 아니라 프로바이더 패밀리 합계로 동기화.
 
+## Share Screenshot
+
+**Share Screenshot**을 직접 실행한 경우에만 선택한 카드를 PNG로 클립보드에 복사.
+이미지는 대시보드와 같은 카드 제목을 사용하므로 **Separate Cards**에서는 `Claude: company`·`Codex: sub` 같은 제목에 화면의 Account Name 포함.
+따라서 이미지를 공유하면 받는 사람에게 계정명이 노출될 수 있음.
+
 ## 기타 네트워크 요청
 
 벤더 도구가 어차피 수행하는 프로바이더 API 호출 외에, OpenUsage는 공개 [모델 가격 목록](pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).

@@ -32,7 +32,7 @@ Exit codes are `0` for success, `2` for invalid arguments or an unknown provider
 ## Accounts
 
 Account management lives in [**Settings → Accounts**](/docs/settings.md) in the app.
-The CLI only reads the same registry, so scripts can see exactly what the GUI shows:
+The CLI reads the same registered accounts and selected terminal account:
 
 ```sh
 openusage account list [claude|codex] [--json]   # registered accounts; * marks the selected one
@@ -43,6 +43,7 @@ openusage account current [claude|codex]         # the selected account's name (
 With a tool, it prints the bare account name or nothing when no account is selected.
 Exit codes are `0` for success, `2` for usage errors, and `4` when the saved account registry cannot be read or validated.
 In that case, the CLI prints an error instead of an empty account list.
+The account list keeps registry order, not the custom display order saved in Settings.
 
 Accounts have no user-visible folders and no launch commands.
 Switching replaces the shared configuration home's authentication, so a plain `claude` or `codex` in a new terminal runs as the selected account with or without the `openusage` command installed.
