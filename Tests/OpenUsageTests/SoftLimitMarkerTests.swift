@@ -84,7 +84,7 @@ final class SoftLimitMarkerTests: XCTestCase {
             let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
             XCTAssertEqual(data.softLimitStatusText, expected, "Used: \(used)")
             data.displayMode = .remaining
-            XCTAssertEqual(data.softLimitStatusText, expected, "Left: \(used)")
+            XCTAssertEqual(data.softLimitStatusText, expected, "Left mode, used: \(used)")
         }
     }
 
@@ -101,7 +101,7 @@ final class SoftLimitMarkerTests: XCTestCase {
             let expected = reached ? "Soft limit reached at 95% used" : "Soft limit at 95% used"
             XCTAssertEqual(data.softLimitStatusText, expected, "Used: \(used)")
             data.displayMode = .remaining
-            XCTAssertEqual(data.softLimitStatusText, expected, "Left: \(used)")
+            XCTAssertEqual(data.softLimitStatusText, expected, "Left mode, used: \(used)")
         }
     }
 
