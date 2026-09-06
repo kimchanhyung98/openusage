@@ -6,6 +6,7 @@
   Opening the popover does not start a second automatic pass.
   Providers fetch in parallel, so fast cards update without waiting for a slow one.
   The batch itself still finishes only after every provider returns; notifications, history sync, and the next five-minute wait begin after that point.
+- Codex Reset Watch is the exception: while active, it checks its public forecast independently every 15 minutes and never holds the provider refresh batch.
 - Turning a provider on (yourself in Customize, or automatically by first-launch/new-provider detection) fetches it promptly instead of waiting out the interval — even when the change lands in the middle of a refresh that's already running.
 - The Dashboard and Settings footer shows `Next update in Nm`.
   **Clicking it (or pressing ⌘R while that footer is present)** refreshes immediately, skipping the cache.

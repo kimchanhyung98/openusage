@@ -21,6 +21,10 @@ struct WidgetData: Hashable {
     /// 전역 "always show pacing" opt-in — `WidgetDataStore`가 stamp.
     /// on이면 blue row에도 even-pace tick·projection 문구 표시 — yellow/red는 reset window 있으면 항상 tick 표시.
     var alwaysShowPacing: Bool = false
+    /// quota가 아닌 공개 reset forecast meter — Used/Left·pace·quota 알림 의미에서 분리.
+    var isForecast: Bool = false
+    var forecastDeadline: Date?
+    var forecastRefreshFailed = false
     var resetsAt: Date?
     /// row hover tooltip에 표시할 미래 expiry 시각들 (Codex reset credit — 가용 credit당 1개). 다른 row는 빈 배열.
     /// raw `Date` 유지 — tooltip이 live format하며 전역 relative/absolute mode 준수 (`expiryTooltip`).
@@ -68,6 +72,7 @@ struct WidgetData: Hashable {
     var providerID: String?
 
     var isBounded: Bool { limit != nil }
+    var isQuotaMeter: Bool { isBounded && !isForecast }
 
     var hasModelBreakdown: Bool {
         hasData && isUsagePeriod && !(modelBreakdown?.models.isEmpty ?? true)
@@ -76,7 +81,7 @@ struct WidgetData: Hashable {
     var selectedValues: [MetricValue] { selection.apply(to: values) }
 
     var displayedValue: Double {
-        guard displayMode == .remaining, let limit else { return used }
+        guard !isForecast, displayMode == .remaining, let limit else { return used }
         return max(0, limit - used)
     }
 
@@ -96,7 +101,7 @@ struct WidgetData: Hashable {
 
     /// meter fill 색상의 severity band (`MeterState.severity` 참조).
     enum MeterSeverity: Hashable {
-        case normal, warning, critical
+        case neutral, normal, warning, critical
     }
 
     /// meter의 전체 시각 상태 — `meterState(now:)`에서 한 번 파생, bar 색·tick·경고 문구의 단일 근거.
@@ -207,6 +212,9 @@ struct WidgetData: Hashable {
         if let valueTextOverride {
             return valueTextOverride
         }
+        if isForecast {
+            return "\(valueText) chance"
+        }
         // 단위는 boundedSubtitle 담당 — "Used"/"Left" 단어의 단일 출처는 `WidgetDisplayMode.label`.
         return "\(valueText) \(displayMode.label.lowercased())"
     }
@@ -215,6 +223,9 @@ struct WidgetData: Hashable {
     var boundedSubtitle: String? {
         if let subtitleOverride {
             return subtitleOverride
+        }
+        if isForecast, let forecastDeadline {
+            return Formatters.resetWatchDeadlineLabel(at: forecastDeadline)
         }
         if let resetLabel {
             return resetLabel
@@ -381,7 +392,7 @@ extension WidgetData {
     /// pacing 입력값 — reset window가 알려진 bounded metric에서만 존재.
     /// nil이면 live pace 판정 생략 — bar는 절대 level band로 fallback.
     private var paceContext: (limit: Double, resetsAt: Date, period: TimeInterval)? {
-        guard hasData, let limit, limit > 0, let resetsAt,
+        guard hasData, !isForecast, let limit, limit > 0, let resetsAt,
               let periodDurationMs, periodDurationMs > 0 else { return nil }
         return (limit, resetsAt, TimeInterval(periodDurationMs) / 1000)
     }
@@ -391,6 +402,7 @@ extension WidgetData {
     /// 모든 band는 표시 fraction이 아닌 사용 비율 기준 — Used/Left toggle에 색·문구 불변.
     func meterState(now: Date = Date()) -> MeterState {
         guard hasData, let limit, limit > 0 else { return hasData ? .level(.normal) : .noData }
+        if isForecast { return forecastLevelState(chance: used, limit: limit) }
         if roundedAtDisplayPrecision(limit - used) <= 0 { return .spent }
         // "Not started" session은 pace 대상 없음 — projection 문구·tick 없는 차분한 bar로 표시.
         if isFreshSessionWindow(now: now) { return absoluteLevelState(used: used, limit: limit) }
@@ -431,6 +443,15 @@ extension WidgetData {
         return .level(.normal)
     }
 
+    /// Reset Watch 확률 전용 단계 — 일반 quota의 80/90 절대 band와 분리.
+    private func forecastLevelState(chance: Double, limit: Double) -> MeterState {
+        let percent = (min(max(chance / limit, 0), 1) * 100).rounded()
+        if percent >= 70 { return .level(.critical) }
+        if percent >= 60 { return .level(.warning) }
+        if percent >= 40 { return .level(.normal) }
+        return .level(.neutral)
+    }
+
     /// bar 위 even-pace tick 위치 0...1, 숨김이면 nil — reset window 경과 비율을 fill과 같은 관점으로 표시.
     /// yellow/red pace 상태는 항상 표시, blue는 `alwaysShowPacing`일 때만 — spent·no-data·window 없는 row는 미표시.
     func paceTick(for state: MeterState, now: Date = Date()) -> Double? {
@@ -450,8 +471,14 @@ extension WidgetData {
     /// bounded primary row의 trailing text — 우선순위는 `boundedSubtitle`과 동일하되 reset은 `resetDisplayMode` 반영.
     /// session row는 rolling window 시작 전 "Not started" 표시.
     func boundedTrailingText(now: Date = Date()) -> String? {
+        if isForecast, forecastRefreshFailed {
+            return hasData ? "Cached forecast · Refresh failed" : "Unavailable · Retry later"
+        }
         guard hasData else { return Self.noDataSubtitle }
         if let subtitleOverride { return subtitleOverride }
+        if isForecast, let forecastDeadline {
+            return Formatters.resetWatchDeadlineLabel(at: forecastDeadline)
+        }
         if isFreshSessionWindow(now: now) { return "Not started" }
         if let resetsAt {
             return resetDisplayMode == .absolute
@@ -471,7 +498,7 @@ extension WidgetData {
 
     /// bounded row trailing text가 클릭 가능한 reset countdown인지 여부 — limit/suffix context·fresh window·reset 없음은 false.
     func hasResetLabel(now: Date = Date()) -> Bool {
-        hasData && subtitleOverride == nil && resetsAt != nil && !isFreshSessionWindow(now: now)
+        hasData && !isForecast && subtitleOverride == nil && resetsAt != nil && !isFreshSessionWindow(now: now)
     }
 
     /// "Not started" trailing label의 hover 설명 문구 — 첫 메시지 전에는 countdown 없음.
@@ -489,7 +516,7 @@ extension WidgetData {
 
     /// bounded headline이 flip 가능한 Used/Left 표시인지 여부 — unbounded·override·no-data row는 false.
     var hasMeterStyleToggle: Bool {
-        hasData && isBounded && valueTextOverride == nil
+        hasData && isQuotaMeter && valueTextOverride == nil
     }
 
     /// bounded headline의 hover tooltip — 현재와 반대 meter style (예: "95% left" → "5% used").
@@ -498,6 +525,14 @@ extension WidgetData {
         let opposite = displayMode == .remaining ? used : max(0, limit - used)
         let word = (displayMode == .remaining ? WidgetDisplayMode.used : .remaining).label.lowercased()
         return "\((valuePrefix ?? "") + format(opposite)) \(word)"
+    }
+
+    /// forecast의 의미상 deadline을 transport/cache freshness보다 우선 적용.
+    func presented(at date: Date = Date()) -> WidgetData {
+        guard isForecast, let forecastDeadline, date >= forecastDeadline else { return self }
+        var copy = self
+        copy.hasData = false
+        return copy
     }
 }
 

@@ -13,7 +13,7 @@ struct SettingsMigration: Sendable {
 /// 설정 shape 변경 시 여기만 수정 — `SettingsMigration` 추가 + `current` 증가; engine(`SettingsMigrator`)은 불변.
 enum SettingsSchema {
     /// 현재 스키마 버전. 아래 최고 migration `version`과 동일 유지 필수. 앱 버전 아님 — migration 추가 시에만 증가.
-    static let current = 2
+    static let current = 3
 
     /// v2 migration 출시 시점의 provider ID, 영구 동결. migration은 시점 고정 변환 — 이 목록 수정 금지.
     static let v2ProviderIDs = [
@@ -34,6 +34,66 @@ enum SettingsSchema {
             }
             if defaults.stringArray(forKey: "openusage.knownProviders.v1") == nil {
                 defaults.set(v2ProviderIDs, forKey: "openusage.knownProviders.v1")
+            }
+        },
+        // v3: 신규 Reset Watch는 기존 layout에서도 On Demand 소속 + Rate Limit Resets 직전 순서로 시작.
+        SettingsMigration(version: 3) { defaults in
+            let layoutKey = "openusage.layout.v1"
+            let expandedKey = "openusage.layout.v1.expandedMetrics"
+            let expandOnEnableKey = "openusage.layout.v1.expandOnEnable"
+            let orderKey = "openusage.layout.v1.metricOrderByProvider"
+            let hasInitializedLayout = defaults.data(forKey: layoutKey) != nil
+                || defaults.stringArray(forKey: expandedKey) != nil
+                || defaults.stringArray(forKey: expandOnEnableKey) != nil
+                || defaults.data(forKey: orderKey) != nil
+            guard hasInitializedLayout else { return }
+
+            let resetWatchID = "codex.resetWatch"
+            let savedExpanded = defaults.stringArray(forKey: expandedKey) ?? []
+            let familiesWithBareEntry = Set(savedExpanded.compactMap { id -> String? in
+                let providerID = ProviderAccountID.providerID(ofMetric: id)
+                guard !ProviderAccountID.isAccountCard(providerID) else { return nil }
+                return ProviderAccountID.family(of: providerID)
+            })
+            var seenExpanded = Set<String>()
+            var expanded = savedExpanded.compactMap { id -> String? in
+                let providerID = ProviderAccountID.providerID(ofMetric: id)
+                let family = ProviderAccountID.family(of: providerID)
+                guard !ProviderAccountID.isAccountCard(providerID) || !familiesWithBareEntry.contains(family) else {
+                    return nil
+                }
+                let canonicalID = ProviderAccountID.canonicalMetricID(id)
+                return seenExpanded.insert(canonicalID).inserted ? canonicalID : nil
+            }
+            if !expanded.contains(resetWatchID) {
+                expanded.append(resetWatchID)
+            }
+            if expanded != savedExpanded {
+                defaults.set(expanded, forKey: expandedKey)
+            }
+
+            guard let encodedOrder = defaults.data(forKey: orderKey) else { return }
+            do {
+                var order = try JSONDecoder().decode([String: [String]].self, from: encodedOrder)
+                let codexKeys = order.keys.filter { ProviderAccountID.family(of: $0) == "codex" }
+                let sourceKey = order["codex"] == nil ? codexKeys.sorted().first : "codex"
+                guard let sourceKey, let savedCodex = order[sourceKey] else { return }
+                var seen = Set<String>()
+                var codex = savedCodex
+                    .map(ProviderAccountID.canonicalMetricID)
+                    .filter { seen.insert($0).inserted && $0 != resetWatchID }
+                if let anchor = codex.firstIndex(of: "codex.rateLimitResets") {
+                    codex.insert(resetWatchID, at: anchor)
+                } else {
+                    codex.append(contentsOf: [resetWatchID, "codex.rateLimitResets"])
+                }
+                for key in codexKeys where key != "codex" {
+                    order.removeValue(forKey: key)
+                }
+                order["codex"] = codex
+                defaults.set(try JSONEncoder().encode(order), forKey: orderKey)
+            } catch {
+                AppLog.warn(.config, "Reset Watch layout order migration skipped unreadable saved order: \(error.localizedDescription)")
             }
         }
     ]

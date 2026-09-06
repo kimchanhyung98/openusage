@@ -57,6 +57,13 @@ iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
 공개 데이터를 그대로 내려받는 요청이라 사용량·로그·계정 정보가 실리지 않으며, Share Anonymous Usage 설정과 무관하게 실행.
 지출 타일은 로컬 CLI 로그로 전부 Mac 안에서 계산 — 로그 데이터는 절대 밖으로 나가지 않음.
 
+Codex 프로바이더가 켜져 있고 **Reset Watch**를 대시보드에서 켜거나 메뉴 막대에 별표하면, OpenUsage가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
+이 조회는 Codex 로그인을 사용하지 않으며 일반 구독 사용량 5분 새로 고침과 독립적으로 실행.
+대시보드 표시와 메뉴 막대 별표가 모두 해제되거나 Codex 프로바이더를 끄면 이후 조회 중단 — 이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
+요청에는 Codex 토큰, 계정 ID, 사용량 값, 로컬 로그, Cookie가 실리지 않음.
+독립 서비스에는 IP 주소와 OpenUsage 사용자 에이전트 같은 일반 네트워크 메타데이터가 전달됨.
+이 조회는 익명 사용 데이터 공유와 별개이며 Share Anonymous Usage 설정의 제어 대상이 아님.
+
 재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, OpenUsage는 파싱된 사용 이벤트를 `~/Library/Application Support/OpenUsage/log-scan-cache/`에 보관.
 이 레코드에는 로컬 합계에 필요한 사용량 메타데이터(프로바이더가 이미 기록한 이벤트별 비용 포함)가 담기지만, 원시 JSONL 줄이나 대화 텍스트는 담기지 않음.
 해당 macOS 계정에만 비공개로 남고, PostHog나 프로바이더, iCloud 어디에도 절대 전송되지 않음.

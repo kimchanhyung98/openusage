@@ -30,15 +30,15 @@ struct WidgetRowView: View {
     }
 
     var body: some View {
-        // reset 날짜가 있는 행은 시계 기반 상태를 위해 30초 tick으로 re-render — TimelineView는 popover 표시 중에만
-        // tick 스케줄, 날짜 없는 행은 static.
+        // reset 날짜가 있는 행은 시계 기반 상태를 위해 30초 tick으로 re-render — forecast는 semantic deadline도
+        // 별도 tick으로 삽입해 마감 즉시 No data 전환. TimelineView는 popover 표시 중에만 tick 스케줄.
         Group {
-            if data.resetsAt != nil || !data.expiriesAt.isEmpty {
-                TimelineView(.periodic(from: .now, by: 30)) { _ in
-                    rowContent
+            if data.resetsAt != nil || data.forecastDeadline != nil || !data.expiriesAt.isEmpty {
+                TimelineView(WidgetRowTimelineSchedule(deadline: data.forecastDeadline)) { context in
+                    rowContent(data.presented(at: context.date))
                 }
             } else {
-                rowContent
+                rowContent(data)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -58,41 +58,41 @@ struct WidgetRowView: View {
     }
 
     @ViewBuilder
-    private var rowContent: some View {
-        if data.isChart, data.hasData {
+    private func rowContent(_ rowData: WidgetData) -> some View {
+        if rowData.isChart, rowData.hasData {
             // 실데이터 없는 chart는 unbounded "No data" 행으로 fall through — descriptor template 데이터 누출 방지.
-            UsageSparkline(data: data)
-        } else if data.isBounded {
-            boundedRow
+            UsageSparkline(data: rowData)
+        } else if rowData.isBounded {
+            boundedRow(rowData)
         } else {
             unboundedRow
         }
     }
 
-    private var boundedRow: some View {
-        let state = data.meterState()
+    private func boundedRow(_ rowData: WidgetData) -> some View {
+        let state = rowData.meterState()
         return VStack(alignment: .leading, spacing: density.rowInnerSpacing) {
-            boundedLabelRow(state)
-            meter(state)
-            primaryTextRow
+            boundedLabelRow(rowData, state: state)
+            meter(rowData, state: state)
+            primaryTextRow(rowData)
         }
     }
 
     /// Label과 같은 줄 오른쪽의 단일 pace 경고 slot — `MeterState`에 따라 escalate. flame만 severity 색을 갖고
     /// copy는 secondary. 경고가 공간을 우선하고 제목이 truncate.
-    private func boundedLabelRow(_ state: WidgetData.MeterState) -> some View {
+    private func boundedLabelRow(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
         HStack(spacing: 6) {
-            Text(data.title)
+            Text(rowData.title)
                 .font(labelFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-            warning(state)
+            warning(rowData, state: state)
         }
     }
 
     /// 상태별 경고 표시 — state를 exhaustive하게 switch해 copy가 bar와 모순되지 않게 보장.
     @ViewBuilder
-    private func warning(_ state: WidgetData.MeterState) -> some View {
+    private func warning(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
         switch state {
         case .spent:
             flameWarning(text: "Limit reached", state: state, accessibility: "Limit reached")
@@ -110,7 +110,7 @@ struct WidgetRowView: View {
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
                 .hoverTooltip(state.tooltip)
-        case .healthy where data.alwaysShowPacing:
+        case .healthy where rowData.alwaysShowPacing:
             // "always show pacing": on-track 행에도 projection 표시 — copy 자체가 projection이므로 flame/tooltip 없음.
             if let projection = state.tooltip {
                 Spacer(minLength: 8)
@@ -120,9 +120,29 @@ struct WidgetRowView: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
+        case .level(.warning) where rowData.isForecast:
+            forecastWarningIcon("exclamationmark.triangle.fill", severity: .warning,
+                                accessibility: "Reset chance is high")
+        case .level(.critical) where rowData.isForecast:
+            forecastWarningIcon("flame.fill", severity: .critical,
+                                accessibility: "Reset chance is very high")
         case .noData, .healthy, .level:
             EmptyView()
         }
+    }
+
+    /// Reset Watch의 우측 icon-only 경고 — 일반 quota pace copy와 분리.
+    @ViewBuilder
+    private func forecastWarningIcon(
+        _ systemName: String,
+        severity: WidgetData.MeterSeverity,
+        accessibility: String
+    ) -> some View {
+        Spacer(minLength: 8)
+        Image(systemName: systemName)
+            .font(.system(size: density.supportingPointSize - 1))
+            .foregroundStyle(severityColor(severity))
+            .accessibilityLabel(accessibility)
     }
 
     /// Flame 아이콘 + 선택적 경고 텍스트 — spent/running-out 공용. `action`이 있으면 plain button으로 wrap.
@@ -158,11 +178,11 @@ struct WidgetRowView: View {
         severity.map(Theme.meterFill) ?? AnyShapeStyle(Color.secondary)
     }
 
-    private var primaryTextRow: some View {
+    private func primaryTextRow(_ rowData: WidgetData) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            headlineText
+            headlineText(rowData)
             Spacer(minLength: 8)
-            trailingContext
+            trailingContext(rowData)
         }
         .font(supportingFont)
         .lineLimit(1)
@@ -170,34 +190,34 @@ struct WidgetRowView: View {
 
     // headline 값은 행의 payload — `.primary`, 주변 컨텍스트는 `.secondary`.
     @ViewBuilder
-    private var headlineText: some View {
-        if data.hasMeterStyleToggle, let onToggleMeterStyle {
+    private func headlineText(_ rowData: WidgetData) -> some View {
+        if rowData.hasMeterStyleToggle, let onToggleMeterStyle {
             Button(action: onToggleMeterStyle) {
-                Text(data.headline)
+                Text(rowData.headline)
                     .foregroundStyle(.primary)
                     .contentTransition(.numericText())
             }
             .buttonStyle(.plain)
-            .hoverTooltip(data.meterStyleTooltip)
+            .hoverTooltip(rowData.meterStyleTooltip)
         } else {
-            Text(data.headline)
+            Text(rowData.headline)
                 .foregroundStyle(.primary)
                 .contentTransition(.numericText())
         }
     }
 
     @ViewBuilder
-    private var trailingContext: some View {
-        if let text = data.boundedTrailingText() {
-            if data.hasResetLabel(), let onToggleResetDisplay {
+    private func trailingContext(_ rowData: WidgetData) -> some View {
+        if let text = rowData.boundedTrailingText() {
+            if rowData.hasResetLabel(), let onToggleResetDisplay {
                 Button(action: onToggleResetDisplay) {
                     Text(text).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .hoverTooltip(data.resetTooltip())
+                .hoverTooltip(rowData.resetTooltip())
             } else {
                 Text(text).foregroundStyle(.secondary)
-                    .hoverTooltip(data.resetTooltip())
+                    .hoverTooltip(rowData.resetTooltip())
             }
         }
     }
@@ -318,7 +338,7 @@ struct WidgetRowView: View {
 
     private func expiryStatusAccessibilityLabel(_ severity: WidgetData.MeterSeverity) -> String {
         switch severity {
-        case .normal: return "Reset credits expire in more than 7 days"
+        case .neutral, .normal: return "Reset credits expire in more than 7 days"
         case .warning: return "A reset credit expires within 7 days"
         case .critical: return "A reset credit expires within 48 hours"
         }
@@ -348,8 +368,8 @@ struct WidgetRowView: View {
 
     /// Full-width capsule meter — fill 색이 pace verdict를 표현(의도적으로 native Gauge/ProgressView가 아님),
     /// 데이터 없으면 비어 있고 무색. pace tick은 overlay로 얹혀 bar 높이를 바꾸지 않음.
-    private func meter(_ state: WidgetData.MeterState) -> some View {
-        let tick = data.paceTick(for: state)
+    private func meter(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
+        let tick = rowData.paceTick(for: state)
         return GeometryReader { proxy in
             // tick은 `.overlay`로 상하 돌출 — ZStack sibling이면 stack이 자라 bar가 두꺼워짐.
             ZStack(alignment: .leading) {
@@ -357,7 +377,7 @@ struct WidgetRowView: View {
                 Capsule().fill(.quaternary)
                 Capsule()
                     .fill(partyMode ? PartyMode.meterFill : severityColor(state.severity))
-                    .frame(width: fillWidth(track: proxy.size.width))
+                    .frame(width: fillWidth(rowData, track: proxy.size.width))
             }
             .overlay(alignment: .leading) {
                 if let tick {
@@ -369,7 +389,7 @@ struct WidgetRowView: View {
             }
         }
         .frame(height: density.meterHeight)
-        .animation(Motion.spring, value: data.fraction)
+        .animation(Motion.spring, value: rowData.fraction)
         .accessibilityHidden(true)
         .hoverTooltip(state.tooltip)
     }
@@ -385,8 +405,47 @@ struct WidgetRowView: View {
 
     /// 최소 가시 규칙이 적용된 fill 폭 — 0이 아닌 fraction은 최소 원 하나(bar 높이) 폭으로 렌더링해
     /// 1–2%가 보이지 않는 sliver가 되지 않게 보장.
-    private func fillWidth(track: CGFloat) -> CGFloat {
-        guard data.hasData, data.fraction > 0 else { return 0 }
-        return max(density.meterHeight, track * data.fraction)
+    private func fillWidth(_ rowData: WidgetData, track: CGFloat) -> CGFloat {
+        guard rowData.hasData, rowData.fraction > 0 else { return 0 }
+        return max(density.meterHeight, track * rowData.fraction)
+    }
+}
+
+/// 기본 30초 tick 사이에 forecast semantic deadline을 정확히 삽입하는 행 전용 스케줄.
+struct WidgetRowTimelineSchedule: TimelineSchedule {
+    let deadline: Date?
+    var interval: TimeInterval = 30
+
+    func entries(from startDate: Date, mode: Mode) -> Entries {
+        Entries(
+            nextPeriodic: startDate,
+            deadline: deadline.map { max($0, startDate) },
+            interval: interval
+        )
+    }
+
+    struct Entries: Sequence, IteratorProtocol {
+        private var nextPeriodic: Date
+        private var deadline: Date?
+        private let interval: TimeInterval
+        private var finished = false
+
+        fileprivate init(nextPeriodic: Date, deadline: Date?, interval: TimeInterval) {
+            self.nextPeriodic = nextPeriodic
+            self.deadline = deadline
+            self.interval = interval
+        }
+
+        mutating func next() -> Date? {
+            guard !finished else { return nil }
+            let candidate = Swift.min(nextPeriodic, deadline ?? .distantFuture)
+            if nextPeriodic <= candidate {
+                nextPeriodic = nextPeriodic.addingTimeInterval(interval)
+            }
+            if let deadline, deadline <= candidate {
+                finished = true
+            }
+            return candidate
+        }
     }
 }

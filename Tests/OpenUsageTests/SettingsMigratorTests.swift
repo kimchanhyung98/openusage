@@ -226,6 +226,130 @@ final class SettingsMigratorTests: XCTestCase {
         XCTAssertEqual(defaults.stringArray(forKey: "openusage.enabledProviders.v1"), enabledAfterFirst)
     }
 
+    // MARK: - v3: Reset Watch layout defaults
+
+    func testV3PlacesResetWatchOnDemandBeforeRateLimitResets() throws {
+        let (defaults, domain) = makeDefaults("V3ResetWatch")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        let placed = [PlacedWidget(descriptorID: "codex.session")]
+        defaults.set(try JSONEncoder().encode(placed), forKey: "openusage.layout.v1")
+        defaults.set(["codex.trend"], forKey: "openusage.layout.v1.expandedMetrics")
+        let order = ["codex": ["codex.session", "codex.rateLimitResets", "codex.today"]]
+        defaults.set(try JSONEncoder().encode(order), forKey: "openusage.layout.v1.metricOrderByProvider")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.layout.v1.expandedMetrics") ?? []),
+            ["codex.trend", "codex.resetWatch"]
+        )
+        let migrated = try XCTUnwrap(defaults.data(forKey: "openusage.layout.v1.metricOrderByProvider"))
+        let migratedOrder = try JSONDecoder().decode([String: [String]].self, from: migrated)
+        XCTAssertEqual(
+            migratedOrder["codex"],
+            ["codex.session", "codex.resetWatch", "codex.rateLimitResets", "codex.today"]
+        )
+        XCTAssertEqual(try JSONDecoder().decode([PlacedWidget].self, from: defaults.data(forKey: "openusage.layout.v1")!), placed)
+    }
+
+    func testV3IsIdempotent() throws {
+        let (defaults, domain) = makeDefaults("V3Idempotent")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(try JSONEncoder().encode([PlacedWidget]()), forKey: "openusage.layout.v1")
+        defaults.set(["codex.resetWatch"], forKey: "openusage.layout.v1.expandedMetrics")
+        let order = ["codex": ["codex.resetWatch", "codex.rateLimitResets"]]
+        defaults.set(try JSONEncoder().encode(order), forKey: "openusage.layout.v1.metricOrderByProvider")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertEqual(defaults.stringArray(forKey: "openusage.layout.v1.expandedMetrics"), ["codex.resetWatch"])
+        let migrated = try XCTUnwrap(defaults.data(forKey: "openusage.layout.v1.metricOrderByProvider"))
+        let migratedOrder = try JSONDecoder().decode([String: [String]].self, from: migrated)
+        XCTAssertEqual(migratedOrder["codex"], ["codex.resetWatch", "codex.rateLimitResets"])
+    }
+
+    func testV3RestoresMissingRateLimitResetsAnchorAfterResetWatch() throws {
+        let (defaults, domain) = makeDefaults("V3MissingResetAnchor")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(try JSONEncoder().encode([PlacedWidget]()), forKey: "openusage.layout.v1")
+        let order = ["codex": ["codex.session", "codex.today"]]
+        defaults.set(try JSONEncoder().encode(order), forKey: "openusage.layout.v1.metricOrderByProvider")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        let migrated = try XCTUnwrap(defaults.data(forKey: "openusage.layout.v1.metricOrderByProvider"))
+        let migratedOrder = try JSONDecoder().decode([String: [String]].self, from: migrated)
+        XCTAssertEqual(
+            migratedOrder["codex"],
+            ["codex.session", "codex.today", "codex.resetWatch", "codex.rateLimitResets"]
+        )
+    }
+
+    func testV3FoldsCardOnlyCodexOrderBeforeInsertingResetWatch() throws {
+        let (defaults, domain) = makeDefaults("V3CardOnlyResetWatch")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(try JSONEncoder().encode([PlacedWidget]()), forKey: "openusage.layout.v1")
+        let cardID = "codex@a1b2c3d4"
+        defaults.set(
+            ["\(cardID).trend", "\(cardID).rateLimitResets"],
+            forKey: "openusage.layout.v1.expandedMetrics"
+        )
+        let order = [
+            cardID: ["\(cardID).session", "\(cardID).rateLimitResets", "\(cardID).today"],
+            "cursor": ["cursor.session"],
+        ]
+        defaults.set(try JSONEncoder().encode(order), forKey: "openusage.layout.v1.metricOrderByProvider")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        let migrated = try XCTUnwrap(defaults.data(forKey: "openusage.layout.v1.metricOrderByProvider"))
+        let migratedOrder = try JSONDecoder().decode([String: [String]].self, from: migrated)
+        XCTAssertNil(migratedOrder[cardID])
+        XCTAssertEqual(
+            migratedOrder["codex"],
+            ["codex.session", "codex.resetWatch", "codex.rateLimitResets", "codex.today"]
+        )
+        XCTAssertEqual(migratedOrder["cursor"], ["cursor.session"])
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.layout.v1.expandedMetrics") ?? []),
+            ["codex.trend", "codex.rateLimitResets", "codex.resetWatch"]
+        )
+    }
+
+    func testV3MigratesInitializedCaretSettingsWithoutPlacedData() {
+        let (defaults, domain) = makeDefaults("V3CaretOnlyResetWatch")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(["codex.trend"], forKey: "openusage.layout.v1.expandedMetrics")
+        defaults.set(["codex.trend"], forKey: "openusage.layout.v1.expandOnEnable")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertNil(defaults.data(forKey: "openusage.layout.v1"))
+        XCTAssertEqual(
+            Set(defaults.stringArray(forKey: "openusage.layout.v1.expandedMetrics") ?? []),
+            ["codex.trend", "codex.resetWatch"]
+        )
+    }
+
+    func testV3LeavesUninitializedLayoutKeysForBootstrap() {
+        let (defaults, domain) = makeDefaults("V3NoLayout")
+        defer { defaults.removePersistentDomain(forName: domain) }
+        defaults.set(2, forKey: SettingsMigrator.schemaVersionKey)
+        defaults.set(true, forKey: "betaUpdatesEnabled")
+
+        SettingsMigrator.migrate(defaults: defaults, domainName: domain)
+
+        XCTAssertNil(defaults.stringArray(forKey: "openusage.layout.v1.expandedMetrics"))
+        XCTAssertNil(defaults.data(forKey: "openusage.layout.v1.metricOrderByProvider"))
+    }
+
     // MARK: - Schema integrity
 
     func testShippedSchemaIsConsistent() {

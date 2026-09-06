@@ -1,6 +1,6 @@
 # Codex
 
-Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI.
+Tracks your ChatGPT/Codex subscription limits using the Codex CLI login, plus an optional public Reset Watch forecast that works without Codex sign-in.
 
 ## What it tracks
 
@@ -9,11 +9,38 @@ Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI
 | Session | 5-hour rolling window usage |
 | Weekly | 7-day window usage |
 | Spark / Spark Weekly | GPT-5.3-Codex-Spark model limits — a 5-hour and a weekly window.<br>Shown only when your account has the limit (otherwise "No data"), and tucked below the "show more" caret by default |
+| Reset Watch | Global reset forecast shown as a chance and deadline; optional and off by default (see below) |
 | Rate Limit Resets | On-demand rate-limit reset credits, shown as a count (e.g. `2 available`) with a colored dot for the soonest expiry; hover the value for a timeline of each credit's expiry |
 | Extra Usage | Flex credits, shown verbatim as dollars + credits (e.g. `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | Local spend, as cost, tokens, or both (see below) |
 
 When Codex reports your plan name, OpenUsage shows it beside the provider name.
+
+## Reset Watch
+
+Reset Watch is an optional forecast metric based on the [public codex-resets.com forecast](https://codex-resets.com/) and its [API](https://codex-resets.com/api/docs).
+It is a global, unofficial AI prediction, not an OpenAI commitment or guarantee.
+
+Fresh installs and layout resets leave it off, place it under **On Demand**, and do not star it for the menu bar.
+Its metric slot is immediately before Rate Limit Resets; you can enable, move, or star it in Customize.
+
+Reset Watch runs independently of Codex sign-in and subscription-usage refreshes.
+While Codex is enabled and the metric is enabled on the dashboard or starred for the menu bar, OpenUsage queries the unauthenticated `GET https://codex-resets.com/api/v1/status` endpoint on a separate 15-minute cadence — three times the regular five-minute usage-refresh interval.
+Activating the metric, or re-enabling Codex while it is active, starts an immediate check.
+Once the metric is both disabled and unstarred, or Codex is disabled, future scheduled checks stop; a Reset Watch request already underway may still finish.
+Codex sign-in is not required: Reset Watch can update when account usage cannot, and a failure on either side never delays or fails the other refresh.
+The request sends no Codex token, account ID, usage values, local logs, or cookies.
+The active watch's chance and deadline are shared across all Codex account cards.
+If there is no active watch, its chance is absent, or its deadline has passed, the row shows **No data**.
+If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
+The next successful check clears that notice.
+Responses marked `no-store` are displayed for the current check only; `no-cache` forecasts require successful revalidation before reuse, including after a failed check.
+
+The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
+The escalating warning is a prompt to use available tokens before a likely reset.
+
+Reset Watch appears only in the app UI.
+It is omitted from the local API and the one-shot CLI output.
 
 ## Where credentials come from
 

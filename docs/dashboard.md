@@ -72,6 +72,13 @@ Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
 - **Hover the bar**, the spare note, or the flame for the pace projection at reset — the one number not already on the row: a blue bar shows the cushion you're on course to finish with (`~35% left at reset`), a yellow bar the usage it complements the spare note with (`~92% used at reset`), a red bar how far past the limit you're projected to land (`~12% over limit at reset`, or `~100% used at reset` when you're projected to finish right at it).
   Once spent it reads `Limit reached`.
 
+**Codex Reset Watch** uses the same meter shape but is a forecast, not a quota.
+It shows a chance and a fixed `By …` deadline, and does not react to Used/Left, reset-format, pacing, or quota-notification settings.
+The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
+Higher bands warn you to use available tokens before a likely reset.
+Failed checks show an unavailable or cached-forecast notice instead of the deadline; successful empty responses still show **No data**.
+The row stops its timer after the forecast deadline until another forecast arrives.
+
 **Metrics without a limit** (daily spend, balances) show as a single line like `$4.08 spent` or `1.2M tokens`.
 The Today / Yesterday / Last 30 Days rows combine cost and tokens (`$4.08 · 1.2M tokens`) and can be turned on or off in Customize.
 A day with no usage reads "No data" rather than a misleading `$0.00 · 0 tokens` — the same as when the source can't be loaded at all.
@@ -91,7 +98,8 @@ With [iCloud Sync](icloud-sync.md) on, the machine-local providers' spend rows, 
 Cursor stays unchanged because its export is already account-wide.
 Quotas, plans, balances, and provider errors always describe this Mac's refresh.
 
-Rows with a reset date tick every 30 seconds, so countdowns and pace stay live between refreshes.
+Rows with a reset date or Reset Watch deadline re-render every 30 seconds, so countdowns, pace, and forecast expiry stay live between network refreshes.
+This UI tick makes no network request; Reset Watch checks its source on a separate 15-minute cadence.
 
 ## Account selector
 
@@ -161,8 +169,8 @@ Drag-reorder also works directly on the dashboard — drag a row within its prov
 On a Force Touch trackpad you'll feel a light tap each time the dragged item snaps into a new slot.
 
 The default reset layout mirrors this fork's owner setup: Claude keeps Session, Weekly, and Fable always visible; Codex keeps Session and Weekly; Kimi keeps Session and Weekly.
-Claude and Codex Usage Trend plus optional limits, reset details, and spend-history rows start on demand.
-Optional rows remain available even when they start off.
+The Claude and Codex Usage Trend rows plus optional limits, reset details, and spend-history rows start on demand.
+Reset Watch is assigned to **On Demand** but starts off and remains available in Customize.
 
 Made a change you didn't mean to?
 Press **⌘Z** to undo — it works anywhere in the popover (the dashboard and Customize alike) and steps back through your recent customization changes one at a time: hiding or showing a metric, reordering metrics or whole providers, starring or unstarring, and moving a metric across the divider all undo.

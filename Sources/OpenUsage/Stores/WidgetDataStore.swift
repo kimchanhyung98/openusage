@@ -16,7 +16,7 @@ final class WidgetDataStore {
     private let defaults: UserDefaults
     /// Provider enablement 조회 — 주입식, 기본은 전부 enabled(테스트·프리뷰용).
     private let isProviderEnabled: @MainActor (String) -> Bool
-    /// 메뉴바 값을 결정하는 사용자 widget 순서(enablement 필터 적용) — 주입식, 기본은 registry 순서.
+    /// dashboard에 배치된 사용자 widget 순서 — quota 알림 입력, 기본은 registry 순서.
     private let orderedDescriptors: @MainActor () -> [WidgetDescriptor]
     /// failure-backoff 윈도우용 clock — 테스트에서 주입.
     private let now: () -> Date
@@ -46,6 +46,8 @@ final class WidgetDataStore {
     var snapshots: [String: ProviderSnapshot] = [:]
     /// 이 Mac이 생산한 last-good snapshot — 이것만 캐시·iCloud export되어 peer 기여의 echo 증식을 차단.
     private(set) var localSnapshots: [String: ProviderSnapshot] = [:]
+    /// Codex 인증·usage snapshot과 분리된 전역 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
+    private var codexResetWatch = CodexResetWatchResult()
     var refreshingProviderIDs: Set<String> = []
     /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
     var lastRefreshAt: Date?
@@ -247,7 +249,7 @@ final class WidgetDataStore {
             .filter { isProviderEnabled($0.providerID) }
             .compactMap { descriptor -> QuotaNotificationEvaluator.Metric? in
                 let data = data(for: descriptor)
-                guard data.isBounded else { return nil }
+                guard data.isQuotaMeter else { return nil }
                 return QuotaNotificationEvaluator.Metric(
                     key: "\(descriptor.providerID).\(descriptor.id)",
                     providerID: descriptor.providerID,
@@ -534,9 +536,31 @@ final class WidgetDataStore {
         return "Refresh failed"
     }
 
+    func setCodexResetWatch(_ watch: CodexResetWatch?, refreshFailed: Bool = false) {
+        let result = CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed)
+        guard codexResetWatch != result else { return }
+        codexResetWatch = result
+    }
+
     func data(for descriptor: WidgetDescriptor) -> WidgetData {
         var result: WidgetData
-        if let snapshot = snapshots[descriptor.providerID],
+        if ProviderAccountID.canonicalMetricID(descriptor.id) == "codex.resetWatch" {
+            if let watch = codexResetWatch.watch {
+                result = WidgetData(
+                    title: descriptor.sample.title,
+                    icon: descriptor.sample.icon,
+                    kind: .percent,
+                    used: ProviderParse.clampPercent(watch.chancePercent),
+                    limit: 100
+                )
+                result.isForecast = true
+                result.forecastDeadline = watch.deadline
+            } else {
+                result = descriptor.sample
+                result.hasData = false
+            }
+            result.forecastRefreshFailed = codexResetWatch.refreshFailed
+        } else if let snapshot = snapshots[descriptor.providerID],
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {
             result = data
@@ -552,7 +576,7 @@ final class WidgetDataStore {
         result.alwaysShowPacing = alwaysShowPacing
         // 행 자신의 카드 identity — per-card action(Codex reset-claim router)의 키.
         result.providerID = descriptor.providerID
-        return result
+        return result.presented(at: now())
     }
 
     /// 최신 snapshot의 plan label — snapshot 없음·plan 미노출이면 nil. provider section header가 표시.

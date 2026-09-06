@@ -34,13 +34,26 @@ final class ProviderCatalogTests: XCTestCase {
             CodexProvider().widgetDescriptors.count,
             "a snapshot card exposes exactly the default card's metric set"
         )
-        for expected in ["session", "weekly", "trend", "rateLimitResets", "credits", "today"] {
+        for expected in ["session", "weekly", "trend", "resetWatch", "rateLimitResets", "credits", "today"] {
             XCTAssertTrue(
                 descriptorIDs.contains("\(card.id).\(expected)"),
                 "missing per-card metric \(card.id).\(expected)"
             )
         }
         XCTAssertFalse(descriptorIDs.contains("codex.session"), "metric ids never leak the bare card id")
+    }
+
+    func testCodexResetWatchPrecedesRateLimitResets() throws {
+        let codex = try XCTUnwrap(
+            ProviderCatalog.make()
+                .compactMap { $0 as? CodexProvider }
+                .first { $0.provider.id == "codex" }
+        )
+        let descriptorIDs = codex.widgetDescriptors.map(\.id)
+        let resetWatchIndex = try XCTUnwrap(descriptorIDs.firstIndex(of: "codex.resetWatch"))
+        let rateLimitResetsIndex = try XCTUnwrap(descriptorIDs.firstIndex(of: "codex.rateLimitResets"))
+
+        XCTAssertEqual(resetWatchIndex + 1, rateLimitResetsIndex)
     }
 
     func testManagedSwitchingPinsTheDefaultCodexCardToTheSharedAuthFile() throws {

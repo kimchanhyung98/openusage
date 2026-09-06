@@ -14,8 +14,17 @@ enum Formatters {
     }
 
     /// 앱 공통 compact 월/일 표기(예: "Jun 21") — localized, 연도 없음.
-    static func monthDayLabel(_ date: Date) -> String {
-        date.formatted(.dateTime.month(.abbreviated).day())
+    static func monthDayLabel(_ date: Date, locale: Locale = .current) -> String {
+        date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+    }
+
+    /// Reset Watch deadline — 날짜 순서는 locale, 시각은 앱의 Auto/12h/24h 설정 준수.
+    static func resetWatchDeadlineLabel(
+        at date: Date,
+        locale: Locale = .current,
+        timeFormat: TimeFormatSetting = .current
+    ) -> String {
+        "By \(monthDayLabel(date, locale: locale)), \(timeFormat.shortTime(date, base: locale))"
     }
 
     /// 모든 "<verb> + when" 라벨이 공유하는 mode-aware deadline 문구.

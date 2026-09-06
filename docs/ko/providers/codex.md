@@ -1,6 +1,6 @@
 # Codex
 
-Codex CLI의 로그인으로 ChatGPT/Codex 구독 한도 추적.
+Codex CLI 로그인으로 ChatGPT/Codex 구독 한도를 추적하고, Codex 로그인 없이 작동하는 선택적 공개 Reset Watch 예측 제공.
 
 ## 추적 항목
 
@@ -9,11 +9,38 @@ Codex CLI의 로그인으로 ChatGPT/Codex 구독 한도 추적.
 | Session | 5시간 순환 기간 사용량 |
 | Weekly | 7일 기간 사용량 |
 | Spark / Spark Weekly | GPT-5.3-Codex-Spark 모델 한도 — 5시간 기간과 주간 기간.<br>계정에 한도가 있을 때만 표시(없으면 "No data")하며 기본적으로 "show more" 캐럿 아래에 배치 |
+| Reset Watch | 확률과 기한으로 표시하는 전역 재설정 예측 — 선택적이며 기본값은 꺼짐(아래 참조) |
 | Rate Limit Resets | 온디맨드 속도 제한 재설정 크레딧 — 개수로 표시(예: `2 available`)하고 가장 빠른 만료를 색상 점으로 표시하며, 값에 마우스를 올리면 크레딧별 만료 타임라인 제공 |
 | Extra Usage | Flex 크레딧 — 달러 + 크레딧 형식 그대로 표시(예: `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
 Codex가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+
+## Reset Watch
+
+Reset Watch는 [codex-resets.com 공개 예측](https://codex-resets.com/)과 해당 [API](https://codex-resets.com/api/docs)를 기반으로 하는 선택적 예측 지표.
+전역·비공식 AI 예측이며 OpenAI의 약속이나 보장이 아님.
+
+신규 설치와 레이아웃 초기화 시 꺼짐, **On Demand** 배치, 메뉴 막대 별표 없음.
+지표 순서는 Rate Limit Resets 바로 앞이며 Customize에서 켜기·이동·별표 가능.
+
+Reset Watch는 Codex 로그인·인증 및 구독 사용량 새로 고침과 독립적으로 작동.
+Codex 프로바이더가 켜져 있고 지표가 대시보드에 표시되거나 메뉴 막대에 별표된 동안, OpenUsage가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량 5분 주기의 3배인 별도 15분 주기로 조회.
+지표를 활성화하거나 활성 상태에서 Codex 프로바이더를 다시 켜면 즉시 조회.
+대시보드 표시와 메뉴 막대 별표가 모두 해제되거나 Codex 프로바이더를 끄면 이후 예약 조회 중단 — 이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
+Codex 로그인 불필요 — 계정 사용량을 가져올 수 없어도 Reset Watch 갱신 가능하며, 어느 쪽 실패도 다른 쪽 새로 고침을 지연하거나 실패시키지 않음.
+요청에는 Codex 토큰, 계정 ID, 사용량 값, 로컬 로그, Cookie를 보내지 않음.
+활성 watch의 확률과 기한은 모든 Codex 계정 카드에서 공유.
+활성 watch가 없거나 확률이 없거나 기한이 지나면 행에 **No data** 표시.
+조회 실패 시 **Unavailable · Retry later** 표시, 재사용 가능한 예측이 유효하면 **Cached forecast · Refresh failed** 표시.
+다음 조회 성공 시 해당 안내 해제.
+`no-store` 응답은 현재 조회에서만 표시, `no-cache` 예측은 조회 실패 후에도 재사용 전에 성공적인 재검증 필요.
+
+막대는 40% 미만에서 중립 상태, 40–59%에서 파랑, 60–69%에서 노란 경고 삼각형, 70% 이상에서 빨간 불꽃 표시.
+단계가 높아질수록 예상 재설정 전에 남은 토큰을 먼저 쓰라는 경고 강화.
+
+Reset Watch는 앱 UI에서만 표시.
+로컬 API와 일회성 CLI 출력에서는 제외.
 
 ## 인증 정보 출처
 
