@@ -80,10 +80,25 @@ struct TokscaleCommandRunner: TokscaleCommandRunning, Sendable {
     static let timeout: TimeInterval = 15 * 60
     static let outputLimit = 64 * 1024
 
-    private static let excludedEnvironmentKeys = Set([
-        "TOKSCALE_API_URL",
-        "NODE_OPTIONS", "NODE_PATH", "BUN_OPTIONS",
-        "LD_PRELOAD", "LD_LIBRARY_PATH",
+    // 미등록 키는 전달하지 않음. 경로 탐색과 Tokscale 인증에 필요한 값만 명시적으로 유지.
+    private static let allowedEnvironmentKeys = Set([
+        "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+        "LC_TIME", "LC_NUMERIC", "LC_MONETARY", "LC_COLLATE", "TZ", "TMPDIR", "DO_NOT_TRACK",
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE",
+        "BUN_CONFIG_REGISTRY",
+        "TOKSCALE_API_TOKEN", "TOKSCALE_CONFIG_DIR", "TOKSCALE_EXTRA_DIRS", "TOKSCALE_HEADLESS_DIR",
+        "TOKSCALE_NATIVE_TIMEOUT_MS", "TOKSCALE_DEVICE_ID", "TOKSCALE_DEVICE_NAME",
+        "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR",
+        "CLAUDE_CONFIG_DIR", "CODEX_HOME", "GEMINI_CLI_HOME", "KIMI_CODE_HOME",
+        "HERMES_HOME", "CODEBUFF_DATA_DIR", "FREEBUFF_DATA_DIR", "GROK_HOME", "JCODE_HOME",
+        "GJC_CODING_AGENT_DIR", "GJC_CONFIG_DIR", "PI_CONFIG_DIR",
+        "SENPI_CODING_AGENT_DIR", "SENPI_CODING_AGENT_SESSION_DIR", "KIMCHI_CODING_AGENT_DIR",
+        "PRIME_AGENT_CODING_AGENT_DIR", "PRIME_AGENT_SESSION_DIR", "PRIME_AGENT_CODING_AGENT_SESSION_DIR",
+        "DSH_HOME", "LM_STUDIO_HOME", "UNSLOTH_STUDIO_HOME", "HINDSIGHT_HOME",
+        "REASONIX_STATE_HOME", "REASONIX_HOME", "GOOSE_PATH_ROOT", "CRUSH_GLOBAL_DATA",
+        "COPILOT_OTEL_FILE_EXPORTER_PATH", "OPENCODE_CONFIG", "OPENCODE_CONFIG_DIR",
     ])
     private static let systemPathDirectories = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
 
@@ -138,10 +153,7 @@ struct TokscaleCommandRunner: TokscaleCommandRunning, Sendable {
             processValue
         }
         var environment = source.filter { key, _ in
-            !Self.excludedEnvironmentKeys.contains(key)
-                && !key.hasPrefix("DYLD_")
-                && !key.hasPrefix("TOKSCALE_FAKE_")
-                && !key.hasPrefix("TOKSCALE_TEST_")
+            Self.allowedEnvironmentKeys.contains(key)
         }
         environment["HOME"] = homeDirectoryURL.path
         environment["PWD"] = homeDirectoryURL.path
