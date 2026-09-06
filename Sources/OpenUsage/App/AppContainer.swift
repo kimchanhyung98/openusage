@@ -109,7 +109,7 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
-        let providerStatus = ProviderStatusStore()
+        let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient())
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 뒤 이어지는 wake에서 즉시 fetch되도록 usage/status의 일반 failure gate 제거.
         // `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).

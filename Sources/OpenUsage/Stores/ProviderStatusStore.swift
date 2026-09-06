@@ -32,7 +32,7 @@ final class ProviderStatusStore {
     @ObservationIgnored private var inFlight: [String: Flight] = [:]
 
     init(
-        http: any HTTPClient = ProviderStatusHTTPClient(),
+        http: any HTTPClient,
         sourceFor: @escaping @MainActor (String) -> ProviderStatusSource? = ProviderStatusSourceCatalog.source(for:),
         now: @escaping @MainActor () -> Date = Date.init,
         onFlightJoined: @escaping @MainActor (String) -> Void = { _ in }
