@@ -40,6 +40,52 @@ final class ShareCardRendererTests: XCTestCase {
         XCTAssertGreaterThan(rep.pixelsHigh, 0)
     }
 
+    func testDisplayNameOverrideRendersExactCompositeTitleIntoPNG() throws {
+        let expectedTitle = "Claude: company"
+        let provider = MockData.claude
+        let exactTitleProvider = Provider(
+            id: provider.id,
+            displayName: expectedTitle,
+            icon: provider.icon,
+            links: provider.links
+        )
+
+        func pngPixels(provider: Provider, displayNameOverride: String? = nil) throws -> Data {
+            let card = ShareCardView(
+                provider: provider,
+                plan: nil,
+                rows: [],
+                appearance: .light,
+                displayNameOverride: displayNameOverride
+            )
+            let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
+            let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+            let pixels = try XCTUnwrap(bitmap.bitmapData)
+            // PNG 메타데이터·압축 바이트가 아닌 디코딩된 픽셀로 제목 렌더 결과 비교.
+            return Data(bytes: pixels, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        }
+
+        let overriddenPixels = try pngPixels(provider: provider, displayNameOverride: expectedTitle)
+        let exactTitlePixels = try pngPixels(provider: exactTitleProvider)
+        let providerTitlePixels = try pngPixels(provider: provider)
+
+        XCTAssertEqual(overriddenPixels.count, exactTitlePixels.count)
+        var largestDifference = 0
+        for (overridden, exact) in zip(overriddenPixels, exactTitlePixels) {
+            largestDifference = max(largestDifference, abs(Int(overridden) - Int(exact)))
+        }
+        XCTAssertLessThanOrEqual(
+            largestDifference, 1,
+            "the exact composite title should match within one rasterization quantization level"
+        )
+        XCTAssertNotEqual(
+            overriddenPixels,
+            providerTitlePixels,
+            "the display-name override must change visible PNG pixels"
+        )
+    }
+
     func testCondensedTextRowIndicesFollowsNeighborRule() {
         let rows = MockData.descriptors(for: MockData.claude.id).map { $0.sample }
         XCTAssertGreaterThan(rows.count, 1, "sample fixture should have multiple rows")

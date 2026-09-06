@@ -39,6 +39,7 @@ final class AppContainer {
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
+    let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
     /// 현재 provider catalog를 만든 account 입력 — 동일 입력의 재조립은 in-flight refresh를 무효화하지 않음.
@@ -76,6 +77,7 @@ final class AppContainer {
         )
         self.accounts = accounts
         self.accountProfiles = accountProfiles
+        self.accountCardPresentation = AccountCardPresentationStore()
         self.accountAssembly = accountAssembly
         self.accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
             assembly: accountAssembly,
@@ -221,8 +223,7 @@ final class AppContainer {
         shellEnvironmentSnapshotTask.cancel()
     }
 
-    /// 카드가 렌더링되는 제목 — Claude·Codex는 계정과 무관하게 provider 이름 고정(`ProviderAccountID.cardTitle`).
-    /// 그 외 provider는 account registry 이름, 없으면 정적 display name.
+    /// 메뉴 바·프로바이더 동작의 이름 — 계정 카드 표시 모드와 독립.
     func displayName(for provider: Provider) -> String {
         ProviderAccountID.cardTitle(
             providerID: provider.id,
@@ -234,6 +235,10 @@ final class AppContainer {
     func accountProfileLabel(for cardID: String) -> String? {
         guard let profileID = accountProfileIDsByCardID[cardID] else { return nil }
         return accountProfiles.profile(id: profileID)?.label
+    }
+
+    func accountProfileID(for cardID: String) -> String? {
+        accountProfileIDsByCardID[cardID]
     }
 
     /// family의 현재 선택된 관리형 profile이 backing하는 표시 카드.
@@ -263,8 +268,7 @@ final class AppContainer {
         accountSelectionRevision &+= 1
     }
 
-    /// dashboard와 메뉴 바가 공유하는 표시 카드 필터 — provider당 카드 1장, 나머지 계정은 header selector로.
-    /// layout 설정도 family 단위 1벌이라 축약하지 않으면 같은 행이 카드 수만큼 중복 렌더됨.
+    /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
     func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
         var visible = orderedIDs
         for family in AccountProfilesStore.supportedFamilies {

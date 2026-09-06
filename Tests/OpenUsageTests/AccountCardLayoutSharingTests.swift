@@ -86,6 +86,218 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         )
     }
 
+    func testProviderReorderIncludesANewAccountRuntimeInTheFamilyBlockAndPinnedOrdinal() {
+        let defaults = makeDefaults("ReorderNewAccountRuntime")
+        saveStored(["claude", "codex", "cursor"], forKey: "layout.providerOrder", in: defaults)
+        let snapshotID = "claude@profile-b"
+        let providers = [
+            Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude")),
+            Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex")),
+            Provider(id: "cursor", displayName: "Cursor", icon: .providerMark("cursor")),
+            Provider(id: snapshotID, displayName: "Claude — B", icon: .providerMark("claude")),
+        ]
+        let descriptors = providers.map { provider in
+            WidgetDescriptor(
+                id: "\(provider.id).session",
+                providerID: provider.id,
+                metricLabel: "session",
+                sample: WidgetData(
+                    title: "session",
+                    icon: provider.icon,
+                    kind: .percent,
+                    used: 0,
+                    limit: 100
+                )
+            )
+        }
+        let store = LayoutStore(
+            registry: WidgetRegistry(providers: providers, descriptors: descriptors),
+            defaults: defaults,
+            storageKey: "layout",
+            defaultMetricIDs: ["claude.session", "codex.session", "cursor.session"],
+            migrationBaselineMetricIDs: ["claude.session", "codex.session", "cursor.session"],
+            defaultPinnedMetricIDs: [],
+            defaultExpandedMetricIDs: []
+        )
+        for metricID in ["claude.session", "codex.session", "cursor.session"] {
+            store.setPinned(true, for: metricID)
+        }
+
+        XCTAssertEqual(store.providerOrder, ["claude", "codex", "cursor"])
+        XCTAssertTrue(store.reorderProvider(dragged: "cursor", target: "claude"))
+
+        XCTAssertEqual(store.providerOrder, ["cursor", "claude", snapshotID, "codex"])
+        XCTAssertEqual(store.pinnedGroups.map(\.provider.id), ["cursor", "claude", snapshotID, "codex"])
+        let menuBarIDs = DashboardUsageAccountSelection.visibleCardIDs(
+            orderedCardIDs: store.pinnedGroups.map(\.provider.id),
+            familyCardIDs: ["claude", snapshotID],
+            selectedCardID: snapshotID
+        )
+        XCTAssertEqual(menuBarIDs, ["cursor", snapshotID, "codex"])
+        XCTAssertEqual(menuBarIDs.firstIndex(of: snapshotID), 1)
+    }
+
+    func testProviderReorderUsesCustomizeOrderWithoutChangingAccountOrder() {
+        let defaults = makeDefaults("CanonicalProviderOrder")
+        let layout = makeStore(defaults: defaults)
+        layout.providerOrder = [cardID, "codex", "claude"]
+
+        let company = AccountProfile(
+            id: "company",
+            family: "claude",
+            label: "company",
+            identityKey: "acct-company",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let work = AccountProfile(
+            id: "work",
+            family: "claude",
+            label: "work",
+            identityKey: "acct-work",
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let profiles = [company, work]
+        let presentation = AccountCardPresentationStore(defaults: defaults)
+        XCTAssertTrue(presentation.reorder(
+            dragged: work.id,
+            target: company.id,
+            family: "claude",
+            profiles: profiles
+        ))
+        let accountOrder = presentation.orderedProfiles(profiles, family: "claude").map(\.id)
+
+        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["codex", "claude"])
+        XCTAssertTrue(layout.reorderProvider(dragged: "claude", target: "codex"))
+
+        XCTAssertEqual(layout.customizeProviderRows.map(\.id), ["claude", "codex"])
+        XCTAssertEqual(layout.providerOrder, [cardID, "claude", "codex"])
+        XCTAssertEqual(
+            presentation.orderedProfiles(profiles, family: "claude").map(\.id),
+            accountOrder,
+            "provider-family movement must not rewrite the separately persisted account order"
+        )
+    }
+
+    func testAccountPresentationChangesDoNotMutateLayoutOrDashboardSelection() {
+        let defaults = makeDefaults("PresentationIsolation")
+        let codexCardID = "codex@profile-sub"
+        saveStored(["codex", codexCardID, "claude", cardID], forKey: "layout.providerOrder", in: defaults)
+        let layout = makeStore(defaults: defaults, includesCodexAccountCard: true)
+        layout.setMetricEnabled("codex.session", true)
+        layout.setMetricEnabled("codex.trend", true)
+        layout.setPinned(true, for: "claude.session")
+        layout.setPinned(true, for: "codex.session")
+        XCTAssertTrue(layout.setProviderExpanded(true, for: "claude"))
+        XCTAssertTrue(layout.setProviderExpanded(true, for: "codex"))
+        DashboardUsageAccountSelection.select(cardID, for: "claude", defaults: defaults)
+        DashboardUsageAccountSelection.select(codexCardID, for: "codex", defaults: defaults)
+
+        let company = AccountProfile(
+            id: "company",
+            family: "claude",
+            label: "company",
+            identityKey: "acct-company",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let work = AccountProfile(
+            id: "work",
+            family: "claude",
+            label: "work",
+            identityKey: "acct-work",
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let personal = AccountProfile(
+            id: "personal",
+            family: "codex",
+            label: "personal",
+            identityKey: "acct-personal",
+            createdAt: Date(timeIntervalSince1970: 1)
+        )
+        let sub = AccountProfile(
+            id: "sub",
+            family: "codex",
+            label: "sub",
+            identityKey: "acct-sub",
+            createdAt: Date(timeIntervalSince1970: 2)
+        )
+        let profiles = [company, work, personal, sub]
+        let providerOrder = layout.providerOrder
+        let placed = layout.placed
+        let metricOrder = layout.metricOrderByProvider
+        let pins = layout.pinnedMetricIDs
+        let expandedMetrics = layout.expandedMetricIDs
+        let expandOnEnable = layout.defaultExpandedOnEnableIDs
+        let expandedProviders = layout.expandedProviderIDs
+        let selections = DashboardUsageAccountSelection.storedSelections(defaults: defaults)
+        let persistence = LayoutPersistence(defaults: defaults, storageKey: "layout")
+        let persistedPlaced = persistence.loadPlaced()
+        let persistedProviderOrder = persistence.loadProviderOrder()
+        let persistedMetricOrder = persistence.loadMetricOrder()
+        let persistedPins = persistence.loadPins()
+        let persistedExpandedMetrics = persistence.loadExpandedMetrics()
+        let persistedExpandOnEnable = persistence.loadExpandOnEnable()
+        let persistedExpandedProviders = persistence.loadExpandedProviders()
+
+        let presentation = AccountCardPresentationStore(defaults: defaults)
+        XCTAssertTrue(presentation.reorder(
+            dragged: work.id,
+            target: company.id,
+            family: "claude",
+            profiles: profiles
+        ))
+        XCTAssertTrue(presentation.reorder(
+            dragged: sub.id,
+            target: personal.id,
+            family: "codex",
+            profiles: profiles
+        ))
+        let accountOrders = ["claude": [work.id, company.id], "codex": [sub.id, personal.id]]
+        func presentedCardIDs() -> [String] {
+            let families = ["claude", "codex"]
+            let orderedIDs = AccountCardPresentationPlanner.orderedCardIDs(
+                layout.displayGroups.map(\.provider.id),
+                familyOrder: layout.customizeProviderRows.map(\.id),
+                orderedProfileIDsByFamily: Dictionary(uniqueKeysWithValues: families.map {
+                    ($0, presentation.orderedProfiles(profiles, family: $0).map(\.id))
+                }),
+                profileIDsByCardID: ["claude": company.id, cardID: work.id, "codex": personal.id, codexCardID: sub.id]
+            )
+            return AccountCardPresentationPlanner.presentedCardIDs(
+                orderedCardIDs: orderedIDs,
+                modesByFamily: Dictionary(uniqueKeysWithValues: families.map {
+                    ($0, presentation.effectiveMode(for: $0, profiles: profiles, registryReadable: true))
+                }),
+                selectedCardIDsByFamily: DashboardUsageAccountSelection.storedSelections(defaults: defaults)
+            )
+        }
+
+        XCTAssertEqual(presentedCardIDs(), [codexCardID, cardID])
+        presentation.setMode(.separateCards)
+        XCTAssertEqual(presentation.mode, .separateCards)
+        XCTAssertEqual(presentedCardIDs(), [codexCardID, "codex", cardID, "claude"])
+        presentation.setMode(.singleCard)
+        XCTAssertEqual(presentation.mode, .singleCard)
+        XCTAssertEqual(presentedCardIDs(), [codexCardID, cardID])
+        for family in ["claude", "codex"] {
+            XCTAssertEqual(presentation.orderedProfiles(profiles, family: family).map(\.id), accountOrders[family])
+        }
+        XCTAssertEqual(layout.providerOrder, providerOrder)
+        XCTAssertEqual(layout.placed, placed)
+        XCTAssertEqual(layout.metricOrderByProvider, metricOrder)
+        XCTAssertEqual(layout.pinnedMetricIDs, pins)
+        XCTAssertEqual(layout.expandedMetricIDs, expandedMetrics)
+        XCTAssertEqual(layout.defaultExpandedOnEnableIDs, expandOnEnable)
+        XCTAssertEqual(layout.expandedProviderIDs, expandedProviders)
+        XCTAssertEqual(DashboardUsageAccountSelection.storedSelections(defaults: defaults), selections)
+        XCTAssertEqual(persistence.loadPlaced(), persistedPlaced)
+        XCTAssertEqual(persistence.loadProviderOrder(), persistedProviderOrder)
+        XCTAssertEqual(persistence.loadMetricOrder(), persistedMetricOrder)
+        XCTAssertEqual(persistence.loadPins(), persistedPins)
+        XCTAssertEqual(persistence.loadExpandedMetrics(), persistedExpandedMetrics)
+        XCTAssertEqual(persistence.loadExpandOnEnable(), persistedExpandOnEnable)
+        XCTAssertEqual(persistence.loadExpandedProviders(), persistedExpandedProviders)
+    }
+
     // MARK: - Migration of layouts saved per account card
 
     func testStoredAccountCardEntriesFoldIntoTheProviderLayout() {
@@ -173,9 +385,9 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    private func makeStore(defaults: UserDefaults) -> LayoutStore {
+    private func makeStore(defaults: UserDefaults, includesCodexAccountCard: Bool = false) -> LayoutStore {
         LayoutStore(
-            registry: .claudeWithAccountCard,
+            registry: .accountCards(includesCodexAccountCard: includesCodexAccountCard),
             defaults: defaults,
             storageKey: "layout",
             defaultMetricIDs: ["claude.session", "claude.trend", "claude.today"],
@@ -198,10 +410,14 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 
 private extension WidgetRegistry {
     /// 기본 Claude 카드 + 등록 계정 카드 하나(+ 순서 검증용 Codex) — 카드들이 같은 metric 3종을 제공
-    static var claudeWithAccountCard: WidgetRegistry {
+    static func accountCards(includesCodexAccountCard: Bool) -> WidgetRegistry {
         let claude = Provider(id: "claude", displayName: "Claude", icon: .providerMark("claude"))
         let card = Provider(id: "claude@profile-work", displayName: "Claude — Work", icon: .providerMark("claude"))
         let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        var providers = [claude, card, codex]
+        if includesCodexAccountCard {
+            providers.append(Provider(id: "codex@profile-sub", displayName: "Codex — Sub", icon: .providerMark("codex")))
+        }
         func descriptors(_ provider: Provider) -> [WidgetDescriptor] {
             ["session", "trend", "today"].map { suffix in
                 WidgetDescriptor(
@@ -219,8 +435,8 @@ private extension WidgetRegistry {
             }
         }
         return WidgetRegistry(
-            providers: [claude, card, codex],
-            descriptors: descriptors(claude) + descriptors(card) + descriptors(codex)
+            providers: providers,
+            descriptors: providers.flatMap(descriptors)
         )
     }
 }

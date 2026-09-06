@@ -30,12 +30,7 @@ struct WidgetGroupedListView: View {
     }
 
     private var dashboardGroups: [ProviderGroup] {
-        let groups = layout.displayGroups
-        let visible = Set(container.collapsingAccountCards(
-            groups.map(\.provider.id),
-            selectionByFamily: storedUsageAccountIDs
-        ))
-        return groups.filter { visible.contains($0.provider.id) }
+        container.presentedAccountGroups(selectionByFamily: storedUsageAccountIDs)
     }
 
     private let accountFamilies = ["claude", "codex"]
@@ -46,13 +41,15 @@ struct WidgetGroupedListView: View {
     }
 
     private func accountGroups(for family: String, in groups: [ProviderGroup]) -> [ProviderGroup] {
-        groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
+        let familyGroups = groups.filter { ProviderAccountID.family(of: $0.provider.id) == family }
+        let byID = Dictionary(uniqueKeysWithValues: familyGroups.map { ($0.provider.id, $0) })
+        return container.orderedAccountCardIDs(familyGroups.map(\.provider.id)).compactMap { byID[$0] }
     }
 
-    private func selectedAccountID(for family: String, groups: [ProviderGroup]) -> String {
+    private func selectedAccountID(for family: String) -> String {
         container.visibleAccountCardID(
             for: family,
-            among: groups.map(\.provider.id),
+            among: container.accountCardIDs(for: family, among: layout.displayGroups.map(\.provider.id)),
             stored: storedUsageAccountID(for: family)
         ) ?? ""
     }
@@ -86,13 +83,14 @@ struct WidgetGroupedListView: View {
     private func header(_ group: ProviderGroup) -> some View {
         let allGroups = layout.displayGroups
         let family = accountFamily(for: group.provider.id)
+        let isSeparate = family.map { container.accountCardDisplayMode(for: $0) == .separateCards } ?? false
         let familyGroups = family.map { self.accountGroups(for: $0, in: allGroups) } ?? []
         let isAccountFamilyGroup = familyGroups.contains { $0.provider.id == group.provider.id }
         // 등록 profile 수가 런타임 카드 수를 넘을 수 있음(여러 계정이 공유 home 하나를 쓰는 경우).
         let accountCount = isAccountFamilyGroup
             ? max(familyGroups.count, family.map { container.accountProfiles.profiles(family: $0).count } ?? 0)
             : 0
-        let options = isAccountFamilyGroup ? familyGroups.map {
+        let options = isAccountFamilyGroup && !isSeparate ? familyGroups.map {
             AccountUsageOption(
                 id: $0.provider.id,
                 title: container.accountOptionTitle(for: $0.provider.id)
@@ -100,6 +98,7 @@ struct WidgetGroupedListView: View {
         } : []
         return ProviderSectionHeader(
             provider: group.provider,
+            title: container.accountCardTitle(for: group.provider),
             plan: dataStore.plan(for: group.provider.id),
             warning: dataStore.headerNotice(for: group.provider.id),
             refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id),
@@ -107,7 +106,7 @@ struct WidgetGroupedListView: View {
             onCopyScreenshot: { shareCard(group) },
             accountOptions: options,
             selectedAccountID: isAccountFamilyGroup
-                ? family.map { selectedAccountID(for: $0, groups: familyGroups) }
+                ? family.map { selectedAccountID(for: $0) }
                 : nil,
             onSelectAccount: isAccountFamilyGroup ? family.map { family in
                 { providerID in
@@ -119,10 +118,10 @@ struct WidgetGroupedListView: View {
                     Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
                 }
             } : nil,
-            accountCount: accountCount
+            accountCount: isSeparate ? 0 : accountCount
         )
         .padding(.horizontal, 8)
-        .highPriorityGesture(providerDragGesture(for: group))
+        .highPriorityGesture(providerDragGesture(for: group), including: isSeparate ? .subviews : .all)
         .contextMenu {
             let name = container.displayName(for: group.provider)
             // provider section 전체 숨김(Customize provider 리스트에서 복구) — per-metric "Hide"의 상위 버전.
@@ -149,7 +148,7 @@ struct WidgetGroupedListView: View {
             dataStore: dataStore,
             layout: layout,
             appearance: colorScheme,
-            displayName: container.displayName(for: group.provider)
+            displayName: container.accountCardTitle(for: group.provider)
         )
     }
 
@@ -333,7 +332,7 @@ struct WidgetGroupedListView: View {
             active: $activeProviderID,
             lift: $reorderLift,
             makeLift: { makeProviderLift(for: group, value: $0) },
-            orderedIDs: { layout.displayGroups.map(\.provider.id) },
+            orderedIDs: { dashboardGroups.map(\.provider.id) },
             reorder: { layout.reorderProvider(dragged: group.provider.id, target: $0) }
         )
     }
@@ -366,7 +365,7 @@ struct WidgetGroupedListView: View {
     }
 
     private func metricTargetIDs(for providerID: String) -> [String] {
-        guard let group = layout.displayGroups.first(where: { $0.provider.id == providerID }) else {
+        guard let group = dashboardGroups.first(where: { $0.provider.id == providerID }) else {
             return []
         }
         let alwaysShown = group.alwaysShownWidgets.compactMap { layout.descriptor(for: $0)?.id }

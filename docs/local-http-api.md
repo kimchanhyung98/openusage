@@ -27,11 +27,13 @@ There is no aliasing or "pick the right account" logic; the same request always 
 
 ### `GET /v1/usage`
 
-Returns the legacy UI-oriented snapshots for all **enabled** providers, in your dashboard order.
+Returns the legacy UI-oriented snapshots for all **enabled** providers, in saved provider order.
 Existing consumers remain supported while this route is deprecated; new consumers should use `/v1/limits`.
 
 Both routes read the same rendered provider snapshots.
 When iCloud Sync is on, that means they both see the same iCloud-combined usage as the dashboard; `/v1/usage` returns the old UI-oriented shape, while `/v1/limits` projects the data into stable resource IDs and raw scalar values.
+The dashboard's **Single Card** / **Separate Cards** mode and Settings account order do not filter or reorder API results.
+Available account snapshots remain accessible even when Single Card shows only one account for a provider.
 
 - **200 OK** — JSON array (may be empty `[]` if nothing has been fetched yet).
 
@@ -170,8 +172,8 @@ A `barChart` line carries a `points` array — one `{ label, value, valueLabel? 
 The in-app model breakdown shown when hovering spend rows is not included in this API yet.
 Spend rows continue to serialize as the same `text` lines so existing local integrations keep their current shape.
 
-In both response shapes, `displayName` is the card's current name — for Claude and Codex it is the fixed provider-card title, not the account.
-The account names shown in the dashboard selector are separate and never appear here.
+In both response shapes, Claude and Codex keep provider names such as `Claude` and `Codex` in `displayName`.
+Account names and the dashboard's `{Provider}: {name}` titles are not exposed here, even in Separate Cards mode.
 The trusted one-shot CLI uses the same schema but may keep the resolved Claude or Codex account name in `displayName`.
 Match on `providerId` (or the envelope key), never on the name.
 
@@ -195,5 +197,5 @@ This matches the original app's behavior so existing integrations keep working.
 
 ## Caching behavior
 
-The API serves whatever the app is showing: only successful fetches replace data, so a failed refresh never blanks the API — you keep getting the last good snapshot.
+The API reads the app's provider snapshots: only successful fetches replace data, so a failed refresh never blanks the API — you keep getting the last good snapshot.
 See [Refreshing & caching](refreshing.md).

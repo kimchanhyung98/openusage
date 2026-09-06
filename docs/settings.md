@@ -52,8 +52,8 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
   A login for a different Claude identity keeps the selected account name and selection; it never silently switches to another named account.
 - Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
-  The dashboard's account selector lists the shared home's account plus the accounts registered here, and picks whose usage the provider's single card shows.
-  A confirmed Settings switch moves the dashboard selector to that same account once; the menu-bar stars are a provider setting and stay put.
+  In **Single Card** mode, the dashboard's account selector lists the shared home's account plus the accounts registered here, and picks whose usage the card shows.
+  A confirmed Settings switch moves the saved dashboard selection to that same account once, even while separate cards are showing; the menu-bar stars are a provider setting and stay put.
   Changing the dashboard selector later is view-only and never runs another terminal switch.
   An inactive account's usage is read from its private Keychain snapshot.
   When that snapshot's token expires, the refreshed token is saved back into the same snapshot — never into the shared home or the active account.
@@ -67,10 +67,53 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   If either deletion fails, the account stays registered so you can retry.
   A workspace failure also leaves the snapshot ready for switching.
   The selected account can't be removed while another account exists; switch first.
-- Adding, renaming, re-signing, or removing an account updates the dashboard selector and card titles immediately.
+- Adding, renaming, re-signing, or removing an account updates the dashboard's account cards and selector immediately.
   Restarting OpenUsage is not required.
 - If the saved account registry cannot be decoded or validated, OpenUsage leaves the original data untouched.
   It shows an error in Accounts and blocks account changes instead of replacing the registry with an empty list.
+
+### Usage Cards
+
+One **Usage Cards** setting at the top of Accounts applies the same display mode to all providers that support accounts.
+It appears only when at least one provider has two or more registered accounts; one Claude account plus one Codex account does not meet this condition.
+The saved choice is preserved if the setting becomes hidden when account counts decrease.
+
+| Option | Behavior |
+| --- | --- |
+| **Single Card** | The default.<br>Shows the selected account under the provider name and keeps the dashboard account selector. |
+| **Separate Cards** | Shows each available account card with a fixed **{Provider}: {name}** title, such as `Claude: company` or `Codex: sub`.<br>No header account selector. |
+
+`{name}` uses the account's existing **Account Name**.
+The title format is not editable; renaming an account in **Manage…** updates its card and Share Screenshot titles immediately.
+See [Dashboard](/docs/dashboard.md) for account display and shared layout behavior.
+
+Display modes apply immediately and persist across restarts.
+Before a shared choice is saved, **Separate Cards** is inherited if any previous per-provider setting used it; otherwise, **Single Card** is used.
+Changing modes preserves the dashboard selection and does not switch the terminal account or refresh usage.
+Returning to **Single Card** restores the previous selection if it is still available; otherwise, an available account is selected.
+Removing a provider's last registered account returns that provider to a single card but preserves the saved preference for accounts added later.
+An unreadable account registry also uses a single card while preserving the preference until the registry recovers.
+
+### Account order
+
+With two or more registered accounts for a provider, drag the account row itself, without a separate handle, to move it within that provider's list.
+Both **Ready** and **Sign-In Needed** rows can move; accounts cannot move between Claude and Codex.
+Clicking **Manage…** or the switch toggle keeps its existing behavior without starting a reorder.
+The list scrolls automatically near its top or bottom edge during a drag.
+VoiceOver provides **Move Up** and **Move Down** actions on the account row and announces the account's position.
+
+Account order applies immediately wherever an account appears in Settings, the **Single Card** selector, **Separate Cards**, and **Options → Share Screenshot**.
+Dragged order persists after leaving Settings, closing the popover, and restarting the app.
+
+The default order is registration order, and new accounts append to the custom order.
+Order survives renaming, re-signing, active account switching, display mode changes, and restarts.
+Removing an account preserves the remaining accounts' relative order; registering the same name again creates a new account at the end.
+An account temporarily missing a usage card keeps its Settings position and returns to that position when its card becomes available again.
+
+Customize manages the whole provider block; Settings manages account order within it.
+Moving either preserves the other order, and Customize undo or **Reset All** does not reset account order.
+Reordering accounts does not change account selection, authentication, metric layout, or usage data.
+Display modes and account order are stored only on this Mac and are excluded from iCloud sync.
 
 ## iCloud Sync
 

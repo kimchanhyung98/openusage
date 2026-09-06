@@ -93,50 +93,77 @@ Quotas, plans, balances, and provider errors always describe this Mac's refresh.
 
 Rows with a reset date tick every 30 seconds, so countdowns and pace stay live between refreshes.
 
-## Account selector
+## Account cards
 
-Claude and Codex always get exactly one card, titled **Claude** or **Codex**, no matter how many accounts you have.
-With two or more accounts, a small account selector in the card header chooses which account's usage that card displays.
-The selector lists the account signed in to the provider's shared home (`~/.claude`, `~/.codex`) as **Default**, plus each account registered in [**Settings → Accounts**](/docs/settings.md) that has usable saved authentication on this Mac, under its account name.
-A registered account whose saved authentication is missing has no usage to show, so it stays out of the selector until it is signed in again.
+Choose one shared **Usage Cards** mode for all providers that support accounts in [**Settings → Accounts**](/docs/settings.md).
+The choice persists across app restarts.
+
+- **Single Card**, the default, shows the selected account's usage in one card titled **Claude** or **Codex** — it does not add multiple accounts' live limits together.
+  When there are multiple shared-home or registered accounts, the header's account selector chooses an available account.
+- **Separate Cards** shows a card for each available account and keeps the same provider's cards together.
+  Each card uses the fixed **{Provider}: {name}** title format, such as **Claude: company** or **Codex: sub**, with no account selector or header dragging.
+
+A registered account's `{name}` is its existing **Account Name**.
+The title format is not editable; renaming the account in **Settings → Accounts → Manage…** updates the title automatically.
+
+Available accounts are the provider's shared-home account (`~/.claude`, `~/.codex`) and registered accounts with an authentication snapshot saved on this Mac.
+The Single Card selector uses registered account names and shows a shared-home account without a registered name as **Default**.
+In Separate Cards, a shared-home name that matches a registered account name gets **(Shared Home)** appended; a number is added if that name also conflicts.
+A registered account without saved authentication stays in Settings but gets no selector entry or empty dashboard card until it can provide usage again.
+An account can still show a sign-in error even when a saved snapshot exists.
 A Claude login kept in some other configuration directory is not listed until you register it there.
+An inactive account's usage is read from its private Keychain authentication snapshot.
+Registered accounts are distinguished by their account names, so two of them remain separate selector entries and individual cards even when their saved authentication currently proves the same provider identity.
+
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
 Terminal switching remains in Settings.
-A confirmed Settings switch moves this selector to the same account once.
+A confirmed Settings switch moves the dashboard selection to the same account once.
+Changing display modes preserves the selected account, so returning to Single Card restores it if it is still available.
+Mode changes apply immediately to the dashboard without a network refresh.
+Adding, renaming, re-signing, or removing an account in Settings also updates the dashboard immediately.
+
+Change provider order in **Customize** and account order within a provider by dragging accounts in **Settings → Accounts**.
+Settings, the Single Card selector, Separate Cards, and Share use the same relative order for registered accounts available on each surface.
+Accounts unavailable on the dashboard keep their Settings positions and return to those positions when available again.
+Unregistered shared-home accounts follow registered accounts in their existing relative order.
+Reordering accounts preserves the selected account, active terminal login, provider order, and display mode.
+
 The card's layout — which metrics show, their order, the Always Visible / On Demand split, whether the caret is open, and the menu-bar stars — is one setting per provider that every account shares.
-Switching accounts therefore changes the numbers, never the rows.
-An inactive account's usage is read from its private Keychain authentication snapshot.
-Adding, renaming, re-signing, or removing an account in Settings updates the selector immediately.
-Registered accounts are distinguished by their account names, so two of them remain separate selector entries even when their saved authentication currently proves the same provider identity.
+Opening or closing one separate card's caret applies to every card of the same provider.
 Local spend and trend logs stay attached to their configuration home rather than being attributed to registered accounts.
-Those rows can read **No data** while the selector is showing an inactive snapshot account.
+In **Single Card**, those rows can still read **No data** while the selector is showing an inactive snapshot account.
+In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** appear only on the active account card backed by the actual shared-home login, following the existing metric settings and regardless of the dashboard selection.
+Inactive cards omit these three rows entirely instead of showing **No data**.
+Quotas, **Rate Limit Resets**, **Last 30 Days**, and other metrics keep their existing behavior.
+This is a display-only rule; it changes neither saved metric layout nor the underlying statistics.
 
 ## Right-click menus
 
 Every row: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…** (Customize opens straight to that provider's metrics.)
 Provider headers: **Hide \<provider\> · Refresh \<provider\> · Customize…** plus **Share Screenshot** (see below).
-Hide turns the whole provider off, and Customize turns it back on or opens directly to its metrics.
-Card titles are fixed — a Claude or Codex card is always titled after its provider, in the card header, these menu items, the shared screenshot, and the menu bar alike.
-Account names are edited only in **Settings → Accounts → Manage…**.
+Hide turns the whole provider off, including its separate account cards, and Customize turns it back on or opens directly to its shared metrics.
+Menu actions keep the provider name, such as **Refresh Claude** or **Hide Claude**.
+Refresh targets the account card whose menu was opened, and **Share Screenshot** copies that card with its displayed title.
 
 ## Share
 
-Copy a clean, branded PNG of one provider's usage to your clipboard, ready to paste into a chat, a tweet, or a doc.
+Copy a clean, branded PNG of one usage card to your clipboard, ready to paste into a chat, a tweet, or a doc.
 There are two ways to reach it:
 
 - Right-click a provider header and choose **Share Screenshot**.
-- Open the footer's **Options** menu and choose **Share Screenshot** ▸ *\<provider\>*.
-  The submenu lists every provider currently showing on the dashboard.
+- Open the footer's **Options** menu and choose **Share Screenshot** ▸ *\<card title\>*.
+  The submenu follows the dashboard's card list, order, and titles: one selected card per provider in Single Card, or each displayed account card in Separate Cards.
 
-The image is a flexible-height PNG using the app's look — the provider's mark and name up top, the metric rows you currently see for that provider, and a small OpenUsage mark centered at the bottom.
+The image is a flexible-height PNG using the app's look — the provider's mark and displayed card title up top, that card's current metric rows, and a small OpenUsage mark centered at the bottom.
 It follows your Light/Dark appearance and shows everything on the card as-is (nothing is hidden or blurred).
+Separate Cards images include the account name in the title.
 
 ## Footer
 
 The bar pinned to the bottom of the popover.
 On the left: the app version, and a live "Next update in …" countdown you can click (or press **⌘R**) to refresh right away.
 On the right: an **Options** menu button.
-It holds everything in one place — **Customize**, **Settings**, **Share Screenshot** (submenu of providers), **Check for Updates…**, **About OpenUsage**, and **Quit OpenUsage**.
+It holds everything in one place — **Customize**, **Settings**, **Share Screenshot** (submenu of displayed cards), **Check for Updates…**, **About OpenUsage**, and **Quit OpenUsage**.
 
 ## Customize
 
@@ -146,6 +173,8 @@ It's a two-level screen: a list of providers, then a provider's detail.
 The **provider list** shows every provider with a switch to turn it on or off, a count of its metrics, and a chevron into its detail.
 Turn a provider off and it stays in the list, greyed — its metrics hide from the dashboard and menu bar but keep their setup for when you turn it back on.
 Drag enabled providers by their grip to reorder; tap a row to open its detail.
+Both display modes keep one entry per provider, and moving it moves all of that provider's account cards while preserving their account order.
+Account order is changed separately in **Settings → Accounts**.
 On a fresh install only the providers detected on your Mac start on (see "First launch" above); this list is where you add the rest.
 
 A provider's **detail** has a back button and provider-specific Reset control in its top bar.
@@ -157,7 +186,9 @@ An empty section shows a dashed **Drag metrics here** target.
 You can star up to two metrics per provider.
 OpenRouter and Z.ai also show an **API Key** section where you can add, replace, reveal, or clear that provider's key.
 
-Drag-reorder also works directly on the dashboard — drag a row within its provider, drag it across the caret boundary while the card is open, or drag a provider header to reorder sections.
+Drag-reorder also works directly on the dashboard — drag a row within its provider or across the caret boundary while the card is open; every account of the same provider shares the result.
+Single Card and ordinary single-account providers allow header dragging to reorder sections.
+Separate Cards headers cannot be dragged; change provider order in Customize and account order in Settings.
 On a Force Touch trackpad you'll feel a light tap each time the dragged item snaps into a new slot.
 
 The default reset layout mirrors this fork's owner setup: Claude keeps Session, Weekly, and Fable always visible; Codex keeps Session and Weekly; Kimi keeps Session and Weekly.
