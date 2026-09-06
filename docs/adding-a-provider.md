@@ -71,6 +71,17 @@ Use the message-only factory only when there is no typed error, and never return
   Cap at **two** links per provider (standard labels: Status, Dashboard, API Keys, or Usage).
   Only `http(s)` URLs with a non-empty label render.
 
+## Optional server-status support
+
+Official server status is separate from `ProviderRuntime` and is opt-in.
+Add a status-catalog entry only when the provider publishes a public HTTPS component feed with stable identifiers.
+Record the exact endpoint, status vocabulary, and exact component ids and names; do not use a broad name fallback or infer an outage from a usage-refresh error.
+Providers without a catalog entry make no status request.
+
+The request must remain unauthenticated and must not include provider credentials, account information, or usage data.
+Status is keyed by provider family, so account-specific provider ids share one check.
+Add focused tests for relevant and unrelated components, maintenance, unknown states, malformed responses, and each documented outage severity, then update the provider's EN/KO pages.
+
 ## User-supplied API keys
 
 Most providers read credentials already on the machine (a companion CLI/app's session, the keychain).

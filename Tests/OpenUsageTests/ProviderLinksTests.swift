@@ -61,7 +61,7 @@ final class ProviderLinksTests: XCTestCase {
 
     func testMixedSetKeepsOnlyValid() {
         let links = [
-            ProviderLink(label: "Status", url: "https://status.anthropic.com/"),
+            ProviderLink(label: "Status", url: "https://status.claude.com/"),
             ProviderLink(label: "", url: "https://console.anthropic.com/"),
             ProviderLink(label: "Bad", url: "ftp://nope"),
             ProviderLink(label: "Console", url: "https://console.anthropic.com/")

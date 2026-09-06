@@ -25,6 +25,18 @@ A provider card can also show **quick-link buttons** pinned at the bottom of its
 They're part of the expander, so collapsing the caret hides them along with the tucked-away metrics.
 Buttons lay out up to three across, wrapping to a second row when there are more.
 
+## Header status
+
+Transient status indicators follow the provider title: a yellow warning triangle for an authentication or usage-refresh problem, then a red skull for a problem reported on the provider's official status page.
+The warning and skull can appear together because they describe different failures.
+VoiceOver exposes the warning's detail as the Usage Issue value.
+
+For enabled Claude, Codex, Cursor, and Copilot cards, OpenUsage checks the relevant components on each provider's official status page.
+A component reporting degraded performance, a partial outage, or a major/full outage shows the skull.
+Scheduled maintenance, an unrelated component problem, and providers without status support do not create a skull.
+An unavailable, malformed, or changed status feed cannot create a new skull; a previously confirmed issue remains until a refresh pass finds the last successful check at least 15 minutes old, or a successful maintenance-only result clears it.
+Server status belongs to the provider family rather than the selected account and stays in memory only.
+
 ## Total Spend
 
 When any enabled provider tracks daily spend (Claude, Codex, Cursor, Grok, or OpenCode), a card sits above the provider sections.
@@ -129,7 +141,8 @@ There are two ways to reach it:
   The submenu lists every provider currently showing on the dashboard.
 
 The image is a flexible-height PNG using the app's look — the provider's mark and name up top, the metric rows you currently see for that provider, and a small OpenUsage mark centered at the bottom.
-It follows your Light/Dark appearance and shows everything on the card as-is (nothing is hidden or blurred).
+It follows your Light/Dark appearance and keeps the visible metric values as-is (nothing is blurred).
+Transient header indicators — the warning triangle, server skull, and refresh spinner — are left out.
 
 ## Footer
 

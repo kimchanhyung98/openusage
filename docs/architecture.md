@@ -71,6 +71,8 @@ The UI reads from a few observable stores:
 - `LayoutStore` — which metrics are shown, the provider/metric order, and which metrics are starred for the menu bar.
   It stores all of that once per provider, so every account card of a provider renders the same layout from that single set.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
+- `ProviderStatusStore` — transient official server status per provider family.
+  It checks only enabled families with an explicit public component source, keeps the result in memory, and exposes it to the dashboard independently of usage and authentication errors.
 - `ProviderAccountsStore` — the account-first registry for stable card ids and per-account sources for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
   Each record contains a stable id, an editable account name, and the provider identity derived from its current saved authentication.
@@ -84,6 +86,12 @@ The UI reads from a few observable stores:
   File access is injected for lifecycle and failure tests.
 
 Refresh runs on a timer in `AppContainer`; each pass respects the cache, so the network is only hit once a snapshot has actually expired.
+The same launch, provider-enablement wake, five-minute, and Dashboard manual passes refresh supported server status alongside usage.
+The status catalog explicitly covers Claude, Codex, Cursor, and Copilot; other families make no status request.
+Its client uses no provider authentication, and its exact component selectors turn only degraded, partial-outage, and major/full-outage states into a server issue.
+Maintenance and unknown states remain neutral.
+Status responses are limited to 64 KiB during transfer, and stopping the periodic refresh owner cancels all outstanding status requests.
+Cancelling one caller waiting on a shared request does not cancel that request for other callers.
 
 Providers with spend tiles carry an explicit history scope beside their export descriptors.
 Machine-local sources can be summed across device files; account-wide sources such as Cursor cannot.

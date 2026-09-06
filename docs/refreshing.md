@@ -12,6 +12,9 @@
 - The one-shot `openusage` command reuses this same persisted cache for five minutes, refreshes missing or stale entries without starting the app, and exits.
   `openusage --force` runs the same forced provider refresh as ⌘R regardless of cache age.
 - While a provider is fetching, a small spinner appears next to its name (and one shows in the footer beside the countdown), so you can tell a refresh is in flight rather than wondering if the numbers are stale.
+- Enabled Claude, Codex, Cursor, and Copilot families also check their official public status components at launch, when enabled, every 5 minutes, and during a Dashboard manual refresh.
+  These checks run separately from usage fetching, so an unavailable status page does not become an authentication or usage error.
+  Providers without explicit status support make no status request.
 - With [iCloud Sync](icloud-sync.md) on, a refresh batch writes one machine-history file after the whole batch finishes.
   Manual provider refreshes write after that provider finishes, and adjacent changes are debounced into one write.
 
@@ -26,6 +29,14 @@ A cached value only counts as *fresh* (skip-a-refresh fresh) when it was fetched
 So a value cached in an earlier session always re-fetches on the first pass after launch — you still see it instantly, but the app never waits out the old interval before getting live numbers.
 This matters after an update: a new app version refreshes right away instead of showing the previous version's data until its interval lapses.
 Within a session, a freshly fetched value then counts as fresh for one refresh interval before the next pass re-fetches it.
+
+Official server status has its own five-minute cache and is kept in memory only.
+Claude and Codex account cards share the result for their provider family instead of checking once per account.
+A relevant component reporting degraded performance, a partial outage, or a major/full outage produces the server skull.
+Scheduled maintenance and unknown results do not produce one.
+A failed status check cannot create a new skull, but it can retain a previously confirmed issue.
+Each refresh pass clears a result whose last successful check is at least 15 minutes old; crossing that age during a request is handled on the next pass, not by a separate timer.
+A successfully decoded maintenance-only result clears it immediately.
 
 Claude, Codex, and pi spend history has a separate local-log parse cache under `~/Library/Application Support/OpenUsage/log-scan-cache/`.
 It stores parsed usage events before OpenUsage applies model-rate estimates, so pricing updates take effect without re-reading unchanged JSONL.
