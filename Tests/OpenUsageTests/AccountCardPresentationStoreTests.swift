@@ -87,6 +87,33 @@ final class AccountCardPresentationStoreTests: XCTestCase {
         XCTAssertEqual(defaults.presentationWriteCount, 1)
     }
 
+    func testReorderPersistsAdjacentAndDistantMovesAtTheTargetPosition() throws {
+        let profiles = ["a", "b", "c", "d"].map { profile($0) }
+        let cases: [(dragged: String, target: String, expected: [String])] = [
+            ("a", "b", ["b", "a", "c", "d"]),
+            ("b", "a", ["b", "a", "c", "d"]),
+            ("b", "d", ["a", "c", "d", "b"]),
+            ("d", "b", ["a", "d", "b", "c"]),
+            ("a", "d", ["b", "c", "d", "a"]),
+            ("d", "a", ["d", "a", "b", "c"]),
+        ]
+        for testCase in cases {
+            try seed(modes: [:], orders: ["claude": ["a", "b", "c", "d"]])
+            let store = AccountCardPresentationStore(defaults: defaults)
+
+            XCTAssertTrue(store.reorder(
+                dragged: testCase.dragged,
+                target: testCase.target,
+                family: "claude",
+                profiles: profiles
+            ))
+
+            let reloaded = AccountCardPresentationStore(defaults: defaults)
+            XCTAssertEqual(reloaded.orderedProfiles(profiles, family: "claude").map(\.id), testCase.expected)
+            XCTAssertEqual(defaults.presentationWriteCount, 1)
+        }
+    }
+
     func testStaleForeignAndDuplicateSavedIDsAreIgnoredAndNewProfilesAppend() throws {
         try seed(modes: [:], orders: ["claude": ["missing", "c", "other", "c", "a", "archived"]])
         let store = AccountCardPresentationStore(defaults: defaults)
@@ -248,7 +275,7 @@ final class AccountCardPresentationStoreTests: XCTestCase {
         XCTAssertEqual(AccountCardPresentationStore(defaults: defaults).mode, .separateCards)
     }
 
-    func testOldVersionWritingLegacyBlobCannotEraseExplicitGlobalMode() throws {
+    func testEarlierPerFamilyFormatWriteCannotEraseExplicitGlobalMode() throws {
         let store = AccountCardPresentationStore(defaults: defaults)
         store.setMode(.separateCards)
 
