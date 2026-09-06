@@ -159,7 +159,9 @@ The first-use flow begins only when the user chooses **Sync Now**:
 
 1. OpenUsage looks for usable `bunx` and `bun` executables in the app environment, the login-shell path, and Bun's configured installation directory.
 2. When the Bun runtime itself is unavailable, the card shows **Installing Bun…**, downloads and runs Bun's official installer, verifies `bunx` in the directory selected by the installer, and continues the same action without requiring an app restart.
-3. OpenUsage runs `bunx tokscale@latest submit` once with the merged app and login-shell environment so the current Tokscale package remains responsible for supported-source discovery; it anchors `HOME` and the command's working directory to the current macOS account, removes known runtime-injection settings, Tokscale test hooks, and custom Tokscale API endpoints, and lets the saved device name override only `TOKSCALE_DEVICE_NAME`.
+3. OpenUsage runs `bunx tokscale@latest submit` once, forwarding only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings from the app and login shell.
+   It anchors `HOME` and the working directory to the current macOS account, excludes unrelated secrets and unknown variables, and lets the saved device name override only `TOKSCALE_DEVICE_NAME`.
+   Tokscale still discovers supported sources; use `TOKSCALE_EXTRA_DIRS` for additional directories when a new path variable is not yet allowed.
 4. **Log In…** appears only when that submit result matches Tokscale's verified missing-login response.
 5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
 6. OpenUsage runs `bunx tokscale@latest login` once in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.

@@ -159,8 +159,9 @@ OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 �
 
 1. App environment, login shell path, Bun의 설정된 install directory에서 사용 가능한 `bunx`와 `bun` executable 탐색.
 2. Bun runtime 자체가 없으면 카드에 **Installing Bun…** 표시, Bun 공식 installer 다운로드·실행, installer가 선택한 directory의 `bunx` 검증 뒤 app restart 없이 같은 동작 계속 진행.
-3. App과 login shell의 environment를 병합해 `bunx tokscale@latest submit`을 한 번 실행하고 현재 Tokscale package가 지원 source 탐색을 계속 소유.
-   `HOME`과 command 작업 directory는 현재 macOS account로 고정하고 알려진 runtime injection 설정, Tokscale test hook, custom Tokscale API endpoint를 제거하며, 저장한 device name은 `TOKSCALE_DEVICE_NAME`만 override.
+3. `bunx tokscale@latest submit`을 한 번 실행하며, app과 login shell에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
+   `HOME`과 작업 directory는 현재 macOS account로 고정하고 무관한 secret·미등록 변수를 제외하며, 저장한 device name은 `TOKSCALE_DEVICE_NAME`만 override.
+   지원 source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수가 아직 허용되지 않은 경우 추가 directory에 `TOKSCALE_EXTRA_DIRS` 사용.
 4. Submit 결과가 검증된 Tokscale 미로그인 응답과 일치할 때만 **Log In…** 표시.
 5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
 6. OpenUsage에서 작은 **Log In to Tokscale** sheet를 열고 `bunx tokscale@latest login` 한 번 실행, 승인 대기 중 browser URL과 user code 표시.

@@ -83,9 +83,11 @@ bunx tokscale@latest submit
 2026-09-04 Tokscale v4.15.1 검토 기준, CLI는 token·cost breakdown, 날짜, client, model, message·timing 통계, device 정보, 발견된 MCP server 이름, Tokscale CLI 버전을 포함 가능.
 해당 집계를 계산하기 위해 local session file을 읽을 수 있지만, Tokscale 현재 policy에서는 prompt·response·conversation content, source code, file content·name, AI provider API key·credential을 제출에서 제외.
 OpenUsage widget, iCloud history, 익명 분석에서 제출 데이터를 역산하지 않고 OpenUsage provider 설정을 filter로 적용하지 않음.
-App과 캡처된 login shell environment를 병합해 OpenUsage provider 목록이 아닌 현재 `@latest` CLI가 source 탐색을 계속 소유.
-따라서 child가 해당 environment에 export된 credential과 기타 secret에 접근할 수 있지만 OpenUsage에서 그 값을 검사하거나 기록하지 않음.
-알려진 runtime injection 설정, Tokscale test hook, custom Tokscale API endpoint, custom terminal `HOME`은 전달하지 않고 현재 macOS account의 home을 `HOME`과 작업 directory로 사용.
+App과 캡처된 login shell environment에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
+AI provider API key·GitHub token 같은 무관한 credential, 미등록 변수, runtime injection 설정, Tokscale test hook, custom Tokscale API endpoint는 전달하지 않음.
+허용한 설정에도 Tokscale 자체 token이나 proxy 인증 같은 credential이 포함될 수 있으며, OpenUsage에서 해당 값을 기록하지 않음.
+Environment 상속만 제한하며 file 접근 제한은 아님: Bun과 Tokscale는 sandbox로 격리하지 않으므로 local file과 자체 설정을 계속 읽을 수 있음.
+Custom terminal `HOME`은 무시하고 현재 macOS account의 home을 `HOME`과 작업 directory로 사용.
 Tokscale 자체 token은 request 인증에 사용하고, Tokscale 현재 policy에서는 AI provider API key와 credential을 제출 usage data에서 제외.
 
 **Name…**에서 저장한 device name은 Tokscale profile에서 기기를 식별할 수 있는 public label.

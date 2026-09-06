@@ -101,8 +101,9 @@ The boundary has four responsibilities:
   Existing parent directories are resolved before appending missing folders, so symbolic links cannot redirect installation outside the home directory; broken links are rejected before download.
 - `TokscaleCommandRunner` accepts only `submit` or `login` and launches the resolved `bunx` directly with fixed argument arrays for `tokscale@latest submit` and `tokscale@latest login`.
   It never uses `shell -c`, AppleScript, or user-supplied command text.
-  It merges the app and captured login-shell environments so `@latest` remains responsible for current and future source discovery rather than freezing a provider-specific allowlist in OpenUsage.
-  Known runtime-injection settings, Tokscale test hooks, and `TOKSCALE_API_URL` are removed; `HOME` and the working directory are anchored to the current macOS account, and package resolution otherwise keeps the user's Bun configuration.
+  It merges the app and captured login-shell environments, with app values taking precedence, then forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings.
+  Unknown variables, AI-provider API keys, runtime-injection settings, Tokscale test hooks, and `TOKSCALE_API_URL` are not forwarded; `HOME` and the working directory are anchored to the current macOS account.
+  Tokscale still owns source discovery; newly introduced path variables require an allowlist update, while `TOKSCALE_EXTRA_DIRS` remains available for additional source directories.
   The only value accepted from this UI and passed to a child is a validated submit-only `TOKSCALE_DEVICE_NAME` environment entry.
 - `TokscaleSyncStore` owns one active install or command for the app lifetime and persists the optional device name locally, so hiding or rebuilding Settings does not orphan the process or lose its result.
 - `TokscaleSettingsSection` renders the compact card, the **Name…** header action and sheet, the missing-login action, and the login sheet.

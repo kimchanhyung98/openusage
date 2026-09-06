@@ -83,9 +83,11 @@ That command asks the Tokscale package resolved by `bunx` to discover its suppor
 Verified against Tokscale v4.15.1 on 2026-09-04, the CLI may include token and cost breakdowns, dates, clients, models, message and timing statistics, device information, discovered MCP server names, and the Tokscale CLI version.
 The CLI may read local session files to calculate those aggregates, but Tokscale's current policy excludes prompts, responses and conversation content, source code, file contents and names, and AI-provider API keys or credentials from submission.
 OpenUsage does not derive the submission from its widgets, iCloud history, or anonymous analytics and does not apply its provider settings as a filter.
-OpenUsage merges the app and captured login-shell environments so the current `@latest` CLI, rather than an OpenUsage provider list, remains responsible for source discovery.
-The child can therefore access exported credentials and other secrets in that environment; OpenUsage does not inspect or log those values.
-Known runtime-injection settings, Tokscale test hooks, custom Tokscale API endpoints, and a custom terminal `HOME` are not forwarded; the command uses the current macOS account's home as both `HOME` and its working directory.
+OpenUsage forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings from the app and captured login-shell environments.
+Unrelated credentials such as AI-provider API keys and GitHub tokens, unknown variables, runtime-injection settings, Tokscale test hooks, and custom Tokscale API endpoints are not forwarded.
+Allowed settings can still contain credentials, such as Tokscale's own token or proxy authentication; OpenUsage does not log those values.
+This limits environment inheritance, not file access: Bun and Tokscale are not sandboxed and can still read local files and their own configuration.
+The command uses the current macOS account's home as both `HOME` and its working directory, ignoring a custom terminal `HOME`.
 Tokscale uses its own token to authenticate the request; its current policy excludes AI-provider API keys and credentials from the submitted usage data.
 
 The device name saved through **Name…** is a public label and can identify the machine on the Tokscale profile.
