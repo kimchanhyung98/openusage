@@ -59,7 +59,11 @@ final class ReleaseVersionScriptTests: XCTestCase {
 
     func testDevelopmentVersionRejectsLegacyTags() throws {
         let repository = try makeRepository(tag: "v0.6.28")
-        XCTAssertThrowsError(try developmentVersion(repositoryDirectory: repository))
+        XCTAssertThrowsError(try developmentVersion(repositoryDirectory: repository)) { error in
+            guard case VersionScriptError.rejectedTag = error else {
+                return XCTFail("expected a legacy tag rejection, got \(error)")
+            }
+        }
     }
 
     func testReleaseTagMustExistAndMatchMainHistory() throws {
@@ -70,12 +74,24 @@ final class ReleaseVersionScriptTests: XCTestCase {
                     "tag", "-a", "v0.9.6-beta.1", "-m", "beta"], in: repository)
         XCTAssertEqual(try verifiedReleaseVersion("v0.9.6-beta.1", in: repository), "0.9.6-beta.1")
         try runGit(["branch", "v0.9.7"], in: repository)
-        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.7", in: repository))
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.7", in: repository)) { error in
+            guard case VersionScriptError.scriptFailure(status: 2, stderr: _) = error else {
+                return XCTFail("expected a missing tag failure, got \(error)")
+            }
+        }
         try runGit(["-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
                     "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "unmerged"], in: repository)
-        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.5", in: repository))
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.5", in: repository)) { error in
+            guard case VersionScriptError.scriptFailure(status: 2, stderr: _) = error else {
+                return XCTFail("expected a mismatched HEAD failure, got \(error)")
+            }
+        }
         try runGit(["tag", "v0.9.8"], in: repository)
-        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.8", in: repository))
+        XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.8", in: repository)) { error in
+            guard case VersionScriptError.scriptFailure(status: 2, stderr: _) = error else {
+                return XCTFail("expected an off-main tag failure, got \(error)")
+            }
+        }
     }
 
     /// checkout된 트리 의존을 피하려고 workflow에 복제한 패턴과 원본의 불일치 감지.
