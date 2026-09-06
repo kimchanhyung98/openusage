@@ -1,6 +1,6 @@
 ---
 name: release-swift
-description: Cut a release of OpenUsage (Swift menu-bar app): pick a version, generate a categorized changelog, tag from `main`, and publish the GitHub Release with notes. Use to ship an Early Access beta or a stable release.
+description: "Cut a release of OpenUsage (Swift menu-bar app): pick a version, generate a categorized changelog, tag from `main`, and publish the GitHub Release with notes. Use to ship an Early Access beta or a stable release."
 ---
 
 # Release Swift
@@ -9,10 +9,10 @@ Pushing a `v*` tag on `main` runs `.github/workflows/release.yml`, which builds,
 
 ## Channels
 
-- **Beta (Early Access):** suffixed tag like `v0.7.1-beta.1`. Marked a GitHub pre-release and added to Sparkle's `beta` channel. Only users with Early Access enabled get it; GitHub "Latest" is untouched.
-- **Stable:** plain tag like `v0.7.1`. Marked non-prerelease, becomes GitHub "Latest", and ships to everyone.
+- **Beta (Early Access):** suffixed tag like `v0.10.0-beta.1`. Marked a GitHub pre-release and added to Sparkle's `beta` channel. Only users with Early Access enabled get it; GitHub "Latest" is untouched.
+- **Stable:** plain tag like `v0.10.0`. Marked non-prerelease, becomes GitHub "Latest", and ships to everyone.
 
-The tag IS the version: `v0.7.1-beta.1` becomes `CFBundleShortVersionString = 0.7.1-beta.1`, and `CFBundleVersion` is the git commit count. There are no version files to bump.
+The tag IS the version: `v0.10.0-beta.1` becomes `CFBundleShortVersionString = 0.10.0-beta.1`, and `CFBundleVersion` is the git commit count. There are no version files to bump.
 
 ## Cutting a release
 
@@ -24,7 +24,7 @@ Next number in the current lane (default bump: patch). Beta builds add a `-beta.
 
 Collect commits since the **previous release in the same channel** and categorize each:
 
-- **Stable cut:** span from the **last stable tag** to this one (e.g. `v0.7.0...v0.7.1`), so the notes roll up the entire beta series plus any post-beta commits. Never start a stable changelog at the last beta — that would omit every beta in the lane.
+- **Stable cut:** span from the **last stable tag** to this one (e.g. `v0.9.5...v0.10.0`), so the notes roll up the entire beta series plus any post-beta commits. Never start a stable changelog at the last beta — that would omit every beta in the lane.
 - **Beta cut:** span from the previous tag (the prior beta, or the last stable if it's the first beta in a lane) to this one.
 
 | Commit prefix | Category |
@@ -49,7 +49,7 @@ Wait for explicit approval of the changelog before changing any files. Accept ed
 
 ### 4. Record it in CHANGELOG.md
 
-Prepend the approved section right after the `# Changelog` header. Commit on `main`:
+Prepend the approved section right after the `# Changelog` header and the preamble line under it. Commit on `main`:
 
 ```sh
 git switch main && git pull
@@ -122,12 +122,12 @@ Only include category sections that have entries.
 ---
 
 ### Changelog
-**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_tag}...v{version})
-
-- [{short_hash}](https://github.com/kimchanhyung98/openusage/commit/{full_hash}) {commit message} by @{author}
+**Full Changelog**: [{prev_tag}...v{version}](https://github.com/kimchanhyung98/openusage/compare/{prev_commit}...{full_hash})
 ~~~
 
 `{prev_tag}` is the previous release **in the same channel**: last stable for a stable cut, last beta (or last stable for the first beta in a lane) for a beta cut.
+
+The compare **link text** uses tag names, but the **URL** uses the two full commit SHAs the tags point at. Some fork tags exist only locally and were never pushed, so a tag-name URL would 404 for them; SHAs always resolve. A commit whose section has no earlier release to compare against uses `**Release Commit**: [{short_hash}](https://github.com/kimchanhyung98/openusage/commit/{full_hash})` instead.
 
 ## Rules
 
@@ -135,7 +135,7 @@ Only include category sections that have entries.
 - Stable changelogs span last-stable → this-stable (roll up the whole beta series); beta changelogs span previous-tag → this-beta.
 - Never push or tag automatically — ask the owner first.
 - Always publish notes to the GitHub Release — never blank.
-- The version is the tag; never edit version files.
+- The release artifact version is derived from the tag. Never edit `AppInfo` or `script/build_and_run.sh` for a release version.
 - The appcast is append-only: older installs and the other channel's latest build must keep working, so the workflow aborts rather than shrink it.
 
 Release secrets and one-time setup live in the README under [Release setup](../../../README.md#release-setup-one-time).
