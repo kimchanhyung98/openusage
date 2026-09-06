@@ -20,7 +20,7 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         }
     }
 
-    func testSubmitUsesFixedArgumentsHomeDirectoryAndMergedEnvironment() async throws {
+    func testSubmitUsesFixedArgumentsHomeDirectoryAndAllowlistedMergedEnvironment() async throws {
         let processRunner = RecordingTokscaleProcessRunner(
             result: StreamingProcessResult(exitCode: 0, output: "finished")
         )
@@ -29,6 +29,7 @@ final class TokscaleCommandRunnerTests: XCTestCase {
             inheritedEnvironment: [
                 "USER": "tester",
                 "LANG": "en_US.UTF-8",
+                "DO_NOT_TRACK": "1",
                 "HTTPS_PROXY": "https://proxy.example",
                 "SSL_CERT_FILE": "/certs/root.pem",
                 "CLAUDE_CONFIG_DIR": "/Users/tester/.claude-custom",
@@ -58,6 +59,8 @@ final class TokscaleCommandRunnerTests: XCTestCase {
                 [
                     "PATH": "/Users/tester/.local/bin:/opt/homebrew/bin",
                     "GEMINI_CLI_HOME": "/Users/tester/.gemini-custom",
+                    "CODEX_HOME": "/Users/tester/.shell-codex",
+                    "http_proxy": "http://shell-proxy.example",
                     "FUTURE_PROVIDER_HOME": "/Users/tester/.future-provider",
                     "TOKSCALE_EXTRA_DIRS": "codex:/Users/tester/more-sessions,claude:relative/sessions,bad-entry",
                 ]
@@ -90,7 +93,10 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         XCTAssertEqual(request.environment["CLAUDE_CONFIG_DIR"], "/Users/tester/.claude-custom")
         XCTAssertEqual(request.environment["CODEX_HOME"], "/Users/tester/.codex-custom")
         XCTAssertEqual(request.environment["GEMINI_CLI_HOME"], "/Users/tester/.gemini-custom")
-        XCTAssertEqual(request.environment["FUTURE_PROVIDER_HOME"], "/Users/tester/.future-provider")
+        XCTAssertEqual(request.environment["DO_NOT_TRACK"], "1")
+        XCTAssertEqual(request.environment["HTTPS_PROXY"], "https://proxy.example")
+        XCTAssertEqual(request.environment["http_proxy"], "http://shell-proxy.example")
+        XCTAssertEqual(request.environment["SSL_CERT_FILE"], "/certs/root.pem")
         XCTAssertEqual(
             request.environment["TOKSCALE_EXTRA_DIRS"],
             "codex:/Users/tester/more-sessions,claude:relative/sessions,bad-entry"
@@ -99,23 +105,20 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         XCTAssertEqual(request.environment["KIMI_CODE_HOME"], "/tmp/unsafe\npath")
         XCTAssertEqual(request.environment["TOKSCALE_API_TOKEN"], "secret-token")
         XCTAssertEqual(request.environment["TOKSCALE_DEVICE_ID"], "forced-device")
-        XCTAssertEqual(request.environment["TOKSCALE_OTHER"], "other")
-        XCTAssertEqual(request.environment["TOKSCALE_FM_DEBUG"], "1")
         XCTAssertEqual(request.environment["TOKSCALE_NATIVE_TIMEOUT_MS"], "600000")
-        XCTAssertEqual(request.environment["GH_TOKEN"], "github-secret")
-        XCTAssertEqual(request.environment["GITHUB_TOKEN"], "github-secret")
-        XCTAssertEqual(request.environment["UNRELATED_SECRET"], "secret")
         XCTAssertEqual(request.environment["BUN_CONFIG_REGISTRY"], "https://registry.example")
         for key in [
             "TOKSCALE_API_URL", "TOKSCALE_FAKE_CODEX_MODE", "NODE_OPTIONS", "BUN_OPTIONS",
             "DYLD_INSERT_LIBRARIES", "LD_LIBRARY_PATH",
+            "GH_TOKEN", "GITHUB_TOKEN", "UNRELATED_SECRET", "FUTURE_PROVIDER_HOME",
+            "TOKSCALE_OTHER", "TOKSCALE_FM_DEBUG",
         ] {
             XCTAssertNil(request.environment[key], "\(key) must not reach the child")
         }
         XCTAssertEqual(request.currentDirectoryURL?.path, "/Users/tester")
     }
 
-    func testLoginDropsOnlyDeviceNameAndKeepsTokscaleAuthenticationEnvironment() async throws {
+    func testLoginDropsDeviceNameAndKeepsTokscaleAuthenticationEnvironment() async throws {
         let processRunner = RecordingTokscaleProcessRunner(
             result: StreamingProcessResult(exitCode: 0, output: "logged in")
         )
@@ -143,6 +146,40 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         XCTAssertNil(request.environment["TOKSCALE_DEVICE_NAME"])
         XCTAssertEqual(request.environment["TOKSCALE_API_TOKEN"], "ambient-token")
         XCTAssertEqual(request.environment["TOKSCALE_CONFIG_DIR"], "/Users/tester/.config/tokscale-custom")
+    }
+
+    func testBothCommandsRejectUnknownKeysAndProviderSecretsFromEitherEnvironment() async throws {
+        let rejectedKeys = [
+            "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "AWS_SECRET_ACCESS_KEY",
+            "GH_TOKEN", "GITHUB_TOKEN", "TOKSCALE_OTHER_TOKEN", "TOKSCALE_TEST_SECRET",
+            "BUN_CONFIG_TOKEN", "NODE_TLS_REJECT_UNAUTHORIZED", "OPENCODE_CONFIG_CONTENT",
+            "CUSTOM_HOME", "CUSTOM_CONFIG_DIR", "UNKNOWN_SETTING",
+        ]
+        let secrets = Dictionary(uniqueKeysWithValues: rejectedKeys.map { ($0, "sensitive-value") })
+        let runtime = BunRuntime(
+            bunURL: URL(fileURLWithPath: "/bun"),
+            bunxURL: URL(fileURLWithPath: "/bunx"),
+            executionPath: "/runtime/bin"
+        )
+        for command in [TokscaleCommand.submit(deviceName: nil), .login] {
+            for useShell in [false, true] {
+                let processRunner = RecordingTokscaleProcessRunner(
+                    result: StreamingProcessResult(exitCode: 0, output: "finished")
+                )
+                let runner = TokscaleCommandRunner(
+                    processRunner: processRunner,
+                    inheritedEnvironment: useShell ? [:] : secrets,
+                    loginShellEnvironment: { useShell ? secrets : [:] },
+                    homeDirectoryURL: URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+                )
+
+                _ = try await runner.run(command, runtime: runtime) { _ in }
+
+                let recordedRequest = await processRunner.request()
+                let request = try XCTUnwrap(recordedRequest)
+                XCTAssertEqual(Set(request.environment.keys), ["HOME", "PWD", "PATH", "TERM", "NO_COLOR"])
+            }
+        }
     }
 
     func testSubmitLeavesAmbientDeviceNameForTokscaleToValidateWhenOpenUsageHasNoOverride() async throws {
