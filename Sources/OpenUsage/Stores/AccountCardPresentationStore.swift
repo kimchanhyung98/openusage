@@ -53,7 +53,7 @@ final class AccountCardPresentationStore {
         }
     }
 
-    /// 구버전 family별 설정은 읽기 승계만 수행 — 명시적 공통 설정이 없을 때 Separate 선택 하나라도 유지.
+    /// 초기 family별 저장 형식(modesByFamily)의 읽기 호환 — 공통 설정이 없을 때 Separate 선택 하나라도 유지.
     var mode: AccountCardDisplayMode {
         guard !hasInvalidModeType else { return .singleCard }
         if let storedMode { return AccountCardDisplayMode(rawValue: storedMode) ?? .singleCard }
@@ -64,7 +64,7 @@ final class AccountCardPresentationStore {
 
     func setMode(_ mode: AccountCardDisplayMode) {
         guard !hasUnreadableSettings, self.mode != mode || hasUnsupportedMode else { return }
-        // 구버전이 계정 순서를 저장해도 공통 모드가 소실되지 않도록 별도 key 사용.
+        // family별 JSON을 쓰는 초기 구현이 계정 순서를 저장해도 공통 모드가 소실되지 않도록 별도 key 사용.
         defaults.set(mode.rawValue, forKey: Self.displayModeKey)
         storedMode = mode.rawValue
         hasInvalidModeType = false
@@ -110,14 +110,10 @@ final class AccountCardPresentationStore {
     @discardableResult
     func reorder(dragged: String, target: String, family: String, profiles: [AccountProfile]) -> Bool {
         guard !hasUnreadableSettings else { return false }
-        var ids = orderedProfiles(profiles, family: family).map(\.id)
-        guard dragged != target,
-              let from = ids.firstIndex(of: dragged),
-              let to = ids.firstIndex(of: target) else { return false }
-        ids.remove(at: from)
-        ids.insert(dragged, at: to)
+        let ids = orderedProfiles(profiles, family: family).map(\.id)
+        guard let next = LayoutStore.reordered(ids, dragged: dragged, target: target) else { return false }
         var updated = settings
-        updated.profileOrderByFamily[family] = ids
+        updated.profileOrderByFamily[family] = next
         return persist(updated)
     }
 
