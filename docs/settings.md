@@ -129,6 +129,56 @@ Tapping an alert opens the popover on the dashboard.
 | Hide From Screen Share | On / Off | On (default) replaces the menu bar strip with the OpenUsage icon and wordmark while your screen is being shared or recorded, and restores your starred metrics the moment the capture ends.<br>See [Menu bar](menu-bar.md#hiding-usage-while-screen-sharing). |
 | Share Anonymous Usage | On / Off | Off by default.<br>Turning it on shares anonymous, daily usage summaries — no account details, credentials, or usage values.<br>See [Privacy & Usage Data](privacy.md) for exactly what is and isn't sent. |
 
+## Tokscale CLI Sync
+
+The Tokscale section is a separate compact card that follows the layout language of **Terminal Helper** without sharing its state.
+It remains independent of iCloud Sync, Share Anonymous Usage, provider enablement, refreshes, the `openusage` command, and the local API.
+
+A small **Name…** action sits beside the Tokscale title in the same header-action position used by Accounts.
+It opens a **Tokscale Device Name** sheet with one text field.
+The value is trimmed, must be non-empty and no more than 120 UTF-8 bytes, and cannot contain control characters.
+Saving keeps the name for this Mac in OpenUsage without starting a command or network request, and the card shows the saved value, such as `m1-max`.
+Each later sync passes it to Tokscale as `TOKSCALE_DEVICE_NAME`.
+Tokscale keeps the stable device ID, so changing the name updates the same public device on the next successful submission instead of creating another device.
+**Remove OpenUsage Override** removes the local override without clearing Tokscale's existing public name; later submissions let Tokscale use a name from its environment or stored device record again.
+
+The card keeps the exact command, its public effect, and a link to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy) visible before the action:
+
+```sh
+bunx tokscale@latest submit
+```
+
+**Sync Now** runs that command once with no provider, date, or OpenUsage-data arguments.
+Tokscale decides which supported sources and fields are included.
+The current CLI may include usage, client, model, device, and discovered MCP-server information in a public profile that can appear in search results.
+Because `bunx` uses `@latest`, it may download and run a newer package whose behavior changed after the OpenUsage release.
+Package resolution follows the user's Bun configuration and may prefer a matching package under the home directory.
+
+Opening OpenUsage or Settings never runs a Tokscale command.
+The first-use flow begins only when the user chooses **Sync Now**:
+
+1. OpenUsage looks for usable `bunx` and `bun` executables in the app environment, the login-shell path, and Bun's configured installation directory.
+2. When the Bun runtime itself is unavailable, the card shows **Installing Bun…**, downloads and runs Bun's official installer, verifies `bunx` in the directory selected by the installer, and continues the same action without requiring an app restart.
+3. OpenUsage runs `bunx tokscale@latest submit` once with the merged app and login-shell environment so the current Tokscale package remains responsible for supported-source discovery; it anchors `HOME` and the command's working directory to the current macOS account, removes known runtime-injection settings, Tokscale test hooks, and custom Tokscale API endpoints, and lets the saved device name override only `TOKSCALE_DEVICE_NAME`.
+4. **Log In…** appears only when that submit result matches Tokscale's verified missing-login response.
+5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
+6. OpenUsage runs `bunx tokscale@latest login` once in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.
+7. When login finishes, the card shows **Tokscale Login Finished. Sync Has Not Started.**
+8. Login never submits usage automatically; another explicit **Sync Now** starts submission.
+
+Only one Tokscale command runs at a time.
+The card distinguishes installing Bun, running Tokscale, login-required, finished, and failed states.
+The card keeps ANSI/control-sequence-cleaned, bounded command output visible through completion or failure until the next operation or app termination; the login sheet shows the same login output while it remains open.
+A zero exit can also mean there was no usage to submit, so completion copy stays neutral rather than claiming an upload succeeded.
+Every other nonzero result remains a normal failure.
+Expired or revoked stored credentials are a known limitation and must be recovered outside OpenUsage with Tokscale's own CLI.
+
+The automatic Bun path uses the official [Bun installer](https://bun.com/docs/installation), installs in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default, and may update the login shell's profile.
+An incompatible `BUN_INSTALL` is not modified; the card reports the failure and offers the manual installation guide.
+OpenUsage does not replace an existing usable Bun installation.
+An existing Bun runtime with no usable `bunx` reports an error instead of being reinstalled.
+If installation or verification fails, submission does not start and the card offers the official installation guide as a recovery action.
+
 ## Advanced
 
 | Setting | Options | What it does |

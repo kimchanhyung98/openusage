@@ -89,6 +89,45 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 계정 전체를 담는 소스는 합산 불가.
 `WidgetDataStore`는 합산한 기록에서 지출 행만 다시 렌더링하고, 할당량과 오류 상태는 로컬 기준으로 유지.
 
+## Tokscale CLI 경계
+
+연동은 다른 프로바이더 pipeline이나 sync engine이 아닌 좁은 외부 process 경계.
+경계의 책임은 네 가지:
+
+- `BunInstaller`는 명시적 **Sync Now**에서 사용 가능한 Bun runtime을 찾지 못할 때만 실행하며, runtime은 있지만 `bunx` alias가 없으면 Bun을 재설치하거나 덮어쓰지 않고 실패.
+  고정된 공식 URL `https://bun.com/install`에서 script를 private temporary file로 내려받아 `/bin/bash`로 실행하고 installer가 선택한 `${BUN_INSTALL:-$HOME/.bun}` directory 아래의 `bunx`를 검증한 뒤, app environment 갱신을 기다리지 않고 설치된 executable을 직접 탐색.
+  Installer child에는 고정된 설치값과 자체 download에 필요한 export된 proxy·certificate 설정만 전달.
+  자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.
+  미생성 폴더를 붙이기 전에 기존 상위 directory의 실제 경로를 해석해 symbolic link가 설치를 home 밖으로 우회하지 못하도록 검증하고, 끊어진 link는 download 전에 거부.
+- `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array로 직접 실행.
+  `shell -c`, AppleScript, 사용자 제공 command text를 사용하지 않음.
+  App과 캡처된 login-shell environment를 병합해 OpenUsage에 provider별 allowlist를 고정하지 않고 `@latest`가 현재·향후 source 탐색을 계속 소유.
+  알려진 runtime injection 설정, Tokscale test hook, `TOKSCALE_API_URL`은 제거하고 `HOME`과 작업 directory는 현재 macOS account에 고정하며 package 해석은 그 외 사용자 Bun 설정 유지.
+  이 UI에서 입력받아 child에 전달하는 유일한 값은 검증된 submit 전용 `TOKSCALE_DEVICE_NAME` environment entry.
+- `TokscaleSyncStore`에서 app 수명 동안 active install 또는 command 하나와 상태를 소유하고 optional device name을 로컬 저장해 Settings가 숨거나 다시 생성되어도 process 고아화와 결과 소실 방지.
+- `TokscaleSettingsSection`에서 소형 card, **Name…** header action과 sheet, 미로그인 동작, login sheet 표시.
+
+해당 Settings button에서만 설치나 Tokscale command 시작 가능.
+App launch, Settings 표시, 주기적·수동 새로 고침, provider 변경, iCloud callback, widget update, `openusage` executable, local API 요청으로 둘 다 실행 금지.
+Submit 동작은 정확히 `bunx tokscale@latest submit`을 실행하고 optional device name이 있으면 `TOKSCALE_DEVICE_NAME`으로만 전달.
+**Name…** 저장으로 process나 network request를 시작하지 않으며 다음 성공 submit에서 Tokscale stable device ID와 연결된 표시 이름 갱신.
+**Remove OpenUsage Override**는 로컬 override만 제거하며 Tokscale의 기존 public name은 삭제하지 않고, 이후 submit에서 Tokscale environment나 저장된 device record의 label 사용.
+검증된 미로그인 submit 결과에서만 별도 login 동작을 활성화하고 login에는 public device name override를 전달하지 않음.
+Login 완료 뒤 submit을 시작하지 않으며 자동 retry와 background submit 없음.
+App 종료 시 runner가 소유한 active installer 또는 Tokscale process group을 cancel한 뒤 정리될 때까지 기다려 종료 중 active operation 방치 방지.
+종료한 leader의 process ID를 group 정리 완료까지 유지한 뒤 회수해 늦은 cancel이 재사용된 process group을 대상으로 삼지 않도록 보장.
+Tokscale CLI가 해당 process group 밖에서 시작하는 detached 후속 작업은 Tokscale 소유.
+
+제출 생성·filter를 위해 `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider account, provider enablement를 읽지 않는 경계.
+Provider collector, parser, contribution model, payload schema, Tokscale 직접 API client, token vault, credential migration은 경계에 포함하지 않음.
+Source 탐색, credential, stable device ID와 `device.json`, 집계, network request는 Tokscale CLI 소유이며 OpenUsage에서 해당 file을 편집하지 않음.
+
+Installer와 Tokscale standard output·error를 동시에 drain하고 ANSI/control sequence를 제거해 bounded memory command buffer에 보관.
+정리 중에도 buffered output을 읽되 pipe별 마지막 64 KiB로 제한해 detached writer의 무한 대기 방지.
+보존하는 앞·뒷부분은 UTF-8 경계의 남는 공간을 공유해 byte 상한 안의 완전한 문자 유지하며, raw C1 control도 제거.
+Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
+Raw output, 상속한 environment value, credential, authorization code를 OpenUsage log, telemetry, file, preference에 기록하지 않음.
+
 ## AppKit 브리지
 
 macOS 메뉴 막대 앱은 `NSStatusItem` 안에 존재.
