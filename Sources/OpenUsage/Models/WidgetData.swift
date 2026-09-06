@@ -22,9 +22,7 @@ struct WidgetData: Hashable {
     /// on이면 blue row에도 even-pace tick·projection 문구 표시 — yellow/red는 reset window 있으면 항상 tick 표시.
     var alwaysShowPacing: Bool = false
     /// quota가 아닌 공개 reset forecast meter — Used/Left·pace·quota 알림 의미에서 분리.
-    var isForecast: Bool = false
-    var forecastDeadline: Date?
-    var forecastRefreshFailed = false
+    var forecast: Forecast?
     var resetsAt: Date?
     /// row hover tooltip에 표시할 미래 expiry 시각들 (Codex reset credit — 가용 credit당 1개). 다른 row는 빈 배열.
     /// raw `Date` 유지 — tooltip이 live format하며 전역 relative/absolute mode 준수 (`expiryTooltip`).
@@ -71,6 +69,13 @@ struct WidgetData: Hashable {
     /// direct fixture(preview, share render)에서는 nil — 해당 action 비활성.
     var providerID: String?
 
+    struct Forecast: Hashable {
+        var deadline: Date?
+        var refreshFailed = false
+    }
+
+    var isForecast: Bool { forecast != nil }
+    var forecastDeadline: Date? { forecast?.deadline }
     var isBounded: Bool { limit != nil }
     var isQuotaMeter: Bool { isBounded && !isForecast }
 
@@ -471,7 +476,7 @@ extension WidgetData {
     /// bounded primary row의 trailing text — 우선순위는 `boundedSubtitle`과 동일하되 reset은 `resetDisplayMode` 반영.
     /// session row는 rolling window 시작 전 "Not started" 표시.
     func boundedTrailingText(now: Date = Date()) -> String? {
-        if isForecast, forecastRefreshFailed {
+        if forecast?.refreshFailed == true {
             return hasData ? "Cached forecast · Refresh failed" : "Unavailable · Retry later"
         }
         guard hasData else { return Self.noDataSubtitle }

@@ -25,7 +25,7 @@ extension WidgetDescriptor {
         metricLabel: String? = nil
     ) -> WidgetDescriptor {
         var sample = WidgetData(title: title, icon: provider.icon, kind: .percent, used: 0, limit: 100)
-        sample.isForecast = true
+        sample.forecast = WidgetData.Forecast()
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 

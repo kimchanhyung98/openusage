@@ -109,7 +109,9 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
+        let resetWatchStore = CodexResetWatchStore()
         let resetWatchCoordinator = CodexResetWatchCoordinator(
+            load: { await resetWatchStore.currentResult() },
             publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
@@ -209,7 +211,11 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
-        observeResetWatchActivity()
+        resetWatchCoordinator.observeActivity { [layout] in
+            layout.orderedRefreshDescriptors().contains {
+                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
+            }
+        }
         self.refreshTask.task = Self.startPeriodicRefresh(
             dataStore: dataStore,
             telemetry: telemetry,
@@ -381,20 +387,6 @@ final class AppContainer {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
         return outcome
-    }
-
-    /// 배치·pin·provider enablement의 최종 활성 상태를 관찰해 독립 Reset Watch task에 전달.
-    private func observeResetWatchActivity() {
-        let active = withObservationTracking {
-            layout.orderedRefreshDescriptors().contains {
-                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
-            }
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.observeResetWatchActivity()
-            }
-        }
-        resetWatchCoordinator.setActive(active)
     }
 
     @discardableResult

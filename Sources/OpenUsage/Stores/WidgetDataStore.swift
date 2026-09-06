@@ -553,13 +553,14 @@ final class WidgetDataStore {
                     used: ProviderParse.clampPercent(watch.chancePercent),
                     limit: 100
                 )
-                result.isForecast = true
-                result.forecastDeadline = watch.deadline
             } else {
                 result = descriptor.sample
                 result.hasData = false
             }
-            result.forecastRefreshFailed = codexResetWatch.refreshFailed
+            result.forecast = .init(
+                deadline: codexResetWatch.watch?.deadline,
+                refreshFailed: codexResetWatch.refreshFailed
+            )
         } else if let snapshot = snapshots[descriptor.providerID],
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {
