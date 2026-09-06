@@ -61,6 +61,20 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertEqual(expired.meterState(now: deadline), .noData)
     }
 
+    func testRemovingForecastMetadataClearsItsMeaningAndDeadlineTogether() {
+        var data = forecast(chance: 75)
+        data.forecast = .init(deadline: .distantFuture, refreshFailed: true)
+        XCTAssertTrue(data.isForecast)
+        XCTAssertEqual(data.boundedTrailingText(), "Cached forecast · Refresh failed")
+
+        data.forecast = nil
+
+        XCTAssertFalse(data.isForecast)
+        XCTAssertNil(data.forecastDeadline)
+        XCTAssertTrue(data.isQuotaMeter)
+        XCTAssertNotEqual(data.boundedTrailingText(), "Cached forecast · Refresh failed")
+    }
+
     func testDeadlineFormatFollowsLocaleInTwentyFourHourMode() {
         let deadline = localDate(year: 2026, month: 8, day: 31, hour: 16)
 
@@ -188,8 +202,7 @@ final class ResetWatchPresentationTests: XCTestCase {
             used: chance,
             limit: 100
         )
-        data.isForecast = true
-        data.forecastDeadline = deadline
+        data.forecast = .init(deadline: deadline)
         return data
     }
 

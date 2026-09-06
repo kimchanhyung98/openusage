@@ -44,12 +44,15 @@ final class CodexResetWatchResultTests: XCTestCase {
             providers: [], defaults: defaults
         )
         store.setCodexResetWatch(nil, refreshFailed: true)
+        XCTAssertEqual(store.data(for: descriptor).forecast, WidgetData.Forecast(refreshFailed: true))
         XCTAssertEqual(store.data(for: descriptor).boundedTrailingText(), "Unavailable · Retry later")
         let watch = CodexResetWatch(chancePercent: 75, deadline: .distantFuture)
         store.setCodexResetWatch(watch, refreshFailed: true)
+        XCTAssertEqual(store.data(for: descriptor).forecast, WidgetData.Forecast(deadline: .distantFuture, refreshFailed: true))
         XCTAssertEqual(store.data(for: descriptor).boundedTrailingText(), "Cached forecast · Refresh failed")
         XCTAssertTrue(store.data(for: descriptor).hasData)
         store.setCodexResetWatch(nil)
+        XCTAssertEqual(store.data(for: descriptor).forecast, WidgetData.Forecast())
         XCTAssertEqual(store.data(for: descriptor).boundedTrailingText(), WidgetData.noDataSubtitle)
     }
 }

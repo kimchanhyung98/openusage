@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import XCTest
 @testable import OpenUsage
 
@@ -136,6 +137,32 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         coordinator.setActive(false)
     }
 
+    func testObservedActivityRearmsAcrossDisableAndReenable() async {
+        let activity = ResetWatchActivityProbe()
+        let watch = CodexResetWatch(chancePercent: 75, deadline: .distantFuture)
+        var published: [CodexResetWatch?] = []
+        let coordinator = CodexResetWatchCoordinator(
+            load: { CodexResetWatchResult(watch: watch) },
+            publish: { published.append($0.watch) },
+            wait: { _ in false }
+        )
+        coordinator.observeActivity { activity.enabled }
+        XCTAssertTrue(published.isEmpty)
+
+        activity.enabled = true
+        let activated = await eventually { published == [watch] }
+        XCTAssertTrue(activated)
+
+        activity.enabled = false
+        let disabled = await eventually { published == [watch, nil] }
+        XCTAssertTrue(disabled)
+
+        activity.enabled = true
+        let reactivated = await eventually { published == [watch, nil, watch] }
+        XCTAssertTrue(reactivated)
+        coordinator.setActive(false)
+    }
+
     private func eventually(
         _ condition: @escaping @MainActor @Sendable () async -> Bool
     ) async -> Bool {
@@ -145,6 +172,12 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         }
         return await condition()
     }
+}
+
+@MainActor
+@Observable
+private final class ResetWatchActivityProbe {
+    var enabled = false
 }
 
 private actor ResetWatchLoadProbe {
