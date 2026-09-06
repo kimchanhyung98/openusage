@@ -96,6 +96,12 @@ Accounts 섹션에서 Claude와 Codex 계정 관리.
 | Show Usage As(사용량 표시 방식) | Used / Left | 상한이 있는 지표를 "48% used"로 읽을지 "52% left"로 읽을지 — 기본값은 Used이며, 헤드라인 클릭과 같은 토글. |
 | Reset Times(초기화 시각 표시) | Countdown / Exact time | "Resets in 3h 25m" 대 "Resets today at 6:38 PM" — 기본값은 Exact Time이며, 리셋 라벨 클릭과 같은 토글. |
 | Always Show Pacing(사용 속도 항상 표시) | 끄기 / 켜기 | 켜기(기본값)는 초기화 기간이 있는 모든 지표에 사용 속도 표시 — 정상 궤도인 행에는 예측치("~33% left at reset")와, 꾸준히 썼다면 지금 어디쯤일지 알려 주는 균등 속도 눈금 추가.<br>끄면 한도에 가깝거나 넘긴 지표로만 제한.<br>초기화 기간이 없는 지표에는 보여 줄 속도 자체가 없음. |
+| Soft Limit(소프트 리밋) | 끄기 / 켜기 | 기본값 끄기.<br>켜면 선택한 기간을 지원하는 진행 막대에 조기 한도 안내선 표시.<br>현재 안내선은 AI 세션을 중단하지 않으며, 모든 사용 세션을 정확한 제어 수단과 안전하게 결합하기 전까지 자동 중단 비활성. |
+| Window(기간) | 5 Hours / Weekly | 한 번에 하나의 soft-limit 기간 선택.<br>기본값 Weekly, Soft Limit을 켠 동안에만 표시.<br>일간·월간·잔액·상한 없는 지표 제외. |
+| Threshold(임계값) | 90%–95% | 1% 단위 안내선 설정.<br>기본값 95%, Soft Limit을 켠 동안에만 표시.<br>프로바이더 hard limit이 아닌 사용자 기준선. |
+
+Soft-limit 설정은 이 Mac에 저장되며, 선택 기간을 명시적으로 지원하는 모든 프로바이더 진행 막대에 적용.
+Used와 Left를 전환하면 안내선 위치만 반전하고 의미는 유지 — 95% used와 5% left는 같은 임계값.
 
 ## 알림
 

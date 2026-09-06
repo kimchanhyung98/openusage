@@ -25,6 +25,8 @@ final class WidgetDataStore {
     private let slowProviderRefreshThreshold: TimeInterval
     /// Quota-notification 설정 — nil이면 notification 전체 비활성(테스트·프리뷰).
     private let notificationSettings: (@MainActor () -> NotificationSettingsStore)?
+    /// Soft-limit 표시 설정 — nil이면 기존 렌더와 동일하게 안내선 없음.
+    private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
     /// Card id → 현재 로그인된 account identity(launch 시 `ProviderAccountAssembly`가 해석).
     /// snapshot cache의 account stamp 근거 — 쓰기는 producer를 기록, launch 로드는 stamp 일치 entry만 paint.
     private var providerIdentityKeys: [String: String]
@@ -94,6 +96,7 @@ final class WidgetDataStore {
         monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         slowProviderRefreshThreshold: TimeInterval = WidgetDataStore.defaultSlowProviderRefreshThreshold,
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
+        softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)? = nil,
         postNotification: (@MainActor (String, String, String, String) async -> Bool)? = nil,
         providerIdentityKeys: [String: String] = [:],
         familyTotalHistoryCardIDs: Set<String> = [],
@@ -110,6 +113,7 @@ final class WidgetDataStore {
         self.monotonicNow = monotonicNow
         self.slowProviderRefreshThreshold = slowProviderRefreshThreshold
         self.notificationSettings = notificationSettings
+        self.softLimitSettings = softLimitSettings
         self.postNotification = postNotification
             ?? { idPrefix, title, subtitle, body in
                 await AppNotifications.shared.post(idPrefix: idPrefix, title: title, subtitle: subtitle, body: body)
@@ -550,6 +554,10 @@ final class WidgetDataStore {
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
+        result.softLimitUsedFraction = softLimitSettings?().usedFraction(
+            for: descriptor.softLimitWindow,
+            periodDurationMs: result.periodDurationMs
+        )
         // 행 자신의 카드 identity — per-card action(Codex reset-claim router)의 키.
         result.providerID = descriptor.providerID
         return result

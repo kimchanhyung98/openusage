@@ -96,6 +96,12 @@ See [iCloud Sync](icloud-sync.md) for what is included and which surfaces use th
 | Show Usage As | Used / Left | Whether bounded metrics read "48% used" or "52% left" — Used is the default; this is the same toggle as clicking a headline. |
 | Reset Times | Countdown / Exact time | "Resets in 3h 25m" vs "Resets today at 6:38 PM" — Exact Time is the default; this is the same toggle as clicking a reset label. |
 | Always Show Pacing | Off / On | On (default) surfaces pacing on every metric with a reset window: on-track rows gain their projection ("~33% left at reset") and an even-pace tick marking where steady use would put you right now.<br>Off limits pacing to metrics close to or over their limit.<br>Metrics without a reset window have no pace to show. |
+| Soft Limit | Off / On | Off by default.<br>When on, shows an early-limit guide on eligible progress bars for the selected window.<br>This guide does not stop AI sessions yet; automatic stopping remains unavailable until OpenUsage can safely bind every usage-consuming session to an exact control. |
+| Window | 5 Hours / Weekly | Selects one soft-limit window at a time.<br>Defaults to Weekly and appears only while Soft Limit is on.<br>Daily, monthly, balance, and unbounded metrics are excluded. |
+| Threshold | 90%–95% | Sets the guide in one-percent steps.<br>Defaults to 95% and appears only while Soft Limit is on.<br>The setting is a user threshold, not a provider hard limit. |
+
+The soft-limit settings are stored on this Mac and apply to every provider progress bar that explicitly supports the selected window.
+Switching between Used and Left mirrors the guide but does not change its meaning: 95% used is the same threshold as 5% left.
 
 ## Notifications
 

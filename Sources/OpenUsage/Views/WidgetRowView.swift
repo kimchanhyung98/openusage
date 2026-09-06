@@ -86,6 +86,7 @@ struct WidgetRowView: View {
                 .font(labelFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
+                .accessibilityHint(data.softLimitStatusText ?? "")
             warning(state)
         }
     }
@@ -350,6 +351,7 @@ struct WidgetRowView: View {
     /// 데이터 없으면 비어 있고 무색. pace tick은 overlay로 얹혀 bar 높이를 바꾸지 않음.
     private func meter(_ state: WidgetData.MeterState) -> some View {
         let tick = data.paceTick(for: state)
+        let softLimitMarker = data.softLimitMarkerFraction
         return GeometryReader { proxy in
             // tick은 `.overlay`로 상하 돌출 — ZStack sibling이면 stack이 자라 bar가 두꺼워짐.
             ZStack(alignment: .leading) {
@@ -364,29 +366,53 @@ struct WidgetRowView: View {
                     RoundedRectangle(cornerRadius: 1)
                         .fill(Color.primary.opacity(0.55))
                         .frame(width: Self.paceTickWidth, height: density.meterHeight + Self.paceTickOverhang)
-                        .offset(x: paceTickOffset(track: proxy.size.width, fraction: tick))
+                        .offset(
+                            x: MeterMarkerGeometry.offset(
+                                track: proxy.size.width,
+                                fraction: tick,
+                                markerWidth: Self.paceTickWidth
+                            )
+                        )
+                }
+            }
+            .overlay(alignment: .leading) {
+                if let softLimitMarker {
+                    RoundedRectangle(cornerRadius: 0.5)
+                        .fill(Color.primary.opacity(0.85))
+                        .frame(width: Self.softLimitMarkerWidth, height: density.meterHeight)
+                        .offset(
+                            x: MeterMarkerGeometry.offset(
+                                track: proxy.size.width,
+                                fraction: softLimitMarker,
+                                markerWidth: Self.softLimitMarkerWidth
+                            )
+                        )
                 }
             }
         }
         .frame(height: density.meterHeight)
         .animation(Motion.spring, value: data.fraction)
+        .animation(Motion.spring, value: data.softLimitMarkerFraction)
         .accessibilityHidden(true)
-        .hoverTooltip(state.tooltip)
+        .hoverTooltip(data.meterTooltip(for: state))
     }
 
     private static let paceTickWidth: CGFloat = 2
     private static let paceTickOverhang: CGFloat = 4
-
-    /// tick을 fraction 중심에 배치하되 track의 rounded 양 끝을 넘지 않게 clamp.
-    private func paceTickOffset(track: CGFloat, fraction: Double) -> CGFloat {
-        let centered = track * fraction - Self.paceTickWidth / 2
-        return min(max(centered, 0), max(track - Self.paceTickWidth, 0))
-    }
+    private static let softLimitMarkerWidth: CGFloat = 1
 
     /// 최소 가시 규칙이 적용된 fill 폭 — 0이 아닌 fraction은 최소 원 하나(bar 높이) 폭으로 렌더링해
     /// 1–2%가 보이지 않는 sliver가 되지 않게 보장.
     private func fillWidth(track: CGFloat) -> CGFloat {
         guard data.hasData, data.fraction > 0 else { return 0 }
         return max(density.meterHeight, track * data.fraction)
+    }
+}
+
+/// meter marker를 fraction 중심에 배치하되 track 양 끝을 넘지 않게 clamp.
+enum MeterMarkerGeometry {
+    static func offset(track: CGFloat, fraction: Double, markerWidth: CGFloat) -> CGFloat {
+        let centered = track * fraction - markerWidth / 2
+        return min(max(centered, 0), max(track - markerWidth, 0))
     }
 }
