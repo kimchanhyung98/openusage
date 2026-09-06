@@ -72,6 +72,7 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃으로 렌더링.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
 - `ProviderStatusStore` — 프로바이더 패밀리별 일시적인 공식 서버 상태.
+  `AppContainer`에서 공개 상태 전용 HTTP client를 명시적으로 주입하며, store 내부에서 전송 계층을 암묵적으로 생성하지 않음.
   명시적인 공개 컴포넌트 소스가 있는 활성 패밀리만 확인하고 결과를 메모리에 보관하며, 사용량·인증 오류와 분리해 대시보드에 제공.
 - `ProviderAccountsStore` — Claude/Codex 로그인의 안정적인 카드 ID와 계정별 소스를 담은 계정 중심 레지스트리.
   `AccountProfilesStore`는 관리형 계정 레코드와 프로바이더 계열별 선택 계정 저장.

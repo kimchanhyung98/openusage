@@ -72,6 +72,7 @@ The UI reads from a few observable stores:
   It stores all of that once per provider, so every account card of a provider renders the same layout from that single set.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
 - `ProviderStatusStore` — transient official server status per provider family.
+  `AppContainer` explicitly supplies its dedicated public-status HTTP client; the store never creates a transport implicitly.
   It checks only enabled families with an explicit public component source, keeps the result in memory, and exposes it to the dashboard independently of usage and authentication errors.
 - `ProviderAccountsStore` — the account-first registry for stable card ids and per-account sources for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
