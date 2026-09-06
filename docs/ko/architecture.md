@@ -72,6 +72,8 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃 설정 공유.
 - 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
   순서는 안정적인 관리형 프로필 ID를 사용하므로 이름, 로그인이나 런타임 카드 ID가 바뀌어도 계정 위치 유지.
+  초기 개발 빌드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 계열별 모드를 저장했으며, `openusage.accountCardDisplayMode.v1`에 공통 선택을 저장하기 전까지 해당 모드를 읽기 전용 fallback으로 사용.
+  별도 key로 분리해 초기 형식을 사용하는 빌드가 계정 순서를 다시 저장해도 공통 선택 보호.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
 - `ProviderAccountsStore` — Claude/Codex 로그인의 안정적인 카드 ID와 계정별 소스를 담은 계정 중심 레지스트리.
   `AccountProfilesStore`는 관리형 계정 레코드와 프로바이더 계열별 선택 계정 저장.

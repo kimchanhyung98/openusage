@@ -88,7 +88,7 @@ The title format is not editable; renaming an account in **Manage…** updates i
 See [Dashboard](/docs/dashboard.md) for account display and shared layout behavior.
 
 Display modes apply immediately and persist across restarts.
-Before a shared choice is saved, **Separate Cards** is inherited if any previous per-provider setting used it; otherwise, **Single Card** is used.
+Before a shared choice is saved, **Separate Cards** is inherited if any per-provider setting from an earlier development build used it; otherwise, **Single Card** is used.
 Changing modes preserves the dashboard selection and does not switch the terminal account or refresh usage.
 Returning to **Single Card** restores the previous selection if it is still available; otherwise, an available account is selected.
 Removing a provider's last registered account returns that provider to a single card but preserves the saved preference for accounts added later.

@@ -72,6 +72,8 @@ The UI reads from a few observable stores:
   It stores all of that once per provider, so every account card of a provider shares the same layout settings.
 - Account presentation settings — one shared display mode and a managed account order for each provider family, stored locally and separately from authentication and layout.
   Order uses stable managed profile IDs, so account positions survive name, sign-in, and runtime card ID changes.
+  Earlier development builds stored per-family modes in `modesByFamily` under `openusage.accountCardPresentation.v1`; those modes remain a read-only fallback until a shared choice is saved under `openusage.accountCardDisplayMode.v1`.
+  The separate key protects the shared choice when a build using the earlier format rewrites account order.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
 - `ProviderAccountsStore` — the account-first registry for stable card ids and per-account sources for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
