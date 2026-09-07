@@ -105,6 +105,12 @@ Every one of those version checks lives in a single file — `Support/LiquidGlas
 The release build (`script/release.sh`) ships a universal binary (arm64 + x86_64), so a single DMG runs natively on both Apple Silicon and Intel Macs.
 The dev build (`script/build_and_run.sh`) stays host-arch only — a universal dev build just doubles compile time on the maintainer's own machine for no benefit.
 
+Release versions come from an existing Git tag pointing to the checked-out commit in `origin/main` history.
+Tags start at `v0.7.0`, use no leading zeroes, and allow only `-beta.N` prereleases with a positive N.
+Fetch `origin/main` before packaging a local release.
+Development builds append `-dev` to the nearest reachable release tag; a checkout with no reachable release tag uses `0.0.0-dev`.
+Invalid tags and Git errors stop the build.
+
 ## Local HTTP API
 
 A small loopback server exposes the current usage as JSON on `127.0.0.1:6736` for other local tools.
