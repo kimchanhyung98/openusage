@@ -31,6 +31,47 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertNotEqual(forecast(chance: 100).meterState(), .spent)
     }
 
+    func testCommunityVoteMarkerDoesNotReplaceForecastOrFlipWithUsedLeft() {
+        var data = forecast(chance: 45)
+        data.forecast?.communityYesPercent = 79
+        for mode in [WidgetDisplayMode.used, .remaining] {
+            data.displayMode = mode
+            XCTAssertEqual(data.fraction, 0.45)
+            XCTAssertEqual(data.boundedHeadline, "45% chance")
+            XCTAssertEqual(data.communityVoteTick, 0.79)
+            XCTAssertEqual(data.communityVoteLabel, "79% expect a reset")
+            XCTAssertEqual(data.meterState(), .level(.normal))
+            XCTAssertEqual(data.menuBarValue, "45%")
+        }
+        data.forecast?.communityYesPercent = 0
+        XCTAssertEqual(data.communityVoteTick, 0)
+        data.forecast?.communityYesPercent = 100
+        XCTAssertEqual(data.communityVoteTick, 1)
+        data.forecast?.communityYesPercent = nil
+        XCTAssertNil(data.communityVoteTick)
+        XCTAssertEqual(data.communityVoteLabel, "Votes unavailable")
+        data.forecast = nil
+        XCTAssertNil(data.communityVoteLabel)
+    }
+
+    func testExpiredForecastHidesCommunityVoteMarkerAndLabel() {
+        let deadline = Date(timeIntervalSince1970: 1_788_156_000)
+        var data = forecast(chance: 45, deadline: deadline)
+        data.forecast?.communityYesPercent = 79
+        let expired = data.presented(at: deadline)
+        XCTAssertNil(expired.communityVoteTick)
+        XCTAssertNil(expired.communityVoteLabel)
+    }
+
+    func testForecastAndQuotaUseSameAbsoluteDateTimeFormat() {
+        let now = localDate(year: 2026, month: 8, day: 28, hour: 16)
+        let deadline = localDate(year: 2026, month: 8, day: 31, hour: 16)
+        XCTAssertEqual(
+            Formatters.resetWatchDeadlineLabel(at: deadline).replacingOccurrences(of: "By ", with: ""),
+            Formatters.resetAbsoluteLabel(at: deadline, now: now)?.replacingOccurrences(of: "Resets ", with: "")
+        )
+    }
+
     func testForecastHasNoQuotaToggleResetActionOrPace() {
         let now = Date(timeIntervalSince1970: 1_788_069_600)
         var data = forecast(chance: 90, deadline: now.addingTimeInterval(24 * 60 * 60))
@@ -84,7 +125,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "en_US"),
                 timeFormat: .twentyFourHour
             ),
-            "By Aug 31, 16:00"
+            "By Aug 31 at 16:00"
         )
         XCTAssertEqual(
             Formatters.resetWatchDeadlineLabel(
@@ -92,7 +133,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "en_GB"),
                 timeFormat: .twentyFourHour
             ),
-            "By 31 Aug, 16:00"
+            "By 31 Aug at 16:00"
         )
         XCTAssertEqual(
             Formatters.resetWatchDeadlineLabel(
@@ -100,7 +141,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "ko_KR"),
                 timeFormat: .twentyFourHour
             ),
-            "By 8월 31일, 16:00"
+            "By 8월 31일 at 16:00"
         )
     }
 
@@ -113,7 +154,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "en_US"),
                 timeFormat: .twelveHour
             )),
-            "By Aug 31, 4:00 PM"
+            "By Aug 31 at 4:00 PM"
         )
         XCTAssertEqual(
             normalizedSpaces(Formatters.resetWatchDeadlineLabel(
@@ -121,7 +162,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "en_GB"),
                 timeFormat: .twelveHour
             )),
-            "By 31 Aug, 4:00 pm"
+            "By 31 Aug at 4:00 pm"
         )
         XCTAssertEqual(
             Formatters.resetWatchDeadlineLabel(
@@ -129,7 +170,7 @@ final class ResetWatchPresentationTests: XCTestCase {
                 locale: Locale(identifier: "ko_KR"),
                 timeFormat: .twelveHour
             ),
-            "By 8월 31일, 오후 4:00"
+            "By 8월 31일 at 오후 4:00"
         )
     }
 

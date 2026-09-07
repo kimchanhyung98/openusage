@@ -22,7 +22,7 @@ final class CodexResetWatchResultTests: XCTestCase {
         let published = expectation(description: "failure published")
         var result = CodexResetWatchResult()
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(refreshFailed: true) },
+            load: { _ in CodexResetWatchResult(refreshFailed: true) },
             publish: { result = $0; if $0.refreshFailed { published.fulfill() } },
             wait: { _ in false }
         )
@@ -51,6 +51,12 @@ final class CodexResetWatchResultTests: XCTestCase {
         XCTAssertEqual(store.data(for: descriptor).forecast, WidgetData.Forecast(deadline: .distantFuture, refreshFailed: true))
         XCTAssertEqual(store.data(for: descriptor).boundedTrailingText(), "Cached forecast · Refresh failed")
         XCTAssertTrue(store.data(for: descriptor).hasData)
+        var withVotes = watch
+        withVotes.communityYesPercent = 79
+        store.setCodexResetWatch(withVotes)
+        XCTAssertEqual(store.data(for: descriptor).communityVoteTick, 0.79)
+        XCTAssertEqual(store.data(for: descriptor).communityVoteLabel, "79% expect a reset")
+        XCTAssertEqual(store.data(for: descriptor).used, 75)
         store.setCodexResetWatch(nil)
         XCTAssertEqual(store.data(for: descriptor).forecast, WidgetData.Forecast())
         XCTAssertEqual(store.data(for: descriptor).boundedTrailingText(), WidgetData.noDataSubtitle)

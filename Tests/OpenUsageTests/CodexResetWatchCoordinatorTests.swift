@@ -17,10 +17,11 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = ResetWatchLoadProbe(result: nil)
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(watch: await loader.load()) },
+            load: { _ in CodexResetWatchResult(watch: await loader.load()) },
             publish: { published.append($0.watch) }
         )
 
+        await coordinator.refreshNow()
         try? await Task.sleep(for: .milliseconds(10))
 
         let loadCount = await loader.count()
@@ -38,7 +39,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let waiter = ResetWatchWaitProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(watch: await loader.load()) },
+            load: { _ in CodexResetWatchResult(watch: await loader.load()) },
             publish: { published.append($0.watch) },
             wait: { await waiter.wait($0) }
         )
@@ -82,7 +83,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = BlockingResetWatchLoadProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(watch: await loader.load()) },
+            load: { _ in CodexResetWatchResult(watch: await loader.load()) },
             publish: { published.append($0.watch) }
         )
 
@@ -113,7 +114,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let loader = BlockingResetWatchLoadProbe()
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(watch: await loader.load()) },
+            load: { _ in CodexResetWatchResult(watch: await loader.load()) },
             publish: { published.append($0.watch) }
         )
 
@@ -142,7 +143,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let watch = CodexResetWatch(chancePercent: 75, deadline: .distantFuture)
         var published: [CodexResetWatch?] = []
         let coordinator = CodexResetWatchCoordinator(
-            load: { CodexResetWatchResult(watch: watch) },
+            load: { _ in CodexResetWatchResult(watch: watch) },
             publish: { published.append($0.watch) },
             wait: { _ in false }
         )
@@ -161,6 +162,64 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         let reactivated = await eventually { published == [watch, nil, watch] }
         XCTAssertTrue(reactivated)
         coordinator.setActive(false)
+    }
+
+    func testManualRefreshForcesLoadWithoutRestartingAutomaticCadence() async {
+        let original = CodexResetWatch(chancePercent: 45, deadline: .distantFuture)
+        let updated = CodexResetWatch(chancePercent: 60, deadline: .distantFuture, communityYesPercent: 79)
+        let loader = ResetWatchLoadProbe(results: [original, updated])
+        let waiter = ResetWatchWaitProbe()
+        var published: [CodexResetWatch?] = []
+        let coordinator = CodexResetWatchCoordinator(
+            load: { force in CodexResetWatchResult(watch: await loader.load(force: force)) },
+            publish: { published.append($0.watch) },
+            wait: { await waiter.wait($0) }
+        )
+        coordinator.setActive(true)
+        let waiting = await eventually { await waiter.count() == 1 }
+        XCTAssertTrue(waiting)
+
+        await coordinator.refreshNow()
+
+        XCTAssertEqual(published, [original, updated])
+        let flags = await loader.forces()
+        let waitCount = await waiter.count()
+        XCTAssertEqual(flags, [false, true])
+        XCTAssertEqual(waitCount, 1)
+        coordinator.setActive(false)
+        await waiter.resumeAll(returning: false)
+    }
+
+    func testManualResultCannotRestoreDisabledOrReactivatedWatch() async {
+        let initial = CodexResetWatch(chancePercent: 45, deadline: .distantFuture)
+        let late = CodexResetWatch(chancePercent: 90, deadline: .distantFuture)
+        for reactivate in [false, true] {
+            let loader = BlockingResetWatchLoadProbe()
+            var published: [CodexResetWatch?] = []
+            let coordinator = CodexResetWatchCoordinator(
+                load: { force in
+                    CodexResetWatchResult(watch: force ? await loader.load() : initial)
+                },
+                publish: { published.append($0.watch) },
+                wait: { _ in false }
+            )
+            coordinator.setActive(true)
+            let activated = await eventually { published == [initial] }
+            XCTAssertTrue(activated)
+            let manual = Task { await coordinator.refreshNow() }
+            let started = await eventually { await loader.count() == 1 }
+            XCTAssertTrue(started)
+            coordinator.setActive(false)
+            if reactivate {
+                coordinator.setActive(true)
+                let reactivated = await eventually { published == [initial, nil, initial] }
+                XCTAssertTrue(reactivated)
+            }
+            await loader.resumeNext(returning: late)
+            await manual.value
+            XCTAssertEqual(published, reactivate ? [initial, nil, initial] : [initial, nil])
+            coordinator.setActive(false)
+        }
     }
 
     private func eventually(
@@ -183,6 +242,7 @@ private final class ResetWatchActivityProbe {
 private actor ResetWatchLoadProbe {
     private var results: [CodexResetWatch?]
     private var loadCount = 0
+    private var forceValues: [Bool] = []
 
     init(result: CodexResetWatch?) {
         self.results = [result]
@@ -192,8 +252,9 @@ private actor ResetWatchLoadProbe {
         self.results = results
     }
 
-    func load() -> CodexResetWatch? {
+    func load(force: Bool = false) -> CodexResetWatch? {
         loadCount += 1
+        forceValues.append(force)
         guard results.count > 1 else { return results.first ?? nil }
         return results.removeFirst()
     }
@@ -201,6 +262,8 @@ private actor ResetWatchLoadProbe {
     func count() -> Int {
         loadCount
     }
+
+    func forces() -> [Bool] { forceValues }
 }
 
 private actor BlockingResetWatchLoadProbe {
