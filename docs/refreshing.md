@@ -10,6 +10,9 @@
 - Turning a provider on (yourself in Customize, or automatically by first-launch/new-provider detection) fetches it promptly instead of waiting out the interval — even when the change lands in the middle of a refresh that's already running.
 - The Dashboard and Settings footer shows `Next update in Nm`.
   **Clicking it (or pressing ⌘R while that footer is present)** refreshes immediately, skipping the cache.
+  When Reset Watch is active, this also revalidates its forecast and community votes alongside usage; the footer stays **Updating…** until both finish.
+  Reset Watch still respects retry delays after failures or rate limits, shares any request already in flight, and keeps its separate automatic cadence.
+  A vote-only failure defers only votes; usage and AI forecasts can still update, and votes resume on the next check after their delay.
 - The one-shot `openusage` command reuses this same persisted cache for five minutes, refreshes missing or stale entries without starting the app, and exits.
   `openusage --force` runs the same forced provider refresh as ⌘R regardless of cache age.
 - While a provider is fetching, a small spinner appears next to its name (and one shows in the footer beside the countdown), so you can tell a refresh is in flight rather than wondering if the numbers are stale.

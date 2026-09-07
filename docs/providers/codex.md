@@ -20,17 +20,30 @@ When Codex reports your plan name, OpenUsage shows it beside the provider name.
 
 Reset Watch is an optional forecast metric based on the [public codex-resets.com forecast](https://codex-resets.com/) and its [API](https://codex-resets.com/api/docs).
 It is a global, unofficial AI prediction, not an OpenAI commitment or guarantee.
+The AI chance remains separate from the community's percentage of **Yes** votes for the same active watch.
+Neither number is an OpenAI guarantee.
 
 Fresh installs and layout resets leave it off, place it under **On Demand**, and do not star it for the menu bar.
 Its metric slot is immediately before Rate Limit Resets; you can enable, move, or star it in Customize.
 
 Reset Watch runs independently of Codex sign-in and subscription-usage refreshes.
 While Codex is enabled and the metric is enabled on the dashboard or starred for the menu bar, OpenUsage queries the unauthenticated `GET https://codex-resets.com/api/v1/status` endpoint on a separate 15-minute cadence — three times the regular five-minute usage-refresh interval.
+For an active forecast with a recognized source post, it also reads `GET https://codex-resets.com/api/watch/votes` and accepts only votes matching that post.
+This vote endpoint is used by the website but is not part of its documented public API, so compatibility may change.
+OpenUsage only reads the totals; it never submits a vote.
 Activating the metric, or re-enabling Codex while it is active, starts an immediate check.
+The footer's manual Refresh action (⌘R) also checks the active forecast and community votes alongside usage, revalidating fresh cached data while still honoring retry delays and sharing requests already in flight.
+It does not change the automatic 15-minute schedule or query Reset Watch when the metric is inactive.
 Once the metric is both disabled and unstarred, or Codex is disabled, future scheduled checks stop; a Reset Watch request already underway may still finish.
 Codex sign-in is not required: Reset Watch can update when account usage cannot, and a failure on either side never delays or fails the other refresh.
 The request sends no Codex token, account ID, usage values, local logs, or cookies.
 The active watch's chance and deadline are shared across all Codex account cards.
+Its community vote ratio is shared too and updates on the same checks, not the website's live cadence.
+Failed, empty, invalid, or mismatched vote results show **Votes unavailable** without discarding the AI forecast.
+Vote failures defer only vote requests: usage and AI forecasts still refresh normally.
+OpenUsage honors the vote endpoint's `Retry-After`; without a valid delay, it waits five minutes after a rate limit or one minute after other failures.
+Votes are retried on the next manual or automatic check after that delay, not by a separate timer.
+The fixed **By** deadline uses the same localized `date at time` format as usage reset dates, including the app's 12/24-hour setting.
 If there is no active watch, its chance is absent, or its deadline has passed, the row shows **No data**.
 If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
 The next successful check clears that notice.
