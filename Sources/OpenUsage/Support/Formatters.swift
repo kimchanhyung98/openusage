@@ -24,7 +24,15 @@ enum Formatters {
         locale: Locale = .current,
         timeFormat: TimeFormatSetting = .current
     ) -> String {
-        "By \(monthDayLabel(date, locale: locale)), \(timeFormat.shortTime(date, base: locale))"
+        "By \(monthDayTimeLabel(date, locale: locale, timeFormat: timeFormat))"
+    }
+
+    static func monthDayTimeLabel(
+        _ date: Date,
+        locale: Locale = .current,
+        timeFormat: TimeFormatSetting = .current
+    ) -> String {
+        "\(monthDayLabel(date, locale: locale)) at \(timeFormat.shortTime(date, base: locale))"
     }
 
     /// 모든 "<verb> + when" 라벨이 공유하는 mode-aware deadline 문구.
@@ -68,7 +76,7 @@ enum Formatters {
             let time = TimeFormatSetting.current.shortTime(date)
             if dayDiff <= 0 { return "today at \(time)" }
             if dayDiff == 1 { return "tomorrow at \(time)" }
-            return "\(monthDayLabel(date)) at \(time)"
+            return monthDayTimeLabel(date)
         }
     }
 

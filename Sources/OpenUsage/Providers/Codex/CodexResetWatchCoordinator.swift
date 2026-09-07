@@ -14,6 +14,7 @@ final class CodexResetWatchCoordinator {
     private let wait: Waiting
     private var isActive = false
     private var task: Task<Void, Never>?
+    private var activationID = UUID()
 
     init(
         load: @escaping CodexResetWatchLoading,
@@ -36,6 +37,15 @@ final class CodexResetWatchCoordinator {
 
     deinit { task?.cancel() }
 
+    /// 수동 새로 고침은 활성 상태에서만 캐시 재검증 — 비활성화 전 요청의 늦은 결과 미게시.
+    func refreshNow() async {
+        guard isActive else { return }
+        let activationID = self.activationID
+        let watch = await load(true)
+        guard isActive, self.activationID == activationID, !Task.isCancelled else { return }
+        publish(watch)
+    }
+
     /// 배치·pin·enablement의 활성 조건을 관찰하고 변경 뒤 관찰을 다시 등록.
     func observeActivity(_ active: @escaping @MainActor () -> Bool) {
         let value = withObservationTracking(active) { [weak self] in
@@ -50,6 +60,7 @@ final class CodexResetWatchCoordinator {
     func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
+        activationID = UUID()
         task?.cancel()
         task = nil
 
@@ -64,7 +75,7 @@ final class CodexResetWatchCoordinator {
         let wait = self.wait
         task = Task {
             while !Task.isCancelled {
-                let watch = await load()
+                let watch = await load(false)
                 guard !Task.isCancelled else { return }
                 publish(watch)
                 guard await wait(interval), !Task.isCancelled else { return }

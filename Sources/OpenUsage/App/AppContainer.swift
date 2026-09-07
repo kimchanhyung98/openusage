@@ -17,6 +17,7 @@ final class AppContainer {
     private(set) var registry: WidgetRegistry
     let layout: LayoutStore
     let dataStore: WidgetDataStore
+    private(set) var isRefreshingAll = false
     /// 머신 로컬 일간 히스토리의 opt-in iCloud 문서 동기화.
     let iCloudSync: ICloudUsageSyncStore
     /// 사용자가 끈 provider의 단일 source of truth. 두 store가 주입 closure로 참조, Customize provider 목록이 변경 주도.
@@ -111,7 +112,7 @@ final class AppContainer {
         )
         let resetWatchStore = CodexResetWatchStore()
         let resetWatchCoordinator = CodexResetWatchCoordinator(
-            load: { await resetWatchStore.currentResult() },
+            load: { force in await resetWatchStore.currentResult(force: force) },
             publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
@@ -369,11 +370,16 @@ final class AppContainer {
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
+        guard !isRefreshingAll else { return }
+        isRefreshingAll = true
+        defer { isRefreshingAll = false }
+        let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
         let reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         await dataStore.refreshAll(force: force)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
+        await resetWatchTask?.value
     }
 
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.

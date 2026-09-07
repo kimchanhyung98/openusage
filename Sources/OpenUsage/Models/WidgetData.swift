@@ -72,10 +72,20 @@ struct WidgetData: Hashable {
     struct Forecast: Hashable {
         var deadline: Date?
         var refreshFailed = false
+        var communityYesPercent: Double?
     }
 
     var isForecast: Bool { forecast != nil }
     var forecastDeadline: Date? { forecast?.deadline }
+    var communityVoteTick: Double? {
+        guard hasData, let percent = forecast?.communityYesPercent else { return nil }
+        return percent / 100
+    }
+    var communityVoteLabel: String? {
+        guard hasData, let forecast else { return nil }
+        guard let percent = forecast.communityYesPercent else { return "Votes unavailable" }
+        return "\(Int(percent))% expect a reset"
+    }
     var isBounded: Bool { limit != nil }
     var isQuotaMeter: Bool { isBounded && !isForecast }
 

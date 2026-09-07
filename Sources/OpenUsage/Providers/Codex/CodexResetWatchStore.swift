@@ -3,6 +3,8 @@ import Foundation
 struct CodexResetWatch: Equatable, Sendable {
     let chancePercent: Double
     let deadline: Date
+    var episodeID: String?
+    var communityYesPercent: Double?
 }
 
 struct CodexResetWatchResult: Equatable, Sendable {
@@ -10,7 +12,7 @@ struct CodexResetWatchResult: Equatable, Sendable {
     var refreshFailed = false
 }
 
-typealias CodexResetWatchLoading = @Sendable () async -> CodexResetWatchResult
+typealias CodexResetWatchLoading = @Sendable (_ force: Bool) async -> CodexResetWatchResult
 
 /// 공개 Reset Watch 응답의 검증·ETag·backoff·single-flight 소유자.
 actor CodexResetWatchStore {
@@ -41,6 +43,7 @@ actor CodexResetWatchStore {
 
     private let http: any HTTPClient
     private let endpoint: URL
+    private let votesEndpoint: URL
     private let now: @Sendable () -> Date
 
     private var representation: Representation?
@@ -48,6 +51,7 @@ actor CodexResetWatchStore {
     private var freshUntil = Date.distantPast
     private var staleUntil = Date.distantPast
     private var retryNotBefore = Date.distantPast
+    private var votesRetryNotBefore = Date.distantPast
     private var lastPolicy = CachePolicy.fallback
     private var refreshFailed = false
     private var refreshTask: Task<CodexResetWatchResult, Never>?
@@ -55,10 +59,12 @@ actor CodexResetWatchStore {
     init(
         http: any HTTPClient = URLSessionHTTPClient(sendsCookies: false),
         endpoint: URL = URL(string: "https://codex-resets.com/api/v1/status")!,
+        votesEndpoint: URL = URL(string: "https://codex-resets.com/api/watch/votes")!,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.http = http
         self.endpoint = endpoint
+        self.votesEndpoint = votesEndpoint
         self.now = now
     }
 
@@ -67,7 +73,8 @@ actor CodexResetWatchStore {
         await currentResult().watch
     }
 
-    func currentResult() async -> CodexResetWatchResult {
+    func currentResult(force: Bool = false) async -> CodexResetWatchResult {
+        if let refreshTask { return await refreshTask.value }
         let readAt = now()
         if case .watch(let watch) = representation, readAt >= watch.deadline {
             representation = nil
@@ -75,7 +82,7 @@ actor CodexResetWatchStore {
             freshUntil = .distantPast
             staleUntil = .distantPast
         }
-        if readAt < freshUntil {
+        if !force, readAt < freshUntil {
             return result(watchIfUsable(at: readAt, validUntil: freshUntil))
         }
         if readAt < retryNotBefore {
@@ -118,7 +125,7 @@ actor CodexResetWatchStore {
             let receivedAt = now()
             switch response.statusCode {
             case 200:
-                let decoded = try Self.decodeRepresentation(response.body, at: receivedAt)
+                let decoded = await withCommunityVotes(try Self.decodeRepresentation(response.body, at: receivedAt))
                 let policy = Self.cachePolicy(response.header("cache-control"), fallback: .fallback)
                 representation = policy.allowsStorage ? decoded : nil
                 etag = policy.allowsStorage ? response.header("etag") : nil
@@ -128,7 +135,9 @@ actor CodexResetWatchStore {
                 refreshFailed = false
                 return result(watch(from: decoded, at: now()))
             case 304:
-                guard let representation else { throw FetchError.notModifiedWithoutCache }
+                guard let cached = representation else { throw FetchError.notModifiedWithoutCache }
+                let representation = await withCommunityVotes(cached)
+                self.representation = representation
                 let policy = Self.cachePolicy(response.header("cache-control"), fallback: lastPolicy)
                 if let responseETag = response.header("etag") { etag = responseETag }
                 lastPolicy = policy
@@ -168,6 +177,22 @@ actor CodexResetWatchStore {
         return watch
     }
 
+    private func withCommunityVotes(_ representation: Representation) async -> Representation {
+        guard case .watch(var watch) = representation, watch.deadline > now() else { return representation }
+        watch.communityYesPercent = nil
+        guard now() >= votesRetryNotBefore else { return .watch(watch) }
+        if let episodeID = watch.episodeID {
+            let votes = await CodexResetWatchVotes.load(
+                http: http, endpoint: votesEndpoint, episodeID: episodeID, now: now
+            )
+            watch.communityYesPercent = votes.percent
+            votesRetryNotBefore = votes.retryNotBefore ?? .distantPast
+        } else {
+            AppLog.warn(LogTag.plugin("codex"), "Reset Watch votes unavailable: missing episode identity")
+        }
+        return .watch(watch)
+    }
+
     private func extendStaleUntilRetry() {
         guard case .watch(let watch) = representation else { return }
         staleUntil = min(max(staleUntil, retryNotBefore), watch.deadline)
@@ -205,7 +230,10 @@ actor CodexResetWatchStore {
             throw FetchError.invalidDeadline
         }
         guard deadline > date else { return .absent }
-        return .watch(CodexResetWatch(chancePercent: Double(chance), deadline: deadline))
+        return .watch(CodexResetWatch(
+            chancePercent: Double(chance), deadline: deadline,
+            episodeID: activeWatch.source.flatMap { CodexResetWatchVotes.episodeID(from: $0.url) }
+        ))
     }
 
     private static func cachePolicy(_ value: String?, fallback: CachePolicy) -> CachePolicy {
@@ -278,10 +306,16 @@ private struct StatusPayload: Decodable {
     struct ActiveWatch: Decodable {
         let resetChancePercent: Int?
         let expiresAt: String
+        let source: Source?
+
+        struct Source: Decodable {
+            let url: String
+        }
 
         private enum CodingKeys: String, CodingKey {
             case resetChancePercent = "reset_chance_percent"
             case expiresAt = "expires_at"
+            case source
         }
 
         init(from decoder: Decoder) throws {
@@ -294,6 +328,7 @@ private struct StatusPayload: Decodable {
             }
             resetChancePercent = try container.decodeIfPresent(Int.self, forKey: .resetChancePercent)
             expiresAt = try container.decode(String.self, forKey: .expiresAt)
+            source = try? container.decodeIfPresent(Source.self, forKey: .source)
         }
     }
 }

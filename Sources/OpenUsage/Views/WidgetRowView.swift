@@ -87,6 +87,14 @@ struct WidgetRowView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
             warning(rowData, state: state)
+            if let votes = rowData.communityVoteLabel {
+                Spacer(minLength: 8)
+                Text(votes)
+                    .font(supportingFont)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .accessibilityLabel("Community vote: \(votes)")
+            }
         }
     }
 
@@ -131,14 +139,13 @@ struct WidgetRowView: View {
         }
     }
 
-    /// Reset Watch의 우측 icon-only 경고 — 일반 quota pace copy와 분리.
+    /// Reset Watch의 icon-only 경고 — 일반 quota pace copy와 분리.
     @ViewBuilder
     private func forecastWarningIcon(
         _ systemName: String,
         severity: WidgetData.MeterSeverity,
         accessibility: String
     ) -> some View {
-        Spacer(minLength: 8)
         Image(systemName: systemName)
             .font(.system(size: density.supportingPointSize - 1))
             .foregroundStyle(severityColor(severity))
@@ -369,7 +376,7 @@ struct WidgetRowView: View {
     /// Full-width capsule meter — fill 색이 pace verdict를 표현(의도적으로 native Gauge/ProgressView가 아님),
     /// 데이터 없으면 비어 있고 무색. pace tick은 overlay로 얹혀 bar 높이를 바꾸지 않음.
     private func meter(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
-        let tick = rowData.paceTick(for: state)
+        let tick = rowData.communityVoteTick ?? rowData.paceTick(for: state)
         return GeometryReader { proxy in
             // tick은 `.overlay`로 상하 돌출 — ZStack sibling이면 stack이 자라 bar가 두꺼워짐.
             ZStack(alignment: .leading) {

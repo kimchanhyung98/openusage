@@ -559,7 +559,8 @@ final class WidgetDataStore {
             }
             result.forecast = .init(
                 deadline: codexResetWatch.watch?.deadline,
-                refreshFailed: codexResetWatch.refreshFailed
+                refreshFailed: codexResetWatch.refreshFailed,
+                communityYesPercent: codexResetWatch.watch?.communityYesPercent
             )
         } else if let snapshot = snapshots[descriptor.providerID],
            let line = snapshot.line(label: descriptor.metricLabel),
