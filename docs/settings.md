@@ -144,7 +144,7 @@ Tokscale keeps the stable device ID, so changing the name updates the same publi
 **Remove OpenUsage Override** removes the local override without clearing Tokscale's existing public name; later submissions let Tokscale use a name from its environment or stored device record again.
 
 **Usage Sync** explains that syncing publishes local usage to a public profile and links to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy).
-Detailed command, installation, and sharing information is kept in these docs and [Privacy & Usage Data](/docs/privacy.md#tokscale-public-sharing), rather than repeated in Settings.
+Detailed command, installation, and sharing information is kept in these docs and [Privacy & Usage Data](/docs/privacy.md#tokscale-public-sharing).
 **Sync** runs this command once with no provider, date, or OpenUsage-data arguments:
 
 ```sh

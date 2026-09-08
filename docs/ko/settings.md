@@ -144,7 +144,7 @@ Tokscale의 stable device ID는 유지되므로 이름을 바꿔도 새 기기�
 **Remove OpenUsage Override**는 Tokscale의 기존 public name을 삭제하지 않고 로컬 override만 제거하며, 이후 sync에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
 
 **Usage Sync**에서 local usage를 public profile에 게시하는 동기화임을 안내하고 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 연결 제공.
-명령·설치·공개 범위 상세 정보는 Settings에서 반복하지 않고 이 문서와 [개인정보 및 사용 데이터](/docs/ko/privacy.md#tokscale-공개-공유)에 유지.
+명령·설치·공개 범위 상세 정보는 이 문서와 [개인정보 및 사용 데이터](/docs/ko/privacy.md#tokscale-공개-공유)에 유지.
 **Sync**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
 
 ```sh

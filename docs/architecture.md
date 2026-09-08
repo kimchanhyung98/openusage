@@ -113,12 +113,12 @@ The boundary has four responsibilities:
   Tokscale still owns source discovery; newly introduced path variables require an allowlist update, while `TOKSCALE_EXTRA_DIRS` remains available for additional source directories.
   The only value accepted from this UI and passed to a child is a validated submit-only `TOKSCALE_DEVICE_NAME` environment entry.
 - `TokscaleSyncStore` owns one active install or command for the app lifetime and persists the optional device name locally, so hiding or rebuilding Settings does not orphan the process or lose its result.
-- `TokscaleSettingsSection` renders the compact card, the **Name…** header action and sheet, the missing-login action, and the login sheet.
+- `TokscaleSettingsSection` provides usage sync, device-name management through the **Tokscale Device Name** sheet, the missing-login action, and the login sheet.
 
 Only the corresponding Settings buttons may start installation or a Tokscale command.
 App launch, Settings appearance, periodic or manual refresh, provider changes, iCloud callbacks, widget updates, the `openusage` executable, and local API requests never trigger either one.
 The submit action runs exactly `bunx tokscale@latest submit`; if the optional device name is set, it is supplied only through `TOKSCALE_DEVICE_NAME`.
-Saving **Name…** does not start a process or network request, and the next successful submit updates the display label associated with Tokscale's stable device ID.
+Saving the device name does not start a process or network request, and the next successful submit updates the display label associated with Tokscale's stable device ID.
 **Remove OpenUsage Override** removes only the local override and does not clear Tokscale's existing public name; later submissions let Tokscale's environment or stored device record supply the label.
 Only a verified missing-login submit result enables the separate login action, and login never receives the public device-name override.
 Login completion never starts submit, and there is no automatic retry or background submission.

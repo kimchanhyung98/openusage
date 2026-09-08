@@ -113,12 +113,12 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
   Source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수는 allowlist 갱신이 필요하고 추가 source directory에는 `TOKSCALE_EXTRA_DIRS` 사용 가능.
   이 UI에서 입력받아 child에 전달하는 유일한 값은 검증된 submit 전용 `TOKSCALE_DEVICE_NAME` environment entry.
 - `TokscaleSyncStore`에서 app 수명 동안 active install 또는 command 하나와 상태를 소유하고 optional device name을 로컬 저장해 Settings가 숨거나 다시 생성되어도 process 고아화와 결과 소실 방지.
-- `TokscaleSettingsSection`에서 소형 card, **Name…** header action과 sheet, 미로그인 동작, login sheet 표시.
+- `TokscaleSettingsSection`에서 usage sync, **Tokscale Device Name** sheet를 통한 기기 이름 관리, 미로그인 동작, login sheet 제공.
 
 해당 Settings button에서만 설치나 Tokscale command 시작 가능.
 App launch, Settings 표시, 주기적·수동 새로 고침, provider 변경, iCloud callback, widget update, `openusage` executable, local API 요청으로 둘 다 실행 금지.
 Submit 동작은 정확히 `bunx tokscale@latest submit`을 실행하고 optional device name이 있으면 `TOKSCALE_DEVICE_NAME`으로만 전달.
-**Name…** 저장으로 process나 network request를 시작하지 않으며 다음 성공 submit에서 Tokscale stable device ID와 연결된 표시 이름 갱신.
+기기 이름 저장으로 process나 network request를 시작하지 않으며 다음 성공 submit에서 Tokscale stable device ID와 연결된 표시 이름 갱신.
 **Remove OpenUsage Override**는 로컬 override만 제거하며 Tokscale의 기존 public name은 삭제하지 않고, 이후 submit에서 Tokscale environment나 저장된 device record의 label 사용.
 검증된 미로그인 submit 결과에서만 별도 login 동작을 활성화하고 login에는 public device name override를 전달하지 않음.
 Login 완료 뒤 submit을 시작하지 않으며 자동 retry와 background submit 없음.
