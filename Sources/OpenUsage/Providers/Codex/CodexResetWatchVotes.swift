@@ -1,6 +1,6 @@
 import Foundation
 
-/// 웹사이트 투표는 같은 게시물의 집계만 사용하며, 실패해도 AI 예측은 유지.
+/// 커뮤니티 투표율은 같은 게시물의 집계로 계산하며, 조회 실패 시에도 AI 예측 유지.
 enum CodexResetWatchVotes {
     struct Result: Sendable {
         var percent: Double?
@@ -40,7 +40,7 @@ enum CodexResetWatchVotes {
             }
             return Result(percent: (Double(votes.yes) / (Double(votes.yes) + Double(votes.no)) * 100).rounded())
         } catch {
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch votes unavailable: \(error.localizedDescription)")
+            AppLog.warn(LogTag.plugin("codex"), "Reset Watch community vote share unavailable: \(error.localizedDescription)")
             return Result(retryNotBefore: retryNotBefore ?? now().addingTimeInterval(60))
         }
     }

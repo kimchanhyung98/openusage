@@ -83,7 +83,7 @@ struct WidgetData: Hashable {
     }
     var communityVoteLabel: String? {
         guard hasData, let forecast else { return nil }
-        guard let percent = forecast.communityYesPercent else { return "Votes unavailable" }
+        guard let percent = forecast.communityYesPercent else { return "Vote share unavailable" }
         return "\(Int(percent))% expect a reset"
     }
     var isBounded: Bool { limit != nil }

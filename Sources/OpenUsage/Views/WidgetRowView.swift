@@ -93,7 +93,7 @@ struct WidgetRowView: View {
                     .font(supportingFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .accessibilityLabel("Community vote: \(votes)")
+                    .accessibilityLabel("Community vote share: \(votes)")
             }
         }
     }

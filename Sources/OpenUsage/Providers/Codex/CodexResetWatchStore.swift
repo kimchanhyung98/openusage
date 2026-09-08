@@ -188,7 +188,7 @@ actor CodexResetWatchStore {
             watch.communityYesPercent = votes.percent
             votesRetryNotBefore = votes.retryNotBefore ?? .distantPast
         } else {
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch votes unavailable: missing episode identity")
+            AppLog.warn(LogTag.plugin("codex"), "Reset Watch community vote share unavailable: missing episode identity")
         }
         return .watch(watch)
     }
