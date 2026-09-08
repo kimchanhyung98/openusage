@@ -99,7 +99,7 @@ struct TokscaleSettingsSection: View {
                 isLoginSheetPresented = true
             }
         case .idle, .submitFinished, .loginFinished, .failed:
-            Button("Sync Now") {
+            Button("Sync") {
                 store.startSubmit()
             }
         }
