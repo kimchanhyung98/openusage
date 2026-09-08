@@ -58,7 +58,7 @@ These are plain downloads of public data — they carry no usage, log, or accoun
 The spend tiles are computed from local CLI logs entirely on your Mac; no log data ever leaves it.
 
 When Codex is enabled and you enable **Reset Watch** on the dashboard or star it for the menu bar, OpenUsage checks the public [codex-resets.com API](https://codex-resets.com/api/docs) without authentication on a separate 15-minute cadence.
-For a recognized active source post, it also reads the same site's `/api/watch/votes` totals without authentication; it never submits votes.
+For a recognized active source post, it also reads the same site's `/api/watch/votes` totals without authentication to calculate the community vote share; it never submits votes.
 While Reset Watch is active, manual Refresh (⌘R) also triggers these checks, subject to retry delays and requests already in flight.
 These checks do not use Codex sign-in and run independently from the regular five-minute subscription-usage refresh.
 Once the metric is both disabled and unstarred, or Codex is disabled, future checks stop; a Reset Watch request already underway may still finish.

@@ -74,7 +74,7 @@ Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
 
 **Codex Reset Watch** uses the same meter shape but is a forecast, not a quota.
 It shows a chance and a fixed `By …` deadline, and does not react to Used/Left, reset-format, pacing, or quota-notification settings.
-The community's **Yes** vote percentage is shown separately from the AI chance; missing or failed vote results read **Votes unavailable** while the forecast stays available.
+The community vote share (the percentage of all responses that are **Yes**) is shown separately from the AI chance; missing totals or failed lookups read **Vote share unavailable** while the forecast stays available.
 The fixed deadline shares the usage reset date's `date at time` format and 12/24-hour setting.
 The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
 Higher bands warn you to use available tokens before a likely reset.
@@ -102,7 +102,7 @@ Quotas, plans, balances, and provider errors always describe this Mac's refresh.
 
 Rows with a reset date or Reset Watch deadline re-render every 30 seconds, so countdowns, pace, and forecast expiry stay live between network refreshes.
 This UI tick makes no network request; Reset Watch checks its source on a separate 15-minute cadence.
-Manual Refresh (⌘R) also revalidates an active Reset Watch's forecast and community votes alongside usage, while retaining retry delays after errors.
+Manual Refresh (⌘R) also revalidates an active Reset Watch's forecast and community vote share alongside usage, while retaining retry delays after errors.
 
 ## Account selector
 
