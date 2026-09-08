@@ -81,6 +81,7 @@ OpenUsage의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산�
 Tokscale 동작은 세 번째 독립 공유 흐름.
 iCloud Sync나 Share Anonymous Usage로 활성화되지 않으며, Tokscale 상태 변경도 두 설정을 바꾸지 않음.
 App launch, 새로 고침, background task, widget update, `openusage` CLI 호출, local API 요청으로 Bun 설치나 Tokscale 실행 금지.
+Settings에서는 공개 사용량 동기화를 요약하고 공식 policy 연결 제공 — 공개 범위·명령·설치 상세 정보는 이 문서에 유지.
 
 Settings의 명시적 **Sync Now**에서만 다음 명령 실행:
 
@@ -100,7 +101,7 @@ Environment 상속만 제한하며 file 접근 제한은 아님: Bun과 Tokscale
 Custom terminal `HOME`은 무시하고 현재 macOS account의 home을 `HOME`과 작업 directory로 사용.
 Tokscale 자체 token은 request 인증에 사용하고, Tokscale 현재 policy에서는 AI provider API key와 credential을 제출 usage data에서 제외.
 
-**Name…**에서 저장한 device name은 Tokscale profile에서 기기를 식별할 수 있는 public label.
+**Tokscale Device Name** sheet에서 저장한 device name은 Tokscale profile에서 기기를 식별할 수 있는 public label.
 OpenUsage에 로컬로 보관하고 submit process에만 `TOKSCALE_DEVICE_NAME`으로 전달하며, `m1-max` 같은 값은 다음 성공 submit에서 같은 stable device의 표시 이름을 교체.
 이름 저장이나 변경만으로 network request를 실행하지 않음.
 Override 제거로 Tokscale의 기존 public name을 삭제하지 않으며, 이후 submit에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
@@ -108,7 +109,7 @@ Override 제거로 Tokscale의 기존 public name을 삭제하지 않으며, 이
 Submit 명령에서 검증된 미로그인 결과를 받으면 OpenUsage에서 별도 **Log In…** 동작을 제공하고 표준 입력 없이 `bunx tokscale@latest login` 실행.
 Login 자체는 usage를 제출하지 않으며, 완료 뒤에도 submit을 자동 시작하지 않음.
 현재 login 흐름에서 Tokscale는 GitHub numeric ID, username, display name, avatar URL, email을 저장 가능.
-새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 **Name…**으로 변경되지 않음.
+새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 기기 이름 관리로 변경되지 않음.
 이후 submit에서 public profile을 생성·갱신하며 GitHub username, avatar, display name을 표시할 수 있음.
 
 명시적 **Sync Now**에서 사용 가능한 Bun runtime을 찾지 못하면 OpenUsage에서 Bun 공식 installer를 다운로드·실행한 뒤 계속 진행.

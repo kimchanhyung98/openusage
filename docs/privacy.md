@@ -81,6 +81,7 @@ This is separate from anonymous usage sharing: iCloud Sync defaults off and uses
 The Tokscale action is a third, independent sharing flow.
 Neither iCloud Sync nor Share Anonymous Usage enables it, and changing Tokscale state changes neither of those settings.
 No app launch, refresh, background task, widget update, `openusage` CLI invocation, or local API request triggers Bun installation or Tokscale.
+Settings summarizes public usage syncing and links to the official policy; the detailed sharing, command, and installation information remains here.
 
 Only an explicit **Sync Now** in Settings runs:
 
@@ -100,7 +101,7 @@ This limits environment inheritance, not file access: Bun and Tokscale are not s
 The command uses the current macOS account's home as both `HOME` and its working directory, ignoring a custom terminal `HOME`.
 Tokscale uses its own token to authenticate the request; its current policy excludes AI-provider API keys and credentials from the submitted usage data.
 
-The device name saved through **Name…** is a public label and can identify the machine on the Tokscale profile.
+The device name saved in the **Tokscale Device Name** sheet is a public label and can identify the machine on the Tokscale profile.
 OpenUsage stores it locally and supplies it only to the submit process as `TOKSCALE_DEVICE_NAME`; a value such as `m1-max` replaces the display label for the same stable device on its next successful submission.
 Saving or changing the name alone makes no network request.
 Removing the override does not clear Tokscale's existing public name; it lets later submissions use the name from Tokscale's environment or stored device record again.
@@ -108,7 +109,7 @@ Removing the override does not clear Tokscale's existing public name; it lets la
 If the submit command reports a verified missing-login result, OpenUsage offers a separate **Log In…** action that runs `bunx tokscale@latest login` with no standard input.
 Login alone does not submit usage, and completing it never starts submit automatically.
 The current login flow lets Tokscale store the GitHub numeric ID, username, display name, avatar URL, and email.
-During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by **Name…**.
+During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by device-name management.
 A later submission creates or updates the public profile, which can show the GitHub username, avatar, and display name.
 
 When an explicit **Sync Now** cannot find a usable Bun runtime, OpenUsage downloads and runs Bun's official installer before continuing.

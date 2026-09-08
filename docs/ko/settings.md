@@ -131,24 +131,26 @@ OpenUsage를 실행한 시점에 이미 나쁜 상태인 할당량은 통지 없
 
 ## Tokscale CLI 동기화
 
-Tokscale 섹션은 **Terminal Helper**와 같은 레이아웃 언어를 쓰되 상태를 공유하지 않는 별도 소형 카드.
+Tokscale 섹션에서 local usage를 공개 Tokscale profile에 게시하는 별도 **Usage Sync** 동작 제공.
 iCloud Sync, Share Anonymous Usage, 프로바이더 활성화, 새로 고침, `openusage` 명령, local API와 독립.
 
-Accounts의 header action과 같은 위치에서 Tokscale 제목 옆에 작은 **Name…** 동작 표시.
-선택 시 text field 하나가 있는 **Tokscale Device Name** sheet 열기.
+기기 이름 관리에서 **Tokscale Device Name** sheet를 열어 이 Mac의 OpenUsage override 확인·편집 가능.
+기본값은 override 없음.
 값의 앞뒤 공백을 제거하고 비어 있지 않은 UTF-8 기준 최대 120byte만 허용하며 control character는 거부.
-저장 시 command나 network request를 시작하지 않고 이 Mac의 이름을 OpenUsage에 보관하며, 카드에 `m1-max` 같은 저장값 표시.
+저장 시 command나 network request를 시작하지 않고 이 Mac의 이름을 로컬에 보관.
+Sheet를 다시 열면 저장한 이름을 미리 채우며 app 재시작 후에도 유지.
 이후 sync마다 `TOKSCALE_DEVICE_NAME`으로 Tokscale에 전달.
 Tokscale의 stable device ID는 유지되므로 이름을 바꿔도 새 기기를 만들지 않고 다음 성공 submit에서 같은 public device 이름 갱신.
 **Remove OpenUsage Override**는 Tokscale의 기존 public name을 삭제하지 않고 로컬 override만 제거하며, 이후 sync에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
 
-동작 전에 정확한 명령, 공개 효과, 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 링크를 카드에 항상 표시:
+**Usage Sync**에서 local usage를 public profile에 게시하는 동기화임을 안내하고 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 연결 제공.
+명령·설치·공개 범위 상세 정보는 Settings에서 반복하지 않고 이 문서와 [개인정보 및 사용 데이터](/docs/ko/privacy.md#tokscale-공개-공유)에 유지.
+**Sync Now**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
 
 ```sh
 bunx tokscale@latest submit
 ```
 
-**Sync Now**는 provider, date, OpenUsage data argument 없이 해당 명령을 한 번 실행.
 선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
 포함할 지원 소스와 field는 Tokscale에서 결정.
 현재 CLI는 usage, client, model, device, 발견된 MCP server 정보를 검색 결과에 노출될 수 있는 public profile에 포함 가능.

@@ -131,24 +131,26 @@ Tapping an alert opens the popover on the dashboard.
 
 ## Tokscale CLI Sync
 
-The Tokscale section is a separate compact card that follows the layout language of **Terminal Helper** without sharing its state.
+The Tokscale section provides a separate **Usage Sync** action for publishing local usage to your public Tokscale profile.
 It remains independent of iCloud Sync, Share Anonymous Usage, provider enablement, refreshes, the `openusage` command, and the local API.
 
-A small **Name…** action sits beside the Tokscale title in the same header-action position used by Accounts.
-It opens a **Tokscale Device Name** sheet with one text field.
+Device-name management opens the **Tokscale Device Name** sheet, where you can view or edit this Mac's OpenUsage override.
+The override is unset by default.
 The value is trimmed, must be non-empty and no more than 120 UTF-8 bytes, and cannot contain control characters.
-Saving keeps the name for this Mac in OpenUsage without starting a command or network request, and the card shows the saved value, such as `m1-max`.
+Saving keeps the name locally for this Mac without starting a command or network request.
+Reopening the sheet prefills the saved name, including after an app restart.
 Each later sync passes it to Tokscale as `TOKSCALE_DEVICE_NAME`.
 Tokscale keeps the stable device ID, so changing the name updates the same public device on the next successful submission instead of creating another device.
 **Remove OpenUsage Override** removes the local override without clearing Tokscale's existing public name; later submissions let Tokscale use a name from its environment or stored device record again.
 
-The card keeps the exact command, its public effect, and a link to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy) visible before the action:
+**Usage Sync** explains that syncing publishes local usage to a public profile and links to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy).
+Detailed command, installation, and sharing information is kept in these docs and [Privacy & Usage Data](/docs/privacy.md#tokscale-public-sharing), rather than repeated in Settings.
+**Sync Now** runs this command once with no provider, date, or OpenUsage-data arguments:
 
 ```sh
 bunx tokscale@latest submit
 ```
 
-**Sync Now** runs that command once with no provider, date, or OpenUsage-data arguments.
 OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
 Tokscale decides which supported sources and fields are included.
 The current CLI may include usage, client, model, device, and discovered MCP-server information in a public profile that can appear in search results.
