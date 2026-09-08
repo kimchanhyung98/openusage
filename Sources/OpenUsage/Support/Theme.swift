@@ -14,6 +14,7 @@ enum Theme {
 
     private static func meterColor(_ severity: WidgetData.MeterSeverity) -> Color {
         switch severity {
+        case .neutral: return Color(nsColor: .systemGray)
         case .normal: return Color(nsColor: .systemBlue)
         case .warning: return Color(nsColor: .systemYellow)
         case .critical: return Color(nsColor: .systemRed)

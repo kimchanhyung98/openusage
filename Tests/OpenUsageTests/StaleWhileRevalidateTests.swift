@@ -320,6 +320,8 @@ final class StaleWhileRevalidateTests: XCTestCase {
         }
         guard runtime.isWaiting else {
             inFlight.cancel()
+            runtime.resume()
+            _ = await inFlight.value
             return XCTFail("the initial refresh did not enter the in-flight state")
         }
 
@@ -629,6 +631,7 @@ private final class BlockingProviderRuntime: ProviderRuntime {
     }
 
     func resume() {
+        blockNextRefresh = false
         continuation?.resume()
         continuation = nil
     }
