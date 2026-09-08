@@ -222,7 +222,8 @@ actor BunInstaller: BunInstalling {
         if let configured = try configuredDiscoveryRoot() {
             installRoots.append(configured)
         }
-        let defaultRoot = try validatedAutomaticInstallRoot(homeDirectoryURL.appendingPathComponent(".bun").path)
+        // 기존 runtime 탐색은 쓰기 없음 — 자동 설치 경로 제한은 install()에서만 적용.
+        let defaultRoot = homeDirectoryURL.appendingPathComponent(".bun", isDirectory: true)
         if !installRoots.contains(defaultRoot) {
             installRoots.append(defaultRoot)
         }

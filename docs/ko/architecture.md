@@ -103,6 +103,7 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
   Installer child에는 고정된 설치값과 자체 download에 필요한 export된 proxy·certificate 설정만 전달.
   자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.
   미생성 폴더를 붙이기 전에 기존 상위 directory의 실제 경로를 해석해 symbolic link가 설치를 home 밖으로 우회하지 못하도록 검증하고, 끊어진 link는 download 전에 거부.
+  쓰기 제한은 새 설치에만 적용 — 사용하지 않는 기본 설치 경로가 깨져 있어도 symbolic link나 외부 설정 directory의 사용 가능한 기존 runtime 탐색 가능.
 - `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array로 직접 실행.
   `shell -c`, AppleScript, 사용자 제공 command text를 사용하지 않음.
   App과 캡처된 login-shell environment를 app 값 우선으로 병합한 뒤 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.

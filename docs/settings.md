@@ -178,6 +178,7 @@ Expired or revoked stored credentials are a known limitation and must be recover
 The automatic Bun path uses the official [Bun installer](https://bun.com/docs/installation), installs in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default, and may update the login shell's profile.
 An incompatible `BUN_INSTALL` is not modified; the card reports the failure and offers the manual installation guide.
 OpenUsage does not replace an existing usable Bun installation.
+Existing runtimes remain discoverable through symbolic links or a configured directory outside the home; the home-directory restriction applies only to automatic installation.
 An existing Bun runtime with no usable `bunx` reports an error instead of being reinstalled.
 If installation or verification fails, submission does not start and the card offers the official installation guide as a recovery action.
 

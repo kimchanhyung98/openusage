@@ -178,6 +178,7 @@ Exit 0도 제출할 usage가 없다는 뜻일 수 있어 upload 성공을 단정
 자동 Bun 경로에서 공식 [Bun installer](https://bun.com/docs/installation)를 사용해 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 설치하며 login shell profile을 갱신할 수 있음.
 호환되지 않는 `BUN_INSTALL`은 수정하지 않고 card에서 실패와 수동 설치 안내 표시.
 사용 가능한 기존 Bun 설치는 교체하지 않음.
+Symbolic link나 home 밖의 설정 directory에서도 기존 runtime 탐색 가능 — home 경로 제한은 자동 설치에만 적용.
 기존 Bun runtime은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오류 표시.
 설치나 검증 실패 시 submit을 시작하지 않고 카드에서 공식 설치 안내를 복구 동작으로 제공.
 

@@ -125,7 +125,7 @@ struct TokscaleSettingsSection: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("The package can access values exported by the app and your login shell, including credentials or other secrets. OpenUsage removes known runtime-injection settings and custom Tokscale API endpoints but cannot control code resolved by your Bun configuration.")
+            Text("OpenUsage forwards only allowed environment settings, including Tokscale authentication, and excludes unrelated credentials and unknown variables. Bun and Tokscale are not sandboxed: they can still read local files and their own configuration.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -103,6 +103,7 @@ The boundary has four responsibilities:
   The installer child receives only the fixed installation values plus exported proxy and certificate settings needed for its download.
   Automatic installation accepts only a safe directory below the current user's home; an incompatible `BUN_INSTALL` fails before download and leaves manual installation as the recovery path.
   Existing parent directories are resolved before appending missing folders, so symbolic links cannot redirect installation outside the home directory; broken links are rejected before download.
+  These write restrictions apply only to a new installation; discovery still accepts an existing usable runtime through a symbolic link or an external configured directory, even if an unused default installation path is broken.
 - `TokscaleCommandRunner` accepts only `submit` or `login` and launches the resolved `bunx` directly with fixed argument arrays for `tokscale@latest submit` and `tokscale@latest login`.
   It never uses `shell -c`, AppleScript, or user-supplied command text.
   It merges the app and captured login-shell environments, with app values taking precedence, then forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings.

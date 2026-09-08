@@ -65,6 +65,82 @@ final class BunInstallerTests: XCTestCase {
         XCTAssertEqual(runtime.bunURL, bin.appendingPathComponent("bun"))
     }
 
+    func testConfiguredRuntimeIsUsableDespiteAnUnrelatedBrokenDefaultLink() async throws {
+        let fixture = try makeFixture()
+        let installRoot = fixture.root.appendingPathComponent("existing-bun", isDirectory: true)
+        let bin = installRoot.appendingPathComponent("bin", isDirectory: true)
+        try makeExecutable(bin.appendingPathComponent("bun"))
+        try makeExecutable(bin.appendingPathComponent("bunx"))
+        try FileManager.default.createSymbolicLink(
+            at: fixture.home.appendingPathComponent(".bun"),
+            withDestinationURL: fixture.root.appendingPathComponent("missing-old-install")
+        )
+        let downloader = BunDownloadStub(download: validDownload())
+        let runner = BunProcessStub()
+        let installer = makeInstaller(
+            fixture: fixture, runner: runner, downloader: downloader,
+            processEnvironment: ["BUN_INSTALL": installRoot.path]
+        )
+
+        guard case .available(let runtime) = try await installer.availability() else {
+            return XCTFail("An unrelated default link must not hide the configured runtime")
+        }
+        XCTAssertEqual(runtime.bunURL, bin.appendingPathComponent("bun"))
+        let resolved = try await installer.install(onOutput: { _ in })
+        XCTAssertEqual(resolved, runtime)
+        XCTAssertEqual(downloader.callCount, 0)
+        XCTAssertTrue(runner.requests.isEmpty)
+    }
+
+    func testExistingDefaultRuntimeMayBeLinkedOutsideHomeWithoutInstallation() async throws {
+        let fixture = try makeFixture()
+        let installRoot = fixture.root.appendingPathComponent("existing-bun", isDirectory: true)
+        let bin = installRoot.appendingPathComponent("bin", isDirectory: true)
+        try makeExecutable(bin.appendingPathComponent("bun"))
+        try makeExecutable(bin.appendingPathComponent("bunx"))
+        try FileManager.default.createSymbolicLink(
+            at: fixture.home.appendingPathComponent(".bun"),
+            withDestinationURL: installRoot
+        )
+        let downloader = BunDownloadStub(download: validDownload())
+        let runner = BunProcessStub()
+        let installer = makeInstaller(fixture: fixture, runner: runner, downloader: downloader)
+
+        guard case .available(let runtime) = try await installer.availability() else {
+            return XCTFail("Discovery must not apply restrictions for writing a new installation")
+        }
+        XCTAssertEqual(runtime.bunURL.resolvingSymlinksInPath(), bin.appendingPathComponent("bun").resolvingSymlinksInPath())
+        let resolved = try await installer.install(onOutput: { _ in })
+        XCTAssertEqual(resolved, runtime)
+        XCTAssertEqual(downloader.callCount, 0)
+        XCTAssertTrue(runner.requests.isEmpty)
+    }
+
+    func testUnsafeDefaultLinksWithoutARuntimeStillFailBeforeInstallation() async throws {
+        for destinationExists in [false, true] {
+            let fixture = try makeFixture()
+            let outside = fixture.root.appendingPathComponent("outside-bun", isDirectory: true)
+            if destinationExists {
+                try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+            }
+            try FileManager.default.createSymbolicLink(
+                at: fixture.home.appendingPathComponent(".bun"), withDestinationURL: outside
+            )
+            let downloader = BunDownloadStub(download: validDownload())
+            let runner = BunProcessStub()
+            let installer = makeInstaller(fixture: fixture, runner: runner, downloader: downloader)
+
+            do {
+                _ = try await installer.install(onOutput: { _ in })
+                XCTFail("A discovered path must not authorize writing outside the home")
+            } catch {
+                XCTAssertEqual(error as? BunInstallerError, .unsafeInstallDirectory)
+            }
+            XCTAssertEqual(downloader.callCount, 0)
+            XCTAssertTrue(runner.requests.isEmpty)
+        }
+    }
+
     func testBunWithoutSameDirectoryBunxDoesNotInstall() async throws {
         let fixture = try makeFixture()
         let bin = fixture.root.appendingPathComponent("bin", isDirectory: true)
