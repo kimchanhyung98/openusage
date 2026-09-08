@@ -22,6 +22,8 @@ final class AppContainer {
     let iCloudSync: ICloudUsageSyncStore
     /// 사용자가 끈 provider의 단일 source of truth. 두 store가 주입 closure로 참조, Customize provider 목록이 변경 주도.
     let enablement: ProviderEnablementStore
+    /// Settings에서만 명시적으로 시작하는 Tokscale CLI 동기화 상태.
+    let tokscaleSync: TokscaleSyncStore
     let apiKeyProviders: [any APIKeyManaging]
     /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
     let notificationSettings: NotificationSettingsStore
@@ -144,6 +146,7 @@ final class AppContainer {
         self.layout = layout
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
+        self.tokscaleSync = TokscaleSyncStore()
         self.resetWatchCoordinator = resetWatchCoordinator
 
         // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
