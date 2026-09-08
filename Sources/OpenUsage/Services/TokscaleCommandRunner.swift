@@ -47,6 +47,15 @@ enum TokscaleCommand: Sendable, Equatable {
             ["tokscale@latest", "login"]
         }
     }
+
+    fileprivate var standardInput: Data {
+        switch self {
+        case .submit:
+            Data("n\n".utf8)
+        case .login:
+            Data()
+        }
+    }
 }
 
 struct TokscaleCommandResult: Sendable, Equatable {
@@ -131,6 +140,7 @@ struct TokscaleCommandRunner: TokscaleCommandRunning, Sendable {
             arguments: command.arguments,
             environment: environment(for: command, executionPath: runtime.executionPath),
             currentDirectoryURL: homeDirectoryURL,
+            standardInput: command.standardInput,
             timeout: Self.timeout,
             outputLimit: Self.outputLimit
         )

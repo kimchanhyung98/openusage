@@ -5,6 +5,7 @@ enum StreamingProcessRunnerError: Error, LocalizedError, Equatable {
     case currentDirectoryMustBeAbsolute
     case invalidTimeout
     case invalidOutputLimit
+    case standardInputTooLarge
     case invalidArgument
     case invalidEnvironment
     case outputReadFailed
@@ -21,6 +22,8 @@ enum StreamingProcessRunnerError: Error, LocalizedError, Equatable {
             "The command timeout must be finite and greater than zero."
         case .invalidOutputLimit:
             "The command output limit cannot be negative."
+        case .standardInputTooLarge:
+            "The command’s standard input exceeds the pipe buffer limit."
         case .invalidArgument:
             "Command arguments cannot contain null bytes."
         case .invalidEnvironment:

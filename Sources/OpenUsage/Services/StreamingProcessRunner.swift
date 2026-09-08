@@ -6,6 +6,7 @@ struct StreamingProcessRequest: Sendable, Equatable {
     var arguments: [String]
     var environment: [String: String]
     var currentDirectoryURL: URL?
+    var standardInput: Data
     var timeout: TimeInterval
     var outputLimit: Int
 
@@ -14,6 +15,7 @@ struct StreamingProcessRequest: Sendable, Equatable {
         arguments: [String],
         environment: [String: String],
         currentDirectoryURL: URL? = nil,
+        standardInput: Data = Data(),
         timeout: TimeInterval,
         outputLimit: Int
     ) {
@@ -21,6 +23,7 @@ struct StreamingProcessRequest: Sendable, Equatable {
         self.arguments = arguments
         self.environment = environment
         self.currentDirectoryURL = currentDirectoryURL
+        self.standardInput = standardInput
         self.timeout = timeout
         self.outputLimit = outputLimit
     }
@@ -53,6 +56,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
     ) async throws -> StreamingProcessResult {
         try Self.validate(request)
 
+        let stdinPipe = try Self.makeStandardInputPipe(request.standardInput)
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         let stdoutRead = StreamingFileHandleBox(stdoutPipe.fileHandleForReading)
@@ -90,6 +94,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                 try Task.checkCancellation()
                 let pid = try Self.spawn(
                     request,
+                    stdinPipe: stdinPipe,
                     stdoutPipe: stdoutPipe,
                     stderrPipe: stderrPipe
                 )
@@ -168,6 +173,18 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         guard request.outputLimit >= 0 else {
             throw StreamingProcessRunnerError.invalidOutputLimit
         }
+        guard request.standardInput.count <= Int(PIPE_BUF) else {
+            throw StreamingProcessRunnerError.standardInputTooLarge
+        }
+    }
+
+    private static func makeStandardInputPipe(_ input: Data) throws -> Pipe? {
+        guard !input.isEmpty else { return nil }
+        let pipe = Pipe()
+        // PIPE_BUF 이하 입력만 미리 채우고 writer를 닫아, 읽지 않는 child와 지연된 질문 모두 EOF 보장.
+        try pipe.fileHandleForWriting.write(contentsOf: input)
+        try pipe.fileHandleForWriting.close()
+        return pipe
     }
 
     private static func waitForExit(
@@ -200,6 +217,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
 
     private static func spawn(
         _ request: StreamingProcessRequest,
+        stdinPipe: Pipe?,
         stdoutPipe: Pipe,
         stderrPipe: Pipe
     ) throws -> pid_t {
@@ -212,10 +230,18 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         let stderrRead = stderrPipe.fileHandleForReading.fileDescriptor
         let stderrWrite = stderrPipe.fileHandleForWriting.fileDescriptor
 
-        try "/dev/null".withCString { path in
-            try requireSpawnSuccess(
-                posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, path, O_RDONLY, 0)
-            )
+        if let stdinPipe {
+            let descriptor = stdinPipe.fileHandleForReading.fileDescriptor
+            try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, descriptor, STDIN_FILENO))
+            if descriptor > STDERR_FILENO {
+                try requireSpawnSuccess(posix_spawn_file_actions_addclose(&fileActions, descriptor))
+            }
+        } else {
+            try "/dev/null".withCString { path in
+                try requireSpawnSuccess(
+                    posix_spawn_file_actions_addopen(&fileActions, STDIN_FILENO, path, O_RDONLY, 0)
+                )
+            }
         }
         try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, stdoutWrite, STDOUT_FILENO))
         try requireSpawnSuccess(posix_spawn_file_actions_adddup2(&fileActions, stderrWrite, STDERR_FILENO))
