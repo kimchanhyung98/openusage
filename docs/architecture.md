@@ -23,6 +23,10 @@ The code is grouped by role:
 At launch it builds the list of providers, turns it into a `WidgetRegistry`, creates the stores, starts the periodic refresh loop, and starts the local HTTP API.
 Everything else receives what it needs from here rather than reaching for globals, which keeps the pieces testable in isolation.
 
+Reset Watch follows the same rule: `AppContainer` creates its cache store and explicitly passes its loader to the coordinator.
+The coordinator owns activity observation and the independent refresh cadence in one file; it does not choose a global store.
+Forecast metadata is one optional value on `WidgetData`, keeping its deadline and refresh-failure state together while still distinguishing an empty forecast from a failed check.
+
 The `openusage` executable imports the same module.
 Every invocation constructs the canonical `ProviderCatalog` (including the launch account pass) and refreshes missing or stale entries through `WidgetDataStore` before reading `ProviderSnapshotCache`; `--force` only bypasses the five-minute freshness gate.
 Providers annotate the scalar resources they export through the stable limits contract; the CLI and `/v1/limits` share one serializer over those same normalized snapshots.
@@ -144,6 +148,12 @@ Every one of those version checks lives in a single file — `Support/LiquidGlas
 
 The release build (`script/release.sh`) ships a universal binary (arm64 + x86_64), so a single DMG runs natively on both Apple Silicon and Intel Macs.
 The dev build (`script/build_and_run.sh`) stays host-arch only — a universal dev build just doubles compile time on the maintainer's own machine for no benefit.
+
+Release versions come from an existing Git tag pointing to the checked-out commit in `origin/main` history.
+Tags start at `v0.7.0`, use no leading zeroes, and allow only `-beta.N` prereleases with a positive N.
+Fetch `origin/main` before packaging a local release.
+Development builds append `-dev` to the nearest reachable release tag; a checkout with no reachable release tag uses `0.0.0-dev`.
+Invalid tags and Git errors stop the build.
 
 ## Local HTTP API
 

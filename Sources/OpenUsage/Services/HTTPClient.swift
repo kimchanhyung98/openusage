@@ -29,6 +29,8 @@ struct URLSessionHTTPClient: HTTPClient {
     /// true면 `127.0.0.1` 한정 self-signed TLS cert를 수용하는 loopback 세션 사용 (`LoopbackTLSDelegate`).
     /// 로컬 language server의 self-signed HTTPS 전용 — 기본 off, 원격 호출은 전체 certificate 검증 유지.
     var allowsInsecureLoopback: Bool = false
+    /// false면 cookie·공유 credential·URL cache·redirect 없는 ephemeral session 사용 — 고정 공개 endpoint 전용.
+    var sendsCookies: Bool = true
 
     /// 모든 provider 요청 공용 세션 — 선택적 `~/.openusage/config.json` proxy 적용해 1회 생성 (`ProxyConfig`).
     /// 유효한 proxy 미설정 시 `URLSession.shared`와 동일한 cookie/cache 의미의 기본 configuration.
@@ -47,6 +49,27 @@ struct URLSessionHTTPClient: HTTPClient {
         URLSession(configuration: .ephemeral, delegate: LoopbackTLSDelegate(), delegateQueue: nil)
     }()
 
+    /// 고정 공개 endpoint 전용 — 공유 인증정보 전송·URL cache·외부 응답 기반 redirect 차단.
+    private static let cookieFreeSession = makeCookieFreeSession()
+
+    static func makeCookieFreeSession(
+        configuration: URLSessionConfiguration = .ephemeral
+    ) -> URLSession {
+        configuration.httpShouldSetCookies = false
+        configuration.httpCookieStorage = nil
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        if let proxy = ProxyConfig.current {
+            configuration.proxyConfigurations = [proxy.proxyConfiguration()]
+        }
+        return URLSession(
+            configuration: configuration,
+            delegate: NoRedirectURLSessionDelegate(),
+            delegateQueue: nil
+        )
+    }
+
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url, timeoutInterval: request.timeout)
         urlRequest.httpMethod = request.method
@@ -55,7 +78,9 @@ struct URLSessionHTTPClient: HTTPClient {
             urlRequest.setValue(value, forHTTPHeaderField: key)
         }
 
-        let session = allowsInsecureLoopback ? Self.loopbackSession : Self.session
+        let session = allowsInsecureLoopback
+            ? Self.loopbackSession
+            : (sendsCookies ? Self.session : Self.cookieFreeSession)
         let (data, response) = try await session.data(for: urlRequest)
         guard let http = response as? HTTPURLResponse else {
             throw HTTPClientError.invalidResponse
@@ -84,6 +109,19 @@ enum HTTPClientError: Error, LocalizedError {
     }
 }
 
+/// 고정 공개 endpoint redirect 거부 — 외부 응답이 loopback·사설망 요청으로 전환되는 경로 차단.
+final class NoRedirectURLSessionDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+}
+
 /// self-signed 서버 cert를 loopback(`127.0.0.1`)에만 수용 — 그 외 host·non-server-trust challenge는 기본 검증으로 통과, 원격 endpoint 신뢰 약화 없음.
 /// mutable 상태 없음 — loopback 세션 간 공유 안전.
 private final class LoopbackTLSDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
@@ -102,4 +140,3 @@ private final class LoopbackTLSDelegate: NSObject, URLSessionDelegate, @unchecke
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }
-

@@ -77,8 +77,8 @@ enum DefaultLayout {
         // Claude: Session·Weekly·Fable은 fold 위, Trend·optional limit·Extra Usage·spend history는 caret 아래
         "claude.trend", "claude.extra", "claude.sonnet",
         "claude.today", "claude.yesterday", "claude.last30",
-        // Codex: Session·Weekly는 fold 위, Trend·reset 상세·Spark·Extra Usage·spend history는 caret 아래
-        "codex.trend", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
+        // Codex: Session·Weekly는 fold 위, Trend·reset watch·reset 상세·Spark·Extra Usage·spend history는 caret 아래
+        "codex.trend", "codex.resetWatch", "codex.rateLimitResets", "codex.spark", "codex.sparkWeekly",
         "codex.credits", "codex.today", "codex.yesterday", "codex.last30",
         "cursor.onDemand", "cursor.requests", "cursor.credits",
         "cursor.today", "cursor.yesterday", "cursor.last30",

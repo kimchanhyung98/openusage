@@ -57,6 +57,15 @@ Besides the provider API calls the vendor's own tools would make, OpenUsage fetc
 These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the Share Anonymous Usage setting.
 OpenUsage computes spend tiles from local CLI logs on your Mac and does not send those logs during normal refreshes or through anonymous analytics.
 
+When Codex is enabled and you enable **Reset Watch** on the dashboard or star it for the menu bar, OpenUsage checks the public [codex-resets.com API](https://codex-resets.com/api/docs) without authentication on a separate 15-minute cadence.
+For a recognized active source post, it also reads the same site's `/api/watch/votes` totals without authentication to calculate the community vote share; it never submits votes.
+While Reset Watch is active, manual Refresh (⌘R) also triggers these checks, subject to retry delays and requests already in flight.
+These checks do not use Codex sign-in and run independently from the regular five-minute subscription-usage refresh.
+Once the metric is both disabled and unstarred, or Codex is disabled, future checks stop; a Reset Watch request already underway may still finish.
+Neither request carries a Codex token, account ID, usage values, local logs, or cookies.
+The independent service still receives ordinary network metadata, such as your IP address and OpenUsage user agent.
+These checks are separate from anonymous usage sharing and are not controlled by the Share Anonymous Usage setting.
+
 To avoid re-reading unchanged Claude, Codex, and pi logs after every relaunch, OpenUsage keeps their parsed usage events in `~/Library/Application Support/OpenUsage/log-scan-cache/`.
 These records contain the usage metadata needed for local totals, including any per-event cost already recorded by a provider, but not raw JSONL lines or conversation text.
 They are private to your macOS account and are never sent to PostHog, a provider, or iCloud.
