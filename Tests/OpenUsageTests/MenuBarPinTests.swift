@@ -91,6 +91,21 @@ final class MenuBarPinTests: XCTestCase {
         XCTAssertEqual(store.pinnedGroups.map(\.provider.id), ["a", "b"])
     }
 
+    func testRefreshDescriptorsIncludeDisabledMetricPinnedOnlyForMenuBar() {
+        let store = makeStore("refreshDescriptors")
+        XCTAssertTrue(store.orderedRenderedDescriptors().isEmpty)
+
+        store.setPinned(true, for: "a.m1")
+
+        XCTAssertEqual(store.orderedRefreshDescriptors().map(\.id), ["a.m1"])
+        store.setMetricEnabled("a.m1", true)
+        XCTAssertEqual(store.orderedRefreshDescriptors().map(\.id), ["a.m1"])
+        store.setPinned(false, for: "a.m1")
+        XCTAssertEqual(store.orderedRefreshDescriptors().map(\.id), ["a.m1"])
+        store.setMetricEnabled("a.m1", false)
+        XCTAssertTrue(store.orderedRefreshDescriptors().isEmpty)
+    }
+
     func testDisabledProviderPinsExcludedFromGroupsButKept() {
         let store = LayoutStore(
             registry: makeRegistry(),
@@ -102,6 +117,7 @@ final class MenuBarPinTests: XCTestCase {
         store.setPinned(true, for: "b.m1")
 
         XCTAssertEqual(store.pinnedGroups.map(\.provider.id), ["b"])
+        XCTAssertEqual(store.orderedRefreshDescriptors().map(\.id), ["b.m1"])
         XCTAssertTrue(store.isPinned("a.m1"))  // 숨겨진 동안에도 membership 유지
     }
 

@@ -31,6 +31,13 @@ final class LoginShellEnvironment: @unchecked Sendable {
         return capturedEnvironment()[name]?.nilIfEmpty
     }
 
+    /// 캡처된 login-shell 환경 전체 — main thread에서는 prewarm 완료 snapshot만 반환.
+    func environmentSnapshot() -> [String: String]? {
+        if let env = cachedSnapshot() { return env }
+        guard !Thread.isMainThread else { return nil }
+        return capturedEnvironment()
+    }
+
     /// launch 시 off-main 캡처 선행 — 첫 provider refresh·UI read가 warm 캐시를 만나도록. 중복 호출 안전.
     /// `.userInitiated` 필수 — utility 우선순위는 cold-launch 경쟁에서 첫 refresh에 밀려 shell export를 부재로 오판.
     func prewarm() {

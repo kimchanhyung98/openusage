@@ -3,7 +3,7 @@
 OpenUsage can share **anonymous** usage data to help understand how the app is used and catch problems.
 It is off by default; opt in any time in **Settings → Privacy → Share Anonymous Usage**.
 
-## What is shared
+## Anonymous analytics: what is shared
 
 When sharing is on, OpenUsage sends two kinds of small daily summaries: one app-use event per day and, for each provider refreshed that day, at most one provider-refresh event:
 
@@ -16,7 +16,7 @@ It also reports **crashes**, so we can find and fix the bugs that make the app q
 - **Crash reports** — if OpenUsage crashes, it saves a report and sends it the next time you open the app: the technical stack trace (which parts of *OpenUsage's own code* were running when it crashed) plus the app and macOS version.
   This contains no account details, credentials, or usage values — just where in the app the crash happened.
 
-## What is never shared
+## Anonymous analytics: what is never shared
 
 - No account details, names, emails, or credentials.
 - No actual usage **values** (no spend amounts, token counts, or limits).
@@ -58,6 +58,17 @@ These are plain downloads of public data — they carry no usage, log, or accoun
 While a supported provider is enabled, OpenUsage also fetches public component status from [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), or [GitHub Status](https://www.githubstatus.com/) at launch, when that provider is enabled, every five minutes, and during Dashboard manual refreshes.
 These requests are unauthenticated and include no provider credentials, account information, usage values, or logs.
 
+OpenUsage computes spend tiles from local CLI logs on your Mac and does not send those logs during normal refreshes or through anonymous analytics.
+
+When Codex is enabled and you enable **Reset Watch** on the dashboard or star it for the menu bar, OpenUsage checks the public [codex-resets.com API](https://codex-resets.com/api/docs) without authentication on a separate 15-minute cadence.
+For a recognized active source post, it also reads the same site's `/api/watch/votes` totals without authentication to calculate the community vote share; it never submits votes.
+While Reset Watch is active, manual Refresh (⌘R) also triggers these checks, subject to retry delays and requests already in flight.
+These checks do not use Codex sign-in and run independently from the regular five-minute subscription-usage refresh.
+Once the metric is both disabled and unstarred, or Codex is disabled, future checks stop; a Reset Watch request already underway may still finish.
+Neither request carries a Codex token, account ID, usage values, local logs, or cookies.
+The independent service still receives ordinary network metadata, such as your IP address and OpenUsage user agent.
+These checks are separate from anonymous usage sharing and are not controlled by the Share Anonymous Usage setting.
+
 To avoid re-reading unchanged Claude, Codex, and pi logs after every relaunch, OpenUsage keeps their parsed usage events in `~/Library/Application Support/OpenUsage/log-scan-cache/`.
 These records contain the usage metadata needed for local totals, including any per-event cost already recorded by a provider, but not raw JSONL lines or conversation text.
 They are private to your macOS account and are never sent to PostHog, a provider, or iCloud.
@@ -68,15 +79,64 @@ If you explicitly turn on [iCloud Sync](icloud-sync.md), OpenUsage writes normal
 Credentials, account limits, provider responses, and raw logs are never written there.
 This is separate from anonymous usage sharing: iCloud Sync defaults off and uses your iCloud account, while the analytics toggle controls PostHog events.
 
-## How it works
+## Tokscale public sharing
 
-- Data is fully anonymous: OpenUsage never identifies you to the analytics service and creates no user profile.
+The Tokscale action is a third, independent sharing flow.
+Neither iCloud Sync nor Share Anonymous Usage enables it, and changing Tokscale state changes neither of those settings.
+No app launch, refresh, background task, widget update, `openusage` CLI invocation, or local API request triggers Bun installation or Tokscale.
+Settings summarizes public usage syncing and links to the official policy; the detailed sharing, command, and installation information remains here.
+
+Only an explicit **Sync** in Settings runs:
+
+```sh
+bunx tokscale@latest submit
+```
+
+That command asks the Tokscale package resolved by `bunx` to discover its supported sources and update a public profile that may be indexed by search engines.
+OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
+Verified against Tokscale v4.15.1 on 2026-09-04, the CLI may include token and cost breakdowns, dates, clients, models, message and timing statistics, device information, discovered MCP server names, and the Tokscale CLI version.
+The CLI may read local session files to calculate those aggregates, but Tokscale's current policy excludes prompts, responses and conversation content, source code, file contents and names, and AI-provider API keys or credentials from submission.
+OpenUsage does not derive the submission from its widgets, iCloud history, or anonymous analytics and does not apply its provider settings as a filter.
+OpenUsage forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings from the app and captured login-shell environments.
+Unrelated credentials such as AI-provider API keys and GitHub tokens, unknown variables, runtime-injection settings, Tokscale test hooks, and custom Tokscale API endpoints are not forwarded.
+Allowed settings can still contain credentials, such as Tokscale's own token or proxy authentication; OpenUsage does not log those values.
+This limits environment inheritance, not file access: Bun and Tokscale are not sandboxed and can still read local files and their own configuration.
+The command uses the current macOS account's home as both `HOME` and its working directory, ignoring a custom terminal `HOME`.
+Tokscale uses its own token to authenticate the request; its current policy excludes AI-provider API keys and credentials from the submitted usage data.
+
+The device name saved in the **Tokscale Device Name** sheet is a public label and can identify the machine on the Tokscale profile.
+OpenUsage stores it locally and supplies it only to the submit process as `TOKSCALE_DEVICE_NAME`; a value such as `m1-max` replaces the display label for the same stable device on its next successful submission.
+Saving or changing the name alone makes no network request.
+Removing the override does not clear Tokscale's existing public name; it lets later submissions use the name from Tokscale's environment or stored device record again.
+
+If the submit command reports a verified missing-login result, OpenUsage offers a separate **Log In…** action that runs `bunx tokscale@latest login` with no standard input.
+Login alone does not submit usage, and completing it never starts submit automatically.
+The current login flow lets Tokscale store the GitHub numeric ID, username, display name, avatar URL, and email.
+During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by device-name management.
+A later submission creates or updates the public profile, which can show the GitHub username, avatar, and display name.
+
+When an explicit **Sync** cannot find a usable Bun runtime, OpenUsage downloads and runs Bun's official installer before continuing.
+The installer creates or updates files in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default and may append Bun's path setup to the login shell profile; it does not require administrator access.
+Its child process receives exported proxy and certificate settings for the binary download, but not other login-shell values.
+OpenUsage does not modify an incompatible `BUN_INSTALL` outside that boundary and instead offers the manual installation guide.
+The mutable Bun installer and `@latest` are part of the disclosure boundary: they may download and execute Bun or Tokscale code that changed without an OpenUsage update.
+The exact `bunx` command follows the user's Bun configuration and may prefer a matching package under the home directory.
+Use only registry endpoints you trust, preferably over HTTPS; an HTTP registry can expose package downloads to tampering.
+See the official [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun installation guide](https://bun.com/docs/installation), and [Bun `bunx` documentation](https://bun.com/docs/pm/bunx).
+
+Installer and command output can contain usernames, browser URLs, authorization codes, local paths, model names, profile URLs, and usage values.
+OpenUsage shows a bounded in-memory copy in the Settings card and login sheet, retains completion or failure output until the next command or app termination, and never writes it to the OpenUsage log, telemetry, UserDefaults, a file, or the clipboard automatically.
+OpenUsage does not read or copy Tokscale's credential file and provides no Tokscale logout, disconnect, or remote-data deletion UI.
+
+## How anonymous analytics works
+
+- Anonymous analytics is fully anonymous: OpenUsage never identifies you to the analytics service and creates no user profile.
 - Crash reports use the **same** Share Anonymous Usage switch — turn it off and crash reporting is off too, with no separate setting to find.
   While it's off, no crash report is recorded or sent.
 - Counts are rolled up locally and sent as daily summaries, so the app's normal 5-minute refresh never turns into a flood of network calls.
 - Your choice and the anonymous ID are stored separately from the rest of the app's settings, so settings migrations and updates do not re-enable sharing or change your ID.
 
-## Controlling sharing
+## Controlling anonymous analytics
 
 Open **Settings → Privacy** and switch **Share Anonymous Usage** on to opt in.
 Switching it off stops sharing immediately.
