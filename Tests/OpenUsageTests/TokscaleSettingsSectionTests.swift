@@ -97,7 +97,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         XCTAssertGreaterThan(expectedIncrease, 0)
         XCTAssertEqual(
             cardHeights[1] - cardHeights[0], expectedIncrease, accuracy: 0.5,
-            "Sync Now should inherit the default settings button's regular-to-large size increase."
+            "Sync should inherit the default settings button's regular-to-large size increase."
         )
         XCTAssertEqual(store.phase, .idle)
         XCTAssertFalse(store.isRunning)
@@ -160,6 +160,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                     window.setContentSize(hosting.fittingSize)
                     hosting.layoutSubtreeIfNeeded()
                     XCTAssertEqual(hosting.bounds.width, PanelHeightController.panelWidth, accuracy: 0.5)
+                    XCTAssertGreaterThan(hosting.bounds.height, 0)
                     XCTAssertLessThanOrEqual(
                         hosting.bounds.height, 150,
                         "Idle Tokscale settings should stay compact for \(variant)."
@@ -172,13 +173,13 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                             "A long saved device name should not change the idle card height for \(variant)."
                         )
                     }
-                    let expectedPixelWidth = Int(hosting.convertToBacking(hosting.bounds).width.rounded())
+                    let expectedPixelSize = hosting.convertToBacking(hosting.bounds).size
                     let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
                     hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
                     let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
                     window.close()
-                    XCTAssertEqual(bitmap.pixelsWide, expectedPixelWidth)
-                    XCTAssertGreaterThan(bitmap.pixelsHigh, 100)
+                    XCTAssertEqual(bitmap.pixelsWide, Int(expectedPixelSize.width.rounded()))
+                    XCTAssertEqual(bitmap.pixelsHigh, Int(expectedPixelSize.height.rounded()))
                     XCTAssertEqual(store.phase, .idle)
                     XCTAssertFalse(store.isRunning)
                     XCTAssertTrue(store.output.isEmpty)
