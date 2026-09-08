@@ -16,7 +16,6 @@ struct TokscaleSettingsSection: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 actionRow
-                Divider()
                 disclosure
 
                 if store.phase != .idle {
@@ -44,12 +43,15 @@ struct TokscaleSettingsSection: View {
             Text("Tokscale")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Button("Name…") {
+            Button {
                 isNameSheetPresented = true
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .accessibilityLabel("Manage Tokscale Device Name")
             .disabled(store.isRunning)
         }
         .padding(.horizontal, 8)
@@ -57,13 +59,15 @@ struct TokscaleSettingsSection: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 5) {
                 Text("Usage Sync")
-                Text(store.deviceName.map { "Device: \($0)" } ?? "Uses Tokscale's Existing Name")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                Link(destination: Self.privacyURL) {
+                    Image(systemName: "info.circle")
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Tokscale Privacy Policy")
             }
             Spacer(minLength: 8)
             action
@@ -77,76 +81,38 @@ struct TokscaleSettingsSection: View {
         switch store.phase {
         case .installingBun:
             Button("Installing…") {}
-                .buttonStyle(.bordered)
-                .controlSize(.small)
                 .disabled(true)
         case .submitting:
             Button("Syncing…") {}
-                .buttonStyle(.bordered)
-                .controlSize(.small)
                 .disabled(true)
         case .loginRequired:
             Button(store.isRunning ? "Cancelling…" : "Log In…") {
                 isLoginSheetPresented = true
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
             .disabled(store.isRunning)
         case .loggingIn:
             Button("View Login…") {
                 isLoginSheetPresented = true
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         case .failed where store.failure == .login:
             Button("Log In…") {
                 isLoginSheetPresented = true
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         case .idle, .submitFinished, .loginFinished, .failed:
             Button("Sync Now") {
                 store.startSubmit()
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
     }
 
     private var disclosure: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("Runs the Tokscale package resolved by bunx to update a public profile that may appear in search results. Tokscale decides which supported sources and fields to include.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("The current CLI may publish usage, client, model, device, and discovered MCP-server information. Its current policy excludes prompts, responses, and source code.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("OpenUsage forwards only allowed environment settings, including Tokscale authentication, and excludes unrelated credentials and unknown variables. Bun and Tokscale are not sandboxed: they can still read local files and their own configuration.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("bunx tokscale@latest submit")
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("If Bun is unavailable, Sync Now installs it from bun.com, and the installer may update your login-shell profile. The installer and `tokscale@latest` can change without an OpenUsage update; bunx follows your Bun package configuration.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 4)
-                Link("Privacy Policy", destination: Self.privacyURL)
-                    .font(.caption)
-                    .fixedSize()
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        Text("Sync local usage to your public Tokscale profile.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -215,7 +181,7 @@ struct TokscaleSettingsSection: View {
     }
 }
 
-private struct TokscaleDeviceNameSheet: View {
+struct TokscaleDeviceNameSheet: View {
     @Bindable var store: TokscaleSyncStore
 
     @Environment(\.dismiss) private var dismiss
@@ -253,7 +219,7 @@ private struct TokscaleDeviceNameSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Device Name")
                     .font(.callout.weight(.semibold))
-                TextField("m1-max", text: $draftName)
+                TextField("Enter Device Name", text: $draftName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(save)
                 HStack(alignment: .firstTextBaseline) {
