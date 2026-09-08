@@ -49,7 +49,7 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertEqual(data.communityVoteTick, 1)
         data.forecast?.communityYesPercent = nil
         XCTAssertNil(data.communityVoteTick)
-        XCTAssertEqual(data.communityVoteLabel, "Votes unavailable")
+        XCTAssertEqual(data.communityVoteLabel, "Vote share unavailable")
         data.forecast = nil
         XCTAssertNil(data.communityVoteLabel)
     }

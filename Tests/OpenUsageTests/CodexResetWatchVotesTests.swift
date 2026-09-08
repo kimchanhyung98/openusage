@@ -26,7 +26,7 @@ final class CodexResetWatchVotesTests: XCTestCase {
         XCTAssertEqual(request.headers["Accept"], "application/json")
         XCTAssertEqual(request.headers["User-Agent"], "OpenUsage")
         XCTAssertNil(request.body)
-        XCTAssertTrue(Set(request.headers.keys).isDisjoint(with: ["Authorization", "Cookie", "ChatGPT-Account-Id"]))
+        XCTAssertTrue(Set(request.headers.keys.map { $0.lowercased() }).isDisjoint(with: ["authorization", "cookie", "chatgpt-account-id"]))
     }
 
     func testInvalidVotesAndFailuresLeaveForecastAvailable() async {
@@ -154,18 +154,27 @@ final class CodexResetWatchVotesTests: XCTestCase {
     }
 
     func testAutomaticReadJoinsForcedRefreshInsteadOfReturningOldFreshCache() async {
-        let http = VotesHTTPClient([status(), votes(), status(chance: 60), votes()], delay: .milliseconds(100))
+        let http = VotesHTTPClient([status(), votes(), status(chance: 60), votes()])
         let store = CodexResetWatchStore(http: http, now: { Self.now })
         _ = await store.currentResult()
+        let requestStarted = expectation(description: "Forced request started")
+        await http.blockNextRequest(started: requestStarted)
         let manual = Task { await store.currentResult(force: true) }
-        for _ in 0..<1000 {
-            if await http.requests.count == 3 { break }
-            try? await Task.sleep(for: .milliseconds(1))
+        guard await XCTWaiter.fulfillment(of: [requestStarted], timeout: 5) == .completed else {
+            await http.resume()
+            _ = await manual.value
+            XCTFail("Forced request did not start")
+            return
         }
-        let automatic = await store.currentResult()
+        let automaticStarted = expectation(description: "Automatic read entered the store")
+        let automatic = Task { await store.readForTest(started: automaticStarted) }
+        let automaticStart = await XCTWaiter.fulfillment(of: [automaticStarted], timeout: 5)
+        await http.resume()
+        XCTAssertEqual(automaticStart, .completed)
+        let automaticResult = await automatic.value
         let manualResult = await manual.value
-        XCTAssertEqual(automatic.watch?.chancePercent, 60)
-        XCTAssertEqual(manualResult, automatic)
+        XCTAssertEqual(automaticResult.watch?.chancePercent, 60)
+        XCTAssertEqual(manualResult, automaticResult)
         let requests = await http.requests
         XCTAssertEqual(requests.count, 4)
     }
@@ -277,6 +286,14 @@ final class CodexResetWatchVotesTests: XCTestCase {
     }
 }
 
+private extension CodexResetWatchStore {
+    /// 같은 actor 실행 구간에서 읽기 시작을 알려, 응답 해제 전에 in-flight 조회 진입 보장.
+    func readForTest(started: XCTestExpectation) async -> CodexResetWatchResult {
+        started.fulfill()
+        return await currentResult()
+    }
+}
+
 private final class VoteRetryClock: @unchecked Sendable {
     private let lock = NSLock()
     private var instant: Date
@@ -311,18 +328,34 @@ private actor VoteRetryHTTPClient: HTTPClient {
 private actor VotesHTTPClient: HTTPClient {
     var requests: [HTTPRequest] = []
     private var responses: [HTTPResponse]
-    private let delay: Duration
+    private var requestStarted: XCTestExpectation?
+    private var continuation: CheckedContinuation<Void, Never>?
 
-    init(_ responses: [HTTPResponse], delay: Duration = .zero) {
+    init(_ responses: [HTTPResponse]) {
         self.responses = responses
-        self.delay = delay
+    }
+
+    func blockNextRequest(started: XCTestExpectation) {
+        requestStarted = started
+    }
+
+    func resume() {
+        requestStarted = nil
+        continuation?.resume()
+        continuation = nil
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         requests.append(request)
         guard !responses.isEmpty else { throw URLError(.timedOut) }
         let response = responses.removeFirst()
-        if delay > .zero { try await Task.sleep(for: delay) }
+        if let started = requestStarted {
+            requestStarted = nil
+            await withCheckedContinuation {
+                continuation = $0
+                started.fulfill()
+            }
+        }
         return response
     }
 }
