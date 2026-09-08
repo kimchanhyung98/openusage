@@ -109,6 +109,49 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         XCTAssertNil(store.data(for: dynamic).softLimitUsedFraction)
     }
 
+    func testSoftLimitAndResetWatchKeepIndependentMarkersAndPresentation() throws {
+        let provider = CodexProvider()
+        let descriptors = provider.widgetDescriptors
+        let weekly = try XCTUnwrap(descriptors.first { $0.id == "codex.weekly" })
+        let forecast = try XCTUnwrap(descriptors.first { $0.id == "codex.resetWatch" })
+        let defaults = makeDefaults()
+        let settings = SoftLimitSettingsStore(defaults: defaults)
+        settings.enabled = true
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let deadline = now.addingTimeInterval(300)
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider.provider], descriptors: descriptors),
+            providers: [], defaults: defaults, now: { now }, softLimitSettings: { settings }
+        )
+        store.snapshots["codex"] = ProviderSnapshot(
+            providerID: "codex", displayName: "Codex",
+            lines: [.progress(label: weekly.metricLabel, used: 95, limit: 100, format: .percent,
+                              periodDurationMs: MetricPeriod.weekMs)]
+        )
+        store.setCodexResetWatch(CodexResetWatch(
+            chancePercent: 75, deadline: deadline, communityYesPercent: 79
+        ))
+
+        for mode in [WidgetDisplayMode.used, .remaining] {
+            store.meterStyle = mode
+            let quota = store.data(for: weekly)
+            let watch = store.data(for: forecast)
+            XCTAssertEqual(quota.softLimitMarkerFraction ?? -1, mode == .used ? 0.95 : 0.05, accuracy: 0.0001)
+            XCTAssertEqual(quota.softLimitStatusText, "Soft limit reached at 95% used")
+            XCTAssertNil(quota.communityVoteTick)
+            XCTAssertNil(watch.softLimitUsedFraction)
+            XCTAssertNil(watch.softLimitMarkerFraction)
+            XCTAssertNil(watch.softLimitStatusText)
+            XCTAssertEqual(watch.fraction, 0.75)
+            XCTAssertEqual(watch.communityVoteTick, 0.79)
+            XCTAssertEqual(watch.communityVoteLabel, "79% expect a reset")
+            XCTAssertFalse(watch.hasMeterStyleToggle)
+            XCTAssertFalse(watch.presented(at: deadline).hasData)
+            XCTAssertNil(watch.presented(at: deadline).communityVoteTick)
+            XCTAssertTrue(quota.presented(at: deadline).hasData)
+        }
+    }
+
     private func makeDefaults() -> UserDefaults {
         let suiteName = "OpenUsageTests.SoftLimit.WidgetDataStore.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

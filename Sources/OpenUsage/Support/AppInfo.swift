@@ -4,6 +4,6 @@ import Foundation
 /// `CFBundleShortVersionString`은 pre-release suffix까지 포함한 전체 버전; fallback은 Info.plist가 없는 실행(`swift run`) 대비.
 enum AppInfo {
     static var version: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.9.5-dev"
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "0.0.0-dev"
     }
 }

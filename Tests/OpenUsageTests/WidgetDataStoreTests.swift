@@ -1,3 +1,5 @@
+import Observation
+import os
 import XCTest
 @testable import OpenUsage
 
@@ -678,6 +680,172 @@ final class WidgetDataStoreTests: XCTestCase {
 
         await store.refreshAll()
         XCTAssertEqual(store.data(for: descriptor).providerID, provider.id)
+    }
+
+    func testResetWatchOverlayIsNoDataAtItsDeadline() {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: provider,
+            title: "Reset Watch"
+        )
+        let deadline = Date(timeIntervalSince1970: 1_800_000_000)
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [],
+            defaults: makeUserDefaults("forecast-deadline"),
+            now: { deadline }
+        )
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 75, deadline: deadline))
+
+        let data = store.data(for: descriptor)
+        XCTAssertTrue(data.isForecast)
+        XCTAssertFalse(data.hasData)
+        XCTAssertEqual(data.headline, WidgetData.noDataHeadline)
+        XCTAssertEqual(data.meterState(now: deadline), .noData)
+    }
+
+    func testResetWatchOverlayInvalidatesObservedData() {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: provider,
+            title: "Reset Watch"
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
+            providers: [],
+            defaults: makeUserDefaults("forecast-observation")
+        )
+        let invalidated = OSAllocatedUnfairLock(initialState: false)
+        withObservationTracking {
+            _ = store.data(for: descriptor)
+        } onChange: {
+            invalidated.withLock { $0 = true }
+        }
+
+        store.setCodexResetWatch(CodexResetWatch(
+            chancePercent: 75,
+            deadline: Date().addingTimeInterval(3_600)
+        ))
+
+        XCTAssertTrue(invalidated.withLock { $0 })
+    }
+
+    func testResetWatchOverlayWorksWithoutCodexAuthenticationAndSurvivesUsageFailure() async {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let session = WidgetDescriptor.percent(id: "codex.session", provider: provider, title: "Session")
+        let resetWatch = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: provider,
+            title: "Reset Watch"
+        )
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [session, resetWatch],
+            snapshot: .error(provider: provider, message: "No Codex credentials found.")
+        )
+        let defaults = makeUserDefaults("reset-watch-auth-independent")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [session, resetWatch]),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults
+        )
+        let deadline = Date().addingTimeInterval(3_600)
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 75, deadline: deadline))
+
+        await store.refreshAll(force: true)
+
+        XCTAssertEqual(store.errorMessage(for: provider.id), "No Codex credentials found.")
+        XCTAssertFalse(store.data(for: session).hasData)
+        XCTAssertEqual(store.data(for: resetWatch).used, 75)
+        XCTAssertEqual(store.data(for: resetWatch).forecastDeadline, deadline)
+        XCTAssertTrue(store.data(for: resetWatch).hasData)
+        XCTAssertTrue(store.snapshots.isEmpty)
+        XCTAssertTrue(store.localSnapshots.isEmpty)
+    }
+
+    func testResetWatchOverlayIsSharedAcrossCodexCards() {
+        let bare = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let account = Provider(
+            id: "codex@ab12cd34",
+            displayName: "Codex — Work",
+            icon: .providerMark("codex")
+        )
+        let bareWatch = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: bare,
+            title: "Reset Watch"
+        )
+        let accountWatch = WidgetDescriptor.forecast(
+            id: "codex@ab12cd34.resetWatch",
+            provider: account,
+            title: "Reset Watch"
+        )
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(
+                providers: [bare, account],
+                descriptors: [bareWatch, accountWatch]
+            ),
+            providers: [],
+            defaults: makeUserDefaults("reset-watch-shared-cards")
+        )
+        let deadline = Date().addingTimeInterval(3_600)
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 69, deadline: deadline))
+
+        let bareData = store.data(for: bareWatch)
+        let accountData = store.data(for: accountWatch)
+
+        XCTAssertTrue(bareData.hasData)
+        XCTAssertTrue(accountData.hasData)
+        XCTAssertEqual(bareData.used, 69)
+        XCTAssertEqual(accountData.used, 69)
+        XCTAssertEqual(bareData.forecastDeadline, deadline)
+        XCTAssertEqual(accountData.forecastDeadline, deadline)
+        XCTAssertEqual(bareData.used, accountData.used)
+        XCTAssertEqual(bareData.forecastDeadline, accountData.forecastDeadline)
+        XCTAssertEqual(bareData.providerID, bare.id)
+        XCTAssertEqual(accountData.providerID, account.id)
+    }
+
+    func testCodexUsageRefreshDoesNotPersistOrRemoveResetWatchOverlay() async {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let session = WidgetDescriptor.percent(id: "codex.session", provider: provider, title: "Session")
+        let resetWatch = WidgetDescriptor.forecast(
+            id: "codex.resetWatch",
+            provider: provider,
+            title: "Reset Watch"
+        )
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [session, resetWatch],
+            snapshot: ProviderSnapshot(
+                providerID: provider.id,
+                displayName: provider.displayName,
+                lines: [.progress(label: "Session", used: 42, limit: 100, format: .percent)]
+            )
+        )
+        let defaults = makeUserDefaults("reset-watch-not-persisted")
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [session, resetWatch]),
+            providers: [runtime],
+            cache: cache,
+            defaults: defaults
+        )
+        let deadline = Date().addingTimeInterval(3_600)
+        store.setCodexResetWatch(CodexResetWatch(chancePercent: 80, deadline: deadline))
+
+        await store.refreshAll(force: true)
+
+        XCTAssertEqual(store.data(for: session).used, 42)
+        XCTAssertEqual(store.data(for: resetWatch).used, 80)
+        XCTAssertEqual(store.localSnapshots[provider.id]?.lines.map(\.label), ["Session"])
+        XCTAssertEqual(
+            cache.loadSnapshots(providerIDs: [provider.id])[provider.id]?.lines.map(\.label),
+            ["Session"]
+        )
     }
 
     private func makeUserDefaults(_ name: String) -> UserDefaults {

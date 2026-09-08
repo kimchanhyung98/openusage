@@ -17,6 +17,7 @@ final class AppContainer {
     private(set) var registry: WidgetRegistry
     let layout: LayoutStore
     let dataStore: WidgetDataStore
+    private(set) var isRefreshingAll = false
     /// 머신 로컬 일간 히스토리의 opt-in iCloud 문서 동기화.
     let iCloudSync: ICloudUsageSyncStore
     /// 사용자가 끈 provider의 단일 source of truth. 두 store가 주입 closure로 참조, Customize provider 목록이 변경 주도.
@@ -51,6 +52,8 @@ final class AppContainer {
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
+    /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
+    private let resetWatchCoordinator: CodexResetWatchCoordinator
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
@@ -111,6 +114,11 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
+        let resetWatchStore = CodexResetWatchStore()
+        let resetWatchCoordinator = CodexResetWatchCoordinator(
+            load: { force in await resetWatchStore.currentResult(force: force) },
+            publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
+        )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 시 즉시 fetch되도록 잔여 failure backoff 제거. `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
         enablement.onProviderEnabled = { [weak dataStore] id in dataStore?.clearFailureBackoff(for: id) }
@@ -141,6 +149,7 @@ final class AppContainer {
         self.layout = layout
         self.dataStore = dataStore
         self.iCloudSync = iCloudSync
+        self.resetWatchCoordinator = resetWatchCoordinator
 
         // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
         // claim 성공 시 해당 카드 강제 refresh — in-flight refresh는 pre-claim 사용량일 수 있어 실제 실행까지 재시도 (bounded).
@@ -208,6 +217,11 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
+        resetWatchCoordinator.observeActivity { [layout] in
+            layout.orderedRefreshDescriptors().contains {
+                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
+            }
+        }
         self.refreshTask.task = Self.startPeriodicRefresh(
             dataStore: dataStore,
             telemetry: telemetry,
@@ -361,11 +375,16 @@ final class AppContainer {
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
+        guard !isRefreshingAll else { return }
+        isRefreshingAll = true
+        defer { isRefreshingAll = false }
+        let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
         let reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         await dataStore.refreshAll(force: force)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
+        await resetWatchTask?.value
     }
 
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
