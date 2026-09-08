@@ -104,8 +104,10 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
   자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.
   미생성 폴더를 붙이기 전에 기존 상위 directory의 실제 경로를 해석해 symbolic link가 설치를 home 밖으로 우회하지 못하도록 검증하고, 끊어진 link는 download 전에 거부.
   쓰기 제한은 새 설치에만 적용 — 사용하지 않는 기본 설치 경로가 깨져 있어도 symbolic link나 외부 설정 directory의 사용 가능한 기존 runtime 탐색 가능.
-- `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array로 직접 실행.
+- `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `posix_spawn`으로 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array와 함께 직접 실행.
   `shell -c`, AppleScript, 사용자 제공 command text를 사용하지 않음.
+  선택적 GitHub star 요청의 명시적 거절로 submit 표준 입력에 정확히 `n\n` 한 번을 전달한 뒤 EOF 처리.
+  Login 표준 입력은 null 유지, 두 command 모두 terminal 없이 output streaming.
   App과 캡처된 login-shell environment를 app 값 우선으로 병합한 뒤 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
   미등록 변수, AI provider API key, runtime injection 설정, Tokscale test hook, `TOKSCALE_API_URL`은 전달하지 않고 `HOME`과 작업 directory는 현재 macOS account에 고정.
   Source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수는 allowlist 갱신이 필요하고 추가 source directory에는 `TOKSCALE_EXTRA_DIRS` 사용 가능.

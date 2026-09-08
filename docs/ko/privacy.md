@@ -89,6 +89,7 @@ bunx tokscale@latest submit
 ```
 
 `bunx`가 해석한 Tokscale package에서 지원 소스를 직접 탐색해 검색 engine에 색인될 수 있는 public profile을 갱신하도록 요청하는 명령.
+선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
 2026-09-04 Tokscale v4.15.1 검토 기준, CLI는 token·cost breakdown, 날짜, client, model, message·timing 통계, device 정보, 발견된 MCP server 이름, Tokscale CLI 버전을 포함 가능.
 해당 집계를 계산하기 위해 local session file을 읽을 수 있지만, Tokscale 현재 policy에서는 prompt·response·conversation content, source code, file content·name, AI provider API key·credential을 제출에서 제외.
 OpenUsage widget, iCloud history, 익명 분석에서 제출 데이터를 역산하지 않고 OpenUsage provider 설정을 filter로 적용하지 않음.
@@ -104,7 +105,7 @@ OpenUsage에 로컬로 보관하고 submit process에만 `TOKSCALE_DEVICE_NAME`�
 이름 저장이나 변경만으로 network request를 실행하지 않음.
 Override 제거로 Tokscale의 기존 public name을 삭제하지 않으며, 이후 submit에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
 
-Submit 명령에서 검증된 미로그인 결과를 받으면 OpenUsage에서 별도 **Log In…** 동작을 제공하고 `bunx tokscale@latest login` 실행.
+Submit 명령에서 검증된 미로그인 결과를 받으면 OpenUsage에서 별도 **Log In…** 동작을 제공하고 표준 입력 없이 `bunx tokscale@latest login` 실행.
 Login 자체는 usage를 제출하지 않으며, 완료 뒤에도 submit을 자동 시작하지 않음.
 현재 login 흐름에서 Tokscale는 GitHub numeric ID, username, display name, avatar URL, email을 저장 가능.
 새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 **Name…**으로 변경되지 않음.
@@ -116,6 +117,7 @@ Installer child에는 binary download용으로 export된 proxy·certificate 설�
 OpenUsage는 이 경계 밖의 호환되지 않는 `BUN_INSTALL`을 수정하지 않고 수동 설치 안내 제공.
 변경 가능한 Bun installer와 `@latest`가 고지 경계에 포함 — OpenUsage update 없이 바뀐 Bun 또는 Tokscale code를 내려받아 실행할 수 있음.
 정확한 `bunx` command는 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
+신뢰하는 registry endpoint와 가급적 HTTPS 사용 권장 — HTTP registry에서는 package download 변조 위험 존재.
 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun 설치 안내](https://bun.com/docs/installation), [Bun `bunx` 문서](https://bun.com/docs/pm/bunx) 참조.
 
 Installer와 command output에는 username, browser URL, authorization code, local path, model 이름, profile URL, usage 값이 포함될 수 있음.

@@ -149,6 +149,7 @@ bunx tokscale@latest submit
 ```
 
 **Sync Now** runs that command once with no provider, date, or OpenUsage-data arguments.
+OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
 Tokscale decides which supported sources and fields are included.
 The current CLI may include usage, client, model, device, and discovered MCP-server information in a public profile that can appear in search results.
 Because `bunx` uses `@latest`, it may download and run a newer package whose behavior changed after the OpenUsage release.
@@ -164,7 +165,7 @@ The first-use flow begins only when the user chooses **Sync Now**:
    Tokscale still discovers supported sources; use `TOKSCALE_EXTRA_DIRS` for additional directories when a new path variable is not yet allowed.
 4. **Log In…** appears only when that submit result matches Tokscale's verified missing-login response.
 5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
-6. OpenUsage runs `bunx tokscale@latest login` once in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.
+6. OpenUsage runs `bunx tokscale@latest login` once with no standard input in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.
 7. When login finishes, the card shows **Tokscale Login Finished. Sync Has Not Started.**
 8. Login never submits usage automatically; another explicit **Sync Now** starts submission.
 

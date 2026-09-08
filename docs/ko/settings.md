@@ -149,6 +149,7 @@ bunx tokscale@latest submit
 ```
 
 **Sync Now**는 provider, date, OpenUsage data argument 없이 해당 명령을 한 번 실행.
+선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
 포함할 지원 소스와 field는 Tokscale에서 결정.
 현재 CLI는 usage, client, model, device, 발견된 MCP server 정보를 검색 결과에 노출될 수 있는 public profile에 포함 가능.
 `bunx`에서 `@latest`를 사용하므로 OpenUsage release 이후 동작이 바뀐 최신 package를 내려받아 실행할 수 있음.
@@ -164,7 +165,7 @@ OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 �
    지원 source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수가 아직 허용되지 않은 경우 추가 directory에 `TOKSCALE_EXTRA_DIRS` 사용.
 4. Submit 결과가 검증된 Tokscale 미로그인 응답과 일치할 때만 **Log In…** 표시.
 5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
-6. OpenUsage에서 작은 **Log In to Tokscale** sheet를 열고 `bunx tokscale@latest login` 한 번 실행, 승인 대기 중 browser URL과 user code 표시.
+6. OpenUsage에서 작은 **Log In to Tokscale** sheet를 열고 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행, 승인 대기 중 browser URL과 user code 표시.
 7. Login 종료 시 카드에 **Tokscale Login Finished. Sync Has Not Started.** 표시.
 8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync Now**를 선택할 때 제출 시작.
 

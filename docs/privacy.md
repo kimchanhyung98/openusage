@@ -89,6 +89,7 @@ bunx tokscale@latest submit
 ```
 
 That command asks the Tokscale package resolved by `bunx` to discover its supported sources and update a public profile that may be indexed by search engines.
+OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
 Verified against Tokscale v4.15.1 on 2026-09-04, the CLI may include token and cost breakdowns, dates, clients, models, message and timing statistics, device information, discovered MCP server names, and the Tokscale CLI version.
 The CLI may read local session files to calculate those aggregates, but Tokscale's current policy excludes prompts, responses and conversation content, source code, file contents and names, and AI-provider API keys or credentials from submission.
 OpenUsage does not derive the submission from its widgets, iCloud history, or anonymous analytics and does not apply its provider settings as a filter.
@@ -104,7 +105,7 @@ OpenUsage stores it locally and supplies it only to the submit process as `TOKSC
 Saving or changing the name alone makes no network request.
 Removing the override does not clear Tokscale's existing public name; it lets later submissions use the name from Tokscale's environment or stored device record again.
 
-If the submit command reports a verified missing-login result, OpenUsage offers a separate **Log In…** action that runs `bunx tokscale@latest login`.
+If the submit command reports a verified missing-login result, OpenUsage offers a separate **Log In…** action that runs `bunx tokscale@latest login` with no standard input.
 Login alone does not submit usage, and completing it never starts submit automatically.
 The current login flow lets Tokscale store the GitHub numeric ID, username, display name, avatar URL, and email.
 During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by **Name…**.
@@ -116,6 +117,7 @@ Its child process receives exported proxy and certificate settings for the binar
 OpenUsage does not modify an incompatible `BUN_INSTALL` outside that boundary and instead offers the manual installation guide.
 The mutable Bun installer and `@latest` are part of the disclosure boundary: they may download and execute Bun or Tokscale code that changed without an OpenUsage update.
 The exact `bunx` command follows the user's Bun configuration and may prefer a matching package under the home directory.
+Use only registry endpoints you trust, preferably over HTTPS; an HTTP registry can expose package downloads to tampering.
 See the official [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun installation guide](https://bun.com/docs/installation), and [Bun `bunx` documentation](https://bun.com/docs/pm/bunx).
 
 Installer and command output can contain usernames, browser URLs, authorization codes, local paths, model names, profile URLs, and usage values.
