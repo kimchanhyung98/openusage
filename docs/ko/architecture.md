@@ -98,7 +98,7 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 연동은 다른 프로바이더 pipeline이나 sync engine이 아닌 좁은 외부 process 경계.
 경계의 책임은 네 가지:
 
-- `BunInstaller`는 명시적 **Sync Now**에서 사용 가능한 Bun runtime을 찾지 못할 때만 실행하며, runtime은 있지만 `bunx` alias가 없으면 Bun을 재설치하거나 덮어쓰지 않고 실패.
+- `BunInstaller`는 명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못할 때만 실행하며, runtime은 있지만 `bunx` alias가 없으면 Bun을 재설치하거나 덮어쓰지 않고 실패.
   고정된 공식 URL `https://bun.com/install`에서 script를 private temporary file로 내려받아 `/bin/bash`로 실행하고 installer가 선택한 `${BUN_INSTALL:-$HOME/.bun}` directory 아래의 `bunx`를 검증한 뒤, app environment 갱신을 기다리지 않고 설치된 executable을 직접 탐색.
   Installer child에는 고정된 설치값과 자체 download에 필요한 export된 proxy·certificate 설정만 전달.
   자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.

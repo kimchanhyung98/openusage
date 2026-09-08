@@ -98,7 +98,7 @@ Machine-local sources can be summed across device files; account-wide sources su
 The integration is a narrow external-process boundary, not another provider pipeline or sync engine.
 The boundary has four responsibilities:
 
-- `BunInstaller` runs only when an explicit **Sync Now** cannot find a usable Bun runtime; a present runtime with a missing `bunx` alias fails without reinstalling or overwriting Bun.
+- `BunInstaller` runs only when an explicit **Sync** cannot find a usable Bun runtime; a present runtime with a missing `bunx` alias fails without reinstalling or overwriting Bun.
   It downloads the script from the fixed official URL `https://bun.com/install` to a private temporary file, runs that file with `/bin/bash`, verifies `bunx` under the installer's selected `${BUN_INSTALL:-$HOME/.bun}` directory, and resolves the installed executable directly without waiting for the app environment to refresh.
   The installer child receives only the fixed installation values plus exported proxy and certificate settings needed for its download.
   Automatic installation accepts only a safe directory below the current user's home; an incompatible `BUN_INSTALL` fails before download and leaves manual installation as the recovery path.

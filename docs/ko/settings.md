@@ -145,7 +145,7 @@ Tokscale의 stable device ID는 유지되므로 이름을 바꿔도 새 기기�
 
 **Usage Sync**에서 local usage를 public profile에 게시하는 동기화임을 안내하고 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 연결 제공.
 명령·설치·공개 범위 상세 정보는 Settings에서 반복하지 않고 이 문서와 [개인정보 및 사용 데이터](/docs/ko/privacy.md#tokscale-공개-공유)에 유지.
-**Sync Now**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
+**Sync**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
 
 ```sh
 bunx tokscale@latest submit
@@ -158,7 +158,7 @@ bunx tokscale@latest submit
 Package 해석은 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
 
 OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 않음.
-최초 사용 흐름은 사용자가 **Sync Now**를 선택할 때만 시작:
+최초 사용 흐름은 사용자가 **Sync**를 선택할 때만 시작:
 
 1. App environment, login shell path, Bun의 설정된 install directory에서 사용 가능한 `bunx`와 `bun` executable 탐색.
 2. Bun runtime 자체가 없으면 카드에 **Installing Bun…** 표시, Bun 공식 installer 다운로드·실행, installer가 선택한 directory의 `bunx` 검증 뒤 app restart 없이 같은 동작 계속 진행.
@@ -169,7 +169,7 @@ OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 �
 5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
 6. OpenUsage에서 작은 **Log In to Tokscale** sheet를 열고 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행, 승인 대기 중 browser URL과 user code 표시.
 7. Login 종료 시 카드에 **Tokscale Login Finished. Sync Has Not Started.** 표시.
-8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync Now**를 선택할 때 제출 시작.
+8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync**를 선택할 때 제출 시작.
 
 동시에 Tokscale command 하나만 실행.
 카드에서 Bun 설치 중, Tokscale 실행 중, login 필요, 완료, 실패 상태 구분.

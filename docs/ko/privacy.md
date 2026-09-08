@@ -83,7 +83,7 @@ iCloud Sync나 Share Anonymous Usage로 활성화되지 않으며, Tokscale 상�
 App launch, 새로 고침, background task, widget update, `openusage` CLI 호출, local API 요청으로 Bun 설치나 Tokscale 실행 금지.
 Settings에서는 공개 사용량 동기화를 요약하고 공식 policy 연결 제공 — 공개 범위·명령·설치 상세 정보는 이 문서에 유지.
 
-Settings의 명시적 **Sync Now**에서만 다음 명령 실행:
+Settings의 명시적 **Sync**에서만 다음 명령 실행:
 
 ```sh
 bunx tokscale@latest submit
@@ -112,7 +112,7 @@ Login 자체는 usage를 제출하지 않으며, 완료 뒤에도 submit을 자�
 새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 기기 이름 관리로 변경되지 않음.
 이후 submit에서 public profile을 생성·갱신하며 GitHub username, avatar, display name을 표시할 수 있음.
 
-명시적 **Sync Now**에서 사용 가능한 Bun runtime을 찾지 못하면 OpenUsage에서 Bun 공식 installer를 다운로드·실행한 뒤 계속 진행.
+명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못하면 OpenUsage에서 Bun 공식 installer를 다운로드·실행한 뒤 계속 진행.
 Installer는 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 file을 생성·갱신하고 login shell profile에 Bun path 설정을 추가할 수 있으며 administrator 권한은 불필요.
 Installer child에는 binary download용으로 export된 proxy·certificate 설정을 전달하지만 그 밖의 login-shell 값은 전달하지 않음.
 OpenUsage는 이 경계 밖의 호환되지 않는 `BUN_INSTALL`을 수정하지 않고 수동 설치 안내 제공.

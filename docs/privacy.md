@@ -83,7 +83,7 @@ Neither iCloud Sync nor Share Anonymous Usage enables it, and changing Tokscale 
 No app launch, refresh, background task, widget update, `openusage` CLI invocation, or local API request triggers Bun installation or Tokscale.
 Settings summarizes public usage syncing and links to the official policy; the detailed sharing, command, and installation information remains here.
 
-Only an explicit **Sync Now** in Settings runs:
+Only an explicit **Sync** in Settings runs:
 
 ```sh
 bunx tokscale@latest submit
@@ -112,7 +112,7 @@ The current login flow lets Tokscale store the GitHub numeric ID, username, disp
 During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by device-name management.
 A later submission creates or updates the public profile, which can show the GitHub username, avatar, and display name.
 
-When an explicit **Sync Now** cannot find a usable Bun runtime, OpenUsage downloads and runs Bun's official installer before continuing.
+When an explicit **Sync** cannot find a usable Bun runtime, OpenUsage downloads and runs Bun's official installer before continuing.
 The installer creates or updates files in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default and may append Bun's path setup to the login shell profile; it does not require administrator access.
 Its child process receives exported proxy and certificate settings for the binary download, but not other login-shell values.
 OpenUsage does not modify an incompatible `BUN_INSTALL` outside that boundary and instead offers the manual installation guide.

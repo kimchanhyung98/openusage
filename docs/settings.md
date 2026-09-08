@@ -145,7 +145,7 @@ Tokscale keeps the stable device ID, so changing the name updates the same publi
 
 **Usage Sync** explains that syncing publishes local usage to a public profile and links to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy).
 Detailed command, installation, and sharing information is kept in these docs and [Privacy & Usage Data](/docs/privacy.md#tokscale-public-sharing), rather than repeated in Settings.
-**Sync Now** runs this command once with no provider, date, or OpenUsage-data arguments:
+**Sync** runs this command once with no provider, date, or OpenUsage-data arguments:
 
 ```sh
 bunx tokscale@latest submit
@@ -158,7 +158,7 @@ Because `bunx` uses `@latest`, it may download and run a newer package whose beh
 Package resolution follows the user's Bun configuration and may prefer a matching package under the home directory.
 
 Opening OpenUsage or Settings never runs a Tokscale command.
-The first-use flow begins only when the user chooses **Sync Now**:
+The first-use flow begins only when the user chooses **Sync**:
 
 1. OpenUsage looks for usable `bunx` and `bun` executables in the app environment, the login-shell path, and Bun's configured installation directory.
 2. When the Bun runtime itself is unavailable, the card shows **Installing Bun…**, downloads and runs Bun's official installer, verifies `bunx` in the directory selected by the installer, and continues the same action without requiring an app restart.
@@ -169,7 +169,7 @@ The first-use flow begins only when the user chooses **Sync Now**:
 5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
 6. OpenUsage runs `bunx tokscale@latest login` once with no standard input in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.
 7. When login finishes, the card shows **Tokscale Login Finished. Sync Has Not Started.**
-8. Login never submits usage automatically; another explicit **Sync Now** starts submission.
+8. Login never submits usage automatically; another explicit **Sync** starts submission.
 
 Only one Tokscale command runs at a time.
 The card distinguishes installing Bun, running Tokscale, login-required, finished, and failed states.
