@@ -16,6 +16,7 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
         store.startSubmit()
         try await waitUntil { store.phase == .loginRequired && !store.isRunning }
         XCTAssertEqual(try fixture.calls(), ["submit"])
+        XCTAssertEqual(try fixture.inputEvents(), ["submit:n:EOF"])
         XCTAssertFalse(store.output.contains("\u{1B}"))
 
         store.startLogin()
@@ -27,10 +28,12 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
         try await waitUntil { store.phase == .loginFinished && !store.isRunning }
         try await assertProcessIsGone(childPID)
         XCTAssertEqual(try fixture.calls(), ["submit", "login"])
+        XCTAssertEqual(try fixture.inputEvents(), ["submit:n:EOF", "login:EOF"])
 
         store.startSubmit()
         try await waitUntil { store.phase == .submitFinished && !store.isRunning }
         XCTAssertEqual(try fixture.calls(), ["submit", "login", "submit"])
+        XCTAssertEqual(try fixture.inputEvents(), ["submit:n:EOF", "login:EOF", "submit:n:EOF"])
         XCTAssertEqual(store.output, "No data to submit.\n")
         XCTAssertEqual(
             fixture.defaults.persistentDomain(forName: fixture.suite)?.keys.sorted(),
@@ -92,6 +95,32 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
         try await waitUntil { fixture.store.output.contains("FIXTURE-CODE") }
         XCTAssertEqual(try fixture.calls(), ["submit", "submit", "login"])
         await fixture.store.shutdown()
+    }
+
+    func testDelayedStarPromptReceivesExplicitNoAndFinishesSubmission() async throws {
+        let fixture = try makeFixture()
+        let store = fixture.store
+        try store.saveDeviceName("fixture-mac")
+        try Data().write(to: fixture.home.appendingPathComponent("authenticated"))
+        try Data().write(to: fixture.home.appendingPathComponent("ask-to-star"))
+
+        store.startSubmit()
+        try await waitUntil { store.output.contains("Fixture submission prepared.") }
+        XCTAssertEqual(store.phase, .submitting)
+        XCTAssertTrue(store.isRunning)
+        XCTAssertFalse(store.output.contains("star the project"))
+
+        try Data().write(to: fixture.home.appendingPathComponent("show-star-prompt"))
+        try await waitUntil { !store.isRunning }
+
+        XCTAssertEqual(store.phase, .submitFinished, store.output)
+        XCTAssertNil(store.failure)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertEqual(try fixture.calls(), ["submit"])
+        XCTAssertEqual(try fixture.inputEvents(), ["submit:n:EOF"])
+        XCTAssertEqual(try Data(contentsOf: fixture.home.appendingPathComponent("star-answer")), Data("n\n".utf8))
+        XCTAssertTrue(store.output.contains("Would you like to star the project on GitHub? (Y/n)"))
+        XCTAssertTrue(store.output.hasSuffix("Star skipped.\nFixture submission completed.\n"))
     }
 
     private func startPendingLogin(_ fixture: Fixture) async throws {
@@ -185,6 +214,11 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
                 .split(separator: "\n").map(String.init)
         }
 
+        func inputEvents() throws -> [String] {
+            try String(contentsOf: home.appendingPathComponent("input-events"), encoding: .utf8)
+                .split(separator: "\n").map(String.init)
+        }
+
         func childPID() throws -> pid_t {
             let text = try String(contentsOf: home.appendingPathComponent("child.pid"), encoding: .utf8)
             return try XCTUnwrap(pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -216,15 +250,46 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
     printf '%s\n' "$2" >> "$HOME/calls"
     case "$2" in
       submit)
+        if test -f "$HOME/ask-to-star"; then
+          printf 'Fixture submission prepared.\n'
+          while test ! -f "$HOME/show-star-prompt"; do /bin/sleep 0.02; done
+          printf 'Would you like to star the project on GitHub? (Y/n) '
+        fi
+        answer=
+        if ! IFS= read -r answer; then
+          printf 'Expected an explicit no response, received EOF.\n' >&2
+          exit 72
+        fi
+        if test "$answer" != n; then
+          printf 'Expected an explicit no response.\n' >&2
+          exit 73
+        fi
+        extra=
+        if IFS= read -r extra || test -n "$extra"; then
+          printf 'Expected EOF after the no response.\n' >&2
+          exit 74
+        fi
+        printf 'submit:%s:EOF\n' "$answer" >> "$HOME/input-events"
         if test ! -f "$HOME/authenticated"; then
           printf '\033[31mNot logged in.\033[0m\n' >&2
           exit 1
         fi
         test "$TOKSCALE_DEVICE_NAME" = "fixture-mac"
-        printf 'No data to submit.\n'
+        if test -f "$HOME/ask-to-star"; then
+          printf '%s\n' "$answer" > "$HOME/star-answer"
+          printf 'Star skipped.\nFixture submission completed.\n'
+        else
+          printf 'No data to submit.\n'
+        fi
         ;;
       login)
         test -z "$TOKSCALE_DEVICE_NAME"
+        answer=
+        if IFS= read -r answer || test -n "$answer"; then
+          printf 'Expected immediate EOF for login.\n' >&2
+          exit 75
+        fi
+        printf 'login:EOF\n' >> "$HOME/input-events"
         /bin/sleep 30 &
         printf '%s\n' "$!" > "$HOME/child.pid"
         printf 'Visit https://example.invalid/verify FIXTURE-CODE\n'

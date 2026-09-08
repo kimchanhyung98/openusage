@@ -52,6 +52,78 @@ final class StreamingProcessRunnerTests: XCTestCase {
         XCTAssertEqual(reportedDirectory.resolvingSymlinksInPath(), directory.resolvingSymlinksInPath())
     }
 
+    func testStandardInputDeliversOneDeclineLineThenEOFToADelayedPrompt() async throws {
+        let request = makeRequest(
+            arguments: [
+                "-c",
+                "printf 'Preparing\\n'; /bin/sleep 0.05; IFS= read -r answer; printf 'answer=%s\\n' \"$answer\"; if IFS= read -r extra; then exit 2; fi",
+            ],
+            standardInput: Data("n\n".utf8)
+        )
+
+        let result = try await StreamingProcessRunner().run(request)
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.output, "Preparing\nanswer=n\n")
+    }
+
+    func testStandardInputIsSafeWhenTheChildExitsWithoutReading() async throws {
+        let request = makeRequest(arguments: ["-c", "exit 7"], standardInput: Data("n\n".utf8))
+
+        let result = try await StreamingProcessRunner().run(request)
+
+        XCTAssertEqual(result.exitCode, 7)
+        XCTAssertTrue(result.output.isEmpty)
+    }
+
+    func testStandardInputSupportsThePipeBufferLimit() async throws {
+        let input = Data(repeating: 0x61, count: Int(PIPE_BUF))
+        let request = makeRequest(executableURL: URL(fileURLWithPath: "/bin/cat"), standardInput: input)
+
+        let result = try await StreamingProcessRunner().run(request)
+
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(Data(result.output.utf8), input)
+    }
+
+    func testStandardInputLargerThanThePipeBufferFailsBeforeLaunch() async {
+        let request = makeRequest(
+            arguments: ["-c", "printf should-not-run"],
+            standardInput: Data(repeating: 0x61, count: Int(PIPE_BUF) + 1)
+        )
+
+        do {
+            _ = try await StreamingProcessRunner().run(request)
+            XCTFail("Oversized input must not launch a child")
+        } catch let error as StreamingProcessRunnerError {
+            XCTAssertEqual(error, .standardInputTooLarge)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testStandardInputSpawnFailureReturnsAndAllowsANewCommand() async throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        for request in [
+            makeRequest(executableURL: missing, standardInput: Data("n\n".utf8)),
+            makeRequest(executableURL: URL(fileURLWithPath: "/bin/cat"), currentDirectoryURL: missing,
+                        standardInput: Data("n\n".utf8)),
+        ] {
+            do {
+                _ = try await StreamingProcessRunner().run(request)
+                XCTFail("A missing executable or working directory must fail")
+            } catch {
+                XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
+                XCTAssertEqual((error as NSError).code, Int(ENOENT))
+            }
+        }
+        let result = try await StreamingProcessRunner().run(
+            makeRequest(executableURL: URL(fileURLWithPath: "/bin/cat"), standardInput: Data("n\n".utf8))
+        )
+        XCTAssertEqual(result.exitCode, 0)
+        XCTAssertEqual(result.output, "n\n")
+    }
+
     func testDrainsStdoutAndStderrWhileBoundingRetainedOutput() async throws {
         let chunks = LockedText()
         let request = makeRequest(
@@ -287,6 +359,7 @@ final class StreamingProcessRunnerTests: XCTestCase {
         arguments: [String] = [],
         environment: [String: String] = [:],
         currentDirectoryURL: URL? = nil,
+        standardInput: Data = Data(),
         timeout: TimeInterval = 5,
         outputLimit: Int = 16_384
     ) -> StreamingProcessRequest {
@@ -295,6 +368,7 @@ final class StreamingProcessRunnerTests: XCTestCase {
             arguments: arguments,
             environment: environment,
             currentDirectoryURL: currentDirectoryURL,
+            standardInput: standardInput,
             timeout: timeout,
             outputLimit: outputLimit
         )
@@ -306,6 +380,7 @@ final class StreamingProcessRunnerTests: XCTestCase {
                 "-c",
                 "trap '' TERM; /bin/sleep 30 & child=$!; printf '%s\\n' $child; wait $child",
             ],
+            standardInput: Data("n\n".utf8),
             timeout: timeout
         )
     }

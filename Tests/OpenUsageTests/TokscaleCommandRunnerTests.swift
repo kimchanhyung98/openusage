@@ -81,6 +81,9 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         let request = try XCTUnwrap(recordedRequest)
         XCTAssertEqual(request.executableURL, runtime.bunxURL)
         XCTAssertEqual(request.arguments, ["tokscale@latest", "submit"])
+        XCTAssertEqual(request.standardInput, Data("n\n".utf8))
+        let requests = await processRunner.requests()
+        XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(request.environment["HOME"], "/Users/tester")
         XCTAssertEqual(request.environment["PWD"], "/Users/tester")
         XCTAssertEqual(
@@ -143,6 +146,9 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         let recordedRequest = await processRunner.request()
         let request = try XCTUnwrap(recordedRequest)
         XCTAssertEqual(request.arguments, ["tokscale@latest", "login"])
+        XCTAssertTrue(request.standardInput.isEmpty)
+        let requests = await processRunner.requests()
+        XCTAssertEqual(requests.count, 1)
         XCTAssertNil(request.environment["TOKSCALE_DEVICE_NAME"])
         XCTAssertEqual(request.environment["TOKSCALE_API_TOKEN"], "ambient-token")
         XCTAssertEqual(request.environment["TOKSCALE_CONFIG_DIR"], "/Users/tester/.config/tokscale-custom")
@@ -280,6 +286,7 @@ private actor RecordingTokscaleProcessRunner: StreamingProcessRunning {
     private let error: TestProcessError?
     private let output: [String]
     private var recordedRequest: StreamingProcessRequest?
+    private var recordedRequests: [StreamingProcessRequest] = []
 
     init(result: StreamingProcessResult, output: [String] = ["live"]) {
         self.result = result
@@ -297,6 +304,7 @@ private actor RecordingTokscaleProcessRunner: StreamingProcessRunning {
         _ request: StreamingProcessRequest,
         onOutput: @escaping @Sendable (String) -> Void
     ) async throws -> StreamingProcessResult {
+        recordedRequests.append(request)
         recordedRequest = request
         for chunk in output { onOutput(chunk) }
         if let error { throw error }
@@ -305,5 +313,9 @@ private actor RecordingTokscaleProcessRunner: StreamingProcessRunning {
 
     func request() -> StreamingProcessRequest? {
         recordedRequest
+    }
+
+    func requests() -> [StreamingProcessRequest] {
+        recordedRequests
     }
 }
