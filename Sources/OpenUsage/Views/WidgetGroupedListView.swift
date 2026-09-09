@@ -98,9 +98,10 @@ struct WidgetGroupedListView: View {
         } : []
         return ProviderSectionHeader(
             provider: group.provider,
-            title: container.accountCardTitle(for: group.provider),
+            displayName: container.accountCardTitle(for: group.provider),
             plan: dataStore.plan(for: group.provider.id),
             warning: dataStore.headerNotice(for: group.provider.id),
+            serviceStatus: container.providerStatus.status(for: group.provider.id),
             refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id),
             staleness: dataStore.stalenessHint(for: group.provider.id),
             onCopyScreenshot: { shareCard(group) },

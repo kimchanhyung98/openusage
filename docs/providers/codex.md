@@ -1,6 +1,6 @@
 # Codex
 
-Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI.
+Tracks your ChatGPT/Codex subscription limits using the Codex CLI login, plus an optional public Reset Watch forecast that works without Codex sign-in.
 
 ## What it tracks
 
@@ -9,11 +9,51 @@ Tracks your ChatGPT/Codex subscription limits using the login from the Codex CLI
 | Session | 5-hour rolling window usage |
 | Weekly | 7-day window usage |
 | Spark / Spark Weekly | GPT-5.3-Codex-Spark model limits — a 5-hour and a weekly window.<br>Shown only when your account has the limit (otherwise "No data"), and tucked below the "show more" caret by default |
+| Reset Watch | Global reset forecast shown as a chance and deadline; optional and off by default (see below) |
 | Rate Limit Resets | On-demand rate-limit reset credits, shown as a count (e.g. `2 available`) with a colored dot for the soonest expiry; hover the value for a timeline of each credit's expiry |
 | Extra Usage | Flex credits, shown verbatim as dollars + credits (e.g. `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | Local spend, as cost, tokens, or both (see below) |
 
 When Codex reports your plan name, OpenUsage shows it beside the provider name.
+
+## Reset Watch
+
+Reset Watch is an optional forecast metric based on the [public codex-resets.com forecast](https://codex-resets.com/) and its [API](https://codex-resets.com/api/docs).
+It is a global, unofficial AI prediction, not an OpenAI commitment or guarantee.
+The AI chance remains separate from the community vote share (the percentage of all responses that are **Yes**) for the same active watch.
+Neither number is an OpenAI guarantee.
+
+Fresh installs and layout resets leave it off, place it under **On Demand**, and do not star it for the menu bar.
+Its metric slot is immediately before Rate Limit Resets; you can enable, move, or star it in Customize.
+
+Reset Watch runs independently of Codex sign-in and subscription-usage refreshes.
+While Codex is enabled and the metric is enabled on the dashboard or starred for the menu bar, OpenUsage queries the unauthenticated `GET https://codex-resets.com/api/v1/status` endpoint on a separate 15-minute cadence — three times the regular five-minute usage-refresh interval.
+For an active forecast with a recognized source post, it also reads `GET https://codex-resets.com/api/watch/votes` and calculates the community vote share only from totals matching that post.
+This endpoint for community vote share lookups is used by the website but is not part of its documented public API, so compatibility may change.
+OpenUsage only reads totals to calculate the community vote share; it never submits a vote.
+Activating the metric, or re-enabling Codex while it is active, starts an immediate check.
+The footer's manual Refresh action (⌘R) also checks the active forecast and community vote share alongside usage, revalidating fresh cached data while still honoring retry delays and sharing requests already in flight.
+It does not change the automatic 15-minute schedule or query Reset Watch when the metric is inactive.
+Once the metric is both disabled and unstarred, or Codex is disabled, future scheduled checks stop; a Reset Watch request already underway may still finish.
+Codex sign-in is not required: Reset Watch can update when account usage cannot, and a failure on either side never delays or fails the other refresh.
+The request sends no Codex token, account ID, usage values, local logs, or cookies.
+The active watch's chance and deadline are shared across all Codex account cards.
+Its community vote share is shared too and updates on the same checks, not the website's live cadence.
+Failed community vote share lookups, or empty, invalid, or mismatched totals, show **Vote share unavailable** without discarding the AI forecast.
+A failed community vote share lookup defers only that lookup: usage and AI forecasts still refresh normally.
+OpenUsage honors `Retry-After` from the endpoint for community vote share lookups; without a valid delay, it waits five minutes after a rate limit or one minute after other failures.
+The community vote share lookup is retried on the next manual or automatic check after that delay, not by a separate timer.
+The fixed **By** deadline uses the same localized `date at time` format as usage reset dates, including the app's 12/24-hour setting.
+If there is no active watch, its chance is absent, or its deadline has passed, the row shows **No data**.
+If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
+The next successful check clears that notice.
+Responses marked `no-store` are displayed for the current check only; `no-cache` forecasts require successful revalidation before reuse, including after a failed check.
+
+The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
+The escalating warning is a prompt to use available tokens before a likely reset.
+
+Reset Watch appears only in the app UI.
+It is omitted from the local API and the one-shot CLI output.
 
 ## Where credentials come from
 
@@ -69,6 +109,13 @@ When a card shows the reset credits row, its **Use** action claims through that 
 Inactive account cards appear in the [local API](/docs/local-http-api.md) under ids like `codex@profile-…`.
 Requesting `codex` through the one-shot [CLI](/docs/cli.md) or local API returns every currently assembled Codex card.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
+
+## Service status
+
+While Codex is enabled, OpenUsage checks the Codex Web and CLI components on [OpenAI Status](https://status.openai.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
+Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
+The public request is unauthenticated and sends no OpenAI credentials or usage data.
+Degraded performance, a partial outage, or a full outage on either component shows the server skull; maintenance and unknown results do not.
 
 ## Troubleshooting
 

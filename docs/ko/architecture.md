@@ -23,6 +23,10 @@ OpenUsage는 공유 모듈 하나와 최소한의 실행 파일 두 개로 구�
 실행 시 프로바이더 목록을 `WidgetRegistry`로 구성하고, 스토어를 생성한 뒤 주기적 새로 고침 루프와 로컬 HTTP API 시작.
 나머지 구성 요소는 전역 상태를 직접 참조하지 않고 여기서 필요한 의존성을 받으므로, 각각 독립적으로 테스트 가능.
 
+Reset Watch도 같은 규칙 적용 — `AppContainer`에서 캐시 스토어를 만들고 coordinator에 로더를 명시적으로 전달.
+Coordinator가 한 파일에서 활성 조건 관찰과 독립 새로 고침 주기를 소유하며, 전역 스토어를 직접 선택하지 않음.
+`WidgetData`의 예측 메타데이터를 하나의 선택적 값으로 묶어 기한·새로 고침 실패 상태를 함께 관리하고, 예측 없음과 조회 실패는 계속 구분.
+
 `openusage` 실행 파일도 같은 모듈을 가져와서 사용.
 매 실행마다 시작 계정 처리를 포함한 표준 `ProviderCatalog`를 구성하고, `ProviderSnapshotCache`를 읽기 전에 없거나 오래된 항목을 `WidgetDataStore`로 새로 고침 — `--force`는 5분 신선도 기준만 우회.
 프로바이더는 안정적인 한도 계약으로 내보낼 스칼라 리소스에 메타데이터를 부여하고, CLI와 `/v1/limits`는 같은 정규화 스냅샷을 직렬화기 하나로 처리.
@@ -75,6 +79,9 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   초기 개발 빌드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 계열별 모드를 저장했으며, `openusage.accountCardDisplayMode.v1`에 공통 선택을 저장하기 전까지 해당 모드를 읽기 전용 fallback으로 사용.
   별도 key로 분리해 초기 형식을 사용하는 빌드가 계정 순서를 다시 저장해도 공통 선택 보호.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
+- `ProviderStatusStore` — 프로바이더 패밀리별 일시적인 공식 서버 상태.
+  `AppContainer`에서 공개 상태 전용 HTTP client를 명시적으로 주입하며, store 내부에서 전송 계층을 암묵적으로 생성하지 않음.
+  명시적인 공개 컴포넌트 소스가 있는 활성 패밀리만 확인하고 결과를 메모리에 보관하며, 사용량·인증 오류와 분리해 대시보드에 제공.
 - `ProviderAccountsStore` — Claude/Codex 로그인의 안정적인 카드 ID와 계정별 소스를 담은 계정 중심 레지스트리.
   `AccountProfilesStore`는 관리형 계정 레코드와 프로바이더 계열별 선택 계정 저장.
   각 레코드에 안정적인 ID, 편집 가능한 계정명, 현재 저장 인증 정보에서 파생된 프로바이더 신원 포함.
@@ -87,7 +94,14 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 - `ICloudUsageSyncStore` — Mac별 동시 접근을 조정하는 원자적 기록 파일 하나, iCloud 메타데이터 알림, 화면에 표시할 기기·오류 상태.
   수명 주기와 실패 테스트를 위해 파일 접근 의존성 주입.
 
-새로 고침은 `AppContainer`의 타이머로 실행되며, 각 회차가 캐시를 존중하므로 스냅샷이 실제로 만료된 뒤에만 네트워크 사용.
+`AppContainer`가 `AppRefreshLoop`를 시작하며, 각 회차가 캐시를 존중하므로 스냅샷이 실제로 만료된 뒤에만 네트워크 사용.
+같은 실행·프로바이더 활성화 wake·5분·대시보드 수동 순회에서 사용량과 함께 지원되는 서버 상태도 새로 고침.
+상태 카탈로그는 Claude, Codex, Cursor, Copilot을 명시적으로 지원하며, 다른 패밀리는 상태 요청을 보내지 않음.
+상태 클라이언트는 프로바이더 인증을 사용하지 않으며, 정확한 컴포넌트 선택자가 성능 저하·부분 장애·중대/전체 장애 상태만 서버 문제로 변환.
+유지보수와 알 수 없는 상태는 문제로 취급하지 않음.
+상태 응답은 전송 중 64 KiB로 제한하며, 주기 갱신 소유자 종료 시 진행 중 상태 요청 모두 취소.
+계정 재조정 중 소유자가 종료되면 재조정 완료 후 새 사용량·상태 순회를 시작하지 않음.
+공유 요청의 대기자 하나를 취소해도 다른 대기자를 위한 요청은 유지.
 
 지출 타일이 있는 프로바이더는 내보내기 디스크립터와 함께 기록 범위를 명시.
 Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 계정 전체를 담는 소스는 합산 불가.
@@ -99,6 +113,49 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 계열 내부 관리형 계정 순서 편집.
 표시 계층은 두 순서와 표시 모드를 합성하며, Dashboard와 Share Screenshot은 같은 최종 카드 목록과 제목 사용.
 제품 동작은 [대시보드](/docs/ko/dashboard.md)와 [설정](/docs/ko/settings.md) 참조.
+
+## Tokscale CLI 경계
+
+연동은 다른 프로바이더 pipeline이나 sync engine이 아닌 좁은 외부 process 경계.
+경계의 책임은 네 가지:
+
+- `BunInstaller`는 명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못할 때만 실행하며, runtime은 있지만 `bunx` alias가 없으면 Bun을 재설치하거나 덮어쓰지 않고 실패.
+  고정된 공식 URL `https://bun.com/install`에서 script를 private temporary file로 내려받아 `/bin/bash`로 실행하고 installer가 선택한 `${BUN_INSTALL:-$HOME/.bun}` directory 아래의 `bunx`를 검증한 뒤, app environment 갱신을 기다리지 않고 설치된 executable을 직접 탐색.
+  Installer child에는 고정된 설치값과 자체 download에 필요한 export된 proxy·certificate 설정만 전달.
+  자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.
+  미생성 폴더를 붙이기 전에 기존 상위 directory의 실제 경로를 해석해 symbolic link가 설치를 home 밖으로 우회하지 못하도록 검증하고, 끊어진 link는 download 전에 거부.
+  쓰기 제한은 새 설치에만 적용 — 사용하지 않는 기본 설치 경로가 깨져 있어도 symbolic link나 외부 설정 directory의 사용 가능한 기존 runtime 탐색 가능.
+- `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `posix_spawn`으로 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array와 함께 직접 실행.
+  `shell -c`, AppleScript, 사용자 제공 command text를 사용하지 않음.
+  선택적 GitHub star 요청의 명시적 거절로 submit 표준 입력에 정확히 `n\n` 한 번을 전달한 뒤 EOF 처리.
+  Login 표준 입력은 null 유지, 두 command 모두 terminal 없이 output streaming.
+  App과 캡처된 login-shell environment를 app 값 우선으로 병합한 뒤 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
+  미등록 변수, AI provider API key, runtime injection 설정, Tokscale test hook, `TOKSCALE_API_URL`은 전달하지 않고 `HOME`과 작업 directory는 현재 macOS account에 고정.
+  Source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수는 allowlist 갱신이 필요하고 추가 source directory에는 `TOKSCALE_EXTRA_DIRS` 사용 가능.
+  이 UI에서 입력받아 child에 전달하는 유일한 값은 검증된 submit 전용 `TOKSCALE_DEVICE_NAME` environment entry.
+- `TokscaleSyncStore`에서 app 수명 동안 active install 또는 command 하나와 상태를 소유하고 optional device name을 로컬 저장해 Settings가 숨거나 다시 생성되어도 process 고아화와 결과 소실 방지.
+- `TokscaleSettingsSection`에서 usage sync, **Tokscale Device Name** sheet를 통한 기기 이름 관리, 미로그인 동작, login sheet 제공.
+
+해당 Settings button에서만 설치나 Tokscale command 시작 가능.
+App launch, Settings 표시, 주기적·수동 새로 고침, provider 변경, iCloud callback, widget update, `openusage` executable, local API 요청으로 둘 다 실행 금지.
+Submit 동작은 정확히 `bunx tokscale@latest submit`을 실행하고 optional device name이 있으면 `TOKSCALE_DEVICE_NAME`으로만 전달.
+기기 이름 저장으로 process나 network request를 시작하지 않으며 다음 성공 submit에서 Tokscale stable device ID와 연결된 표시 이름 갱신.
+**Remove OpenUsage Override**는 로컬 override만 제거하며 Tokscale의 기존 public name은 삭제하지 않고, 이후 submit에서 Tokscale environment나 저장된 device record의 label 사용.
+검증된 미로그인 submit 결과에서만 별도 login 동작을 활성화하고 login에는 public device name override를 전달하지 않음.
+Login 완료 뒤 submit을 시작하지 않으며 자동 retry와 background submit 없음.
+App 종료 시 runner가 소유한 active installer 또는 Tokscale process group을 cancel한 뒤 정리될 때까지 기다려 종료 중 active operation 방치 방지.
+종료한 leader의 process ID를 group 정리 완료까지 유지한 뒤 회수해 늦은 cancel이 재사용된 process group을 대상으로 삼지 않도록 보장.
+Tokscale CLI가 해당 process group 밖에서 시작하는 detached 후속 작업은 Tokscale 소유.
+
+제출 생성·filter를 위해 `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider account, provider enablement를 읽지 않는 경계.
+Provider collector, parser, contribution model, payload schema, Tokscale 직접 API client, token vault, credential migration은 경계에 포함하지 않음.
+Source 탐색, credential, stable device ID와 `device.json`, 집계, network request는 Tokscale CLI 소유이며 OpenUsage에서 해당 file을 편집하지 않음.
+
+Installer와 Tokscale standard output·error를 동시에 drain하고 ANSI/control sequence를 제거해 bounded memory command buffer에 보관.
+정리 중에도 buffered output을 읽되 pipe별 마지막 64 KiB로 제한해 detached writer의 무한 대기 방지.
+보존하는 앞·뒷부분은 UTF-8 경계의 남는 공간을 공유해 byte 상한 안의 완전한 문자 유지하며, raw C1 control도 제거.
+Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
+Raw output, 상속한 environment value, credential, authorization code를 OpenUsage log, telemetry, file, preference에 기록하지 않음.
 
 ## AppKit 브리지
 
@@ -115,6 +172,12 @@ OpenUsage는 macOS 15(Sequoia) 이상에서 실행.
 
 릴리스 빌드(`script/release.sh`)는 유니버설 바이너리(arm64 + x86_64)를 제공하므로, DMG 하나로 Apple Silicon과 Intel Mac 모두에서 네이티브 실행.
 개발 빌드(`script/build_and_run.sh`)는 호스트 아키텍처 전용 — 유니버설 개발 빌드는 이점 없이 메인테이너 Mac의 컴파일 시간만 두 배로 늘리기 때문.
+
+릴리스 버전은 `origin/main` 이력에 포함된 현재 체크아웃 커밋을 가리키는 실제 Git 태그에서 유도.
+태그는 `v0.7.0` 이상, 숫자 앞의 불필요한 0 금지, 사전 릴리스는 양의 정수 N을 쓰는 `-beta.N`만 허용.
+로컬 릴리스 패키징 전에 `origin/main` fetch 필요.
+개발 빌드는 가장 가까운 도달 가능한 릴리스 태그에 `-dev` 추가, 도달 가능한 릴리스 태그가 없으면 `0.0.0-dev` 사용.
+잘못된 태그와 Git 오류 발생 시 빌드 중단.
 
 ## 로컬 HTTP API
 

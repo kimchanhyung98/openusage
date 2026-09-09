@@ -23,6 +23,10 @@ The code is grouped by role:
 At launch it builds the list of providers, turns it into a `WidgetRegistry`, creates the stores, starts the periodic refresh loop, and starts the local HTTP API.
 Everything else receives what it needs from here rather than reaching for globals, which keeps the pieces testable in isolation.
 
+Reset Watch follows the same rule: `AppContainer` creates its cache store and explicitly passes its loader to the coordinator.
+The coordinator owns activity observation and the independent refresh cadence in one file; it does not choose a global store.
+Forecast metadata is one optional value on `WidgetData`, keeping its deadline and refresh-failure state together while still distinguishing an empty forecast from a failed check.
+
 The `openusage` executable imports the same module.
 Every invocation constructs the canonical `ProviderCatalog` (including the launch account pass) and refreshes missing or stale entries through `WidgetDataStore` before reading `ProviderSnapshotCache`; `--force` only bypasses the five-minute freshness gate.
 Providers annotate the scalar resources they export through the stable limits contract; the CLI and `/v1/limits` share one serializer over those same normalized snapshots.
@@ -75,6 +79,9 @@ The UI reads from a few observable stores:
   Earlier development builds stored per-family modes in `modesByFamily` under `openusage.accountCardPresentation.v1`; those modes remain a read-only fallback until a shared choice is saved under `openusage.accountCardDisplayMode.v1`.
   The separate key protects the shared choice when a build using the earlier format rewrites account order.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
+- `ProviderStatusStore` — transient official server status per provider family.
+  `AppContainer` explicitly supplies its dedicated public-status HTTP client; the store never creates a transport implicitly.
+  It checks only enabled families with an explicit public component source, keeps the result in memory, and exposes it to the dashboard independently of usage and authentication errors.
 - `ProviderAccountsStore` — the account-first registry for stable card ids and per-account sources for Claude/Codex sign-ins.
   `AccountProfilesStore` stores the managed account records and the selected account for each family.
   Each record contains a stable id, an editable account name, and the provider identity derived from its current saved authentication.
@@ -87,7 +94,14 @@ The UI reads from a few observable stores:
 - `ICloudUsageSyncStore` — one coordinated, atomic history file per Mac, iCloud metadata notifications, and the visible device/error state.
   File access is injected for lifecycle and failure tests.
 
-Refresh runs on a timer in `AppContainer`; each pass respects the cache, so the network is only hit once a snapshot has actually expired.
+`AppContainer` starts `AppRefreshLoop`; each pass respects the cache, so the network is only hit once a snapshot has actually expired.
+The same launch, provider-enablement wake, five-minute, and Dashboard manual passes refresh supported server status alongside usage.
+The status catalog explicitly covers Claude, Codex, Cursor, and Copilot; other families make no status request.
+Its client uses no provider authentication, and its exact component selectors turn only degraded, partial-outage, and major/full-outage states into a server issue.
+Maintenance and unknown states remain neutral.
+Status responses are limited to 64 KiB during transfer, and stopping the periodic refresh owner cancels all outstanding status requests.
+If the owner stops during account reconciliation, finishing that reconciliation does not start a new usage or status pass.
+Cancelling one caller waiting on a shared request does not cancel that request for other callers.
 
 Providers with spend tiles carry an explicit history scope beside their export descriptors.
 Machine-local sources can be summed across device files; account-wide sources such as Cursor cannot.
@@ -99,6 +113,49 @@ Provider order and account order are managed separately.
 Customize edits the layout's canonical provider-family order; Settings edits the managed account order within a family.
 The presentation layer combines both orders with the display mode, and Dashboard and Share Screenshot use the same final card list and titles.
 See [Dashboard](/docs/dashboard.md) and [Settings](/docs/settings.md) for product behavior.
+
+## Tokscale CLI boundary
+
+The integration is a narrow external-process boundary, not another provider pipeline or sync engine.
+The boundary has four responsibilities:
+
+- `BunInstaller` runs only when an explicit **Sync** cannot find a usable Bun runtime; a present runtime with a missing `bunx` alias fails without reinstalling or overwriting Bun.
+  It downloads the script from the fixed official URL `https://bun.com/install` to a private temporary file, runs that file with `/bin/bash`, verifies `bunx` under the installer's selected `${BUN_INSTALL:-$HOME/.bun}` directory, and resolves the installed executable directly without waiting for the app environment to refresh.
+  The installer child receives only the fixed installation values plus exported proxy and certificate settings needed for its download.
+  Automatic installation accepts only a safe directory below the current user's home; an incompatible `BUN_INSTALL` fails before download and leaves manual installation as the recovery path.
+  Existing parent directories are resolved before appending missing folders, so symbolic links cannot redirect installation outside the home directory; broken links are rejected before download.
+  These write restrictions apply only to a new installation; discovery still accepts an existing usable runtime through a symbolic link or an external configured directory, even if an unused default installation path is broken.
+- `TokscaleCommandRunner` accepts only `submit` or `login` and launches the resolved `bunx` directly through `posix_spawn` with fixed argument arrays for `tokscale@latest submit` and `tokscale@latest login`.
+  It never uses `shell -c`, AppleScript, or user-supplied command text.
+  Submit receives exactly one `n\n` on standard input, followed by EOF, as an explicit refusal of an optional GitHub star request.
+  Login keeps null standard input; both commands stream output without a terminal.
+  It merges the app and captured login-shell environments, with app values taking precedence, then forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings.
+  Unknown variables, AI-provider API keys, runtime-injection settings, Tokscale test hooks, and `TOKSCALE_API_URL` are not forwarded; `HOME` and the working directory are anchored to the current macOS account.
+  Tokscale still owns source discovery; newly introduced path variables require an allowlist update, while `TOKSCALE_EXTRA_DIRS` remains available for additional source directories.
+  The only value accepted from this UI and passed to a child is a validated submit-only `TOKSCALE_DEVICE_NAME` environment entry.
+- `TokscaleSyncStore` owns one active install or command for the app lifetime and persists the optional device name locally, so hiding or rebuilding Settings does not orphan the process or lose its result.
+- `TokscaleSettingsSection` provides usage sync, device-name management through the **Tokscale Device Name** sheet, the missing-login action, and the login sheet.
+
+Only the corresponding Settings buttons may start installation or a Tokscale command.
+App launch, Settings appearance, periodic or manual refresh, provider changes, iCloud callbacks, widget updates, the `openusage` executable, and local API requests never trigger either one.
+The submit action runs exactly `bunx tokscale@latest submit`; if the optional device name is set, it is supplied only through `TOKSCALE_DEVICE_NAME`.
+Saving the device name does not start a process or network request, and the next successful submit updates the display label associated with Tokscale's stable device ID.
+**Remove OpenUsage Override** removes only the local override and does not clear Tokscale's existing public name; later submissions let Tokscale's environment or stored device record supply the label.
+Only a verified missing-login submit result enables the separate login action, and login never receives the public device-name override.
+Login completion never starts submit, and there is no automatic retry or background submission.
+App termination waits for the runner-owned installer or Tokscale process group to settle after cancellation, so OpenUsage does not abandon its active operation while closing.
+The runner keeps the exited leader's process ID reserved until group cleanup finishes, then reaps it so late cancellation cannot target a reused process group.
+Any detached follow-up work that Tokscale CLI starts outside that process group remains owned by Tokscale.
+
+The boundary does not read `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider accounts, or provider enablement to build or filter a submission.
+The boundary contains no provider collector, parser, contribution model, payload schema, direct Tokscale API client, token vault, or credential migration.
+Tokscale's CLI owns its source discovery, credentials, stable device ID and `device.json`, aggregation, and network request; OpenUsage never edits that file.
+
+Installer and Tokscale standard output and error are drained concurrently, stripped of ANSI and control sequences, and kept in a bounded in-memory command buffer.
+Cleanup still reads buffered output, with a final 64 KiB allowance per pipe so detached writers cannot hold the runner open indefinitely.
+The retained beginning and end share unused space at UTF-8 boundaries, preserving complete characters that fit in the byte limit; raw C1 controls are sanitized too.
+The Settings card shows that buffer while it is available, including completion or failure output until the next operation or app termination, and the login sheet also shows login output while it remains open.
+Raw output, inherited environment values, credentials, and authorization codes never enter OpenUsage logs, telemetry, files, or preferences.
 
 ## The AppKit bridge
 
@@ -115,6 +172,12 @@ Every one of those version checks lives in a single file — `Support/LiquidGlas
 
 The release build (`script/release.sh`) ships a universal binary (arm64 + x86_64), so a single DMG runs natively on both Apple Silicon and Intel Macs.
 The dev build (`script/build_and_run.sh`) stays host-arch only — a universal dev build just doubles compile time on the maintainer's own machine for no benefit.
+
+Release versions come from an existing Git tag pointing to the checked-out commit in `origin/main` history.
+Tags start at `v0.7.0`, use no leading zeroes, and allow only `-beta.N` prereleases with a positive N.
+Fetch `origin/main` before packaging a local release.
+Development builds append `-dev` to the nearest reachable release tag; a checkout with no reachable release tag uses `0.0.0-dev`.
+Invalid tags and Git errors stop the build.
 
 ## Local HTTP API
 

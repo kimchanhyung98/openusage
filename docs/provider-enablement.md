@@ -34,6 +34,13 @@ Because you asked for a clean slate, it re-runs the same local credential detect
 It also asks for confirmation first.
 See [Dashboard](dashboard.md) for the metric side of that reset.
 
+## Status checks follow enablement
+
+Only enabled providers take part in official server-status checks.
+Claude, Codex, Cursor, and Copilot currently have explicit status sources; an enabled provider without one makes no status request.
+Claude and Codex account cards share one status result for their provider family rather than sending one request per account.
+These public checks are separate from local credential detection, use no authentication, and send none of the credentials that enabled the provider.
+
 ## How it works (for the curious)
 
 The app persists three small lists in its settings:

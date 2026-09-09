@@ -53,6 +53,7 @@ final class CodexProvider: ProviderRuntime {
                     estimatedCost: true,
                     sourceNote: "From your Codex logs (estimated)"
                 ),
+            .forecast(id: "\(provider.id).resetWatch", provider: provider, title: "Reset Watch"),
             .values(id: "\(provider.id).rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
                 .exportingLimit("rateLimitResets", kind: .balance, unit: "resets", source: .value(kind: .count, label: "available")),
             // `additional_rate_limits`의 Spark 전용 limit (GPT-5.3-Codex-Spark) — `DefaultLayout`에서 On Demand·비활성·unpinned로 seed.

@@ -5,6 +5,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var container: AppContainer?
     private var statusItemController: StatusItemController?
     private var singleInstanceLock: SingleInstanceLock.Token?
+    private var isAwaitingTokscaleShutdown = false
     private let updater = UpdaterController()
 
     public override init() {
@@ -52,6 +53,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItemController = StatusItemController(container: container, updater: updater)
         // 백그라운드 업데이트 체크 시작 (release build 한정).
         updater.start()
+    }
+
+    /// Runner 소유 process group 정리까지 app 종료 지연.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !isAwaitingTokscaleShutdown else { return .terminateLater }
+        guard let container, container.tokscaleSync.isRunning else { return .terminateNow }
+        isAwaitingTokscaleShutdown = true
+        Task { @MainActor in
+            await container.tokscaleSync.shutdown()
+            self.isAwaitingTokscaleShutdown = false
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
 
     /// 종료 시 대기 telemetry flush — SDK lifecycle autocapture off라 자동 flush 부재, 저빈도 이벤트 유실 방지.

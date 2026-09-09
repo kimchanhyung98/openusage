@@ -17,10 +17,15 @@ final class AppContainer {
     private(set) var registry: WidgetRegistry
     let layout: LayoutStore
     let dataStore: WidgetDataStore
+    /// 공개 provider 상태 페이지를 family 단위로 조회·보관하는 transient store.
+    let providerStatus: ProviderStatusStore
+    private(set) var isRefreshingAll = false
     /// 머신 로컬 일간 히스토리의 opt-in iCloud 문서 동기화.
     let iCloudSync: ICloudUsageSyncStore
     /// 사용자가 끈 provider의 단일 source of truth. 두 store가 주입 closure로 참조, Customize provider 목록이 변경 주도.
     let enablement: ProviderEnablementStore
+    /// Settings에서만 명시적으로 시작하는 Tokscale CLI 동기화 상태.
+    let tokscaleSync: TokscaleSyncStore
     let apiKeyProviders: [any APIKeyManaging]
     /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
     let notificationSettings: NotificationSettingsStore
@@ -50,6 +55,8 @@ final class AppContainer {
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
+    /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
+    private let resetWatchCoordinator: CodexResetWatchCoordinator
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
@@ -109,9 +116,19 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
+        let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient())
+        let resetWatchStore = CodexResetWatchStore()
+        let resetWatchCoordinator = CodexResetWatchCoordinator(
+            load: { force in await resetWatchStore.currentResult(force: force) },
+            publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
+        )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
-        // provider 재활성화 시 즉시 fetch되도록 잔여 failure backoff 제거. `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
-        enablement.onProviderEnabled = { [weak dataStore] id in dataStore?.clearFailureBackoff(for: id) }
+        // provider 재활성화 뒤 이어지는 wake에서 즉시 fetch되도록 usage/status의 일반 failure gate 제거.
+        // `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
+        enablement.onProviderEnabled = { [weak dataStore, weak providerStatus] id in
+            dataStore?.clearFailureBackoff(for: id)
+            providerStatus?.providerEnabled(id)
+        }
         enablement.onChange = { [weak dataStore, weak iCloudSync] in
             dataStore?.providerEnablementDidChange()
             iCloudSync?.scheduleWrite()
@@ -137,7 +154,10 @@ final class AppContainer {
         self.notificationSettings = notificationSettings
         self.layout = layout
         self.dataStore = dataStore
+        self.providerStatus = providerStatus
         self.iCloudSync = iCloudSync
+        self.tokscaleSync = TokscaleSyncStore()
+        self.resetWatchCoordinator = resetWatchCoordinator
 
         // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
         // claim 성공 시 해당 카드 강제 refresh — in-flight refresh는 pre-claim 사용량일 수 있어 실제 실행까지 재시도 (bounded).
@@ -205,9 +225,18 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
-        self.refreshTask.task = Self.startPeriodicRefresh(
+        resetWatchCoordinator.observeActivity { [layout] in
+            layout.orderedRefreshDescriptors().contains {
+                ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
+            }
+        }
+        self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,
+            providerStatus: providerStatus,
             telemetry: telemetry,
+            enabledProviderIDs: { [enablement, dataStore] in
+                dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
+            },
             reconcileAccounts: { [weak self] in
                 _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
@@ -360,11 +389,22 @@ final class AppContainer {
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
+        guard !isRefreshingAll else { return }
+        isRefreshingAll = true
+        defer { isRefreshingAll = false }
+        let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
         let reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        let enabledProviderIDs = dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
+        async let statusRefresh: Void = providerStatus.refresh(
+            providerIDs: enabledProviderIDs,
+            force: force
+        )
         await dataStore.refreshAll(force: force)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
+        await statusRefresh
+        await resetWatchTask?.value
     }
 
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
@@ -373,10 +413,16 @@ final class AppContainer {
         if ProviderAccountID.family(of: providerID) == "claude" {
             reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
+        let statusProviderIDs = enablement.isEnabled(providerID) ? [providerID] : []
+        async let statusRefresh: Void = providerStatus.refresh(
+            providerIDs: statusProviderIDs,
+            force: force
+        )
         let outcome = await dataStore.refresh(providerID: providerID, force: force)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
+        await statusRefresh
         return outcome
     }
 
@@ -448,27 +494,5 @@ final class AppContainer {
             result[family] = selected.id
         }
         return result
-    }
-
-    /// 주기 refresh loop: 런치 직후 1회, 이후 매 interval 실행. 각 패스는 cache 준수 — 만료된 snapshot만 네트워크 요청.
-    /// 패스 사이 대기는 `RefreshWakeSignal` 경유 — 첫 패스 전 구독·buffer로 패스 도중의 enablement 변경도 무유실.
-    /// wake는 `ProviderEnablementStore.didChangeNotification` 한정 필수 — `UserDefaults.didChangeNotification` 구독은 refresh 폭주 유발.
-    private static func startPeriodicRefresh(
-        dataStore: WidgetDataStore,
-        telemetry: TelemetryRecorder,
-        reconcileAccounts: @escaping @MainActor () async -> Void
-    ) -> Task<Void, Never> {
-        Task {
-            let wakeSignal = RefreshWakeSignal()
-            while !Task.isCancelled {
-                await reconcileAccounts()
-                await dataStore.refreshAll()
-                // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
-                await dataStore.evaluateNotifications()
-                // 일자 전환 beat: `app_daily_active` 1일 1회 발행 + 전일 provider rollup flush.
-                telemetry.tick()
-                await wakeSignal.waitForWake(timeout: RefreshSetting.interval)
-            }
-        }
     }
 }
