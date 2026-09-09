@@ -97,6 +97,13 @@ Start `claude` in a new terminal and use `/login`, or run `claude auth login`, t
 OpenUsage verifies the shared `~/.claude` login, replaces that named account's private Keychain snapshot and stored provider identity, and refreshes its status without requiring **Sign In Again** or an app restart.
 Signing in as another provider identity does not rename the account or silently select another managed account.
 
+## Service status
+
+While Claude is enabled, OpenUsage checks the Claude API and Claude Code components on [Claude Status](https://status.claude.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
+Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
+The public request is unauthenticated and sends no Claude credentials or usage data.
+Degraded performance, a partial outage, or a major outage on either component shows the server skull; scheduled maintenance and unknown results do not.
+
 ## Troubleshooting
 
 - **"Not logged in"** — for the selected managed account, start `claude` in a new terminal and use `/login`, or run `claude auth login`, complete the sign-in you want stored under that account name, and refresh OpenUsage.

@@ -55,6 +55,9 @@ iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
 
 벤더 도구가 어차피 수행하는 프로바이더 API 호출 외에, OpenUsage는 공개 [모델 가격 목록](pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
 공개 데이터를 그대로 내려받는 요청이라 사용량·로그·계정 정보가 실리지 않으며, Share Anonymous Usage 설정과 무관하게 실행.
+지원되는 프로바이더가 활성화돼 있으면 OpenUsage가 실행 시, 해당 프로바이더 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), [GitHub Status](https://www.githubstatus.com/)에서 공개 컴포넌트 상태도 가져옴.
+인증 없는 요청이며 프로바이더 인증 정보, 계정 정보, 사용량 값, 로그를 포함하지 않음.
+
 OpenUsage는 로컬 CLI 로그로 Mac에서 지출 타일을 계산하고 일반 새로 고침이나 익명 분석으로 해당 로그를 전송하지 않음.
 
 Codex 프로바이더가 켜져 있고 **Reset Watch**를 대시보드에서 켜거나 메뉴 막대에 별표하면, OpenUsage가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.

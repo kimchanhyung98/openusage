@@ -55,6 +55,9 @@ Shared managed-home history is synced as a provider-family total, not under the 
 
 Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages).
 These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the Share Anonymous Usage setting.
+While a supported provider is enabled, OpenUsage also fetches public component status from [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), or [GitHub Status](https://www.githubstatus.com/) at launch, when that provider is enabled, every five minutes, and during Dashboard manual refreshes.
+These requests are unauthenticated and include no provider credentials, account information, usage values, or logs.
+
 OpenUsage computes spend tiles from local CLI logs on your Mac and does not send those logs during normal refreshes or through anonymous analytics.
 
 When Codex is enabled and you enable **Reset Watch** on the dashboard or star it for the menu bar, OpenUsage checks the public [codex-resets.com API](https://codex-resets.com/api/docs) without authentication on a separate 15-minute cadence.
