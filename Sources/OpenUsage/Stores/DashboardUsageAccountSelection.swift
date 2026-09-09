@@ -4,9 +4,19 @@ enum DashboardUsageAccountSelection {
     static let claudeKey = "openusage.dashboardUsageAccount.claude"
     static let codexKey = "openusage.dashboardUsageAccount.codex"
 
-    static func select(_ providerID: String, for family: String, defaults: UserDefaults = .standard) {
+    /// 등록 계정은 현재 runtime 대신 stable profile로 저장 — 미등록·기존 runtime 선택은 그대로 유지.
+    static func selectionID(for providerID: String, family: String, profileID: String?) -> String {
+        profileID.map { AccountUsageCardPlanner.cardID(family: family, profileID: $0) } ?? providerID
+    }
+
+    static func select(
+        _ providerID: String,
+        for family: String,
+        profileID: String? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         guard let key = key(for: family) else { return }
-        defaults.set(providerID, forKey: key)
+        defaults.set(selectionID(for: providerID, family: family, profileID: profileID), forKey: key)
     }
 
     static func selectedID(for family: String, defaults: UserDefaults = .standard) -> String {
@@ -21,6 +31,26 @@ enum DashboardUsageAccountSelection {
             result[family] = selectedID(for: family, defaults: defaults)
         }
         return result
+    }
+
+    /// 저장된 profile 선택을 현재 표시 카드로 해석 — 실시간·스냅샷 전환 시 저장값 변경 없음.
+    static func visibleCardID(
+        for family: String,
+        among cardIDs: [String],
+        stored: String,
+        preferredCardID: String?,
+        profileIDsByCardID: [String: String]
+    ) -> String? {
+        guard let first = cardIDs.first else { return nil }
+        if cardIDs.contains(stored) { return stored }
+        if let replacement = cardIDs.first(where: { cardID in
+            guard let profileID = profileIDsByCardID[cardID] else { return false }
+            return AccountUsageCardPlanner.cardID(family: family, profileID: profileID) == stored
+        }) {
+            return replacement
+        }
+        if let preferredCardID { return preferredCardID }
+        return cardIDs.contains(family) ? family : first
     }
 
     /// family의 모든 card를 선택된 하나로 축약 — 등록 계정도 독립 발견된 config-directory 로그인도 동일 취급
@@ -51,11 +81,12 @@ enum DashboardUsageAccountSelection {
         return accountName.hasPrefix(prefix) ? String(accountName.dropFirst(prefix.count)) : accountName
     }
 
-    /// 계정 전환 확정 후 dashboard 선택을 family 공유 runtime으로 지정
-    /// 구 credential 사본을 들고 있을 수 있는 ambient config-dir card 대신 bare runtime을 가리키는 규칙
+    /// 계정 전환 확정 후 선택 profile을 저장하고, 즉시 새로 고칠 공유 runtime ID 반환.
+    /// 구 credential 사본을 들고 있을 수 있는 ambient config-dir card는 새로 고침 대상으로 사용하지 않음.
     @discardableResult
     static func selectAfterAccountSwitch(
         family: String,
+        profileID: String,
         availableCardIDs: [String],
         defaults: UserDefaults = .standard
     ) -> String? {
@@ -63,7 +94,7 @@ enum DashboardUsageAccountSelection {
             AppLog.error(.config, "account switch could not select the shared \(family) usage runtime")
             return nil
         }
-        select(family, for: family, defaults: defaults)
+        select(family, for: family, profileID: profileID, defaults: defaults)
         return family
     }
 

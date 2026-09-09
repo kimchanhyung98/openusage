@@ -54,7 +54,7 @@ Shared managed-home history is synced as a provider-family total, not under the 
 ## Share Screenshot
 
 A selected card is copied to the clipboard as a PNG only when you explicitly use **Share Screenshot**.
-The image uses the same card title as the dashboard, so **Separate Cards** includes the displayed Account Name in titles such as `Claude: company` and `Codex: sub`.
+The image uses the same card title as the dashboard, so **Separate Cards** includes the displayed Account Name in titles such as `Claude: Account 1` and `Codex: Account 2`.
 Sharing the image can therefore expose the account name to its recipients.
 
 ## Other network requests

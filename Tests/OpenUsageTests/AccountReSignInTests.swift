@@ -168,7 +168,7 @@ final class AccountReSignInTests: XCTestCase {
 
     // MARK: - External reauthentication
 
-    func testSharedClaudeReauthenticationRebindsOnlyTheSelectedNamedProfile() throws {
+    func testSharedClaudeReauthenticationRebindsOnlyTheSelectedNamedProfile() async throws {
         let (store, cleanup) = makeStore()
         defer { cleanup() }
         let alpha = try store.add(
@@ -191,7 +191,7 @@ final class AccountReSignInTests: XCTestCase {
         )
         try seedSharedClaudeLogin(token: "token-b-new", previousAccount: "a", account: "b")
 
-        let result = try importer.reconcileSelectedClaudeSharedAuthentication(in: store)
+        let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
 
         let rebound = try XCTUnwrap(store.profile(id: alpha.id))
         XCTAssertEqual(result, .updated(profileID: alpha.id))
@@ -199,6 +199,10 @@ final class AccountReSignInTests: XCTestCase {
         XCTAssertEqual(rebound.identityKey, "acct-b|org-b")
         XCTAssertEqual(store.preferredProfileID(family: "claude"), alpha.id)
         XCTAssertEqual(store.profile(id: beta.id)?.identityKey, "acct-b|org-b")
+        XCTAssertEqual(
+            try switcher.loadSnapshot(for: beta),
+            claudeEntry(token: "token-b-old", account: "b")
+        )
         let reboundSnapshot = try XCTUnwrap(switcher.loadSnapshot(for: rebound))
         XCTAssertEqual(
             ClaudeAuthStore.parseCredentials(reboundSnapshot.credential)?.claudeAiOauth?.accessToken,

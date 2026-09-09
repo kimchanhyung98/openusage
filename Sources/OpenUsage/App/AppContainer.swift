@@ -276,17 +276,20 @@ final class AppContainer {
         return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
     }
 
-    /// family가 지금 렌더하는 카드 — 저장된 dashboard 선택 → 선택 profile 카드 → 공유 runtime → 첫 카드.
+    /// family의 표시 카드 — 저장된 선택과 동일 profile 우선, 없으면 Settings 선택·공유 runtime·첫 카드 순.
     func visibleAccountCardID(for family: String, among cardIDs: [String], stored: String) -> String? {
-        guard let first = cardIDs.first else { return nil }
-        if cardIDs.contains(stored) { return stored }
-        if let preferred = preferredAccountCardID(for: family, among: cardIDs) { return preferred }
-        return cardIDs.contains(family) ? family : first
+        DashboardUsageAccountSelection.visibleCardID(
+            for: family,
+            among: cardIDs,
+            stored: stored,
+            preferredCardID: preferredAccountCardID(for: family, among: cardIDs),
+            profileIDsByCardID: accountProfileIDsByCardID
+        )
     }
 
-    /// family에 속한 카드 id — 등록 계정과 독립 발견 로그인을 구분하지 않음(모두 한 카드의 계정 선택지).
+    /// family에 속한 표시 가능 카드 — 등록 계정이 있으면 미등록 로그인 제외.
     func accountCardIDs(for family: String, among orderedIDs: [String]) -> [String] {
-        orderedIDs.filter { ProviderAccountID.family(of: $0) == family }
+        orderedAccountCardIDs(orderedIDs).filter { ProviderAccountID.family(of: $0) == family }
     }
 
     /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
@@ -299,9 +302,11 @@ final class AppContainer {
 
     /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
     func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
-        var visible = orderedIDs
+        let availableCards = orderedAccountCardIDs(orderedIDs)
+        let availableIDs = Set(availableCards)
+        var visible = orderedIDs.filter { availableIDs.contains($0) }
         for family in AccountProfilesStore.supportedFamilies {
-            let cards = accountCardIDs(for: family, among: orderedIDs)
+            let cards = availableCards.filter { ProviderAccountID.family(of: $0) == family }
             guard cards.count > 1 else { continue }
             visible = DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: visible,
@@ -331,6 +336,7 @@ final class AppContainer {
     func syncDashboardUsageAccount(to profile: AccountProfile) {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
+            profileID: profile.id,
             availableCardIDs: registry.providers.map(\.id)
         ) else {
             return
@@ -483,12 +489,12 @@ final class AppContainer {
         assembly: ProviderAccountAssembly,
         profiles: AccountProfilesStore
     ) -> [String: String] {
-        // 선택 profile은 bare family 카드, 비활성 profile은 명시적인 snapshot 카드만 담당.
+        // 공유 홈의 관찰 계정을 등록 profile에 연결 — identity 미확인 시 기존 선택 유지.
         var result = assembly.profileIDsByCard
         for family in AccountProfilesStore.supportedFamilies {
             guard let selected = profiles.preferredProfile(family: family) else { continue }
             if let observed = assembly.identityKeysByCard[family], observed != selected.identityKey {
-                // 공유 home이 외부에서 다른 계정으로 로그인된 경우 — bare 카드가 그 로그인을 표시하므로 선택 profile의 label 미점유.
+                result[family] = profiles.profiles(family: family).first { $0.identityKey == observed }?.id
                 continue
             }
             result[family] = selected.id

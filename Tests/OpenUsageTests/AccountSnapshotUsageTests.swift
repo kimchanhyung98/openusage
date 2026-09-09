@@ -144,7 +144,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
         AccountProfile(
             id: id,
             family: family,
-            label: "default",
+            label: "Account 1",
             identityKey: "personal",
             createdAt: .distantPast
         )

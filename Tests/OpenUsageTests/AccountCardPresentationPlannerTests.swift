@@ -2,44 +2,110 @@ import XCTest
 @testable import OpenUsage
 
 final class AccountCardPresentationPlannerTests: XCTestCase {
-    func testOnlyConflictingUnmanagedNamesReceiveASharedHomeSuffix() {
-        XCTAssertEqual(
-            AccountCardPresentationPlanner.unmanagedAccountName("Default", reservedNames: ["Work"]),
-            "Default"
+    func testRegisteredCodexAccountsExcludeTheAdditionalSharedHomeCard() {
+        let registeredCards = ["account-1", "account-2", "account-3"].map { "codex@profile-\($0)" }
+        let cards = AccountCardPresentationPlanner.orderedCardIDs(
+            ["codex"] + registeredCards,
+            familyOrder: ["codex"],
+            orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+            profileIDsByCardID: Dictionary(uniqueKeysWithValues: zip(registeredCards, ["account-1", "account-2", "account-3"]))
         )
-        XCTAssertEqual(
-            AccountCardPresentationPlanner.unmanagedAccountName("Default", reservedNames: ["default"]),
-            "Default (Shared Home)"
-        )
-        XCTAssertEqual(
-            AccountCardPresentationPlanner.unmanagedAccountName(
-                "Default", reservedNames: ["Default", "Default (Shared Home)", "Default (Shared Home) 2"]
-            ),
-            "Default (Shared Home) 3"
-        )
+
+        XCTAssertEqual(cards, registeredCards)
+        XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
+            orderedCardIDs: cards,
+            modesByFamily: ["codex": .separateCards],
+            selectedCardIDsByFamily: ["codex": "codex"]
+        ), registeredCards)
+        XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
+            orderedCardIDs: cards,
+            modesByFamily: ["codex": .singleCard],
+            selectedCardIDsByFamily: ["codex": "codex"]
+        ), [registeredCards[0]])
+    }
+
+    func testMissingRegisteredCredentialsDoNotExposeAnUnregisteredSharedHome() {
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            ["codex", "cursor"],
+            familyOrder: ["codex", "cursor"],
+            orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+            profileIDsByCardID: [:]
+        ), ["cursor"])
+    }
+
+    func testAProviderWithoutRegisteredAccountsKeepsItsDefaultCard() {
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            ["claude", "codex", "cursor"],
+            familyOrder: ["claude", "codex", "cursor"],
+            orderedProfileIDsByFamily: ["claude": [], "codex": []],
+            profileIDsByCardID: [:]
+        ), ["claude", "codex", "cursor"])
+    }
+
+    func testSharedHomeMappedToARegisteredAccountRemainsVisibleUnderItsName() {
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            ["codex@profile-account-3", "codex", "codex@profile-account-2"],
+            familyOrder: ["codex"],
+            orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+            profileIDsByCardID: ["codex": "account-1", "codex@profile-account-2": "account-2", "codex@profile-account-3": "account-3"]
+        ), ["codex", "codex@profile-account-2", "codex@profile-account-3"])
+        XCTAssertEqual(title("codex", mode: .separateCards, name: "Account 1"), "Codex: Account 1")
+    }
+
+    func testStaleProfileMappingDoesNotExposeRemovedAccountCards() {
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            ["claude", "claude@profile-work", "claude@profile-removed"],
+            familyOrder: ["claude"],
+            orderedProfileIDsByFamily: ["claude": ["work"]],
+            profileIDsByCardID: ["claude": "removed", "claude@profile-work": "work", "claude@profile-removed": "removed"]
+        ), ["claude@profile-work"])
+    }
+
+    func testLiveRegisteredCardReplacesOnlyItsOwnSnapshotWithoutChangingProfileOrder() {
+        let snapshots = ["account-1", "account-2", "account-3"].map { "codex@profile-\($0)" }
+        let mapping = [
+            "codex": "account-2",
+            snapshots[0]: "account-1",
+            snapshots[1]: "account-2",
+            snapshots[2]: "account-3",
+        ]
+        for cards in [["codex"] + snapshots, snapshots + ["codex"]] {
+            XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+                cards,
+                familyOrder: ["codex"],
+                orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+                profileIDsByCardID: mapping
+            ), [snapshots[0], "codex", snapshots[2]])
+        }
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            snapshots,
+            familyOrder: ["codex"],
+            orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+            profileIDsByCardID: mapping
+        ), snapshots)
     }
 
     func testCanonicalFamilyOrderWinsOverFirstRawCardOccurrence() {
-        let cards = ["claude@profile-company", "cursor", "codex", "claude", "codex@profile-sub"]
+        let cards = ["claude@profile-account-3", "cursor", "codex", "claude", "codex@profile-account-2"]
 
         XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
             cards,
             familyOrder: ["codex", "claude", "cursor"],
-            orderedProfileIDsByFamily: ["claude": ["personal", "company"], "codex": ["sub", "main"]],
+            orderedProfileIDsByFamily: ["claude": ["personal", "account-3"], "codex": ["account-2", "main"]],
             profileIDsByCardID: [
-                "claude": "personal", "claude@profile-company": "company",
-                "codex": "main", "codex@profile-sub": "sub",
+                "claude": "personal", "claude@profile-account-3": "account-3",
+                "codex": "main", "codex@profile-account-2": "account-2",
             ]
-        ), ["codex@profile-sub", "codex", "claude", "claude@profile-company", "cursor"])
+        ), ["codex@profile-account-2", "codex", "claude", "claude@profile-account-3", "cursor"])
     }
 
-    func testManagedCardsPrecedeUnmanagedCardsKeepingTheirRelativeOrder() {
+    func testRegisteredClaudeAccountsExcludeUnmanagedCards() {
         XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
             ["claude@external-two", "claude@profile-b", "claude@external-one", "claude"],
             familyOrder: ["claude"],
             orderedProfileIDsByFamily: ["claude": ["a", "b"]],
             profileIDsByCardID: ["claude": "a", "claude@profile-b": "b"]
-        ), ["claude", "claude@profile-b", "claude@external-two", "claude@external-one"])
+        ), ["claude", "claude@profile-b"])
     }
 
     func testMissingRuntimeHasNoPlaceholderAndRetainsItsRankWhenItReturns() {
@@ -81,7 +147,7 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
     }
 
     func testSingleCardSelectsOneRuntimePerFamilyWithoutChangingOtherProviders() {
-        let cards = ["codex@profile-sub", "codex", "claude", "claude@profile-work", "cursor"]
+        let cards = ["codex@profile-account-2", "codex", "claude", "claude@profile-work", "cursor"]
 
         XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: cards,
@@ -91,13 +157,13 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
     }
 
     func testEffectiveDisplayModesKeepSeparateCardsAndSingleCardFallback() {
-        let cards = ["codex@profile-sub", "codex", "claude", "claude@profile-work", "cursor"]
+        let cards = ["codex@profile-account-2", "codex", "claude", "claude@profile-work", "cursor"]
 
         XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: cards,
             modesByFamily: ["claude": .singleCard, "codex": .separateCards],
             selectedCardIDsByFamily: ["claude": "claude@profile-work", "codex": "codex"]
-        ), ["codex@profile-sub", "codex", "claude@profile-work", "cursor"])
+        ), ["codex@profile-account-2", "codex", "claude@profile-work", "cursor"])
         XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: cards,
             modesByFamily: ["claude": .separateCards, "codex": .separateCards],
@@ -114,8 +180,8 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
     }
 
     func testSeparateCardsIgnoreValidStaleAndCrossFamilySelections() {
-        let cards = ["claude", "claude@profile-work", "codex", "codex@profile-sub", "cursor"]
-        for selection in ["", "claude", "claude@profile-work", "removed", "codex@profile-sub"] {
+        let cards = ["claude", "claude@profile-work", "codex", "codex@profile-account-2", "cursor"]
+        for selection in ["", "claude", "claude@profile-work", "removed", "codex@profile-account-2"] {
             XCTAssertEqual(AccountCardPresentationPlanner.presentedCardIDs(
                 orderedCardIDs: cards,
                 modesByFamily: ["claude": .separateCards, "codex": .separateCards],
@@ -136,11 +202,11 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
     }
 
     func testTitlesUseExactManagedNameOnlyInSeparateMode() {
-        XCTAssertEqual(title("codex@profile-sub", mode: .separateCards, name: "sub"), "Codex: sub")
-        XCTAssertEqual(title("claude", mode: .separateCards, name: "company"), "Claude: company")
+        XCTAssertEqual(title("codex@profile-account-2", mode: .separateCards, name: "Account 2"), "Codex: Account 2")
+        XCTAssertEqual(title("claude", mode: .separateCards, name: "Account 3"), "Claude: Account 3")
         XCTAssertEqual(title("claude@profile-work", mode: .separateCards, name: "회사: 개발 · 팀"), "Claude: 회사: 개발 · 팀")
-        XCTAssertEqual(title("codex", mode: .singleCard, name: "sub"), "Codex")
-        XCTAssertEqual(title("claude@profile-work", mode: .singleCard, name: "company"), "Claude")
+        XCTAssertEqual(title("codex", mode: .singleCard, name: "Account 2"), "Codex")
+        XCTAssertEqual(title("claude@profile-work", mode: .singleCard, name: "Account 3"), "Claude")
     }
 
     func testDefaultAccountFallbackAndNonAccountProviderTitlesStayIntact() {

@@ -2,20 +2,6 @@ import Foundation
 
 /// 기존 runtime 결과를 변경하지 않고 화면에 쓸 계정 카드 순서·표시 대상만 계산.
 enum AccountCardPresentationPlanner {
-    /// 등록 이름은 변경하지 않고 이름이 겹친 미등록 공유 홈만 구분.
-    static func unmanagedAccountName(_ name: String, reservedNames: [String]) -> String {
-        let reserved = Set(reservedNames.map { $0.lowercased() })
-        guard reserved.contains(name.lowercased()) else { return name }
-        let base = "\(name) (Shared Home)"
-        var candidate = base
-        var suffix = 2
-        while reserved.contains(candidate.lowercased()) {
-            candidate = "\(base) \(suffix)"
-            suffix += 1
-        }
-        return candidate
-    }
-
     static func cardTitle(
         providerID: String,
         fallback: String,
@@ -44,7 +30,14 @@ enum AccountCardPresentationPlanner {
             let cards = cardsByFamily[family] ?? []
             guard ProviderAccountID.families.contains(family) else { return cards }
             let profileOrder = orderedProfileIDsByFamily[family] ?? []
-            return cards.enumerated().sorted { lhs, rhs in
+            let liveProfileID = cards.contains(family) ? profileIDsByCardID[family] : nil
+            // 등록 계정이 있으면 해당 계정 카드만 표시 — 미등록 공유 홈을 별도 계정으로 추가하지 않음.
+            let availableCards = profileOrder.isEmpty ? cards : cards.filter { cardID in
+                guard let profileID = profileIDsByCardID[cardID] else { return false }
+                return profileOrder.contains(profileID)
+                    && (cardID == family || profileID != liveProfileID)
+            }
+            return availableCards.enumerated().sorted { lhs, rhs in
                 let left = profileIDsByCardID[lhs.element].flatMap { profileOrder.firstIndex(of: $0) }
                 let right = profileIDsByCardID[rhs.element].flatMap { profileOrder.firstIndex(of: $0) }
                 if left != right { return (left ?? Int.max) < (right ?? Int.max) }

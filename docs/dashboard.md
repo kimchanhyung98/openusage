@@ -122,16 +122,20 @@ Choose one shared **Usage Cards** mode for all providers that support accounts i
 The choice persists across app restarts.
 
 - **Single Card**, the default, shows the selected account's usage in one card titled **Claude** or **Codex** — it does not add multiple accounts' live limits together.
-  When there are multiple shared-home or registered accounts, the header's account selector chooses an available account.
+  The header's account selector appears only when at least two registered account cards are available.
 - **Separate Cards** shows a card for each available account and keeps the same provider's cards together.
-  Each card uses the fixed **{Provider}: {name}** title format, such as **Claude: company** or **Codex: sub**, with no account selector or header dragging.
+  Each card uses the fixed **{Provider}: {name}** title format, such as **Claude: Account 1** or **Codex: Account 2**, with no account selector or header dragging.
 
 A registered account's `{name}` is its existing **Account Name**.
 The title format is not editable; renaming the account in **Settings → Accounts → Manage…** updates the title automatically.
 
-Available accounts are the provider's shared-home account (`~/.claude`, `~/.codex`) and registered accounts with an authentication snapshot saved on this Mac.
-The Single Card selector uses registered account names and shows a shared-home account without a registered name as **Default**.
-In Separate Cards, a shared-home name that matches a registered account name gets **(Shared Home)** appended; a number is added if that name also conflicts.
+When a provider has registered accounts, the dashboard, account selector, Share Screenshot, and menu bar use only those accounts.
+An account uses its existing registered name, including when its card reads the current shared-home login (`~/.claude`, `~/.codex`).
+When account identities are refreshed, a Codex shared-home login matching another registered account uses that account's live card instead of its snapshot, keeping shared-home history available.
+This presentation mapping does not change the account selected in Settings or any saved authentication.
+Claude keeps its existing [terminal reauthentication behavior](/docs/providers/claude.md): a verified new shared-home login replaces the identity and saved authentication under the account name selected in Settings, even if another registered name has the same provider identity.
+An unregistered shared-home login does not add another card or selector entry.
+Without registered accounts for that provider, its default usage card remains available.
 A registered account without saved authentication stays in Settings but gets no selector entry or empty dashboard card until it can provide usage again.
 An account can still show a sign-in error even when a saved snapshot exists.
 A Claude login kept in some other configuration directory is not listed until you register it there.
@@ -139,6 +143,8 @@ An inactive account's usage is read from its private Keychain authentication sna
 Registered accounts are distinguished by their account names, so two of them remain separate selector entries and individual cards even when their saved authentication currently proves the same provider identity.
 
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
+The dashboard keeps the selected registered account even when the terminal login changes.
+If an older version remembered only the shared-home card, select the registered account once again to apply this behavior.
 Terminal switching remains in Settings.
 A confirmed Settings switch moves the dashboard selection to the same account once.
 Changing display modes preserves the selected account, so returning to Single Card restores it if it is still available.
@@ -148,7 +154,6 @@ Adding, renaming, re-signing, or removing an account in Settings also updates th
 Change provider order in **Customize** and account order within a provider by dragging accounts in **Settings → Accounts**.
 Settings, the Single Card selector, Separate Cards, and Share use the same relative order for registered accounts available on each surface.
 Accounts unavailable on the dashboard keep their Settings positions and return to those positions when available again.
-Unregistered shared-home accounts follow registered accounts in their existing relative order.
 Reordering accounts preserves the selected account, active terminal login, provider order, and display mode.
 
 The card's layout — which metrics show, their order, the Always Visible / On Demand split, whether the caret is open, and the menu-bar stars — is one setting per provider that every account shares.

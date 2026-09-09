@@ -85,7 +85,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
             .map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
-        for cardID in ["codex", "codex@profile-company"] {
+        for cardID in ["codex", "codex@profile-account-2"] {
             let raw = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
             let group = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(raw, mode: .separateCards))
             var heights: [CGFloat] = []
@@ -94,7 +94,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
                 let widgets = layout.isProviderExpanded(cardID) ? group.widgets : group.alwaysShownWidgets
                 let rows = try widgets.map { dataStore.data(for: try XCTUnwrap(layout.descriptor(for: $0))) }
                 XCTAssertEqual(rows.filter(\.isForecast).count, cardID == "codex" && expanded ? 1 : 0)
-                let title = cardID == "codex" ? "Codex: main" : "Codex: company"
+                let title = cardID == "codex" ? "Codex: Account 1" : "Codex: Account 2"
                 let card = ShareCardView(
                     provider: group.provider,
                     plan: nil,
@@ -123,7 +123,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
     func testSingleCardKeepsTheSelectedSnapshotHistoryRows() throws {
         let layout = makeLayout()
         layout.setMetricEnabled("codex.resetWatch", true)
-        let selectedID = "codex@profile-company"
+        let selectedID = "codex@profile-account-2"
         let ids = AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: layout.displayGroups.map(\.id),
             modesByFamily: ["codex": .singleCard],
@@ -140,7 +140,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
     func testSeparateHistoryDoesNotFollowDashboardSelection() throws {
         let layout = makeLayout()
         layout.setMetricEnabled("codex.resetWatch", true)
-        let selections = ["claude": "claude@profile-work", "codex": "codex@profile-company"]
+        let selections = ["claude": "claude@profile-work", "codex": "codex@profile-account-2"]
         let modes: [String: AccountCardDisplayMode] = ["claude": .separateCards, "codex": .separateCards]
         let ids = AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: layout.displayGroups.map(\.id),
@@ -162,7 +162,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
         let placed = layout.placed
         let expandedIDs = layout.expandedMetricIDs
-        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-account-2" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
 
         XCTAssertEqual(presented.alwaysShownWidgets, group.expandedWidgets)
@@ -183,7 +183,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
     func testPromotedLimitsCanBeReorderedWhileCollapsed() throws {
         let layout = makeLayout()
         layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
-        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-account-2" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
         let weekly = "\(group.id).weekly"
         let resets = "\(group.id).rateLimitResets"
@@ -209,7 +209,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         layout.setPinned(true, for: "codex.today")
         layout.setPinned(true, for: "codex.resetWatch")
         let pins = layout.pinnedMetricIDs
-        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-account-2" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
         XCTAssertTrue(layout.setProviderExpanded(true, for: group.id))
         let divider = "divider"
@@ -228,7 +228,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let layout = makeLayout()
         layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
         let originalExpanded = layout.expandedMetricIDs
-        let cardID = "codex@profile-company"
+        let cardID = "codex@profile-account-2"
         XCTAssertTrue(layout.setProviderExpanded(true, for: cardID))
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
@@ -273,7 +273,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
     func testDashboardReorderRejectsHiddenAndOtherAccountTargets() throws {
         let layout = makeLayout()
         layout.setMetricEnabled("codex.resetWatch", true)
-        let cardID = "codex@profile-company"
+        let cardID = "codex@profile-account-2"
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
         let originalOrder = layout.metricOrderByProvider
@@ -292,7 +292,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testLast30DaysIsNotChangedByTheThreeRowFilter() throws {
         let layout = makeLayout()
-        for (family, cardID) in [("claude", "claude@profile-work"), ("codex", "codex@profile-company")] {
+        for (family, cardID) in [("claude", "claude@profile-work"), ("codex", "codex@profile-account-2")] {
             layout.setMetricEnabled("\(family).last30", true)
             let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
             let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
@@ -317,7 +317,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let suite = "OpenUsageTests.AccountCardHistoryPresentation.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
-        let providers = ["claude", "claude@profile-work", "codex", "codex@profile-company", "codex@profile-default"]
+        let providers = ["claude", "claude@profile-work", "codex", "codex@profile-account-2", "codex@profile-account-3"]
             .map { id in
                 ProviderAccountID.family(of: id) == "claude"
                     ? ClaudeProvider.makeProvider(id: id)

@@ -55,6 +55,7 @@ The launch account pass assembles log roots for the shared home and read-only sn
 Settings sign-in, switching, and removal actions repeat that pass, so cards follow account changes without a relaunch.
 A Claude login found in a config directory that is not registered produces no card and no registry record; it only records that another login exists on this Mac.
 The dashboard shows one selected account or separate account cards per provider according to the shared **Usage Cards** setting.
+For providers with registered accounts, presentation excludes runtimes not linked to a registered account; the runtime catalog, authentication, CLI, and local API remain unchanged.
 Shared pi logs cannot identify which Claude login produced them, so they are omitted while another Claude login exists rather than assigned to the wrong account.
 When a config dir is re-authenticated as a different account, reconciliation moves that source edge to the new identity while retaining the old record and its history.
 For the selected managed Claude account, shared-home reconciliation is verification-guarded and bidirectional.

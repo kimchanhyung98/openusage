@@ -54,7 +54,7 @@ iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
 ## Share Screenshot
 
 **Share Screenshot**을 직접 실행한 경우에만 선택한 카드를 PNG로 클립보드에 복사.
-이미지는 대시보드와 같은 카드 제목을 사용하므로 **Separate Cards**에서는 `Claude: company`·`Codex: sub` 같은 제목에 화면의 Account Name 포함.
+이미지는 대시보드와 같은 카드 제목을 사용하므로 **Separate Cards**에서는 `Claude: Account 1`·`Codex: Account 2` 같은 제목에 화면의 Account Name 포함.
 따라서 이미지를 공유하면 받는 사람에게 계정명이 노출될 수 있음.
 
 ## 기타 네트워크 요청
