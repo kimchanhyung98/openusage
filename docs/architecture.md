@@ -90,12 +90,13 @@ The UI reads from a few observable stores:
 - `ICloudUsageSyncStore` — one coordinated, atomic history file per Mac, iCloud metadata notifications, and the visible device/error state.
   File access is injected for lifecycle and failure tests.
 
-Refresh runs on a timer in `AppContainer`; each pass respects the cache, so the network is only hit once a snapshot has actually expired.
+`AppContainer` starts `AppRefreshLoop`; each pass respects the cache, so the network is only hit once a snapshot has actually expired.
 The same launch, provider-enablement wake, five-minute, and Dashboard manual passes refresh supported server status alongside usage.
 The status catalog explicitly covers Claude, Codex, Cursor, and Copilot; other families make no status request.
 Its client uses no provider authentication, and its exact component selectors turn only degraded, partial-outage, and major/full-outage states into a server issue.
 Maintenance and unknown states remain neutral.
 Status responses are limited to 64 KiB during transfer, and stopping the periodic refresh owner cancels all outstanding status requests.
+If the owner stops during account reconciliation, finishing that reconciliation does not start a new usage or status pass.
 Cancelling one caller waiting on a shared request does not cancel that request for other callers.
 
 Providers with spend tiles carry an explicit history scope beside their export descriptors.
