@@ -175,6 +175,14 @@ final class AccountCardMappingTests: XCTestCase {
     }
 
     func testSavedCodexAccountSelectionSurvivesSnapshotAndLiveCardChangesAcrossAllSurfaces() throws {
+        try assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: false)
+    }
+
+    func testNewLiveCodexSelectionSurvivesSnapshotAndLiveCardChangesAcrossAllSurfaces() throws {
+        try assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: true)
+    }
+
+    private func assertCodexAccountSelectionSurvivesCardChanges(selectLiveCard: Bool) throws {
         let defaults = makeScratchDefaults()
         let store = AccountProfilesStore(defaults: defaults)
         let preferred = try store.add(family: "codex", label: "Account 1", identityKey: "identity-1")
@@ -184,10 +192,19 @@ final class AccountCardMappingTests: XCTestCase {
         let profiles = store.profiles(family: "codex")
         let savedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: selected.id)
         let separateNamedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: sameIdentity.id)
-        DashboardUsageAccountSelection.select(savedCard, for: "codex", defaults: defaults)
+        let liveMapping = AppContainer.accountProfileIDsByCardID(
+            assembly: ProviderAccountAssembly(identityKeysByCard: ["codex": selected.identityKey]),
+            profiles: store
+        )
+        DashboardUsageAccountSelection.select(
+            selectLiveCard ? "codex" : savedCard,
+            for: "codex",
+            profileID: selectLiveCard ? liveMapping["codex"] : nil,
+            defaults: defaults
+        )
         let savedDefaults = defaults.dictionaryRepresentation()
 
-        for sharedIdentity in [preferred.identityKey, selected.identityKey, "unregistered", selected.identityKey] {
+        for sharedIdentity in [preferred.identityKey, selected.identityKey, "unregistered"] {
             let snapshots = AccountUsageCardPlanner.snapshotCards(
                 profiles: profiles,
                 preferredProfileIDs: ["codex": preferred.id],

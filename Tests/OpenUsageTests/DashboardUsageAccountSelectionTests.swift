@@ -36,12 +36,92 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
 
         let selectedID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: "claude",
+            profileID: "profile-beta",
             availableCardIDs: ["claude", "claude@b81c9bc9"],
             defaults: defaults
         )
 
         XCTAssertEqual(selectedID, "claude")
-        XCTAssertEqual(DashboardUsageAccountSelection.selectedID(for: "claude", defaults: defaults), "claude")
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.selectedID(for: "claude", defaults: defaults),
+            AccountUsageCardPlanner.cardID(family: "claude", profileID: "profile-beta")
+        )
+    }
+
+    func testSelectingALiveAccountKeepsThatProfileWhenItBecomesASnapshot() {
+        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for family in AccountProfilesStore.supportedFamilies {
+            DashboardUsageAccountSelection.select(family, for: family, profileID: "account-2", defaults: defaults)
+            let snapshot = AccountUsageCardPlanner.cardID(family: family, profileID: "account-2")
+
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardID(
+                    for: family,
+                    among: [family, snapshot],
+                    stored: DashboardUsageAccountSelection.selectedID(for: family, defaults: defaults),
+                    preferredCardID: family,
+                    profileIDsByCardID: [family: "account-1", snapshot: "account-2"]
+                ),
+                snapshot,
+                "the bare runtime now belongs to another account, but the selected profile remains available"
+            )
+        }
+    }
+
+    func testRegisteredSelectionUsesTheSameIDForLiveAndSnapshotCards() {
+        for family in AccountProfilesStore.supportedFamilies {
+            let snapshot = AccountUsageCardPlanner.cardID(family: family, profileID: "account-2")
+            for cardID in [family, snapshot] {
+                XCTAssertEqual(
+                    DashboardUsageAccountSelection.selectionID(
+                        for: cardID, family: family, profileID: "account-2"
+                    ),
+                    snapshot
+                )
+            }
+        }
+    }
+
+    func testSelectionsWithoutARegisteredProfileKeepTheirExistingIDs() {
+        for cardID in ["codex", "codex@ambient", "codex@profile-account-2"] {
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.selectionID(for: cardID, family: "codex", profileID: nil),
+                cardID
+            )
+        }
+    }
+
+    func testLiveAccountSelectionSurvivesReloadingPreferences() {
+        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        DashboardUsageAccountSelection.select("codex", for: "codex", profileID: "account-2", defaults: defaults)
+
+        let reloaded = UserDefaults(suiteName: suiteName)!
+
+        XCTAssertEqual(
+            DashboardUsageAccountSelection.storedSelections(defaults: reloaded)["codex"],
+            AccountUsageCardPlanner.cardID(family: "codex", profileID: "account-2")
+        )
+    }
+
+    func testAccountSwitchWithoutASharedRuntimeLeavesTheSelectionUntouched() {
+        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let previous = AccountUsageCardPlanner.cardID(family: "codex", profileID: "account-1")
+        DashboardUsageAccountSelection.select(previous, for: "codex", defaults: defaults)
+
+        XCTAssertNil(DashboardUsageAccountSelection.selectAfterAccountSwitch(
+            family: "codex",
+            profileID: "account-2",
+            availableCardIDs: [previous],
+            defaults: defaults
+        ))
+        XCTAssertEqual(DashboardUsageAccountSelection.selectedID(for: "codex", defaults: defaults), previous)
     }
 
     func testASingleCardStaysVisible() {
