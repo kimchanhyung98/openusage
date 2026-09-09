@@ -69,7 +69,8 @@ Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 
 
 ## 그 밖의 설정 디렉터리 로그인
 
-OpenUsage는 공유 홈(`~/.claude`)에 로그인된 계정과 **Settings → Accounts**에 등록한 계정만 표시 — 그 외에는 표시하지 않음.
+**Settings → Accounts**에 Claude 등록 계정이 있으면 대시보드에 표시 가능한 등록 계정만 표시하며, 공유 홈(`~/.claude`) 카드는 별도 추가하지 않음.
+Claude 등록 계정이 없으면 기본 사용량 카드 유지.
 커스텀 설정 디렉터리(별도 `CLAUDE_CONFIG_DIR` 홈)에 있는 Claude 로그인은 카드도, 계정 선택기 항목도 아니며 [CLI](/docs/ko/cli.md)·[로컬 API](/docs/ko/local-http-api.md)에도 없음.
 표시하려면 Settings에서 해당 계정 등록.
 
@@ -88,7 +89,7 @@ Claude 상태 파일의 인증 정보와 계정 식별 정보는 바뀌지만 MC
 
 Claude는 **Settings → Accounts**의 공통 **Usage Cards** 설정을 따름.
 기본값 **Single Card**는 **Claude** 카드 하나와 기존 계정 선택기를 유지하며, **Separate Cards**는 표시 가능한 계정마다 선택기 없는 카드 하나를 표시.
-Separate Cards 제목은 **Claude: company** 같은 고정 형식 **{Provider}: {name}** 사용.
+Separate Cards 제목은 **Claude: Account 1** 같은 고정 형식 **{Provider}: {name}** 사용.
 계정 순서는 [설정](/docs/ko/settings.md), 카드 표시·공유 동작은 [대시보드](/docs/ko/dashboard.md) 참조.
 
 대시보드 계정 선택기는 표시할 사용량만 바꾸며 새 Claude 세션에서 사용할 계정은 변경하지 않음.
@@ -97,7 +98,7 @@ Separate Cards 제목은 **Claude: company** 같은 고정 형식 **{Provider}: 
 **Separate Cards**의 **Usage Trend**·**Today**·**Yesterday**는 실제 공유 홈 로그인에 해당하는 활성 계정 카드에서만 기존 지표 설정에 따라 표시하며, 비활성 카드에서는 행 자체를 숨김.
 **Last 30 Days**는 해당 세 행 필터의 대상이 아니며, 비활성 카드에서도 기존 지표 설정에 따라 표시 가능.
 계정 추가, 이름 변경, 재로그인, 제거 시 대시보드 즉시 갱신.
-선택기와 개별 카드에는 공유 홈의 계정과 Settings에 등록한 계정만 표시.
+선택기와 개별 카드는 등록 계정명을 사용하며, 미등록 공유 홈 로그인은 추가하지 않음.
 등록 계정명은 두 계정이 현재 같은 프로바이더 신원을 증명해도 선택기와 개별 카드에서 각각 유지.
 
 일반 터미널을 선택된 관리형 계정의 공식 재인증 경로로 지원.

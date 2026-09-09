@@ -52,7 +52,7 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
   A login for a different Claude identity keeps the selected account name and selection; it never silently switches to another named account.
 - Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
-  In **Single Card** mode, the dashboard's account selector lists the shared home's account plus the accounts registered here, and picks whose usage the card shows.
+  In **Single Card** mode, the dashboard's account selector lists the available accounts registered here and picks whose usage the card shows; an unregistered shared-home login is not an additional option.
   A confirmed Settings switch moves the saved dashboard selection to that same account once, even while separate cards are showing; the menu-bar stars are a provider setting and stay put.
   Changing the dashboard selector later is view-only and never runs another terminal switch.
   An inactive account's usage is read from its private Keychain snapshot.
@@ -81,7 +81,7 @@ The saved choice is preserved if the setting becomes hidden when account counts 
 | Option | Behavior |
 | --- | --- |
 | **Single Card** | The default.<br>Shows the selected account under the provider name and keeps the dashboard account selector. |
-| **Separate Cards** | Shows each available account card with a fixed **{Provider}: {name}** title, such as `Claude: company` or `Codex: sub`.<br>No header account selector. |
+| **Separate Cards** | Shows each available account card with a fixed **{Provider}: {name}** title, such as `Claude: Account 1` or `Codex: Account 2`.<br>No header account selector. |
 
 `{name}` uses the account's existing **Account Name**.
 The title format is not editable; renaming an account in **Manage…** updates its card and Share Screenshot titles immediately.

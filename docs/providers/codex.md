@@ -87,7 +87,7 @@ The first account imports your current sign-in from `~/.codex/auth.json`, legacy
 An additional account signs in through the official flow inside an app-owned workspace, so the active login is never disturbed.
 Switching accounts in **Settings → Accounts** keeps the shared Codex configuration home in place and replaces only its `auth.json`.
 The existing `config.toml`, skills, and session history stay shared.
-While accounts are managed and the shared `auth.json` exists, that file is the credential source only for the **Default** (shared-home) card.
+While accounts are managed and the shared `auth.json` exists, the shared-home runtime reads only that file; the dashboard shows it under the registered account name only when it is linked to that account.
 A Settings switch writes the file, and file-mode Codex logins keep it fresh.
 This prevents a stale `Codex Auth` Keychain item from answering for another account.
 Each account's authentication snapshot is stored in the macOS Keychain.
@@ -100,10 +100,11 @@ In **Separate Cards**, **Usage Trend**, **Today**, **Yesterday**, and **Reset Wa
 
 Codex follows the shared **Usage Cards** setting in **Settings → Accounts**.
 The default **Single Card** keeps one **Codex** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.
-Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Codex: sub**.
+Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Codex: Account 2**.
 See [Settings](/docs/settings.md) for account order and [Dashboard](/docs/dashboard.md) for card display and sharing behavior.
 
-The dashboard account selector lists the shared-home account and registered accounts with an authentication snapshot saved on this Mac.
+When Codex accounts are registered, the dashboard and account selector show only the available registered accounts, without an additional shared-home card.
+Without registered Codex accounts, the default usage card remains available.
 It shows account names and changes only the account whose usage and reset popover are displayed.
 It never signs in, switches the active login, or changes the account a new Codex session uses.
 When a card shows the reset credits row, its **Use** action claims through that card's credential source.

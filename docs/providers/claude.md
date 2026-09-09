@@ -69,7 +69,8 @@ Otherwise pi usage stays in the Claude card's tiles like the rest of the shared 
 
 ## Other config-directory logins
 
-OpenUsage shows the account signed in to the shared home (`~/.claude`) plus the accounts you register in **Settings → Accounts** — nothing else.
+When Claude accounts are registered in **Settings → Accounts**, the dashboard shows only the available registered accounts, without an additional shared-home (`~/.claude`) card.
+Without registered Claude accounts, the default usage card remains available.
 A Claude login sitting in a custom config dir (a separate `CLAUDE_CONFIG_DIR` home) is not a card, not an entry in the account selector, and not in the [CLI](../cli.md) or [local API](../local-http-api.md).
 Register that account in Settings to see it.
 
@@ -88,7 +89,7 @@ Inactive account cards appear in the [local API](/docs/local-http-api.md) under 
 
 Claude follows the shared **Usage Cards** setting in **Settings → Accounts**.
 The default **Single Card** keeps one **Claude** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.
-Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Claude: company**.
+Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Claude: Account 1**.
 See [Settings](/docs/settings.md) for account order and [Dashboard](/docs/dashboard.md) for card display and sharing behavior.
 
 The dashboard account picker changes only which account's usage is shown and never changes the account a new Claude session uses.
@@ -97,7 +98,7 @@ In **Single Card**, those rows can still show **No data** while viewing an inact
 In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
 **Last 30 Days** is not part of that three-row filter and remains available on inactive cards according to the existing metric settings.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
-The picker and separate cards show the shared home's account plus the accounts registered in Settings.
+The picker and separate cards use the registered account names and do not add an unregistered shared-home login.
 Registered account names stay separate selector entries and individual cards even when two of them currently prove the same provider identity.
 
 The ordinary terminal is a supported reauthentication path for the selected managed account.
