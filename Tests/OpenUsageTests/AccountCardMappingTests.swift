@@ -13,7 +13,7 @@ final class AccountCardMappingTests: XCTestCase {
 
     func testBareFamilyCardMapsToTheSelectedProfileWhenTheObservedIdentityMatches() throws {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
-        _ = try profiles.add(family: "claude", label: "default", identityKey: "acct-1")
+        _ = try profiles.add(family: "claude", label: "Account 1", identityKey: "acct-1")
         let work = try profiles.add(family: "claude", label: "Work", identityKey: "acct-2")
         profiles.setPreferred(family: "claude", profileID: work.id)
         let assembly = ProviderAccountAssembly(identityKeysByCard: ["claude": "acct-2"])
@@ -54,7 +54,7 @@ final class AccountCardMappingTests: XCTestCase {
 
     func testSnapshotCardKeepsItsExplicitProfileMapping() throws {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
-        let personal = try profiles.add(family: "claude", label: "default", identityKey: "acct-1")
+        let personal = try profiles.add(family: "claude", label: "Account 1", identityKey: "acct-1")
         let work = try profiles.add(family: "claude", label: "Work", identityKey: "acct-2")
         profiles.setPreferred(family: "claude", profileID: work.id)
         let cardID = AccountUsageCardPlanner.cardID(family: "claude", profileID: personal.id)
@@ -79,5 +79,51 @@ final class AccountCardMappingTests: XCTestCase {
         let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
 
         XCTAssertNil(mapping["claude@ab12cd34"])
+    }
+
+    func testRegisteredCodexNamesStayTheOnlyCardsAcrossSharedHomeIdentityChanges() throws {
+        let store = AccountProfilesStore(defaults: makeScratchDefaults())
+        let names = ["Account 1", "Account 2", "Account 3"]
+        let profiles = try names.enumerated().map { index, name in
+            try store.add(family: "codex", label: name, identityKey: "identity-\(index + 1)")
+        }
+        store.setPreferred(family: "codex", profileID: profiles[0].id)
+
+        for sharedIdentity in [profiles[0].identityKey, "identity-unregistered"] {
+            let snapshots = AccountUsageCardPlanner.snapshotCards(
+                profiles: profiles,
+                preferredProfileIDs: ["codex": profiles[0].id],
+                availableSnapshotProfileIDs: Set(profiles.map(\.id)),
+                sharedHomeIdentityKeys: ["codex": sharedIdentity]
+            )
+            let assembly = ProviderAccountAssembly(
+                identityKeysByCard: ["codex": sharedIdentity],
+                snapshotCards: snapshots,
+                profileIDsByCard: Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.profileID) })
+            )
+            let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: store)
+            let ordered = AccountCardPresentationPlanner.orderedCardIDs(
+                ["codex"] + snapshots.map(\.id),
+                familyOrder: ["codex"],
+                orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
+                profileIDsByCardID: mapping
+            )
+            let presented = AccountCardPresentationPlanner.presentedCardIDs(
+                orderedCardIDs: ordered,
+                modesByFamily: ["codex": .separateCards],
+                selectedCardIDsByFamily: ["codex": "codex"]
+            )
+            let titles = try presented.map { cardID in
+                let profileID = try XCTUnwrap(mapping[cardID])
+                let profile = try XCTUnwrap(store.profile(id: profileID))
+                return AccountCardPresentationPlanner.cardTitle(
+                    providerID: cardID, fallback: "Codex", mode: .separateCards, accountName: profile.label
+                )
+            }
+
+            XCTAssertEqual(titles, names.map { "Codex: \($0)" })
+            XCTAssertEqual(store.preferredProfileID(family: "codex"), profiles[0].id)
+            XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
+        }
     }
 }

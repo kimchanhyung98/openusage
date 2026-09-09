@@ -15,7 +15,7 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
         let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         var measurements: [String] = []
-        for title in ["company", "default"] {
+        for title in ["Account 1", "Account 2"] {
             let view = ProviderSectionHeader(
                 provider: MockData.claude,
                 displayName: "Claude",

@@ -41,7 +41,7 @@ final class ShareCardRendererTests: XCTestCase {
     }
 
     func testDisplayNameOverrideRendersExactCompositeTitleIntoPNG() throws {
-        let expectedTitle = "Claude: company"
+        let expectedTitle = "Claude: Account 1"
         let provider = MockData.claude
         let exactTitleProvider = Provider(
             id: provider.id,

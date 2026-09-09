@@ -142,11 +142,11 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         let layout = makeStore(defaults: defaults)
         layout.providerOrder = [cardID, "codex", "claude"]
 
-        let company = AccountProfile(
-            id: "company",
+        let firstClaudeAccount = AccountProfile(
+            id: "account-1",
             family: "claude",
-            label: "company",
-            identityKey: "acct-company",
+            label: "Account 1",
+            identityKey: "acct-account-1",
             createdAt: Date(timeIntervalSince1970: 1)
         )
         let work = AccountProfile(
@@ -156,11 +156,11 @@ final class AccountCardLayoutSharingTests: XCTestCase {
             identityKey: "acct-work",
             createdAt: Date(timeIntervalSince1970: 2)
         )
-        let profiles = [company, work]
+        let profiles = [firstClaudeAccount, work]
         let presentation = AccountCardPresentationStore(defaults: defaults)
         XCTAssertTrue(presentation.reorder(
             dragged: work.id,
-            target: company.id,
+            target: firstClaudeAccount.id,
             family: "claude",
             profiles: profiles
         ))
@@ -180,7 +180,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
 
     func testAccountPresentationChangesDoNotMutateLayoutOrDashboardSelection() {
         let defaults = makeDefaults("PresentationIsolation")
-        let codexCardID = "codex@profile-sub"
+        let codexCardID = "codex@profile-account-2"
         saveStored(["codex", codexCardID, "claude", cardID], forKey: "layout.providerOrder", in: defaults)
         let layout = makeStore(defaults: defaults, includesCodexAccountCard: true)
         layout.setMetricEnabled("codex.session", true)
@@ -192,11 +192,11 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         DashboardUsageAccountSelection.select(cardID, for: "claude", defaults: defaults)
         DashboardUsageAccountSelection.select(codexCardID, for: "codex", defaults: defaults)
 
-        let company = AccountProfile(
-            id: "company",
+        let firstClaudeAccount = AccountProfile(
+            id: "account-1",
             family: "claude",
-            label: "company",
-            identityKey: "acct-company",
+            label: "Account 1",
+            identityKey: "acct-account-1",
             createdAt: Date(timeIntervalSince1970: 1)
         )
         let work = AccountProfile(
@@ -213,14 +213,14 @@ final class AccountCardLayoutSharingTests: XCTestCase {
             identityKey: "acct-personal",
             createdAt: Date(timeIntervalSince1970: 1)
         )
-        let sub = AccountProfile(
-            id: "sub",
+        let secondCodexAccount = AccountProfile(
+            id: "account-2",
             family: "codex",
-            label: "sub",
-            identityKey: "acct-sub",
+            label: "Account 2",
+            identityKey: "acct-account-2",
             createdAt: Date(timeIntervalSince1970: 2)
         )
-        let profiles = [company, work, personal, sub]
+        let profiles = [firstClaudeAccount, work, personal, secondCodexAccount]
         let providerOrder = layout.providerOrder
         let placed = layout.placed
         let metricOrder = layout.metricOrderByProvider
@@ -241,17 +241,17 @@ final class AccountCardLayoutSharingTests: XCTestCase {
         let presentation = AccountCardPresentationStore(defaults: defaults)
         XCTAssertTrue(presentation.reorder(
             dragged: work.id,
-            target: company.id,
+            target: firstClaudeAccount.id,
             family: "claude",
             profiles: profiles
         ))
         XCTAssertTrue(presentation.reorder(
-            dragged: sub.id,
+            dragged: secondCodexAccount.id,
             target: personal.id,
             family: "codex",
             profiles: profiles
         ))
-        let accountOrders = ["claude": [work.id, company.id], "codex": [sub.id, personal.id]]
+        let accountOrders = ["claude": [work.id, firstClaudeAccount.id], "codex": [secondCodexAccount.id, personal.id]]
         func presentedCardIDs() -> [String] {
             let families = ["claude", "codex"]
             let orderedIDs = AccountCardPresentationPlanner.orderedCardIDs(
@@ -260,7 +260,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
                 orderedProfileIDsByFamily: Dictionary(uniqueKeysWithValues: families.map {
                     ($0, presentation.orderedProfiles(profiles, family: $0).map(\.id))
                 }),
-                profileIDsByCardID: ["claude": company.id, cardID: work.id, "codex": personal.id, codexCardID: sub.id]
+                profileIDsByCardID: ["claude": firstClaudeAccount.id, cardID: work.id, "codex": personal.id, codexCardID: secondCodexAccount.id]
             )
             return AccountCardPresentationPlanner.presentedCardIDs(
                 orderedCardIDs: orderedIDs,
@@ -416,7 +416,7 @@ private extension WidgetRegistry {
         let codex = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         var providers = [claude, card, codex]
         if includesCodexAccountCard {
-            providers.append(Provider(id: "codex@profile-sub", displayName: "Codex — Sub", icon: .providerMark("codex")))
+            providers.append(Provider(id: "codex@profile-account-2", displayName: "Codex — Account 2", icon: .providerMark("codex")))
         }
         func descriptors(_ provider: Provider) -> [WidgetDescriptor] {
             ["session", "trend", "today"].map { suffix in

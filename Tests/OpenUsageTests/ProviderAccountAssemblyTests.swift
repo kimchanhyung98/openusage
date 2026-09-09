@@ -312,8 +312,8 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let profiles = AccountProfilesStore(defaults: defaults)
-        let personal = try profiles.add(family: "claude", label: "default", identityKey: "acct-1")
-        let work = try profiles.add(family: "claude", label: "wv7777", identityKey: "acct-2")
+        let personal = try profiles.add(family: "claude", label: "Account 1", identityKey: "acct-1")
+        let work = try profiles.add(family: "claude", label: "Account 2", identityKey: "acct-2")
         profiles.setPreferred(family: "claude", profileID: work.id)
 
         let assembly = ProviderAccountAssembly.make(
@@ -343,7 +343,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let profiles = AccountProfilesStore(defaults: defaults)
-        let personal = try profiles.add(family: "codex", label: "default", identityKey: "codex-1")
+        let personal = try profiles.add(family: "codex", label: "Account 1", identityKey: "codex-1")
         let work = try profiles.add(family: "codex", label: "Work", identityKey: "codex-2")
         profiles.setPreferred(family: "codex", profileID: work.id)
 
@@ -421,7 +421,7 @@ final class ProviderAccountAssemblyTests: XCTestCase {
         let defaults = makeScratchDefaults()
         let store = ProviderAccountsStore(defaults: defaults)
         let profiles = AccountProfilesStore(defaults: defaults)
-        let personal = try profiles.add(family: "claude", label: "default", identityKey: "acct-1")
+        let personal = try profiles.add(family: "claude", label: "Account 1", identityKey: "acct-1")
         profiles.setPreferred(family: "claude", profileID: personal.id)
 
         let assembly = ProviderAccountAssembly.make(
