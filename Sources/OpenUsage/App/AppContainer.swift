@@ -284,9 +284,9 @@ final class AppContainer {
         return cardIDs.contains(family) ? family : first
     }
 
-    /// family에 속한 카드 id — 등록 계정과 독립 발견 로그인을 구분하지 않음(모두 한 카드의 계정 선택지).
+    /// family에 속한 표시 가능 카드 — 등록 계정이 있으면 미등록 로그인 제외.
     func accountCardIDs(for family: String, among orderedIDs: [String]) -> [String] {
-        orderedIDs.filter { ProviderAccountID.family(of: $0) == family }
+        orderedAccountCardIDs(orderedIDs).filter { ProviderAccountID.family(of: $0) == family }
     }
 
     /// dashboard 계정 선택이 바뀔 때마다 증가 — 선택은 `UserDefaults`에 저장돼 관찰되지 않으므로,
@@ -299,9 +299,10 @@ final class AppContainer {
 
     /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
     func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
-        var visible = orderedIDs
+        let availableIDs = Set(orderedAccountCardIDs(orderedIDs))
+        var visible = orderedIDs.filter { availableIDs.contains($0) }
         for family in AccountProfilesStore.supportedFamilies {
-            let cards = accountCardIDs(for: family, among: orderedIDs)
+            let cards = accountCardIDs(for: family, among: visible)
             guard cards.count > 1 else { continue }
             visible = DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: visible,

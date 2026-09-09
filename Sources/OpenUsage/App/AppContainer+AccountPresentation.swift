@@ -13,7 +13,7 @@ extension AppContainer {
         )
     }
 
-    /// 순서는 표시 전용 — 런타임 catalog·CLI·HTTP API의 순서와 무관.
+    /// 등록 계정 표시 대상·순서만 계산 — 런타임 catalog·CLI·HTTP API는 유지.
     func orderedAccountCardIDs(_ cardIDs: [String]) -> [String] {
         let profileOrders = Dictionary(uniqueKeysWithValues: AccountProfilesStore.supportedFamilies.map {
             ($0, orderedAccountProfiles(for: $0).map(\.id))
@@ -62,18 +62,11 @@ extension AppContainer {
 
     func accountCardTitle(for provider: Provider) -> String {
         let family = ProviderAccountID.family(of: provider.id)
-        let name = accountOptionTitle(for: provider.id)
-        let resolvedName = accountProfileLabel(for: provider.id) == nil
-            ? AccountCardPresentationPlanner.unmanagedAccountName(
-                name,
-                reservedNames: accountProfiles.profiles(family: family).map(\.label)
-            )
-            : name
         return AccountCardPresentationPlanner.cardTitle(
             providerID: provider.id,
             fallback: displayName(for: provider),
             mode: accountCardDisplayMode(for: family),
-            accountName: resolvedName
+            accountName: accountOptionTitle(for: provider.id)
         )
     }
 }
