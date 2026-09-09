@@ -348,19 +348,13 @@ struct WidgetGroupedListView: View {
             makeLift: { makeMetricLift(for: descriptor, value: $0) },
             orderedIDs: { metricTargetIDs(for: providerID) },
             reorder: { target in
-                let current = metricTargetIDs(for: providerID)
-                if current.contains(expandedDividerID(for: providerID)) {
-                    guard let next = LayoutStore.reordered(current, dragged: descriptor.id, target: target) else {
-                        return false
-                    }
-                    return layout.applyMetricDividerOrder(
-                        next,
-                        dragged: descriptor.id,
-                        dividerID: expandedDividerID(for: providerID),
-                        in: providerID
-                    )
-                }
-                return layout.reorderMetric(dragged: descriptor.id, target: target, in: providerID)
+                guard let group = dashboardGroups.first(where: { $0.id == providerID }) else { return false }
+                return layout.reorderDashboardMetric(
+                    dragged: descriptor.id,
+                    target: target,
+                    in: group,
+                    dividerID: expandedDividerID(for: providerID)
+                )
             }
         )
     }
@@ -369,12 +363,7 @@ struct WidgetGroupedListView: View {
         guard let group = dashboardGroups.first(where: { $0.provider.id == providerID }) else {
             return []
         }
-        let alwaysShown = group.alwaysShownWidgets.compactMap { layout.descriptor(for: $0)?.id }
-        // caret은 expanded section이 열려 있으면(links-only 포함) drop target — metric을 caret 아래로 끌어 내릴 수 있음.
-        let hasExpandedContent = group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty
-        guard hasExpandedContent, layout.isProviderExpanded(providerID) else { return alwaysShown }
-        let expanded = group.expandedWidgets.compactMap { layout.descriptor(for: $0)?.id }
-        return alwaysShown + [expandedDividerID(for: providerID)] + expanded
+        return layout.dashboardMetricTargetIDs(in: group, dividerID: expandedDividerID(for: providerID))
     }
 
     private func makeProviderLift(for group: ProviderGroup, value: DragGesture.Value) -> ReorderLift? {

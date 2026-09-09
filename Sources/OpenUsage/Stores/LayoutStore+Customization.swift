@@ -210,6 +210,29 @@ extension LayoutStore {
         }
     }
 
+    func dashboardMetricTargetIDs(in group: ProviderGroup, dividerID: String) -> [String] {
+        let alwaysShown = group.alwaysShownWidgets.compactMap { descriptor(for: $0)?.id }
+        let hasExpandedContent = group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty
+        guard hasExpandedContent, isProviderExpanded(group.id) else { return alwaysShown }
+        let expanded = group.expandedWidgets.compactMap { descriptor(for: $0)?.id }
+        return alwaysShown + [dividerID] + expanded
+    }
+
+    @discardableResult
+    func reorderDashboardMetric(dragged: String, target: String, in group: ProviderGroup, dividerID: String) -> Bool {
+        let current = dashboardMetricTargetIDs(in: group, dividerID: dividerID)
+        guard current.contains(dragged), current.contains(target) else { return false }
+        // 임시 승격 행끼리의 정렬은 저장된 On Demand 소속 유지 — 링크 caret이 열려 있어도 동일.
+        let reordersPromotedRows = target != dividerID
+            && group.expandedWidgets.isEmpty
+            && group.alwaysShownWidgets.allSatisfy { isExpandedMetric($0.descriptorID) }
+        if !current.contains(dividerID) || reordersPromotedRows {
+            return reorderMetric(dragged: dragged, target: target, in: group.id)
+        }
+        guard let next = Self.reordered(current, dragged: dragged, target: target) else { return false }
+        return applyMetricDividerOrder(next, dragged: dragged, dividerID: dividerID, in: group.id)
+    }
+
     /// 한 provider 내 metric reorder(둘 다 그 provider의 descriptor id) — 전체 metric 순서에서 동작해
     /// disabled metric도 자리 유지. 다른 section의 행에 drop하면 dragged의 On Demand membership이 target을
     /// 따라감; 저장 순서는 두 section 분할로 재구성. 반환값은 실제 변경 여부(haptics 키).
