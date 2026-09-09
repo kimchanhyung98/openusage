@@ -122,7 +122,7 @@ Choose one shared **Usage Cards** mode for all providers that support accounts i
 The choice persists across app restarts.
 
 - **Single Card**, the default, shows the selected account's usage in one card titled **Claude** or **Codex** — it does not add multiple accounts' live limits together.
-  When multiple registered accounts are available, the header's account selector chooses an account.
+  The header's account selector appears only when at least two registered account cards are available.
 - **Separate Cards** shows a card for each available account and keeps the same provider's cards together.
   Each card uses the fixed **{Provider}: {name}** title format, such as **Claude: Account 1** or **Codex: Account 2**, with no account selector or header dragging.
 
@@ -131,6 +131,8 @@ The title format is not editable; renaming the account in **Settings → Account
 
 When a provider has registered accounts, the dashboard, account selector, Share Screenshot, and menu bar use only those accounts.
 An account uses its existing registered name, including when its card reads the current shared-home login (`~/.claude`, `~/.codex`).
+When account identities are refreshed, a shared-home login matching another registered account uses that account's live card instead of its snapshot, keeping shared-home history available.
+This does not change the account selected in Settings or any saved authentication.
 An unregistered shared-home login does not add another card or selector entry.
 Without registered accounts for that provider, its default usage card remains available.
 A registered account without saved authentication stays in Settings but gets no selector entry or empty dashboard card until it can provide usage again.
