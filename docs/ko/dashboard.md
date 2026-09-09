@@ -159,6 +159,8 @@ Settings, Single Card 선택기, Separate Cards, Share는 각 화면에 표시 �
 비활성 카드에서는 **No data** 대신 이 세 행 자체를 숨김.
 한도, **Rate Limit Resets**, **Last 30 Days** 및 다른 지표는 기존 동작 유지.
 저장된 지표 레이아웃이나 원본 통계를 바꾸지 않는 표시 전용 규칙.
+이 행들을 숨긴 뒤 Always Visible 지표가 없으면 남은 지표를 캐럿 위에 임시 표시하여 카드 사용 가능 상태 유지.
+임시 표시된 행끼리 순서를 바꿔도 저장된 On Demand 배치는 유지되며 카드 링크를 펼친 상태에서도 동일.
 
 ## 우클릭 메뉴
 
