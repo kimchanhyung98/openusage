@@ -8,6 +8,50 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
     private let warning = "Re-login for live usage."
     private let issue = ProviderServiceIssue(severity: .partial, componentName: "Claude Code", checkedAt: .distantPast)
 
+    func testAccountPickerRendersOnlyWithTwoAvailableCards() throws {
+        let suite = "OpenUsageTests.AvailableAccountPicker.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+        let options = [
+            AccountUsageOption(id: "codex", title: "Account 1"),
+            AccountUsageOption(id: "codex@profile-account-2", title: "Account 2"),
+        ]
+        for count in 0...2 {
+            let view = ProviderSectionHeader(
+                provider: MockData.codex,
+                displayName: "Codex",
+                accountOptions: Array(options.prefix(count)),
+                selectedAccountID: "codex",
+                onSelectAccount: { _ in },
+                accountCount: 3
+            )
+            .padding(.horizontal, 22)
+            .padding(.vertical, 12)
+            .frame(width: PanelHeightController.panelWidth)
+            .background(Color.black)
+            .environment(\.colorScheme, .dark)
+            .defaultAppStorage(defaults)
+            try withHosting(view) { hosting, _ in
+                let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                let hasPickerPixels = (Int(Double(bitmap.pixelsWide) * 0.6)..<bitmap.pixelsWide).contains { x in
+                    (0..<bitmap.pixelsHigh).contains { y in
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+                        return color.alphaComponent > 0.5 && color.redComponent > 0.25
+                            && color.greenComponent > 0.25 && color.blueComponent > 0.25
+                    }
+                }
+                XCTAssertEqual(hasPickerPixels, count > 1, "Available cards: \(count)")
+                if let export {
+                    let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                    try png.write(to: export.appendingPathComponent("account-picker-\(count)-options.png"))
+                }
+            }
+        }
+    }
+
     func testShortAccountLabelsKeepTheChevronCloseToTheText() throws {
         let suite = "OpenUsageTests.AccountSpacing.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

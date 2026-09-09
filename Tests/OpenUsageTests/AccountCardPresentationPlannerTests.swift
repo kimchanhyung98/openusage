@@ -61,6 +61,30 @@ final class AccountCardPresentationPlannerTests: XCTestCase {
         ), ["claude@profile-work"])
     }
 
+    func testLiveRegisteredCardReplacesOnlyItsOwnSnapshotWithoutChangingProfileOrder() {
+        let snapshots = ["account-1", "account-2", "account-3"].map { "codex@profile-\($0)" }
+        let mapping = [
+            "codex": "account-2",
+            snapshots[0]: "account-1",
+            snapshots[1]: "account-2",
+            snapshots[2]: "account-3",
+        ]
+        for cards in [["codex"] + snapshots, snapshots + ["codex"]] {
+            XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+                cards,
+                familyOrder: ["codex"],
+                orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+                profileIDsByCardID: mapping
+            ), [snapshots[0], "codex", snapshots[2]])
+        }
+        XCTAssertEqual(AccountCardPresentationPlanner.orderedCardIDs(
+            snapshots,
+            familyOrder: ["codex"],
+            orderedProfileIDsByFamily: ["codex": ["account-1", "account-2", "account-3"]],
+            profileIDsByCardID: mapping
+        ), snapshots)
+    }
+
     func testCanonicalFamilyOrderWinsOverFirstRawCardOccurrence() {
         let cards = ["claude@profile-account-3", "cursor", "codex", "claude", "codex@profile-account-2"]
 

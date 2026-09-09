@@ -21,11 +21,20 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
     }
 
-    func testMultipleAccountsKeepThePickerForOneSharedRuntimeCard() {
-        XCTAssertTrue(
+    func testMultipleRegisteredAccountsDoNotShowPickerForOneAvailableCard() {
+        XCTAssertFalse(
             ProviderSectionHeader.shouldShowAccountPicker(
                 accountCount: 2,
                 runtimeOptionCount: 1
+            )
+        )
+    }
+
+    func testMultipleRegisteredAccountsDoNotShowPickerWithoutAvailableCards() {
+        XCTAssertFalse(
+            ProviderSectionHeader.shouldShowAccountPicker(
+                accountCount: 2,
+                runtimeOptionCount: 0
             )
         )
     }
