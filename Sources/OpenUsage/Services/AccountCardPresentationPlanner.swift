@@ -53,6 +53,7 @@ enum AccountCardPresentationPlanner {
         }
     }
 
+    /// Single Card의 선택이 유효하지 않으면 공유 홈·첫 카드 순으로 대체, Separate Cards는 전체 유지.
     static func presentedCardIDs(
         orderedCardIDs: [String],
         modesByFamily: [String: AccountCardDisplayMode],
@@ -73,13 +74,13 @@ enum AccountCardPresentationPlanner {
         }
     }
 
-    /// 공유 홈 runtime만 로컬 통계 보유 — 비활성 snapshot의 빈 통계 행은 분리 카드에서 제외.
+    /// 비활성 분리 카드의 공유 홈 전용 행만 제외 — 저장된 레이아웃은 유지.
     static func presentedGroup(_ group: ProviderGroup, mode: AccountCardDisplayMode) -> ProviderGroup? {
         guard mode == .separateCards,
               ProviderAccountID.families.contains(ProviderAccountID.family(of: group.id)),
               ProviderAccountID.isAccountCard(group.id)
         else { return group }
-        let hiddenIDs = Set(["trend", "today", "yesterday"].map { "\(group.id).\($0)" })
+        let hiddenIDs = Set(["trend", "today", "yesterday", "resetWatch"].map { "\(group.id).\($0)" })
         let alwaysShown = group.alwaysShownWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
         let expanded = group.expandedWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
         guard !alwaysShown.isEmpty || !expanded.isEmpty else { return nil }

@@ -157,6 +157,7 @@ Settings, Single Card 선택기, Separate Cards, Share는 각 화면에 표시 �
 **Single Card**에서 선택기가 비활성 스냅샷 계정을 보여 주는 동안 이 행들은 기존처럼 **No data**로 표시될 수 있음.
 **Separate Cards**에서는 대시보드 선택과 관계없이 실제 공유 홈 로그인에 해당하는 활성 계정 카드에만 **Usage Trend**·**Today**·**Yesterday**를 기존 지표 설정에 따라 표시.
 비활성 카드에서는 **No data** 대신 이 세 행 자체를 숨김.
+Codex **Reset Watch**도 **Separate Cards**에서는 활성 공유 홈 계정 카드에만 표시하며 Share Screenshot에도 동일 적용.
 한도, **Rate Limit Resets**, **Last 30 Days** 및 다른 지표는 기존 동작 유지.
 저장된 지표 레이아웃이나 원본 통계를 바꾸지 않는 표시 전용 규칙.
 이 행들을 숨긴 뒤 지표가 하나도 남지 않으면 해당 비활성 카드를 대시보드와 Share Screenshot에서 제외.

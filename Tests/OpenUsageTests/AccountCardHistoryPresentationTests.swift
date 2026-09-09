@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import OpenUsage
 
@@ -27,8 +28,101 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         }
     }
 
+    func testSeparateCardsShowResetWatchOnlyOnSharedHomeCard() throws {
+        let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
+        let originalExpanded = layout.expandedMetricIDs
+        for onDemand in [false, true] {
+            layout.expandedMetricIDs = originalExpanded.union(onDemand ? ["codex.resetWatch"] : [])
+            let groups = layout.displayGroups.filter { ProviderAccountID.family(of: $0.id) == "codex" }
+            XCTAssertEqual(groups.count, 3)
+
+            for group in groups {
+                let metricID = "\(group.id).resetWatch"
+                XCTAssertTrue(group.widgets.contains { $0.descriptorID == metricID })
+                let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
+                XCTAssertEqual(
+                    presented.widgets.contains { $0.descriptorID == metricID },
+                    group.id == "codex",
+                    "Reset Watch must appear only on the shared-home card: \(group.id)"
+                )
+            }
+        }
+    }
+
+    func testResetWatchOnlySnapshotsDoNotLeaveEmptyCards() throws {
+        let layout = makeLayout()
+        for suffix in ["weekly", "trend", "rateLimitResets", "today", "yesterday"] {
+            layout.setMetricEnabled("codex.\(suffix)", false)
+        }
+        layout.setMetricEnabled("codex.resetWatch", true)
+
+        for group in layout.displayGroups where ProviderAccountID.family(of: group.id) == "codex" {
+            XCTAssertEqual(group.widgets.map(\.descriptorID), ["\(group.id).resetWatch"])
+            let presented = AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards)
+            XCTAssertEqual(presented == nil, ProviderAccountID.isAccountCard(group.id))
+        }
+    }
+
+    func testResetWatchShareRenderingFollowsMainCardAndCaretState() throws {
+        let layout = makeLayout()
+        for suffix in ["trend", "rateLimitResets", "today", "yesterday"] {
+            layout.setMetricEnabled("codex.\(suffix)", false)
+        }
+        layout.setMetricEnabled("codex.resetWatch", true)
+        layout.expandedMetricIDs = ["codex.resetWatch"]
+        let suite = "OpenUsageTests.ResetWatchShare.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let dataStore = WidgetDataStore(
+            registry: layout.registry,
+            providers: [],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults
+        )
+        dataStore.setCodexResetWatch(.init(chancePercent: 75, deadline: .distantFuture, communityYesPercent: 60))
+        let export = ProcessInfo.processInfo.environment["OPENUSAGE_RESET_WATCH_RENDER_DIR"]
+            .map { URL(fileURLWithPath: $0) }
+        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+
+        for cardID in ["codex", "codex@profile-company"] {
+            let raw = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+            let group = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(raw, mode: .separateCards))
+            var heights: [CGFloat] = []
+            for expanded in [false, true] {
+                layout.setProviderExpanded(expanded, for: cardID)
+                let widgets = layout.isProviderExpanded(cardID) ? group.widgets : group.alwaysShownWidgets
+                let rows = try widgets.map { dataStore.data(for: try XCTUnwrap(layout.descriptor(for: $0))) }
+                XCTAssertEqual(rows.filter(\.isForecast).count, cardID == "codex" && expanded ? 1 : 0)
+                let title = cardID == "codex" ? "Codex: main" : "Codex: company"
+                let card = ShareCardView(
+                    provider: group.provider,
+                    plan: nil,
+                    rows: rows,
+                    appearance: .light,
+                    expandBoundaryIndex: expanded ? group.alwaysShownWidgets.count : nil,
+                    displayNameOverride: title
+                ).defaultAppStorage(defaults)
+                let image = try XCTUnwrap(ShareCardRenderer.image(for: card))
+                XCTAssertEqual(image.size.width, ShareCardView.width)
+                heights.append(image.size.height)
+                if let export {
+                    let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
+                    let name = "\(cardID)-\(expanded ? "expanded" : "collapsed").png"
+                    try png.write(to: export.appendingPathComponent(name))
+                }
+            }
+            if cardID == "codex" {
+                XCTAssertGreaterThan(heights[1], heights[0])
+            } else {
+                XCTAssertEqual(heights[1], heights[0])
+            }
+        }
+    }
+
     func testSingleCardKeepsTheSelectedSnapshotHistoryRows() throws {
         let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
         let selectedID = "codex@profile-company"
         let ids = AccountCardPresentationPlanner.presentedCardIDs(
             orderedCardIDs: layout.displayGroups.map(\.id),
@@ -45,6 +139,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testSeparateHistoryDoesNotFollowDashboardSelection() throws {
         let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
         let selections = ["claude": "claude@profile-work", "codex": "codex@profile-company"]
         let modes: [String: AccountCardDisplayMode] = ["claude": .separateCards, "codex": .separateCards]
         let ids = AccountCardPresentationPlanner.presentedCardIDs(
@@ -57,10 +152,13 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         }
         XCTAssertEqual(groups.filter { $0.widgets.contains { $0.descriptorID.hasSuffix(".trend") } }.map(\.id),
                        ["claude", "codex"])
+        XCTAssertEqual(groups.filter { $0.widgets.contains { $0.descriptorID.hasSuffix(".resetWatch") } }.map(\.id),
+                       ["codex"])
     }
 
     func testFilteringPromotesRemainingLimitsWithoutChangingSavedLayout() throws {
         let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
         layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
         let placed = layout.placed
         let expandedIDs = layout.expandedMetricIDs
@@ -106,7 +204,10 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testReorderingFilteredRowsPreservesHiddenHistoryMembershipAndPins() throws {
         let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
+        layout.expandedMetricIDs.insert("codex.resetWatch")
         layout.setPinned(true, for: "codex.today")
+        layout.setPinned(true, for: "codex.resetWatch")
         let pins = layout.pinnedMetricIDs
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
@@ -116,7 +217,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
         XCTAssertTrue(layout.reorderDashboardMetric(dragged: dragged, target: divider, in: presented, dividerID: divider))
         XCTAssertFalse(layout.isExpandedMetric(dragged))
-        for suffix in ["trend", "today", "yesterday"] {
+        for suffix in ["trend", "today", "yesterday", "resetWatch"] {
             XCTAssertTrue(layout.isExpandedMetric("codex.\(suffix)"))
             XCTAssertTrue(layout.isMetricEnabled("codex.\(suffix)"))
         }
@@ -171,6 +272,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
 
     func testDashboardReorderRejectsHiddenAndOtherAccountTargets() throws {
         let layout = makeLayout()
+        layout.setMetricEnabled("codex.resetWatch", true)
         let cardID = "codex@profile-company"
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
@@ -178,7 +280,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let originalExpanded = layout.expandedMetricIDs
         let divider = "\(cardID)::dashboard-expanded-divider"
 
-        for target in ["\(cardID).trend", "\(cardID).rateLimitResets", "codex.weekly", divider] {
+        for target in ["\(cardID).trend", "\(cardID).resetWatch", "\(cardID).rateLimitResets", "codex.weekly", divider] {
             XCTAssertFalse(layout.reorderDashboardMetric(
                 dragged: "\(cardID).weekly", target: target, in: presented, dividerID: divider
             ), target)
