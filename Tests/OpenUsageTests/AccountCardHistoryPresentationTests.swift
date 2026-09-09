@@ -97,7 +97,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
             orderedIDs: presented.alwaysShownWidgets.map(\.descriptorID)
         ))
         XCTAssertEqual(target, resets)
-        XCTAssertTrue(layout.reorderMetric(dragged: weekly, target: target, in: group.id))
+        XCTAssertTrue(layout.reorderDashboardMetric(dragged: weekly, target: target, in: presented, dividerID: "divider"))
         let reordered = try XCTUnwrap(layout.displayGroups.first { $0.id == group.id })
         let next = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(reordered, mode: .separateCards))
         XCTAssertEqual(next.alwaysShownWidgets.map(\.descriptorID), [resets, weekly])
@@ -110,19 +110,82 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let pins = layout.pinnedMetricIDs
         let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex@profile-company" })
         let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
+        XCTAssertTrue(layout.setProviderExpanded(true, for: group.id))
         let divider = "divider"
-        let current = presented.alwaysShownWidgets.map(\.descriptorID)
-            + [divider] + presented.expandedWidgets.map(\.descriptorID)
         let dragged = "\(group.id).rateLimitResets"
-        let next = try XCTUnwrap(LayoutStore.reordered(current, dragged: dragged, target: divider))
 
-        XCTAssertTrue(layout.applyMetricDividerOrder(next, dragged: dragged, dividerID: divider, in: group.id))
+        XCTAssertTrue(layout.reorderDashboardMetric(dragged: dragged, target: divider, in: presented, dividerID: divider))
         XCTAssertFalse(layout.isExpandedMetric(dragged))
         for suffix in ["trend", "today", "yesterday"] {
             XCTAssertTrue(layout.isExpandedMetric("codex.\(suffix)"))
             XCTAssertTrue(layout.isMetricEnabled("codex.\(suffix)"))
         }
         XCTAssertEqual(layout.pinnedMetricIDs, pins)
+    }
+
+    func testReorderingPromotedLimitsWithLinksExpandedPreservesSavedMembership() throws {
+        let layout = makeLayout()
+        layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
+        let originalExpanded = layout.expandedMetricIDs
+        let cardID = "codex@profile-company"
+        XCTAssertTrue(layout.setProviderExpanded(true, for: cardID))
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+        let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
+        XCTAssertFalse(presented.provider.visibleLinks.isEmpty)
+        XCTAssertTrue(presented.expandedWidgets.isEmpty)
+        let weekly = "\(cardID).weekly"
+        let resets = "\(cardID).rateLimitResets"
+        let divider = "\(cardID)::dashboard-expanded-divider"
+        XCTAssertEqual(layout.dashboardMetricTargetIDs(in: presented, dividerID: divider), [weekly, resets, divider])
+        XCTAssertTrue(layout.reorderDashboardMetric(dragged: weekly, target: resets, in: presented, dividerID: divider))
+
+        XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
+        let reordered = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+        let final = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(reordered, mode: .separateCards))
+        XCTAssertEqual(final.alwaysShownWidgets.map(\.descriptorID), [resets, weekly])
+
+        XCTAssertTrue(layout.undo())
+        XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
+        let restored = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+        let undo = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(restored, mode: .separateCards))
+        XCTAssertEqual(undo.alwaysShownWidgets.map(\.descriptorID), [weekly, resets])
+    }
+
+    func testReorderingPromotedSharedHomeLimitsPreservesSavedMembership() throws {
+        let layout = makeLayout()
+        for suffix in ["trend", "today", "yesterday"] {
+            layout.setMetricEnabled("codex.\(suffix)", false)
+        }
+        layout.expandedMetricIDs = ["codex.weekly", "codex.rateLimitResets"]
+        let originalExpanded = layout.expandedMetricIDs
+        XCTAssertTrue(layout.setProviderExpanded(true, for: "codex"))
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == "codex" })
+        XCTAssertTrue(group.expandedWidgets.isEmpty)
+
+        XCTAssertTrue(layout.reorderDashboardMetric(
+            dragged: "codex.weekly", target: "codex.rateLimitResets", in: group, dividerID: "divider"
+        ))
+
+        XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
+    }
+
+    func testDashboardReorderRejectsHiddenAndOtherAccountTargets() throws {
+        let layout = makeLayout()
+        let cardID = "codex@profile-company"
+        let group = try XCTUnwrap(layout.displayGroups.first { $0.id == cardID })
+        let presented = try XCTUnwrap(AccountCardPresentationPlanner.presentedGroup(group, mode: .separateCards))
+        let originalOrder = layout.metricOrderByProvider
+        let originalExpanded = layout.expandedMetricIDs
+        let divider = "\(cardID)::dashboard-expanded-divider"
+
+        for target in ["\(cardID).trend", "\(cardID).rateLimitResets", "codex.weekly", divider] {
+            XCTAssertFalse(layout.reorderDashboardMetric(
+                dragged: "\(cardID).weekly", target: target, in: presented, dividerID: divider
+            ), target)
+        }
+
+        XCTAssertEqual(layout.metricOrderByProvider, originalOrder)
+        XCTAssertEqual(layout.expandedMetricIDs, originalExpanded)
     }
 
     func testLast30DaysIsNotChangedByTheThreeRowFilter() throws {
@@ -153,7 +216,11 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let providers = ["claude", "claude@profile-work", "codex", "codex@profile-company", "codex@profile-default"]
-            .map { Provider(id: $0, displayName: $0, icon: .providerMark(ProviderAccountID.family(of: $0))) }
+            .map { id in
+                ProviderAccountID.family(of: id) == "claude"
+                    ? ClaudeProvider.makeProvider(id: id)
+                    : CodexProvider.makeProvider(id: id)
+            }
         let descriptors = providers.flatMap { provider in
             ProviderAccountID.family(of: provider.id) == "claude"
                 ? ClaudeProvider(provider: provider).widgetDescriptors
