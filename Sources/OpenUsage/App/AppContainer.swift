@@ -228,7 +228,7 @@ final class AppContainer {
                 ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
             }
         }
-        self.refreshTask.task = Self.startPeriodicRefresh(
+        self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,
             providerStatus: providerStatus,
             telemetry: telemetry,
@@ -490,37 +490,5 @@ final class AppContainer {
             result[family] = selected.id
         }
         return result
-    }
-
-    /// 주기 refresh loop: 런치 직후 1회, 이후 매 interval 실행. 각 패스는 cache 준수 — 만료된 snapshot만 네트워크 요청.
-    /// 패스 사이 대기는 `RefreshWakeSignal` 경유 — 첫 패스 전 구독·buffer로 패스 도중의 enablement 변경도 무유실.
-    /// wake는 `ProviderEnablementStore.didChangeNotification` 한정 필수 — `UserDefaults.didChangeNotification` 구독은 refresh 폭주 유발.
-    private static func startPeriodicRefresh(
-        dataStore: WidgetDataStore,
-        providerStatus: ProviderStatusStore,
-        telemetry: TelemetryRecorder,
-        enabledProviderIDs: @escaping @MainActor () -> [String],
-        reconcileAccounts: @escaping @MainActor () async -> Void
-    ) -> Task<Void, Never> {
-        Task {
-            let wakeSignal = RefreshWakeSignal()
-            await withTaskCancellationHandler {
-                while !Task.isCancelled {
-                    await reconcileAccounts()
-                    let statusProviderIDs = enabledProviderIDs()
-                    async let statusRefresh: Void = providerStatus.refresh(providerIDs: statusProviderIDs)
-                    await dataStore.refreshAll()
-                    // 매 tick 알림 재평가 — refresh 후 실행으로 최신 데이터 참조, fetch 없는 loop에서도 시간 경과 pace 악화 감지.
-                    await dataStore.evaluateNotifications()
-                    // 일자 전환 beat: `app_daily_active` 1일 1회 발행 + 전일 provider rollup flush.
-                    telemetry.tick()
-                    // usage 완료 시점에 다음 heartbeat를 시작 — status 응답 시간이 footer countdown cadence를 밀지 않도록 병렬 대기.
-                    async let nextWake: Void = wakeSignal.waitForWake(timeout: RefreshSetting.interval)
-                    _ = await (statusRefresh, nextWake)
-                }
-            } onCancel: {
-                Task { @MainActor in providerStatus.cancelRefreshes() }
-            }
-        }
     }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 /// 표시 순서: 제목 → usage 경고 → 확인된 서버 장애 → plan → outdated → refresh 진행.
 struct ProviderSectionHeader: View {
     let provider: Provider
+    let displayName: String
     var plan: String?
     var warning: String?
     var serviceStatus: ProviderServiceStatus = .unknown
@@ -19,13 +20,12 @@ struct ProviderSectionHeader: View {
     var accountCount = 0
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
-    /// 카드 rename 반영용 — `Provider` 자체 이름은 launch 시 고정.
-    @Environment(AppContainer.self) private var container
     @Environment(\.popoverPartyMode) private var partyMode
     @State private var isHovered = false
 
     init(
         provider: Provider,
+        displayName: String,
         plan: String? = nil,
         warning: String? = nil,
         serviceStatus: ProviderServiceStatus = .unknown,
@@ -38,6 +38,7 @@ struct ProviderSectionHeader: View {
         accountCount: Int = 0
     ) {
         self.provider = provider
+        self.displayName = displayName
         self.plan = plan
         self.warning = warning
         self.serviceStatus = serviceStatus
@@ -59,7 +60,7 @@ struct ProviderSectionHeader: View {
                 .accessibilityHidden(true)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 // 폭 압박 시 우선순위 낮은 stale 태그부터 truncate — 이름의 2줄 래핑 방지
-                Text(container.displayName(for: provider))
+                Text(displayName)
                     .font(.system(size: density.headerPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -88,7 +89,7 @@ struct ProviderSectionHeader: View {
                         if case .disrupted(let issue) = serviceStatus {
                             ServerIssueIcon(
                                 issue: issue,
-                                providerName: container.displayName(for: provider)
+                                providerName: displayName
                             )
                             .layoutPriority(4)
                         }
@@ -116,7 +117,7 @@ struct ProviderSectionHeader: View {
             Spacer(minLength: 8)
             if let onCopyScreenshot {
                 CopyFeedbackButton(
-                    accessibilityLabel: "Copy \(container.displayName(for: provider)) Screenshot",
+                    accessibilityLabel: "Copy \(displayName) Screenshot",
                     isRevealed: isHovered,
                     action: onCopyScreenshot
                 )
@@ -213,6 +214,7 @@ private struct AccountUsagePicker: View {
         .menuStyle(.button)
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel("Usage Account")
         .accessibilityValue(selectedTitle)
     }

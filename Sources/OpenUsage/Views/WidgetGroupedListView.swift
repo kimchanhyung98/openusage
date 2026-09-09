@@ -100,6 +100,7 @@ struct WidgetGroupedListView: View {
         } : []
         return ProviderSectionHeader(
             provider: group.provider,
+            displayName: container.displayName(for: group.provider),
             plan: dataStore.plan(for: group.provider.id),
             warning: dataStore.headerNotice(for: group.provider.id),
             serviceStatus: container.providerStatus.status(for: group.provider.id),
