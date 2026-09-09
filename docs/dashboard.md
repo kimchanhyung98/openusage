@@ -143,7 +143,8 @@ An inactive account's usage is read from its private Keychain authentication sna
 Registered accounts are distinguished by their account names, so two of them remain separate selector entries and individual cards even when their saved authentication currently proves the same provider identity.
 
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
-If the selected account's snapshot is replaced by its live shared-home card, the dashboard, Share Screenshot, and menu bar keep showing that same registered account without rewriting the saved view selection.
+The dashboard keeps the selected registered account even when the terminal login changes.
+If an older version remembered only the shared-home card, select the registered account once again to apply this behavior.
 Terminal switching remains in Settings.
 A confirmed Settings switch moves the dashboard selection to the same account once.
 Changing display modes preserves the selected account, so returning to Single Card restores it if it is still available.
