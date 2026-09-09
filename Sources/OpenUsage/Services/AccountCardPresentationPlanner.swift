@@ -30,10 +30,12 @@ enum AccountCardPresentationPlanner {
             let cards = cardsByFamily[family] ?? []
             guard ProviderAccountID.families.contains(family) else { return cards }
             let profileOrder = orderedProfileIDsByFamily[family] ?? []
+            let liveProfileID = cards.contains(family) ? profileIDsByCardID[family] : nil
             // 등록 계정이 있으면 해당 계정 카드만 표시 — 미등록 공유 홈을 별도 계정으로 추가하지 않음.
             let availableCards = profileOrder.isEmpty ? cards : cards.filter { cardID in
                 guard let profileID = profileIDsByCardID[cardID] else { return false }
                 return profileOrder.contains(profileID)
+                    && (cardID == family || profileID != liveProfileID)
             }
             return availableCards.enumerated().sorted { lhs, rhs in
                 let left = profileIDsByCardID[lhs.element].flatMap { profileOrder.firstIndex(of: $0) }

@@ -164,9 +164,9 @@ extension ProviderSectionHeader {
         return result
     }
 
-    /// 계정이 둘 이상이면 selector 노출 — 공유 config home 때문에 런타임 카드가 하나로 접힌 경우도 포함.
+    /// 계정이 여러 개여도 실제 선택지가 하나뿐이면 selector 숨김.
     static func shouldShowAccountPicker(accountCount: Int, runtimeOptionCount: Int) -> Bool {
-        accountCount > 1 && runtimeOptionCount > 0
+        accountCount > 1 && runtimeOptionCount > 1
     }
 }
 

@@ -299,10 +299,11 @@ final class AppContainer {
 
     /// 메뉴 바의 선택 카드 필터 — 대시보드 표시 모드와 무관하게 provider당 카드 1장 유지.
     func collapsingAccountCards(_ orderedIDs: [String], selectionByFamily: [String: String]) -> [String] {
-        let availableIDs = Set(orderedAccountCardIDs(orderedIDs))
+        let availableCards = orderedAccountCardIDs(orderedIDs)
+        let availableIDs = Set(availableCards)
         var visible = orderedIDs.filter { availableIDs.contains($0) }
         for family in AccountProfilesStore.supportedFamilies {
-            let cards = accountCardIDs(for: family, among: visible)
+            let cards = availableCards.filter { ProviderAccountID.family(of: $0) == family }
             guard cards.count > 1 else { continue }
             visible = DashboardUsageAccountSelection.visibleCardIDs(
                 orderedCardIDs: visible,
@@ -484,12 +485,12 @@ final class AppContainer {
         assembly: ProviderAccountAssembly,
         profiles: AccountProfilesStore
     ) -> [String: String] {
-        // 선택 profile은 bare family 카드, 비활성 profile은 명시적인 snapshot 카드만 담당.
+        // 공유 홈의 관찰 계정을 등록 profile에 연결 — identity 미확인 시 기존 선택 유지.
         var result = assembly.profileIDsByCard
         for family in AccountProfilesStore.supportedFamilies {
             guard let selected = profiles.preferredProfile(family: family) else { continue }
             if let observed = assembly.identityKeysByCard[family], observed != selected.identityKey {
-                // 공유 home이 외부에서 다른 계정으로 로그인된 경우 — bare 카드가 그 로그인을 표시하므로 선택 profile의 label 미점유.
+                result[family] = profiles.profiles(family: family).first { $0.identityKey == observed }?.id
                 continue
             }
             result[family] = selected.id
