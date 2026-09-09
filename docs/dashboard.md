@@ -159,8 +159,9 @@ In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** appear only
 Inactive cards omit these three rows entirely instead of showing **No data**.
 Quotas, **Rate Limit Resets**, **Last 30 Days**, and other metrics keep their existing behavior.
 This is a display-only rule; it changes neither saved metric layout nor the underlying statistics.
-If hiding these rows leaves no Always Visible metrics, the remaining metrics appear above the caret so the card stays usable.
-Reordering those temporarily promoted rows preserves their saved On Demand placement, even with the card's links expanded.
+If hiding these rows leaves no metrics, the inactive card is omitted from the dashboard and Share Screenshot.
+If other metrics remain but none are Always Visible, they appear above the caret so the card stays usable.
+Reordering those temporarily promoted rows preserves their saved On Demand placement, even with the card's caret open.
 
 ## Right-click menus
 
