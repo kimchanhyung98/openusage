@@ -157,6 +157,7 @@ Local spend and trend logs stay attached to their configuration home rather than
 In **Single Card**, those rows can still read **No data** while the selector is showing an inactive snapshot account.
 In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** appear only on the active account card backed by the actual shared-home login, following the existing metric settings and regardless of the dashboard selection.
 Inactive cards omit these three rows entirely instead of showing **No data**.
+Codex **Reset Watch** also appears only on the active shared-home account card in **Separate Cards**, including Share Screenshot.
 Quotas, **Rate Limit Resets**, **Last 30 Days**, and other metrics keep their existing behavior.
 This is a display-only rule; it changes neither saved metric layout nor the underlying statistics.
 If hiding these rows leaves no metrics, the inactive card is omitted from the dashboard and Share Screenshot.

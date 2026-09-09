@@ -37,8 +37,9 @@ It does not change the automatic 15-minute schedule or query Reset Watch when th
 Once the metric is both disabled and unstarred, or Codex is disabled, future scheduled checks stop; a Reset Watch request already underway may still finish.
 Codex sign-in is not required: Reset Watch can update when account usage cannot, and a failure on either side never delays or fails the other refresh.
 The request sends no Codex token, account ID, usage values, local logs, or cookies.
-The active watch's chance and deadline are shared across all Codex account cards.
-Its community vote share is shared too and updates on the same checks, not the website's live cadence.
+The active watch's chance, deadline, and community vote share are one global forecast, not account-specific values.
+In **Separate Cards**, Reset Watch appears only on the active shared-home account card, regardless of dashboard selection; **Single Card** behavior is unchanged.
+The community vote share updates on the same checks, not the website's live cadence.
 Failed community vote share lookups, or empty, invalid, or mismatched totals, show **Vote share unavailable** without discarding the AI forecast.
 A failed community vote share lookup defers only that lookup: usage and AI forecasts still refresh normally.
 OpenUsage honors `Retry-After` from the endpoint for community vote share lookups; without a valid delay, it waits five minutes after a rate limit or one minute after other failures.
@@ -95,7 +96,7 @@ Its reset-credit **Use** action also claims through that snapshot without changi
 Spend tiles aggregate the shared home's session logs as one family total.
 Past logs are never attributed to a specific account.
 An inactive snapshot card therefore has no account-specific local logs, so its spend and trend rows can still show **No data** in **Single Card**.
-In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
+In **Separate Cards**, **Usage Trend**, **Today**, **Yesterday**, and **Reset Watch** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
 
 Codex follows the shared **Usage Cards** setting in **Settings → Accounts**.
 The default **Single Card** keeps one **Codex** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.
