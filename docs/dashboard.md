@@ -131,8 +131,9 @@ The title format is not editable; renaming the account in **Settings → Account
 
 When a provider has registered accounts, the dashboard, account selector, Share Screenshot, and menu bar use only those accounts.
 An account uses its existing registered name, including when its card reads the current shared-home login (`~/.claude`, `~/.codex`).
-When account identities are refreshed, a shared-home login matching another registered account uses that account's live card instead of its snapshot, keeping shared-home history available.
-This does not change the account selected in Settings or any saved authentication.
+When account identities are refreshed, a Codex shared-home login matching another registered account uses that account's live card instead of its snapshot, keeping shared-home history available.
+This presentation mapping does not change the account selected in Settings or any saved authentication.
+Claude keeps its existing [terminal reauthentication behavior](/docs/providers/claude.md): a verified new shared-home login replaces the identity and saved authentication under the account name selected in Settings, even if another registered name has the same provider identity.
 An unregistered shared-home login does not add another card or selector entry.
 Without registered accounts for that provider, its default usage card remains available.
 A registered account without saved authentication stays in Settings but gets no selector entry or empty dashboard card until it can provide usage again.
@@ -142,6 +143,7 @@ An inactive account's usage is read from its private Keychain authentication sna
 Registered accounts are distinguished by their account names, so two of them remain separate selector entries and individual cards even when their saved authentication currently proves the same provider identity.
 
 The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
+If the selected account's snapshot is replaced by its live shared-home card, the dashboard, Share Screenshot, and menu bar keep showing that same registered account without rewriting the saved view selection.
 Terminal switching remains in Settings.
 A confirmed Settings switch moves the dashboard selection to the same account once.
 Changing display modes preserves the selected account, so returning to Single Card restores it if it is still available.
