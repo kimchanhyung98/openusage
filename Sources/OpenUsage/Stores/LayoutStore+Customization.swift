@@ -169,11 +169,7 @@ extension LayoutStore {
     @discardableResult
     func reorderProvider(dragged: String, target: String) -> Bool {
         recordingUndoStep {
-            var shown: [String] = []
-            for providerID in customizeGroups.map(\.provider.id) {
-                let family = ProviderAccountID.family(of: providerID)
-                if !shown.contains(family) { shown.append(family) }
-            }
+            let shown = customizeProviderRows.filter(\.isEnabled).map(\.id)
             let draggedFamily = ProviderAccountID.family(of: dragged)
             let targetFamily = ProviderAccountID.family(of: target)
             guard let next = Self.reordered(shown, dragged: draggedFamily, target: targetFamily) else { return false }
@@ -181,8 +177,11 @@ extension LayoutStore {
             // persist된 raw 순서에서 visible slot만 재배열 — unknown id(이 launch registry에 없는 account
             // 카드)와 disabled provider는 정확한 위치를 유지한 채 visible family만 그 사이를 이동.
             var membersByFamily: [String: [String]] = [:]
-            for providerID in providerOrder {
-                membersByFamily[ProviderAccountID.family(of: providerID), default: []].append(providerID)
+            for providerID in providerOrder + orderedProviderIDs() {
+                let family = ProviderAccountID.family(of: providerID)
+                if membersByFamily[family]?.contains(providerID) != true {
+                    membersByFamily[family, default: []].append(providerID)
+                }
             }
             let shownSet = Set(shown)
             var replacements = next.makeIterator()
@@ -209,6 +208,29 @@ extension LayoutStore {
             syncPlacedOrder()
             return true
         }
+    }
+
+    func dashboardMetricTargetIDs(in group: ProviderGroup, dividerID: String) -> [String] {
+        let alwaysShown = group.alwaysShownWidgets.compactMap { descriptor(for: $0)?.id }
+        let hasExpandedContent = group.hasExpandedMetrics || !group.provider.visibleLinks.isEmpty
+        guard hasExpandedContent, isProviderExpanded(group.id) else { return alwaysShown }
+        let expanded = group.expandedWidgets.compactMap { descriptor(for: $0)?.id }
+        return alwaysShown + [dividerID] + expanded
+    }
+
+    @discardableResult
+    func reorderDashboardMetric(dragged: String, target: String, in group: ProviderGroup, dividerID: String) -> Bool {
+        let current = dashboardMetricTargetIDs(in: group, dividerID: dividerID)
+        guard current.contains(dragged), current.contains(target) else { return false }
+        // 임시 승격 행끼리의 정렬은 저장된 On Demand 소속 유지 — 링크 caret이 열려 있어도 동일.
+        let reordersPromotedRows = target != dividerID
+            && group.expandedWidgets.isEmpty
+            && group.alwaysShownWidgets.allSatisfy { isExpandedMetric($0.descriptorID) }
+        if !current.contains(dividerID) || reordersPromotedRows {
+            return reorderMetric(dragged: dragged, target: target, in: group.id)
+        }
+        guard let next = Self.reordered(current, dragged: dragged, target: target) else { return false }
+        return applyMetricDividerOrder(next, dragged: dragged, dividerID: dividerID, in: group.id)
     }
 
     /// 한 provider 내 metric reorder(둘 다 그 provider의 descriptor id) — 전체 metric 순서에서 동작해

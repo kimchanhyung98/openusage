@@ -11,6 +11,7 @@ Cursor's history is already account-wide, so it stays local and is never added a
 Disabling a provider immediately removes its peer contributions from the combined view and omits it from this Mac's next iCloud write, while its local cached snapshot remains.
 
 Managed account names, their current provider-identity bindings, selected terminal/dashboard accounts, sign-in readiness, and Keychain authentication snapshots stay on this Mac and are never included.
+The shared **Single Card** / **Separate Cards** choice for all supported providers and Settings account order also stay on this Mac, so each Mac can have its own card arrangement.
 A discovered configuration home whose logs belong to one proven account keeps an opaque identity for cross-Mac matching.
 Managed `~/.claude` and `~/.codex` histories can contain sessions from several switched accounts.
 They therefore sync only as a provider-family total and are not assigned to the currently selected managed account.
@@ -35,7 +36,9 @@ It has no profile identity and merges with the same bare provider family on peer
 
 An account you use on another Mac but have no login for here doesn't become a card: it appears as its own slice in **Total Spend**, named by its account code ("claude@ab12cd34") — so the number at the top is the whole truth across your Macs, and several such accounts stay tellable apart.
 That code is the same id the account's card carries on any Mac it's signed in on (the synced file holds no emails or names to label it with).
-The moment you log that account in locally, its card appears — under that same id — with the full cross-machine history already attached.
+The moment you log that account in locally, its usage is available under that same id with the full cross-machine history already attached.
+In this Mac's **Single Card** mode, the account selection determines which available account card appears.
+**Separate Cards** shows all available account cards regardless of that selection.
 
 Macs running an older OpenUsage read their own format but report this Mac's newer file as "update OpenUsage" — update both sides to sync multi-account machines.
 

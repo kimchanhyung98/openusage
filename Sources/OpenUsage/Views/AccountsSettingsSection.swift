@@ -7,6 +7,11 @@ struct AccountsSettingsSection: View {
     @Environment(AppContainer.self) private var container
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
+    let reorderSpaceName: String
+    @Binding var reorderLift: ReorderLift?
+    let scrollViewportFrame: CGRect
+    let scrollToAccount: (String, AccountSettingsReorderDirection) -> Void
+
     @State private var isAddSheetPresented = false
     @State private var addFamily = "claude"
     @State private var editingProfile: AccountProfile?
@@ -64,6 +69,12 @@ struct AccountsSettingsSection: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, density.controlRowPadding)
                 } else {
+                    if container.accountCardPresentation.shouldShowDisplayMode(
+                        profiles: store.profiles,
+                        registryReadable: !store.hasUnreadableRegistry
+                    ) {
+                        usageCardsRow
+                    }
                     ForEach(populatedFamilies, id: \.id) { family in
                         familyCard(family: family.id, title: family.title)
                     }
@@ -73,6 +84,12 @@ struct AccountsSettingsSection: View {
 
             if let switchError {
                 Text(switchError)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.notice)
+                    .padding(.horizontal, 8)
+            }
+            if let presentationError = container.accountCardPresentation.errorMessage {
+                Text(presentationError)
                     .font(.caption2)
                     .foregroundStyle(Theme.notice)
                     .padding(.horizontal, 8)
@@ -130,67 +147,42 @@ struct AccountsSettingsSection: View {
 
     // MARK: - Family card
 
-    private func familyCard(family: String, title: String) -> some View {
-        let profiles = store.profiles(family: family)
-
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                ProviderIcon(source: .providerMark(family), inset: 0.04)
-                    .frame(width: density.headerIconSize, height: density.headerIconSize)
-                Text(title)
-                    .font(.system(size: density.headerPointSize, weight: .semibold))
-                    .foregroundStyle(.primary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, density.controlRowPadding)
-            .padding(.bottom, 4)
-
-            ForEach(profiles) { profile in
-                profileRow(profile, family: family, showsSelectionToggle: profiles.count > 1)
-                if profile.id != profiles.last?.id {
-                    Divider()
-                        .padding(.horizontal, 12)
-                }
-            }
-        }
-    }
-
-    private func profileRow(_ profile: AccountProfile, family: String, showsSelectionToggle: Bool) -> some View {
-        let state = signInStates[profile.id] ?? .needsSignIn
-        let isReady = state.isReady
-
-        return HStack(alignment: .center, spacing: 8) {
-            HStack(spacing: 5) {
-                Text(displayLabel(profile.label))
-                    .lineLimit(1)
-                    .accessibilityLabel(profile.label)
-                Button {
-                    editingProfile = profile
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Manage \(profile.label) Account")
-            }
+    private var usageCardsRow: some View {
+        HStack(spacing: 10) {
+            Text("Usage Cards")
             Spacer(minLength: 8)
-            AccountStatusBadge(state: state)
-            if showsSelectionToggle {
-                Toggle("", isOn: selectionBinding(family: family, profileID: profile.id))
-                    .settingsSwitchStyle()
-                    .disabled(!isReady)
+            Picker("Usage Cards", selection: accountCardModeBinding) {
+                ForEach(AccountCardDisplayMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
             }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, density.controlRowPadding)
-        .accessibilityValue(
-            store.preferredProfileID(family: family) == profile.id ? "Selected" : "Not Selected"
+    }
+
+    private var accountCardModeBinding: Binding<AccountCardDisplayMode> {
+        Binding(
+            get: { container.accountCardPresentation.mode },
+            set: { container.accountCardPresentation.setMode($0) }
         )
     }
 
-    private func displayLabel(_ label: String) -> String {
-        label.count > 10 ? "\(label.prefix(10))…" : label
+    private func familyCard(family: String, title: String) -> some View {
+        AccountSettingsFamilyCard(
+            family: family,
+            title: title,
+            signInStates: signInStates,
+            reorderSpaceName: reorderSpaceName,
+            reorderLift: $reorderLift,
+            scrollViewportFrame: scrollViewportFrame,
+            scrollToAccount: scrollToAccount,
+            onManage: { editingProfile = $0 },
+            selection: { selectionBinding(family: family, profileID: $0) }
+        )
     }
 
     /// family별 선택의 radio 동작 — 다른 profile 선택은 이동, 선택된 스위치 off는 무시:

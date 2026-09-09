@@ -29,8 +29,7 @@ enum ProviderAccountID {
         cardID.contains("@")
     }
 
-    /// 카드 제목 — account family 카드는 계정과 무관하게 provider 이름 고정, 계정 이름은 selector가 표시.
-    /// 카드 제목을 그리는 모든 표면(헤더·우클릭 메뉴·공유 이미지·메뉴 바)의 단일 규칙.
+    /// Single Card·메뉴 바·프로바이더 동작의 이름 — 계정명과 무관하게 provider 이름 고정.
     static func cardTitle(providerID: String, fallback: String) -> String {
         let family = family(of: providerID)
         return families.contains(family) ? family.capitalized : fallback

@@ -32,7 +32,7 @@ OpenUsage에서 **Settings → Command Line**(설정 → 명령줄)을 열고 **
 ## 계정
 
 계정 관리는 앱의 [**Settings → Accounts**(설정 → 계정)](/docs/ko/settings.md)에 있음.
-CLI는 같은 레지스트리를 읽기만 하므로, 스크립트에서 GUI와 정확히 같은 상태 확인 가능:
+CLI는 동일한 등록 계정과 선택된 터미널 계정을 조회:
 
 ```sh
 openusage account list [claude|codex] [--json]   # 등록된 계정; *는 선택된 계정 표시
@@ -43,6 +43,7 @@ openusage account current [claude|codex]         # 선택된 계정의 이름(�
 도구를 지정하면 계정 이름만 출력하고, 선택된 계정이 없으면 아무것도 출력하지 않음.
 종료 코드는 성공 `0`, 사용법 오류 `2`, 저장된 계정 레지스트리를 읽거나 검증할 수 없을 때 `4`.
 이때 CLI는 빈 계정 목록 대신 오류를 출력.
+계정 목록은 Settings에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
 
 계정에는 사용자에게 보이는 폴더도, 실행 명령도 없음.
 전환은 공유 설정 홈의 인증 정보를 교체하므로, `openusage` 명령 설치 여부와 무관하게 새 터미널에서 그냥 `claude`나 `codex`를 실행하면 선택된 계정으로 동작.

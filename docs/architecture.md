@@ -52,9 +52,9 @@ The disk store provides reuse across process launches.
 Scans drop source-file records as their modification dates leave the requested history window.
 Aggregation and pricing still run on every refresh from the cached events.
 The launch account pass assembles log roots for the shared home and read-only snapshot cards for inactive registered accounts.
-Settings account actions repeat that pass, so cards follow account changes without a relaunch.
+Settings sign-in, switching, and removal actions repeat that pass, so cards follow account changes without a relaunch.
 A Claude login found in a config directory that is not registered produces no card and no registry record; it only records that another login exists on this Mac.
-The dashboard selector collapses every card of a provider into one, so each provider renders a single card.
+The dashboard shows one selected account or separate account cards per provider according to the shared **Usage Cards** setting.
 Shared pi logs cannot identify which Claude login produced them, so they are omitted while another Claude login exists rather than assigned to the wrong account.
 When a config dir is re-authenticated as a different account, reconciliation moves that source edge to the new identity while retaining the old record and its history.
 For the selected managed Claude account, shared-home reconciliation is verification-guarded and bidirectional.
@@ -73,7 +73,11 @@ The UI reads from a few observable stores:
 - `WidgetDataStore` — the latest snapshot per provider, plus refresh and caching.
   It keeps machine-local cached snapshots separate from rendered snapshots so peer history can never be written back out and counted again.
 - `LayoutStore` — which metrics are shown, the provider/metric order, and which metrics are starred for the menu bar.
-  It stores all of that once per provider, so every account card of a provider renders the same layout from that single set.
+  It stores all of that once per provider, so every account card of a provider shares the same layout settings.
+- Account presentation settings — one shared display mode and a managed account order for each provider family, stored locally and separately from authentication and layout.
+  Order uses stable managed profile IDs, so account positions survive name, sign-in, and runtime card ID changes.
+  Earlier development builds stored per-family modes in `modesByFamily` under `openusage.accountCardPresentation.v1`; those modes remain a read-only fallback until a shared choice is saved under `openusage.accountCardDisplayMode.v1`.
+  The separate key protects the shared choice when a build using the earlier format rewrites account order.
 - `ProviderEnablementStore` — which providers the user has turned on or off.
 - `ProviderStatusStore` — transient official server status per provider family.
   `AppContainer` explicitly supplies its dedicated public-status HTTP client; the store never creates a transport implicitly.
@@ -102,6 +106,13 @@ Cancelling one caller waiting on a shared request does not cancel that request f
 Providers with spend tiles carry an explicit history scope beside their export descriptors.
 Machine-local sources can be summed across device files; account-wide sources such as Cursor cannot.
 `WidgetDataStore` re-renders only the spend rows from the union, leaving quota and error state local.
+
+## Account presentation
+
+Provider order and account order are managed separately.
+Customize edits the layout's canonical provider-family order; Settings edits the managed account order within a family.
+The presentation layer combines both orders with the display mode, and Dashboard and Share Screenshot use the same final card list and titles.
+See [Dashboard](/docs/dashboard.md) and [Settings](/docs/settings.md) for product behavior.
 
 ## Tokscale CLI boundary
 

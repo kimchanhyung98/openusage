@@ -54,6 +54,10 @@ struct DashboardView: View {
                 // bare Return이 popover를 닫지 못하게 보장.
                 PopoverKeyReader(
                     onEscape: {
+                        if let reorderLift, case .settingsAccountRow = reorderLift.payload {
+                            self.reorderLift = nil
+                            return true
+                        }
                         // L2 detail → L1 → dashboard 순의 단계적 후퇴.
                         if layout.customizeProviderID != nil {
                             withAnimation(Motion.spring) { layout.customizeProviderID = nil }
@@ -274,7 +278,7 @@ struct DashboardView: View {
                 reorderLift: $reorderLift
             )
         case .settings:
-            SettingsScreen()
+            SettingsScreen(reorderSpaceName: Self.reorderSpace, reorderLift: $reorderLift)
         }
     }
 

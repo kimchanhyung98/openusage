@@ -51,6 +51,12 @@ Managed account names, current provider-identity bindings, selected-account stat
 Only normalized usage history is eligible for iCloud.
 Shared managed-home history is synced as a provider-family total, not under the currently selected account.
 
+## Share Screenshot
+
+A selected card is copied to the clipboard as a PNG only when you explicitly use **Share Screenshot**.
+The image uses the same card title as the dashboard, so **Separate Cards** includes the displayed Account Name in titles such as `Claude: company` and `Codex: sub`.
+Sharing the image can therefore expose the account name to its recipients.
+
 ## Other network requests
 
 Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages).

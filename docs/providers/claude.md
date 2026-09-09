@@ -85,12 +85,20 @@ The credential and account identity in Claude's state files change, while MCP se
 Each account's authentication snapshot is stored in the macOS Keychain.
 An inactive account's usage card reads from that snapshot.
 Inactive account cards appear in the [local API](/docs/local-http-api.md) under ids like `claude@profile-…`.
+
+Claude follows the shared **Usage Cards** setting in **Settings → Accounts**.
+The default **Single Card** keeps one **Claude** card with the existing account selector; **Separate Cards** shows one card per available account without a selector.
+Separate Cards uses the fixed title format **{Provider}: {name}**, such as **Claude: company**.
+See [Settings](/docs/settings.md) for account order and [Dashboard](/docs/dashboard.md) for card display and sharing behavior.
+
 The dashboard account picker changes only which account's usage is shown and never changes the account a new Claude session uses.
 Local spend and trend logs stay with the shared configuration home and are not attributed to managed accounts.
-Those rows can show **No data** while the dashboard is viewing an inactive snapshot account.
+In **Single Card**, those rows can still show **No data** while viewing an inactive snapshot account.
+In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** follow the existing metric settings only on the active account card backed by the actual shared-home login; inactive cards omit these rows entirely.
+**Last 30 Days** is not part of that three-row filter and remains available on inactive cards according to the existing metric settings.
 Adding, renaming, re-signing, or removing an account updates the dashboard immediately.
-The picker lists the shared home's account plus the accounts registered in Settings.
-Registered account names stay separate selector entries even when two of them currently prove the same provider identity.
+The picker and separate cards show the shared home's account plus the accounts registered in Settings.
+Registered account names stay separate selector entries and individual cards even when two of them currently prove the same provider identity.
 
 The ordinary terminal is a supported reauthentication path for the selected managed account.
 Start `claude` in a new terminal and use `/login`, or run `claude auth login`, then complete any valid Claude sign-in you want stored under the account name selected in Settings.

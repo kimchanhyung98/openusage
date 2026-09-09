@@ -129,20 +129,65 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
         }
     }
 
-    private func header(refreshing: Bool, disrupted: Bool) -> ProviderSectionHeader {
+    func testSeparateAccountTitlesKeepIssueIndicatorsVisibleAcrossAppearancesAndDensities() throws {
+        let suite = "OpenUsageTests.SeparateStatusHeader.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+
+        for density in DensitySetting.allCases {
+            defaults.set(density.rawValue, forKey: DensitySetting.key)
+            for appearance in [ColorScheme.light, .dark] {
+                for refreshing in [false, true] {
+                    let variant = "separate-\(density.rawValue)-\(appearance)-\(refreshing ? "refreshing" : "idle")"
+                    let view = header(refreshing: refreshing, disrupted: true, mode: .separateCards)
+                        .padding(.horizontal, 22)
+                        .padding(.vertical, 12)
+                        .frame(width: PanelHeightController.panelWidth)
+                        .background(appearance == .light ? Color.white : Color.black)
+                        .environment(\.colorScheme, appearance)
+                        .defaultAppStorage(defaults)
+                    try withHosting(view) { hosting, _ in
+                        XCTAssertEqual(hosting.bounds.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                        XCTAssertLessThanOrEqual(hosting.bounds.height, 52, variant)
+                        let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                        let counts = issuePixelCounts(in: bitmap)
+                        XCTAssertGreaterThan(counts.red, 4, "Service issue pixels: \(variant)")
+                        XCTAssertEqual(counts.orange > 4, !refreshing, "Usage warning pixels: \(variant)")
+                        if let export {
+                            let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                            try png.write(to: export.appendingPathComponent("status-header-\(variant).png"))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func header(
+        refreshing: Bool,
+        disrupted: Bool,
+        mode: AccountCardDisplayMode = .singleCard
+    ) -> ProviderSectionHeader {
         ProviderSectionHeader(
             provider: MockData.claude,
-            displayName: "Claude",
+            displayName: AccountCardPresentationPlanner.cardTitle(
+                providerID: "claude", fallback: "Claude", mode: mode, accountName: accountName
+            ),
             plan: "Max 20x",
             warning: warning,
             serviceStatus: disrupted ? .disrupted(issue) : .unknown,
             refreshing: refreshing,
             staleness: StalenessHint(label: "Outdated", tooltip: "Updated 20 minutes ago"),
             onCopyScreenshot: { true },
-            accountOptions: [.init(id: "claude", title: accountName), .init(id: "claude@work", title: "Work")],
+            accountOptions: mode == .singleCard
+                ? [.init(id: "claude", title: accountName), .init(id: "claude@work", title: "Work")]
+                : [],
             selectedAccountID: "claude",
             onSelectAccount: { _ in },
-            accountCount: 2
+            accountCount: mode == .singleCard ? 2 : 0
         )
     }
 
