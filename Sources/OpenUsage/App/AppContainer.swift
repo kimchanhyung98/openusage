@@ -276,12 +276,15 @@ final class AppContainer {
         return cardIDs.first { accountProfileIDsByCardID[$0] == profileID }
     }
 
-    /// family가 지금 렌더하는 카드 — 저장된 dashboard 선택 → 선택 profile 카드 → 공유 runtime → 첫 카드.
+    /// family의 표시 카드 — 저장된 선택과 동일 profile 우선, 없으면 Settings 선택·공유 runtime·첫 카드 순.
     func visibleAccountCardID(for family: String, among cardIDs: [String], stored: String) -> String? {
-        guard let first = cardIDs.first else { return nil }
-        if cardIDs.contains(stored) { return stored }
-        if let preferred = preferredAccountCardID(for: family, among: cardIDs) { return preferred }
-        return cardIDs.contains(family) ? family : first
+        DashboardUsageAccountSelection.visibleCardID(
+            for: family,
+            among: cardIDs,
+            stored: stored,
+            preferredCardID: preferredAccountCardID(for: family, among: cardIDs),
+            profileIDsByCardID: accountProfileIDsByCardID
+        )
     }
 
     /// family에 속한 표시 가능 카드 — 등록 계정이 있으면 미등록 로그인 제외.

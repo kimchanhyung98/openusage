@@ -23,6 +23,26 @@ enum DashboardUsageAccountSelection {
         return result
     }
 
+    /// 저장된 스냅샷이 실시간 카드로 대체돼도 같은 stable profile 선택 유지 — 저장값 변경 없음.
+    static func visibleCardID(
+        for family: String,
+        among cardIDs: [String],
+        stored: String,
+        preferredCardID: String?,
+        profileIDsByCardID: [String: String]
+    ) -> String? {
+        guard let first = cardIDs.first else { return nil }
+        if cardIDs.contains(stored) { return stored }
+        if let replacement = cardIDs.first(where: { cardID in
+            guard let profileID = profileIDsByCardID[cardID] else { return false }
+            return AccountUsageCardPlanner.cardID(family: family, profileID: profileID) == stored
+        }) {
+            return replacement
+        }
+        if let preferredCardID { return preferredCardID }
+        return cardIDs.contains(family) ? family : first
+    }
+
     /// family의 모든 card를 선택된 하나로 축약 — 등록 계정도 독립 발견된 config-directory 로그인도 동일 취급
     /// 대시보드에는 provider당 card 1장만 남고, 나머지 계정은 header selector 항목이 됨
     static func visibleCardIDs(
