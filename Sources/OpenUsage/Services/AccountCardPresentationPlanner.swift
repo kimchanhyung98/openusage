@@ -53,12 +53,7 @@ enum AccountCardPresentationPlanner {
         }
     }
 
-    /// Selects the cards to display for provider families that use a single-card mode.
-    /// - Parameters:
-    ///   - orderedCardIDs: The card identifiers in display order.
-    ///   - modesByFamily: The display mode configured for each provider family.
-    ///   - selectedCardIDsByFamily: Previously selected card identifiers by provider family.
-    /// - Returns: The ordered card identifiers after limiting single-card families to a valid selected card, family card, or first available card.
+    /// Single Card의 선택이 유효하지 않으면 공유 홈·첫 카드 순으로 대체, Separate Cards는 전체 유지.
     static func presentedCardIDs(
         orderedCardIDs: [String],
         modesByFamily: [String: AccountCardDisplayMode],
@@ -79,11 +74,7 @@ enum AccountCardPresentationPlanner {
         }
     }
 
-    /// Filters widgets from a separated account card while preserving its display group structure.
-    /// - Parameters:
-    ///   - group: The provider group to filter.
-    ///   - mode: The account card display mode.
-    /// - Returns: The filtered provider group, the original group when filtering does not apply, or `nil` when no widgets remain.
+    /// 비활성 분리 카드의 공유 홈 전용 행만 제외 — 저장된 레이아웃은 유지.
     static func presentedGroup(_ group: ProviderGroup, mode: AccountCardDisplayMode) -> ProviderGroup? {
         guard mode == .separateCards,
               ProviderAccountID.families.contains(ProviderAccountID.family(of: group.id)),
