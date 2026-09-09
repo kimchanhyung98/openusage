@@ -64,9 +64,14 @@ struct WidgetGroupedListView: View {
     }
 
     private func selectUsageAccount(_ providerID: String, for family: String) {
+        let selectionID = DashboardUsageAccountSelection.selectionID(
+            for: providerID,
+            family: family,
+            profileID: container.accountProfileID(for: providerID)
+        )
         switch family {
-        case "claude": selectedClaudeUsageAccountID = providerID
-        case "codex": selectedCodexUsageAccountID = providerID
+        case "claude": selectedClaudeUsageAccountID = selectionID
+        case "codex": selectedCodexUsageAccountID = selectionID
         default: break
         }
     }

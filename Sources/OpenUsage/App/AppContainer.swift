@@ -336,6 +336,7 @@ final class AppContainer {
     func syncDashboardUsageAccount(to profile: AccountProfile) {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
+            profileID: profile.id,
             availableCardIDs: registry.providers.map(\.id)
         ) else {
             return
