@@ -73,13 +73,13 @@ enum AccountCardPresentationPlanner {
         }
     }
 
-    /// 공유 홈 runtime만 로컬 통계 보유 — 비활성 snapshot의 빈 통계 행은 분리 카드에서 제외.
+    /// 분리 카드의 로컬 통계·전역 예측은 공유 홈 카드에만 표시 — 비활성 snapshot에서 제외.
     static func presentedGroup(_ group: ProviderGroup, mode: AccountCardDisplayMode) -> ProviderGroup? {
         guard mode == .separateCards,
               ProviderAccountID.families.contains(ProviderAccountID.family(of: group.id)),
               ProviderAccountID.isAccountCard(group.id)
         else { return group }
-        let hiddenIDs = Set(["trend", "today", "yesterday"].map { "\(group.id).\($0)" })
+        let hiddenIDs = Set(["trend", "today", "yesterday", "resetWatch"].map { "\(group.id).\($0)" })
         let alwaysShown = group.alwaysShownWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
         let expanded = group.expandedWidgets.filter { !hiddenIDs.contains($0.descriptorID) }
         guard !alwaysShown.isEmpty || !expanded.isEmpty else { return nil }
