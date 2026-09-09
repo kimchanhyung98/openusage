@@ -57,6 +57,88 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
         )
     }
 
+    func testSavedSnapshotSelectionFollowsItsLiveCardBeforeThePreferredAccount() {
+        for family in AccountProfilesStore.supportedFamilies {
+            let preferred = AccountUsageCardPlanner.cardID(family: family, profileID: "profile-1")
+            let stored = AccountUsageCardPlanner.cardID(family: family, profileID: "profile-2")
+
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardID(
+                    for: family,
+                    among: [preferred, family],
+                    stored: stored,
+                    preferredCardID: preferred,
+                    profileIDsByCardID: [preferred: "profile-1", family: "profile-2"]
+                ),
+                family,
+                "the selected named account remains available even after its snapshot is replaced"
+            )
+        }
+    }
+
+    func testAnAvailableStoredSelectionWinsOverThePreferredAndLiveCards() {
+        let snapshot = AccountUsageCardPlanner.cardID(family: "codex", profileID: "profile-2")
+
+        for stored in [snapshot, "codex"] {
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardID(
+                    for: "codex",
+                    among: ["codex", snapshot],
+                    stored: stored,
+                    preferredCardID: "codex",
+                    profileIDsByCardID: ["codex": "profile-1", snapshot: "profile-2"]
+                ),
+                stored
+            )
+        }
+    }
+
+    func testUnrelatedStoredSelectionsKeepThePreferredAccountFallback() {
+        let preferred = AccountUsageCardPlanner.cardID(family: "codex", profileID: "profile-1")
+        let missing = AccountUsageCardPlanner.cardID(family: "codex", profileID: "profile-3")
+        let otherFamily = AccountUsageCardPlanner.cardID(family: "claude", profileID: "profile-2")
+
+        for stored in ["", missing, otherFamily, "codex@ambient"] {
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardID(
+                    for: "codex",
+                    among: ["codex", preferred],
+                    stored: stored,
+                    preferredCardID: preferred,
+                    profileIDsByCardID: [preferred: "profile-1", "codex": "profile-2"]
+                ),
+                preferred
+            )
+        }
+    }
+
+    func testUnmappedCardsKeepTheSharedHomeThenFirstCardFallback() {
+        for cards in [["codex@ambient", "codex"], ["codex@ambient"]] {
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardID(
+                    for: "codex",
+                    among: cards,
+                    stored: AccountUsageCardPlanner.cardID(family: "codex", profileID: "profile-2"),
+                    preferredCardID: nil,
+                    profileIDsByCardID: [:]
+                ),
+                cards.contains("codex") ? "codex" : cards.first
+            )
+        }
+    }
+
+    func testNoAvailableCardsProducesNoVisibleSelection() {
+        XCTAssertNil(
+            DashboardUsageAccountSelection.visibleCardID(
+                for: "codex",
+                among: [],
+                stored: "codex",
+                preferredCardID: nil,
+                profileIDsByCardID: ["codex": "profile-1"]
+            )
+        )
+    }
+
     func testEveryAccountOfAProviderCollapsesIntoTheSelectedCard() {
         let cards = ["claude", "claude@ambient-work", "claude@profile-personal", "codex"]
 

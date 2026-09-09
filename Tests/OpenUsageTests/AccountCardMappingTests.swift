@@ -173,4 +173,73 @@ final class AccountCardMappingTests: XCTestCase {
             XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
         }
     }
+
+    func testSavedCodexAccountSelectionSurvivesSnapshotAndLiveCardChangesAcrossAllSurfaces() throws {
+        let defaults = makeScratchDefaults()
+        let store = AccountProfilesStore(defaults: defaults)
+        let preferred = try store.add(family: "codex", label: "Account 1", identityKey: "identity-1")
+        let selected = try store.add(family: "codex", label: "Account 2", identityKey: "identity-2")
+        let sameIdentity = try store.add(family: "codex", label: "Account 3", identityKey: selected.identityKey)
+        store.setPreferred(family: "codex", profileID: preferred.id)
+        let profiles = store.profiles(family: "codex")
+        let savedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: selected.id)
+        let separateNamedCard = AccountUsageCardPlanner.cardID(family: "codex", profileID: sameIdentity.id)
+        DashboardUsageAccountSelection.select(savedCard, for: "codex", defaults: defaults)
+        let savedDefaults = defaults.dictionaryRepresentation()
+
+        for sharedIdentity in [preferred.identityKey, selected.identityKey, "unregistered", selected.identityKey] {
+            let snapshots = AccountUsageCardPlanner.snapshotCards(
+                profiles: profiles,
+                preferredProfileIDs: ["codex": preferred.id],
+                availableSnapshotProfileIDs: Set(profiles.map(\.id)),
+                sharedHomeIdentityKeys: ["codex": sharedIdentity]
+            )
+            let assembly = ProviderAccountAssembly(
+                identityKeysByCard: ["codex": sharedIdentity],
+                snapshotCards: snapshots,
+                profileIDsByCard: Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0.profileID) })
+            )
+            let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: store)
+            let ordered = AccountCardPresentationPlanner.orderedCardIDs(
+                ["codex"] + snapshots.map(\.id),
+                familyOrder: ["codex"],
+                orderedProfileIDsByFamily: ["codex": profiles.map(\.id)],
+                profileIDsByCardID: mapping
+            )
+            let visible = try XCTUnwrap(DashboardUsageAccountSelection.visibleCardID(
+                for: "codex",
+                among: ordered,
+                stored: DashboardUsageAccountSelection.selectedID(for: "codex", defaults: defaults),
+                preferredCardID: ordered.first { mapping[$0] == preferred.id },
+                profileIDsByCardID: mapping
+            ))
+            let expected = sharedIdentity == selected.identityKey ? "codex" : savedCard
+
+            XCTAssertEqual(visible, expected)
+            XCTAssertEqual(mapping[visible], selected.id)
+            XCTAssertEqual(ordered.count, profiles.count)
+            XCTAssertTrue(ordered.contains(separateNamedCard), "a separate account name is not merged by identity")
+            XCTAssertEqual(
+                AccountCardPresentationPlanner.presentedCardIDs(
+                    orderedCardIDs: ordered,
+                    modesByFamily: ["codex": .singleCard],
+                    selectedCardIDsByFamily: ["codex": visible]
+                ),
+                [expected],
+                "Dashboard and Share use the same resolved selection"
+            )
+            XCTAssertEqual(
+                DashboardUsageAccountSelection.visibleCardIDs(
+                    orderedCardIDs: ordered,
+                    familyCardIDs: Set(ordered),
+                    selectedCardID: visible
+                ),
+                [expected],
+                "the menu bar uses the same resolved selection"
+            )
+            XCTAssertEqual(store.preferredProfileID(family: "codex"), preferred.id)
+            XCTAssertEqual(store.profiles(family: "codex").map(\.identityKey), profiles.map(\.identityKey))
+            XCTAssertTrue(NSDictionary(dictionary: defaults.dictionaryRepresentation()).isEqual(to: savedDefaults))
+        }
+    }
 }
