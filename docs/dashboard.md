@@ -91,7 +91,7 @@ The fixed deadline shares the usage reset date's `date at time` format and 12/24
 The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
 Higher bands warn you to use available tokens before a likely reset.
 Failed checks show an unavailable or cached-forecast notice instead of the deadline.
-After a successful check, no active signal or an expired forecast shows **0% chance** without a deadline or community vote share; before the first check, the row shows **No data**.
+After a successful check, no active signal, a missing chance, or an expired forecast shows **0% chance** without a deadline or community vote share; before the first check, the row shows **No data**.
 The row stops its timer after the forecast deadline until another forecast arrives.
 
 **Metrics without a limit** (daily spend, balances) show as a single line like `$4.08 spent` or `1.2M tokens`.

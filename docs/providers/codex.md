@@ -49,6 +49,7 @@ After a successful check, no active watch, a missing chance, or an expired deadl
 This means there is no active reset signal, including after a recent reset; it does not mean the API returned a measured 0% probability.
 Before the first completed check, the row shows **No data**.
 If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
+A cancelled check keeps reusable cached data and any existing failure notice.
 The next successful check clears that notice.
 Responses marked `no-store` are displayed for the current check only; `no-cache` forecasts require successful revalidation before reuse, including after a failed check.
 
