@@ -96,10 +96,27 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertTrue(data.presented(at: deadline.addingTimeInterval(-1)).hasData)
 
         let expired = data.presented(at: deadline)
+        XCTAssertTrue(expired.hasData)
+        XCTAssertEqual(expired.boundedHeadline, "0% chance")
+        XCTAssertNil(expired.boundedTrailingText(now: deadline))
+        XCTAssertNil(expired.forecastDeadline)
+        XCTAssertEqual(expired.meterState(now: deadline), .level(.neutral))
+        XCTAssertEqual(expired.fraction, 0)
+    }
+
+    func testFailedCachedForecastBecomesUnavailableAtItsDeadline() {
+        let deadline = Date(timeIntervalSince1970: 1_788_156_000)
+        var data = forecast(chance: 75, deadline: deadline)
+        data.forecast?.refreshFailed = true
+        data.forecast?.communityYesPercent = 79
+
+        let expired = data.presented(at: deadline)
         XCTAssertFalse(expired.hasData)
         XCTAssertEqual(expired.headline, WidgetData.noDataHeadline)
-        XCTAssertEqual(expired.boundedTrailingText(now: deadline), WidgetData.noDataSubtitle)
+        XCTAssertEqual(expired.boundedTrailingText(now: deadline), "Unavailable · Retry later")
         XCTAssertEqual(expired.meterState(now: deadline), .noData)
+        XCTAssertNil(expired.communityVoteTick)
+        XCTAssertNil(expired.communityVoteLabel)
     }
 
     func testRemovingForecastMetadataClearsItsMeaningAndDeadlineTogether() {
@@ -199,7 +216,7 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertEqual(content.bars, [metric])
     }
 
-    func testPinnedForecastPublishesDeadlineAndDisappearsAtThatInstant() {
+    func testPinnedForecastPublishesDeadlineAndBecomesZeroAtThatInstant() {
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.forecast(
             id: "codex.resetWatch",
@@ -217,7 +234,9 @@ final class ResetWatchPresentationTests: XCTestCase {
 
         let expired = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: deadline)
         XCTAssertNil(expired.nextInvalidation)
-        XCTAssertTrue(expired.isEmpty)
+        XCTAssertFalse(expired.isEmpty)
+        XCTAssertEqual(expired.groups.first?.metrics.first?.value, "0%")
+        XCTAssertEqual(expired.groups.first?.metrics.first?.fraction, 0)
     }
 
     func testWidgetRowTimelineInsertsExactForecastDeadlineBetweenPeriodicTicks() {
