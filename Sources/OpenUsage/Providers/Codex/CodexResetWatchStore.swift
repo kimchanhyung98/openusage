@@ -162,7 +162,15 @@ actor CodexResetWatchStore {
                 throw FetchError.httpStatus(response.statusCode)
             }
         } catch is CancellationError {
-            return CodexResetWatchResult()
+            var cancelled = CodexResetWatchResult(refreshFailed: refreshFailed)
+            if !lastPolicy.requiresValidation {
+                cancelled.watch = representation.flatMap { watch(from: $0, at: now()) }
+                // 취소는 새 성공 응답이 아니므로 명시적인 빈 캐시만 0%로 유지.
+                if case .absent = representation {
+                    cancelled.isAbsent = !refreshFailed
+                }
+            }
+            return cancelled
         } catch {
             let failedAt = now()
             retryNotBefore = failedAt.addingTimeInterval(Self.failureRetryAge)
