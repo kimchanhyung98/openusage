@@ -215,7 +215,12 @@ final class WidgetDataStore {
             guard liveIDs.contains(cardID) else { return false }
             return previousIdentityKeys[cardID] == identityKeys[cardID]
         }
-        notificationEvaluator.reset(providerIDs: Set(providersByID.keys.filter { !keepsState($0) }))
+        // 계정 family의 미해석 identity는 같은 계정을 증명 못 하므로 카탈로그 교체 시 알림도 무효화.
+        notificationEvaluator.reset(providerIDs: Set(providersByID.keys.filter { cardID in
+            !keepsState(cardID)
+                || (identityKeys[cardID] == nil
+                    && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
+        }))
         catalogGeneration += 1
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
