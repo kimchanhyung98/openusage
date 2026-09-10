@@ -205,6 +205,8 @@ struct AccountsSettingsSection: View {
     private func switchTo(_ profile: AccountProfile) {
         guard let shell = AccountShellInstaller.defaultShell() else {
             switchError = "Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically."
+            AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
+                                  localContext: "Login shell could not be detected; account switch not applied")
             return
         }
         let currentProfile = store.preferredProfile(family: profile.family)
@@ -217,7 +219,9 @@ struct AccountsSettingsSection: View {
             container.refreshAccountCatalog()
             container.syncDashboardUsageAccount(to: profile)
             switchError = nil
+            AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } catch {
+            AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
             switchError = "Couldn't switch to \(profile.label): \(error.localizedDescription)"
         }
     }

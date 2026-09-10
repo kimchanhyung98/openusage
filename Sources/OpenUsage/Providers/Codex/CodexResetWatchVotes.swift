@@ -38,9 +38,10 @@ enum CodexResetWatchVotes {
                   (0...maximumSafeInteger).contains(votes.no), votes.yes + votes.no > 0 else {
                 throw VotesError.invalidCounts
             }
+            AppDiagnostics.record(.resetVoteFetch, result: .success, providerID: "codex")
             return Result(percent: (Double(votes.yes) / (Double(votes.yes) + Double(votes.no)) * 100).rounded())
         } catch {
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch community vote share unavailable: \(error.localizedDescription)")
+            AppDiagnostics.failure(.resetVoteFetch, error: error, providerID: "codex")
             return Result(retryNotBefore: retryNotBefore ?? now().addingTimeInterval(60))
         }
     }
@@ -71,7 +72,14 @@ enum CodexResetWatchVotes {
         }
     }
 
-    private enum VotesError: Error, LocalizedError {
+    private enum VotesError: Error, LocalizedError, CategorizedError {
+        var errorCategory: ErrorCategory {
+            switch self {
+            case .httpStatus(let code): .http(code)
+            case .episodeMismatch, .invalidCounts: .decoding
+            }
+        }
+
         case httpStatus(Int), episodeMismatch, invalidCounts
 
         var errorDescription: String? {

@@ -20,6 +20,23 @@ enum ErrorCategory: String, Sendable, CaseIterable, Codable {
     /// 해당 account/plan에서 usage 데이터가 정당하게 없는 경우 (구독 없음, API-key 전용, quota endpoint 부재) — 오작동 아님.
     case notAvailable = "not_available"
     case other = "other"
+    case storage = "storage"
+    case permission = "permission"
+    case subprocess = "subprocess"
+
+    static func classify(_ error: Error) -> ErrorCategory {
+        if let categorized = error as? CategorizedError { return categorized.errorCategory }
+        if error is URLError { return .network }
+        if error is DecodingError { return .decoding }
+        if let cocoa = error as? CocoaError {
+            switch cocoa.code {
+            case .fileReadNoPermission, .fileWriteNoPermission: return .permission
+            case .fileReadCorruptFile: return .decoding
+            default: return .storage
+            }
+        }
+        return .other
+    }
 
     /// non-2xx HTTP status 분류 — 429는 rate limiting, 나머지는 4xx/5xx 경계로 구분.
     static func http(_ statusCode: Int) -> ErrorCategory {

@@ -62,7 +62,7 @@ final class CodexResetClaimService {
     func claim(creditExpiringAt expiry: Date, redeemRequestID: String) async -> ResetClaimOutcome {
         let candidates = await credentialCandidates()
         guard !candidates.isEmpty else {
-            AppLog.error(LogTag.plugin("codex"), "reset claim: no usable Codex credentials")
+            AppDiagnostics.record(.resetClaim, result: .failure, category: .notLoggedIn, providerID: "codex")
             return .failed
         }
 
@@ -83,6 +83,7 @@ final class CodexResetClaimService {
             case .noCredit:
                 // 오류 아님 — popover 렌더 이후 CLI/web에서 claim됐거나 만료. refresh가 timeline을 실제 상태와 동기화.
                 AppLog.warn(LogTag.plugin("codex"), "reset claim: no available credit matches the picked expiry")
+                AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
                 await refreshAfterClaim()
                 return .noCredit
             case .failed:
@@ -94,6 +95,7 @@ final class CodexResetClaimService {
             creditID: creditID, redeemRequestID: redeemRequestID, candidates: preferredCandidates
         )
         if outcome != .failed {
+            AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable, providerID: "codex")
             // 상태 변경(또는 snapshot과 불일치) 확인 — 결과 banner가 이미 동기화된 meter·credit count 위에 뜨도록 refresh 후 반환.
             await refreshAfterClaim()
         }
@@ -116,7 +118,8 @@ final class CodexResetClaimService {
                     redeemRequestID: redeemRequestID
                 )
             } catch {
-                AppLog.error(LogTag.plugin("codex"), "reset claim: consume request failed: \(error.localizedDescription)")
+                AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
+                                       localContext: "Reset claim consume request failed")
                 return .failed
             }
             if response.statusCode == 401 || response.statusCode == 403 {
@@ -125,15 +128,14 @@ final class CodexResetClaimService {
             }
             let outcome = Self.outcome(fromConsume: response)
             if outcome == .failed {
-                AppLog.error(
-                    LogTag.plugin("codex"),
-                    "reset claim: consume failed (\(response.statusCode)): "
-                        + LogRedaction.bodyPreview(String(decoding: response.body, as: UTF8.self), limit: 300)
-                )
+                AppDiagnostics.record(.resetClaim, result: .failure,
+                                      category: (200..<300).contains(response.statusCode) ? .decoding : .http(response.statusCode),
+                                      providerID: "codex", localContext: "Reset claim consume failed (HTTP \(response.statusCode))")
             }
             return outcome
         }
-        AppLog.error(LogTag.plugin("codex"), "reset claim: consume rejected for every credential (last: \(lastRejection.map(String.init) ?? "none"))")
+        AppDiagnostics.record(.resetClaim, result: .failure, category: .authExpired, providerID: "codex",
+                              localContext: "Reset claim consume rejected for every credential (last: \(lastRejection.map(String.init) ?? "none"))")
         return .failed
     }
 
@@ -154,21 +156,25 @@ final class CodexResetClaimService {
                     accessToken: credentials.accessToken, accountID: credentials.accountID
                 )
             } catch {
-                AppLog.error(LogTag.plugin("codex"), "reset claim: credit list fetch failed: \(error.localizedDescription)")
+                AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
+                                       localContext: "Reset claim credit list request failed")
                 return .failed
             }
             if list.statusCode == 401 || list.statusCode == 403 {
                 lastFailure = "credit list fetch rejected (\(list.statusCode))"
                 continue
             }
-            guard (200..<300).contains(list.statusCode), let body = ProviderParse.jsonObject(list.body) else {
-                AppLog.error(LogTag.plugin("codex"), "reset claim: credit list fetch failed (\(list.statusCode))")
+            guard (200..<300).contains(list.statusCode), let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
+                AppDiagnostics.record(.resetClaim, result: .failure,
+                                      category: (200..<300).contains(list.statusCode) ? .decoding : .http(list.statusCode),
+                                      providerID: "codex", localContext: "Reset claim credit list failed (HTTP \(list.statusCode))")
                 return .failed
             }
             guard let matched = Self.creditID(in: body, expiringAt: expiry) else { return .noCredit }
             return .matched(creditID: matched, credentials: credentials)
         }
-        AppLog.error(LogTag.plugin("codex"), "reset claim: \(lastFailure)")
+        AppDiagnostics.record(.resetClaim, result: .failure, category: .authExpired, providerID: "codex",
+                              localContext: "Reset claim: \(lastFailure)")
         return .failed
     }
 
@@ -186,7 +192,7 @@ final class CodexResetClaimService {
     /// Consume 응답 → popover outcome. protocol code 4종 모두 HTTP 200으로 도착(outcome은 body의 `code`) — non-2xx·미인식 code는 `.failed`.
     static func outcome(fromConsume response: HTTPResponse) -> ResetClaimOutcome {
         guard (200..<300).contains(response.statusCode),
-              let body = ProviderParse.jsonObject(response.body),
+              let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let code = body["code"] as? String
         else {
             return .failed

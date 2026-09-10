@@ -14,7 +14,7 @@ let package = Package(
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "3.0.1"),
         // 앱 내 자동 업데이트(appcast + EdDSA 서명). 2.9.4부터 dockless 앱의 업데이트 창 가림 수정.
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
-        .package(url: "https://github.com/PostHog/posthog-ios.git", from: "3.62.0")
+        .package(url: "https://github.com/PostHog/posthog-ios.git", exact: "3.64.5")
     ],
     targets: [
         .target(

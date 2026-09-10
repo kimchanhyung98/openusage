@@ -238,12 +238,18 @@ enum CodexUsageMapper {
         body: [String: Any],
         resetCredits: HTTPResponse?
     ) -> [String: Any]? {
-        if let resetCredits, (200..<300).contains(resetCredits.statusCode),
-           let dedicated = ProviderParse.jsonObject(resetCredits.body),
-           ProviderParse.number(dedicated["available_count"]) != nil {
+        if let resetCredits, let dedicated = resetCreditsPayload(resetCredits) {
             return dedicated
         }
         return body["rate_limit_reset_credits"] as? [String: Any]
+    }
+
+    static func resetCreditsPayload(_ response: HTTPResponse) -> [String: Any]? {
+        guard (200..<300).contains(response.statusCode),
+              let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
+              ProviderParse.number(body["available_count"]) != nil
+        else { return nil }
+        return body
     }
 
     /// Still-available credit들의 `expires_at` (soonest-first). `status`는 upstream optional — 명시적 non-available("consumed"/"expired")만 제외, status 없는 credit은 유지.

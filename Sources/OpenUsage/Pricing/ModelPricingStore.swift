@@ -172,6 +172,11 @@ actor ModelPricingStore {
     /// source 1개 fetch 및 cache 파일 갱신 — 새 데이터 저장 시 true.
     private func fetch(_ source: SourceID) async -> Bool {
         guard let url = sourceURLs[source] else { return false }
+        let operation: DiagnosticOperation = switch source {
+        case .litellm: .pricingLiteLLM
+        case .modelsDev: .pricingModelsDev
+        case .supplement: .pricingSupplement
+        }
         var state = sourceStates[source] ?? SourceState()
         var request = HTTPRequest(method: "GET", url: url, timeout: 30)
         if let etag = state.etag {
@@ -187,11 +192,13 @@ actor ModelPricingStore {
                 state.fetchedAt = now()
                 state.failedAt = nil
                 sourceStates[source] = state
+                AppDiagnostics.record(operation, result: .success)
                 return true
             case 304:
                 state.fetchedAt = now()
                 state.failedAt = nil
                 sourceStates[source] = state
+                AppDiagnostics.record(operation, result: .success)
                 return false
             default:
                 throw PricingFetchError.httpStatus(response.statusCode)
@@ -199,7 +206,8 @@ actor ModelPricingStore {
         } catch {
             state.failedAt = now()
             sourceStates[source] = state
-            AppLog.warn("pricing", "\(source.rawValue) refresh failed, keeping cached data: \(error.localizedDescription)")
+            AppDiagnostics.failure(operation, error: error,
+                                   localContext: "Pricing refresh failed; keeping cached data")
             return false
         }
     }
@@ -249,13 +257,18 @@ actor ModelPricingStore {
             try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(sourceStates)
             try data.write(to: stateFile, options: .atomic)
+            AppDiagnostics.record(.pricingCache, result: .success)
         } catch {
-            AppLog.warn("pricing", "could not persist pricing fetch state: \(error.localizedDescription)")
+            AppDiagnostics.failure(.pricingCache, error: error)
         }
     }
 }
 
-private enum PricingFetchError: Error, LocalizedError {
+private enum PricingFetchError: Error, LocalizedError, CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self { case .httpStatus(let code): .http(code) }
+    }
+
     case httpStatus(Int)
 
     var errorDescription: String? {

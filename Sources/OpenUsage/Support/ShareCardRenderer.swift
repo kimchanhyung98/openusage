@@ -33,16 +33,19 @@ enum ShareCardRenderer {
     @discardableResult
     static func copyToPasteboard(_ image: NSImage, pasteboard: NSPasteboard = .general) -> Bool {
         guard let png = pngData(from: image) else {
-            AppLog.error(.lifecycle, "share card: failed to encode PNG for clipboard")
+            AppDiagnostics.record(.shareScreenshot, result: .failure, category: .decoding,
+                                  localContext: "Share card could not be encoded as PNG for the clipboard")
             NSSound.beep()
             return false
         }
         pasteboard.clearContents()
         guard pasteboard.setData(png, forType: .png) else {
-            AppLog.error(.lifecycle, "share card: pasteboard rejected the PNG")
+            AppDiagnostics.record(.shareScreenshot, result: .failure, category: .other,
+                                  localContext: "Share card pasteboard rejected the PNG")
             NSSound.beep()
             return false
         }
+        AppDiagnostics.record(.shareScreenshot, result: .success)
         return true
     }
 
@@ -75,7 +78,7 @@ enum ShareCardRenderer {
             expandBoundaryIndex: isExpanded ? alwaysRows.count : nil,
             displayNameOverride: displayName
         )
-        return renderAndCopy(view, label: group.provider.id, layout: layout)
+        return renderAndCopy(view, layout: layout)
     }
 
     /// `share(group:…)`의 Total Spend 대응 — 선택된 period·metric의 aggregate ring 카드를 렌더해 clipboard 복사.
@@ -93,14 +96,14 @@ enum ShareCardRenderer {
             return false
         }
         let view = TotalSpendShareCardView(total: total, metric: metric, appearance: appearance)
-        return renderAndCopy(view, label: metric.title.lowercased(), layout: layout)
+        return renderAndCopy(view, layout: layout)
     }
 
     /// 두 share 액션이 공유하는 렌더→복사 파이프라인.
     /// 렌더 동안 저장된 density를 `.regular`로 교체 후 복원해 export가 popover density slider를 무시; 성공 시 "Copied to clipboard" pill 표시.
-    /// 실패 시 beep + `label` 명시 로그로 조용한 실패 방지; pasteboard 기록 여부 반환.
+    /// 실패 시 beep + 처리 단계 로그로 조용한 실패 방지; pasteboard 기록 여부 반환.
     @discardableResult
-    private static func renderAndCopy<Card: View>(_ view: Card, label: String, layout: LayoutStore) -> Bool {
+    private static func renderAndCopy<Card: View>(_ view: Card, layout: LayoutStore) -> Bool {
         let densityKey = DensitySetting.key
         let savedDensity = UserDefaults.standard.string(forKey: densityKey)
         UserDefaults.standard.set(DensitySetting.regular.rawValue, forKey: densityKey)
@@ -112,7 +115,8 @@ enum ShareCardRenderer {
             }
         }
         guard let image = image(for: view) else {
-            AppLog.error(.lifecycle, "share card: ImageRenderer produced no image for \(label)")
+            AppDiagnostics.record(.shareScreenshot, result: .failure, category: .other,
+                                  localContext: "Share card ImageRenderer produced no image")
             NSSound.beep()
             return false
         }

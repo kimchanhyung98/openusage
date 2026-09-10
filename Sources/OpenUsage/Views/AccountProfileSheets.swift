@@ -137,17 +137,17 @@ struct AccountAddSheet: View {
                     )
                 }
                 let code = try await AccountSignInLauncher().runLogin(family: family, home: home)
-                guard !Task.isCancelled else {
-                    if let profileID { try? importer.removeSignInWorkspace(family: family, profileID: profileID) }
-                    return
-                }
+                try Task.checkCancellation()
                 guard code == 0 else {
+                    AppDiagnostics.record(.accountAdd, result: .failure, category: .subprocess, providerID: family,
+                                          localContext: "Sign-in process exited with status \(code); no account added")
                     if let profileID { try? importer.removeSignInWorkspace(family: family, profileID: profileID) }
                     phase = .failed("The \(familyTitle) sign-in did not complete. Nothing was added — try again.")
                     return
                 }
                 if let profileID {
                     guard let credential = try importer.readWorkspaceCredential(family: family, profileID: profileID) else {
+                        AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
                         try? importer.removeSignInWorkspace(family: family, profileID: profileID)
                         phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
                         return
@@ -162,12 +162,14 @@ struct AccountAddSheet: View {
                     )
                 } else {
                     guard try importer.importDefaultAccount(family: family, into: store) != nil else {
+                        AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
                         phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
                         return
                     }
                 }
                 finish()
             } catch is CancellationError {
+                AppDiagnostics.record(.accountAdd, result: .cancelled, providerID: family)
                 if let profileID {
                     try? importer.removeSignInWorkspace(family: family, profileID: profileID)
                 }
@@ -181,11 +183,13 @@ struct AccountAddSheet: View {
     }
 
     private func finish() {
+        AppDiagnostics.record(.accountAdd, result: .success, providerID: family)
         onCompleted()
         dismiss()
     }
 
     private func fail(_ error: any Error) {
+        AppDiagnostics.failure(.accountAdd, error: error, providerID: family)
         if let error = error as? AccountProfileError {
             phase = .failed(error.userMessage)
         } else {
@@ -324,6 +328,8 @@ struct AccountProfileManagementSheet: View {
                 guard !Task.isCancelled else { return }
                 guard code == 0 else {
                     actionError = "The \(familyTitle) sign-in did not complete. The saved account is unchanged."
+                    AppDiagnostics.record(.accountSignIn, result: .failure, category: .subprocess, providerID: profile.family,
+                                          localContext: "Sign-in process exited with status \(code); saved account unchanged")
                     return
                 }
                 try AccountCredentialImporter().completeReSignIn(
@@ -331,10 +337,13 @@ struct AccountProfileManagementSheet: View {
                     in: store,
                     isActive: store.preferredProfileID(family: profile.family) == profile.id
                 )
+                AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
                 onChanged()
             } catch is CancellationError {
+                AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
                 // sheet close로 취소됨 — 변경 없음.
             } catch {
+                AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
                 actionError = error.localizedDescription
             }
         }
@@ -351,11 +360,13 @@ struct AccountProfileManagementSheet: View {
         }
         do {
             try AccountCredentialImporter().removeAccount(profile, from: store)
+            AppDiagnostics.record(.accountRemove, result: .success, providerID: profile.family)
         } catch let error as AccountProfileError {
+            AppDiagnostics.failure(.accountRemove, error: error, providerID: profile.family)
             actionError = error.userMessage
             return
         } catch {
-            AppLog.warn(.config, "account profile removal failed: \(error.localizedDescription)")
+            AppDiagnostics.failure(.accountRemove, error: error, providerID: profile.family)
             actionError = error.localizedDescription
             return
         }

@@ -63,7 +63,7 @@ final class WidgetDataStore {
 
     /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
     /// 테스트·프리뷰에서는 nil(no-op).
-    @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, Bool) -> Void)?
+    @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
     /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
     @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
     @ObservationIgnored private var peerHistoryDocuments: [UsageHistoryDocument] = []
@@ -139,13 +139,13 @@ final class WidgetDataStore {
 
     /// Enabled provider 전체를 동시 refresh — 느린 provider 하나가 나머지를 지연시키지 않는 구조.
     /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
-    func refreshAll(force: Bool = false) async {
+    func refreshAll(force: Bool = false, trigger: RefreshTrigger = .scheduled) async {
         // MainActor 격리 유지를 위해 task group 대신 provider별 Task 생성 후 일괄 await.
         let providerIDs = registry.providers.map(\.id).filter { isProviderEnabled($0) }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
         let tasks = providerIDs.map { providerID in
-            Task { await self.refresh(providerID: providerID, force: force, notifyHistoryChange: false) }
+            Task { await self.refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false) }
         }
         var outcomes: [RefreshOutcome] = []
         outcomes.reserveCapacity(tasks.count)
@@ -173,7 +173,7 @@ final class WidgetDataStore {
     ) async {
         precondition(maxAttempts > 0)
         for attempt in 0..<maxAttempts {
-            switch await refresh(providerID: providerID, force: true) {
+            switch await refresh(providerID: providerID, force: true, trigger: .accountChange) {
             case .refreshed, .cacheHit, .backedOff, .failed:
                 return
             case .skipped:
@@ -188,6 +188,13 @@ final class WidgetDataStore {
     /// 카탈로그 교체마다 증가 — `refresh`가 fetch 시작 시 캡처해 교체를 가로지른 결과를 폐기,
     /// 한 account에서 시작한 fetch가 이후 설치된 identity로 publish·stamp되는 일 차단.
     private var catalogGeneration = 0
+
+    /// 알려진 계정은 카드·identity로 비교, 미해석 계정은 catalog 교체 시 무효화.
+    func claimRefreshBinding(providerID: String) -> ClaimRefreshBinding? {
+        guard providersByID[providerID] != nil else { return nil }
+        if let identityKey = providerIdentityKeys[providerID] { return .account(identityKey) }
+        return .unresolvedCatalog(catalogGeneration)
+    }
 
     /// Settings의 account 발견 이후 catalog 교체 — store 객체는 유지되어 view·status item이
     /// 메뉴바 process 재시작 없이 새 registry를 즉시 관찰.
@@ -204,9 +211,9 @@ final class WidgetDataStore {
         let previousIdentityKeys = providerIdentityKeys
         func keepsState(_ cardID: String) -> Bool {
             guard liveIDs.contains(cardID) else { return false }
-            guard let newKey = identityKeys[cardID] else { return true }
-            return previousIdentityKeys[cardID] == newKey
+            return previousIdentityKeys[cardID] == identityKeys[cardID]
         }
+        notificationEvaluator.reset(providerIDs: Set(providersByID.keys.filter { !keepsState($0) }))
         catalogGeneration += 1
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
@@ -217,7 +224,8 @@ final class WidgetDataStore {
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
-            !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
+            (identityKeys[cardID] != nil || previousIdentityKeys[cardID] == nil)
+                && !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
         }
         for (cardID, snapshot) in cached where localSnapshots[cardID] == nil {
             localSnapshots[cardID] = snapshot
@@ -275,6 +283,7 @@ final class WidgetDataStore {
     func refresh(
         providerID: String,
         force: Bool = false,
+        trigger: RefreshTrigger = .scheduled,
         notifyHistoryChange: Bool = true
     ) async -> RefreshOutcome {
         guard isProviderEnabled(providerID) else { return .skipped }
@@ -323,6 +332,7 @@ final class WidgetDataStore {
         // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
         guard catalogGeneration == boundGeneration else {
             AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
+            AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
             return .skipped
         }
         let durationMs = durationMilliseconds(since: start)
@@ -337,8 +347,12 @@ final class WidgetDataStore {
             providerErrors[providerID] = message
             // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
-            AppLog.warn(.refresh, "\(providerID) failed: \(message)")
-            onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, force)
+            if snapshot.errorCategory == .notLoggedIn || snapshot.errorCategory == .notAvailable {
+                AppLog.info(.refresh, "\(providerID) unavailable: \(message)")
+            } else {
+                AppLog.error(.refresh, "\(providerID) failed: \(message)")
+            }
+            onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, trigger, false)
             return .failed
         }
         if providerErrors[providerID] != nil {
@@ -348,10 +362,12 @@ final class WidgetDataStore {
         failureRetryAfter[providerID] = nil
         // live limit refresh 성공 + local log/CSV scan 무결과이면 last-good normalized history만 보존(새 plan·
         // limit·warning·timestamp는 반영). non-nil 빈 history는 scan 완료의 증거라 authoritative — 기존 행 삭제.
+        var degraded = snapshot.warning != nil || snapshot.isDegraded == true
         if snapshot.usageHistory == nil,
            let history = localSnapshots[providerID]?.usageHistory,
            let descriptor = registry.historyDescriptorsByProvider[providerID]
         {
+            degraded = true
             snapshot.usageHistory = history
             snapshot = UsageHistorySnapshotRenderer.render(
                 local: snapshot,
@@ -368,7 +384,7 @@ final class WidgetDataStore {
         rebuildRenderedSnapshots()
         if notifyHistoryChange { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
-        onRefreshOutcome?(providerID, .refreshed, nil, force)
+        onRefreshOutcome?(providerID, .refreshed, nil, trigger, degraded)
         return .refreshed
     }
 

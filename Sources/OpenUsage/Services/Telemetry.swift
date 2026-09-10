@@ -14,7 +14,22 @@ enum TelemetryConfig {
         let env = ProcessInfo.processInfo.environment["OPENUSAGE_POSTHOG_TOKEN"]?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let env, !env.isEmpty { return env }
+        if buildChannel == "development" { return placeholderToken }
         return bakedToken
+    }
+
+    static var buildChannel: String {
+        #if DEBUG
+        return "development"
+        #else
+        if AppInfo.version.contains("dev") { return "development" }
+        return AppInfo.version.contains("beta") ? "beta" : "stable"
+        #endif
+    }
+
+    static var osVersion: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)"
     }
 
     /// US 리전 기본값 — EU 프로젝트 토큰일 때만 EU 리전 host로 변경.
@@ -24,65 +39,165 @@ enum TelemetryConfig {
 /// telemetry 전송 seam — PostHog에서 추상화해 recorder의 daily-rollup/dedup 로직을 fake sink로 unit-test 가능.
 @MainActor
 protocol TelemetrySink: AnyObject {
+    var isAvailable: Bool { get }
     func capture(_ event: String, _ properties: [String: Any])
     /// 사용자 공유 선택을 runtime에 SDK로 미러링.
     func setEnabled(_ enabled: Bool)
     func flush()
 }
 
-/// 익명·opt-in PostHog sink — `identify()`/`group()`/`alias()` 미사용, `personProfiles = .never`.
-/// ID·count·enum만 전송 — free-form 에러 메시지 전송 금지(`LogRedaction`은 네트워크 transport 미적용). 실제 token 미설정 시 inert — dev 빌드의 phone home 금지.
+extension TelemetrySink {
+    var isAvailable: Bool { true }
+}
+
+/// 익명 opt-in 전송 — 동의가 없으면 SDK 자체를 시작하지 않음.
 @MainActor
 final class PostHogTelemetrySink: TelemetrySink {
-    /// crash/uncaught-exception autocapture는 usage telemetry와 동일한 선택으로 gate — `PostHogSDK.shared` singleton 없이 unit-test 가능하도록 여기서 결정.
-    /// 전송이 아닌 install 자체를 gate — 비활성 launch는 handler 미설치·crash report 미기록.
     nonisolated static func errorAutocaptureEnabled(telemetryEnabled: Bool) -> Bool { telemetryEnabled }
 
-    private let configured: Bool
+    private let token: String
+    private let host: String
+    private let storage: TelemetrySDKStorage
+    private let sessionConfiguration: () -> URLSessionConfiguration
+    private let flushInterval: TimeInterval
+    private let consentID: () -> String
+    private var nextConsentStart: Date?
+    private var mustDiscardPending: Bool
+    private var sdk: PostHogSDK?
+    private var transport: TelemetryTransport?
+    private var enabled = false
 
-    init(enabled: Bool, token: String = TelemetryConfig.token, host: String = TelemetryConfig.host) {
-        guard token.hasPrefix("phc_"), token != TelemetryConfig.placeholderToken else {
-            configured = false
+    var isAvailable: Bool { enabled && sdk != nil }
+
+    init(
+        enabled: Bool,
+        token: String = TelemetryConfig.token,
+        host: String = TelemetryConfig.host,
+        crashConsentStartedAt: Date = Date(),
+        consentID: @escaping () -> String = { UUID().uuidString },
+        sessionConfiguration: @escaping () -> URLSessionConfiguration = { .ephemeral },
+        flushInterval: TimeInterval = 30
+    ) {
+        self.token = token
+        self.host = host
+        self.storage = TelemetrySDKStorage(token: token)
+        self.consentID = consentID
+        self.nextConsentStart = enabled ? crashConsentStartedAt : nil
+        self.mustDiscardPending = !enabled
+        self.sessionConfiguration = sessionConfiguration
+        self.flushInterval = flushInterval
+        guard isConfigured else {
             AppLog.info(.config, "telemetry inert: no PostHog project token configured")
             return
         }
-        configured = true
+        if enabled { setEnabled(true) }
+        else { discardPendingEvents() }
+    }
 
-        let config = PostHogConfig(projectToken: token, host: host)
-        // 완전 익명 — person profile·anonymous→identified merge 없음.
-        config.personProfiles = .never
-        // feature flag 미사용·자체 daily rollup 사용 — startup fetch와 autocapture 모두 생략.
-        config.preloadFeatureFlags = false
-        config.captureApplicationLifecycleEvents = false
-        config.captureScreenViews = false
-        // 이벤트 발생 전 사용자 선택 상태로 시작.
-        config.optOut = !enabled
-        // crash/uncaught-exception autocapture — 동일한 공유 선택으로 install 자체를 gate: opt-out launch는 handler 미설치·디스크 기록 없음, opt-in은 다음 launch부터 활성(`optOut`은 세션 내 전송 즉시 차단).
-        // 이 flag만으로 불충분 — PostHog 프로젝트 설정의 server-side "Exception autocapture" 필요, SDK가 캐시에서 읽어 두 번째 launch부터 활성.
-        // sessionReplay/surveys/captureElementInteractions/tracingHeaders 참조 금지 — macOS target에 부재.
-        config.errorTrackingConfig.autoCapture = Self.errorAutocaptureEnabled(telemetryEnabled: enabled)
-        PostHogSDK.shared.setup(config)
-
-        // super property는 이후 모든 이벤트에 부착 (익명, non-PII).
-        PostHogSDK.shared.register([
-            "app_version": AppInfo.version,
-            "os_version": ProcessInfo.processInfo.operatingSystemVersionString
-        ])
-        AppLog.info(.config, "telemetry initialized (enabled=\(enabled))")
+    private var isConfigured: Bool {
+        token != TelemetryConfig.placeholderToken
+            && token.range(of: #"^phc_[A-Za-z0-9_]+$"#, options: .regularExpression) != nil
     }
 
     func capture(_ event: String, _ properties: [String: Any]) {
-        guard configured else { return }
-        PostHogSDK.shared.capture(event, properties: properties)
+        guard isAvailable else { return }
+        let properties = properties.merging([
+            "app_version": AppInfo.version,
+            "os_version": TelemetryConfig.osVersion,
+            "build_channel": TelemetryConfig.buildChannel,
+        ]) { current, _ in current }
+        sdk?.capture(event, properties: properties)
+        AppLog.debug(.config, "telemetry event submitted to SDK")
     }
 
     func setEnabled(_ enabled: Bool) {
-        guard configured else { return }
-        if enabled { PostHogSDK.shared.optIn() } else { PostHogSDK.shared.optOut() }
+        guard isConfigured, self.enabled != enabled else { return }
+        if !enabled {
+            self.enabled = false
+            mustDiscardPending = true
+            transport?.revoke()
+            sdk?.optOut()
+            sdk?.close()
+            sdk = nil
+            transport = nil
+            discardPendingEvents()
+            return
+        }
+        do {
+            if mustDiscardPending { try storage.discardQueues() }
+            try storage.prepare()
+            mustDiscardPending = false
+        }
+        catch {
+            AppLog.error(.config, "telemetry disabled: pending queue privacy migration failed")
+            return
+        }
+        let transport = TelemetryTransport(configuration: sessionConfiguration())
+        let config = PostHogConfig(projectToken: token, host: host)
+        config.personProfiles = .never
+        config.preloadFeatureFlags = false
+        config.captureApplicationLifecycleEvents = false
+        config.captureScreenViews = false
+        config.optOut = false
+        config.flushIntervalSeconds = flushInterval
+        config.errorTrackingConfig.autoCapture = Self.errorAutocaptureEnabled(telemetryEnabled: true)
+        let sdkSession = URLSessionConfiguration.ephemeral
+        sdkSession.protocolClasses = [TelemetryURLProtocol.self]
+        sdkSession.httpAdditionalHeaders = [TelemetryURLProtocol.sessionHeader: transport.id]
+        config.urlSessionConfiguration = sdkSession
+        let consentStart = nextConsentStart ?? Date()
+        let consentID = consentID()
+        nextConsentStart = nil
+        config.setBeforeSend { event in
+            guard transport.isEnabled,
+                  event.event != "$exception" || Self.crashBelongsToConsent(properties: event.properties, timestamp: event.timestamp, consentID: consentID, since: consentStart) else { return nil }
+            var source = event.properties
+            if event.event == "$exception" {
+                for key in ["app_version", "os_version", "build_channel"] {
+                    source[key] = source["openusage_crash_" + key] ?? source[key]
+                }
+            }
+            guard let properties = TelemetryPrivacy.properties(for: event.event, source: source) else { return nil }
+            event.properties = properties
+            return event
+        }
+        self.transport = transport
+        self.enabled = true
+        let sdk = PostHogSDK.with(config)
+        // SDK의 과거 optOut 파일보다 앱의 전용 동의 저장소가 우선.
+        sdk.optIn()
+        // SDK super property는 호출자의 집계 버전을 덮어쓰므로 과거 등록값 제거.
+        for key in ["app_version", "os_version", "build_channel"] { sdk.unregister(key) }
+        // 크래시 시점의 동의 구간을 로컬 report에 stamp — beforeSend가 항상 제거.
+        sdk.register([
+            "openusage_consent_id": consentID,
+            "openusage_crash_app_version": AppInfo.version,
+            "openusage_crash_os_version": TelemetryConfig.osVersion,
+            "openusage_crash_build_channel": TelemetryConfig.buildChannel,
+        ])
+        self.sdk = sdk
+        AppLog.info(.config, "telemetry initialized; crash autocapture requested (remote configuration and debugger dependent)")
+    }
+
+    nonisolated static func crashBelongsToConsent(
+        properties: [String: Any], timestamp: Date, consentID: String, since: Date
+    ) -> Bool {
+        // PLCrashReporter의 정수 초 크래시 시각에 맞춰 동의 시작도 같은 정밀도로 비교.
+        let consentStart = Date(timeIntervalSince1970: since.timeIntervalSince1970.rounded(.down))
+        return properties["openusage_consent_id"] as? String == consentID && timestamp >= consentStart
     }
 
     func flush() {
-        guard configured else { return }
-        PostHogSDK.shared.flush()
+        guard isAvailable else { return }
+        sdk?.flush()
+    }
+
+    private func discardPendingEvents() {
+        do {
+            try storage.discardQueues()
+            AppLog.info(.config, "telemetry pending queues discarded")
+        } catch {
+            AppLog.error(.config, "telemetry queue cleanup failed; transport remains disabled")
+        }
     }
 }

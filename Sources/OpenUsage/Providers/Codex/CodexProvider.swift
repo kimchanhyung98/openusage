@@ -77,7 +77,10 @@ final class CodexProvider: ProviderRuntime {
         return keychain?.hasUsableAccessToken == true
     }
 
+    private var refreshIsDegraded = false
+
     func refresh() async -> ProviderSnapshot {
+        refreshIsDegraded = false
         let fileCandidates = authStore.loadAuthCandidates()
         var lastFallbackError: Error?
 
@@ -172,7 +175,8 @@ final class CodexProvider: ProviderRuntime {
             plan: mapped.plan,
             lines: mapped.lines,
             refreshedAt: now(),
-            usageHistory: usageHistory
+            usageHistory: usageHistory,
+            isDegraded: refreshIsDegraded ? true : nil
         )
     }
 
@@ -180,9 +184,23 @@ final class CodexProvider: ProviderRuntime {
     /// 실패는 log 후 `nil`, mapper가 usage body에 내장된 count로 fallback — endpoint가 죽어도 Session/Weekly/Credits 유지.
     private func fetchResetCreditsBestEffort(accessToken: String, accountID: String?) async -> HTTPResponse? {
         do {
-            return try await usageClient.fetchResetCredits(accessToken: accessToken, accountID: accountID)
+            let response = try await usageClient.fetchResetCredits(accessToken: accessToken, accountID: accountID)
+            if (200..<300).contains(response.statusCode) {
+                guard CodexUsageMapper.resetCreditsPayload(response) != nil else {
+                    refreshIsDegraded = true
+                    AppDiagnostics.record(.resetCreditFetch, result: .degraded, category: .decoding, providerID: provider.id)
+                    return nil
+                }
+                AppDiagnostics.record(.resetCreditFetch, result: .success, providerID: provider.id)
+            } else {
+                refreshIsDegraded = true
+                AppDiagnostics.record(.resetCreditFetch, result: .degraded, category: .http(response.statusCode), providerID: provider.id)
+            }
+            return response
         } catch {
-            AppLog.warn(LogTag.plugin("codex"), "reset-credit fetch failed; using usage-body count: \(error.localizedDescription)")
+            refreshIsDegraded = true
+            AppDiagnostics.record(.resetCreditFetch, result: .degraded, providerID: provider.id, error: error,
+                                  localContext: "reset-credit fetch failed; using usage-body count")
             return nil
         }
     }
@@ -224,7 +242,14 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private func refreshAccessToken(authState: inout CodexAuthState, refreshToken: String) async throws -> String {
-        let response = try await usageClient.refreshToken(refreshToken)
+        let response: CodexRefreshResponse
+        do {
+            response = try await usageClient.refreshToken(refreshToken)
+        } catch {
+            AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
+            throw error
+        }
+        AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
         authState.auth.tokens?.accessToken = response.accessToken
         if let refreshToken = response.refreshToken {
             authState.auth.tokens?.refreshToken = refreshToken
@@ -236,8 +261,11 @@ final class CodexProvider: ProviderRuntime {
         // save 실패는 loud log 후 계속 — 삼키면 회전된 token이 디스크에 남아 다음 실행에서 false "token expired" 유발, refreshed token은 이번 세션에서 유효.
         do {
             try authStore.save(authState)
+            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch {
-            AppLog.error(LogTag.auth("codex"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
+            refreshIsDegraded = true
+            AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
+                                  localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
         return response.accessToken
     }

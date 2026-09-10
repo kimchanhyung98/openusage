@@ -1,35 +1,28 @@
+import Darwin
 import Foundation
 import os
 
-/// 로그 파일 URL 해석과 lock 보호 `FileHandle` appender 소유 — 단일 아카이브 rotation 포함.
-/// `@unchecked Sendable`: 모든 가변 상태를 내부 `NSLock`이 보호하므로 어떤 isolation에서도 쓰기 가능.
-/// 10 MB 초과 시 `OpenUsage.1.log`로 rotation(디스크 ~20 MB 상한); open/rotation 실패 시 `os.Logger`에 크게 알리고 세션 동안 자체 비활성화.
+/// 독립 기록기·프로세스의 append와 rotation을 동일 lock 파일로 직렬화.
+/// `@unchecked Sendable`: 인스턴스 상태는 `NSLock`, 공유 파일은 `flock`으로 보호.
 final class LogFile: @unchecked Sendable {
-    /// 공유 production sink — 다른 코드는 `AppLog`를 거쳐 여기에 기록.
-    /// `Logs/OpenUsage` 하위 폴더는 literal(bundle-id 미사용)이라 dev/release 빌드가 같은 파일 공유.
     static let shared = LogFile(directory: defaultDirectory(), fileName: "OpenUsage.log")
-
-    /// 외부에 알리는 로그 경로 — 공유 sink에서 파생되어 사용자에게 보이는 경로와 실제 기록 위치가 항상 일치.
     static let url: URL = shared.fileURL
-
     static let defaultMaxBytes = 10_000_000
 
-    /// 이 sink의 실제 기록 위치 — `url`이 파생하는 단일 소스.
     let fileURL: URL
     private let archiveURL: URL
+    private let lockURL: URL
     private let directory: URL
     private let maxBytes: Int
     private let fallbackLogger = Logger(subsystem: "OpenUsage", category: "logfile")
-
     private let lock = NSLock()
-    private var handle: FileHandle?
-    private var size = 0
+    private var lockFD: Int32 = -1
     private var disabled = false
-    private var opened = false
 
     init(directory: URL, fileName: String, maxBytes: Int = defaultMaxBytes) {
         self.directory = directory
         self.fileURL = directory.appendingPathComponent(fileName)
+        self.lockURL = directory.appendingPathComponent(fileName + ".lock")
         self.maxBytes = maxBytes
         let base = (fileName as NSString).deletingPathExtension
         let ext = (fileName as NSString).pathExtension
@@ -37,98 +30,84 @@ final class LogFile: @unchecked Sendable {
         self.archiveURL = directory.appendingPathComponent(archiveName)
     }
 
+    deinit {
+        if lockFD >= 0 { Darwin.close(lockFD) }
+    }
+
     static func defaultDirectory() -> URL {
-        // `[0]` 대신 `.first` + fallback — `bootstrap()` 중 실행되므로 빈 결과에서도 crash 대신 유효 디렉터리 유지.
         let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return library.appendingPathComponent("Logs/OpenUsage", isDirectory: true)
     }
 
-    /// 디렉터리·파일 생성, 디스크 기준 size seed, launch-time trim(남은 oversize 파일 1회 rotation). 멱등.
     func open() {
         lock.lock()
         defer { lock.unlock() }
-        guard !opened else { return }
-        opened = true
+        guard !disabled, lockFD < 0 else { return }
         do {
-            try openLocked()
-        } catch {
-            failLocked("open failed: \(error.localizedDescription)")
-        }
+            try prepareLocked()
+            try withProcessLock {
+                let handle = try appendHandle()
+                defer { try? handle.close() }
+                if try handle.seekToEnd() > UInt64(maxBytes) { try rotateLocked() }
+            }
+        } catch { failLocked("open", error: error) }
     }
 
-    /// 포맷 완료된 라인 1줄 append(개행 자동 추가). 상한 초과 예상 시 rotation 선행; sink 비활성화 후에는 no-op.
     func append(_ line: String) {
         lock.lock()
         defer { lock.unlock() }
         guard !disabled else { return }
-        if !opened {
-            opened = true
-            do {
-                try openLocked()
-            } catch {
-                failLocked("open failed: \(error.localizedDescription)")
-                return
-            }
-        }
-        guard handle != nil else { return }
-
-        let data = Data("\(line)\n".utf8)
-        if size + data.count > maxBytes {
-            do {
-                try rotateLocked()
-            } catch {
-                failLocked("rotate failed: \(error.localizedDescription)")
-                return
-            }
-        }
-        // rotation이 handle을 교체했을 수 있어 재조회.
-        guard let liveHandle = handle else { return }
         do {
-            try liveHandle.write(contentsOf: data)
-            size += data.count
-        } catch {
-            failLocked("write failed: \(error.localizedDescription)")
-        }
+            try prepareLocked()
+            try withProcessLock {
+                // rotation로 inode가 바뀌어도 현재 파일을 열어 기록 — 이전 archive handle 재사용 금지.
+                var handle = try appendHandle()
+                defer { try? handle.close() }
+                let data = Data("\(line)\n".utf8)
+                if try handle.seekToEnd() + UInt64(data.count) > UInt64(maxBytes) {
+                    try handle.close()
+                    try rotateLocked()
+                    handle = try appendHandle()
+                }
+                try handle.write(contentsOf: data)
+            }
+        } catch { failLocked("append", error: error) }
     }
 
-    // MARK: - Locked internals (caller holds `lock`)
-
-    private func openLocked() throws {
+    private func prepareLocked() throws {
+        guard lockFD < 0 else { return }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: fileURL.path) {
-            FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+        lockFD = Darwin.open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard lockFD >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    }
+
+    private func withProcessLock(_ body: () throws -> Void) throws {
+        while flock(lockFD, LOCK_EX) != 0 {
+            guard errno == EINTR else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         }
-        let handle = try FileHandle(forWritingTo: fileURL)
-        let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-        self.handle = handle
-        self.size = (attributes?[.size] as? Int) ?? 0
-        // launch-time trim: 남은 oversize 파일은 첫 write 전 1회 rotation.
-        if self.size > maxBytes {
-            try rotateLocked()
-        } else {
-            try handle.seekToEnd()
-        }
+        defer { flock(lockFD, LOCK_UN) }
+        try body()
+    }
+
+    private func appendHandle() throws -> FileHandle {
+        let fd = Darwin.open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        return FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
 
     private func rotateLocked() throws {
-        try handle?.close()
-        handle = nil
         if FileManager.default.fileExists(atPath: archiveURL.path) {
             try FileManager.default.removeItem(at: archiveURL)
         }
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try FileManager.default.moveItem(at: fileURL, to: archiveURL)
         }
-        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
-        handle = try FileHandle(forWritingTo: fileURL)
-        size = 0
+        try appendHandle().close()
     }
 
-    private func failLocked(_ message: String) {
-        fallbackLogger.error("File log sink disabled: \(message, privacy: .public)")
-        try? handle?.close()
-        handle = nil
+    private func failLocked(_ operation: String, error: Error) {
+        fallbackLogger.error("File log sink disabled: \(operation, privacy: .public), code=\((error as NSError).code)")
         disabled = true
     }
 }

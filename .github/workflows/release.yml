@@ -163,7 +163,7 @@ jobs:
             exit 0
           fi
           [ -d dist/dSYMs ] || { echo "dist/dSYMs missing — release.sh did not produce a dSYM." >&2; exit 1; }
-          npm install -g @posthog/cli
+          npm install -g @posthog/cli@0.18.1
           # symbolication은 dSYM의 binary Mach-O UUID로 crash report와 symbol을 연결.
           # 릴리스별 flag 동기화 없이 `--directory`만 필요.
           posthog-cli dsym upload --directory dist/dSYMs

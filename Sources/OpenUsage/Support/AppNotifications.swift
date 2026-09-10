@@ -75,9 +75,10 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         do {
             try await centerProvider().add(request)
             AppLog.info(.notifications, "posted \(idPrefix)")
+            AppDiagnostics.record(.notificationDelivery, result: .success)
             return true
         } catch {
-            AppLog.error(.notifications, "post \(idPrefix) failed: \(error.localizedDescription)")
+            AppDiagnostics.failure(.notificationDelivery, error: error)
             return false
         }
     }
@@ -96,14 +97,16 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
                 return true
             case .denied:
                 AppLog.info(.notifications, "authorization denied")
+                AppDiagnostics.record(.notificationAuthorization, result: .cancelled)
                 return false
             case .notDetermined:
                 do {
                     let granted = try await center.requestAuthorization(options: [.alert, .sound])
                     AppLog.info(.notifications, "authorization \(granted ? "granted" : "refused")")
+                    AppDiagnostics.record(.notificationAuthorization, result: granted ? .success : .cancelled)
                     return granted
                 } catch {
-                    AppLog.error(.notifications, "authorization request failed: \(error.localizedDescription)")
+                    AppDiagnostics.failure(.notificationAuthorization, error: error)
                     return false
                 }
             @unknown default:

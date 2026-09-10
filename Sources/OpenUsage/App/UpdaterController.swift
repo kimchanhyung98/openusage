@@ -170,20 +170,24 @@ private final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
         UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? ["beta"] : []
     }
 
-    /// update cycle 결과 기록. `SUNoUpdateError`/`SUInstallationCanceledError`는 정상 outcome이라 Info, 실제 오류만 Warn.
+    /// update cycle 결과 기록 — 업데이트 없음·사용자 취소는 INFO, 실패는 공통 진단 기록.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
         let channel = UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? "early access" : "stable"
         guard let error else {
+            AppDiagnostics.record(.updateCheck, result: .success)
             AppLog.info(.updates, "check finished (channel=\(channel), no error)")
             return
         }
         let code = (error as NSError).code
         if code == Int(SUError.noUpdateError.rawValue) {
+            AppDiagnostics.record(.updateCheck, result: .success)
             AppLog.info(.updates, "check finished (channel=\(channel), no update available)")
         } else if code == Int(SUError.installationCanceledError.rawValue) {
+            AppDiagnostics.record(.updateCheck, result: .cancelled)
             AppLog.info(.updates, "check finished (channel=\(channel), user canceled)")
         } else {
-            AppLog.warn(.updates, "check/download failed: \(error.localizedDescription)")
+            AppDiagnostics.failure(.updateCheck, error: error,
+                                   localContext: "Update check or download failed")
         }
     }
 }

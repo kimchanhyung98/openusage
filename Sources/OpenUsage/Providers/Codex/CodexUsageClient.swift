@@ -34,7 +34,7 @@ struct CodexUsageClient: Sendable {
         ))
 
         if response.statusCode == 400 || response.statusCode == 401 {
-            let errorBody = ProviderParse.jsonObject(response.body)
+            let errorBody = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
             let code = errorBody?["error"].flatMap { errorValue -> String? in
                 if let error = errorValue as? [String: Any] {
                     return error["code"] as? String ?? error["error"] as? String
@@ -60,7 +60,7 @@ struct CodexUsageClient: Sendable {
         guard (200..<300).contains(response.statusCode) else {
             throw CodexUsageError.requestFailed(response.statusCode)
         }
-        guard let body = ProviderParse.jsonObject(response.body),
+        guard let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
               let accessToken = body["access_token"] as? String,
               !accessToken.isEmpty
         else {

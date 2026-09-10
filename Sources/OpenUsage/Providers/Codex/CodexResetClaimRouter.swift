@@ -7,15 +7,18 @@ import SwiftUI
 final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]
     private let refreshAfterClaim: (String) async -> Void
+    private var generation = 0
+    private var identityKeysByCard: [String: String] = [:]
 
     /// `refreshAfterClaim`은 claim한 카드의 provider id 수신 — container가 공용 bounded-retry 강제 refresh 주입 (`AppContainer` 참고).
     init(
         providers: [CodexProvider],
+        identityKeys: [String: String] = [:],
         refreshAfterClaim: @escaping (String) async -> Void
     ) {
         self.servicesByCard = [:]
         self.refreshAfterClaim = refreshAfterClaim
-        reconfigure(providers: providers)
+        reconfigure(providers: providers, identityKeys: identityKeys)
     }
 
     /// 카드 하나의 claim service — Codex runtime 없는 카드(미등록 id, managed home 미발견)는 `nil`, row는 read-only 렌더링.
@@ -24,14 +27,30 @@ final class CodexResetClaimRouter {
     }
 
     /// 현재 카탈로그 전체로 라우팅 테이블 재구성 — 같은 id 재등록은 교체, 이탈 카드는 제거 (stale credential로 claim 가능한 상태 방지).
-    func reconfigure(providers: [CodexProvider]) {
+    func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
+        generation &+= 1
+        identityKeysByCard = identityKeys
+        let boundGeneration = generation
         let refreshAfterClaim = refreshAfterClaim
         servicesByCard = Dictionary(uniqueKeysWithValues: providers.map { provider in
             let cardID = provider.provider.id
+            let boundIdentityKey = identityKeys[cardID]
             return (cardID, CodexResetClaimService(
                 authStore: provider.authStore,
                 usageClient: provider.usageClient,
-                refreshAfterClaim: { await refreshAfterClaim(cardID) }
+                refreshAfterClaim: { [weak self] in
+                    // 다른 카드 변경은 허용하되, identity 미해석 카드는 같은 catalog에서만 후속 조회.
+                    guard let self,
+                          self.servicesByCard[cardID] != nil,
+                          self.identityKeysByCard[cardID] == boundIdentityKey,
+                          boundIdentityKey != nil || self.generation == boundGeneration
+                    else {
+                        AppLog.info(LogTag.plugin("codex"), "post-claim refresh skipped: account binding changed")
+                        AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
+                        return
+                    }
+                    await refreshAfterClaim(cardID)
+                }
             ))
         })
     }

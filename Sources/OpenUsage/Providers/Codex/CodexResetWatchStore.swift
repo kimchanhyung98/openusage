@@ -133,6 +133,7 @@ actor CodexResetWatchStore {
                 applyFreshness(policy, receivedAt: receivedAt, representation: decoded)
                 retryNotBefore = .distantPast
                 refreshFailed = false
+                AppDiagnostics.record(.resetWatchFetch, result: .success, providerID: "codex")
                 return result(watch(from: decoded, at: now()))
             case 304:
                 guard let cached = representation else { throw FetchError.notModifiedWithoutCache }
@@ -148,6 +149,7 @@ actor CodexResetWatchStore {
                 }
                 retryNotBefore = .distantPast
                 refreshFailed = false
+                AppDiagnostics.record(.resetWatchFetch, result: .success, providerID: "codex")
                 return result(watch(from: representation, at: now()))
             case 429:
                 let retrySeconds = Self.retryAfterSeconds(response, now: receivedAt)
@@ -155,7 +157,7 @@ actor CodexResetWatchStore {
                 retryNotBefore = receivedAt.addingTimeInterval(retrySeconds)
                 extendStaleUntilRetry()
                 refreshFailed = true
-                AppLog.warn(LogTag.plugin("codex"), "Reset Watch rate limited; retry deferred")
+                AppDiagnostics.record(.resetWatchFetch, result: .failure, category: .rateLimited, providerID: "codex")
                 return result(lastPolicy.requiresValidation ? nil : representation.flatMap { watch(from: $0, at: now()) })
             default:
                 throw FetchError.httpStatus(response.statusCode)
@@ -167,7 +169,7 @@ actor CodexResetWatchStore {
             retryNotBefore = failedAt.addingTimeInterval(Self.failureRetryAge)
             extendStaleUntilRetry()
             refreshFailed = true
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch refresh failed: \(error.localizedDescription)")
+            AppDiagnostics.failure(.resetWatchFetch, error: error, providerID: "codex")
             return result(lastPolicy.requiresValidation ? nil : representation.flatMap { watch(from: $0, at: now()) })
         }
     }
@@ -188,7 +190,8 @@ actor CodexResetWatchStore {
             watch.communityYesPercent = votes.percent
             votesRetryNotBefore = votes.retryNotBefore ?? .distantPast
         } else {
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch community vote share unavailable: missing episode identity")
+            AppDiagnostics.record(.resetVoteFetch, result: .degraded, category: .decoding, providerID: "codex",
+                                  localContext: "Active forecast has no recognized source post; community votes unavailable")
         }
         return .watch(watch)
     }
@@ -333,7 +336,14 @@ private struct StatusPayload: Decodable {
     }
 }
 
-private enum FetchError: Error, LocalizedError {
+private enum FetchError: Error, LocalizedError, CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .httpStatus(let code): .http(code)
+        case .notModifiedWithoutCache, .invalidChance, .invalidDeadline: .decoding
+        }
+    }
+
     case httpStatus(Int)
     case notModifiedWithoutCache
     case invalidChance

@@ -81,7 +81,15 @@ struct URLSessionHTTPClient: HTTPClient {
         let session = allowsInsecureLoopback
             ? Self.loopbackSession
             : (sendsCookies ? Self.session : Self.cookieFreeSession)
-        let (data, response) = try await session.data(for: urlRequest)
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: urlRequest) }
+        catch {
+            if (error as? URLError)?.code != .cancelled {
+                AppLog.error(.http, "request transport failed (code=\((error as NSError).code), category=\(ErrorCategory.classify(error).rawValue))")
+            }
+            throw error
+        }
         guard let http = response as? HTTPURLResponse else {
             throw HTTPClientError.invalidResponse
         }

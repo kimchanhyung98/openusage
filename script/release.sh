@@ -132,6 +132,10 @@ echo "==> generating dSYM (crash symbolication)"
 rm -rf "$DSYM_DIR"
 mkdir -p "$DSYM_DIR"
 dsymutil "$APP_BINARY" -o "$APP_DSYM"
+# dSYM 검색용 release metadata를 실제 앱과 정합화 — symbol UUID는 변경하지 않음.
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_DSYM/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_DSYM/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP_DSYM/Contents/Info.plist"
 # 배포 binary의 모든 architecture UUID가 dSYM에 포함되는지 검증.
 # 누락 시 업로드한 symbol이 crash report와 일치하지 않아 "no symbols" 형태의 조용한 실패 발생.
 for uuid in $(dwarfdump --uuid "$APP_BINARY" | awk '{print $2}'); do

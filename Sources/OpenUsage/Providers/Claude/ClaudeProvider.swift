@@ -84,8 +84,11 @@ final class ClaudeProvider: ProviderRuntime {
         return load.desktopStatus == .permissionRequired || load.desktopStatus == .stale
     }
 
+    private var refreshIsDegraded = false
+
     func refresh() async -> ProviderSnapshot {
-        await refresh(
+        refreshIsDegraded = false
+        return await refresh(
             credentialReloadsRemaining: 1,
             forceDesktopFallback: false,
             previousFallbackError: nil
@@ -190,7 +193,7 @@ final class ClaudeProvider: ProviderRuntime {
                     previousFallbackError: previousFallbackError
                 )
             } catch let error as ClaudeAuthError where error.allowsAuthFallback {
-                AppLog.warn(LogTag.auth("claude"), "\(state.source.label) failed (\(error)); falling back to next source if any")
+                AppLog.info(LogTag.auth("claude"), "\(state.source.label) authentication failed; falling back to next source if any")
                 lastFallbackError = error
                 continue
             } catch {
@@ -283,7 +286,8 @@ final class ClaudeProvider: ProviderRuntime {
             lines: mapped.lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
-            warning: warning
+            warning: warning,
+            isDegraded: refreshIsDegraded ? true : nil
         )
     }
 
@@ -398,23 +402,29 @@ final class ClaudeProvider: ProviderRuntime {
         expectedGeneration: ClaudeCredentialGeneration
     ) async throws -> RefreshedAccess {
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
-        let response = try await usageClient.refreshToken(refreshToken, config: authStore.oauthConfig())
-        if response.statusCode == 400 || response.statusCode == 401 {
-            let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
-            let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
-            if errorCode == "invalid_grant" {
-                AppLog.warn(LogTag.auth("claude"), "session expired (invalid_grant)")
-                throw ClaudeAuthError.sessionExpired
+        let decoded: ClaudeRefreshResponse
+        do {
+            let response = try await usageClient.refreshToken(refreshToken, config: authStore.oauthConfig())
+            if response.statusCode == 400 || response.statusCode == 401 {
+                let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+                let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
+                if errorCode == "invalid_grant" {
+                    throw ClaudeAuthError.sessionExpired
+                }
+                // 인식 못한 OAuth 에러 코드의 400/401은 만료 확정 아님(proxy/WAF/gateway 가능) —
+                // 재로그인 안내 대신 HTTP status 표면화.
+                throw ClaudeUsageError.requestFailed(response.statusCode)
             }
-            // 인식 못한 OAuth 에러 코드의 400/401은 만료 확정 아님(proxy/WAF/gateway 가능) —
-            // 재로그인 안내 대신 HTTP status 표면화.
-            throw ClaudeUsageError.requestFailed(response.statusCode)
+            guard (200..<300).contains(response.statusCode) else {
+                throw ClaudeUsageError.requestFailed(response.statusCode)
+            }
+            // decoded.accessToken / refreshToken 로깅 금지 — rotation 발생 사실만 기록.
+            decoded = try JSONDecoder().decode(ClaudeRefreshResponse.self, from: response.body)
+        } catch {
+            AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
+            throw error
         }
-        guard (200..<300).contains(response.statusCode) else {
-            throw ClaudeUsageError.requestFailed(response.statusCode)
-        }
-        // decoded.accessToken / refreshToken 로깅 금지 — rotation 발생 사실만 기록.
-        let decoded = try JSONDecoder().decode(ClaudeRefreshResponse.self, from: response.body)
+        AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
         let previousOAuth = state.oauth
         state.oauth.accessToken = decoded.accessToken
         if let refreshToken = decoded.refreshToken {
@@ -433,11 +443,15 @@ final class ClaudeProvider: ProviderRuntime {
                 throw ClaudeAuthError.credentialsChanged
             }
             persisted = true
+            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch let error as ClaudeAuthError where error == .credentialsChanged {
+            AppDiagnostics.record(.credentialSave, result: .bindingChanged, providerID: provider.id)
             throw error
         } catch {
-            AppLog.error(LogTag.auth("claude"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
             persisted = false
+            refreshIsDegraded = true
+            AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
+                                  localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
         if cachedCredentialFingerprint == Self.credentialFingerprint(previousOAuth) {
             cachedCredentialFingerprint = Self.credentialFingerprint(state.oauth)
