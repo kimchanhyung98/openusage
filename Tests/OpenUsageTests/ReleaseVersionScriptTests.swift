@@ -32,6 +32,44 @@ final class ReleaseVersionScriptTests: XCTestCase {
         )
     }
 
+    func testHookGitEnvironmentCannotRedirectScratchRepositories() throws {
+        let cleanEnvironment = ["PATH": "/usr/bin:/bin"]
+        let outside = try makeRepository(tag: "v1.1.1", environment: cleanEnvironment)
+        let originalBranch = try runGit(["symbolic-ref", "HEAD"], in: outside, environment: cleanEnvironment)
+        let originalRefs = try runGit(["show-ref"], in: outside, environment: cleanEnvironment)
+        let index = outside.appendingPathComponent(".git/index")
+        try runGit(["read-tree", "HEAD"], in: outside, environment: cleanEnvironment)
+        let originalIndex = try Data(contentsOf: index)
+        var hookEnvironment = cleanEnvironment
+        hookEnvironment["GIT_DIR"] = outside.appendingPathComponent(".git").path
+        hookEnvironment["GIT_COMMON_DIR"] = outside.appendingPathComponent(".git").path
+        hookEnvironment["GIT_WORK_TREE"] = outside.path
+        hookEnvironment["GIT_INDEX_FILE"] = index.path
+        hookEnvironment["GIT_PREFIX"] = "hook/"
+        hookEnvironment["GIT_AUTHOR_NAME"] = "Inherited Hook Author"
+        hookEnvironment["GIT_AUTHOR_EMAIL"] = "hook@example.com"
+        hookEnvironment["GIT_COMMITTER_NAME"] = "Inherited Hook Committer"
+        hookEnvironment["GIT_COMMITTER_EMAIL"] = "hook@example.com"
+        hookEnvironment["GIT_CONFIG_COUNT"] = "1"
+        hookEnvironment["GIT_CONFIG_KEY_0"] = "user.name"
+        hookEnvironment["GIT_CONFIG_VALUE_0"] = "Inherited Config Author"
+
+        let target = try makeRepository(tag: "v9.9.9", environment: hookEnvironment)
+
+        XCTAssertEqual(try callFunction(
+            "openusage_development_version",
+            arguments: [target.path],
+            workingDirectory: outside,
+            environment: hookEnvironment
+        ), "9.9.9-dev")
+        XCTAssertEqual(try runGit(
+            ["log", "-1", "--format=%an|%ae|%cn|%ce"], in: target, environment: cleanEnvironment
+        ), "OpenUsage Test|test@example.com|OpenUsage Test|test@example.com")
+        XCTAssertEqual(try runGit(["symbolic-ref", "HEAD"], in: outside, environment: cleanEnvironment), originalBranch)
+        XCTAssertEqual(try runGit(["show-ref"], in: outside, environment: cleanEnvironment), originalRefs)
+        XCTAssertEqual(try Data(contentsOf: index), originalIndex)
+    }
+
     func testDevelopmentVersionFailsWhenTheNearestTagIsMalformed() throws {
         let repository = try makeRepository(tag: "v9.9")
 
@@ -145,7 +183,8 @@ final class ReleaseVersionScriptTests: XCTestCase {
     private func callFunction(
         _ name: String,
         arguments: [String],
-        workingDirectory: URL? = nil
+        workingDirectory: URL? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> String {
         let output = Pipe()
         let process = Process()
@@ -160,6 +199,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         // 단일 pipe로 두 출력을 함께 비워 진단 출력 폭주에 의한 교착 방지.
         process.standardError = output
         process.currentDirectoryURL = workingDirectory
+        process.environment = Self.gitEnvironment(environment)
 
         try process.run()
         let stdout = output.fileHandleForReading.readDataToEndOfFile()
@@ -188,41 +228,58 @@ final class ReleaseVersionScriptTests: XCTestCase {
     // MARK: - Scratch repositories
 
     /// 전역·system git 설정을 무시하고 태그 하나를 가진 임시 저장소 생성.
-    private func makeRepository(tag: String?) throws -> URL {
+    private func makeRepository(
+        tag: String?,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("openusage-version-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
 
-        try runGit(["init", "--quiet"], in: directory)
+        try runGit(["init", "--quiet"], in: directory, environment: environment)
         try runGit([
             "-c", "user.name=OpenUsage Test",
             "-c", "user.email=test@example.com",
             "-c", "commit.gpgsign=false",
             "commit", "--allow-empty", "--quiet", "--message", "seed"
-        ], in: directory)
+        ], in: directory, environment: environment)
         if let tag {
-            try runGit(["tag", tag], in: directory)
+            try runGit(["tag", tag], in: directory, environment: environment)
         }
         return directory
     }
 
-    private func runGit(_ arguments: [String], in directory: URL) throws {
+    @discardableResult
+    private func runGit(
+        _ arguments: [String],
+        in directory: URL,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> String {
+        let output = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", directory.path] + arguments
-        var environment = ProcessInfo.processInfo.environment
-        environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
-        environment["GIT_CONFIG_SYSTEM"] = "/dev/null"
-        process.environment = environment
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        process.environment = Self.gitEnvironment(environment)
+        process.standardOutput = output
+        process.standardError = output
 
         try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        let message = String(data: data, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
-            throw VersionScriptError.scriptFailure(status: process.terminationStatus, stderr: "git \(arguments.joined(separator: " "))")
+            throw VersionScriptError.scriptFailure(status: process.terminationStatus, stderr: "git \(arguments.joined(separator: " ")): \(message)")
         }
+        return message.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// hook의 저장소 경로·index·작성자·주입 설정을 제거하고 나머지 환경은 유지.
+    private static func gitEnvironment(_ inherited: [String: String]) -> [String: String] {
+        var environment = inherited.filter { !$0.key.hasPrefix("GIT_") }
+        environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
+        environment["GIT_CONFIG_SYSTEM"] = "/dev/null"
+        return environment
     }
 
     private enum VersionScriptError: Error {

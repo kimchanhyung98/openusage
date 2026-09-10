@@ -3,6 +3,29 @@ import XCTest
 
 @MainActor
 final class AppRefreshLoopTests: XCTestCase {
+    func testOwnerCancellationStopsHeartbeatWhileReconciliationRemainsSuspended() async throws {
+        let heartbeatStarted = expectation(description: "Heartbeat sleeping")
+        let heartbeatCancelled = expectation(description: "Heartbeat cancelled")
+        let fixture = try Fixture(heartbeatSleep: {
+            heartbeatStarted.fulfill()
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch { heartbeatCancelled.fulfill(); throw error }
+        })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [heartbeatStarted, reconciliationStarted], timeout: 2)
+        loop.cancel()
+        await fulfillment(of: [heartbeatCancelled], timeout: 0.5)
+        gate.open()
+        await loop.value
+    }
+
     func testCancellationDuringReconciliationDoesNotStartUsageOrStatus() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
@@ -126,7 +149,7 @@ final class AppRefreshLoopTests: XCTestCase {
         let dataStore: WidgetDataStore
         let telemetry: TelemetryRecorder
 
-        init() throws {
+        init(heartbeatSleep: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(60)) }) throws {
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             dataStore = WidgetDataStore(
                 registry: WidgetRegistry(providers: [runtime.provider], descriptors: []),
@@ -136,7 +159,7 @@ final class AppRefreshLoopTests: XCTestCase {
                 TelemetryConfigSnapshot(
                     enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [], expandedMetricIDs: [], menuBarStyle: "text"
                 )
-            })
+            }, heartbeatSleep: heartbeatSleep)
         }
 
         func cleanUp() { defaults.removePersistentDomain(forName: suite) }

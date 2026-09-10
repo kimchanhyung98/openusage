@@ -5,9 +5,12 @@ import XCTest
 
 @MainActor
 final class TelemetrySDKIntegrationTests: XCTestCase {
-    private func makeSink(enabled: Bool = false, token: String) -> PostHogTelemetrySink {
+    private func makeSink(
+        enabled: Bool = false, token: String, consentStart: @escaping () -> Date = Date.init
+    ) -> PostHogTelemetrySink {
         PostHogTelemetrySink(
             enabled: enabled, token: token, host: "https://telemetry-fixture.invalid",
+            crashConsentStartedAt: consentStart,
             sessionConfiguration: {
                 let config = URLSessionConfiguration.ephemeral
                 config.protocolClasses = [TelemetryFixtureURLProtocol.self]
@@ -15,6 +18,26 @@ final class TelemetrySDKIntegrationTests: XCTestCase {
             },
             flushInterval: 0.1
         )
+    }
+
+    func testReenableUsesThePersistedConsentBoundaryForCrashFiltering() async throws {
+        TelemetryFixtureURLProtocol.reset()
+        var consentStart = Date().addingTimeInterval(-3600)
+        let sink = makeSink(
+            enabled: true, token: "phc_fixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+            consentStart: { consentStart }
+        )
+        defer { sink.setEnabled(false) }
+        sink.setEnabled(false)
+        consentStart = Date().addingTimeInterval(3600)
+        sink.setEnabled(true)
+        sink.capture("$exception", ["$exception_list": [["type": "SIGABRT"]]])
+        sink.capture("provider_refresh_daily", ["provider_id": "claude", "success_count": 1])
+        sink.flush()
+        try await waitForBatch()
+
+        let events = try TelemetryFixtureURLProtocol.events()
+        XCTAssertEqual(events.compactMap { $0["event"] as? String }, ["provider_refresh_daily"])
     }
 
     func testDisabledInitializationDoesNotStartSDKNetworking() async throws {

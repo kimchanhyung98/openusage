@@ -152,6 +152,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
     }
 
     func testMalformedPeerMessageIsVisibleAndValidDocumentsStillLoad() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let defaults = makeDefaults("malformed")
         let peer = UsageHistoryDocument(
             deviceID: "peer",
@@ -161,7 +162,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         )
         let fileStore = RecordingHistoryFileStore(
             seedDocuments: [peer],
-            invalidFileMessages: ["broken.json: invalid value"]
+            invalidFiles: [UsageHistoryDocumentError.invalidValue]
         )
         let sync = ICloudUsageSyncStore(
             dataStore: makeDataStore(defaults),
@@ -176,6 +177,9 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
 
         XCTAssertTrue(sync.displayedDocuments.contains { $0.deviceID == "peer" })
         XCTAssertNotNil(sync.serviceError)
+        let reads = diagnostics.events.filter { $0.operation == .iCloudRead }
+        XCTAssertFalse(reads.isEmpty)
+        XCTAssertTrue(reads.allSatisfy { $0.result == .degraded && $0.category == .other })
     }
 
     func testBackgroundReloadShowsSyncActivity() async throws {
@@ -375,7 +379,7 @@ private final class MemoryDeviceIDStore: ICloudDeviceIDStoring, @unchecked Senda
 
 private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     private(set) var documents: [UsageHistoryDocument]
-    private(set) var invalidFileMessages: [String]
+    private let invalidFiles: [Error]
     private(set) var writeCount = 0
     private(set) var deletedDeviceIDs: [String] = []
     private let unavailable: Bool
@@ -390,11 +394,11 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     init(
         unavailable: Bool = false,
         seedDocuments: [UsageHistoryDocument] = [],
-        invalidFileMessages: [String] = []
+        invalidFiles: [Error] = []
     ) {
         self.unavailable = unavailable
         self.documents = seedDocuments
-        self.invalidFileMessages = invalidFileMessages
+        self.invalidFiles = invalidFiles
     }
 
     func loadDocuments() async throws -> UsageHistoryLoadResult {
@@ -407,7 +411,9 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
                 loadGate = continuation
             }
         }
-        return UsageHistoryLoadResult(documents: documents, invalidFileMessages: invalidFileMessages)
+        var result = UsageHistoryLoadResult(documents: documents)
+        for error in invalidFiles { result.appendFailure(error, fileName: "broken.json") }
+        return result
     }
 
     func write(_ document: UsageHistoryDocument) async throws {

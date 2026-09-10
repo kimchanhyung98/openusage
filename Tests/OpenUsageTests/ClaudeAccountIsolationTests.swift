@@ -275,6 +275,85 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         ])
     }
 
+    func testReloginAfterPersistenceFailureDoesNotDegradeNewLoginSnapshot() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let accountB = credentials(access: "account-b", refresh: "refresh-b", plan: "max")
+        let keychain = IsolationFailingKeychain(value: credentials(
+            access: "account-a", refresh: "refresh-a", plan: "pro", expiresAt: 1
+        ))
+        let fixture = makeFixture(files: FakeFiles([:]), keychain: keychain) { request in
+            if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"access_token":"account-a2","refresh_token":"refresh-a2","expires_in":3600}"#.utf8
+                ))
+            }
+            if request.headers["Authorization"] == "Bearer account-a2" {
+                keychain.value = accountB
+                return Self.usageResponse(percent: 25)
+            }
+            XCTAssertEqual(request.headers["Authorization"], "Bearer account-b")
+            return Self.usageResponse(percent: 75)
+        }
+
+        let snapshot = await fixture.provider.refresh()
+
+        XCTAssertEqual(snapshot.plan, "Max")
+        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertNil(snapshot.isDegraded)
+        XCTAssertEqual(keychain.value, accountB)
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
+            DiagnosticEvent(.credentialRefresh, result: .success, providerID: "claude")
+        ])
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
+            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude")
+        ])
+        XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
+            "Bearer account-a2", "Bearer account-b"
+        ])
+    }
+
+    func testPersistenceFailureRemainsDegradedAfterSameGenerationFallbackSavesSuccessfully() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let keychainAccount = credentials(access: "keychain-a", refresh: "keychain-refresh", plan: "max")
+        let keychain = IsolationFailingKeychain(value: keychainAccount)
+        let files = FakeFiles([path: credentials(
+            access: "file-b", refresh: "file-refresh", plan: "pro", expiresAt: 1
+        )])
+        let fixture = makeFixture(files: files, keychain: keychain) { request in
+            if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                let parameters = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(request.body))
+                if parameters["refresh_token"] == "keychain-refresh" {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                        #"{"access_token":"keychain-a2","refresh_token":"keychain-refresh-2","expires_in":3600}"#.utf8
+                    ))
+                }
+                XCTAssertEqual(parameters["refresh_token"], "file-refresh")
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"access_token":"file-b2","refresh_token":"file-refresh-2","expires_in":3600}"#.utf8
+                ))
+            }
+            if request.headers["Authorization"] == "Bearer file-b2" {
+                return Self.usageResponse(percent: 75)
+            }
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+
+        let snapshot = await fixture.provider.refresh()
+
+        XCTAssertEqual(snapshot.plan, "Pro")
+        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(keychain.value, keychainAccount)
+        XCTAssertTrue(files.files[path]?.contains("file-refresh-2") == true)
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
+            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude"),
+            DiagnosticEvent(.credentialSave, result: .success, providerID: "claude")
+        ])
+        XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
+            "Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b2"
+        ])
+    }
+
     private struct Fixture {
         var provider: ClaudeProvider
         var files: FakeFiles
@@ -357,4 +436,15 @@ private final class IsolationCallCounter: @unchecked Sendable {
             return value
         }
     }
+}
+
+private final class IsolationFailingKeychain: KeychainAccessing, @unchecked Sendable {
+    var value: String?
+
+    init(value: String) { self.value = value }
+    func readGenericPassword(service: String) throws -> String? { value }
+    func writeGenericPassword(service: String, value: String) throws {
+        throw CocoaError(.fileWriteNoPermission)
+    }
+    func deleteGenericPassword(service: String) throws { value = nil }
 }

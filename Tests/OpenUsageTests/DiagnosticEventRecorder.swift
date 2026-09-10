@@ -1,6 +1,7 @@
 import Foundation
 @testable import OpenUsage
 
+/// AppDiagnostics 단일 구독을 독점하는 테스트 수집기 — 다른 수집기·TelemetryRecorder와 동시 사용 금지.
 final class DiagnosticEventRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [DiagnosticEvent] = []

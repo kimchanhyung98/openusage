@@ -312,7 +312,7 @@ private actor PendingDeletionHistoryFileStore: UsageHistoryFileStoring {
     }
 
     func loadDocuments() async throws -> UsageHistoryLoadResult {
-        UsageHistoryLoadResult(documents: documents, invalidFileMessages: [])
+        UsageHistoryLoadResult(documents: documents)
     }
 
     func write(_ document: UsageHistoryDocument) async throws {

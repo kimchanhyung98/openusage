@@ -50,6 +50,23 @@ final class WidgetDataStoreClaimRefreshTests: XCTestCase {
         )
     }
 
+    func testPostClaimDiagnosticsUseTheRefreshedProviderFamily() async {
+        let diagnostics = DiagnosticEventRecorder()
+        for family in ["claude", "codex"] {
+            let cardID = "\(family)@profile-private"
+            let runtime = Runtime(id: cardID, used: 0)
+            let store = makeStore(providers: [runtime], identityKeys: [cardID: "account-A"])
+            await store.refreshAfterClaim(providerID: cardID, maxAttempts: 1, retryDelay: .zero)
+        }
+        XCTAssertEqual(
+            diagnostics.events.filter { $0.operation == .postClaimRefresh },
+            [
+                DiagnosticEvent(.postClaimRefresh, result: .success, providerID: "claude"),
+                DiagnosticEvent(.postClaimRefresh, result: .success, providerID: "codex"),
+            ]
+        )
+    }
+
     func testUnrelatedAccountChangeRetriesPostClaimRefreshForTheSameIdentity() async {
         let started = expectation(description: "post-claim refresh started")
         let gate = Gate()

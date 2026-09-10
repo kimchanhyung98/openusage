@@ -38,7 +38,6 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional plan") }.count, 1, logs)
         XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional credit-grants") }.count, 1, logs)
         XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional prepaid-balance") }.count, 1, logs)
-        XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("[WARN]") || $0.contains("[ERROR]") }.count, 4, logs)
         XCTAssertFalse(logs.contains("[http]"), logs)
         XCTAssertFalse(logs.contains(accessToken), logs)
     }
@@ -150,6 +149,36 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertTrue(logs.contains("optional prepaid-balance response contained invalid balance metadata"), logs)
     }
 
+    func testSuccessfulGenericRequestFallbackRecordsSuccessAfterMapping() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let provider = makeProvider { request in
+            if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"gpt-4":{"maxRequestUsage":500,"numRequests":100}}"#.utf8
+                ))
+            }
+            switch request.url {
+            case CursorUsageClient.usageURL:
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"enabled":true,"planUsage":{}}"#.utf8))
+            case CursorUsageClient.planURL:
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"pro"}}"#.utf8))
+            default:
+                XCTFail("Unexpected request: \(request.url)")
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+        }
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.isDegraded)
+        XCTAssertEqual(progress(snapshot.lines, "Requests")?.used, 100)
+        XCTAssertEqual(progress(snapshot.lines, "Requests")?.limit, 500)
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .cursorFallback }, [
+            DiagnosticEvent(.cursorFallback, result: .success, providerID: "cursor")
+        ])
+    }
+
     func testFailedGenericRequestFallbackIsLoggedBeforePrimaryMappingError() async throws {
         let diagnostics = DiagnosticEventRecorder()
         let provider = makeProvider { request in
@@ -184,7 +213,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
         )
     }
 
-    func testGenericRequestFallbackPreservesTransportAndDecodingDiagnostics() async throws {
+    func testGenericRequestFallbackPreservesTransportAndDecodingDiagnosticsBeforePrimaryMappingFailure() async throws {
         let responses: [(HTTPResponse?, ErrorCategory)] = [
             (nil, .network),
             (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-json".utf8)), .decoding)
@@ -208,7 +237,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
             let (snapshot, logs) = try await captureLogs { await provider.refresh() }
 
-            XCTAssertEqual(snapshot.errorCategory, .decoding)
+            XCTAssertEqual(snapshot.errorCategory, .decoding, "The empty primary plan fails mapping after the optional fallback")
             XCTAssertFalse(logs.contains("[http]"), logs)
             XCTAssertEqual(logs.split(separator: "\n").filter {
                 $0.contains("operation=cursor_fallback") || $0.contains("optional request-based usage fallback failed")

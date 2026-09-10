@@ -21,9 +21,9 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let lines = try capture.lines()
         XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
         XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") })
-        XCTAssertTrue(lines.contains { $0.contains("authorization_error_code=-60005") })
+        XCTAssertTrue(lines.contains { $0.contains("error_code=-60005") })
         XCTAssertFalse(lines.joined().contains("PRIVATE_AUTHORIZATION_MESSAGE"))
-        XCTAssertEqual(capture.events.read(), [DiagnosticEvent(.cliInstall, result: .failure, category: .permission)])
+        XCTAssertEqual(capture.events, [DiagnosticEvent(.cliInstall, result: .failure, category: .permission)])
         XCTAssertEqual(installer.status, .notInstalled)
         XCTAssertEqual(installer.errorMessage, "Couldn't install the terminal helper: PRIVATE_AUTHORIZATION_MESSAGE")
     }
@@ -33,7 +33,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         defer { capture.cleanUp() }
         let bodies = [
             #"{"episode_id":"PRIVATE_EPISODE","yes":1,"no":1}"#,
-            #"{"episode_id":"123","yes":0,"no":0}"#,
+            #"{"episode_id":"123","yes":-1,"no":0}"#,
             #"{"private":"PRIVATE_JSON_VALUE"}"#
         ]
         for body in bodies {
@@ -59,11 +59,36 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertFalse(lines.joined().contains("PRIVATE_EPISODE"))
         XCTAssertFalse(lines.joined().contains("PRIVATE_JSON_VALUE"))
         let expected = DiagnosticEvent(.resetVoteFetch, result: .failure, category: .decoding, providerID: "codex")
-        let events = capture.events.read()
+        let events = capture.events
         XCTAssertEqual(events, Array(repeating: expected, count: 3))
         let encoded = String(decoding: try JSONEncoder().encode(events), as: UTF8.self)
         XCTAssertFalse(encoded.contains("error_domain"))
         XCTAssertFalse(encoded.contains("PRIVATE_"))
+    }
+
+    func testEmptyVotesRemainUnavailableWithoutAnErrorLog() async throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let response = HTTPResponse(statusCode: 200, headers: [:], body: Data(
+            #"{"episode_id":"123","yes":0,"no":0}"#.utf8
+        ))
+
+        let result = await CodexResetWatchVotes.load(
+            http: ResponseClient(response: response),
+            endpoint: URL(string: "https://example.invalid/votes")!,
+            episodeID: "123",
+            now: { now }
+        )
+
+        XCTAssertNil(result.percent)
+        XCTAssertEqual(result.retryNotBefore, now.addingTimeInterval(60))
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines.allSatisfy { $0.contains("[INFO]") })
+        XCTAssertEqual(capture.events, [
+            DiagnosticEvent(.resetVoteFetch, result: .failure, category: .notAvailable, providerID: "codex")
+        ])
     }
 
     func testUsageReadFailureWritesOneWarningPerNewFailureWithoutPathDisclosure() async throws {
@@ -81,7 +106,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertTrue(lines.allSatisfy { $0.contains("[WARN]") })
         XCTAssertTrue(lines.allSatisfy { $0.contains("Could not read 1 local usage log file") })
         XCTAssertFalse(lines.joined().contains("session.jsonl"))
-        XCTAssertEqual(capture.events.read(), [
+        XCTAssertEqual(capture.events, [
             DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex"),
             DiagnosticEvent(.historyScan, result: .success, providerID: "codex"),
             DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex")
@@ -100,7 +125,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertTrue(lines.allSatisfy { $0.contains("[WARN]") && $0.contains("source=plugin:pi") })
         XCTAssertFalse(lines.joined().contains("pi-session.jsonl"))
         XCTAssertFalse(lines.joined().contains("/Users/private/account"))
-        let events = capture.events.read()
+        let events = capture.events
         XCTAssertEqual(events, [DiagnosticEvent(.historyScan, result: .degraded, category: .storage)])
         XCTAssertNil(events.first?.provider)
         let encoded = String(decoding: try JSONEncoder().encode(events), as: UTF8.self)
@@ -143,7 +168,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
         XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") && $0.contains("consume failed (HTTP 500)") })
         XCTAssertFalse(lines.joined().contains("PRIVATE_"))
-        let events = capture.events.read()
+        let events = capture.events
         XCTAssertEqual(events, [DiagnosticEvent(.resetClaim, result: .failure, category: .http(500), providerID: "codex")])
         let encoded = String(decoding: try JSONEncoder().encode(events), as: UTF8.self)
         XCTAssertFalse(encoded.contains("PRIVATE_"))
@@ -180,7 +205,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
             XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") })
             XCTAssertFalse(lines.joined().contains("PRIVATE_"))
-            XCTAssertEqual(capture.events.read(), [
+            XCTAssertEqual(capture.events, [
                 DiagnosticEvent(.resetClaim, result: .failure, category: .decoding, providerID: "codex")
             ])
         }
@@ -191,18 +216,11 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         func send(_ request: HTTPRequest) async throws -> HTTPResponse { response }
     }
 
-    private final class Events: @unchecked Sendable {
-        private let lock = NSLock()
-        private var values: [DiagnosticEvent] = []
-        func append(_ event: DiagnosticEvent) { lock.withLock { values.append(event) } }
-        func read() -> [DiagnosticEvent] { lock.withLock { values } }
-    }
-
     private final class Capture {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let events = Events()
+        private let diagnostics = DiagnosticEventRecorder()
+        var events: [DiagnosticEvent] { diagnostics.events }
         private let previousSink: LogFile
-        private let observer: UUID
 
         init() throws {
             previousSink = AppLog.sink
@@ -210,8 +228,6 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             sink.open()
             AppLog.sink = sink
             AppLog.reloadLevel(.info)
-            let events = self.events
-            observer = AppDiagnostics.observe { event, _ in events.append(event) }
         }
 
         func lines() throws -> [String] {
@@ -220,7 +236,6 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         }
 
         func cleanUp() {
-            AppDiagnostics.removeObserver(observer)
             AppLog.sink = previousSink
             AppLog.reloadLevel()
             try? FileManager.default.removeItem(at: directory)
