@@ -188,6 +188,68 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         XCTAssertTrue(recorder.posts.isEmpty, "a delivery waiting on the previous account must not be submitted")
     }
 
+    func testCatalogReplacementInvalidatesOnlyUnresolvedAccountFamilyDeliveries() async {
+        let cases: [(id: String, identity: String?, remainsCurrent: Bool)] = [
+            ("claude", nil, false), ("codex", nil, false),
+            ("cursor", nil, true), ("codex", "account-A", true),
+        ]
+        for testCase in cases {
+            let name = "delivery-catalog-\(testCase.id)-\(testCase.identity ?? "unresolved")"
+            let defaults = makeUserDefaults(name)
+            let settings = NotificationSettingsStore(defaults: defaults)
+            allOn(settings)
+            let provider = Provider(id: testCase.id, displayName: testCase.id, icon: .providerMark(testCase.id))
+            let descriptor = WidgetDescriptor(
+                id: "\(testCase.id).session", providerID: testCase.id, metricLabel: "Session",
+                sample: WidgetData(title: "Session", icon: provider.icon, kind: .percent, used: 10, limit: 100)
+            )
+            func sample(_ used: Double) -> ProviderSnapshot {
+                ProviderSnapshot(providerID: provider.id, displayName: provider.displayName,
+                    lines: [.progress(label: "Session", used: used, limit: 100, format: .percent,
+                        resetsAt: resetsAt, periodDurationMs: Int(week * 1000))])
+            }
+            let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
+            let first = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(80))
+            let identityKeys = testCase.identity.map { [testCase.id: $0] } ?? [:]
+            let recorder = Recorder()
+            let currentAtDelivery = EnabledFlag(true)
+            let deliveryStarted = expectation(description: name)
+            let gate = DeliveryGate()
+            let store = WidgetDataStore(
+                registry: registry, providers: [first],
+                cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+                defaults: defaults, notificationSettings: { settings },
+                postNotification: { idPrefix, title, subtitle, body, isCurrent in
+                    deliveryStarted.fulfill()
+                    await gate.wait()
+                    currentAtDelivery.value = isCurrent()
+                    guard currentAtDelivery.value else { return false }
+                    recorder.posts.append((idPrefix, title, subtitle, body))
+                    return true
+                },
+                providerIdentityKeys: identityKeys
+            )
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            first.snapshot = sample(87)
+            await store.refreshAll(force: true)
+            let evaluation = Task { await store.evaluateNotifications(now: base) }
+            await fulfillment(of: [deliveryStarted], timeout: 2)
+
+            let second = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(87))
+            store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: identityKeys)
+            await gate.open()
+            await evaluation.value
+            XCTAssertEqual(currentAtDelivery.value, testCase.remainsCurrent, name)
+            let expectedPosts = testCase.remainsCurrent ? 1 : 0
+            XCTAssertEqual(recorder.posts.count, expectedPosts, name)
+
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            XCTAssertEqual(recorder.posts.count, expectedPosts, "new baselines and retained dedup must not refire: \(name)")
+        }
+    }
+
     func testInFlightNotificationCannotOverwriteTheNewAccountBaseline() async {
         let evaluator = QuotaNotificationEvaluator()
         let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)

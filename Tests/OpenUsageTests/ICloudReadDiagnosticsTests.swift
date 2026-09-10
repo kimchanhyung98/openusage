@@ -16,29 +16,36 @@ final class ICloudReadDiagnosticsTests: XCTestCase {
 
     func testPartialReadRecordsEachCategoryOnceThenSuccessfulRead() async throws {
         let diagnostics = DiagnosticEventRecorder()
-        let fileStore = HistoryStore(result: Self.partialResult())
+        let fileStore = HistoryStore(result: Self.partialResult(), holdLoad: 2)
         let sync = makeSync(fileStore: fileStore)
 
         sync.enabled = true
-        try await waitUntil { await fileStore.completedLoads == 2 && !sync.isSyncing }
+        try await waitUntil { await fileStore.loadInFlight && sync.invalidFileMessages.count == 5 }
 
         let reads = diagnostics.events.filter { $0.operation == .iCloudRead }
         XCTAssertEqual(reads, [
             DiagnosticEvent(.iCloudRead, result: .degraded, category: .decoding),
             DiagnosticEvent(.iCloudRead, result: .degraded, category: .other),
             DiagnosticEvent(.iCloudRead, result: .degraded, category: .permission),
-            DiagnosticEvent(.iCloudRead, result: .degraded, category: .storage),
+            DiagnosticEvent(.iCloudRead, result: .degraded, category: .storage)
+        ])
+        XCTAssertEqual(sync.invalidFileMessages.count, 5)
+        XCTAssertTrue(sync.invalidFileMessages.allSatisfy { $0.contains("PRIVATE_") })
+        let encoded = String(decoding: try JSONEncoder().encode(reads), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("PRIVATE_"))
+
+        await fileStore.releaseLoad()
+        try await waitUntil { await fileStore.completedLoads == 2 && !sync.isSyncing }
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .iCloudRead }, reads + [
             DiagnosticEvent(.iCloudRead, result: .success)
         ])
         XCTAssertTrue(sync.invalidFileMessages.isEmpty)
         XCTAssertNil(sync.serviceError)
-        let encoded = String(decoding: try JSONEncoder().encode(reads), as: UTF8.self)
-        XCTAssertFalse(encoded.contains("PRIVATE_"))
     }
 
     func testReadCompletedAfterDisablingSyncDoesNotReportStaleFailures() async throws {
         let diagnostics = DiagnosticEventRecorder()
-        let fileStore = HistoryStore(result: Self.partialResult(), holdFirstLoad: true)
+        let fileStore = HistoryStore(result: Self.partialResult(), holdLoad: 1)
         let sync = makeSync(fileStore: fileStore)
 
         sync.enabled = true
@@ -98,22 +105,22 @@ final class ICloudReadDiagnosticsTests: XCTestCase {
 
     private actor HistoryStore: UsageHistoryFileStoring {
         private var result: UsageHistoryLoadResult
-        private var holdFirstLoad: Bool
+        private var heldLoad: Int?
         private var loadGate: CheckedContinuation<Void, Never>?
         private(set) var loadInFlight = false
         private(set) var completedLoads = 0
 
-        init(result: UsageHistoryLoadResult, holdFirstLoad: Bool = false) {
+        init(result: UsageHistoryLoadResult, holdLoad: Int? = nil) {
             self.result = result
-            self.holdFirstLoad = holdFirstLoad
+            self.heldLoad = holdLoad
         }
 
         func loadDocuments() async throws -> UsageHistoryLoadResult {
             let current = result
             result = UsageHistoryLoadResult(documents: [])
             loadInFlight = true
-            if holdFirstLoad {
-                holdFirstLoad = false
+            if completedLoads + 1 == heldLoad {
+                heldLoad = nil
                 await withCheckedContinuation { loadGate = $0 }
             }
             loadInFlight = false

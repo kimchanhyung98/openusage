@@ -32,7 +32,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         )
     }
 
-    func testHookGitEnvironmentCannotRedirectScratchRepositories() throws {
+    func testScratchRepositoryHelpersIgnoreInheritedHookGitEnvironment() throws {
         let cleanEnvironment = ["PATH": "/usr/bin:/bin"]
         let outside = try makeRepository(tag: "v1.1.1", environment: cleanEnvironment)
         let originalBranch = try runGit(["symbolic-ref", "HEAD"], in: outside, environment: cleanEnvironment)
