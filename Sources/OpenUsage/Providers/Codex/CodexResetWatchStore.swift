@@ -10,6 +10,7 @@ struct CodexResetWatch: Equatable, Sendable {
 struct CodexResetWatchResult: Equatable, Sendable {
     var watch: CodexResetWatch?
     var refreshFailed = false
+    var isAbsent = false
 }
 
 typealias CodexResetWatchLoading = @Sendable (_ force: Bool) async -> CodexResetWatchResult
@@ -97,7 +98,7 @@ actor CodexResetWatchStore {
     }
 
     private func result(_ watch: CodexResetWatch?) -> CodexResetWatchResult {
-        CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed)
+        CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed, isAbsent: watch == nil && !refreshFailed)
     }
 
     private func watchIfUsable(at date: Date, validUntil: Date) -> CodexResetWatch? {
@@ -161,7 +162,7 @@ actor CodexResetWatchStore {
                 throw FetchError.httpStatus(response.statusCode)
             }
         } catch is CancellationError {
-            return result(nil)
+            return CodexResetWatchResult()
         } catch {
             let failedAt = now()
             retryNotBefore = failedAt.addingTimeInterval(Self.failureRetryAge)

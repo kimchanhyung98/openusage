@@ -120,7 +120,9 @@ final class AppContainer {
         let resetWatchStore = CodexResetWatchStore()
         let resetWatchCoordinator = CodexResetWatchCoordinator(
             load: { force in await resetWatchStore.currentResult(force: force) },
-            publish: { [dataStore] in dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed) }
+            publish: { [dataStore] in
+                dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed, isAbsent: $0.isAbsent)
+            }
         )
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 뒤 이어지는 wake에서 즉시 fetch되도록 usage/status의 일반 failure gate 제거.

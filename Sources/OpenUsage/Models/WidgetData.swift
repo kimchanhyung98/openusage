@@ -11,7 +11,7 @@ struct WidgetData: Hashable {
     let title: String          // 예: "Claude 5h"
     let icon: IconSource
     let kind: MetricKind
-    let used: Double
+    var used: Double
     var limit: Double?         // nil이면 unbounded (number tile) — `.values` line resolve 시 해제
     var countSuffix: String?   // 예: "credits"
     var valuePrefix: String?   // 예: forecast의 "~"
@@ -82,7 +82,7 @@ struct WidgetData: Hashable {
         return percent / 100
     }
     var communityVoteLabel: String? {
-        guard hasData, let forecast else { return nil }
+        guard hasData, let forecast, forecast.deadline != nil else { return nil }
         guard let percent = forecast.communityYesPercent else { return "Vote share unavailable" }
         return "\(Int(percent))% expect a reset"
     }
@@ -546,7 +546,13 @@ extension WidgetData {
     func presented(at date: Date = Date()) -> WidgetData {
         guard isForecast, let forecastDeadline, date >= forecastDeadline else { return self }
         var copy = self
-        copy.hasData = false
+        if forecast?.refreshFailed == true {
+            copy.hasData = false
+        } else {
+            copy.used = 0
+            copy.forecast?.deadline = nil
+            copy.forecast?.communityYesPercent = nil
+        }
         return copy
     }
 }
