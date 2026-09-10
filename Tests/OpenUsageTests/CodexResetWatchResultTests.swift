@@ -91,6 +91,52 @@ final class CodexResetWatchResultTests: XCTestCase {
         XCTAssertEqual(result, CodexResetWatchResult())
     }
 
+    func testCancelledRefreshPreservesReusableForecastAbsenceAndFailure() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let active = HTTPResponse(statusCode: 200, headers: [:], body: Data(
+            #"{"data":{"active_watch":{"reset_chance_percent":75,"expires_at":"2099-01-01T00:00:00Z"}}}"#.utf8
+        ))
+        let absent = HTTPResponse(
+            statusCode: 200, headers: [:], body: Data(#"{"data":{"active_watch":null}}"#.utf8)
+        )
+        let failure = HTTPResponse(statusCode: 429, headers: ["retry-after": "0"], body: Data())
+
+        for responses in [[active], [absent], [failure], [active, failure], [absent, failure]] {
+            let source = CodexResetWatchStore(
+                http: CancelledResetWatchHTTPClient(responses: responses), now: { now }
+            )
+            var previous = CodexResetWatchResult()
+            for _ in responses {
+                previous = await source.currentResult(force: true)
+            }
+
+            let cancelled = await source.currentResult(force: true)
+            XCTAssertEqual(cancelled, previous)
+        }
+    }
+
+    func testCancelledRefreshDoesNotReuseUnvalidatedOrUnstoredResponses() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let bodies = [
+            #"{"data":{"active_watch":{"reset_chance_percent":75,"expires_at":"2099-01-01T00:00:00Z"}}}"#,
+            #"{"data":{"active_watch":null}}"#
+        ]
+        for policy in ["no-cache", "no-store"] {
+            for body in bodies {
+                let response = HTTPResponse(
+                    statusCode: 200, headers: ["cache-control": policy], body: Data(body.utf8)
+                )
+                let source = CodexResetWatchStore(
+                    http: CancelledResetWatchHTTPClient(responses: [response]), now: { now }
+                )
+                _ = await source.currentResult()
+
+                let cancelled = await source.currentResult(force: true)
+                XCTAssertEqual(cancelled, CodexResetWatchResult(), policy)
+            }
+        }
+    }
+
     func testCoordinatorPublishesFailureAndClearsItWhenDisabled() async {
         let published = expectation(description: "failure published")
         var result = CodexResetWatchResult()
@@ -138,8 +184,15 @@ final class CodexResetWatchResultTests: XCTestCase {
     }
 }
 
-private struct CancelledResetWatchHTTPClient: HTTPClient {
+private actor CancelledResetWatchHTTPClient: HTTPClient {
+    private var responses: [HTTPResponse]
+
+    init(responses: [HTTPResponse] = []) {
+        self.responses = responses
+    }
+
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        throw CancellationError()
+        guard !responses.isEmpty else { throw CancellationError() }
+        return responses.removeFirst()
     }
 }
