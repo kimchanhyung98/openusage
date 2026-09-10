@@ -28,10 +28,12 @@ The release default is **Info** — quiet but useful.
 **Debug** is opt-in; turn it on only while reproducing a problem, since it is much noisier.
 
 If a local usage log exists but cannot be read, OpenUsage writes one warning and skips it for that refresh.
-It does not repeat the warning every five minutes; it warns again only if the file recovers and later becomes unreadable again.
+It does not repeat the warning every five minutes; it warns again only after a confirmed successful read followed by another read failure.
+A missing file does not count as recovery.
 The shared diagnostic module writes one local record for each reported failure: Error for a failed operation, Warning when an optional step fails and the main result remains usable.
 The record includes a fixed operation, error category, and available local context or error domain and code; raw error descriptions are excluded.
-Normal missing-login or unavailable-plan results stay at Info, and user cancellation is not treated as a failure.
+Normal missing-login, unavailable-plan, and empty Reset Watch vote results stay at Info, and user cancellation is not treated as a failure.
+HTTP transport details stay at Debug; the operation handling the failure records its final error or partial-failure warning.
 
 Any provider refresh that takes 10 seconds or longer writes a Warning-level `[refresh]` line with the provider ID, elapsed milliseconds, and threshold.
 This is visible at the default Info setting, so a slow local-log scan or network call can be identified from a normal support log without reproducing it with Debug enabled.
@@ -68,13 +70,16 @@ When sharing is already enabled at launch, diagnostic collection starts before i
 Provider summaries separate explicit manual refreshes from account changes, credential changes, reset claims, and scheduled work.
 Successful limit refreshes with an unavailable history scan or optional endpoint are recorded as partial failures when that condition is reported by the provider.
 Invalid Codex reset-credit responses keep the usage-response fallback and record a decoding partial failure.
-Cursor request-based fallback failures preserve their HTTP, network, or decoding category.
+Cursor request-based fallback failures preserve their HTTP, network, or decoding category, and successful fallbacks are counted too.
+iCloud records each distinct peer-file error category once per completed read and ignores results from a sync that was stopped or restarted.
 The first unexpected failure, partial failure, or recovery for a category can be sent immediately, capped at 30 events per local day; all recorded results remain in daily counts.
 Recovery events are limited to operations independent of account identity; one account's successful refresh does not declare another account's failure resolved.
 Claude, Codex, and Cursor record each token refresh request and response validation separately from saving the refreshed credentials.
 If Claude credentials change before the guarded save, the save records an account-binding change while preserving the existing re-read behavior.
+A replaced Claude login starts a fresh result while keeping the earlier failure diagnostic; a fallback within the same login retains any unresolved credential-save partial failure.
 Token refresh and credential saving do not generate recovery alerts across accounts.
 The daily check runs before refresh work and on an independent one-minute timer.
+Cancelling the refresh loop stops that timer even while account reconciliation is still waiting.
 
 PostHog transport logs report a fixed endpoint category and HTTP status or transport error code, without request bodies, tokens, or URLs.
 An HTTP success confirms a response from ingestion, not that an event is visible in a dashboard or that a crash has resolved symbols.

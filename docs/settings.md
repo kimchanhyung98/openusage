@@ -154,6 +154,7 @@ Alerts work while the app runs in the menu bar, even with the popover closed.
 Alerts fire on a new crossing or pace worsening, then stay deduplicated while that condition is unchanged, so you do not get repeats on every refresh.
 A quota already in a bad state when OpenUsage launches establishes the baseline without alerting.
 If a card's account identity changes or is removed, its notification baseline is cleared; the replacement account's first sample does not trigger a quota warning.
+Quota alerts still in progress for the previous account are stopped or removed after the account changes.
 If it recovers and later worsens again, the alert re-arms; a new reset period also clears the reset-based history.
 **Almost Out** is based only on the remaining share, so it also works for bounded balances without a reset window.
 **Cutting It Close** and **Will Run Out** require reset-window pace context.

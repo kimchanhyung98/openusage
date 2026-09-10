@@ -22,6 +22,7 @@ It also reports **crashes**, so we can find and fix the bugs that make the app q
   Before sending, OpenUsage retains only fixed exception types, stack addresses, binary identifiers needed to resolve those addresses, and app and macOS versions.
   It removes exception messages, file paths, function text, and recorded action details.
   Reports from an earlier consent period are rejected.
+  Re-enabling sharing uses the saved start time of the new consent period.
 
 ## Anonymous analytics: what is never shared
 
