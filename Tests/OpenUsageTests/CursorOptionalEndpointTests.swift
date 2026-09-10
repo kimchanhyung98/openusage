@@ -4,6 +4,7 @@ import XCTest
 @MainActor
 final class CursorOptionalEndpointTests: XCTestCase {
     func testOptionalSchemaAndHTTPFailuresAreLoggedWithoutDiscardingPrimaryUsage() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let accessToken = makeCursorJWT(includeSubject: true)
         let provider = makeProvider(accessToken: accessToken) { request in
             switch request.url {
@@ -24,9 +25,21 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
         XCTAssertEqual(progress(snapshot.lines, "Total usage")?.used, 20)
         XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertTrue(diagnostics.events.contains(DiagnosticEvent(.cursorCredits, result: .degraded, category: .http5xx, providerID: "cursor")))
         XCTAssertTrue(logs.contains("optional plan response contained invalid plan metadata"), logs)
         XCTAssertTrue(logs.contains("optional credit-grants request returned HTTP 503"), logs)
         XCTAssertTrue(logs.contains("optional prepaid-balance response was invalid"), logs)
+        for operation in ["cursor_plan", "cursor_credits", "cursor_balance"] {
+            let matching = logs.split(separator: "\n").filter { $0.contains("operation=" + operation) }
+            XCTAssertEqual(matching.count, 1, logs)
+            XCTAssertTrue(matching.first?.contains("WARN") == true, logs)
+        }
+        XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional plan") }.count, 1, logs)
+        XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional credit-grants") }.count, 1, logs)
+        XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("optional prepaid-balance") }.count, 1, logs)
+        XCTAssertEqual(logs.split(separator: "\n").filter { $0.contains("[WARN]") || $0.contains("[ERROR]") }.count, 4, logs)
+        XCTAssertFalse(logs.contains("[http]"), logs)
         XCTAssertFalse(logs.contains(accessToken), logs)
     }
 
@@ -138,6 +151,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
     }
 
     func testFailedGenericRequestFallbackIsLoggedBeforePrimaryMappingError() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let provider = makeProvider { request in
             if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
                 return HTTPResponse(statusCode: 502, headers: [:], body: Data())
@@ -164,6 +178,46 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
         XCTAssertNotNil(snapshot.errorCategory)
         XCTAssertTrue(logs.contains("optional request-based usage fallback failed"), logs)
+        XCTAssertEqual(
+            diagnostics.events.filter { $0.operation == .cursorFallback },
+            [DiagnosticEvent(.cursorFallback, result: .degraded, category: .http5xx, providerID: "cursor")]
+        )
+    }
+
+    func testGenericRequestFallbackPreservesTransportAndDecodingDiagnostics() async throws {
+        let responses: [(HTTPResponse?, ErrorCategory)] = [
+            (nil, .network),
+            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-json".utf8)), .decoding)
+        ]
+        for (response, category) in responses {
+            let diagnostics = DiagnosticEventRecorder()
+            let provider = makeProvider { request in
+                if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
+                    guard let response else { throw URLError(.cannotConnectToHost) }
+                    return response
+                }
+                switch request.url {
+                case CursorUsageClient.usageURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"enabled":true,"planUsage":{}}"#.utf8))
+                case CursorUsageClient.planURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"pro"}}"#.utf8))
+                default:
+                    return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+                }
+            }
+
+            let (snapshot, logs) = try await captureLogs { await provider.refresh() }
+
+            XCTAssertEqual(snapshot.errorCategory, .decoding)
+            XCTAssertFalse(logs.contains("[http]"), logs)
+            XCTAssertEqual(logs.split(separator: "\n").filter {
+                $0.contains("operation=cursor_fallback") || $0.contains("optional request-based usage fallback failed")
+            }.count, 1, logs)
+            XCTAssertEqual(
+                diagnostics.events.filter { $0.operation == .cursorFallback },
+                [DiagnosticEvent(.cursorFallback, result: .degraded, category: category, providerID: "cursor")]
+            )
+        }
     }
 
     private nonisolated static var primaryUsageResponse: HTTPResponse {

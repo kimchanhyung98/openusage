@@ -88,6 +88,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
     }
 
     func testReloginDuringTokenRotationCannotBeOverwrittenOrPublished() async {
+        let diagnostics = DiagnosticEventRecorder()
         let accountA = credentials(
             access: "account-a", refresh: "refresh-a", plan: "pro", expiresAt: 1
         )
@@ -109,6 +110,12 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let snapshot = await fixture.provider.refresh()
 
         XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
+            DiagnosticEvent(.credentialRefresh, result: .success, providerID: "claude")
+        ])
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
+            DiagnosticEvent(.credentialSave, result: .bindingChanged, providerID: "claude")
+        ])
         XCTAssertEqual(fixture.files.files[path], accountB)
         XCTAssertFalse(fixture.http.requests.contains {
             $0.headers["Authorization"] == "Bearer account-a2"
@@ -230,6 +237,42 @@ final class ClaudeAccountIsolationTests: XCTestCase {
             usageRequests(fixture.http).compactMap { $0.headers["Authorization"] },
             ["Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b"]
         )
+    }
+
+    func testFailedRotationThenOtherCredentialUsageDoesNotReportRefreshSuccess() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let fileAccount = credentials(access: "file-b", refresh: "file-refresh", plan: "pro")
+        let files = FakeFiles([path: fileAccount])
+        let keychain = ServiceKeychain()
+        let store = ClaudeAuthStore(
+            environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
+            files: files, keychain: keychain
+        )
+        let service = store.keychainServiceCandidates().first!
+        keychain.currentUserValues[service] = credentials(
+            access: "keychain-a", refresh: "keychain-refresh", plan: "max"
+        )
+        let fixture = makeFixture(files: files, keychain: keychain) { request in
+            if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                return HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
+            }
+            if request.headers["Authorization"] == "Bearer file-b" {
+                return Self.usageResponse(percent: 75)
+            }
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+
+        let snapshot = await fixture.provider.refresh()
+
+        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertEqual(files.files[path], fileAccount)
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
+            DiagnosticEvent(.credentialRefresh, result: .failure, category: .authExpired, providerID: "claude")
+        ])
+        XCTAssertFalse(diagnostics.events.contains { $0.operation == .credentialSave })
+        XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
+            "Bearer keychain-a", "Bearer file-b"
+        ])
     }
 
     private struct Fixture {

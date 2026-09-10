@@ -132,6 +132,82 @@ final class CodexResetClaimRouterTests: XCTestCase {
         )
     }
 
+    func testInFlightClaimKeepsItsCredentialAndDoesNotRefreshAReplacementAccount() async throws {
+        let reachedConsume = expectation(description: "A consume started")
+        let gate = ClaimGate()
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.resetCreditsURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Self.listBody())
+            }
+            reachedConsume.fulfill()
+            await gate.wait()
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
+        }
+        let refreshes = Recorder()
+        let router = CodexResetClaimRouter(
+            providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
+            identityKeys: ["codex": "account-A"],
+            refreshAfterClaim: { refreshes.values.append($0) }
+        )
+        let original = try XCTUnwrap(router.service(for: "codex"))
+        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture") }
+        await fulfillment(of: [reachedConsume], timeout: 2)
+        router.reconfigure(
+            providers: [makeSharedHomeProvider(home: "/tmp/claim-B", token: "token-B", http: http)],
+            identityKeys: ["codex": "account-B"]
+        )
+        await gate.open()
+        let outcome = await claim.value
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["Authorization"] }), ["Bearer token-A"])
+        XCTAssertTrue(refreshes.values.isEmpty, "a stale completion must not resolve bare codex to B")
+    }
+
+    private actor ClaimGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private var opened = false
+        func wait() async {
+            guard !opened else { return }
+            await withCheckedContinuation { continuation = $0 }
+        }
+        func open() {
+            opened = true
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    func testUnrelatedCatalogChangeStillRefreshesTheClaimedAccount() async throws {
+        let reachedConsume = expectation(description: "consume started")
+        let gate = ClaimGate()
+        let http = RoutingHTTPClient { request in
+            if request.url == CodexUsageClient.resetCreditsURL {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Self.listBody())
+            }
+            reachedConsume.fulfill()
+            await gate.wait()
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
+        }
+        let refreshes = Recorder()
+        let router = CodexResetClaimRouter(
+            providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
+            identityKeys: ["codex": "account-A"],
+            refreshAfterClaim: { refreshes.values.append($0) }
+        )
+        let original = try XCTUnwrap(router.service(for: "codex"))
+        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture") }
+        await fulfillment(of: [reachedConsume], timeout: 2)
+        router.reconfigure(
+            providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
+            identityKeys: ["codex": "account-A"]
+        )
+        await gate.open()
+        let outcome = await claim.value
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["Authorization"] }), ["Bearer token-A"])
+        XCTAssertEqual(refreshes.values, ["codex"], "an unrelated catalog change must still refresh the claimed account")
+    }
+
     func testReconfigureDropsCardsThatLeftTheCatalog() {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(

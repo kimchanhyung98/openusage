@@ -132,6 +132,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
     }
 
     func testUnavailableStoreSurfacesFriendlyError() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let defaults = makeDefaults("unavailable")
         let fileStore = RecordingHistoryFileStore(unavailable: true)
         let sync = ICloudUsageSyncStore(
@@ -146,6 +147,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         try await waitUntil { sync.serviceError != nil && !sync.isSyncing }
 
         XCTAssertEqual(sync.serviceError, ICloudUsageSyncError.unavailable.localizedDescription)
+        XCTAssertTrue(diagnostics.events.contains { $0.operation == .iCloudWrite && $0.result == .failure })
         XCTAssertFalse(sync.isSyncing)
     }
 
@@ -249,6 +251,84 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
 
         XCTAssertEqual(try development.readDeviceID(), "development-id")
         XCTAssertEqual(try production.readDeviceID(), "production-id")
+    }
+
+    func testStartupIdentityFailureIsRecordedOnceOnlyWhenTelemetryWasEnabled() async throws {
+        for enabled in [false, true] {
+            for failsOnRead in [false, true] {
+                let defaults = makeDefaults("startup-diagnostics-\(enabled)-\(failsOnRead)")
+                let savedID = UUID().uuidString.lowercased()
+                defaults.set(savedID, forKey: "openusage.icloudSync.deviceID.v1")
+                let telemetryStore = TelemetryStore(defaults: defaults)
+                telemetryStore.enabled = enabled
+                let sink = ICloudTelemetrySink()
+                let recorder = TelemetryRecorder(sink: sink, store: telemetryStore, snapshot: {
+                    TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
+                                            expandedMetricIDs: [], menuBarStyle: "text")
+                })
+                recorder.startDiagnostics()
+                defer { recorder.stopDiagnostics() }
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                let originalSink = AppLog.sink
+                let log = LogFile(directory: directory, fileName: "startup.log")
+                AppLog.sink = log
+                defer { AppLog.sink = originalSink; try? FileManager.default.removeItem(at: directory) }
+
+                let sync = ICloudUsageSyncStore(
+                    dataStore: makeDataStore(defaults), defaults: defaults, fileStore: RecordingHistoryFileStore(),
+                    deviceIDStore: FailingDeviceIDStore(failsOnRead: failsOnRead), observesMetadataChanges: false
+                )
+                if enabled { try await waitUntil { sink.events.count == 1 } }
+
+                XCTAssertEqual(sync.deviceID, savedID)
+                XCTAssertNotNil(sync.serviceError)
+                let lines = try String(contentsOf: log.fileURL, encoding: .utf8).split(separator: "\n")
+                XCTAssertEqual(lines.filter { $0.contains("[ERROR]") }.count, 1)
+                XCTAssertTrue(lines.contains { $0.contains("error_domain=NSOSStatusErrorDomain error_code=-25293") })
+                XCTAssertEqual(sink.events.count, enabled ? 1 : 0)
+                let counters = Array(telemetryStore.featureCounters().values)
+                XCTAssertEqual(counters.count, enabled ? 1 : 0)
+                if enabled {
+                    XCTAssertEqual(counters.first?.count, 1)
+                    XCTAssertEqual(counters.first?.event.operation, .iCloudIdentity)
+                    XCTAssertEqual(counters.first?.event.result, .failure)
+                    XCTAssertNil(counters.first?.event.provider)
+                    XCTAssertEqual(sink.events.first?.0, "feature_operation_result")
+                    let properties = try XCTUnwrap(sink.events.first?.1)
+                    XCTAssertEqual(properties["count"] as? Int, 1)
+                    XCTAssertEqual(Set(properties.keys), ["schema_version", "day", "app_version", "build_channel",
+                                                        "feature", "operation", "result", "error_category", "count"])
+                    let payload = String(describing: properties)
+                    XCTAssertFalse(payload.contains(savedID))
+                    XCTAssertFalse(payload.contains("private-identity-detail"))
+                }
+            }
+        }
+    }
+
+    func testInvalidDeletionRequestWritesOneLocalErrorAndOneDiagnostic() async throws {
+        let defaults = makeDefaults("invalid-deletion-diagnostic")
+        defaults.set("../private-device-id", forKey: "openusage.icloudSync.pendingDeletionDeviceID.v1")
+        let diagnostics = DiagnosticEventRecorder()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let originalSink = AppLog.sink
+        let log = LogFile(directory: directory, fileName: "deletion.log")
+        AppLog.sink = log
+        defer { AppLog.sink = originalSink; try? FileManager.default.removeItem(at: directory) }
+        let fileStore = RecordingHistoryFileStore()
+        let sync = ICloudUsageSyncStore(
+            dataStore: makeDataStore(defaults), defaults: defaults, fileStore: fileStore,
+            deviceIDStore: MemoryDeviceIDStore(), observesMetadataChanges: false
+        )
+        try await waitUntil { sync.deletionError != nil }
+
+        let lines = try String(contentsOf: log.fileURL, encoding: .utf8).split(separator: "\n")
+        XCTAssertEqual(lines.filter { $0.contains("[ERROR]") }.count, 1)
+        XCTAssertTrue(lines.contains { $0.contains("invalid device identifier") })
+        XCTAssertFalse(lines.contains { $0.contains("private-device-id") })
+        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.iCloudDelete, result: .failure, category: .decoding)])
+        let deleted = await fileStore.deletedDeviceIDs
+        XCTAssertTrue(deleted.isEmpty)
     }
 
     private func makeDataStore(_ defaults: UserDefaults) -> WidgetDataStore {
@@ -375,4 +455,22 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
         writeGate?.resume()
         writeGate = nil
     }
+}
+
+private struct FailingDeviceIDStore: ICloudDeviceIDStoring {
+    let failsOnRead: Bool
+    private var failure: NSError {
+        NSError(domain: NSOSStatusErrorDomain, code: -25293,
+                userInfo: [NSLocalizedDescriptionKey: "private-identity-detail"])
+    }
+    func readDeviceID() throws -> String? { if failsOnRead { throw failure }; return nil }
+    func writeDeviceID(_ deviceID: String) throws { throw failure }
+}
+
+@MainActor
+private final class ICloudTelemetrySink: TelemetrySink {
+    var events: [(String, [String: Any])] = []
+    func capture(_ event: String, _ properties: [String: Any]) { events.append((event, properties)) }
+    func setEnabled(_ enabled: Bool) {}
+    func flush() {}
 }

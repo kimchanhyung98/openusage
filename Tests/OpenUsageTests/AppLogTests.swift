@@ -46,6 +46,21 @@ final class AppLogTests: XCTestCase {
         XCTAssertTrue(try fileContents().contains("debug-now-visible"))
     }
 
+    @MainActor
+    func testLocalAPIDoesNotLogUntrustedRequestText() throws {
+        AppLog.reloadLevel(.debug)
+        let server = LocalUsageServer(state: {
+            LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:], limitDescriptors: [:], errors: [:])
+        })
+        _ = server.route(head: "GET /v1/limits?token=OPAQUE_PRIVATE_VALUE HTTP/1.1\r\n")
+        _ = server.route(head: "PRIVATE_METHOD /unknown/private@example.com HTTP/1.1\r\n")
+        let contents = try fileContents()
+        XCTAssertFalse(contents.contains("OPAQUE_PRIVATE_VALUE"))
+        XCTAssertFalse(contents.contains("private@example.com"))
+        XCTAssertFalse(contents.contains("PRIVATE_METHOD"))
+        XCTAssertTrue(contents.contains("/v1/limits"))
+    }
+
     func testErrorFloorSuppressesEverythingButError() throws {
         AppLog.reloadLevel(.error)
         AppLog.warn(.http, "warn-below-error-floor")

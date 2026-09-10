@@ -112,6 +112,78 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         XCTAssertEqual(recorder.posts.count, 1)
     }
 
+    func testAccountReplacementStartsAnIndependentNotificationBaseline() async {
+        let settings = NotificationSettingsStore(defaults: makeUserDefaults("account-boundary-settings"))
+        allOn(settings)
+        let recorder = Recorder()
+        let (store, first, descriptor) = makeStore(
+            used: 80, settings: settings, recorder: recorder, defaultsName: "account-boundary"
+        )
+        let registry = WidgetRegistry(providers: [Self.provider], descriptors: [descriptor])
+        store.replaceProviderCatalog(registry: registry, providers: [first], identityKeys: ["test": "account-A"])
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        let second = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 95))
+        store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: ["test": "account-B"])
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        XCTAssertTrue(recorder.posts.isEmpty, "the first sample of B must not be compared with A")
+    }
+
+    func testInFlightNotificationCannotOverwriteTheNewAccountBaseline() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
+        func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
+            [.init(key: "test.session", providerID: "test", data: WidgetData(
+                title: "Session", icon: Self.provider.icon, kind: .percent, used: used, limit: 100,
+                resetsAt: resetsAt, periodDurationMs: Int(week * 1000)
+            ))]
+        }
+        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _ in XCTFail("first sample"); return true })
+        var oldPosts = 0
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _ in
+            oldPosts += 1
+            evaluator.reset(providerIDs: ["test"])
+            await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: self.base,
+                                     providerName: { $0 }, post: { _, _, _, _ in XCTFail("new account first sample"); return true })
+            return true
+        })
+        XCTAssertEqual(oldPosts, 1, "remaining old-account notifications must stop after replacement")
+        var newPosts = 0
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _ in newPosts += 1; return true })
+        XCTAssertEqual(newPosts, 2, "new account baseline must survive the old delivery completion")
+    }
+
+    func testUnrelatedAccountResetPreservesDeliveredNotificationDeduplication() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
+        func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
+            ["cursor", "claude"].map { providerID in
+                .init(key: "\(providerID).session", providerID: providerID, data: WidgetData(
+                    title: "Session", icon: Self.provider.icon, kind: .percent,
+                    used: providerID == "cursor" ? used : 80, limit: 100,
+                    resetsAt: resetsAt, periodDurationMs: Int(week * 1000)
+                ))
+            }
+        }
+        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _ in XCTFail("first sample"); return true })
+        var delivered: [String] = []
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { id, _, _, _ in
+            delivered.append(id)
+            if delivered.count == 1 { evaluator.reset(providerIDs: ["claude"]) }
+            return true
+        })
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { id, _, _, _ in delivered.append(id); return true })
+        XCTAssertEqual(delivered.count, 2, "unrelated account changes must not replay delivered milestones")
+        XCTAssertEqual(Set(delivered).count, 2)
+    }
+
     func testCloseToRunningOutFiresThroughTheStore() async {
         let settings = NotificationSettingsStore(defaults: makeUserDefaults("c2r-settings"))
         allOn(settings)
