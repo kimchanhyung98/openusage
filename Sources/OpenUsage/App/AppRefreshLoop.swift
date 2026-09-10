@@ -30,6 +30,7 @@ enum AppRefreshLoop {
                     _ = await (statusRefresh, nextWake)
                 }
             } onCancel: {
+                heartbeat.cancel()
                 Task { @MainActor in providerStatus.cancelRefreshes() }
             }
         }

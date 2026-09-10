@@ -370,7 +370,9 @@ final class CursorProvider: ProviderRuntime {
         guard let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] else {
             throw CursorUsageError.invalidResponse
         }
-        return try CursorUsageMapper.mapRequestBasedUsage(body, planName: planName, unavailableMessage: unavailableMessage)
+        let mapped = try CursorUsageMapper.mapRequestBasedUsage(body, planName: planName, unavailableMessage: unavailableMessage)
+        AppDiagnostics.record(.cursorFallback, result: .success, providerID: provider.id)
+        return mapped
     }
 
     private func usageSummaryAndRequestResult(

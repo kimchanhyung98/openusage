@@ -48,21 +48,15 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// 즉시 알림 1건 게시. identifier는 매번 고유해 같은 metric의 반복 알림이 coalesce되지 않음.
     /// 실제 전달 여부 반환(테스트·미허가·예약 실패 시 false) — 호출자가 milestone을 미기록으로 남기고 재시도 가능.
-    func post(idPrefix: String, title: String, subtitle: String, body: String, soundEnabled: Bool = true) async -> Bool {
+    func post(
+        idPrefix: String,
+        title: String,
+        subtitle: String,
+        body: String,
+        soundEnabled: Bool = true,
+        isCurrent: @MainActor () -> Bool = { true }
+    ) async -> Bool {
         guard !Self.isRunningUnderTests else { return false }
-        var authorized = await ensureAuthorization().value
-        if !authorized {
-            // 캐시된 거부는 stale일 수 있으므로 live 상태 재확인 — System Settings 재허용이 재시작 없이 반영됨.
-            let status = await centerProvider().notificationSettings().authorizationStatus
-            switch status {
-            case .authorized, .provisional, .ephemeral:
-                authorized = true
-                authorizationTask = Task<Bool, Never> { true }
-            default:
-                AppLog.debug(.notifications, "skip \(idPrefix): not authorized")
-                return false
-            }
-        }
         let content = UNMutableNotificationContent()
         content.title = title
         content.subtitle = subtitle
@@ -72,13 +66,55 @@ final class AppNotifications: NSObject, UNUserNotificationCenterDelegate {
         if soundEnabled { content.sound = .default }
         let id = "openusage-\(idPrefix)-\(UUID().uuidString)"
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        let center = centerProvider()
         do {
-            try await centerProvider().add(request)
+            let delivered = try await Self.deliver(
+                request,
+                isCurrent: isCurrent,
+                authorize: { await self.isAuthorizedForDelivery(idPrefix: idPrefix) },
+                add: { try await center.add($0) },
+                remove: { id in
+                    center.removePendingNotificationRequests(withIdentifiers: [id])
+                    center.removeDeliveredNotifications(withIdentifiers: [id])
+                }
+            )
+            guard delivered else { return false }
             AppLog.info(.notifications, "posted \(idPrefix)")
             AppDiagnostics.record(.notificationDelivery, result: .success)
             return true
         } catch {
             AppDiagnostics.failure(.notificationDelivery, error: error)
+            return false
+        }
+    }
+
+    /// 권한·예약 대기 중 계정 교체 시 전달 중단, 이미 제출한 요청은 해당 identifier만 제거.
+    static func deliver(
+        _ request: UNNotificationRequest,
+        isCurrent: @MainActor () -> Bool,
+        authorize: @MainActor () async -> Bool,
+        add: @MainActor (UNNotificationRequest) async throws -> Void,
+        remove: @MainActor (String) -> Void
+    ) async throws -> Bool {
+        guard isCurrent(), await authorize(), isCurrent() else { return false }
+        try await add(request)
+        guard isCurrent() else {
+            remove(request.identifier)
+            return false
+        }
+        return true
+    }
+
+    private func isAuthorizedForDelivery(idPrefix: String) async -> Bool {
+        if await ensureAuthorization().value { return true }
+        // 캐시된 거부는 stale일 수 있으므로 live 상태 재확인 — System Settings 재허용이 재시작 없이 반영됨.
+        let status = await centerProvider().notificationSettings().authorizationStatus
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            authorizationTask = Task<Bool, Never> { true }
+            return true
+        default:
+            AppLog.debug(.notifications, "skip \(idPrefix): not authorized")
             return false
         }
     }

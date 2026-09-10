@@ -136,6 +136,7 @@ enum AppDiagnostics {
         localContext: String? = nil
     ) {
         let cancelled = error is CancellationError || (error as? URLError)?.code == .cancelled
+            || (error as? CocoaError)?.code == .userCancelled
         let event = DiagnosticEvent(
             operation,
             result: cancelled ? .cancelled : result,

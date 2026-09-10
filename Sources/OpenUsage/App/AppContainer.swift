@@ -121,7 +121,7 @@ final class AppContainer {
         let telemetry = TelemetryRecorder(
             sink: PostHogTelemetrySink(
                 enabled: telemetryStore.enabled,
-                crashConsentStartedAt: telemetryStore.consentStartedAt,
+                crashConsentStartedAt: { telemetryStore.consentStartedAt },
                 consentID: { telemetryStore.consentID }
             ),
             store: telemetryStore,

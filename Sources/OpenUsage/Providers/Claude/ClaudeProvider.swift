@@ -187,6 +187,8 @@ final class ClaudeProvider: ProviderRuntime {
                 return snapshot
             } catch ClaudeAuthError.credentialsChanged where credentialReloadsRemaining > 0 {
                 AppLog.info(LogTag.auth("claude"), "credential source changed during refresh; reloading current login")
+                // 로그인 교체로 폐기한 시도의 저장 실패를 새 결과에 전파하지 않음.
+                refreshIsDegraded = false
                 return await refresh(
                     credentialReloadsRemaining: credentialReloadsRemaining - 1,
                     forceDesktopFallback: forceDesktopFallback,

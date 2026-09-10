@@ -78,12 +78,21 @@ final class LocalUsageServer {
                     let head = String(data: buffered[..<headEnd.lowerBound], encoding: .utf8) ?? ""
                     self.finish(connection, with: self.route(head: head))
                 } else if error != nil || isComplete || buffered.count >= Self.headLimit {
-                    if let error { AppDiagnostics.failure(.localAPIRequest, error: error) }
+                    if let error { Self.recordReceiveFailure(error) }
                     self.finish(connection, with: nil)
                 } else {
                     self.receiveHead(connection, buffered: buffered)
                 }
             }
+        }
+    }
+
+    nonisolated static func recordReceiveFailure(_ error: NWError) {
+        switch error {
+        case .posix(.ECONNRESET), .posix(.EPIPE):
+            AppDiagnostics.record(.localAPIRequest, result: .cancelled)
+        default:
+            AppDiagnostics.failure(.localAPIRequest, error: error)
         }
     }
 

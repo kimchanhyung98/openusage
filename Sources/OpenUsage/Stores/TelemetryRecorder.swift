@@ -48,6 +48,7 @@ final class TelemetryRecorder {
     private let store: TelemetryStore
     private let snapshot: @MainActor () -> TelemetryConfigSnapshot
     private let now: () -> Date
+    private let heartbeatSleep: @Sendable () async throws -> Void
     private let appVersion: String
     private let buildChannel: String
     private var diagnosticsStarted = false
@@ -58,6 +59,7 @@ final class TelemetryRecorder {
         store: TelemetryStore,
         snapshot: @escaping @MainActor () -> TelemetryConfigSnapshot,
         now: @escaping () -> Date = Date.init,
+        heartbeatSleep: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(60)) },
         appVersion: String = AppInfo.version,
         buildChannel: String = TelemetryConfig.buildChannel
     ) {
@@ -65,6 +67,7 @@ final class TelemetryRecorder {
         self.store = store
         self.snapshot = snapshot
         self.now = now
+        self.heartbeatSleep = heartbeatSleep
         self.appVersion = appVersion
         self.buildChannel = buildChannel
         if !store.enabled { store.discardPendingCounters() }
@@ -142,7 +145,7 @@ final class TelemetryRecorder {
     func runHeartbeat() async {
         while !Task.isCancelled {
             tick()
-            do { try await Task.sleep(for: .seconds(60)) }
+            do { try await heartbeatSleep() }
             catch { return }
         }
     }

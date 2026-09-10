@@ -1,4 +1,5 @@
 import Foundation
+import Network
 
 /// refresh 실패를 telemetry에서 그룹화하기 위한 안정적 bucket — free-form 오류 메시지는 그룹화 불가·정보 유출 위험이라 raw value만 전송. raw value는 telemetry에 보고되는 문자열이므로 변경 금지.
 /// `notLoggedIn`은 의도적 분리 — 미인증 provider의 실패는 버그가 아닌 기대 노이즈라 분석에서 필터링 가능해야 함.
@@ -26,12 +27,12 @@ enum ErrorCategory: String, Sendable, CaseIterable, Codable {
 
     static func classify(_ error: Error) -> ErrorCategory {
         if let categorized = error as? CategorizedError { return categorized.errorCategory }
-        if error is URLError { return .network }
+        if error is URLError || error is NWError { return .network }
         if error is DecodingError { return .decoding }
         if let cocoa = error as? CocoaError {
             switch cocoa.code {
             case .fileReadNoPermission, .fileWriteNoPermission: return .permission
-            case .fileReadCorruptFile: return .decoding
+            case .propertyListReadCorrupt: return .decoding
             default: return .storage
             }
         }

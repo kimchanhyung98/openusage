@@ -17,18 +17,18 @@ extension WidgetDataStore {
         for _ in 0..<maxAttempts {
             guard !Task.isCancelled else { return }
             guard let boundBinding, claimRefreshBinding(providerID: providerID) == boundBinding else {
-                AppLog.info(LogTag.plugin("codex"), "post-claim refresh stopped: account binding changed")
-                AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
+                AppLog.info(LogTag.plugin(ProviderAccountID.family(of: providerID)), "post-claim refresh stopped: account binding changed")
+                AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: providerID)
                 return
             }
             switch await refresh(providerID: providerID, force: true, trigger: .resetClaim) {
             case .refreshed, .cacheHit, .backedOff:
-                AppDiagnostics.record(.postClaimRefresh, result: .success, providerID: "codex")
+                AppDiagnostics.record(.postClaimRefresh, result: .success, providerID: providerID)
                 return
             case .failed:
                 failures += 1
                 guard failures < 3 else {
-                    AppDiagnostics.record(.postClaimRefresh, result: .failure, category: .other, providerID: "codex",
+                    AppDiagnostics.record(.postClaimRefresh, result: .failure, category: .other, providerID: providerID,
                                           localContext: "Post-claim refresh failed repeatedly; meters may lag until the next cycle")
                     return
                 }
@@ -38,7 +38,7 @@ extension WidgetDataStore {
             do { try await Task.sleep(for: retryDelay) }
             catch { return }
         }
-        AppDiagnostics.record(.postClaimRefresh, result: .failure, category: .other, providerID: "codex",
+        AppDiagnostics.record(.postClaimRefresh, result: .failure, category: .other, providerID: providerID,
                               localContext: "Post-claim refresh kept being skipped; meters may lag until the next cycle")
     }
 }

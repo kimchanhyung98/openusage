@@ -61,7 +61,7 @@ final class PostHogTelemetrySink: TelemetrySink {
     private let sessionConfiguration: () -> URLSessionConfiguration
     private let flushInterval: TimeInterval
     private let consentID: () -> String
-    private var nextConsentStart: Date?
+    private let crashConsentStartedAt: () -> Date
     private var mustDiscardPending: Bool
     private var sdk: PostHogSDK?
     private var transport: TelemetryTransport?
@@ -73,7 +73,7 @@ final class PostHogTelemetrySink: TelemetrySink {
         enabled: Bool,
         token: String = TelemetryConfig.token,
         host: String = TelemetryConfig.host,
-        crashConsentStartedAt: Date = Date(),
+        crashConsentStartedAt: @escaping () -> Date = Date.init,
         consentID: @escaping () -> String = { UUID().uuidString },
         sessionConfiguration: @escaping () -> URLSessionConfiguration = { .ephemeral },
         flushInterval: TimeInterval = 30
@@ -82,7 +82,7 @@ final class PostHogTelemetrySink: TelemetrySink {
         self.host = host
         self.storage = TelemetrySDKStorage(token: token)
         self.consentID = consentID
-        self.nextConsentStart = enabled ? crashConsentStartedAt : nil
+        self.crashConsentStartedAt = crashConsentStartedAt
         self.mustDiscardPending = !enabled
         self.sessionConfiguration = sessionConfiguration
         self.flushInterval = flushInterval
@@ -145,9 +145,8 @@ final class PostHogTelemetrySink: TelemetrySink {
         sdkSession.protocolClasses = [TelemetryURLProtocol.self]
         sdkSession.httpAdditionalHeaders = [TelemetryURLProtocol.sessionHeader: transport.id]
         config.urlSessionConfiguration = sdkSession
-        let consentStart = nextConsentStart ?? Date()
+        let consentStart = crashConsentStartedAt()
         let consentID = consentID()
-        nextConsentStart = nil
         config.setBeforeSend { event in
             guard transport.isEnabled,
                   event.event != "$exception" || Self.crashBelongsToConsent(properties: event.properties, timestamp: event.timestamp, consentID: consentID, since: consentStart) else { return nil }

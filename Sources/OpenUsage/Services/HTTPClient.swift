@@ -86,7 +86,7 @@ struct URLSessionHTTPClient: HTTPClient {
         do { (data, response) = try await session.data(for: urlRequest) }
         catch {
             if (error as? URLError)?.code != .cancelled {
-                AppLog.error(.http, "request transport failed (code=\((error as NSError).code), category=\(ErrorCategory.classify(error).rawValue))")
+                AppLog.debug(.http, "request transport failed (code=\((error as NSError).code), category=\(ErrorCategory.classify(error).rawValue))")
             }
             throw error
         }

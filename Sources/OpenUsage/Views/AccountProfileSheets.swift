@@ -325,7 +325,7 @@ struct AccountProfileManagementSheet: View {
                 let home = try workspace.prepare(family: profile.family, profileID: profile.id).path
                 let launcher = AccountSignInLauncher()
                 let code = try await launcher.runLogin(family: profile.family, home: home)
-                guard !Task.isCancelled else { return }
+                try Task.checkCancellation()
                 guard code == 0 else {
                     actionError = "The \(familyTitle) sign-in did not complete. The saved account is unchanged."
                     AppDiagnostics.record(.accountSignIn, result: .failure, category: .subprocess, providerID: profile.family,

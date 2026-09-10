@@ -3,7 +3,15 @@ import Observation
 
 struct UsageHistoryLoadResult: Sendable {
     var documents: [UsageHistoryDocument]
-    var invalidFileMessages: [String]
+    private(set) var invalidFileMessages: [String] = []
+    private(set) var failureCategories: Set<ErrorCategory> = []
+
+    init(documents: [UsageHistoryDocument]) { self.documents = documents }
+
+    mutating func appendFailure(_ error: Error, fileName: String) {
+        invalidFileMessages.append("\(fileName): \(error.localizedDescription)")
+        failureCategories.insert(ErrorCategory.classify(error))
+    }
 }
 
 protocol UsageHistoryFileStoring: Sendable {
@@ -70,7 +78,7 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     func loadDocuments() async throws -> UsageHistoryLoadResult {
         let directory = try historyDirectory(create: false)
         guard FileManager.default.fileExists(atPath: directory.path) else {
-            return UsageHistoryLoadResult(documents: [], invalidFileMessages: [])
+            return UsageHistoryLoadResult(documents: [])
         }
 
         let urls = try FileManager.default.contentsOfDirectory(
@@ -79,20 +87,19 @@ actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
             options: [.skipsHiddenFiles]
         ).filter { $0.pathExtension == "json" }
 
-        var documents: [UsageHistoryDocument] = []
-        var errors: [String] = []
+        var result = UsageHistoryLoadResult(documents: [])
         for url in urls {
             do {
                 let data = try coordinatedRead(url)
                 let document = try decoder.decode(UsageHistoryDocument.self, from: data)
                 try document.validate()
-                documents.append(document)
+                result.documents.append(document)
             } catch {
-                errors.append("\(url.lastPathComponent): \(error.localizedDescription)")
+                result.appendFailure(error, fileName: url.lastPathComponent)
                 AppLog.warn(.config, "iCloud history ignored \(url.lastPathComponent): \(error.localizedDescription)")
             }
         }
-        return UsageHistoryLoadResult(documents: documents, invalidFileMessages: errors)
+        return result
     }
 
     func write(_ document: UsageHistoryDocument) async throws {
@@ -376,8 +383,13 @@ final class ICloudUsageSyncStore {
                 }
                 documents = UsageHistoryDocument.newestByDevice(visibleDocuments)
                 invalidFileMessages = result.invalidFileMessages
-                AppDiagnostics.record(.iCloudRead, result: result.invalidFileMessages.isEmpty ? .success : .degraded,
-                                      category: result.invalidFileMessages.isEmpty ? nil : .decoding)
+                if result.invalidFileMessages.isEmpty {
+                    AppDiagnostics.record(.iCloudRead, result: .success)
+                } else {
+                    for category in result.failureCategories.sorted(by: { $0.rawValue < $1.rawValue }) {
+                        AppDiagnostics.record(.iCloudRead, result: .degraded, category: category)
+                    }
+                }
                 dataStore.setPeerHistoryDocuments(visibleDocuments, ownDeviceID: deviceID)
                 operationError = result.invalidFileMessages.isEmpty
                     ? nil

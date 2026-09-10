@@ -5,6 +5,8 @@ import Foundation
 /// metric·reset window 단위 dedup, no-data metric 미발화, 미전달 metric 상태는 prune되어 재등록 시 초기화
 @MainActor
 final class QuotaNotificationEvaluator {
+    typealias Post = @MainActor (String, String, String, String, @MainActor () -> Bool) async -> Bool
+
     /// store가 이미 resolve한 이번 pass의 enabled·bounded·visible metric 하나
     struct Metric {
         let key: String
@@ -33,7 +35,7 @@ final class QuotaNotificationEvaluator {
         toggles: PaceNotificationToggles,
         now: Date,
         providerName: @MainActor (String) -> String,
-        post: @MainActor (String, String, String, String) async -> Bool
+        post: Post
     ) async {
         let evaluationGenerations = generationsByProvider
         let activeKeys = Set(metrics.map(\.key))
@@ -67,7 +69,7 @@ final class QuotaNotificationEvaluator {
             var underDelivered = false
             for milestone in result.fire {
                 let delivered = await deliver(milestone, data: data, providerID: metric.providerID,
-                                              providerName: providerName, post: post)
+                                              providerName: providerName, generation: boundGeneration, post: post)
                 guard generationsByProvider[metric.providerID, default: 0] == boundGeneration else {
                     continue metricLoop
                 }
@@ -95,10 +97,13 @@ final class QuotaNotificationEvaluator {
         data: WidgetData,
         providerID: String,
         providerName: @MainActor (String) -> String,
-        post: @MainActor (String, String, String, String) async -> Bool
+        generation: Int,
+        post: Post
     ) async -> Bool {
         let subtitle = "\(providerName(providerID)) \(data.title)"
-        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body)
+        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body) {
+            self.generationsByProvider[providerID, default: 0] == generation
+        }
     }
 
     // MARK: - Notification decision trace helpers (debug logging only)

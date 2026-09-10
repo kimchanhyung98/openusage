@@ -35,9 +35,10 @@ enum CodexResetWatchVotes {
             guard votes.episodeID == episodeID else { throw VotesError.episodeMismatch }
             let maximumSafeInteger: Int64 = 9_007_199_254_740_991
             guard (0...maximumSafeInteger).contains(votes.yes),
-                  (0...maximumSafeInteger).contains(votes.no), votes.yes + votes.no > 0 else {
+                  (0...maximumSafeInteger).contains(votes.no) else {
                 throw VotesError.invalidCounts
             }
+            guard votes.yes + votes.no > 0 else { throw VotesError.noVotes }
             AppDiagnostics.record(.resetVoteFetch, result: .success, providerID: "codex")
             return Result(percent: (Double(votes.yes) / (Double(votes.yes) + Double(votes.no)) * 100).rounded())
         } catch {
@@ -77,16 +78,18 @@ enum CodexResetWatchVotes {
             switch self {
             case .httpStatus(let code): .http(code)
             case .episodeMismatch, .invalidCounts: .decoding
+            case .noVotes: .notAvailable
             }
         }
 
-        case httpStatus(Int), episodeMismatch, invalidCounts
+        case httpStatus(Int), episodeMismatch, invalidCounts, noVotes
 
         var errorDescription: String? {
             switch self {
             case .httpStatus(let status): "HTTP \(status)"
             case .episodeMismatch: "Vote episode did not match the active forecast"
-            case .invalidCounts: "Vote counts were invalid or empty"
+            case .invalidCounts: "Vote counts were invalid"
+            case .noVotes: "No votes yet"
             }
         }
     }

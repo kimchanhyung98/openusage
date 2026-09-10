@@ -87,8 +87,9 @@ final class CommandLineToolInstaller {
             AppDiagnostics.record(operation, result: .cancelled)
         case .failure(let message, let code):
             let context = "Terminal helper \(action) failed"
-                + (code.map { "; authorization_error_code=\($0)" } ?? "")
-            AppDiagnostics.record(operation, result: .failure, category: .permission, localContext: context)
+                + (code.map { "; error_code=\($0)" } ?? "")
+            let category: ErrorCategory = code.map { (73...75).contains($0) } == true ? .subprocess : .permission
+            AppDiagnostics.record(operation, result: .failure, category: category, localContext: context)
             errorMessage = "Couldn't \(action) the terminal helper: \(message)"
         }
         refreshStatus()

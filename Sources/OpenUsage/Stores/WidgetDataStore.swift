@@ -32,7 +32,7 @@ final class WidgetDataStore {
     /// Card id → live 카드 title 리졸버(비계정 provider는 nil) — nil(테스트·one-shot CLI)이면 derived name 폴백.
     private let resolveDisplayName: (@MainActor (String) -> String?)?
     /// Milestone notification 전달 지점 — 반환 Bool은 실제 전달 여부, false면 un-marked로 남겨 다음 pass 재시도.
-    private let postNotification: @MainActor (String, String, String, String) async -> Bool
+    private let postNotification: QuotaNotificationEvaluator.Post
 
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
@@ -96,7 +96,7 @@ final class WidgetDataStore {
         monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         slowProviderRefreshThreshold: TimeInterval = WidgetDataStore.defaultSlowProviderRefreshThreshold,
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
-        postNotification: (@MainActor (String, String, String, String) async -> Bool)? = nil,
+        postNotification: QuotaNotificationEvaluator.Post? = nil,
         providerIdentityKeys: [String: String] = [:],
         familyTotalHistoryCardIDs: Set<String> = [],
         resolveDisplayName: (@MainActor (String) -> String?)? = nil
@@ -113,8 +113,10 @@ final class WidgetDataStore {
         self.slowProviderRefreshThreshold = slowProviderRefreshThreshold
         self.notificationSettings = notificationSettings
         self.postNotification = postNotification
-            ?? { idPrefix, title, subtitle, body in
-                await AppNotifications.shared.post(idPrefix: idPrefix, title: title, subtitle: subtitle, body: body)
+            ?? { idPrefix, title, subtitle, body, isCurrent in
+                await AppNotifications.shared.post(
+                    idPrefix: idPrefix, title: title, subtitle: subtitle, body: body, isCurrent: isCurrent
+                )
             }
         self.providerIdentityKeys = providerIdentityKeys
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
