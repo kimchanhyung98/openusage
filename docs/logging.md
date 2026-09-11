@@ -29,7 +29,10 @@ The release default is **Info** — quiet but useful.
 
 If a local usage log exists but cannot be read, OpenUsage writes one warning and skips it for that refresh.
 It does not repeat the warning every five minutes; it warns again only after a confirmed successful read followed by another read failure.
-A missing file does not count as recovery.
+A missing file, including one that disappears after discovery, does not count as recovery.
+A successful read counts as recovery even when the file contains no usable usage records.
+When OpenCode finds databases again after a directory read failure, recovery is evaluated together with the database reads.
+Database read failures keep the failure state active; an empty database list does not confirm directory recovery.
 The shared diagnostic module writes one local record for each reported failure: Error for a failed operation, Warning when an optional step fails and the main result remains usable.
 The record includes a fixed operation, error category, and available local context or error domain and code; raw error descriptions are excluded.
 Normal missing-login, unavailable-plan, and empty Reset Watch vote results stay at Info, and user cancellation is not treated as a failure.
