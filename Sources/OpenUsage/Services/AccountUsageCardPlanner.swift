@@ -39,4 +39,10 @@ enum AccountUsageCardPlanner {
     static func cardID(family: String, profileID: String) -> String {
         "\(family)@profile-\(profileID)"
     }
+
+    static func statusCardID(for profile: AccountProfile, profileIDsByCard: [String: String]) -> String? {
+        let snapshotID = cardID(family: profile.family, profileID: profile.id)
+        if profileIDsByCard[snapshotID] == profile.id { return snapshotID }
+        return profileIDsByCard[profile.family] == profile.id ? profile.family : nil
+    }
 }

@@ -18,6 +18,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// 오류 snapshot 전용 telemetry 분류 bucket (non-PII).
     /// 성공 시 항상 nil, 오류 snapshot은 cache되지 않아 미영속.
     var errorCategory: ErrorCategory?
+    var authenticationIssue: ProviderAuthenticationIssue?
     /// 성공한 응답에 포함된 부분 실패 여부 — 이전 cache의 누락 필드는 nil.
     var isDegraded: Bool?
 
@@ -30,6 +31,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
         errorCategory: ErrorCategory? = nil,
+        authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil
     ) {
         self.providerID = providerID
@@ -40,6 +42,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.usageHistory = usageHistory
         self.warning = warning
         self.errorCategory = errorCategory
+        self.authenticationIssue = authenticationIssue
         self.isDegraded = isDegraded
     }
 
@@ -56,6 +59,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         refreshedAt: Date,
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
+        authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
@@ -66,6 +70,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             refreshedAt: refreshedAt,
             usageHistory: usageHistory,
             warning: warning,
+            authenticationIssue: authenticationIssue,
             isDegraded: isDegraded
         )
     }
@@ -76,16 +81,23 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         Self.error(
             provider: provider,
             message: error.localizedDescription,
-            category: (error as? CategorizedError)?.errorCategory ?? .other
+            category: (error as? CategorizedError)?.errorCategory ?? .other,
+            authenticationIssue: ProviderAuthenticationIssue(error: error)
         )
     }
 
-    static func error(provider: Provider, message: String, category: ErrorCategory? = nil) -> ProviderSnapshot {
+    static func error(
+        provider: Provider,
+        message: String,
+        category: ErrorCategory? = nil,
+        authenticationIssue: ProviderAuthenticationIssue? = nil
+    ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
             lines: [.badge(label: MetricLine.errorBadgeLabel, text: message, colorHex: "#EF4444")],
-            errorCategory: category
+            errorCategory: category,
+            authenticationIssue: authenticationIssue
         )
     }
 }

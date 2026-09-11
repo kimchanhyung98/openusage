@@ -125,6 +125,7 @@ public final class AccountProfilesStore {
     public private(set) var profiles: [AccountProfile] = []
     public private(set) var hasUnreadableRegistry = false
     public private(set) var authenticationRevision = 0
+    private(set) var authenticationRevisionsByProfileID: [String: Int] = [:]
     private var preferredByFamily: [String: String] = [:]
 
     public init(defaults: UserDefaults = .standard) {
@@ -300,6 +301,7 @@ public final class AccountProfilesStore {
         )
         defaults.removeObject(forKey: Self.identityReplacementKey)
         authenticationRevision &+= 1
+        authenticationRevisionsByProfileID[profile.id] = authenticationRevision
         return profile
     }
 

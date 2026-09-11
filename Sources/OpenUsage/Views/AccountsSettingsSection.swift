@@ -1,8 +1,7 @@
 import SwiftUI
 
 /// 관리되는 Claude/Codex 계정의 Settings surface — family별 토글은 하나의 Shared Runtime Home을 유지한 채
-/// authentication만 선택 계정으로 교체. 행은 credential/경로를 노출하지 않음 — badge는 저장된 sign-in의
-/// 유효성에 대한 로컬 `AccountSignInProbe` 판정.
+/// authentication만 선택 계정으로 교체. Badge는 로컬 인증 준비 상태와 실제 usage 갱신 결과 결합.
 struct AccountsSettingsSection: View {
     @Environment(AppContainer.self) private var container
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
@@ -203,6 +202,11 @@ struct AccountsSettingsSection: View {
     }
 
     private func switchTo(_ profile: AccountProfile) {
+        let status = container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn)
+        guard status.canSwitch else {
+            switchError = status.message ?? "Sign in again before switching to this account."
+            return
+        }
         guard let shell = AccountShellInstaller.defaultShell() else {
             switchError = "Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically."
             AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
@@ -241,26 +245,27 @@ struct AccountsSettingsSection: View {
     }
 }
 
-/// 계정 행/sheet의 compact readiness dot — 저장된 sign-in이 유효하면 green, sign-in 필요하면 amber.
+/// 계정 행·관리 화면의 공통 상태 배지 — 확인 전은 중립, 정상은 green, 실패는 amber.
 struct AccountStatusBadge: View {
-    let state: AccountSignInProbe.State
+    let state: AccountStatus
+
+    private var color: AnyShapeStyle {
+        switch state {
+        case .ready: Theme.positive
+        case .notChecked, .checking: AnyShapeStyle(.secondary)
+        case .sessionExpired, .signInNeeded, .refreshFailed: Theme.notice
+        }
+    }
 
     var body: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(state.isReady ? Theme.positive : Theme.notice)
+                .fill(color)
                 .frame(width: 5, height: 5)
-            Text(state.isReady ? "Ready" : "Sign-In Needed")
+            Text(state.title)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(state.isReady ? Theme.positive : Theme.notice)
+                .foregroundStyle(color)
                 .lineLimit(1)
         }
-    }
-}
-
-extension AccountSignInProbe.State {
-    var isReady: Bool {
-        if case .ready = self { return true }
-        return false
     }
 }

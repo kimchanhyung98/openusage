@@ -232,6 +232,10 @@ struct AccountProfileManagementSheet: View {
         profile.family == "claude" ? "Claude" : "Codex"
     }
 
+    private var accountStatus: AccountStatus {
+        container.accountStatus(for: profile, localState: signInState)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
@@ -257,7 +261,7 @@ struct AccountProfileManagementSheet: View {
             }
 
             HStack(spacing: 8) {
-                AccountStatusBadge(state: signInState)
+                AccountStatusBadge(state: accountStatus)
                 Spacer(minLength: 8)
                 Button(isSigningIn ? "Signing In…" : "Sign In Again") {
                     signInAgain()
@@ -270,6 +274,13 @@ struct AccountProfileManagementSheet: View {
             if let actionError {
                 Text(actionError)
                     .font(.caption2)
+                    .foregroundStyle(Theme.notice)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let message = accountStatus.message {
+                Text(message)
+                    .font(.caption)
                     .foregroundStyle(Theme.notice)
                     .fixedSize(horizontal: false, vertical: true)
             }

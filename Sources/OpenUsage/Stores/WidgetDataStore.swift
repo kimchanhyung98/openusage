@@ -51,9 +51,12 @@ final class WidgetDataStore {
     var refreshingProviderIDs: Set<String> = []
     /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
     var lastRefreshAt: Date?
-    /// Provider별 최신 refresh 에러 — 에러 snapshot에서 설정, 다음 성공에서 해제.
-    /// last-good snapshot은 계속 표시(stale-while-revalidate), dashboard는 경고 indicator만 추가.
-    var providerErrors: [String: String] = [:]
+    private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
+    var providerErrors: [String: String] {
+        refreshResults.compactMapValues { $0.failure?.message }
+    }
+    private var authenticationGenerations: [String: Int] = [:]
+    private var invalidatedAuthentication: Set<String> = []
 
     /// Provider별 실패 후 다음 probe 허용 시각(`failureRetryBackoff` 참고) — UI 상태가 아니라 observation 제외.
     @ObservationIgnored private var failureRetryAfter: [String: Date] = [:]
@@ -227,7 +230,9 @@ final class WidgetDataStore {
         self.providerIdentityKeys = identityKeys
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         localSnapshots = localSnapshots.filter { keepsState($0.key) }
-        providerErrors = providerErrors.filter { keepsState($0.key) }
+        refreshResults = refreshResults.filter { keepsState($0.key) }
+        authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
+        invalidatedAuthentication.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
@@ -246,7 +251,7 @@ final class WidgetDataStore {
             AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
             return
         }
-        providerErrors[providerID] = message
+        refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message))
     }
 
     var knownProviderIDs: [String] { registry.providers.map(\.id) }
@@ -300,7 +305,8 @@ final class WidgetDataStore {
             providerID: providerID,
             currentIdentityKey: providerIdentityKeys[providerID]
         )
-        if !force, !staleAccountStamp, let cached = cache.snapshot(providerID: providerID) {
+        if !force, !staleAccountStamp, !invalidatedAuthentication.contains(providerID),
+           let cached = cache.snapshot(providerID: providerID) {
             // no-op write 회피 — @Observable은 값 비교를 하지 않아 재할당만으로 메뉴바 label 재렌더 발생.
             AppLog.debug(.refresh, "cache hit \(providerID)")
             if localSnapshots[providerID] != cached {
@@ -326,6 +332,7 @@ final class WidgetDataStore {
         refreshingProviderIDs.insert(providerID)
         defer { refreshingProviderIDs.remove(providerID) }
         let boundGeneration = catalogGeneration
+        let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let start = monotonicNow()
         var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
             await provider.refresh()
@@ -337,8 +344,9 @@ final class WidgetDataStore {
         }
         // fetch 중 catalog 교체: 카드 id가 다른 account를 가리킬 수 있어 결과 폐기 — publish하면 이전
         // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
-        guard catalogGeneration == boundGeneration else {
-            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
+        guard catalogGeneration == boundGeneration,
+              authenticationGenerations[providerID, default: 0] == authenticationGeneration else {
+            AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog or authentication changed mid-fetch")
             AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
             return .skipped
         }
@@ -351,7 +359,11 @@ final class WidgetDataStore {
         }
         if let message = Self.errorMessage(in: snapshot) {
             // 실패 시 에러만 노출하고 last-good snapshot 유지 — 전 행 "No data" 붕괴 방지.
-            providerErrors[providerID] = message
+            refreshResults[providerID] = .failed(ProviderRefreshFailure(
+                message: message,
+                category: snapshot.errorCategory ?? .other,
+                authenticationIssue: snapshot.authenticationIssue
+            ))
             // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
             if snapshot.errorCategory == .notLoggedIn || snapshot.errorCategory == .notAvailable {
@@ -362,9 +374,8 @@ final class WidgetDataStore {
             onRefreshOutcome?(providerID, .failed, snapshot.errorCategory, trigger, false)
             return .failed
         }
-        if providerErrors[providerID] != nil {
-            providerErrors[providerID] = nil
-        }
+        refreshResults[providerID] = .succeeded
+        invalidatedAuthentication.remove(providerID)
         // 회복 시 backoff 해제 — 즉시 정상 cadence 복귀.
         failureRetryAfter[providerID] = nil
         // live limit refresh 성공 + local log/CSV scan 무결과이면 last-good normalized history만 보존(새 plan·
@@ -537,7 +548,16 @@ final class WidgetDataStore {
     }
 
     func errorMessage(for providerID: String) -> String? {
-        providerErrors[providerID]
+        refreshResults[providerID]?.failure?.message
+    }
+
+    /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
+    func invalidateAuthentication(for providerID: String) {
+        guard providersByID[providerID] != nil else { return }
+        authenticationGenerations[providerID, default: 0] &+= 1
+        invalidatedAuthentication.insert(providerID)
+        refreshResults[providerID] = nil
+        failureRetryAfter[providerID] = nil
     }
 
     /// 최신 *성공* snapshot의 soft warning(예: Claude "Re-login for live usage") — 실패 후에도 last-good이

@@ -8,7 +8,7 @@ struct ReorderLift {
         case customizeMetric(title: String)
         case settingsAccountRow(
             label: String,
-            state: AccountSignInProbe.State,
+            state: AccountStatus,
             isSelected: Bool,
             showsSelectionToggle: Bool
         )
