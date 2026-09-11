@@ -67,6 +67,24 @@ final class AppLogTests: XCTestCase {
         XCTAssertTrue(contents.contains("/v1/usage/provider"))
     }
 
+    @MainActor
+    func testLocalAPIQueryOnlyTargetsLogUnknownRoute() throws {
+        AppLog.reloadLevel(.debug)
+        let server = LocalUsageServer(state: {
+            LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:])
+        })
+
+        for path in ["?", "?/v1/usage", "?/v1/limits", "?/v1/usage/PRIVATE_ACCOUNT"] {
+            XCTAssertEqual(server.route(head: "GET \(path) HTTP/1.1\r\n").status, 404)
+        }
+
+        let contents = try fileContents()
+        XCTAssertEqual(contents.components(separatedBy: "GET unknown").count - 1, 4, contents)
+        XCTAssertFalse(contents.contains("/v1/usage"), contents)
+        XCTAssertFalse(contents.contains("/v1/limits"), contents)
+        XCTAssertFalse(contents.contains("PRIVATE_ACCOUNT"), contents)
+    }
+
     func testErrorFloorSuppressesEverythingButError() throws {
         AppLog.reloadLevel(.error)
         AppLog.warn(.http, "warn-below-error-floor")

@@ -62,7 +62,7 @@ enum LocalUsageAPI {
             return Response(status: 204, body: nil)
         }
 
-        let segments = path.split(separator: "?", maxSplits: 1)[0]
+        let segments = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0]
             .split(separator: "/")
             .map(String.init)
 
