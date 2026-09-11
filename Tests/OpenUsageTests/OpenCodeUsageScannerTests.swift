@@ -110,6 +110,70 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         }
     }
 
+    func testDirectoryFailureRecoversAfterDatabaseReadAndCanFailAgain() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        var scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": "[]"]),
+            databasePaths: { throw CocoaError(.fileReadNoPermission) },
+            readFailureWarning: warnings.record
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        scanner.databasePaths = { ["/oc/opencode.db"] }
+        let recovered = try await scanner.scan(now: now)
+        XCTAssertNotNil(recovered)
+        scanner.databasePaths = { throw CocoaError(.fileReadNoPermission) }
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
+    func testDirectoryRecoveryDoesNotReportSuccessWhenAllDatabasesFail() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        var scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(failing: ["/oc/opencode.db"]),
+            databasePaths: { throw CocoaError(.fileReadNoPermission) },
+            readFailureWarning: warnings.record
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        scanner.databasePaths = { ["/oc/opencode.db"] }
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
     func testHasHostedUsageProbe() {
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let withUsage = OpenCodeUsageScanner(

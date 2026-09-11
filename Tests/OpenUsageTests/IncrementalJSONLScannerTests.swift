@@ -312,7 +312,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         XCTAssertLessThanOrEqual(probe.maximumActive, 3)
     }
 
-    func testUnreadableFileWarnsOnceUntilItRecovers() async throws {
+    func testUnreadableFileWarnsOnceUntilItRecoversEvenWhenMissingAfterDiscovery() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("OpenUsageScannerWarnings-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -322,12 +322,19 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         let file = JSONLScanning.DiscoveredFile(path: path.path, size: 0, mtime: Date())
         let warnings = WarningRecorder()
-        let scanner = IncrementalJSONLScanner<Int>(readFailureWarning: warnings.record)
+        let diagnostics = DiagnosticEventRecorder()
+        let scanner = IncrementalJSONLScanner<Int>(logTag: "plugin:codex", readFailureWarning: warnings.record)
         let parse: @Sendable (Data) -> [Int]? = { data in
             String(data: data, encoding: .utf8).flatMap(Int.init).map { [$0] }
         }
 
         _ = await scanner.items(from: [file], since: .distantPast, parse: parse)
+        _ = await scanner.items(from: [file], since: .distantPast, parse: parse)
+        XCTAssertEqual(warnings.counts, [1])
+
+        try FileManager.default.removeItem(at: path)
+        _ = await scanner.items(from: [file], since: .distantPast, parse: parse)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         _ = await scanner.items(from: [file], since: .distantPast, parse: parse)
         XCTAssertEqual(warnings.counts, [1])
 
@@ -350,6 +357,40 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         )
         _ = await scanner.items(from: [failedAgainFile], since: .distantPast, parse: parse)
         XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "codex"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex")
+        ])
+    }
+
+    func testSuccessfulReadRecoversWhenParserReturnsNilOrNoItems() async throws {
+        let parseResults: [[Int]?] = [nil, []]
+        for parsedItems in parseResults {
+            let directory = try makeDirectory("EmptyRecovery")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let path = directory.appendingPathComponent("usage.jsonl")
+            try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+            var file = JSONLScanning.DiscoveredFile(path: path.path, size: 0, mtime: Date())
+            let warnings = WarningRecorder()
+            let diagnostics = DiagnosticEventRecorder()
+            let scanner = IncrementalJSONLScanner<Int>(logTag: "plugin:codex", readFailureWarning: warnings.record)
+            let parse: @Sendable (Data) -> [Int]? = { _ in parsedItems }
+
+            _ = await scanner.items(from: [file], since: .distantPast, parse: parse)
+            try FileManager.default.removeItem(at: path)
+            try Data("invalid".utf8).write(to: path)
+            file.size = 7
+            file.mtime.addTimeInterval(1)
+            let items = await scanner.items(from: [file], since: .distantPast, parse: parse)
+
+            XCTAssertEqual(items, [])
+            XCTAssertEqual(warnings.counts, [1])
+            XCTAssertEqual(diagnostics.events, [
+                DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex"),
+                DiagnosticEvent(.historyScan, result: .success, providerID: "codex")
+            ])
+        }
     }
 
     func testScanningAnotherBatchDoesNotForgetAnUnreadableFile() async throws {
