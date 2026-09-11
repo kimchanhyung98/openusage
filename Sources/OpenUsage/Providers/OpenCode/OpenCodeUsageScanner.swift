@@ -45,13 +45,15 @@ struct OpenCodeUsageScanner: Sendable {
     /// database가 존재하는데 하나도 못 읽으면 `databaseUnreadable` throw — 전부 실패한 refresh를 0 사용량으로 렌더링 금지.
     /// 기본 33일은 가장 넓은 meter window(anchored month)+여유분 — tile/trend는 아래에서 31일로 재제한.
     func scan(now: Date, daysBack: Int = 33, hasGoKey: Bool = false) async throws -> OpenCodeUsageScan? {
+        let directoryMarker = "<data directory>"
         let paths: [String]
         do {
             paths = try databasePaths()
         } catch {
             // data directory가 존재하나 열거 불가 — 읽기 불가 database와 동일 실패군, reporter edge-log로 반복 spam 방지
-            let marker = "<data directory>"
-            let newlyFailing = await readFailureReporter.update(checkedPaths: [marker], failingPaths: [marker])
+            let newlyFailing = await readFailureReporter.update(
+                checkedPaths: [directoryMarker], failingPaths: [directoryMarker]
+            )
             if !newlyFailing.isEmpty {
                 AppLog.warn(LogTag.plugin("opencode"), "data directory unreadable: \(error.localizedDescription)")
             }
@@ -85,7 +87,9 @@ struct OpenCodeUsageScanner: Sendable {
             }
         }
         // 경로별 상세는 새로 실패한 경로만 로그(reporter edge-trigger) — 계속 잠긴 database는 5분마다가 아닌 1회만 경고
-        let newlyFailing = await readFailureReporter.update(checkedPaths: checked, failingPaths: Set(failures.keys))
+        let newlyFailing = await readFailureReporter.update(
+            checkedPaths: checked.union([directoryMarker]), failingPaths: Set(failures.keys)
+        )
         for path in newlyFailing.sorted() {
             AppLog.warn(LogTag.plugin("opencode"), "usage query failed for \(path): \(failures[path] ?? "unknown error")")
         }
