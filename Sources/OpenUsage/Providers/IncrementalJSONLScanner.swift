@@ -124,7 +124,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             parse: parse
         )
         guard !Task.isCancelled else { return nil }
-        let checkedPaths = Set(parseResults.lazy.map(\.file.path))
+        let checkedPaths = Set(parseResults.lazy.filter(\.readAttempted).map(\.file.path))
         let unreadablePaths = Set(parseResults.lazy.filter(\.readFailed).map(\.file.path))
         await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
         guard !Task.isCancelled else { return nil }
@@ -381,28 +381,28 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         return result
     }
 
-    /// 변경 파일을 상한 내에서 병렬 read + parse. 결과는 입력 순서로 키잉, `nil` item 목록은 읽기 실패 표시.
+    /// 변경 파일을 상한 내에서 병렬 read + parse. 결과는 입력 순서로 키잉, 읽기 시도·실패 여부는 parser 결과와 분리.
     private static func parseFiles(
         _ files: [JSONLScanning.DiscoveredFile],
         maxConcurrentParses: Int,
         permitPool: JSONLParsePermitPool,
         parse: @Sendable @escaping (Data) -> [Item]?
-    ) async -> [(file: JSONLScanning.DiscoveredFile, items: [Item]?, readFailed: Bool)] {
+    ) async -> [(file: JSONLScanning.DiscoveredFile, items: [Item]?, readAttempted: Bool, readFailed: Bool)] {
         await withTaskGroup(
-            of: (Int, [Item]?, Bool).self,
-            returning: [(file: JSONLScanning.DiscoveredFile, items: [Item]?, readFailed: Bool)].self
+            of: (Int, [Item]?, Bool, Bool).self,
+            returning: [(file: JSONLScanning.DiscoveredFile, items: [Item]?, readAttempted: Bool, readFailed: Bool)].self
         ) { group in
             func addTask(at index: Int) {
                 let file = files[index]
                 group.addTask {
-                    guard await permitPool.acquire() else { return (index, nil, false) }
-                    let result: (Int, [Item]?, Bool)
+                    guard await permitPool.acquire() else { return (index, nil, false, false) }
+                    let result: (Int, [Item]?, Bool, Bool)
                     if Task.isCancelled || !FileManager.default.fileExists(atPath: file.path) {
-                        result = (index, nil, false)
+                        result = (index, nil, false, false)
                     } else if let data = FileManager.default.contents(atPath: file.path) {
-                        result = (index, parse(data), false)
+                        result = (index, parse(data), true, false)
                     } else {
-                        result = (index, nil, true)
+                        result = (index, nil, true, true)
                     }
                     await permitPool.release()
                     return result
@@ -416,13 +416,13 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                 nextIndex += 1
             }
 
-            var results = files.map { (file: $0, items: Optional<[Item]>.none, readFailed: false) }
-            for await (index, items, readFailed) in group {
+            var results = files.map { (file: $0, items: Optional<[Item]>.none, readAttempted: false, readFailed: false) }
+            for await (index, items, readAttempted, readFailed) in group {
                 if Task.isCancelled {
                     group.cancelAll()
                     break
                 }
-                results[index] = (files[index], items, readFailed)
+                results[index] = (files[index], items, readAttempted, readFailed)
                 if nextIndex < files.count {
                     addTask(at: nextIndex)
                     nextIndex += 1
