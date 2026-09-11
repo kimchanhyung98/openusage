@@ -39,6 +39,7 @@ final class TokscaleSyncCooldownTests: XCTestCase {
             bunInstaller: installer,
             commandRunner: commandRunner
         )
+        addTeardownBlock { await store.shutdown() }
 
         store.startSubmit()
         try await waitUntil { store.phase == .submitFinished }
