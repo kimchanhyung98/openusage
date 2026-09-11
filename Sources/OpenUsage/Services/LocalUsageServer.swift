@@ -112,7 +112,7 @@ final class LocalUsageServer {
     }
 
     private nonisolated static func logRoute(_ path: String) -> String {
-        let route = path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? ""
+        let route = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
         for base in ["/v1/limits", "/v1/usage"] {
             if route == base { return base }
             if route.hasPrefix(base + "/") { return base + "/provider" }
