@@ -78,7 +78,7 @@ final class LocalUsageServer {
                     let head = String(data: buffered[..<headEnd.lowerBound], encoding: .utf8) ?? ""
                     self.finish(connection, with: self.route(head: head))
                 } else if error != nil || isComplete || buffered.count >= Self.headLimit {
-                    if let error { Self.recordReceiveFailure(error) }
+                    if let error { Self.recordTransportFailure(error) }
                     self.finish(connection, with: nil)
                 } else {
                     self.receiveHead(connection, buffered: buffered)
@@ -87,7 +87,7 @@ final class LocalUsageServer {
         }
     }
 
-    nonisolated static func recordReceiveFailure(_ error: NWError) {
+    nonisolated static func recordTransportFailure(_ error: NWError) {
         switch error {
         case .posix(.ECONNRESET), .posix(.EPIPE):
             AppDiagnostics.record(.localAPIRequest, result: .cancelled)
@@ -159,13 +159,13 @@ final class LocalUsageServer {
             head += "Content-Type: application/json\r\n"
             head += "Content-Length: \(body.count)\r\n\r\n"
             connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
-                if let error { AppDiagnostics.failure(.localAPIRequest, error: error) }
+                if let error { Self.recordTransportFailure(error) }
                 connection.cancel()
             })
         } else {
             head += "Content-Length: 0\r\n\r\n"
             connection.send(content: Data(head.utf8), completion: .contentProcessed { error in
-                if let error { AppDiagnostics.failure(.localAPIRequest, error: error) }
+                if let error { Self.recordTransportFailure(error) }
                 connection.cancel()
             })
         }
