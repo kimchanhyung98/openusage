@@ -135,7 +135,9 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
   Source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수는 allowlist 갱신이 필요하고 추가 source directory에는 `TOKSCALE_EXTRA_DIRS` 사용 가능.
   이 UI에서 입력받아 child에 전달하는 유일한 값은 검증된 submit 전용 `TOKSCALE_DEVICE_NAME` environment entry.
 - `TokscaleSyncStore`에서 app 수명 동안 active install 또는 command 하나와 상태를 소유하고 optional device name을 로컬 저장해 Settings가 숨거나 다시 생성되어도 process 고아화와 결과 소실 방지.
-- `TokscaleSettingsSection`에서 usage sync, **Tokscale Device Name** sheet를 통한 기기 이름 관리, 미로그인 동작, login sheet 제공.
+  Submit exit 0 결과가 열린 동안과 **Done**으로 닫은 뒤 10분 동안 재제출 차단, 대기 종료 시각은 메모리에 유지하고 앱 재시작 시 초기화.
+  오류·미로그인 안내·login 결과를 닫을 때는 새 대기 시간 없음, 만료 시 다음 명시적 submit만 허용.
+- `TokscaleSettingsSection`에서 usage sync, **Tokscale Device Name** sheet를 통한 기기 이름 관리, 미로그인 동작, login sheet, operation 종료 후 **Done**으로 결과 닫기 제공.
 
 해당 Settings button에서만 설치나 Tokscale command 시작 가능.
 App launch, Settings 표시, 주기적·수동 새로 고침, provider 변경, iCloud callback, widget update, `openusage` executable, local API 요청으로 둘 다 실행 금지.
@@ -155,7 +157,8 @@ Source 탐색, credential, stable device ID와 `device.json`, 집계, network re
 Installer와 Tokscale standard output·error를 동시에 drain하고 ANSI/control sequence를 제거해 bounded memory command buffer에 보관.
 정리 중에도 buffered output을 읽되 pipe별 마지막 64 KiB로 제한해 detached writer의 무한 대기 방지.
 보존하는 앞·뒷부분은 UTF-8 경계의 남는 공간을 공유해 byte 상한 안의 완전한 문자 유지하며, raw C1 control도 제거.
-Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
+Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 **Done**으로 결과를 닫거나 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
+결과 닫기는 output·오류를 비우고 카드를 idle로 돌리며 기기 이름과 Tokscale 인증은 유지.
 Raw output, 상속한 environment value, credential, authorization code를 OpenUsage log, telemetry, file, preference에 기록하지 않음.
 
 ## AppKit 브리지

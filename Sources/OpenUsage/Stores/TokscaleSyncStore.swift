@@ -42,6 +42,7 @@ enum TokscaleSyncFailure: Equatable {
 @Observable
 final class TokscaleSyncStore {
     static let deviceNameKey = "openusage.tokscale.deviceName.v1"
+    static let minimumSyncInterval: TimeInterval = 10 * 60
 
     private(set) var phase: TokscaleSyncPhase = .idle
     private(set) var deviceName: String?
@@ -49,22 +50,32 @@ final class TokscaleSyncStore {
     private(set) var errorMessage: String?
     private(set) var failure: TokscaleSyncFailure?
     private(set) var isRunning = false
+    private(set) var nextSyncAllowedAt: Date?
+
+    var isSyncCoolingDown: Bool { nextSyncAllowedAt != nil }
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let bunInstaller: any BunInstalling
     @ObservationIgnored private let commandRunner: any TokscaleCommandRunning
+    @ObservationIgnored private let now: @MainActor @Sendable () -> Date
+    @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private var activeTask: Task<Void, Never>?
+    @ObservationIgnored private var cooldownTask: Task<Void, Never>?
     @ObservationIgnored private var operationGeneration = 0
     @ObservationIgnored private var acceptsOutput = false
 
     init(
         defaults: UserDefaults = .standard,
         bunInstaller: any BunInstalling = BunInstaller(),
-        commandRunner: any TokscaleCommandRunning = TokscaleCommandRunner()
+        commandRunner: any TokscaleCommandRunning = TokscaleCommandRunner(),
+        now: @escaping @MainActor @Sendable () -> Date = Date.init,
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.defaults = defaults
         self.bunInstaller = bunInstaller
         self.commandRunner = commandRunner
+        self.now = now
+        self.sleep = sleep
         if let saved = defaults.string(forKey: Self.deviceNameKey) {
             do {
                 deviceName = try TokscaleDeviceName(saved).value
@@ -88,8 +99,16 @@ final class TokscaleSyncStore {
         defaults.removeObject(forKey: Self.deviceNameKey)
     }
 
+    func refreshCooldown() {
+        guard let nextSyncAllowedAt, now() >= nextSyncAllowedAt else { return }
+        cooldownTask?.cancel()
+        cooldownTask = nil
+        self.nextSyncAllowedAt = nil
+    }
+
     func startSubmit() {
-        guard activeTask == nil else { return }
+        refreshCooldown()
+        guard activeTask == nil, phase != .submitFinished, !isSyncCoolingDown else { return }
         let name = deviceName.flatMap { try? TokscaleDeviceName($0) }
         let generation = beginOperation(initialPhase: .submitting)
         activeTask = Task { @MainActor [weak self] in
@@ -117,10 +136,38 @@ final class TokscaleSyncStore {
         phase = .loginRequired
     }
 
+    /// 제출 명령 완료 결과를 닫은 시점부터 재동기화 제한 적용. 실패·로그인 결과는 즉시 재시도 허용.
+    func dismissResult() {
+        guard !isRunning else { return }
+        if phase == .submitFinished {
+            applySyncCooldown()
+        }
+        acceptsOutput = false
+        output = ""
+        errorMessage = nil
+        failure = nil
+        phase = .idle
+    }
+
+    private func applySyncCooldown() {
+        nextSyncAllowedAt = now().addingTimeInterval(Self.minimumSyncInterval)
+        cooldownTask?.cancel()
+        let sleep = self.sleep
+        cooldownTask = Task { @MainActor [weak self] in
+            try? await sleep(.seconds(Self.minimumSyncInterval))
+            guard let self, !Task.isCancelled else { return }
+            self.nextSyncAllowedAt = nil
+            self.cooldownTask = nil
+        }
+    }
+
     func shutdown() async {
         let task = activeTask
         operationGeneration &+= 1
         task?.cancel()
+        cooldownTask?.cancel()
+        cooldownTask = nil
+        nextSyncAllowedAt = nil
         isRunning = false
         acceptsOutput = false
         output = ""

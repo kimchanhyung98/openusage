@@ -7,8 +7,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
     func testInitIsInertAndLoadsOnlyAValidatedSavedName() async throws {
         let defaults = makeDefaults()
         defaults.set("  m1-max  ", forKey: TokscaleSyncStore.deviceNameKey)
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [])
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [])
 
         let store = TokscaleSyncStore(
             defaults: defaults,
@@ -29,8 +29,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testSavingNameValidatesAndPersistsWithoutStartingWork() async throws {
         let defaults = makeDefaults()
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [])
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [])
         let store = TokscaleSyncStore(
             defaults: defaults,
             bunInstaller: installer,
@@ -55,8 +55,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
         let defaults = makeDefaults()
         let store = TokscaleSyncStore(
             defaults: defaults,
-            bunInstaller: StubBunInstaller(availability: .available(runtime)),
-            commandRunner: StubTokscaleCommandRunner(responses: [])
+            bunInstaller: TokscaleStoreTestBunInstaller(availability: .available(runtime)),
+            commandRunner: TokscaleStoreTestCommandRunner(responses: [])
         )
         try store.saveDeviceName("m1-max")
 
@@ -70,12 +70,12 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testMissingBunInstallsThenContinuesTheSameSubmit() async throws {
         let defaults = makeDefaults()
-        let installer = StubBunInstaller(
+        let installer = TokscaleStoreTestBunInstaller(
             availability: .missing,
             installResult: .success(runtime),
             installOutput: ["installer output\n"]
         )
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(
                 result: TokscaleCommandResult(exitCode: 0, output: "submit output\n"),
                 output: ["submit output\n"]
@@ -104,8 +104,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     func testOnlyOneSubmitCanRunAtATime() async throws {
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(result: TokscaleCommandResult(exitCode: 0, output: "done"), isSuspended: true),
         ])
         let store = TokscaleSyncStore(
@@ -130,8 +130,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testExactMissingLoginResultOffersLoginAndLoginNeverSubmits() async throws {
         let missingLoginOutput = TokscaleCommandResult.loginRequiredMarker
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(result: TokscaleCommandResult(exitCode: 1, output: missingLoginOutput)),
             .init(
                 result: TokscaleCommandResult(exitCode: 0, output: "Login complete."),
@@ -158,8 +158,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testFailedLoginCanRetryWithoutStartingSubmit() async throws {
         let missingLoginOutput = TokscaleCommandResult.loginRequiredMarker
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(result: TokscaleCommandResult(exitCode: 1, output: missingLoginOutput)),
             .init(result: TokscaleCommandResult(exitCode: 4, output: "Denied.")),
             .init(result: TokscaleCommandResult(exitCode: 0, output: "Login complete.")),
@@ -184,8 +184,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     func testBunWithoutBunxFailsWithoutInstallOrCommand() async throws {
-        let installer = StubBunInstaller(availability: .bunxMissing)
-        let commandRunner = StubTokscaleCommandRunner(responses: [])
+        let installer = TokscaleStoreTestBunInstaller(availability: .bunxMissing)
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [])
         let store = TokscaleSyncStore(
             defaults: makeDefaults(),
             bunInstaller: installer,
@@ -208,7 +208,7 @@ final class TokscaleSyncStoreTests: XCTestCase {
         let store = TokscaleSyncStore(
             defaults: makeDefaults(),
             bunInstaller: installer,
-            commandRunner: StubTokscaleCommandRunner(responses: [])
+            commandRunner: TokscaleStoreTestCommandRunner(responses: [])
         )
 
         store.startSubmit()
@@ -223,8 +223,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testNonzeroSubmitIsANormalFailureUnlessLoginMarkerMatches() async throws {
         let diagnostics = DiagnosticEventRecorder()
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(
                 result: TokscaleCommandResult(
                     exitCode: 7,
@@ -250,8 +250,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     func testOutputIsBoundedWhilePreservingItsBeginningAndEnd() async throws {
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(
                 result: TokscaleCommandResult(exitCode: 0, output: "fallback"),
                 output: ["BEGIN\n", String(repeating: "x", count: TokscaleCommandRunner.outputLimit * 2), "\nEND"]
@@ -274,8 +274,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
 
     func testCancelLoginRejectsLateOutputAndWaitsForChildTermination() async throws {
         let missingLoginOutput = TokscaleCommandResult.loginRequiredMarker
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(result: TokscaleCommandResult(exitCode: 1, output: missingLoginOutput)),
             .init(
                 result: TokscaleCommandResult(exitCode: 0, output: "late result"),
@@ -312,8 +312,8 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     func testShutdownCancelsAndInvalidatesAnActiveOperation() async throws {
-        let installer = StubBunInstaller(availability: .available(runtime))
-        let commandRunner = StubTokscaleCommandRunner(responses: [
+        let installer = TokscaleStoreTestBunInstaller(availability: .available(runtime))
+        let commandRunner = TokscaleStoreTestCommandRunner(responses: [
             .init(
                 result: TokscaleCommandResult(exitCode: 0, output: "late result"),
                 output: ["early output"],
@@ -369,109 +369,5 @@ final class TokscaleSyncStoreTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTFail("Condition was not met before timeout")
-    }
-}
-
-private enum TokscaleStoreTestError: Error, Sendable {
-    case failed
-}
-
-private actor StubBunInstaller: BunInstalling {
-    private let availabilityResult: Result<BunAvailability, TokscaleStoreTestError>
-    private let installResult: Result<BunRuntime, TokscaleStoreTestError>
-    private let installOutput: [String]
-    private var availabilityCalls = 0
-    private var installCalls = 0
-
-    init(
-        availability: BunAvailability,
-        installResult: Result<BunRuntime, TokscaleStoreTestError> = .failure(.failed),
-        installOutput: [String] = []
-    ) {
-        self.availabilityResult = .success(availability)
-        self.installResult = installResult
-        self.installOutput = installOutput
-    }
-
-    func availability() async throws -> BunAvailability {
-        availabilityCalls += 1
-        return try availabilityResult.get()
-    }
-
-    func install(onOutput: @escaping @Sendable (String) -> Void) async throws -> BunRuntime {
-        installCalls += 1
-        for chunk in installOutput { onOutput(chunk) }
-        return try installResult.get()
-    }
-
-    func availabilityCallCount() -> Int {
-        availabilityCalls
-    }
-
-    func installCallCount() -> Int {
-        installCalls
-    }
-}
-
-private actor UnsafeDirectoryBunInstaller: BunInstalling {
-    func availability() async throws -> BunAvailability {
-        .missing
-    }
-
-    func install(onOutput: @escaping @Sendable (String) -> Void) async throws -> BunRuntime {
-        throw BunInstallerError.unsafeInstallDirectory
-    }
-}
-
-private actor StubTokscaleCommandRunner: TokscaleCommandRunning {
-    struct Response: Sendable {
-        let result: TokscaleCommandResult
-        var output: [String] = []
-        var isSuspended = false
-    }
-
-    private var responses: [Response]
-    private var recordedCommands: [TokscaleCommand] = []
-    private var suspendedContinuation: CheckedContinuation<Void, Never>?
-    private var suspendedOutput: (@Sendable (String) -> Void)?
-
-    init(responses: [Response]) {
-        self.responses = responses
-    }
-
-    func run(
-        _ command: TokscaleCommand,
-        runtime: BunRuntime,
-        onOutput: @escaping @Sendable (String) -> Void
-    ) async throws -> TokscaleCommandResult {
-        recordedCommands.append(command)
-        guard !responses.isEmpty else { throw TokscaleStoreTestError.failed }
-        let response = responses.removeFirst()
-        for chunk in response.output { onOutput(chunk) }
-        if response.isSuspended {
-            suspendedOutput = onOutput
-            await withCheckedContinuation { continuation in
-                suspendedContinuation = continuation
-            }
-            suspendedOutput = nil
-        }
-        return response.result
-    }
-
-    func callCount() -> Int {
-        recordedCommands.count
-    }
-
-    func commands() -> [TokscaleCommand] {
-        recordedCommands
-    }
-
-    func emitToSuspendedCall(_ output: String) {
-        suspendedOutput?(output)
-    }
-
-    func releaseSuspendedCall() {
-        suspendedContinuation?.resume()
-        suspendedContinuation = nil
     }
 }

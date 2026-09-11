@@ -53,6 +53,148 @@ final class TokscaleSettingsSectionTests: XCTestCase {
         return fields
     }
 
+    func testFinishedAndFailedResultsRenderAndCollapseAcrossAppearancesAndDensities() async throws {
+        let suite = "OpenUsageTests.Tokscale.ResultRendering.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let export = ProcessInfo.processInfo.environment["OPENUSAGE_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+
+        for result in renderedResults {
+            for density in DensitySetting.allCases {
+                defaults.set(density.rawValue, forKey: DensitySetting.key)
+                for appearance in [ColorScheme.light, .dark] {
+                    let store = TokscaleSyncStore(
+                        defaults: defaults,
+                        bunInstaller: StubFinishedBunInstaller(),
+                        commandRunner: StubFinishedTokscaleRunner(result: result)
+                    )
+                    let outcome = result.exitCode == 0 ? "finished" : "failed"
+                    let variant = "\(outcome)-\(density.rawValue)-\(appearance)"
+                    let view = resultCard(store: store, defaults: defaults, appearance: appearance)
+                    let idleHeight = try renderedSize(of: view).height
+
+                    store.startSubmit()
+                    try await waitForResult(store, phase: result.exitCode == 0 ? .submitFinished : .failed)
+                    XCTAssertFalse(store.output.isEmpty)
+                    let resultSize = try renderedSize(
+                        of: view, export: export?.appendingPathComponent("tokscale-\(variant).png")
+                    )
+                    XCTAssertEqual(resultSize.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                    XCTAssertGreaterThan(resultSize.height, idleHeight + 100, variant)
+                    XCTAssertLessThan(resultSize.height, 400, variant)
+
+                    store.dismissResult()
+                    XCTAssertEqual(store.phase, .idle)
+                    XCTAssertTrue(store.output.isEmpty)
+                    XCTAssertNil(store.errorMessage)
+                    XCTAssertNil(store.failure)
+                    XCTAssertEqual(store.isSyncCoolingDown, result.exitCode == 0)
+                    let dismissedSize = try renderedSize(
+                        of: view, export: export?.appendingPathComponent("tokscale-\(variant)-dismissed.png")
+                    )
+                    XCTAssertEqual(dismissedSize.width, PanelHeightController.panelWidth, accuracy: 0.5, variant)
+                    XCTAssertLessThan(dismissedSize.height, resultSize.height - 100, variant)
+                    if result.exitCode == 0 {
+                        XCTAssertGreaterThanOrEqual(dismissedSize.height, idleHeight, variant)
+                        XCTAssertLessThanOrEqual(dismissedSize.height, idleHeight + 48, variant)
+                    } else {
+                        XCTAssertEqual(dismissedSize.height, idleHeight, accuracy: 0.5, variant)
+                    }
+                    await store.shutdown()
+                }
+            }
+        }
+    }
+
+    func testDoneButtonDismissesResultsWhenHostExposesSwiftUIAccessibility() async throws {
+        _ = try renderedSize(of: Button("Accessibility Control") {}) { hosting in
+            guard accessibilityButton(named: "Accessibility Control", in: hosting) != nil else {
+                throw XCTSkip("This test host does not expose accessibility children for a standalone SwiftUI button.")
+            }
+        }
+        let suite = "OpenUsageTests.Tokscale.DoneButton.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        for result in renderedResults {
+            let store = TokscaleSyncStore(
+                defaults: defaults,
+                bunInstaller: StubFinishedBunInstaller(),
+                commandRunner: StubFinishedTokscaleRunner(result: result)
+            )
+            let view = resultCard(store: store, defaults: defaults, appearance: .dark)
+            _ = try renderedSize(of: view) { hosting in
+                XCTAssertNil(accessibilityButton(named: "Done", in: hosting))
+            }
+            store.startSubmit()
+            try await waitForResult(store, phase: result.exitCode == 0 ? .submitFinished : .failed)
+
+            _ = try renderedSize(of: view) { hosting in
+                let done = try XCTUnwrap(accessibilityButton(named: "Done", in: hosting))
+                XCTAssertTrue(done.isAccessibilityEnabled())
+                XCTAssertGreaterThan(done.accessibilityFrame().width, 0)
+                let window = try XCTUnwrap(hosting.window)
+                XCTAssertTrue(window.frame.insetBy(dx: -1, dy: -1).contains(done.accessibilityFrame()))
+                let sync = try XCTUnwrap(accessibilityButton(named: "Sync", in: hosting))
+                XCTAssertEqual(sync.isAccessibilityEnabled(), result.exitCode != 0)
+                XCTAssertTrue(done.accessibilityPerformPress())
+            }
+            XCTAssertEqual(store.phase, .idle)
+            XCTAssertTrue(store.output.isEmpty)
+            XCTAssertNil(store.errorMessage)
+            XCTAssertNil(store.failure)
+            XCTAssertEqual(store.isSyncCoolingDown, result.exitCode == 0)
+            _ = try renderedSize(of: view) { hosting in
+                XCTAssertNil(accessibilityButton(named: "Done", in: hosting))
+                let sync = try XCTUnwrap(accessibilityButton(named: "Sync", in: hosting))
+                XCTAssertEqual(sync.isAccessibilityEnabled(), result.exitCode != 0)
+            }
+            await store.shutdown()
+        }
+    }
+
+    private var renderedResults: [TokscaleCommandResult] {
+        [
+            TokscaleCommandResult(
+                exitCode: 0,
+                output: "Successfully submitted!\n\nSummary:\n\nView your profile: https://tokscale.ai/u/example\n"
+            ),
+            TokscaleCommandResult(exitCode: 1, output: "The submission could not finish. Try again later.\n"),
+        ]
+    }
+
+    private func resultCard(store: TokscaleSyncStore, defaults: UserDefaults, appearance: ColorScheme) -> some View {
+        TokscaleSettingsSection(store: store)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(width: PanelHeightController.panelWidth)
+            .background(appearance == .light ? Color.white : Color.black)
+            .environment(\.colorScheme, appearance)
+            .defaultAppStorage(defaults)
+    }
+
+    private func waitForResult(_ store: TokscaleSyncStore, phase: TokscaleSyncPhase) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while clock.now < deadline && (store.phase != phase || store.isRunning) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(store.phase, phase)
+        XCTAssertFalse(store.isRunning)
+    }
+
+    private func accessibilityButton(named name: String, in view: NSView) -> (any NSAccessibilityProtocol)? {
+        accessibilityElements(in: view).first {
+            $0.accessibilityRole() == .button && ($0.accessibilityLabel() == name || $0.accessibilityTitle() == name)
+        }
+    }
+
+    private func accessibilityElements(in element: any NSAccessibilityProtocol) -> [any NSAccessibilityProtocol] {
+        [element] + (element.accessibilityChildren() ?? []).compactMap { $0 as? any NSAccessibilityProtocol }
+            .flatMap { accessibilityElements(in: $0) }
+    }
+
     func testSyncButtonInheritsDefaultSettingsControlSize() throws {
         let suite = "OpenUsageTests.Tokscale.ButtonRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -190,5 +332,40 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                 }
             }
         }
+    }
+}
+
+private actor StubFinishedBunInstaller: BunInstalling {
+    func availability() async throws -> BunAvailability {
+        .available(BunRuntime(
+            bunURL: URL(fileURLWithPath: "/opt/bun/bin/bun"),
+            bunxURL: URL(fileURLWithPath: "/opt/bun/bin/bunx"),
+            executionPath: "/opt/bun/bin"
+        ))
+    }
+
+    func install(onOutput: @escaping @Sendable (String) -> Void) async throws -> BunRuntime {
+        BunRuntime(
+            bunURL: URL(fileURLWithPath: "/opt/bun/bin/bun"),
+            bunxURL: URL(fileURLWithPath: "/opt/bun/bin/bunx"),
+            executionPath: "/opt/bun/bin"
+        )
+    }
+}
+
+private actor StubFinishedTokscaleRunner: TokscaleCommandRunning {
+    let result: TokscaleCommandResult
+
+    init(result: TokscaleCommandResult) {
+        self.result = result
+    }
+
+    func run(
+        _ command: TokscaleCommand,
+        runtime: BunRuntime,
+        onOutput: @escaping @Sendable (String) -> Void
+    ) async throws -> TokscaleCommandResult {
+        onOutput(result.output)
+        return result
     }
 }
