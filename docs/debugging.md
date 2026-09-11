@@ -19,6 +19,12 @@ It ships no update feed, so it never checks for updates — test updates with a 
 Development analytics defaults off and ignores the bundled production project token.
 Only an explicit `OPENUSAGE_POSTHOG_TOKEN` override can configure development analytics; use a separate test project.
 
+## Worktree Checks
+
+The pre-commit hook clears Git's repository-specific environment before running `make check`.
+This lets SwiftPM inspect dependencies in their own repositories when committing from a linked worktree.
+Failed checks still block the commit.
+
 ## Stream logs
 
 To watch the app's logs live while you reproduce an issue:

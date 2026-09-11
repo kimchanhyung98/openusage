@@ -19,6 +19,12 @@
 개발 분석은 기본값 꺼짐이며 내장 운영 프로젝트 토큰 무시.
 개발 분석 설정에는 명시적인 `OPENUSAGE_POSTHOG_TOKEN` override만 사용 가능; 별도 테스트 프로젝트 사용.
 
+## Worktree 검사
+
+pre-commit 훅은 `make check` 실행 전에 Git의 저장소별 환경 변수 제거.
+linked worktree에서 커밋할 때 SwiftPM이 각 의존성의 저장소를 올바르게 검사하도록 처리.
+검사 실패 시 커밋 차단 유지.
+
 ## 로그 스트리밍
 
 문제를 재현하면서 앱 로그를 실시간으로 보려면:
