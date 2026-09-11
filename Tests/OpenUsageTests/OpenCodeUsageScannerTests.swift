@@ -73,6 +73,69 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         XCTAssertNil(scan.goWindows)
     }
 
+    func testDatabaseDeletedBetweenDiscoveryAndQueryIsUnreadable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = directory.appendingPathComponent("opencode.db")
+        try Data().write(to: database)
+        let scanner = OpenCodeUsageScanner(databasePaths: {
+            let paths = try OpenCodePaths.databaseFiles(in: directory.path)
+            try FileManager.default.removeItem(at: database)
+            return paths
+        })
+
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable after the discovered database disappears")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
+    }
+
+    func testDisappearedDatabaseCannotRecoverPriorReadFailure() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        let path = "/oc/opencode.db"
+        let sqlite = FakeSQLite(failing: [path])
+        let scanner = OpenCodeUsageScanner(
+            sqlite: sqlite, databasePaths: { [path] }, readFailureWarning: warnings.record
+        )
+
+        for failing in [true, false, true] {
+            sqlite.failing = failing ? [path] : []
+            do {
+                _ = try await scanner.scan(now: now)
+                XCTFail("expected databaseUnreadable until a real read succeeds")
+            } catch {
+                XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+            }
+        }
+        XCTAssertEqual(warnings.counts, [1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+
+        sqlite.failing = []
+        sqlite.data[path] = "[]"
+        let recovered = try await scanner.scan(now: now)
+        XCTAssertNotNil(recovered)
+        sqlite.failing = [path]
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable after another read failure")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
     func testFailingDatabaseIsSkippedNotFatal() async throws {
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode-next.db": db2], failing: ["/oc/opencode.db"]),
