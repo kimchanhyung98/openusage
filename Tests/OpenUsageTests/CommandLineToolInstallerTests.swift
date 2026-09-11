@@ -47,11 +47,18 @@ final class CommandLineToolInstallerTests: XCTestCase {
     }
 
     func testPrivilegedCommandStatusesAreNotAuthorizationFailures() throws {
-        let cases: [(Int, CommandLineToolInstaller.Operation, ErrorCategory)] = [
+        let cases: [(Int?, CommandLineToolInstaller.Operation, ErrorCategory)] = [
+            (1, .install, .subprocess),
+            (1, .uninstall, .subprocess),
+            (255, .install, .subprocess),
             (73, .install, .subprocess),
             (74, .uninstall, .subprocess),
             (75, .uninstall, .subprocess),
-            (-60005, .install, .permission)
+            (-60005, .install, .permission),
+            (nil, .install, .other),
+            (-999, .uninstall, .other),
+            (0, .install, .other),
+            (256, .install, .other)
         ]
         for (code, operation, category) in cases {
             let fixture = try fixture()
@@ -91,15 +98,36 @@ final class CommandLineToolInstallerTests: XCTestCase {
 
             let lines = try String(contentsOf: fixture.root.appendingPathComponent("diagnostics.log"), encoding: .utf8)
                 .split(separator: "\n").map(String.init)
-            XCTAssertEqual(lines.count, 1, "status=\(code)")
+            XCTAssertEqual(lines.count, 1, "status=\(String(describing: code))")
             let line = try XCTUnwrap(lines.first)
             XCTAssertTrue(line.contains("[ERROR]"), line)
-            XCTAssertTrue(line.contains("; error_code=\(code)"), line)
+            if let code {
+                XCTAssertTrue(line.contains("; error_code=\(code)"), line)
+            } else {
+                XCTAssertFalse(line.contains("error_code="), line)
+            }
             XCTAssertFalse(line.contains("authorization_error_code"), line)
             XCTAssertFalse(line.contains("PRIVATE_COMMAND_FAILURE"), line)
             XCTAssertEqual(diagnostics.events, [DiagnosticEvent(expectedOperation, result: .failure, category: category)])
             XCTAssertTrue(installer.errorMessage?.contains("PRIVATE_COMMAND_FAILURE") == true)
         }
+    }
+
+    func testCancelledAuthorizationDoesNotBecomeFailure() throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let diagnostics = DiagnosticEventRecorder()
+        let installer = CommandLineToolInstaller(
+            sourcePath: fixture.source,
+            destinationPath: fixture.destination,
+            performPrivileged: { _, _, _ in .cancelled }
+        )
+
+        installer.install()
+
+        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.cliInstall, result: .cancelled)])
+        XCTAssertNil(installer.errorMessage)
+        XCTAssertEqual(installer.status, .notInstalled)
     }
 
     func testForeignPathIsNeverOverwritten() throws {

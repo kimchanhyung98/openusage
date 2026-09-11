@@ -146,9 +146,11 @@ enum PricingCatalogCodecs {
     }
 }
 
-enum PricingCodecError: Error, LocalizedError, Equatable {
+enum PricingCodecError: CategorizedError, LocalizedError, Equatable {
     case notAnObject
     case noUsableEntries
+
+    var errorCategory: ErrorCategory { .decoding }
 
     var errorDescription: String? {
         switch self {

@@ -88,7 +88,14 @@ final class CommandLineToolInstaller {
         case .failure(let message, let code):
             let context = "Terminal helper \(action) failed"
                 + (code.map { "; error_code=\($0)" } ?? "")
-            let category: ErrorCategory = code.map { (73...75).contains($0) } == true ? .subprocess : .permission
+            let category: ErrorCategory
+            if let code, (1...255).contains(code) {
+                category = .subprocess
+            } else if code == -60005 {
+                category = .permission
+            } else {
+                category = .other
+            }
             AppDiagnostics.record(operation, result: .failure, category: category, localContext: context)
             errorMessage = "Couldn't \(action) the terminal helper: \(message)"
         }

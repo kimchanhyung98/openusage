@@ -102,6 +102,41 @@ final class UpdaterController {
         checkForUpdates()
     }
 
+    static func recordUpdateCycle(error: Error?) {
+        let channel = UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? "early access" : "stable"
+        guard let error else {
+            AppDiagnostics.record(.updateCheck, result: .success)
+            AppLog.info(.updates, "check finished (channel=\(channel), no error)")
+            return
+        }
+        let code = (error as NSError).code
+        let downloadError = underlyingDownloadURLError(error)
+        if code == Int(SUError.noUpdateError.rawValue) {
+            AppDiagnostics.record(.updateCheck, result: .success)
+            AppLog.info(.updates, "check finished (channel=\(channel), no update available)")
+        } else if code == Int(SUError.installationCanceledError.rawValue) || downloadError?.code == .cancelled {
+            AppDiagnostics.record(.updateCheck, result: .cancelled)
+            AppLog.info(.updates, "check finished (channel=\(channel), user canceled)")
+        } else {
+            let category: ErrorCategory = downloadError == nil ? ErrorCategory.classify(error) : .network
+            AppDiagnostics.record(.updateCheck, result: .failure, category: category, error: error,
+                                  localContext: "Update check or download failed")
+        }
+    }
+
+    private static func underlyingDownloadURLError(_ error: Error) -> URLError? {
+        var current = error as NSError
+        // 다운로드·appcast의 연속 포장 두 단계에서 URL 오류 원인과 취소 코드만 복원.
+        for _ in 0..<2 {
+            guard current.domain == SUSparkleErrorDomain,
+                  current.code == Int(SUError.downloadError.rawValue),
+                  let underlying = current.userInfo[NSUnderlyingErrorKey] as? Error else { break }
+            if let urlError = underlying as? URLError { return urlError }
+            current = underlying as NSError
+        }
+        return nil
+    }
+
     /// 배너 dismiss — snooze 성격. 다음 scheduled check가 재노출 (영구 skip은 Sparkle window 담당).
     func dismissAvailableUpdate() {
         availableUpdateVersion = nil
@@ -172,23 +207,7 @@ private final class UpdaterChannelDelegate: NSObject, SPUUpdaterDelegate {
 
     /// update cycle 결과 기록 — 업데이트 없음·사용자 취소는 INFO, 실패는 공통 진단 기록.
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
-        let channel = UserDefaults.standard.bool(forKey: UpdaterController.betaChannelDefaultsKey) ? "early access" : "stable"
-        guard let error else {
-            AppDiagnostics.record(.updateCheck, result: .success)
-            AppLog.info(.updates, "check finished (channel=\(channel), no error)")
-            return
-        }
-        let code = (error as NSError).code
-        if code == Int(SUError.noUpdateError.rawValue) {
-            AppDiagnostics.record(.updateCheck, result: .success)
-            AppLog.info(.updates, "check finished (channel=\(channel), no update available)")
-        } else if code == Int(SUError.installationCanceledError.rawValue) {
-            AppDiagnostics.record(.updateCheck, result: .cancelled)
-            AppLog.info(.updates, "check finished (channel=\(channel), user canceled)")
-        } else {
-            AppDiagnostics.failure(.updateCheck, error: error,
-                                   localContext: "Update check or download failed")
-        }
+        UpdaterController.recordUpdateCycle(error: error)
     }
 }
 

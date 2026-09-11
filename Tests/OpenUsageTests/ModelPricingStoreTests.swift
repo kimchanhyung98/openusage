@@ -33,6 +33,69 @@ final class ModelPricingStoreTests: XCTestCase {
         ])
     }
 
+    func testStructurallyInvalidCatalogsAreDecodingFailuresAndKeepCachedPrices() async throws {
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = base.addingTimeInterval(2 * 60 * 60)
+        let cases: [(String, PricingCodecError)] = [("[]", .notAnObject), ("{}", .noUsableEntries)]
+        for (index, testCase) in cases.enumerated() {
+            let cacheDirectory = tempDir.appendingPathComponent("case-\(index)", isDirectory: true)
+            let (store, _) = makeStore(handler: { Self.respond(to: $0) }, now: { base }, cacheDirectory: cacheDirectory)
+            await store.refreshNow()
+            let (body, expectedError) = testCase
+            let data = Data(body.utf8)
+            for parse in [PricingCatalogCodecs.catalogFromLiteLLM, PricingCatalogCodecs.catalogFromModelsDev] {
+                XCTAssertThrowsError(try parse(data)) { XCTAssertEqual($0 as? PricingCodecError, expectedError) }
+            }
+            let diagnostics = DiagnosticEventRecorder()
+            let (aged, http) = makeStore(handler: { request in
+                if request.url.absoluteString.contains("litellm") || request.url.host() == "models.dev" {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: data)
+                }
+                return Self.respond(to: request)
+            }, now: { later }, cacheDirectory: cacheDirectory)
+
+            await aged.refreshNow()
+
+            XCTAssertEqual(http.requests.count, 3)
+            let failures = diagnostics.events.filter { $0.operation == .pricingLiteLLM || $0.operation == .pricingModelsDev }
+            XCTAssertEqual(failures, [
+                DiagnosticEvent(.pricingLiteLLM, result: .failure, category: .decoding),
+                DiagnosticEvent(.pricingModelsDev, result: .failure, category: .decoding)
+            ])
+            let pricing = await aged.current()
+            XCTAssertEqual(pricing.resolve(model: "fetched-model")?.inputPerMillion, 5)
+            XCTAssertEqual(pricing.resolve(model: "fetched-dev-model")?.inputPerMillion, 1)
+        }
+    }
+
+    func testPartiallyValidCatalogsKeepUsableEntries() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let (store, _) = makeStore { request in
+            if request.url.absoluteString.contains("litellm") {
+                let body = #"{"good-model":{"input_cost_per_token":0.000005,"output_cost_per_token":0.00001},"bad-model":{}}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }
+            if request.url.host() == "models.dev" {
+                let body = #"{"provider":{"models":{"good-dev-model":{"cost":{"input":1,"output":2}},"bad-dev-model":{}}}}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }
+            return Self.respond(to: request)
+        }
+
+        await store.refreshNow()
+
+        let pricing = await store.current()
+        XCTAssertEqual(pricing.resolve(model: "good-model")?.inputPerMillion, 5)
+        XCTAssertEqual(pricing.resolve(model: "good-dev-model")?.inputPerMillion, 1)
+        XCTAssertNil(pricing.resolve(model: "bad-model"))
+        XCTAssertNil(pricing.resolve(model: "bad-dev-model"))
+        let events = diagnostics.events.filter { $0.operation == .pricingLiteLLM || $0.operation == .pricingModelsDev }
+        XCTAssertEqual(events, [
+            DiagnosticEvent(.pricingLiteLLM, result: .success),
+            DiagnosticEvent(.pricingModelsDev, result: .success)
+        ])
+    }
+
     private static let bundledFixtures: @Sendable (String) -> Data? = { name in
         switch name {
         case "pricing_supplement":
@@ -65,12 +128,13 @@ final class ModelPricingStoreTests: XCTestCase {
 
     private func makeStore(
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        cacheDirectory: URL? = nil
     ) -> (ModelPricingStore, RoutingHTTPClient) {
         let http = RoutingHTTPClient(handler: handler)
         let store = ModelPricingStore(
             http: http,
-            cacheDirectory: tempDir,
+            cacheDirectory: cacheDirectory ?? tempDir,
             now: now,
             bundledData: Self.bundledFixtures
         )
