@@ -19,7 +19,7 @@ OpenUsage shows the reported tier (such as "Pay as you go" or "Free tier") besid
 
 Unlike the other providers, OpenRouter has no companion app or CLI that leaves a credential on your machine, so you supply an API key.
 Create one at [openrouter.ai/keys](https://openrouter.ai/keys), then add it in **Settings → API Keys** (recommended): expand OpenRouter, paste the key, and Save.
-The key is stored at `~/.config/openusage/openrouter.json` and picked up on the next refresh.
+The key is stored at `~/.config/openusage/openrouter.json`.
 
 You can also provide the key directly (checked in this order, first match wins):
 
@@ -36,6 +36,10 @@ You can also provide the key directly (checked in this order, first match wins):
    When a key is found here, the API Keys card shows it as read-only ("From environment") with a checkbox to override it with a saved key.
 
 A key saved through the app overrides an environment key (the config file is checked first); removing the saved key falls back to the environment key, or to none.
+Saving or removing a key in the app starts a refresh with the effective key, waiting for any earlier request to finish and ignoring that earlier result.
+If the earlier request outlasts the waiting limit, the next scheduled refresh retries with the current key.
+If the provider is disabled, this refresh is deferred until it is enabled again.
+Previously displayed last-known values remain while the new request runs or fails; restarting the app can also restore those values before fetching with the current key.
 
 ## Troubleshooting
 
