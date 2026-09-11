@@ -51,6 +51,7 @@ Works for disabled providers too.
 ### Everything else
 
 Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**.
+Queries do not affect routing; a `GET` request with an empty path or only a query returns **404**.
 When the server is already handling its maximum of 16 concurrent connections, requests get **503** — back off and retry.
 
 ## Limits response shape
@@ -184,6 +185,8 @@ Match on `providerId` (or the envelope key), never on the name.
 ```
 
 Codes: `provider_not_found`, `not_found`, `method_not_allowed`, `server_busy`.
+
+Peer resets and broken pipes during request receipt or response sending count as cancelled requests in diagnostics; other transport errors remain failures.
 
 ## CORS and privacy
 
