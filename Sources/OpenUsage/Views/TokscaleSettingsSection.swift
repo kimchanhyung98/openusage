@@ -36,6 +36,9 @@ struct TokscaleSettingsSection: View {
         .sheet(isPresented: $isLoginSheetPresented) {
             TokscaleLoginSheet(store: store)
         }
+        .onAppear {
+            store.refreshCooldown()
+        }
     }
 
     private var header: some View {
@@ -102,23 +105,29 @@ struct TokscaleSettingsSection: View {
             Button("Sync") {
                 store.startSubmit()
             }
+            .disabled(store.phase == .submitFinished || store.isSyncCoolingDown)
         }
     }
 
     private var disclosure: some View {
-        Text("Sync local usage to your public Tokscale profile.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Sync local usage to your public Tokscale profile.")
+            if let nextSyncAllowedAt = store.nextSyncAllowedAt {
+                Text("Sync Available at \(nextSyncAllowedAt, style: .time)")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var status: some View {
         VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
+            HStack(spacing: 7) {
                 if store.isRunning {
                     ProgressView()
                         .controlSize(.small)
@@ -127,6 +136,16 @@ struct TokscaleSettingsSection: View {
                     .font(.caption)
                     .foregroundStyle(statusStyle)
                     .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if canDismissResult {
+                    Button("Done") {
+                        withAnimation(Motion.spring) {
+                            store.dismissResult()
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
 
             if store.failure?.offersBunInstallationGuide == true {
@@ -137,6 +156,10 @@ struct TokscaleSettingsSection: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var canDismissResult: Bool {
+        !store.isRunning && store.phase != .idle
     }
 
     private var statusMessage: String {
