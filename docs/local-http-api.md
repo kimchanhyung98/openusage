@@ -52,6 +52,7 @@ Works for disabled providers too.
 
 Methods other than `GET`/`OPTIONS` return **405**; unknown routes return **404**.
 Queries do not affect routing; a `GET` request with an empty path or only a query returns **404**.
+Query-only requests are logged as an unknown route, even when the query contains a supported route name.
 When the server is already handling its maximum of 16 concurrent connections, requests get **503** — back off and retry.
 
 ## Limits response shape
