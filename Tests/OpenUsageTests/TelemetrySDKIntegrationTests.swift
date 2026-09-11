@@ -126,9 +126,13 @@ final class TelemetrySDKIntegrationTests: XCTestCase {
         let sink = makeSink(enabled: true, token: "phc_fixture_" + UUID().uuidString.replacingOccurrences(of: "-", with: ""))
         defer { sink.setEnabled(false) }
         let uuid = UUID().uuidString
+        let frames = (0..<257).map {
+            ["instruction_addr": "0x" + String(0x1000 + $0, radix: 16),
+             "function": "OPAQUE_PRIVATE_VALUE", "abs_path": "/Users/private/file"]
+        }
         sink.capture("$exception", [
-            "$exception_list": [["type": "SIGABRT", "value": "OPAQUE_PRIVATE_VALUE",
-                "stacktrace": ["frames": [["instruction_addr": "0x1234", "function": "OPAQUE_PRIVATE_VALUE"]]]]],
+            "$exception_list": [["type": "Fatal error", "value": "OPAQUE_PRIVATE_VALUE",
+                "stacktrace": ["frames": frames]]],
             "$debug_images": [["debug_id": uuid, "image_addr": "0x1000", "code_file": "/Users/private/OpenUsage"]],
             "$exception_steps": [["message": "OPAQUE_PRIVATE_VALUE"]],
         ])
@@ -136,9 +140,17 @@ final class TelemetrySDKIntegrationTests: XCTestCase {
         try await waitForBatch()
         let events = try TelemetryFixtureURLProtocol.events()
         XCTAssertEqual(events.count, 1)
+        let properties = try XCTUnwrap(events.first?["properties"] as? [String: Any])
+        let exception = try XCTUnwrap((properties["$exception_list"] as? [[String: Any]])?.first)
+        let stacktrace = try XCTUnwrap(exception["stacktrace"] as? [String: Any])
+        let retainedFrames = try XCTUnwrap(stacktrace["frames"] as? [[String: Any]])
+        XCTAssertEqual(exception["type"] as? String, "FatalError")
+        XCTAssertEqual(exception["value"] as? String, "Crash details redacted")
+        XCTAssertEqual(retainedFrames.count, 256)
+        XCTAssertEqual(retainedFrames.first?["instruction_addr"] as? String, "0x1001")
+        XCTAssertEqual(retainedFrames.last?["instruction_addr"] as? String, "0x1100")
         let encoded = String(decoding: try JSONSerialization.data(withJSONObject: events), as: UTF8.self)
         XCTAssertTrue(encoded.contains(uuid))
-        XCTAssertTrue(encoded.contains("0x1234"))
         for forbidden in ["OPAQUE_PRIVATE_VALUE", "/Users/private", "openusage_consent_id", "openusage_crash_"] {
             XCTAssertFalse(encoded.contains(forbidden), forbidden)
         }

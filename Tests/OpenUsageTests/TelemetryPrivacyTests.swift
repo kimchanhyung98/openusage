@@ -56,7 +56,46 @@ final class TelemetryPrivacyTests: XCTestCase {
         let properties = try XCTUnwrap(TelemetryPrivacy.properties(for: "$exception", source: [
             "$exception_list": [["type": "private@example.com", "value": "secret"]],
         ]))
-        XCTAssertEqual((properties["$exception_list"] as? [[String: Any]])?.first?["type"] as? String, "NativeException")
+        let exception = try XCTUnwrap((properties["$exception_list"] as? [[String: Any]])?.first)
+        XCTAssertEqual(exception["type"] as? String, "NativeException")
+        XCTAssertEqual(exception["value"] as? String, "Crash details redacted")
+        let encoded = String(decoding: try JSONSerialization.data(withJSONObject: properties), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("private@example.com"))
+        XCTAssertFalse(encoded.contains("secret"))
+    }
+
+    func testCrashFrameLimitRetainsTheCrashLocationAndFrameOrder() throws {
+        for count in [256, 257] {
+            let frames = (0..<count).map { ["instruction_addr": "0x" + String(0x1000 + $0, radix: 16)] }
+            let properties = try XCTUnwrap(TelemetryPrivacy.properties(for: "$exception", source: [
+                "$exception_list": [["type": "SIGABRT", "stacktrace": ["frames": frames]]],
+            ]))
+            let exception = try XCTUnwrap((properties["$exception_list"] as? [[String: Any]])?.first)
+            let stacktrace = try XCTUnwrap(exception["stacktrace"] as? [String: Any])
+            let retained = try XCTUnwrap(stacktrace["frames"] as? [[String: Any]])
+
+            XCTAssertEqual(exception["type"] as? String, "SIGABRT")
+            XCTAssertEqual(retained.count, 256)
+            XCTAssertEqual(retained.compactMap { $0["instruction_addr"] as? String },
+                           ((count - 256)..<count).map { "0x" + String(0x1000 + $0, radix: 16) })
+            XCTAssertEqual(retained.last?["instruction_addr"] as? String, "0x" + String(0x1000 + count - 1, radix: 16))
+        }
+    }
+
+    func testSDKSwiftCrashTypesMapToFixedTypesWithoutMessages() throws {
+        for (type, expected) in [
+            ("Fatal error", "FatalError"),
+            ("Assertion failed", "AssertionFailure"),
+            ("Precondition failed", "PreconditionFailure"),
+            ("fAtAl ErRoR", "FatalError"),
+        ] {
+            let properties = try XCTUnwrap(TelemetryPrivacy.properties(for: "$exception", source: [
+                "$exception_list": [["type": type, "value": "private@example.com at /Users/private/file"]],
+            ]))
+            let exception = try XCTUnwrap((properties["$exception_list"] as? [[String: Any]])?.first)
+            XCTAssertEqual(exception["type"] as? String, expected)
+            XCTAssertEqual(exception["value"] as? String, "Crash details redacted")
+        }
     }
 
     func testVersionAllowsBetaDevelopmentBuildsButRejectsFreeText() {
