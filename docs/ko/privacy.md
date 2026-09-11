@@ -139,7 +139,7 @@ OpenUsage는 이 경계 밖의 호환되지 않는 `BUN_INSTALL`을 수정하지
 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun 설치 안내](https://bun.com/docs/installation), [Bun `bunx` 문서](https://bun.com/docs/pm/bunx) 참조.
 
 Installer와 command output에는 username, browser URL, authorization code, local path, model 이름, profile URL, usage 값이 포함될 수 있음.
-OpenUsage에서는 bounded memory 사본을 Settings card와 login sheet에 표시하고 완료·실패 output도 다음 command 또는 app 종료까지 유지하며, OpenUsage log, telemetry, UserDefaults, file, clipboard에 자동 기록하지 않음.
+OpenUsage에서는 bounded memory 사본을 Settings card와 login sheet에 표시하고 완료·실패 output도 카드의 **Done**으로 결과를 닫거나 다음 command 또는 app 종료까지 유지하며, OpenUsage log, telemetry, UserDefaults, file, clipboard에 자동 기록하지 않음.
 OpenUsage에서 Tokscale credential file을 읽거나 복사하지 않으며 Tokscale logout, disconnect, remote data 삭제 UI도 제공하지 않음.
 
 ## 익명 분석 동작 방식

@@ -224,13 +224,19 @@ OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 �
    지원 source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수가 아직 허용되지 않은 경우 추가 directory에 `TOKSCALE_EXTRA_DIRS` 사용.
 4. Submit 결과가 검증된 Tokscale 미로그인 응답과 일치할 때만 **Log In…** 표시.
 5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
-6. OpenUsage에서 작은 **Log In to Tokscale** sheet를 열고 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행, 승인 대기 중 browser URL과 user code 표시.
+6. **Log In…**으로 작은 **Log In to Tokscale** sheet 표시, sheet 안 **Log In** 선택 시 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행하며 승인 대기 중 browser URL과 user code 표시.
 7. Login 종료 시 카드에 **Tokscale Login Finished. Sync Has Not Started.** 표시.
 8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync**를 선택할 때 제출 시작.
 
 동시에 Tokscale command 하나만 실행.
 카드에서 Bun 설치 중, Tokscale 실행 중, login 필요, 완료, 실패 상태 구분.
-Card에서 ANSI/control sequence를 제거한 bounded command output을 완료·실패 뒤에도 다음 operation 또는 app 종료까지 표시하고, login sheet가 열려 있는 동안 같은 login output도 표시.
+Card에서 ANSI/control sequence를 제거한 bounded command output을 완료·실패 뒤에도 **Done**으로 닫거나 다음 operation 또는 app 종료까지 표시하고, login sheet가 열려 있는 동안 같은 login output도 표시.
+**Done**으로 결과·command output·오류를 비우고 초기 카드로 복귀하며 기기 이름과 Tokscale 인증은 유지.
+설치나 command 실행 중에는 Done 사용 불가.
+Submit exit 0 뒤에는 **Done**으로 결과를 닫기 전까지 **Sync** 비활성화, 닫은 시점부터 최소 10분 동안 비활성화 유지.
+**Sync Available at**으로 다음 실행 가능 시각 안내, 해당 시각에는 버튼만 다시 활성화하고 자동 제출 없음.
+오류·미로그인 안내·login 결과를 닫을 때는 새 대기 시간 없이 복구와 명시적 재시도 가능.
+대기 상태는 같은 앱 세션에서 Settings를 닫고 다시 열어도 유지하며 앱 재시작 시 초기화.
 Exit 0도 제출할 usage가 없다는 뜻일 수 있어 upload 성공을 단정하지 않는 중립적 완료 문구 사용.
 그 밖의 nonzero 결과는 일반 실패로 유지.
 만료되거나 revoke된 저장 credential은 알려진 제한이며 OpenUsage 밖에서 Tokscale 자체 CLI로 복구.

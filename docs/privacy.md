@@ -139,7 +139,7 @@ Use only registry endpoints you trust, preferably over HTTPS; an HTTP registry c
 See the official [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun installation guide](https://bun.com/docs/installation), and [Bun `bunx` documentation](https://bun.com/docs/pm/bunx).
 
 Installer and command output can contain usernames, browser URLs, authorization codes, local paths, model names, profile URLs, and usage values.
-OpenUsage shows a bounded in-memory copy in the Settings card and login sheet, retains completion or failure output until the next command or app termination, and never writes it to the OpenUsage log, telemetry, UserDefaults, a file, or the clipboard automatically.
+OpenUsage shows a bounded in-memory copy in the Settings card and login sheet, retains completion or failure output until the card's **Done** dismisses the result, the next command begins, or the app terminates, and never writes it to the OpenUsage log, telemetry, UserDefaults, a file, or the clipboard automatically.
 OpenUsage does not read or copy Tokscale's credential file and provides no Tokscale logout, disconnect, or remote-data deletion UI.
 
 ## How anonymous analytics works

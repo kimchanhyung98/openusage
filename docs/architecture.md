@@ -135,7 +135,9 @@ The boundary has four responsibilities:
   Tokscale still owns source discovery; newly introduced path variables require an allowlist update, while `TOKSCALE_EXTRA_DIRS` remains available for additional source directories.
   The only value accepted from this UI and passed to a child is a validated submit-only `TOKSCALE_DEVICE_NAME` environment entry.
 - `TokscaleSyncStore` owns one active install or command for the app lifetime and persists the optional device name locally, so hiding or rebuilding Settings does not orphan the process or lose its result.
-- `TokscaleSettingsSection` provides usage sync, device-name management through the **Tokscale Device Name** sheet, the missing-login action, and the login sheet.
+  It blocks another submit while a zero-exit result remains open and for 10 minutes after **Done** dismisses that result; the deadline is held in memory and resets on app restart.
+  Dismissing errors, missing-login notices, or login results adds no waiting period, and expiry only permits another explicit submit.
+- `TokscaleSettingsSection` provides usage sync, device-name management through the **Tokscale Device Name** sheet, the missing-login action, the login sheet, and result dismissal with **Done** after the operation ends.
 
 Only the corresponding Settings buttons may start installation or a Tokscale command.
 App launch, Settings appearance, periodic or manual refresh, provider changes, iCloud callbacks, widget updates, the `openusage` executable, and local API requests never trigger either one.
@@ -155,7 +157,8 @@ Tokscale's CLI owns its source discovery, credentials, stable device ID and `dev
 Installer and Tokscale standard output and error are drained concurrently, stripped of ANSI and control sequences, and kept in a bounded in-memory command buffer.
 Cleanup still reads buffered output, with a final 64 KiB allowance per pipe so detached writers cannot hold the runner open indefinitely.
 The retained beginning and end share unused space at UTF-8 boundaries, preserving complete characters that fit in the byte limit; raw C1 controls are sanitized too.
-The Settings card shows that buffer while it is available, including completion or failure output until the next operation or app termination, and the login sheet also shows login output while it remains open.
+The Settings card shows that buffer while it is available, including completion or failure output until **Done** dismisses the result, the next operation begins, or the app terminates; the login sheet also shows login output while it remains open.
+Result dismissal clears the output and error and returns the card to idle without changing the device name or Tokscale credentials.
 Raw output, inherited environment values, credentials, and authorization codes never enter OpenUsage logs, telemetry, files, or preferences.
 
 ## The AppKit bridge

@@ -224,13 +224,19 @@ The first-use flow begins only when the user chooses **Sync**:
    Tokscale still discovers supported sources; use `TOKSCALE_EXTRA_DIRS` for additional directories when a new path variable is not yet allowed.
 4. **Log In…** appears only when that submit result matches Tokscale's verified missing-login response.
 5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
-6. OpenUsage runs `bunx tokscale@latest login` once with no standard input in a small **Log In to Tokscale** sheet that keeps the browser URL and user code visible while authorization is pending.
+6. **Log In…** opens a small **Log In to Tokscale** sheet; choosing **Log In** inside it runs `bunx tokscale@latest login` once with no standard input and keeps the browser URL and user code visible while authorization is pending.
 7. When login finishes, the card shows **Tokscale Login Finished. Sync Has Not Started.**
 8. Login never submits usage automatically; another explicit **Sync** starts submission.
 
 Only one Tokscale command runs at a time.
 The card distinguishes installing Bun, running Tokscale, login-required, finished, and failed states.
-The card keeps ANSI/control-sequence-cleaned, bounded command output visible through completion or failure until the next operation or app termination; the login sheet shows the same login output while it remains open.
+The card keeps ANSI/control-sequence-cleaned, bounded command output visible through completion or failure until dismissed with **Done**, a new operation begins, or the app terminates; the login sheet shows the same login output while it remains open.
+**Done** clears the result, command output, and error, returning the card to its initial state without changing the device name or Tokscale credentials.
+It is unavailable while an installation or command is running.
+After a zero-exit submit, **Sync** stays disabled until the result is closed with **Done**, then remains disabled for at least 10 minutes from that dismissal.
+**Sync Available at** shows when the next sync can run; reaching that time only re-enables the button and never submits automatically.
+Closing an error, missing-login notice, or login result does not start a new waiting period, so recovery and explicit retries remain available.
+The waiting period survives closing and reopening Settings within the same app session and resets when the app restarts.
 A zero exit can also mean there was no usage to submit, so completion copy stays neutral rather than claiming an upload succeeded.
 Every other nonzero result remains a normal failure.
 Expired or revoked stored credentials are a known limitation and must be recovered outside OpenUsage with Tokscale's own CLI.
