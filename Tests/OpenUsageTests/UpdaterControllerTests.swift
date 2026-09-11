@@ -66,6 +66,33 @@ final class UpdaterUserDriverDelegateTests: XCTestCase {
 
 @MainActor
 final class UpdaterCycleDiagnosticsTests: XCTestCase {
+    func testWrappedDownloadCancellationsRemainCancelled() {
+        let diagnostics = DiagnosticEventRecorder()
+        for depth in 1...2 {
+            var error: Error = URLError(.cancelled)
+            for _ in 0..<depth { error = downloadError(underlying: error) }
+            UpdaterController.recordUpdateCycle(error: error)
+        }
+
+        XCTAssertEqual(diagnostics.events, Array(repeating:
+            DiagnosticEvent(.updateCheck, result: .cancelled), count: 2))
+    }
+
+    func testUnsupportedWrappersDoNotExposeInnerCancellation() {
+        let cancelled = URLError(.cancelled)
+        let errors: [Error] = [
+            NSError(domain: "OtherDomain", code: 2001, userInfo: [NSUnderlyingErrorKey: cancelled]),
+            NSError(domain: SUSparkleErrorDomain, code: 9999, userInfo: [NSUnderlyingErrorKey: cancelled]),
+            downloadError(underlying: downloadError(underlying: downloadError(underlying: cancelled)))
+        ]
+        let diagnostics = DiagnosticEventRecorder()
+
+        for error in errors { UpdaterController.recordUpdateCycle(error: error) }
+
+        XCTAssertEqual(diagnostics.events, Array(repeating:
+            DiagnosticEvent(.updateCheck, result: .failure, category: .other), count: errors.count))
+    }
+
     func testWrappedDownloadNetworkFailuresKeepOriginalLocalContext() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let previousSink = AppLog.sink

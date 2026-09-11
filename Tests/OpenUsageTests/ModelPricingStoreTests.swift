@@ -34,24 +34,25 @@ final class ModelPricingStoreTests: XCTestCase {
     }
 
     func testStructurallyInvalidCatalogsAreDecodingFailuresAndKeepCachedPrices() async throws {
-        let (store, _) = makeStore(handler: { Self.respond(to: $0) })
-        await store.refreshNow()
-
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let later = base.addingTimeInterval(2 * 60 * 60)
         let cases: [(String, PricingCodecError)] = [("[]", .notAnObject), ("{}", .noUsableEntries)]
         for (index, testCase) in cases.enumerated() {
+            let cacheDirectory = tempDir.appendingPathComponent("case-\(index)", isDirectory: true)
+            let (store, _) = makeStore(handler: { Self.respond(to: $0) }, now: { base }, cacheDirectory: cacheDirectory)
+            await store.refreshNow()
             let (body, expectedError) = testCase
             let data = Data(body.utf8)
             for parse in [PricingCatalogCodecs.catalogFromLiteLLM, PricingCatalogCodecs.catalogFromModelsDev] {
                 XCTAssertThrowsError(try parse(data)) { XCTAssertEqual($0 as? PricingCodecError, expectedError) }
             }
             let diagnostics = DiagnosticEventRecorder()
-            let later = Date().addingTimeInterval(Double(index + 1) * 2 * 60 * 60)
             let (aged, http) = makeStore(handler: { request in
                 if request.url.absoluteString.contains("litellm") || request.url.host() == "models.dev" {
                     return HTTPResponse(statusCode: 200, headers: [:], body: data)
                 }
                 return Self.respond(to: request)
-            }, now: { later })
+            }, now: { later }, cacheDirectory: cacheDirectory)
 
             await aged.refreshNow()
 
@@ -127,12 +128,13 @@ final class ModelPricingStoreTests: XCTestCase {
 
     private func makeStore(
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        cacheDirectory: URL? = nil
     ) -> (ModelPricingStore, RoutingHTTPClient) {
         let http = RoutingHTTPClient(handler: handler)
         let store = ModelPricingStore(
             http: http,
-            cacheDirectory: tempDir,
+            cacheDirectory: cacheDirectory ?? tempDir,
             now: now,
             bundledData: Self.bundledFixtures
         )
