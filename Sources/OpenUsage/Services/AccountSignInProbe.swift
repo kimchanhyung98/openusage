@@ -10,6 +10,11 @@ struct AccountSignInProbe: Sendable {
         case ready(identityKey: String, label: String?)
         /// 증명 가능한 sign-in snapshot 부재 — "wrong account"가 아니라 단순 미준비.
         case needsSignIn
+
+        var isReady: Bool {
+            if case .ready = self { return true }
+            return false
+        }
     }
 
     var environment: EnvironmentReading

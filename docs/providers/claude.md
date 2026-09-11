@@ -123,6 +123,8 @@ Degraded performance, a partial outage, or a major outage on either component sh
 - **"Claude Desktop login is stale"** — open Claude Desktop so it can renew the login, then refresh OpenUsage.
 - **"Re-login for live usage"** (an amber warning on the Claude header) — your saved login can authenticate for inference but can't read your subscription limits, because it lacks the `user:profile` access (this is what an inference-only token from `claude setup-token` carries).
   Run `claude` and sign in again with your Claude account, then refresh; the spend tiles keep working in the meantime.
+  This sign-in warning takes priority over a stale or unreadable Claude Desktop login.
+  A Desktop Keychain access prompt still takes priority when access can restore usage without a new sign-in.
 - **"Updates blocked by Anthropic"** (an amber warning on the Claude header) — the usage API is throttling OpenUsage.
   It keeps the last values from the same login, shows when it will retry, and backs off in the meantime.
   A different login starts with a fresh cache and cooldown.

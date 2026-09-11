@@ -128,7 +128,7 @@ Estimated source LOC excludes tests.
   Verify that two or more managed profiles collapse only their own cards into the selector.
 - Run `script/build_and_run.sh`, then inspect `~/Library/Logs/OpenUsage/OpenUsage.log` for account registry, identity, switch, rollback, and refresh failures.
 - Exercise both Claude and Codex live: import the first account, add a second account, switch, start a fresh terminal session, view an inactive account, re-sign in, and remove it.
-  Verify that an expired credential either refreshes or becomes **Sign-In Needed**, and that a completed re-sign-in replaces the selected managed account's authentication and provider identity without changing its name or selection.
+  Verify that an expired credential either refreshes or becomes **Session Expired** or **Sign-In Needed**, and that a completed re-sign-in replaces the selected managed account's authentication and provider identity without changing its name or selection.
 - Verify the read-only account CLI plus the existing card CLI/API ids and response shapes.
 - Repeat the two-Mac iCloud compatibility check before release.
   Managed account metadata and credentials remain local, while synced usage history must keep working with older readers.

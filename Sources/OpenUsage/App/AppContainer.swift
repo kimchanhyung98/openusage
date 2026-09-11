@@ -47,6 +47,7 @@ final class AppContainer {
     let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
+    @ObservationIgnored var observedAuthenticationRevisions: [String: Int] = [:]
     /// 현재 provider catalog를 만든 account 입력 — 동일 입력의 재조립은 in-flight refresh를 무효화하지 않음.
     private var accountAssembly: ProviderAccountAssembly
     /// 온디맨드 credential 재탐지(Customize "Reset All")용으로 보관하는 provider runtime 목록.
@@ -337,6 +338,8 @@ final class AppContainer {
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
     func refreshAccountCatalog() {
+        var addedIDs: Set<String> = []
+        defer { refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) }
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
@@ -353,7 +356,7 @@ final class AppContainer {
         )
         let nextRegistry = WidgetRegistry.from(nextProviders)
         let previousIDs = Set(registry.providers.map(\.id))
-        let addedIDs = Set(nextRegistry.providers.map(\.id)).subtracting(previousIDs)
+        addedIDs = Set(nextRegistry.providers.map(\.id)).subtracting(previousIDs)
 
         registry = nextRegistry
         providers = nextProviders

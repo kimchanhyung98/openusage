@@ -164,7 +164,7 @@ struct AccountSettingsFamilyCard: View {
     }
 
     private func profileRow(_ profile: AccountProfile, position: Int, total: Int) -> some View {
-        let state = signInStates[profile.id] ?? .needsSignIn
+        let state = container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn)
         let dragID = AccountSettingsReorder.dragID(family: family, profileID: profile.id)
         let isSelected = store.preferredProfileID(family: family) == profile.id
 
@@ -188,7 +188,7 @@ struct AccountSettingsFamilyCard: View {
             if total > 1 {
                 Toggle("", isOn: selection(profile.id))
                     .settingsSwitchStyle()
-                    .disabled(!state.isReady)
+                    .disabled(!state.canSwitch)
             }
         }
         .padding(.horizontal, 12)
@@ -253,7 +253,7 @@ struct AccountSettingsFamilyCard: View {
                     id: dragID,
                     payload: .settingsAccountRow(
                         label: displayLabel(profile.label),
-                        state: signInStates[profile.id] ?? .needsSignIn,
+                        state: container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn),
                         isSelected: store.preferredProfileID(family: family) == profile.id,
                         showsSelectionToggle: profileCount > 1
                     ),
@@ -414,7 +414,7 @@ struct AccountSettingsFamilyCard: View {
 
 struct AccountSettingsLiftRow: View {
     let label: String
-    let state: AccountSignInProbe.State
+    let state: AccountStatus
     let isSelected: Bool
     let showsSelectionToggle: Bool
 
@@ -434,7 +434,7 @@ struct AccountSettingsLiftRow: View {
             if showsSelectionToggle {
                 Toggle("", isOn: .constant(isSelected))
                     .settingsSwitchStyle()
-                    .disabled(!state.isReady)
+                    .disabled(!state.canSwitch)
             }
         }
         .padding(.horizontal, 12)

@@ -53,6 +53,35 @@ final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
         XCTAssertEqual(requests, ["fixture-a", "fixture-a", "fixture-b", "fixture-b"])
     }
 
+    func testKeyChangeClearsSuccessfulResultUntilTheReplacementSucceeds() async throws {
+        let f = fixture(blockedKeys: ["fixture-b"])
+        try f.runtime.saveAPIKey("fixture-a")
+        let initial = await f.store.refresh(providerID: "openrouter", force: true)
+        XCTAssertEqual(initial, .refreshed)
+        XCTAssertEqual(f.store.refreshResults["openrouter"], .succeeded)
+        let previous = try XCTUnwrap(f.store.localSnapshots["openrouter"])
+
+        try f.runtime.saveAPIKey("fixture-b")
+        let generation = f.store.credentialsDidChange(for: "openrouter")
+        XCTAssertNil(f.store.refreshResults["openrouter"])
+        let replacement = Task { await refreshChange(f.store, generation: generation) }
+        await waitForRequest("fixture-b", in: f.http)
+
+        XCTAssertNil(f.store.refreshResults["openrouter"])
+        XCTAssertEqual(f.store.localSnapshots["openrouter"], previous)
+        XCTAssertEqual(f.cache.snapshot(providerID: "openrouter"), previous)
+        await f.http.release("fixture-b")
+        await replacement.value
+
+        XCTAssertEqual(f.store.refreshResults["openrouter"], .succeeded)
+        XCTAssertEqual(creditsUsed(f.store), 82)
+        let cached = await f.store.refresh(providerID: "openrouter")
+        XCTAssertEqual(cached, .cacheHit)
+        XCTAssertEqual(f.store.refreshResults["openrouter"], .succeeded)
+        let requests = await f.http.keys
+        XCTAssertEqual(requests, ["fixture-a", "fixture-a", "fixture-b", "fixture-b"])
+    }
+
     func testOldFailureCannotPublishAnErrorOrBackoffForNewKey() async throws {
         let f = fixture(failedKeys: ["fixture-a"])
         try f.runtime.saveAPIKey("fixture-a")

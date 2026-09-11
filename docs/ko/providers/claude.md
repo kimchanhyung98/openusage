@@ -123,6 +123,8 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 - **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
 - **"Re-login for live usage"**(Claude 헤더의 황색 경고) — 저장된 로그인은 추론 인증이 가능하지만 `user:profile` 접근 권한이 없어 구독 한도 조회 불가(`claude setup-token`에서 발급한 추론 전용 토큰의 동작).
   `claude`를 실행해 Claude 계정으로 재로그인한 뒤 새로 고침; 그동안 지출 타일은 계속 동작.
+  이 로그인 경고는 Claude Desktop의 만료되었거나 읽을 수 없는 로그인 안내보다 우선 표시.
+  새 로그인 없이 사용량 조회를 복구할 수 있는 Desktop Keychain 접근 안내는 계속 우선 표시.
 - **"Updates blocked by Anthropic"**(Claude 헤더의 황색 경고) — 사용량 API가 OpenUsage를 제한하는 상태.
   같은 로그인의 마지막 값을 유지하고 재시도 시각을 표시하며 그동안 재시도 간격을 늘림.
   다른 로그인은 새 캐시와 쿨다운으로 시작.
