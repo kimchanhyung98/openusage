@@ -73,9 +73,11 @@ struct OpenCodeUsageScanner: Sendable {
         for path in paths {
             checked.insert(path)
             do {
-                if let json = try sqlite.queryValue(path: path, sql: Self.dataSQL(cutoffMs: cutoffMs)) {
-                    rows.append(contentsOf: Self.parseRows(json))
+                // 집계 조회 성공은 빈 DB도 "[]" 반환 — nil은 발견 후 사라진 DB 등 읽기 불가 상태.
+                guard let json = try sqlite.queryValue(path: path, sql: Self.dataSQL(cutoffMs: cutoffMs)) else {
+                    throw OpenCodeUsageError.databaseUnreadable
                 }
+                rows.append(contentsOf: Self.parseRows(json))
             } catch {
                 failures[path] = error.localizedDescription
                 continue
