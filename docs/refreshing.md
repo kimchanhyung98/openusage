@@ -56,7 +56,7 @@ App writes are debounced until after refresh; the one-shot CLI drains pending wr
 ## When a fetch fails
 
 A failed refresh **never wipes your data**: the last good values stay on screen, and a small warning triangle appears next to the provider's name — hover it for the error message (e.g. "Not logged in").
-The error clears on the next successful refresh.
+The error clears on the next successful refresh or when you save or remove that provider's API key in the app.
 
 The last good normalized history is preserved too, so a temporary provider failure—or a successful limit refresh whose local log scan is temporarily unavailable—does not remove this Mac's previous contribution from an iCloud-combined spend total.
 

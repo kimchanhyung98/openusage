@@ -38,7 +38,7 @@ You can also provide the key directly (checked in this order, first match wins):
 A key saved through the app overrides an environment key (the config file is checked first); removing the saved key falls back to the environment key, or to none.
 Saving or removing a key in the app starts a refresh with the effective key, waiting for any earlier request to finish and ignoring that earlier result.
 If the earlier request outlasts the waiting limit, the next scheduled refresh retries with the current key.
-If the provider is disabled, this refresh waits until it is enabled again.
+If the provider is disabled, this refresh is deferred until it is enabled again.
 Previously displayed last-known values remain while the new request runs or fails; restarting the app can also restore those values before fetching with the current key.
 
 ## Troubleshooting
