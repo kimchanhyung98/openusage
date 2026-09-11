@@ -384,6 +384,42 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(httpClient.requests.count, 1)
     }
 
+    @MainActor
+    func testStaleDesktopDoesNotMaskMissingProfileScopeWarning() async throws {
+        let fixture = try makeFixture(
+            activeOrganization: organization,
+            v2: [cacheKey(organization: organization): tokenEntry("expired-desktop", expiresIn: -1)]
+        )
+        let now = now
+        let httpClient = RoutingHTTPClient { _ in
+            XCTFail("Inference-only credentials must not request live usage")
+            return HTTPResponse(statusCode: 500, headers: [:], body: Data())
+        }
+        let provider = ClaudeProvider(
+            authStore: ClaudeAuthStore(
+                environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
+                files: fixture.files,
+                keychain: FakeKeychain(
+                    #"{"claudeAiOauth":{"accessToken":"inference-only","expiresAt":4102444800000,"scopes":["user:inference"]}}"#
+                ),
+                desktop: fixture.store,
+                now: { now }
+            ),
+            usageClient: ClaudeUsageClient(httpClient: httpClient),
+            logUsageScanner: ClaudeLogFixture.scanner(home: nil),
+            includePiUsage: false,
+            now: { now },
+            pricing: { TestPricing.bundled }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(snapshot.authenticationIssue, .signInNeeded)
+        XCTAssertEqual(snapshot.warning, ClaudeUsageMapper.missingProfileScopeWarning)
+        XCTAssertNil(badge(snapshot.lines, "Error"))
+        XCTAssertTrue(httpClient.requests.isEmpty)
+    }
+
     private func makeFixture(
         activeOrganization: String,
         v2: [String: Any],

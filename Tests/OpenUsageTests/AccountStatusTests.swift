@@ -134,6 +134,60 @@ final class AccountStatusTests: XCTestCase {
         XCTAssertEqual(status(in: store), .ready)
     }
 
+    func testReauthenticationClearsPartialUsageAuthenticationWarningWhileKeepingUsage() async {
+        let runtime = AccountStatusRuntime(id: "claude")
+        runtime.snapshot.plan = "Pro"
+        runtime.snapshot.refreshedAt = Date(timeIntervalSince1970: 1_800_000_000)
+        runtime.snapshot.usageHistory = ProviderUsageHistory(series: .init(daily: [
+            .init(date: "2026-09-11", totalTokens: 1200, costUSD: 0.25)
+        ]))
+        var expected = runtime.snapshot
+        runtime.snapshot.warning = ClaudeUsageMapper.missingProfileScopeWarning
+        runtime.snapshot.authenticationIssue = .signInNeeded
+        let store = makeStore(runtime)
+        await store.refresh(providerID: "claude", force: true)
+        XCTAssertEqual(store.headerNotice(for: "claude"), ClaudeUsageMapper.missingProfileScopeWarning)
+        XCTAssertFalse(status(in: store, providerID: "claude").canSwitch)
+
+        store.invalidateAuthentication(for: "claude")
+
+        XCTAssertEqual(status(in: store, providerID: "claude"), .notChecked)
+        XCTAssertNil(store.headerNotice(for: "claude"))
+        XCTAssertEqual(store.localSnapshots["claude"], expected)
+        XCTAssertEqual(store.snapshots["claude"], expected)
+
+        runtime.suspends = true
+        let started = expectation(description: "replacement refresh started")
+        runtime.onStart = { started.fulfill() }
+        let refresh = Task { await store.refresh(providerID: "claude") }
+        await fulfillment(of: [started], timeout: 1)
+        XCTAssertEqual(status(in: store, providerID: "claude"), .checking)
+        XCTAssertNil(store.headerNotice(for: "claude"))
+        XCTAssertEqual(store.snapshots["claude"], expected)
+
+        expected.refreshedAt = expected.refreshedAt.addingTimeInterval(60)
+        runtime.finish(expected)
+        let outcome = await refresh.value
+        XCTAssertEqual(outcome, .refreshed)
+        XCTAssertEqual(status(in: store, providerID: "claude"), .ready)
+        XCTAssertNil(store.headerNotice(for: "claude"))
+    }
+
+    func testReauthenticationPreservesWarningsUnrelatedToAuthentication() async {
+        let runtime = AccountStatusRuntime(id: "claude")
+        runtime.snapshot.warning = "Updates temporarily rate limited."
+        let store = makeStore(runtime)
+        await store.refresh(providerID: "claude", force: true)
+        let previous = store.localSnapshots["claude"]
+
+        store.invalidateAuthentication(for: "claude")
+
+        XCTAssertEqual(status(in: store, providerID: "claude"), .notChecked)
+        XCTAssertEqual(store.headerNotice(for: "claude"), "Updates temporarily rate limited.")
+        XCTAssertEqual(store.localSnapshots["claude"], previous)
+        XCTAssertEqual(store.snapshots["claude"], previous)
+    }
+
     func testReauthenticationDiscardsThePreviousCredentialsInFlightResult() async {
         let runtime = AccountStatusRuntime()
         runtime.suspends = true
