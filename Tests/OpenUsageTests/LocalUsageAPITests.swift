@@ -172,6 +172,36 @@ final class LocalUsageAPITests: XCTestCase {
         }
     }
 
+    func testQueryWithoutPathCannotSelectUsageRoute() throws {
+        let response = LocalUsageAPI.respond(method: "GET", path: "?/v1/usage", state: makeState())
+
+        XCTAssertEqual(response.status, 404)
+        XCTAssertEqual((try json(response.body) as? [String: Any])?["error"] as? String, "not_found")
+    }
+
+    func testEmptyPathAndQueryOnlyTargetsReturnNotFound() throws {
+        for path in ["", "?"] {
+            let response = LocalUsageAPI.respond(method: "GET", path: path, state: makeState())
+
+            XCTAssertEqual(response.status, 404, path)
+            XCTAssertEqual((try json(response.body) as? [String: Any])?["error"] as? String, "not_found", path)
+        }
+    }
+
+    func testUsageAndLimitsRoutesIgnoreQuery() throws {
+        let state = makeState()
+        for path in ["/v1/usage", "/v1/usage/claude", "/v1/limits", "/v1/limits/claude"] {
+            let response = LocalUsageAPI.respond(method: "GET", path: path + "?source=local", state: state)
+            let expected = LocalUsageAPI.respond(method: "GET", path: path, state: state)
+
+            XCTAssertEqual(response.status, 200, path)
+            XCTAssertEqual(
+                try XCTUnwrap(try json(response.body) as? NSObject),
+                try XCTUnwrap(try json(expected.body) as? NSObject), path
+            )
+        }
+    }
+
     func testMethodAndRouteErrors() throws {
         let state = makeState()
 
@@ -189,6 +219,17 @@ final class LocalUsageAPITests: XCTestCase {
 }
 
 final class LocalUsageServerRequestLineTests: XCTestCase {
+    @MainActor
+    func testQueryOnlyRequestRoutesToNotFound() {
+        let state = LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:])
+        let server = LocalUsageServer(state: { state })
+
+        let response = server.route(head: "GET ? HTTP/1.1\r\nHost: localhost\r\n")
+
+        XCTAssertEqual(response.status, 404)
+        XCTAssertEqual(response.body, Data(#"{"error":"not_found"}"#.utf8))
+    }
+
     func testParsesWellFormedRequestLine() {
         let (method, path) = LocalUsageServer.parseRequestLine("GET /v1/usage HTTP/1.1\r\nHost: localhost\r\n")
         XCTAssertEqual(method, "GET")

@@ -83,11 +83,11 @@ final class AppDiagnosticsTests: XCTestCase {
         XCTAssertEqual(diagnostics.events, Array(repeating: DiagnosticEvent(.iCloudRead, result: .cancelled), count: 2))
     }
 
-    func testLocalAPIReceivePeerCloseIsCancelledButTimeoutRemainsFailure() throws {
+    func testLocalAPITransportPeerCloseIsCancelledButTimeoutRemainsFailure() throws {
         let diagnostics = DiagnosticEventRecorder()
-        LocalUsageServer.recordReceiveFailure(.posix(.ECONNRESET))
-        LocalUsageServer.recordReceiveFailure(.posix(.EPIPE))
-        LocalUsageServer.recordReceiveFailure(.posix(.ETIMEDOUT))
+        LocalUsageServer.recordTransportFailure(.posix(.ECONNRESET))
+        LocalUsageServer.recordTransportFailure(.posix(.EPIPE))
+        LocalUsageServer.recordTransportFailure(.posix(.ETIMEDOUT))
 
         XCTAssertEqual(diagnostics.events, [
             DiagnosticEvent(.localAPIRequest, result: .cancelled),
