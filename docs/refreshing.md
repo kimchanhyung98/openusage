@@ -29,6 +29,9 @@ Snapshots are cached on disk and load instantly at launch, so you see your last-
 
 Claude and Codex cache entries also remember which account produced them.
 If you swap the account signed in at the provider's default home between launches, the previous account's cached values are discarded at the next launch (the card starts empty and fills on its first fetch) instead of briefly showing the old account's limits and plan under the new login.
+If a known account becomes unidentifiable while the app is running, its previous cached values stay hidden until the same account is verified again or a new fetch succeeds.
+Other account-list changes and fresh-cache checks do not restore those hidden values.
+If the account is already unidentifiable at launch, the existing last-known-value behavior still applies.
 
 A cached value only counts as *fresh* (skip-a-refresh fresh) when it was fetched **during the current running session**.
 So a value cached in an earlier session always re-fetches on the first pass after launch — you still see it instantly, but the app never waits out the old interval before getting live numbers.
