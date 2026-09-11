@@ -109,13 +109,17 @@ final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
         try f.runtime.saveAPIKey("fixture-a")
         let failure = await f.store.refresh(providerID: "openrouter", force: true)
         XCTAssertEqual(failure, .failed)
+        XCTAssertNotNil(f.store.providerErrors["openrouter"])
         f.enabled.value = false
         try f.runtime.saveAPIKey("fixture-b")
         let generation = f.store.credentialsDidChange(for: "openrouter")
+        XCTAssertNil(f.store.providerErrors["openrouter"])
         await refreshChange(f.store, generation: generation)
         let beforeEnabling = await f.http.keys
         XCTAssertEqual(beforeEnabling, ["fixture-a", "fixture-a"])
         XCTAssertEqual(f.store.localSnapshots["openrouter"], f.lastGood)
+        XCTAssertNil(f.store.providerErrors["openrouter"])
+        XCTAssertEqual(f.cache.snapshot(providerID: "openrouter"), f.lastGood)
 
         f.enabled.value = true
         let outcome = await f.store.refresh(providerID: "openrouter")
@@ -123,6 +127,27 @@ final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
         XCTAssertEqual(outcome, .refreshed)
         XCTAssertEqual(creditsUsed(f.store), 82)
         XCTAssertNil(f.store.providerErrors["openrouter"])
+    }
+
+    func testKeyChangeClearsPublishedErrorWhileCurrentRequestIsPending() async throws {
+        let f = fixture(blockedKeys: ["fixture-b"], failedKeys: ["fixture-a"])
+        try f.runtime.saveAPIKey("fixture-a")
+        let failure = await f.store.refresh(providerID: "openrouter", force: true)
+        XCTAssertEqual(failure, .failed)
+        XCTAssertNotNil(f.store.providerErrors["openrouter"])
+
+        try f.runtime.saveAPIKey("fixture-b")
+        let generation = f.store.credentialsDidChange(for: "openrouter")
+        XCTAssertNil(f.store.providerErrors["openrouter"])
+        let replacement = Task { await refreshChange(f.store, generation: generation) }
+        await waitForRequest("fixture-b", in: f.http)
+
+        XCTAssertNil(f.store.providerErrors["openrouter"])
+        XCTAssertEqual(f.store.localSnapshots["openrouter"], f.lastGood)
+        XCTAssertEqual(f.cache.snapshot(providerID: "openrouter"), f.lastGood)
+        await f.http.release("fixture-b")
+        await replacement.value
+        XCTAssertEqual(creditsUsed(f.store), 82)
     }
 
     func testNewerKeyChangeSupersedesAnOlderWaitingRefresh() async throws {

@@ -154,7 +154,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
 
         let outcome = await store.refresh(providerID: "claude")
 
-        XCTAssertEqual(outcome, .skipped, "an unresolved identity must reach the runtime instead of reusing rejected cache")
+        XCTAssertEqual(outcome, .skipped, "an unresolved identity must bypass rejected fresh cache before provider lookup")
         XCTAssertNil(store.snapshots["claude"])
         XCTAssertNotNil(cache.snapshot(providerID: "claude"), "the persisted last-good cache must remain intact")
     }
