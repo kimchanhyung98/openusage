@@ -58,6 +58,12 @@ final class WidgetDataStore {
     /// Provider별 실패 후 다음 probe 허용 시각(`failureRetryBackoff` 참고) — UI 상태가 아니라 observation 제외.
     @ObservationIgnored private var failureRetryAfter: [String: Date] = [:]
 
+    /// known→nil 이후 재확인 전까지 배제한 캐시의 재유입 차단 — 영구 캐시·최초 미해석 launch 정책은 유지.
+    @ObservationIgnored private var unresolvedIdentityCacheRejections: Set<String> = []
+    /// API 키 변경 전 시작한 결과의 게시·캐시 쓰기를 provider 단위로 무효화.
+    @ObservationIgnored private var credentialGenerations: [String: Int] = [:]
+    @ObservationIgnored private var providersNeedingCredentialRefresh: Set<String> = []
+
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
 
@@ -173,18 +179,53 @@ final class WidgetDataStore {
         maxAttempts: Int = 45,
         retryDelay: Duration = .seconds(1)
     ) async {
+        await refreshAfterSelection(providerID: providerID, trigger: .accountChange,
+                                    maxAttempts: maxAttempts, retryDelay: retryDelay)
+    }
+
+    /// 키 저장·삭제 성공 직후 동기 호출 — Task 시작 전 이전 조회를 무효화하고 다음 실제 조회 보장.
+    @discardableResult
+    func credentialsDidChange(for providerID: String) -> Int {
+        let generation = credentialGenerations[providerID, default: 0] + 1
+        credentialGenerations[providerID] = generation
+        providersNeedingCredentialRefresh.insert(providerID)
+        clearFailureBackoff(for: providerID)
+        return generation
+    }
+
+    func refreshAfterCredentialChange(
+        providerID: String,
+        credentialGeneration: Int,
+        maxAttempts: Int = 45,
+        retryDelay: Duration = .seconds(1)
+    ) async {
+        await refreshAfterSelection(providerID: providerID, trigger: .credentialChange,
+                                    credentialGeneration: credentialGeneration,
+                                    maxAttempts: maxAttempts, retryDelay: retryDelay)
+    }
+
+    private func refreshAfterSelection(
+        providerID: String,
+        trigger: RefreshTrigger,
+        credentialGeneration: Int? = nil,
+        maxAttempts: Int,
+        retryDelay: Duration
+    ) async {
         precondition(maxAttempts > 0)
         for attempt in 0..<maxAttempts {
-            switch await refresh(providerID: providerID, force: true, trigger: .accountChange) {
+            guard !Task.isCancelled, isProviderEnabled(providerID), providersByID[providerID] != nil else { return }
+            guard credentialGeneration == nil || credentialGenerations[providerID] == credentialGeneration else { return }
+            switch await refresh(providerID: providerID, force: true, trigger: trigger) {
             case .refreshed, .cacheHit, .backedOff, .failed:
                 return
             case .skipped:
                 guard attempt < maxAttempts - 1 else { break }
-                AppLog.info(.refresh, "account selection waiting out an in-flight refresh for \(providerID) (attempt \(attempt + 1))")
-                try? await Task.sleep(for: retryDelay)
+                AppLog.info(.refresh, "\(trigger.rawValue) waiting out an in-flight refresh for \(providerID) (attempt \(attempt + 1))")
+                do { try await Task.sleep(for: retryDelay) }
+                catch { return }
             }
         }
-        AppLog.error(.refresh, "account selection refresh kept being skipped for \(providerID); waiting for the next cycle")
+        AppLog.error(.refresh, "\(trigger.rawValue) refresh kept being skipped for \(providerID); waiting for the next cycle")
     }
 
     /// 카탈로그 교체마다 증가 — `refresh`가 fetch 시작 시 캡처해 교체를 가로지른 결과를 폐기,
@@ -211,6 +252,8 @@ final class WidgetDataStore {
         // snapshot·error·failure backoff는 이월 금지. `hasStaleAccountStamp`와 동일 규칙: 새 identity가
         // known이고 이전과 다르면 빈 상태로 시작.
         let previousIdentityKeys = providerIdentityKeys
+        unresolvedIdentityCacheRejections.formUnion(previousIdentityKeys.keys.filter { identityKeys[$0] == nil })
+        unresolvedIdentityCacheRejections.subtract(identityKeys.keys)
         func keepsState(_ cardID: String) -> Bool {
             guard liveIDs.contains(cardID) else { return false }
             return previousIdentityKeys[cardID] == identityKeys[cardID]
@@ -231,7 +274,7 @@ final class WidgetDataStore {
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
-            (identityKeys[cardID] != nil || previousIdentityKeys[cardID] == nil)
+            !unresolvedIdentityCacheRejections.contains(cardID)
                 && !cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: identityKeys[cardID])
         }
         for (cardID, snapshot) in cached where localSnapshots[cardID] == nil {
@@ -300,7 +343,10 @@ final class WidgetDataStore {
             providerID: providerID,
             currentIdentityKey: providerIdentityKeys[providerID]
         )
-        if !force, !staleAccountStamp, let cached = cache.snapshot(providerID: providerID) {
+        if !force, !staleAccountStamp,
+           !unresolvedIdentityCacheRejections.contains(providerID),
+           !providersNeedingCredentialRefresh.contains(providerID),
+           let cached = cache.snapshot(providerID: providerID) {
             // no-op write 회피 — @Observable은 값 비교를 하지 않아 재할당만으로 메뉴바 label 재렌더 발생.
             AppLog.debug(.refresh, "cache hit \(providerID)")
             if localSnapshots[providerID] != cached {
@@ -326,6 +372,7 @@ final class WidgetDataStore {
         refreshingProviderIDs.insert(providerID)
         defer { refreshingProviderIDs.remove(providerID) }
         let boundGeneration = catalogGeneration
+        let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         let start = monotonicNow()
         var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
             await provider.refresh()
@@ -340,6 +387,10 @@ final class WidgetDataStore {
         guard catalogGeneration == boundGeneration else {
             AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog changed mid-fetch")
             AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
+            return .skipped
+        }
+        guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
+            AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
             return .skipped
         }
         let durationMs = durationMilliseconds(since: start)
@@ -388,6 +439,8 @@ final class WidgetDataStore {
         localSnapshots[providerID] = snapshot
         // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
         cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
+        unresolvedIdentityCacheRejections.remove(providerID)
+        providersNeedingCredentialRefresh.remove(providerID)
         rebuildRenderedSnapshots()
         if notifyHistoryChange { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
