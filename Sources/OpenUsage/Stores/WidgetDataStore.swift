@@ -51,7 +51,7 @@ final class WidgetDataStore {
     var refreshingProviderIDs: Set<String> = []
     /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
     var lastRefreshAt: Date?
-    /// Provider별 최신 refresh 에러 — 에러 snapshot에서 설정, 다음 성공에서 해제.
+    /// Provider별 최신 refresh 에러 — 에러 snapshot에서 설정, 다음 성공이나 API 키 변경에서 해제.
     /// last-good snapshot은 계속 표시(stale-while-revalidate), dashboard는 경고 indicator만 추가.
     var providerErrors: [String: String] = [:]
 
@@ -189,6 +189,7 @@ final class WidgetDataStore {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
         providersNeedingCredentialRefresh.insert(providerID)
+        providerErrors[providerID] = nil
         clearFailureBackoff(for: providerID)
         return generation
     }
