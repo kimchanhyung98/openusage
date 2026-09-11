@@ -416,6 +416,7 @@ final class ClaudeProviderTests: XCTestCase {
 
         // hard error badge가 아닌 soft warning으로 missing scope 안내, live-usage 미터는 공백
         XCTAssertEqual(snapshot.warning, ClaudeUsageMapper.missingProfileScopeWarning)
+        XCTAssertEqual(snapshot.authenticationIssue, .signInNeeded)
         XCTAssertNil(badge(snapshot.lines, "Error"))
         XCTAssertNil(snapshot.line(label: "Session"))
         // scope gate의 핵심: usage endpoint 미호출
