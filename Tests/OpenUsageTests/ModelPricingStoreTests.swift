@@ -14,6 +14,25 @@ final class ModelPricingStoreTests: XCTestCase {
         try? FileManager.default.removeItem(at: tempDir)
     }
 
+    func testMalformedRemoteCatalogsAreDecodingFailures() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let (store, http) = makeStore { request in
+            if request.url.absoluteString.contains("litellm") || request.url.host() == "models.dev" {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data("PRIVATE_INVALID_JSON".utf8))
+            }
+            return Self.respond(to: request)
+        }
+
+        await store.refreshNow()
+
+        XCTAssertEqual(http.requests.count, 3)
+        let failures = diagnostics.events.filter { $0.operation == .pricingLiteLLM || $0.operation == .pricingModelsDev }
+        XCTAssertEqual(failures, [
+            DiagnosticEvent(.pricingLiteLLM, result: .failure, category: .decoding),
+            DiagnosticEvent(.pricingModelsDev, result: .failure, category: .decoding)
+        ])
+    }
+
     private static let bundledFixtures: @Sendable (String) -> Data? = { name in
         switch name {
         case "pricing_supplement":

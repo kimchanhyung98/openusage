@@ -19,6 +19,15 @@ enum TokscaleSyncFailure: Equatable {
     case submit
     case login
 
+    var diagnosticOperation: DiagnosticOperation {
+        switch self {
+        case .bunCheck, .bunxMissing: .tokscaleCheck
+        case .bunInstallation: .tokscaleInstall
+        case .submit: .tokscaleSubmit
+        case .login: .tokscaleLogin
+        }
+    }
+
     var offersBunInstallationGuide: Bool {
         switch self {
         case .bunCheck, .bunInstallation, .bunxMissing:
@@ -100,6 +109,7 @@ final class TokscaleSyncStore {
     func cancelLogin() {
         guard phase == .loggingIn, activeTask != nil else { return }
         activeTask?.cancel()
+        AppDiagnostics.record(.tokscaleLogin, result: .cancelled)
         acceptsOutput = false
         output = ""
         errorMessage = nil
@@ -142,12 +152,14 @@ final class TokscaleSyncStore {
         switch availability {
         case .available(let availableRuntime):
             runtime = availableRuntime
+            AppDiagnostics.record(.tokscaleCheck, result: .success)
         case .missing:
             guard isCurrent(generation) else { return }
             phase = .installingBun
             do {
                 runtime = try await bunInstaller.install { outputRelay.receive($0) }
                 try Task.checkCancellation()
+                AppDiagnostics.record(.tokscaleInstall, result: .success)
             } catch {
                 publishFinalOutput(from: outputRelay, generation: generation)
                 finish(
@@ -205,6 +217,7 @@ final class TokscaleSyncStore {
         switch availability {
         case .available(let availableRuntime):
             runtime = availableRuntime
+            AppDiagnostics.record(.tokscaleCheck, result: .success)
         case .missing:
             finish(error: .bunInstallation, generation: generation)
             return
@@ -263,6 +276,12 @@ final class TokscaleSyncStore {
 
     private func finish(phase: TokscaleSyncPhase, generation: Int) {
         guard isCurrent(generation) else { return }
+        switch phase {
+        case .submitFinished: AppDiagnostics.record(.tokscaleSubmit, result: .success)
+        case .loginFinished: AppDiagnostics.record(.tokscaleLogin, result: .success)
+        case .loginRequired: AppDiagnostics.record(.tokscaleSubmit, result: .failure, category: .notLoggedIn)
+        default: break
+        }
         self.phase = phase
         acceptsOutput = false
         activeTask = nil
@@ -282,17 +301,16 @@ final class TokscaleSyncStore {
             isRunning = false
             return
         }
+        let context = exitCode.map { "Tokscale command exited with status \($0)" }
+            ?? "Tokscale \(failure) operation failed before completion"
+        AppDiagnostics.record(failure.diagnosticOperation, result: .failure, category: .subprocess,
+                              localContext: context)
         self.failure = failure
         errorMessage = message ?? Self.message(for: failure, exitCode: exitCode)
         phase = .failed
         acceptsOutput = false
         activeTask = nil
         isRunning = false
-        if let exitCode {
-            AppLog.warn(.subprocess, "Tokscale command exited with status \(exitCode)")
-        } else {
-            AppLog.error(.subprocess, "Tokscale operation failed before completion")
-        }
     }
 
     private func isCurrent(_ generation: Int) -> Bool {

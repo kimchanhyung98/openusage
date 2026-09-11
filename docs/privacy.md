@@ -5,16 +5,24 @@ It is off by default; opt in any time in **Settings → Privacy → Share Anonym
 
 ## Anonymous analytics: what is shared
 
-When sharing is on, OpenUsage sends two kinds of small daily summaries: one app-use event per day and, for each provider refreshed that day, at most one provider-refresh event:
+When sharing is on, OpenUsage sends daily app, provider, and feature summaries, plus a limited number of failure and recovery events:
 
 - **App use** — that the app was active today, the app and macOS version, which providers and metrics you have enabled, and which metrics you've pinned to the menu bar or tucked behind the "show more" caret.
   A random ID (not tied to you or any account) lets us count daily active users without identifying anyone.
-- **Provider refreshes** — per provider, how many refreshes succeeded or failed that day, the **kinds** of errors that happened (for example "not logged in", "network", or an HTTP status group), and how many manual refreshes you triggered.
+- **Provider refreshes** — success, failure, and partial-failure counts, coarse error categories, and refresh reasons such as scheduled, manual, account change, credential change, or reset claim.
+  All account cards are combined under the provider name; account IDs and account counts are excluded.
+  Each summary retains its collection date, app version, and build channel, including across an update.
+- **Feature diagnostics** — fixed operation names and results for account management, credential storage, history reads, iCloud, Tokscale, Reset Watch, reset claims, pricing, provider status, notifications, updates, screenshots, and local integrations.
+  Repeated results are counted locally; the first failure or recovery for a result category can be sent promptly, with a limit of 30 immediate diagnostic events per local day.
+  These records contain no command output, screenshots, account labels, device labels, or raw error messages.
 
 It also reports **crashes**, so we can find and fix the bugs that make the app quit unexpectedly:
 
-- **Crash reports** — if OpenUsage crashes, it saves a report and sends it the next time you open the app: the technical stack trace (which parts of *OpenUsage's own code* were running when it crashed) plus the app and macOS version.
-  This contains no account details, credentials, or usage values — just where in the app the crash happened.
+- **Crash reports** — when the crash handler is available, it saves a report for a later opted-in launch.
+  Before sending, OpenUsage retains only fixed exception types, stack addresses, binary identifiers needed to resolve those addresses, and app and macOS versions.
+  It removes exception messages, file paths, function text, and recorded action details.
+  Reports from an earlier consent period are rejected.
+  Re-enabling sharing uses the saved start time of the new consent period.
 
 ## Anonymous analytics: what is never shared
 
@@ -136,11 +144,17 @@ OpenUsage does not read or copy Tokscale's credential file and provides no Toksc
 
 ## How anonymous analytics works
 
-- Anonymous analytics is fully anonymous: OpenUsage never identifies you to the analytics service and creates no user profile.
-- Crash reports use the **same** Share Anonymous Usage switch — turn it off and crash reporting is off too, with no separate setting to find.
-  While it's off, no crash report is recorded or sent.
-- Counts are rolled up locally and sent as daily summaries, so the app's normal 5-minute refresh never turns into a flood of network calls.
+- OpenUsage uses random installation identifiers, never calls the analytics service's identify function, and creates no person profile.
+  The service still receives ordinary network metadata such as the sender's IP address; location enrichment is disabled on events.
+- Crash reports use the **same** Share Anonymous Usage switch.
+  An opted-out launch does not start the SDK or install its crash handler.
+  Switching off cancels pending transport requests and discards unsent SDK queues and local summary counters; already transmitted data cannot be recalled.
+  A native crash handler installed earlier in the process can keep writing a local report until the app restarts, but that report is excluded from later sharing.
+  Restart after changing the switch to apply crash-handler changes reliably; capture also depends on the project's exception setting and whether a debugger is attached.
+- Daily summaries are checked independently of provider refresh completion, including when no provider is enabled.
+  Immediate diagnostics are deduplicated and capped; normal successful refreshes remain daily counts.
 - Your choice and the anonymous ID are stored separately from the rest of the app's settings, so settings migrations and updates do not re-enable sharing or change your ID.
+- Development builds use a separate consent store and require an explicitly supplied test project token before sending analytics.
 
 ## Controlling anonymous analytics
 

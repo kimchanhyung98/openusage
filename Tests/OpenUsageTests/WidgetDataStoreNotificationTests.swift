@@ -31,6 +31,22 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         func refresh() async -> ProviderSnapshot { snapshot }
     }
 
+    private actor DeliveryGate {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private var opened = false
+
+        func wait() async {
+            guard !opened else { return }
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func open() {
+            opened = true
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
     private func makeUserDefaults(_ name: String) -> UserDefaults {
         let suite = "WidgetDataStoreNotificationTests.\(name)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -77,7 +93,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
             isProviderEnabled: isEnabled,
             orderedDescriptors: { [descriptor] },
             notificationSettings: { settings },
-            postNotification: { idPrefix, title, subtitle, body in
+            postNotification: { idPrefix, title, subtitle, body, _ in
                 recorder.posts.append((idPrefix, title, subtitle, body))
                 return delivered()
             }
@@ -110,6 +126,183 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
 
         await store.evaluateNotifications(now: base)
         XCTAssertEqual(recorder.posts.count, 1)
+    }
+
+    func testAccountReplacementStartsAnIndependentNotificationBaseline() async {
+        let settings = NotificationSettingsStore(defaults: makeUserDefaults("account-boundary-settings"))
+        allOn(settings)
+        let recorder = Recorder()
+        let (store, first, descriptor) = makeStore(
+            used: 80, settings: settings, recorder: recorder, defaultsName: "account-boundary"
+        )
+        let registry = WidgetRegistry(providers: [Self.provider], descriptors: [descriptor])
+        store.replaceProviderCatalog(registry: registry, providers: [first], identityKeys: ["test": "account-A"])
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        let second = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 95))
+        store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: ["test": "account-B"])
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        XCTAssertTrue(recorder.posts.isEmpty, "the first sample of B must not be compared with A")
+    }
+
+    func testAccountReplacementInvalidatesNotificationDeliveryWhileItWaits() async {
+        let settings = NotificationSettingsStore(defaults: makeUserDefaults("delivery-account-settings"))
+        allOn(settings)
+        let descriptor = Self.descriptor()
+        let registry = WidgetRegistry(providers: [Self.provider], descriptors: [descriptor])
+        let first = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 80))
+        let defaults = makeUserDefaults("delivery-account")
+        let recorder = Recorder()
+        let deliveryStarted = expectation(description: "notification awaiting delivery")
+        let gate = DeliveryGate()
+        let store = WidgetDataStore(
+            registry: registry,
+            providers: [first],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults,
+            notificationSettings: { settings },
+            postNotification: { idPrefix, title, subtitle, body, isCurrent in
+                deliveryStarted.fulfill()
+                await gate.wait()
+                guard isCurrent() else { return false }
+                recorder.posts.append((idPrefix, title, subtitle, body))
+                return true
+            },
+            providerIdentityKeys: ["test": "account-A"]
+        )
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        first.snapshot = snapshot(used: 95)
+        await store.refreshAll(force: true)
+        let evaluation = Task { await store.evaluateNotifications(now: base) }
+        await fulfillment(of: [deliveryStarted], timeout: 2)
+
+        let second = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 80))
+        store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: ["test": "account-B"])
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        await gate.open()
+        await evaluation.value
+
+        XCTAssertTrue(recorder.posts.isEmpty, "a delivery waiting on the previous account must not be submitted")
+    }
+
+    func testCatalogReplacementInvalidatesOnlyUnresolvedAccountFamilyDeliveries() async {
+        let cases: [(id: String, identity: String?, remainsCurrent: Bool)] = [
+            ("claude", nil, false), ("codex", nil, false),
+            ("cursor", nil, true), ("codex", "account-A", true),
+        ]
+        for testCase in cases {
+            let name = "delivery-catalog-\(testCase.id)-\(testCase.identity ?? "unresolved")"
+            let defaults = makeUserDefaults(name)
+            let settings = NotificationSettingsStore(defaults: defaults)
+            allOn(settings)
+            let provider = Provider(id: testCase.id, displayName: testCase.id, icon: .providerMark(testCase.id))
+            let descriptor = WidgetDescriptor(
+                id: "\(testCase.id).session", providerID: testCase.id, metricLabel: "Session",
+                sample: WidgetData(title: "Session", icon: provider.icon, kind: .percent, used: 10, limit: 100)
+            )
+            func sample(_ used: Double) -> ProviderSnapshot {
+                ProviderSnapshot(providerID: provider.id, displayName: provider.displayName,
+                    lines: [.progress(label: "Session", used: used, limit: 100, format: .percent,
+                        resetsAt: resetsAt, periodDurationMs: Int(week * 1000))])
+            }
+            let registry = WidgetRegistry(providers: [provider], descriptors: [descriptor])
+            let first = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(80))
+            let identityKeys = testCase.identity.map { [testCase.id: $0] } ?? [:]
+            let recorder = Recorder()
+            let currentAtDelivery = EnabledFlag(true)
+            let deliveryStarted = expectation(description: name)
+            let gate = DeliveryGate()
+            let store = WidgetDataStore(
+                registry: registry, providers: [first],
+                cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+                defaults: defaults, notificationSettings: { settings },
+                postNotification: { idPrefix, title, subtitle, body, isCurrent in
+                    deliveryStarted.fulfill()
+                    await gate.wait()
+                    currentAtDelivery.value = isCurrent()
+                    guard currentAtDelivery.value else { return false }
+                    recorder.posts.append((idPrefix, title, subtitle, body))
+                    return true
+                },
+                providerIdentityKeys: identityKeys
+            )
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            first.snapshot = sample(87)
+            await store.refreshAll(force: true)
+            let evaluation = Task { await store.evaluateNotifications(now: base) }
+            await fulfillment(of: [deliveryStarted], timeout: 2)
+
+            let second = MutableRuntime(provider: provider, descriptors: [descriptor], snapshot: sample(87))
+            store.replaceProviderCatalog(registry: registry, providers: [second], identityKeys: identityKeys)
+            await gate.open()
+            await evaluation.value
+            XCTAssertEqual(currentAtDelivery.value, testCase.remainsCurrent, name)
+            let expectedPosts = testCase.remainsCurrent ? 1 : 0
+            XCTAssertEqual(recorder.posts.count, expectedPosts, name)
+
+            await store.refreshAll(force: true)
+            await store.evaluateNotifications(now: base)
+            XCTAssertEqual(recorder.posts.count, expectedPosts, "new baselines and retained dedup must not refire: \(name)")
+        }
+    }
+
+    func testInFlightNotificationCannotOverwriteTheNewAccountBaseline() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
+        func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
+            [.init(key: "test.session", providerID: "test", data: WidgetData(
+                title: "Session", icon: Self.provider.icon, kind: .percent, used: used, limit: 100,
+                resetsAt: resetsAt, periodDurationMs: Int(week * 1000)
+            ))]
+        }
+        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("first sample"); return true })
+        var oldPosts = 0
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _, _ in
+            oldPosts += 1
+            evaluator.reset(providerIDs: ["test"])
+            await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: self.base,
+                                     providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("new account first sample"); return true })
+            return true
+        })
+        XCTAssertEqual(oldPosts, 1, "remaining old-account notifications must stop after replacement")
+        var newPosts = 0
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _, _ in newPosts += 1; return true })
+        XCTAssertEqual(newPosts, 2, "new account baseline must survive the old delivery completion")
+    }
+
+    func testUnrelatedAccountResetPreservesDeliveredNotificationDeduplication() async {
+        let evaluator = QuotaNotificationEvaluator()
+        let toggles = PaceNotificationToggles(underTenPercent: true, healthyToClose: true, closeToRunningOut: true)
+        func metrics(_ used: Double) -> [QuotaNotificationEvaluator.Metric] {
+            ["cursor", "claude"].map { providerID in
+                .init(key: "\(providerID).session", providerID: providerID, data: WidgetData(
+                    title: "Session", icon: Self.provider.icon, kind: .percent,
+                    used: providerID == "cursor" ? used : 80, limit: 100,
+                    resetsAt: resetsAt, periodDurationMs: Int(week * 1000)
+                ))
+            }
+        }
+        await evaluator.evaluate(metrics: metrics(80), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { _, _, _, _, _ in XCTFail("first sample"); return true })
+        var delivered: [String] = []
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { id, _, _, _, isCurrent in
+            delivered.append(id)
+            if delivered.count == 1 { evaluator.reset(providerIDs: ["claude"]) }
+            XCTAssertTrue(isCurrent(), "an unrelated account change must keep this delivery valid")
+            return true
+        })
+        await evaluator.evaluate(metrics: metrics(95), toggles: toggles, now: base,
+                                 providerName: { $0 }, post: { id, _, _, _, _ in delivered.append(id); return true })
+        XCTAssertEqual(delivered.count, 2, "unrelated account changes must not replay delivered milestones")
+        XCTAssertEqual(Set(delivered).count, 2)
     }
 
     func testCloseToRunningOutFiresThroughTheStore() async {
@@ -265,7 +458,7 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
             orderedDescriptors: { [descriptor] },
             now: { self.base },
             notificationSettings: { settings },
-            postNotification: { idPrefix, title, subtitle, body in
+            postNotification: { idPrefix, title, subtitle, body, _ in
                 recorder.posts.append((idPrefix, title, subtitle, body))
                 return true
             }

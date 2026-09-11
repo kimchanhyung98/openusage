@@ -63,16 +63,22 @@ enum AccountShellInstaller {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         fileManager: FileManager = .default
     ) throws {
-        let home = homeDirectory.resolvingSymlinksInPath().standardizedFileURL
-        let configurationHome = sharedConfigurationHome(family: family, homeDirectory: home)
-        let source = shell.setupSource(family: family, configurationHome: configurationHome)
-        switch shell {
-        case .zsh:
-            try replace(source, for: family, at: home.appendingPathComponent(".zshrc"), fileManager: fileManager)
-        case .fish:
-            let config = home.appendingPathComponent(".config/fish/config.fish")
-            try fileManager.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try replace(source, for: family, at: config, fileManager: fileManager)
+        do {
+            let home = homeDirectory.resolvingSymlinksInPath().standardizedFileURL
+            let configurationHome = sharedConfigurationHome(family: family, homeDirectory: home)
+            let source = shell.setupSource(family: family, configurationHome: configurationHome)
+            switch shell {
+            case .zsh:
+                try replace(source, for: family, at: home.appendingPathComponent(".zshrc"), fileManager: fileManager)
+            case .fish:
+                let config = home.appendingPathComponent(".config/fish/config.fish")
+                try fileManager.createDirectory(at: config.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try replace(source, for: family, at: config, fileManager: fileManager)
+            }
+            AppDiagnostics.record(.shellInstall, result: .success, providerID: family)
+        } catch {
+            AppDiagnostics.failure(.shellInstall, error: error, providerID: family)
+            throw error
         }
     }
 

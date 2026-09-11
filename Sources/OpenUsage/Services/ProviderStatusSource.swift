@@ -161,7 +161,14 @@ enum ProviderStatusSourceCatalog {
     }
 }
 
-enum ProviderStatusSourceError: Error, Equatable, Sendable {
+enum ProviderStatusSourceError: Error, Equatable, Sendable, CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .httpStatus(let code, _): .http(code)
+        case .invalidContentType, .bodyTooLarge, .invalidPayload, .scopeMismatch: .decoding
+        }
+    }
+
     case httpStatus(Int, retryAfter: String?)
     case invalidContentType
     case bodyTooLarge

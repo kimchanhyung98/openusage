@@ -125,6 +125,7 @@ final class ProviderStatusStore {
             let status = try source.decode(response, checkedAt: checkedAt)
             var entry = entries[source.familyID] ?? Entry()
             entry.status = status
+            AppDiagnostics.record(.providerStatus, result: .success, providerID: source.familyID)
             entry.lastSuccessfulAt = checkedAt
             entry.nextAutomaticAttemptAt = nil
             entry.retryAfterUntil = nil
@@ -148,6 +149,8 @@ final class ProviderStatusStore {
     }
 
     private func recordFailure(_ error: Error, source: ProviderStatusSource) {
+        AppDiagnostics.failure(.providerStatus, error: error, providerID: source.familyID,
+                               localContext: "Public provider status request failed (\(Self.errorCategory(error)))")
         let failedAt = now()
         var entry = entries[source.familyID] ?? Entry()
         entry.nextAutomaticAttemptAt = failedAt.addingTimeInterval(Self.failureRetryDelay)
@@ -158,10 +161,6 @@ final class ProviderStatusStore {
         }
         entries[source.familyID] = entry
         publish(entry.status, for: source.familyID)
-        AppLog.warn(
-            .http,
-            "provider-status \(source.familyID) \(source.endpointURL.host() ?? "unknown") failed (\(Self.errorCategory(error)))"
-        )
     }
 
     private func expireStaleStatus(for family: String) {

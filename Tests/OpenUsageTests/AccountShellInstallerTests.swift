@@ -94,6 +94,7 @@ final class AccountShellInstallerTests: XCTestCase {
     }
 
     func testInvalidExistingProfileIsNeverOverwritten() throws {
+        let diagnostics = DiagnosticEventRecorder()
         let home = try makeHome()
         let zshrcURL = home.appendingPathComponent(".zshrc")
         let original = Data([0xFF, 0xFE, 0xFD])
@@ -103,6 +104,7 @@ final class AccountShellInstallerTests: XCTestCase {
             try AccountShellInstaller.install(family: "claude", shell: .zsh, homeDirectory: home)
         )
         XCTAssertEqual(try Data(contentsOf: zshrcURL), original)
+        XCTAssertTrue(diagnostics.events.contains { $0.operation == .shellInstall && $0.result == .failure && $0.provider == "claude" })
     }
 
     func testOnlyZshAndFishAreSupported() {

@@ -103,10 +103,10 @@ public struct UsageReader {
             )
             if let matchedIDs {
                 for providerID in orderedIDs.filter(matchedIDs.contains) {
-                    _ = await dataStore.refresh(providerID: providerID, force: force)
+                    _ = await dataStore.refresh(providerID: providerID, force: force, trigger: .cli)
                 }
             } else {
-                await dataStore.refreshAll(force: force)
+                await dataStore.refreshAll(force: force, trigger: .cli)
             }
             if providersOverride == nil {
                 await PersistentJSONLScanCaches.flushPendingWrites()

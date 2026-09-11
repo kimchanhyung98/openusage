@@ -30,19 +30,19 @@ final class TelemetryRecorderTests: XCTestCase {
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
 
-        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
-        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: true)
-        recorder.record(providerID: "claude", outcome: .failed, category: .network, manual: false)
-        recorder.record(providerID: "claude", outcome: .failed, category: .notLoggedIn, manual: false)
-        recorder.record(providerID: "claude", outcome: .failed, category: .notAvailable, manual: false)
-        recorder.record(providerID: "claude", outcome: .cacheHit, category: nil, manual: false)
-        recorder.record(providerID: "claude", outcome: .skipped, category: nil, manual: false)
-        recorder.record(providerID: "claude", outcome: .backedOff, category: nil, manual: false)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .manual)
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .failed, category: .notLoggedIn, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .failed, category: .notAvailable, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .cacheHit, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .skipped, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .backedOff, category: nil, trigger: .scheduled)
 
         XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
 
         clock = day(26)
-        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
 
         let rollups = sink.events(named: "provider_refresh_daily")
         XCTAssertEqual(rollups.count, 1)
@@ -91,7 +91,7 @@ final class TelemetryRecorderTests: XCTestCase {
         var clock = day(25)
         let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
 
-        recorder.record(providerID: "grok", outcome: .refreshed, category: nil, manual: false)
+        recorder.record(providerID: "grok", outcome: .refreshed, category: nil, trigger: .scheduled)
 
         clock = day(26)
         recorder.tick()
@@ -112,9 +112,9 @@ final class TelemetryRecorderTests: XCTestCase {
         XCTAssertEqual(sink.enabledCalls, [false])
 
         recorder.tick()
-        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, manual: false)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
         clock = day(26)
-        recorder.record(providerID: "claude", outcome: .failed, category: .network, manual: false)
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
         recorder.tick()
 
         XCTAssertTrue(sink.events.isEmpty, "no events should be captured while opted out")
@@ -165,6 +165,82 @@ final class TelemetryRecorderTests: XCTestCase {
 
         store.enabled = true
         XCTAssertTrue(TelemetryStore(defaults: defaults).enabled)
+    }
+
+    func testAccountRollupsMigrateAndMergeAcrossRestartWithoutAccountIDs() {
+        let defaults = makeDefaults("account-migration")
+        defaults.set(true, forKey: "enabled")
+        let store = TelemetryStore(defaults: defaults)
+        store.setProviderCounters([
+            "claude@profile-A": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(25)), success: 2),
+            "claude@profile-B": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(25)), success: 3),
+        ])
+        let sink = FakeSink()
+        let recorder = TelemetryRecorder(
+            sink: sink, store: TelemetryStore(defaults: defaults), snapshot: { self.snapshot }, now: { self.day(26) }
+        )
+        recorder.tick()
+
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        XCTAssertEqual(rollups.first?["provider_id"] as? String, "claude")
+        XCTAssertEqual(rollups.first?["success_count"] as? Int, 5)
+        XCTAssertEqual(rollups.first?["trigger_classification"] as? String, "legacy")
+        XCTAssertEqual(rollups.first?["app_version"] as? String, "legacy")
+        XCTAssertFalse(String(describing: rollups).contains("profile-"))
+    }
+
+    func testFreshAccountRollupsHaveOneFamilyAndTheAggregationDay() {
+        let sink = FakeSink()
+        let store = makeStore("account-day")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        for id in ["claude", "claude@profile-A", "claude@profile-B", "claude"] {
+            recorder.record(providerID: id, outcome: .refreshed, category: nil, trigger: .scheduled)
+        }
+        clock = day(26)
+        recorder.tick()
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        XCTAssertEqual(rollups.first?["success_count"] as? Int, 4)
+        XCTAssertEqual(rollups.first?["day"] as? String, TelemetryRecorder.dayString(day(25)))
+        XCTAssertNotNil(rollups.first?["schema_version"])
+        XCTAssertNotNil(rollups.first?["app_version"])
+    }
+
+    func testOptOutDiscardsUnsentCountersBeforeReenabling() {
+        let sink = FakeSink()
+        let store = makeStore("discard-on-opt-out")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
+        recorder.setEnabled(false)
+        clock = day(26)
+        recorder.setEnabled(true)
+        recorder.tick()
+        XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
+        XCTAssertTrue(store.providerCounters().isEmpty)
+    }
+
+    func testUpgradePreservesSeparateDaysAndCollectionVersions() {
+        let sink = FakeSink()
+        let store = makeStore("version-boundary")
+        var clock = day(25)
+        store.setProviderCounters([
+            "codex@profile-A": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(23)), success: 2),
+            "codex@profile-B": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(24)), success: 3),
+        ])
+        let old = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock }, appVersion: "0.7.1", buildChannel: "stable")
+        old.record(providerID: "codex", outcome: .refreshed, category: nil, trigger: .scheduled)
+        let upgraded = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock }, appVersion: "0.7.2", buildChannel: "stable")
+        upgraded.record(providerID: "codex", outcome: .refreshed, category: nil, trigger: .manual)
+        clock = day(26)
+        upgraded.tick()
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 4)
+        XCTAssertEqual(Set(rollups.compactMap { $0["app_version"] as? String }), ["legacy", "0.7.1", "0.7.2"])
+        XCTAssertEqual(rollups.filter { $0["day"] as? String == TelemetryRecorder.dayString(day(25)) }.count, 2)
+        XCTAssertTrue(store.providerCounters().isEmpty)
     }
 
     // MARK: - Helpers

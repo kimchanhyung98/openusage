@@ -141,6 +141,42 @@ final class GrokLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(warnings.counts, [])
     }
 
+    func testMissingLogDoesNotRecoverAnEarlierReadFailure() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let files = FailingTextFiles(path: "/custom/grok/logs/unified.jsonl")
+        let warnings = GrokWarningRecorder()
+        let scanner = GrokLogUsageScanner(
+            files: files,
+            environment: FakeEnvironment(["GROK_HOME": "/custom/grok"]),
+            readFailureWarning: warnings.record
+        )
+
+        _ = await scanner.scan(pricing: TestPricing.bundled)
+        files.isPresent = false
+        let missing = await scanner.scan(pricing: TestPricing.bundled)
+        files.isPresent = true
+        _ = await scanner.scan(pricing: TestPricing.bundled)
+
+        XCTAssertNil(missing)
+        XCTAssertEqual(warnings.counts, [1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "grok")
+        ])
+
+        files.shouldFail = false
+        let recovered = await scanner.scan(pricing: TestPricing.bundled)
+        files.shouldFail = true
+        _ = await scanner.scan(pricing: TestPricing.bundled)
+
+        XCTAssertNotNil(recovered)
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "grok"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "grok"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "grok")
+        ])
+    }
+
     func testUnreadableLogWarnsOnceUntilItRecovers() async {
         let path = "/custom/grok/logs/unified.jsonl"
         let files = FailingTextFiles(path: path)
@@ -178,12 +214,13 @@ private final class GrokWarningRecorder: @unchecked Sendable {
 private final class FailingTextFiles: TextFileAccessing, @unchecked Sendable {
     let path: String
     var shouldFail = true
+    var isPresent = true
 
     init(path: String) {
         self.path = path
     }
 
-    func exists(_ path: String) -> Bool { path == self.path }
+    func exists(_ path: String) -> Bool { isPresent && path == self.path }
 
     func readText(_ path: String) throws -> String {
         if shouldFail { throw TestError.unreadable }

@@ -202,6 +202,9 @@ final class GrokProvider: ProviderRuntime {
         do {
             return GrokUsageMapper.planName(from: try await usageClient.fetchSettings(accessToken: accessToken))
         } catch {
+            if !(error is CancellationError), (error as? URLError)?.code != .cancelled {
+                AppLog.warn(LogTag.plugin("grok"), "optional plan request failed (category=\(ErrorCategory.classify(error).rawValue), error_code=\((error as NSError).code))")
+            }
             return nil
         }
     }

@@ -18,6 +18,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// 오류 snapshot 전용 telemetry 분류 bucket (non-PII).
     /// 성공 시 항상 nil, 오류 snapshot은 cache되지 않아 미영속.
     var errorCategory: ErrorCategory?
+    /// 성공한 응답에 포함된 부분 실패 여부 — 이전 cache의 누락 필드는 nil.
+    var isDegraded: Bool?
 
     init(
         providerID: String,
@@ -27,7 +29,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         refreshedAt: Date = Date(),
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
-        errorCategory: ErrorCategory? = nil
+        errorCategory: ErrorCategory? = nil,
+        isDegraded: Bool? = nil
     ) {
         self.providerID = providerID
         self.displayName = displayName
@@ -37,6 +40,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.usageHistory = usageHistory
         self.warning = warning
         self.errorCategory = errorCategory
+        self.isDegraded = isDegraded
     }
 
     func line(label: String) -> MetricLine? {
@@ -51,7 +55,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         lines: [MetricLine],
         refreshedAt: Date,
         usageHistory: ProviderUsageHistory? = nil,
-        warning: String? = nil
+        warning: String? = nil,
+        isDegraded: Bool? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
@@ -60,7 +65,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             lines: lines,
             refreshedAt: refreshedAt,
             usageHistory: usageHistory,
-            warning: warning
+            warning: warning,
+            isDegraded: isDegraded
         )
     }
 

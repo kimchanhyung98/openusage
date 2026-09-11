@@ -159,6 +159,9 @@ If the dedicated call fails, the row falls back to the count embedded in the usa
 You can also spend a reset credit right from that popover — the same claim the Codex CLI's "Usage limit resets" picker performs.
 Hover a credit in the timeline and a **Use** button appears; clicking it expands that credit into an inline confirmation ("Immediately reset your usage limits. This can't be undone.") with **Reset** / **Cancel**.
 Confirming claims that exact credit and immediately resets your 5-hour and weekly windows; the app then refreshes Codex so the meters and the remaining count reflect it before the success line ("Reset claimed. Enjoy!") appears.
+If the claiming card is removed or its account identity changes while a claim or its follow-up refresh is in progress, the remaining follow-up is skipped instead of refreshing a replacement account through the old card ID.
+Changes to other accounts do not interrupt the follow-up refresh when the claiming card still has the same known identity.
+An already submitted claim keeps its original credentials; claim success and follow-up refresh are recorded separately.
 
 Safeguards, because a claim is irreversible:
 

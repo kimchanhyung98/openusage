@@ -14,7 +14,7 @@ final class CommandLineToolInstaller {
     }
 
     enum Operation { case install, uninstall }
-    enum OperationResult { case success, cancelled, failure(String) }
+    enum OperationResult { case success, cancelled, failure(String, code: Int? = nil) }
 
     private(set) var status: Status
     private(set) var errorMessage: String?
@@ -65,26 +65,32 @@ final class CommandLineToolInstaller {
         }
         guard fileManager.isExecutableFile(atPath: sourcePath) else {
             errorMessage = "The bundled terminal helper couldn't be found. Reinstall OpenUsage and try again."
+            AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
+                                  localContext: "Bundled terminal helper is missing or not executable")
             return
         }
-        handle(performPrivileged(.install, sourcePath, destinationPath), action: "install")
+        handle(performPrivileged(.install, sourcePath, destinationPath), action: "install", operation: .cliInstall)
     }
 
     func uninstall() {
         refreshStatus()
         guard status == .installed else { return }
-        handle(performPrivileged(.uninstall, sourcePath, destinationPath), action: "remove")
+        handle(performPrivileged(.uninstall, sourcePath, destinationPath), action: "remove", operation: .cliRemove)
     }
 
-    private func handle(_ result: OperationResult, action: String) {
+    private func handle(_ result: OperationResult, action: String, operation: DiagnosticOperation) {
         switch result {
         case .success:
+            AppDiagnostics.record(operation, result: .success)
             errorMessage = nil
         case .cancelled:
-            break
-        case .failure(let message):
+            AppDiagnostics.record(operation, result: .cancelled)
+        case .failure(let message, let code):
+            let context = "Terminal helper \(action) failed"
+                + (code.map { "; error_code=\($0)" } ?? "")
+            let category: ErrorCategory = code.map { (73...75).contains($0) } == true ? .subprocess : .permission
+            AppDiagnostics.record(operation, result: .failure, category: category, localContext: context)
             errorMessage = "Couldn't \(action) the terminal helper: \(message)"
-            AppLog.error(.config, "Terminal helper \(action) failed: \(message)")
         }
         refreshStatus()
     }
@@ -134,7 +140,8 @@ final class CommandLineToolInstaller {
         }
         return .failure(
             (errorInfo[NSAppleScript.errorMessage] as? String)
-                ?? "macOS rejected the authorization request."
+                ?? "macOS rejected the authorization request.",
+            code: errorInfo[NSAppleScript.errorNumber] as? Int
         )
     }
 

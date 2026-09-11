@@ -222,6 +222,7 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     func testNonzeroSubmitIsANormalFailureUnlessLoginMarkerMatches() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let installer = StubBunInstaller(availability: .available(runtime))
         let commandRunner = StubTokscaleCommandRunner(responses: [
             .init(
@@ -241,6 +242,7 @@ final class TokscaleSyncStoreTests: XCTestCase {
         try await waitUntil { store.phase == .failed }
 
         XCTAssertEqual(store.failure, .submit)
+        XCTAssertTrue(diagnostics.events.contains(DiagnosticEvent(.tokscaleSubmit, result: .failure, category: .subprocess)))
         XCTAssertEqual(
             store.errorMessage,
             "Tokscale finished with status 7. Review the command output and try again."

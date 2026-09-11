@@ -232,18 +232,24 @@ enum CodexUsageMapper {
         return (Int(count.rounded(.down)), availableExpiries(in: source["credits"]))
     }
 
-    /// count·expiry를 읽을 source — 전용 endpoint body가 usable(2xx, 파싱 가능, *numeric* `available_count`)일 때만 채택, 아니면 usage body의 embedded object.
+    /// count·expiry를 읽을 source — 전용 endpoint body가 usable(2xx, 파싱 가능, 0 이상 numeric `available_count`)일 때만 채택, 아니면 usage body의 embedded object.
     /// bare nil-check 금지 — JSON `null`은 `NSNull`(non-nil)이라 unusable한 전용 body를 선택해 usage-body count로의 fallback을 막음.
     private static func resetCreditsSource(
         body: [String: Any],
         resetCredits: HTTPResponse?
     ) -> [String: Any]? {
-        if let resetCredits, (200..<300).contains(resetCredits.statusCode),
-           let dedicated = ProviderParse.jsonObject(resetCredits.body),
-           ProviderParse.number(dedicated["available_count"]) != nil {
+        if let resetCredits, let dedicated = resetCreditsPayload(resetCredits) {
             return dedicated
         }
         return body["rate_limit_reset_credits"] as? [String: Any]
+    }
+
+    static func resetCreditsPayload(_ response: HTTPResponse) -> [String: Any]? {
+        guard (200..<300).contains(response.statusCode),
+              let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any],
+              let count = ProviderParse.number(body["available_count"]), count >= 0
+        else { return nil }
+        return body
     }
 
     /// Still-available credit들의 `expires_at` (soonest-first). `status`는 upstream optional — 명시적 non-available("consumed"/"expired")만 제외, status 없는 credit은 유지.

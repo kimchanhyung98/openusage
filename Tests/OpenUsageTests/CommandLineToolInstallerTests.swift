@@ -46,6 +46,62 @@ final class CommandLineToolInstallerTests: XCTestCase {
         XCTAssertEqual(installer.status, .notInstalled)
     }
 
+    func testPrivilegedCommandStatusesAreNotAuthorizationFailures() throws {
+        let cases: [(Int, CommandLineToolInstaller.Operation, ErrorCategory)] = [
+            (73, .install, .subprocess),
+            (74, .uninstall, .subprocess),
+            (75, .uninstall, .subprocess),
+            (-60005, .install, .permission)
+        ]
+        for (code, operation, category) in cases {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.root) }
+            let previousSink = AppLog.sink
+            AppLog.sink = LogFile(directory: fixture.root, fileName: "diagnostics.log")
+            AppLog.sink.open()
+            AppLog.reloadLevel(.info)
+            defer {
+                AppLog.sink = previousSink
+                AppLog.reloadLevel()
+            }
+            let diagnostics = DiagnosticEventRecorder()
+            if case .uninstall = operation {
+                try FileManager.default.createDirectory(
+                    atPath: (fixture.destination as NSString).deletingLastPathComponent,
+                    withIntermediateDirectories: true
+                )
+                try FileManager.default.createSymbolicLink(atPath: fixture.destination, withDestinationPath: fixture.source)
+            }
+            let installer = CommandLineToolInstaller(
+                sourcePath: fixture.source,
+                destinationPath: fixture.destination,
+                performPrivileged: { _, _, _ in .failure("PRIVATE_COMMAND_FAILURE", code: code) }
+            )
+            let expectedOperation: DiagnosticOperation
+            switch operation {
+            case .install:
+                installer.install()
+                expectedOperation = .cliInstall
+                XCTAssertEqual(installer.status, .notInstalled)
+            case .uninstall:
+                installer.uninstall()
+                expectedOperation = .cliRemove
+                XCTAssertEqual(installer.status, .installed)
+            }
+
+            let lines = try String(contentsOf: fixture.root.appendingPathComponent("diagnostics.log"), encoding: .utf8)
+                .split(separator: "\n").map(String.init)
+            XCTAssertEqual(lines.count, 1, "status=\(code)")
+            let line = try XCTUnwrap(lines.first)
+            XCTAssertTrue(line.contains("[ERROR]"), line)
+            XCTAssertTrue(line.contains("; error_code=\(code)"), line)
+            XCTAssertFalse(line.contains("authorization_error_code"), line)
+            XCTAssertFalse(line.contains("PRIVATE_COMMAND_FAILURE"), line)
+            XCTAssertEqual(diagnostics.events, [DiagnosticEvent(expectedOperation, result: .failure, category: category)])
+            XCTAssertTrue(installer.errorMessage?.contains("PRIVATE_COMMAND_FAILURE") == true)
+        }
+    }
+
     func testForeignPathIsNeverOverwritten() throws {
         let fixture = try fixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }

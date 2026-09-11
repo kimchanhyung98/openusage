@@ -16,6 +16,8 @@ From the repo root:
 The script builds a signed app bundle under `dist/` and launches it in place — nothing is installed to `/Applications`.
 The dev build uses its own bundle id (`com.kimchanhyung98.openusage.dev`), so it keeps its own settings and keychain and never disturbs a released OpenUsage.
 It ships no update feed, so it never checks for updates — test updates with a real signed, notarized release build.
+Development analytics defaults off and ignores the bundled production project token.
+Only an explicit `OPENUSAGE_POSTHOG_TOKEN` override can configure development analytics; use a separate test project.
 
 ## Stream logs
 
@@ -55,6 +57,24 @@ The launch-time account pass (which account is signed in at the Claude/Codex def
   The card works as before; it just can't participate in account-aware features yet.
 - `stale account cache discarded for claude` — the account at the default home changed between launches, so the previous account's cached snapshot was dropped instead of painting under the new login.
 - `account identity read skipped for claude, codex: login shell cold and no shell-environment snapshot exists yet` — a first launch raced a slow login shell, so the named families were left unread this launch; every later launch has a persisted snapshot to fall back on.
+
+## Verify Telemetry Locally
+
+The regression tests use fake credentials, isolated SDK requests, and temporary files:
+
+```sh
+CFFIXED_USER_HOME=/tmp/openusage-telemetry-tests OPENUSAGE_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
+```
+
+These checks cover final SDK payload redaction, queued events after opt-out, restart behavior, rollup dates and versions, concurrent log writers, and account transitions.
+`telemetry event submitted to SDK` means local submission; use the separate HTTP response log to distinguish delivery attempts and rejection.
+Neither message proves production dashboard visibility.
+
+Native crash capture requires exception autocapture in the PostHog project and an app without a debugger attached.
+Restart after a consent change when checking the native crash handler.
+Use a disposable test app and test project to verify crash capture, relaunch delivery, and symbol resolution.
+The release script stamps the dSYM with the app's bundle ID, version, and build; the workflow uploads it with a pinned PostHog CLI version.
+Successful dSYM generation or upload alone does not prove symbol resolution.
 
 ## Tips
 

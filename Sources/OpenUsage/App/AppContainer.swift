@@ -116,6 +116,37 @@ final class AppContainer {
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
         )
+        // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
+        let telemetryStore = TelemetryStore()
+        let telemetry = TelemetryRecorder(
+            sink: PostHogTelemetrySink(
+                enabled: telemetryStore.enabled,
+                crashConsentStartedAt: { telemetryStore.consentStartedAt },
+                consentID: { telemetryStore.consentID }
+            ),
+            store: telemetryStore,
+            snapshot: { [enablement, layout, dataStore] in
+                // 활성 구성만 보고 — 꺼진 provider의 metric 제외로 `enabledProviders`와 일관 유지.
+                let providerOn: (String) -> Bool = { metricID in
+                    guard let providerID = layout.registry.descriptor(id: metricID)?.providerID else { return false }
+                    return enablement.isEnabled(providerID)
+                }
+                return TelemetryConfigSnapshot.collapsingAccountCards(
+                    enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
+                    enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
+                    pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
+                    expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
+                    menuBarStyle: layout.menuBarStyle.rawValue,
+                    providerIDForMetric: { layout.registry.descriptor(id: $0)?.providerID }
+                )
+            }
+        )
+        dataStore.onRefreshOutcome = { [weak telemetry] providerID, outcome, category, trigger, degraded in
+            telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
+        }
+        self.telemetry = telemetry
+        // iCloud identity 초기화 오류도 기존 공유 동의에 따라 수집하도록 먼저 구독.
+        telemetry.startDiagnostics()
         let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient())
         let resetWatchStore = CodexResetWatchStore()
         let resetWatchCoordinator = CodexResetWatchCoordinator(
@@ -166,56 +197,12 @@ final class AppContainer {
         let codexProviders = providers.compactMap { $0 as? CodexProvider }
         self.codexResetClaim = CodexResetClaimRouter(
             providers: codexProviders,
+            identityKeys: accountAssembly.identityKeysByCard,
             refreshAfterClaim: { [weak dataStore] providerID in
-                // 재시도 한도는 provider의 최장 refresh(≈45s)보다 길게 유지 필수 — pre-claim meter 위에 성공 배너 방지.
-                // `.failed`도 수 회 재시도 후 loud하게 포기 (provider 오류가 카드에 표시되므로 staleness 비은폐).
-                var failures = 0
-                for attempt in 0..<45 {
-                    guard let dataStore else { return }
-                    switch await dataStore.refresh(providerID: providerID, force: true) {
-                    case .refreshed, .cacheHit, .backedOff:
-                        return
-                    case .failed:
-                        failures += 1
-                        guard failures < 3 else {
-                            AppLog.error(LogTag.plugin("codex"), "post-claim refresh failed \(failures) times; meters may lag until the next cycle")
-                            return
-                        }
-                        try? await Task.sleep(for: .seconds(2))
-                    case .skipped:
-                        AppLog.info(LogTag.plugin("codex"), "post-claim refresh waiting out an in-flight refresh (attempt \(attempt + 1))")
-                        try? await Task.sleep(for: .seconds(1))
-                    }
-                }
-                AppLog.error(LogTag.plugin("codex"), "post-claim refresh kept being skipped; meters may lag until the next cycle")
+                await dataStore?.refreshAfterClaim(providerID: providerID)
             }
         )
 
-        // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
-        let telemetryStore = TelemetryStore()
-        let telemetry = TelemetryRecorder(
-            sink: PostHogTelemetrySink(enabled: telemetryStore.enabled),
-            store: telemetryStore,
-            snapshot: { [enablement, layout, dataStore] in
-                // 활성 구성만 보고 — 꺼진 provider의 metric 제외로 `enabledProviders`와 일관 유지.
-                let providerOn: (String) -> Bool = { metricID in
-                    guard let providerID = layout.registry.descriptor(id: metricID)?.providerID else { return false }
-                    return enablement.isEnabled(providerID)
-                }
-                return TelemetryConfigSnapshot.collapsingAccountCards(
-                    enabledProviders: dataStore.knownProviderIDs.filter { enablement.isEnabled($0) },
-                    enabledMetricIDs: layout.placed.map(\.descriptorID).filter(providerOn),
-                    pinnedMetricIDs: layout.pinnedMetricIDs.filter(providerOn),
-                    expandedMetricIDs: layout.expandedMetricIDs.filter(providerOn),
-                    menuBarStyle: layout.menuBarStyle.rawValue,
-                    providerIDForMetric: { layout.registry.descriptor(id: $0)?.providerID }
-                )
-            }
-        )
-        dataStore.onRefreshOutcome = { [weak telemetry] providerID, outcome, category, manual in
-            telemetry?.record(providerID: providerID, outcome: outcome, category: category, manual: manual)
-        }
-        self.telemetry = telemetry
         self.transparency = PopoverTransparencyStore()
         self.privacy = MenuBarPrivacyStore()
         self.localAPI = LocalUsageServer(state: { [layout, enablement, dataStore] in
@@ -389,7 +376,10 @@ final class AppContainer {
                 enablement.setEnabled(true, for: providerID)
             }
         }
-        codexResetClaim.reconfigure(providers: nextProviders.compactMap { $0 as? CodexProvider })
+        codexResetClaim.reconfigure(
+            providers: nextProviders.compactMap { $0 as? CodexProvider },
+            identityKeys: assembly.identityKeysByCard
+        )
         for providerID in addedIDs where enablement.isEnabled(providerID) {
             Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
         }
@@ -407,7 +397,7 @@ final class AppContainer {
             providerIDs: enabledProviderIDs,
             force: force
         )
-        await dataStore.refreshAll(force: force)
+        await dataStore.refreshAll(force: force, trigger: .manual)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
@@ -426,7 +416,7 @@ final class AppContainer {
             providerIDs: statusProviderIDs,
             force: force
         )
-        let outcome = await dataStore.refresh(providerID: providerID, force: force)
+        let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
         if let reconciliationError {
             dataStore.setExternalProviderError(reconciliationError, for: "claude")
         }
@@ -443,13 +433,18 @@ final class AppContainer {
             switch try await AccountCredentialImporter()
                 .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
             case .updated(let profileID):
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
                 AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
                 return .success(true)
-            case .unchanged, .noUsableAuthentication:
+            case .unchanged:
+                AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
+                return .success(false)
+            case .noUsableAuthentication:
                 return .success(false)
             }
         } catch {
-            AppLog.error(.auth, "external Claude reauthentication reconciliation failed: \(error.localizedDescription)")
+            AppDiagnostics.failure(.accountReconcile, error: error, providerID: "claude",
+                                   localContext: "External Claude reauthentication reconciliation failed")
             return .failure(error)
         }
     }

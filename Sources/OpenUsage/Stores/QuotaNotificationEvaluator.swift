@@ -5,6 +5,8 @@ import Foundation
 /// metric·reset window 단위 dedup, no-data metric 미발화, 미전달 metric 상태는 prune되어 재등록 시 초기화
 @MainActor
 final class QuotaNotificationEvaluator {
+    typealias Post = @MainActor (String, String, String, String, @MainActor () -> Bool) async -> Bool
+
     /// store가 이미 resolve한 이번 pass의 enabled·bounded·visible metric 하나
     struct Metric {
         let key: String
@@ -13,6 +15,19 @@ final class QuotaNotificationEvaluator {
     }
 
     private var notificationState: [String: NotificationState] = [:]
+    private var generationsByProvider: [String: Int] = [:]
+
+    /// 계정이 교체·제거된 카드의 baseline만 제거, 대기 중인 이전 평가의 commit도 무효화.
+    func reset(providerIDs: Set<String>) {
+        guard !providerIDs.isEmpty else { return }
+        for providerID in providerIDs {
+            generationsByProvider[providerID, default: 0] &+= 1
+        }
+        notificationState = notificationState.filter { key, _ in
+            !providerIDs.contains { key.hasPrefix($0 + ".") }
+        }
+        AppLog.info(.notifications, "notification baseline reset after account catalog change")
+    }
 
     /// 전체 metric의 pace milestone 평가 후 신규 도달분을 `post`로 전달 — `providerName`은 subtitle용 표시명 매핑
     func evaluate(
@@ -20,10 +35,14 @@ final class QuotaNotificationEvaluator {
         toggles: PaceNotificationToggles,
         now: Date,
         providerName: @MainActor (String) -> String,
-        post: @MainActor (String, String, String, String) async -> Bool
+        post: Post
     ) async {
-        var nextState: [String: NotificationState] = [:]
-        for metric in metrics {
+        let evaluationGenerations = generationsByProvider
+        let activeKeys = Set(metrics.map(\.key))
+        notificationState = notificationState.filter { activeKeys.contains($0.key) }
+        metricLoop: for metric in metrics {
+            let boundGeneration = evaluationGenerations[metric.providerID, default: 0]
+            guard generationsByProvider[metric.providerID, default: 0] == boundGeneration else { continue }
             let key = metric.key
             let data = metric.data
             let state = data.meterState(now: now)
@@ -50,7 +69,10 @@ final class QuotaNotificationEvaluator {
             var underDelivered = false
             for milestone in result.fire {
                 let delivered = await deliver(milestone, data: data, providerID: metric.providerID,
-                                              providerName: providerName, post: post)
+                                              providerName: providerName, generation: boundGeneration, post: post)
+                guard generationsByProvider[metric.providerID, default: 0] == boundGeneration else {
+                    continue metricLoop
+                }
                 if delivered {
                     if milestone == .underTenPercent { underDelivered = true } else { paceDelivered = true }
                     next.firedMilestones.insert(milestone)
@@ -65,9 +87,8 @@ final class QuotaNotificationEvaluator {
             if !result.fire.isEmpty {
                 AppLog.debug(.notifications, "commit \(key): paceDelivered=\(paceDelivered) underTenDelivered=\(underDelivered) persistedBucket=\(Self.bucketDescription(next.previousBucket)) persistedWasUnderTen=\(next.wasUnderTenPercent) persistedFired=\(Self.milestoneDescription(next.firedMilestones))")
             }
-            nextState[key] = next
+            notificationState[key] = next
         }
-        notificationState = nextState
     }
 
     /// milestone 알림 1건 조립·게시 — title은 trigger명, subtitle은 "Provider Metric", 전달 성공 여부 반환
@@ -76,10 +97,13 @@ final class QuotaNotificationEvaluator {
         data: WidgetData,
         providerID: String,
         providerName: @MainActor (String) -> String,
-        post: @MainActor (String, String, String, String) async -> Bool
+        generation: Int,
+        post: Post
     ) async -> Bool {
         let subtitle = "\(providerName(providerID)) \(data.title)"
-        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body)
+        return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body) {
+            self.generationsByProvider[providerID, default: 0] == generation
+        }
     }
 
     // MARK: - Notification decision trace helpers (debug logging only)

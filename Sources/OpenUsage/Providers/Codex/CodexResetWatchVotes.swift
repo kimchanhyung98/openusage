@@ -35,12 +35,14 @@ enum CodexResetWatchVotes {
             guard votes.episodeID == episodeID else { throw VotesError.episodeMismatch }
             let maximumSafeInteger: Int64 = 9_007_199_254_740_991
             guard (0...maximumSafeInteger).contains(votes.yes),
-                  (0...maximumSafeInteger).contains(votes.no), votes.yes + votes.no > 0 else {
+                  (0...maximumSafeInteger).contains(votes.no) else {
                 throw VotesError.invalidCounts
             }
+            guard votes.yes + votes.no > 0 else { throw VotesError.noVotes }
+            AppDiagnostics.record(.resetVoteFetch, result: .success, providerID: "codex")
             return Result(percent: (Double(votes.yes) / (Double(votes.yes) + Double(votes.no)) * 100).rounded())
         } catch {
-            AppLog.warn(LogTag.plugin("codex"), "Reset Watch community vote share unavailable: \(error.localizedDescription)")
+            AppDiagnostics.failure(.resetVoteFetch, error: error, providerID: "codex")
             return Result(retryNotBefore: retryNotBefore ?? now().addingTimeInterval(60))
         }
     }
@@ -71,14 +73,23 @@ enum CodexResetWatchVotes {
         }
     }
 
-    private enum VotesError: Error, LocalizedError {
-        case httpStatus(Int), episodeMismatch, invalidCounts
+    private enum VotesError: Error, LocalizedError, CategorizedError {
+        var errorCategory: ErrorCategory {
+            switch self {
+            case .httpStatus(let code): .http(code)
+            case .episodeMismatch, .invalidCounts: .decoding
+            case .noVotes: .notAvailable
+            }
+        }
+
+        case httpStatus(Int), episodeMismatch, invalidCounts, noVotes
 
         var errorDescription: String? {
             switch self {
             case .httpStatus(let status): "HTTP \(status)"
             case .episodeMismatch: "Vote episode did not match the active forecast"
-            case .invalidCounts: "Vote counts were invalid or empty"
+            case .invalidCounts: "Vote counts were invalid"
+            case .noVotes: "No votes yet"
             }
         }
     }

@@ -61,7 +61,10 @@ final class CursorProvider: ProviderRuntime {
         await loadOffMainActor { [authStore] in authStore.loadAuthState() } != nil
     }
 
+    private var refreshIsDegraded = false
+
     func refresh() async -> ProviderSnapshot {
+        refreshIsDegraded = false
         guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
             return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
         }
@@ -133,7 +136,7 @@ final class CursorProvider: ProviderRuntime {
                 )
                 return snapshot(mapped)
             } catch {
-                AppLog.warn(LogTag.plugin("cursor"), "optional request-based usage fallback failed")
+                noteDegraded(.cursorFallback, error: error, localContext: "optional request-based usage fallback failed")
             }
         }
 
@@ -160,40 +163,39 @@ final class CursorProvider: ProviderRuntime {
         do {
             response = try await usageClient.fetchUsageCSV(accessToken: accessToken, start: start, end: end)
         } catch {
-            AppLog.warn(LogTag.plugin("cursor"), "usage CSV request failed")
+            noteDegraded(.historyScan, error: error, localContext: "usage CSV request failed")
             return nil
         }
         guard let response else {
-            AppLog.warn(LogTag.plugin("cursor"), "usage CSV request could not be prepared from the current session")
+            noteDegraded(.historyScan, category: .authInvalid, localContext: "usage CSV request could not be prepared from the current session")
             return nil
         }
         guard (200..<300).contains(response.statusCode) else {
-            AppLog.warn(LogTag.plugin("cursor"), "usage CSV request returned HTTP \(response.statusCode)")
+            noteDegraded(.historyScan, category: .http(response.statusCode), localContext: "usage CSV request returned HTTP \(response.statusCode)")
             return nil
         }
         guard let csv = String(data: response.body, encoding: .utf8) else {
-            AppLog.warn(LogTag.plugin("cursor"), "usage CSV response was not valid UTF-8")
+            noteDegraded(.historyScan, category: .decoding, localContext: "usage CSV response was not valid UTF-8")
             return nil
         }
         let pricing = await pricing()
         do {
             let parsed = try CursorUsageCSV.parse(csv: csv, pricing: pricing)
             if parsed.rejectedRowCount > 0 {
-                AppLog.warn(
-                    LogTag.plugin("cursor"),
-                    "usage CSV ignored \(parsed.rejectedRowCount) malformed row\(parsed.rejectedRowCount == 1 ? "" : "s")"
-                )
+                noteDegraded(.historyScan, category: .decoding,
+                             localContext: "usage CSV ignored \(parsed.rejectedRowCount) malformed row\(parsed.rejectedRowCount == 1 ? "" : "s")")
             }
+            if parsed.rejectedRowCount == 0 { AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id) }
             return CursorUsageMapper.appendSpendLines(rows: parsed.rows, now: end, pricing: pricing, to: &lines)
         } catch let error as CursorUsageCSVError {
             switch error {
             case .missingColumns(let columns):
-                AppLog.warn(LogTag.plugin("cursor"), "usage CSV missing required columns: \(columns.joined(separator: ", "))")
+                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV missing required columns: \(columns.joined(separator: ", "))")
             case .malformedCSV:
-                AppLog.warn(LogTag.plugin("cursor"), "usage CSV is structurally malformed")
+                noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV is structurally malformed")
             }
         } catch {
-            AppLog.warn(LogTag.plugin("cursor"), "usage CSV could not be parsed")
+            noteDegraded(.historyScan, category: .decoding, error: error, localContext: "usage CSV could not be parsed")
         }
         return nil
     }
@@ -222,39 +224,59 @@ final class CursorProvider: ProviderRuntime {
             return nil
         }
 
-        let response = try await usageClient.refreshToken(refreshToken)
-        if response.statusCode == 400 || response.statusCode == 401 {
-            let body = ProviderParse.jsonObject(response.body)
-            if body?["shouldLogout"] as? Bool == true {
+        let accessToken: String
+        do {
+            let response = try await usageClient.refreshToken(refreshToken)
+            if response.statusCode == 400 || response.statusCode == 401 {
+                let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+                if body?["shouldLogout"] as? Bool == true {
+                    throw CursorAuthError.sessionExpired
+                }
+                throw CursorAuthError.tokenExpired
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                AppDiagnostics.record(.credentialRefresh, result: .failure, category: .http(response.statusCode), providerID: provider.id,
+                                      localContext: "token refresh request returned HTTP \(response.statusCode)")
+                return nil
+            }
+            let body: [String: Any]
+            do {
+                guard let object = try JSONSerialization.jsonObject(with: response.body) as? [String: Any] else {
+                    throw CursorUsageError.invalidResponse
+                }
+                body = object
+            } catch {
+                AppDiagnostics.record(.credentialRefresh, result: .failure, category: .decoding, providerID: provider.id, error: error,
+                                      localContext: "token refresh response was invalid")
+                return nil
+            }
+            if body["shouldLogout"] as? Bool == true {
                 throw CursorAuthError.sessionExpired
             }
-            throw CursorAuthError.tokenExpired
+            guard let token = (body["access_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+                AppDiagnostics.record(.credentialRefresh, result: .failure, category: .decoding, providerID: provider.id,
+                                      localContext: "token refresh response contained no usable access token")
+                return nil
+            }
+            accessToken = token
+        } catch {
+            AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
+            throw error
         }
-        guard (200..<300).contains(response.statusCode),
-              let body = ProviderParse.jsonObject(response.body)
-        else {
-            return nil
-        }
-        if body["shouldLogout"] as? Bool == true {
-            throw CursorAuthError.sessionExpired
-        }
-        guard let accessToken = (body["access_token"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
-            return nil
-        }
+        AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
         // 선택된 credential source에 저장. SQLite write는 bound parameter 사용; 실패 시 token 없는 일반 오류만 기록.
         do {
             try authStore.saveAccessToken(accessToken, source: authState.source)
+            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch {
-            AppLog.error(
-                LogTag.auth("cursor"),
-                "failed to persist rotated access token to the selected Cursor credential store; using it for this session only"
-            )
+            noteDegraded(.credentialSave, error: error,
+                         localContext: "failed to persist rotated access token to the selected Cursor credential store; using it for this session only")
         }
         return accessToken
     }
 
     private func fetchPlanName(accessToken: String) async -> (String?, Bool) {
-        guard let body = await fetchOptionalJSONObject(label: "plan", request: {
+        guard let body = await fetchOptionalJSONObject(label: "plan", operation: .cursorPlan, request: {
             try await self.usageClient.fetchPlan(accessToken: accessToken)
         }) else {
             return (nil, true)
@@ -264,86 +286,93 @@ final class CursorProvider: ProviderRuntime {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .nilIfEmpty
         else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional plan response contained invalid plan metadata")
+            noteDegraded(.cursorPlan, category: .decoding, localContext: "optional plan response contained invalid plan metadata")
             return (nil, true)
         }
+        AppDiagnostics.record(.cursorPlan, result: .success, providerID: provider.id)
         return (planName, false)
     }
 
     private func fetchCreditGrants(accessToken: String) async -> [String: Any]? {
-        guard let body = await fetchOptionalJSONObject(label: "credit-grants", request: {
+        guard let body = await fetchOptionalJSONObject(label: "credit-grants", operation: .cursorCredits, request: {
             try await self.usageClient.fetchCredits(accessToken: accessToken)
         }) else {
             return nil
         }
         guard let hasCreditGrants = body["hasCreditGrants"] as? Bool else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional credit-grants response contained invalid grant metadata")
+            noteDegraded(.cursorCredits, category: .decoding, localContext: "optional credit-grants response contained invalid grant metadata")
             return nil
         }
         if hasCreditGrants {
             guard let totalCents = ProviderParse.number(body["totalCents"]), totalCents > 0,
                   let usedCents = ProviderParse.number(body["usedCents"]), usedCents >= 0 else {
-                AppLog.warn(LogTag.plugin("cursor"), "optional credit-grants response contained invalid grant metadata")
+                noteDegraded(.cursorCredits, category: .decoding, localContext: "optional credit-grants response contained invalid grant metadata")
                 return nil
             }
         }
+        AppDiagnostics.record(.cursorCredits, result: .success, providerID: provider.id)
         return body
     }
 
     private func fetchStripeBalanceCents(accessToken: String) async -> Double {
-        guard let body = await fetchOptionalJSONObject(label: "prepaid-balance", request: {
+        guard let body = await fetchOptionalJSONObject(label: "prepaid-balance", operation: .cursorBalance, request: {
             try await self.usageClient.fetchStripeBalance(accessToken: accessToken)
         }) else {
             return 0
         }
         guard ProviderParse.number(body["customerBalance"]) != nil else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional prepaid-balance response contained invalid balance metadata")
+            noteDegraded(.cursorBalance, category: .decoding, localContext: "optional prepaid-balance response contained invalid balance metadata")
             return 0
         }
+        AppDiagnostics.record(.cursorBalance, result: .success, providerID: provider.id)
         return CursorUsageMapper.stripeBalanceCents(from: body)
     }
 
     /// optional endpoint는 사용 가능한 primary snapshot을 보강할 뿐 provider 전체를 실패시키지 않음. boundary 처리를 한곳에 모아 transport·준비·status·schema 실패가 고정된 credential-free 진단으로 노출.
     private func fetchOptionalJSONObject(
         label: String,
+        operation: DiagnosticOperation,
         request: () async throws -> HTTPResponse?
     ) async -> [String: Any]? {
         let response: HTTPResponse?
         do {
             response = try await request()
         } catch {
-            AppLog.warn(LogTag.plugin("cursor"), "optional \(label) request failed")
+            noteDegraded(operation, error: error, localContext: "optional \(label) request failed")
             return nil
         }
         guard let response else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional \(label) request could not be prepared from the current session")
+            noteDegraded(operation, category: .authInvalid, localContext: "optional \(label) request could not be prepared from the current session")
             return nil
         }
         guard (200..<300).contains(response.statusCode) else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional \(label) request returned HTTP \(response.statusCode)")
+            noteDegraded(operation, category: .http(response.statusCode), localContext: "optional \(label) request returned HTTP \(response.statusCode)")
             return nil
         }
-        guard let body = ProviderParse.jsonObject(response.body) else {
-            AppLog.warn(LogTag.plugin("cursor"), "optional \(label) response was invalid")
+        do {
+            guard let body = try JSONSerialization.jsonObject(with: response.body) as? [String: Any] else {
+                throw CursorUsageError.invalidResponse
+            }
+            return body
+        } catch {
+            noteDegraded(operation, category: .decoding, error: error, localContext: "optional \(label) response was invalid")
             return nil
         }
-        return body
     }
 
     private func requestBasedResult(accessToken: String, planName: String?, unavailableMessage: String) async throws -> CursorMappedUsage {
-        do {
-            guard let response = try await usageClient.fetchRequestBasedUsage(accessToken: accessToken),
-                  (200..<300).contains(response.statusCode),
-                  let body = ProviderParse.jsonObject(response.body)
-            else {
-                throw CursorUsageError.requestBasedUnavailable(unavailableMessage)
-            }
-            return try CursorUsageMapper.mapRequestBasedUsage(body, planName: planName, unavailableMessage: unavailableMessage)
-        } catch let error as CursorUsageError {
-            throw error
-        } catch {
+        guard let response = try await usageClient.fetchRequestBasedUsage(accessToken: accessToken) else {
             throw CursorUsageError.requestBasedUnavailable(unavailableMessage)
         }
+        guard (200..<300).contains(response.statusCode) else {
+            throw CursorUsageError.requestFailed(response.statusCode)
+        }
+        guard let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] else {
+            throw CursorUsageError.invalidResponse
+        }
+        let mapped = try CursorUsageMapper.mapRequestBasedUsage(body, planName: planName, unavailableMessage: unavailableMessage)
+        AppDiagnostics.record(.cursorFallback, result: .success, providerID: provider.id)
+        return mapped
     }
 
     private func usageSummaryAndRequestResult(
@@ -351,17 +380,23 @@ final class CursorProvider: ProviderRuntime {
         planName: String?,
         unavailableMessage: String
     ) async throws -> CursorMappedUsage {
-        let summary = await fetchOptionalJSONObject(label: "usage-summary", request: {
+        let summary = await fetchOptionalJSONObject(label: "usage-summary", operation: .cursorSummary, request: {
             try await self.usageClient.fetchUsageSummary(accessToken: accessToken)
         })
         if let summary, !CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
-            AppLog.warn(LogTag.plugin("cursor"), "optional usage-summary response contained no usable usage fields")
+            noteDegraded(.cursorSummary, category: .decoding, localContext: "optional usage-summary response contained no usable usage fields")
         }
-        let requestUsage = await fetchOptionalJSONObject(label: "request-based usage", request: {
+        let requestUsage = await fetchOptionalJSONObject(label: "request-based usage", operation: .cursorFallback, request: {
             try await self.usageClient.fetchRequestBasedUsage(accessToken: accessToken)
         })
         if let requestUsage, !CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
-            AppLog.warn(LogTag.plugin("cursor"), "optional request-based usage response contained no usable usage fields")
+            noteDegraded(.cursorFallback, category: .decoding, localContext: "optional request-based usage response contained no usable usage fields")
+        }
+        if let summary, CursorUsageSummaryMapper.hasUsableSummaryPayload(summary) {
+            AppDiagnostics.record(.cursorSummary, result: .success, providerID: provider.id)
+        }
+        if let requestUsage, CursorUsageSummaryMapper.hasUsableRequestPayload(requestUsage) {
+            AppDiagnostics.record(.cursorFallback, result: .success, providerID: provider.id)
         }
         return try CursorUsageSummaryMapper.map(
             summary: summary,
@@ -375,13 +410,24 @@ final class CursorProvider: ProviderRuntime {
         CursorPlanUsageFacts(usage: usage).shouldTryGenericRequestFallback
     }
 
+    private func noteDegraded(
+        _ operation: DiagnosticOperation,
+        category: ErrorCategory? = nil,
+        error: Error? = nil,
+        localContext: String? = nil
+    ) {
+        refreshIsDegraded = true
+        AppDiagnostics.record(operation, result: .degraded, category: category, providerID: provider.id, error: error, localContext: localContext)
+    }
+
     private func snapshot(_ mapped: CursorMappedUsage, usageHistory: ProviderUsageHistory? = nil) -> ProviderSnapshot {
         ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
             lines: mapped.lines,
             refreshedAt: now(),
-            usageHistory: usageHistory
+            usageHistory: usageHistory,
+            isDegraded: refreshIsDegraded ? true : nil
         )
     }
 }

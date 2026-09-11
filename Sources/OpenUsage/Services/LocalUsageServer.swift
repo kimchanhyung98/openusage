@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// `127.0.0.1:6736`의 read-only usage API용 loopback 전용 HTTP/1.1 listener — 앱과 함께 시작.
-/// port 선점 시 세션 동안 조용히 비활성(원본 앱과 동일). 동시 요청 최대 16 — 초과 연결은 즉시 `503 {"error":"server_busy"}`.
+/// port 선점 시 오류 기록 후 세션 동안 비활성. 동시 요청 최대 16 — 초과 연결은 즉시 `503 {"error":"server_busy"}`.
 @MainActor
 final class LocalUsageServer {
     static let port: UInt16 = 6736
@@ -29,14 +29,17 @@ final class LocalUsageServer {
         do {
             listener = try NWListener(using: parameters)
         } catch {
-            AppLog.info(.localAPI, "disabled: \(error.localizedDescription)")
+            AppDiagnostics.failure(.localAPIListen, error: error,
+                                   localContext: "Local API listener could not be created; disabled for this session")
             return
         }
 
         listener.stateUpdateHandler = { state in
+            if case .ready = state { AppDiagnostics.record(.localAPIListen, result: .success) }
             if case .failed(let error) = state {
-                // 대부분 port 선점 — 이번 세션 동안 조용히 비활성.
-                AppLog.info(.localAPI, "disabled: \(error.localizedDescription)")
+                // 대부분 port 선점 — 이번 세션 동안 비활성.
+                AppDiagnostics.failure(.localAPIListen, error: error,
+                                       localContext: "Local API listener failed; disabled for this session")
             }
         }
         listener.newConnectionHandler = { connection in
@@ -51,6 +54,7 @@ final class LocalUsageServer {
     private func accept(_ connection: NWConnection) {
         connection.start(queue: queue)
         guard activeConnections < Self.maxConcurrentConnections else {
+            AppDiagnostics.record(.localAPIRequest, result: .failure, category: .rateLimited)
             Self.send(LocalUsageAPI.busy, over: connection)
             return
         }
@@ -74,6 +78,7 @@ final class LocalUsageServer {
                     let head = String(data: buffered[..<headEnd.lowerBound], encoding: .utf8) ?? ""
                     self.finish(connection, with: self.route(head: head))
                 } else if error != nil || isComplete || buffered.count >= Self.headLimit {
+                    if let error { Self.recordReceiveFailure(error) }
                     self.finish(connection, with: nil)
                 } else {
                     self.receiveHead(connection, buffered: buffered)
@@ -82,15 +87,37 @@ final class LocalUsageServer {
         }
     }
 
+    nonisolated static func recordReceiveFailure(_ error: NWError) {
+        switch error {
+        case .posix(.ECONNRESET), .posix(.EPIPE):
+            AppDiagnostics.record(.localAPIRequest, result: .cancelled)
+        default:
+            AppDiagnostics.failure(.localAPIRequest, error: error)
+        }
+    }
+
     func route(head: String) -> LocalUsageAPI.Response {
         let (method, path) = Self.parseRequestLine(head)
-        // path는 secret-free(loopback API는 정규화된 usage만 서빙) — Debug 전용.
-        AppLog.debug(.localAPI, "\(method) \(path)")
+        // 외부 입력은 고정 route·method 분류만 기록 — 계정 경로·쿼리·임의 문자열 제외.
+        AppLog.debug(.localAPI, "\(Self.logMethod(method)) \(Self.logRoute(path))")
         return LocalUsageAPI.respond(
             method: method,
             path: path,
             state: state().redactingAccountNamesForBrowserWire()
         )
+    }
+
+    private nonisolated static func logMethod(_ method: String) -> String {
+        ["GET", "OPTIONS"].contains(method) ? method : "other"
+    }
+
+    private nonisolated static func logRoute(_ path: String) -> String {
+        let route = path.split(separator: "?", maxSplits: 1).first.map(String.init) ?? ""
+        for base in ["/v1/limits", "/v1/usage"] {
+            if route == base { return base }
+            if route.hasPrefix(base + "/") { return base + "/provider" }
+        }
+        return "unknown"
     }
 
     /// HTTP request line을 `(method, path)`로 파싱 — 비어 있거나 malformed head 허용.
@@ -131,12 +158,14 @@ final class LocalUsageServer {
         if let body = response.body {
             head += "Content-Type: application/json\r\n"
             head += "Content-Length: \(body.count)\r\n\r\n"
-            connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in
+            connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
+                if let error { AppDiagnostics.failure(.localAPIRequest, error: error) }
                 connection.cancel()
             })
         } else {
             head += "Content-Length: 0\r\n\r\n"
-            connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in
+            connection.send(content: Data(head.utf8), completion: .contentProcessed { error in
+                if let error { AppDiagnostics.failure(.localAPIRequest, error: error) }
                 connection.cancel()
             })
         }

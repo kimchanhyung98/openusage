@@ -16,6 +16,8 @@
 스크립트는 `dist/` 아래에 서명된 앱 번들을 빌드해 그 자리에서 실행 — `/Applications`에는 아무것도 설치하지 않음.
 개발 빌드는 자체 번들 ID(`com.kimchanhyung98.openusage.dev`)를 쓰므로 설정과 키체인도 따로 유지하며, 릴리스된 OpenUsage를 건드리지 않음.
 업데이트 피드가 없어 업데이트를 확인하지도 않으므로, 업데이트는 실제로 서명·공증된 릴리스 빌드로 테스트.
+개발 분석은 기본값 꺼짐이며 내장 운영 프로젝트 토큰 무시.
+개발 분석 설정에는 명시적인 `OPENUSAGE_POSTHOG_TOKEN` override만 사용 가능; 별도 테스트 프로젝트 사용.
 
 ## 로그 스트리밍
 
@@ -55,6 +57,24 @@ log show --last 10m --info --predicate 'process == "OpenUsage"'
   카드는 이전과 똑같이 동작하며, 아직 계정 인식 기능에만 참여하지 못하는 상태.
 - `stale account cache discarded for claude` — 실행 사이에 기본 홈의 계정이 바뀌어, 새 로그인 아래에 이전 계정의 캐시 스냅샷을 그리는 대신 폐기한 경우.
 - `account identity read skipped for claude, codex: login shell cold and no shell-environment snapshot exists yet` — 첫 실행이 느린 로그인 셸과 경합해 해당 패밀리를 이번 실행에서 읽지 않고 넘긴 경우로, 이후 실행에는 폴백할 영속 스냅샷이 존재.
+
+## 로컬 Telemetry 검증
+
+회귀 테스트는 가짜 인증 정보·격리된 SDK 요청·임시 파일 사용:
+
+```sh
+CFFIXED_USER_HOME=/tmp/openusage-telemetry-tests OPENUSAGE_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
+```
+
+최종 SDK payload 마스킹·공유 OFF 이후 대기 이벤트·재시작·집계 날짜 및 버전·로그 동시 기록·계정 전환 검증 포함.
+`telemetry event submitted to SDK`는 로컬 제출 의미; 별도 HTTP 응답 로그로 전송 시도와 거부 구분.
+두 메시지 모두 운영 대시보드 표시의 증거는 아님.
+
+네이티브 크래시 수집에는 PostHog 프로젝트의 exception autocapture와 디버거가 연결되지 않은 앱 필요.
+네이티브 크래시 핸들러 확인 시 동의 변경 후 재시작.
+폐기 가능한 테스트 앱·테스트 프로젝트에서 크래시 수집·재실행 전송·심볼 해석 검증.
+릴리스 스크립트는 dSYM에 앱 번들 ID·버전·빌드를 기록하며 workflow는 고정 버전의 PostHog CLI로 업로드.
+dSYM 생성·업로드 성공만으로 심볼 해석을 보장하지 않음.
 
 ## 팁
 
