@@ -35,8 +35,14 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   An additional account signs in inside a private workspace owned by OpenUsage, so your current account and open terminals keep working while you sign in.
   A cancelled or failed sign-in registers nothing.
 - Each account's authentication is kept as a private snapshot in the macOS Keychain.
-  The row badge reads **Ready** while that saved sign-in is usable and its current provider identity can be verified, and **Sign-In Needed** otherwise.
-  For the selected Claude account, **Ready** also requires the login in the shared `~/.claude` home to be usable and to match the identity currently saved under that account name; a new verified login replaces that saved identity, while the presence of a saved or expired credential alone is not enough.
+  **Ready** requires a usable saved sign-in and a successful usage check in the current app session, with no outstanding error or warning.
+  **Session Expired** means token renewal reported an expired session; revoked or conflicting tokens show **Sign-In Needed**.
+  **Refresh Failed** reports connection, server, or usage-check problems without treating them as session expiry.
+  Before the first check, or after signing in again, the badge shows **Not Checked**, then **Checking** while the request runs.
+  Missing or mismatched saved sign-ins show **Sign-In Needed**.
+  The account row and Manage screen follow the same account's dashboard refresh result, including while Settings stays open.
+  Old usage can remain visible with **Outdated**, but reading that cache does not clear an error or establish **Ready**.
+  For the selected Claude account, the login in the shared `~/.claude` home must also be usable and match the identity currently saved under that account name.
 - With two or more accounts for one provider, each row gains a toggle that picks the account new terminal sessions use.
   Switching asks for confirmation.
   Approval keeps the one shared Claude or Codex configuration home and replaces only its authentication with the selected account.
@@ -44,9 +50,10 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   Approval also installs or updates a small `claude`/`codex` function in your login shell's startup file (zsh or fish), so new terminal sessions follow the switch.
   Switching requires a zsh or fish login shell; with another login shell the switch stops with an error and nothing is changed.
   See the [CLI](/docs/cli.md) page for details; the `openusage` command-line tool is not required.
-  A toggle is enabled only while its row is **Ready**.
+  A toggle requires locally usable sign-in information and is disabled for **Session Expired** or **Sign-In Needed**.
+  **Not Checked**, **Checking**, and temporary **Refresh Failed** states do not themselves prevent switching.
   While any registered accounts remain, one account stays selected even if it later needs sign-in.
-  Readiness controls the badge and whether that row can be switched to; it never changes the selected account automatically.
+  Status changes never select a different account automatically.
   Already-running sessions are never changed.
   If the selected Claude account signs in again from an ordinary terminal — either with `/login` inside `claude` or with `claude auth login` — OpenUsage verifies the login in the shared home and replaces the authentication and provider identity stored under that same account name automatically.
   This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
@@ -61,6 +68,9 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   The account name is the only editable field.
   **Sign In Again** remains an in-app recovery path, but it is not required when the selected Claude account was reauthenticated from an ordinary terminal.
   **Sign In Again** accepts any complete, verifiable provider login and replaces that named account's saved authentication and provider identity.
+  Manage shows the current failure's explanation beside this recovery action.
+  A completed sign-in clears that account's previous check result and requests a new check when the provider is enabled, even when the provider identity is unchanged.
+  A successful check restores **Ready**; results from a request started before the sign-in change are discarded.
   It does not rename the account or select another account, even when the provider identity changes or is also stored under another account name.
   Removing deletes the account's OpenUsage sign-in workspace first, then its Keychain snapshot, and finally unregisters the record.
   Your `~/.claude` and `~/.codex` data is never touched.
@@ -97,7 +107,7 @@ An unreadable account registry also uses a single card while preserving the pref
 ### Account order
 
 With two or more registered accounts for a provider, drag the account row itself, without a separate handle, to move it within that provider's list.
-Both **Ready** and **Sign-In Needed** rows can move; accounts cannot move between Claude and Codex.
+Rows can move regardless of their sign-in or refresh status; accounts cannot move between Claude and Codex.
 Clicking **Manage…** or the switch toggle keeps its existing behavior without starting a reorder.
 The list scrolls automatically near its top or bottom edge during a drag.
 VoiceOver provides **Move Up** and **Move Down** actions on the account row and announces the account's position.
