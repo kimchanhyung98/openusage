@@ -338,7 +338,8 @@ final class AppContainer {
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
     func refreshAccountCatalog() {
-        defer { refreshReauthenticatedAccounts() }
+        var addedIDs: Set<String> = []
+        defer { refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) }
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
@@ -355,7 +356,7 @@ final class AppContainer {
         )
         let nextRegistry = WidgetRegistry.from(nextProviders)
         let previousIDs = Set(registry.providers.map(\.id))
-        let addedIDs = Set(nextRegistry.providers.map(\.id)).subtracting(previousIDs)
+        addedIDs = Set(nextRegistry.providers.map(\.id)).subtracting(previousIDs)
 
         registry = nextRegistry
         providers = nextProviders

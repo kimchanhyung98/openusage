@@ -205,6 +205,9 @@ struct AccountsSettingsSection: View {
         let status = container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn)
         guard status.canSwitch else {
             switchError = status.message ?? "Sign in again before switching to this account."
+            let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
+            AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
+                                  localContext: "Account switch requires sign-in; account switch not applied")
             return
         }
         guard let shell = AccountShellInstaller.defaultShell() else {

@@ -237,6 +237,7 @@ struct AccountProfileManagementSheet: View {
     }
 
     var body: some View {
+        let status = accountStatus
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 Text("Manage \(familyTitle) Account")
@@ -261,7 +262,7 @@ struct AccountProfileManagementSheet: View {
             }
 
             HStack(spacing: 8) {
-                AccountStatusBadge(state: accountStatus)
+                AccountStatusBadge(state: status)
                 Spacer(minLength: 8)
                 Button(isSigningIn ? "Signing In…" : "Sign In Again") {
                     signInAgain()
@@ -278,7 +279,7 @@ struct AccountProfileManagementSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let message = accountStatus.message {
+            if let message = status.message {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(Theme.notice)

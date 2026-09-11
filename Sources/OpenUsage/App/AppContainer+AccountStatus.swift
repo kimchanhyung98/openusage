@@ -10,7 +10,7 @@ extension AppContainer {
     }
 
     /// 동일 provider 신원으로 재로그인한 경우도 새 credential 기준으로 해당 카드만 재확인.
-    func refreshReauthenticatedAccounts() {
+    func refreshReauthenticatedAccounts(alreadyScheduledCardIDs: Set<String>) {
         let revisions = accountProfiles.authenticationRevisionsByProfileID
         let changedIDs = Set(revisions.compactMap { profileID, revision in
             observedAuthenticationRevisions[profileID] != revision ? profileID : nil
@@ -19,7 +19,7 @@ extension AppContainer {
         for cardID in dataStore.knownProviderIDs {
             guard let profileID = accountProfileID(for: cardID), changedIDs.contains(profileID) else { continue }
             dataStore.invalidateAuthentication(for: cardID)
-            if enablement.isEnabled(cardID) {
+            if enablement.isEnabled(cardID), !alreadyScheduledCardIDs.contains(cardID) {
                 Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
             }
         }

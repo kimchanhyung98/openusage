@@ -557,6 +557,12 @@ final class WidgetDataStore {
         authenticationGenerations[providerID, default: 0] &+= 1
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil
+        if var snapshot = localSnapshots[providerID], snapshot.authenticationIssue != nil {
+            snapshot.authenticationIssue = nil
+            snapshot.warning = nil
+            localSnapshots[providerID] = snapshot
+            rebuildRenderedSnapshots()
+        }
         failureRetryAfter[providerID] = nil
     }
 

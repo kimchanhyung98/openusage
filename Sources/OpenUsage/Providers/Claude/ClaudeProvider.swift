@@ -127,14 +127,14 @@ final class ClaudeProvider: ProviderRuntime {
         let hasLiveUsageCandidate = candidates.contains {
             authStore.liveUsageAvailability($0) == .available
         }
-        let desktopFallbackWarning: String? = if !hasLiveUsageCandidate {
+        let desktopFallbackWarning: ClaudeAuthError? = if !hasLiveUsageCandidate {
             switch credentialLoad.desktopStatus {
             case .permissionRequired:
-                ClaudeAuthError.desktopPermissionRequired.localizedDescription
+                .desktopPermissionRequired
             case .stale:
-                ClaudeAuthError.desktopTokenExpired.localizedDescription
+                .desktopTokenExpired
             case .invalid:
-                ClaudeAuthError.desktopCredentialsUnavailable.localizedDescription
+                .desktopCredentialsUnavailable
             case .notChecked, .notFound, .available:
                 nil
             }
@@ -222,7 +222,7 @@ final class ClaudeProvider: ProviderRuntime {
     private func probe(
         state initialState: ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
-        fallbackWarning: String?
+        fallbackWarning: ClaudeAuthError?
     ) async throws -> ProviderSnapshot {
         var state = initialState
         var mapped = ClaudeMappedUsage(
@@ -253,8 +253,8 @@ final class ClaudeProvider: ProviderRuntime {
             // 명시적 CLAUDE_CODE_OAUTH_TOKEN은 설계상 inference 전용 — 조회·안내 대상 아님, spend 타일은 유지.
             break
         }
-        if let fallbackWarning {
-            warning = fallbackWarning
+        if let fallbackWarning, authenticationIssue == nil || fallbackWarning == .desktopPermissionRequired {
+            warning = fallbackWarning.localizedDescription
         }
 
         // 로컬 spend 타일 — 네이티브 로그 스캔 + pi 내 Claude usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
