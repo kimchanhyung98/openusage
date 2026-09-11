@@ -536,8 +536,8 @@ final class WidgetDataStore {
         return "Refresh failed"
     }
 
-    func setCodexResetWatch(_ watch: CodexResetWatch?, refreshFailed: Bool = false) {
-        let result = CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed)
+    func setCodexResetWatch(_ watch: CodexResetWatch?, refreshFailed: Bool = false, isAbsent: Bool = false) {
+        let result = CodexResetWatchResult(watch: watch, refreshFailed: refreshFailed, isAbsent: isAbsent)
         guard codexResetWatch != result else { return }
         codexResetWatch = result
     }
@@ -555,7 +555,7 @@ final class WidgetDataStore {
                 )
             } else {
                 result = descriptor.sample
-                result.hasData = false
+                result.hasData = codexResetWatch.isAbsent
             }
             result.forecast = .init(
                 deadline: codexResetWatch.watch?.deadline,

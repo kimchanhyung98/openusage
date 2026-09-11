@@ -682,7 +682,7 @@ final class WidgetDataStoreTests: XCTestCase {
         XCTAssertEqual(store.data(for: descriptor).providerID, provider.id)
     }
 
-    func testResetWatchOverlayIsNoDataAtItsDeadline() {
+    func testResetWatchOverlayIsZeroAtItsDeadline() {
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let descriptor = WidgetDescriptor.forecast(
             id: "codex.resetWatch",
@@ -700,9 +700,9 @@ final class WidgetDataStoreTests: XCTestCase {
 
         let data = store.data(for: descriptor)
         XCTAssertTrue(data.isForecast)
-        XCTAssertFalse(data.hasData)
-        XCTAssertEqual(data.headline, WidgetData.noDataHeadline)
-        XCTAssertEqual(data.meterState(now: deadline), .noData)
+        XCTAssertTrue(data.hasData)
+        XCTAssertEqual(data.boundedHeadline, "0% chance")
+        XCTAssertEqual(data.meterState(now: deadline), .level(.neutral))
     }
 
     func testResetWatchOverlayInvalidatesObservedData() {

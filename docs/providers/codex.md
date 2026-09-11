@@ -45,8 +45,11 @@ A failed community vote share lookup defers only that lookup: usage and AI forec
 OpenUsage honors `Retry-After` from the endpoint for community vote share lookups; without a valid delay, it waits five minutes after a rate limit or one minute after other failures.
 The community vote share lookup is retried on the next manual or automatic check after that delay, not by a separate timer.
 The fixed **By** deadline uses the same localized `date at time` format as usage reset dates, including the app's 12/24-hour setting.
-If there is no active watch, its chance is absent, or its deadline has passed, the row shows **No data**.
+After a successful check, no active watch, a missing chance, or an expired deadline shows **0% chance** without a deadline or community vote share.
+This means there is no active reset signal, including after a recent reset; it does not mean the API returned a measured 0% probability.
+Before the first completed check, the row shows **No data**.
 If a check fails, the row shows **Unavailable · Retry later**, or **Cached forecast · Refresh failed** while a reusable forecast remains valid.
+A cancelled check keeps reusable cached data and any existing failure notice.
 The next successful check clears that notice.
 Responses marked `no-store` are displayed for the current check only; `no-cache` forecasts require successful revalidation before reuse, including after a failed check.
 
