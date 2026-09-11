@@ -23,6 +23,10 @@ OpenUsage reads it from the first place it finds one, in this order:
 4. The `GLM_API_KEY` environment variable (the legacy Zhipu name, still accepted)
 
 You can also add and rotate the key from **Settings → API Keys** without touching a file.
+Saving or removing a key in the app starts a refresh with the effective key, waiting for any earlier request to finish and ignoring that earlier result.
+If the earlier request outlasts the waiting limit, the next scheduled refresh retries with the current key.
+If the provider is disabled, this refresh is deferred until it is enabled again.
+Previously displayed last-known values remain while the new request runs or fails; restarting the app can also restore those values before fetching with the current key.
 Either way, nothing leaves your Mac except the same API calls Z.ai's own subscription UI makes.
 
 ## Setup

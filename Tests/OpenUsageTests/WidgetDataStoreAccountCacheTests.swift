@@ -140,6 +140,95 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertEqual(honored, .cacheHit)
     }
 
+    func testKnownToUnresolvedIdentityCannotReuseFreshCache() async {
+        let defaults = makeUserDefaults("known-to-unresolved")
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+        cache.store(snapshot("claude", used: 40), producedByIdentityKey: "acct-a")
+        let store = makeStore(providers: [provider("claude")], cache: cache, defaults: defaults,
+                              identityKeys: ["claude": "acct-a"])
+        store.replaceProviderCatalog(
+            registry: WidgetRegistry(providers: [provider("claude")], descriptors: []),
+            providers: [], identityKeys: [:]
+        )
+        XCTAssertNil(store.localSnapshots["claude"])
+
+        let outcome = await store.refresh(providerID: "claude")
+
+        XCTAssertEqual(outcome, .skipped, "an unresolved identity must bypass rejected fresh cache before provider lookup")
+        XCTAssertNil(store.snapshots["claude"])
+        XCTAssertNotNil(cache.snapshot(providerID: "claude"), "the persisted last-good cache must remain intact")
+    }
+
+    func testUnresolvedAssemblyChangeCannotRestorePreviouslyRejectedCache() {
+        let defaults = makeUserDefaults("unresolved-assembly")
+        let files = FakeFiles([
+            "/Users/fixture/.claude.json": #"{"oauthAccount":{"accountUuid":"ACCT-A"}}"#,
+            "/Users/fixture/.codex/auth.json": #"{"tokens":{"access_token":"fixture","account_id":"CODEX-A"}}"#,
+        ])
+        let accounts = ProviderAccountsStore(defaults: defaults)
+        let observer = DefaultAccountObserver(environment: FakeEnvironment(), files: files,
+                                              keychain: FakeKeychain(nil),
+                                              homeDirectory: { URL(fileURLWithPath: "/Users/fixture") })
+        let known = ProviderAccountAssembly.make(observer: observer, accountsStore: accounts)
+        let registry = WidgetRegistry(providers: [provider("claude"), provider("codex")], descriptors: [])
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+        cache.store(snapshot("claude", used: 40), producedByIdentityKey: "acct-a")
+        let store = makeStore(providers: registry.providers, cache: cache, defaults: defaults,
+                              identityKeys: known.identityKeysByCard)
+        files.files["/Users/fixture/.claude.json"] = #"{"oauthAccount":{}}"#
+        let unresolved = ProviderAccountAssembly.make(observer: observer, accountsStore: accounts)
+        XCTAssertNotEqual(known, unresolved)
+        XCTAssertNil(unresolved.identityKeysByCard["claude"])
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: unresolved.identityKeysByCard)
+        XCTAssertNil(store.localSnapshots["claude"])
+
+        files.files["/Users/fixture/.codex/auth.json"] = #"{"tokens":{"access_token":"fixture","account_id":"CODEX-B"}}"#
+        let changed = ProviderAccountAssembly.make(observer: observer, accountsStore: accounts)
+        XCTAssertNotEqual(unresolved, changed, "the app only replaces catalogs when the assembly changes")
+        XCTAssertNil(changed.identityKeysByCard["claude"])
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: changed.identityKeysByCard)
+
+        XCTAssertNil(store.snapshots["claude"], "another family's assembly change must not restore the rejected entry")
+    }
+
+    func testMatchingIdentityCanRestoreCacheAfterUnresolvedPeriod() async {
+        let defaults = makeUserDefaults("identity-restored")
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+        let original = snapshot("claude", used: 40)
+        cache.store(original, producedByIdentityKey: "acct-a")
+        let registry = WidgetRegistry(providers: [provider("claude")], descriptors: [])
+        let store = makeStore(providers: registry.providers, cache: cache, defaults: defaults,
+                              identityKeys: ["claude": "acct-a"])
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: [:])
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: ["claude": "acct-a"])
+
+        let outcome = await store.refresh(providerID: "claude")
+
+        XCTAssertEqual(outcome, .cacheHit)
+        XCTAssertEqual(store.localSnapshots["claude"], original)
+    }
+
+    func testSuccessfulUnresolvedFetchReplacesRejectedCache() async {
+        let defaults = makeUserDefaults("unresolved-success")
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+        cache.store(snapshot("claude", used: 40), producedByIdentityKey: "acct-a")
+        let current = snapshot("claude", used: 55)
+        let runtime = CountingProviderRuntime(provider: provider("claude"), descriptors: [], snapshot: current)
+        let registry = WidgetRegistry.from([runtime])
+        let store = makeStore(providers: registry.providers, cache: cache, defaults: defaults,
+                              identityKeys: ["claude": "acct-a"])
+        store.replaceProviderCatalog(registry: registry, providers: [runtime], identityKeys: [:])
+
+        let first = await store.refresh(providerID: "claude")
+        let second = await store.refresh(providerID: "claude")
+
+        XCTAssertEqual(first, .refreshed)
+        XCTAssertEqual(second, .cacheHit)
+        XCTAssertEqual(runtime.refreshCount, 1)
+        XCTAssertEqual(store.snapshots["claude"], current)
+        XCTAssertNil(cache.producedByIdentityKey(providerID: "claude"))
+    }
+
     func testHasStaleAccountStampSemantics() {
         let defaults = makeUserDefaults("predicate")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })

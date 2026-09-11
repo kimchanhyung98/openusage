@@ -70,6 +70,53 @@ final class ReleaseVersionScriptTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: index), originalIndex)
     }
 
+    func testWorktreePreCommitUsesForeignRepositoryAndRejectsFailedChecks() throws {
+        let repository = try makeRepository(tag: nil)
+        let dependency = try makeRepository(tag: nil)
+        try runGit(["config", "test.repository-marker", "dependency"], in: dependency)
+        let worktree = repository.appendingPathComponent("linked-worktree")
+        try runGit(["worktree", "add", "--quiet", "-b", "hook-check", worktree.path], in: repository)
+        let hooks = worktree.appendingPathComponent(".husky")
+        try FileManager.default.createDirectory(at: hooks, withIntermediateDirectories: true)
+        let hook = hooks.appendingPathComponent("pre-commit")
+        try FileManager.default.copyItem(at: Self.repositoryRoot.appendingPathComponent(".husky/pre-commit"), to: hook)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+        try runGit(["config", "core.hooksPath", ".husky"], in: repository)
+        let makefile = worktree.appendingPathComponent("Makefile")
+        try """
+        check:
+        \t@test "$$(git -C \"$(DEPENDENCY)\" config --local test.repository-marker)" = dependency
+
+        """.write(to: makefile, atomically: true, encoding: .utf8)
+        var environment = ProcessInfo.processInfo.environment
+        environment["DEPENDENCY"] = dependency.path
+        let originalMain = try runGit(["rev-parse", "HEAD"], in: repository)
+        let originalDependencyRefs = try runGit(["show-ref"], in: dependency)
+        let originalDependencyConfig = try Data(contentsOf: dependency.appendingPathComponent(".git/config"))
+        try runGit(["add", "Makefile", ".husky/pre-commit"], in: worktree)
+
+        try runGit([
+            "-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+            "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "check foreign repository"
+        ], in: worktree, environment: environment)
+
+        XCTAssertEqual(try runGit(["rev-parse", "HEAD"], in: repository), originalMain)
+        XCTAssertEqual(try runGit(["show-ref"], in: dependency), originalDependencyRefs)
+        XCTAssertEqual(try Data(contentsOf: dependency.appendingPathComponent(".git/config")), originalDependencyConfig)
+        let checkedHead = try runGit(["rev-parse", "HEAD"], in: worktree)
+        XCTAssertNotEqual(checkedHead, originalMain)
+        try "check:\n\t@exit 42\n".write(to: makefile, atomically: true, encoding: .utf8)
+        try runGit(["add", "Makefile"], in: worktree)
+        let stagedFiles = try runGit(["ls-files", "--stage"], in: worktree)
+
+        XCTAssertThrowsError(try runGit([
+            "-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+            "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "reject failed check"
+        ], in: worktree, environment: environment))
+        XCTAssertEqual(try runGit(["rev-parse", "HEAD"], in: worktree), checkedHead)
+        XCTAssertEqual(try runGit(["ls-files", "--stage"], in: worktree), stagedFiles)
+    }
+
     func testDevelopmentVersionFailsWhenTheNearestTagIsMalformed() throws {
         let repository = try makeRepository(tag: "v9.9")
 

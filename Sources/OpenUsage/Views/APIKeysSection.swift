@@ -222,11 +222,11 @@ struct APIKeysSection: View {
         }
     }
 
-    /// 실패 backoff 해제 + 강제 refresh로 새 키 데이터 즉시 반영. 비활성 프로바이더면 refresh만 no-op.
+    /// 이전 조회를 무효화하고 현재 키로 후속 조회 — 비활성 프로바이더는 재활성화 시 조회.
     private func triggerRefresh() {
         let id = provider.provider.id
-        dataStore.clearFailureBackoff(for: id)
-        Task { await dataStore.refresh(providerID: id, force: true, trigger: .credentialChange) }
+        let generation = dataStore.credentialsDidChange(for: id)
+        Task { await dataStore.refreshAfterCredentialChange(providerID: id, credentialGeneration: generation) }
     }
 }
 

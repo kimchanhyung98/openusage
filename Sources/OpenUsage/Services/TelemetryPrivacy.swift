@@ -92,10 +92,16 @@ enum TelemetryPrivacy {
             "NSInvalidArgumentException", "NSRangeException", "NSInternalInconsistencyException",
             "FatalError", "AssertionFailure", "PreconditionFailure", "SwiftRuntimeError",
         ]
-        let type = source["type"] as? String ?? ""
+        var type = source["type"] as? String ?? ""
+        switch type.lowercased() {
+        case "fatal error": type = "FatalError"
+        case "assertion failed": type = "AssertionFailure"
+        case "precondition failed": type = "PreconditionFailure"
+        default: break
+        }
         var result: [String: Any] = ["type": types.contains(type) ? type : "NativeException", "value": "Crash details redacted"]
         if let stack = source["stacktrace"] as? [String: Any], let frames = stack["frames"] as? [[String: Any]] {
-            result["stacktrace"] = ["type": "raw", "frames": frames.prefix(256).map { frame in
+            result["stacktrace"] = ["type": "raw", "frames": frames.suffix(256).map { frame in
                 var safe: [String: Any] = ["platform": "apple"]
                 for key in ["instruction_addr", "image_addr", "symbol_addr"] {
                     if let value = address(frame[key]) { safe[key] = value }

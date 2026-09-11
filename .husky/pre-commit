@@ -1,3 +1,8 @@
 #!/usr/bin/env sh
 
+git_local_env=$(git rev-parse --local-env-vars) || exit $?
+for name in $git_local_env; do
+  unset "$name"
+done
+
 make check

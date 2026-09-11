@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import XCTest
 @testable import OpenUsage
 
@@ -60,5 +61,112 @@ final class UpdaterUserDriverDelegateTests: XCTestCase {
 
         XCTAssertTrue(sessionFinished)
         XCTAssertTrue(resolved)
+    }
+}
+
+@MainActor
+final class UpdaterCycleDiagnosticsTests: XCTestCase {
+    func testWrappedDownloadCancellationsRemainCancelled() {
+        let diagnostics = DiagnosticEventRecorder()
+        for depth in 1...2 {
+            var error: Error = URLError(.cancelled)
+            for _ in 0..<depth { error = downloadError(underlying: error) }
+            UpdaterController.recordUpdateCycle(error: error)
+        }
+
+        XCTAssertEqual(diagnostics.events, Array(repeating:
+            DiagnosticEvent(.updateCheck, result: .cancelled), count: 2))
+    }
+
+    func testUnsupportedWrappersDoNotExposeInnerCancellation() {
+        let cancelled = URLError(.cancelled)
+        let errors: [Error] = [
+            NSError(domain: "OtherDomain", code: 2001, userInfo: [NSUnderlyingErrorKey: cancelled]),
+            NSError(domain: SUSparkleErrorDomain, code: 9999, userInfo: [NSUnderlyingErrorKey: cancelled]),
+            downloadError(underlying: downloadError(underlying: downloadError(underlying: cancelled)))
+        ]
+        let diagnostics = DiagnosticEventRecorder()
+
+        for error in errors { UpdaterController.recordUpdateCycle(error: error) }
+
+        XCTAssertEqual(diagnostics.events, Array(repeating:
+            DiagnosticEvent(.updateCheck, result: .failure, category: .other), count: errors.count))
+    }
+
+    func testWrappedDownloadNetworkFailuresKeepOriginalLocalContext() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let previousSink = AppLog.sink
+        AppLog.sink = LogFile(directory: root, fileName: "diagnostics.log")
+        AppLog.sink.open()
+        AppLog.reloadLevel(.info)
+        defer {
+            AppLog.sink = previousSink
+            AppLog.reloadLevel()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let diagnostics = DiagnosticEventRecorder()
+        for code in [URLError.notConnectedToInternet, .timedOut] {
+            for depth in 1...2 {
+                var error: Error = URLError(code, userInfo: [
+                    NSURLErrorFailingURLErrorKey: URL(string: "https://example.invalid/PRIVATE_URL")!
+                ]) as NSError
+                for _ in 0..<depth { error = downloadError(underlying: error) }
+                UpdaterController.recordUpdateCycle(error: error)
+            }
+        }
+
+        XCTAssertEqual(diagnostics.events, Array(repeating:
+            DiagnosticEvent(.updateCheck, result: .failure, category: .network), count: 4))
+        let lines = try String(contentsOf: root.appendingPathComponent("diagnostics.log"), encoding: .utf8)
+            .split(separator: "\n")
+        XCTAssertEqual(lines.count, 4)
+        XCTAssertTrue(lines.allSatisfy { $0.contains("error_domain=SUSparkleErrorDomain error_code=2001") })
+        XCTAssertTrue(lines.allSatisfy { $0.contains("context=Update check or download failed") })
+        XCTAssertFalse(lines.joined().contains("PRIVATE_"))
+    }
+
+    func testOnlyKnownDownloadWrappersAreUnwrapped() {
+        let network = URLError(.timedOut)
+        let cases: [(Error, ErrorCategory)] = [
+            (network, .network),
+            (NSError(domain: "OtherDomain", code: 2001, userInfo: [NSUnderlyingErrorKey: network]), .other),
+            (NSError(domain: SUSparkleErrorDomain, code: 9999, userInfo: [NSUnderlyingErrorKey: network]), .other),
+            (downloadError(underlying: CocoaError(.fileReadNoPermission)), .other),
+            (NSError(domain: SUSparkleErrorDomain, code: 2001), .other),
+            (downloadError(underlying: downloadError(underlying: downloadError(underlying: network))), .other),
+            (NSError(domain: "OtherDomain", code: 9999), .other)
+        ]
+        let diagnostics = DiagnosticEventRecorder()
+
+        for (error, _) in cases { UpdaterController.recordUpdateCycle(error: error) }
+
+        XCTAssertEqual(diagnostics.events, cases.map {
+            DiagnosticEvent(.updateCheck, result: .failure, category: $0.1)
+        })
+        XCTAssertEqual(ErrorCategory.classify(downloadError(underlying: network)), .other)
+    }
+
+    func testSuccessNoUpdateAndCancellationKeepExistingResults() {
+        let diagnostics = DiagnosticEventRecorder()
+        UpdaterController.recordUpdateCycle(error: nil)
+        UpdaterController.recordUpdateCycle(error:
+            NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue)))
+        UpdaterController.recordUpdateCycle(error:
+            NSError(domain: SUSparkleErrorDomain, code: Int(SUError.installationCanceledError.rawValue)))
+        UpdaterController.recordUpdateCycle(error: URLError(.cancelled))
+
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.updateCheck, result: .success),
+            DiagnosticEvent(.updateCheck, result: .success),
+            DiagnosticEvent(.updateCheck, result: .cancelled),
+            DiagnosticEvent(.updateCheck, result: .cancelled)
+        ])
+    }
+
+    private func downloadError(underlying: Error) -> NSError {
+        NSError(domain: SUSparkleErrorDomain, code: Int(SUError.downloadError.rawValue), userInfo: [
+            NSLocalizedDescriptionKey: "PRIVATE_DOWNLOAD_DESCRIPTION",
+            NSUnderlyingErrorKey: underlying
+        ])
     }
 }

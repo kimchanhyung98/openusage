@@ -29,6 +29,9 @@ Snapshots are cached on disk and load instantly at launch, so you see your last-
 
 Claude and Codex cache entries also remember which account produced them.
 If you swap the account signed in at the provider's default home between launches, the previous account's cached values are discarded at the next launch (the card starts empty and fills on its first fetch) instead of briefly showing the old account's limits and plan under the new login.
+If a known account becomes unidentifiable while the app is running, its previous cached values stay hidden until the same account is verified again or a new fetch succeeds.
+Other account-list changes and fresh-cache checks do not restore those hidden values.
+If the account is already unidentifiable at launch, the existing last-known-value behavior still applies.
 
 A cached value only counts as *fresh* (skip-a-refresh fresh) when it was fetched **during the current running session**.
 So a value cached in an earlier session always re-fetches on the first pass after launch — you still see it instantly, but the app never waits out the old interval before getting live numbers.
@@ -53,7 +56,7 @@ App writes are debounced until after refresh; the one-shot CLI drains pending wr
 ## When a fetch fails
 
 A failed refresh **never wipes your data**: the last good values stay on screen, and a small warning triangle appears next to the provider's name — hover it for the error message (e.g. "Not logged in").
-The error clears on the next successful refresh.
+The error clears on the next successful refresh or when you save or remove that provider's API key in the app.
 
 The last good normalized history is preserved too, so a temporary provider failure—or a successful limit refresh whose local log scan is temporarily unavailable—does not remove this Mac's previous contribution from an iCloud-combined spend total.
 
