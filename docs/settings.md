@@ -36,9 +36,10 @@ For example, you can rename `beta` to `gamma` and sign in again under the rename
   A cancelled or failed sign-in registers nothing.
 - Each account's authentication is kept as a private snapshot in the macOS Keychain.
   **Ready** requires a usable saved sign-in and a successful usage check in the current app session, with no outstanding error or warning.
-  **Session Expired** means token renewal reported an expired session; revoked or conflicting tokens show **Sign-In Needed**.
+  **Session Expired** means token renewal reported an expired session; expired access tokens, revoked tokens, and conflicting tokens show **Sign-In Needed**.
   **Refresh Failed** reports connection, server, or usage-check problems without treating them as session expiry.
   Before the first check, or after signing in again, the badge shows **Not Checked**, then **Checking** while the request runs.
+  Signing in again clears the previous authentication warning while keeping the last usage available for the new check.
   Missing or mismatched saved sign-ins show **Sign-In Needed**.
   The account row and Manage screen follow the same account's dashboard refresh result, including while Settings stays open.
   Old usage can remain visible with **Outdated**, but reading that cache does not clear an error or establish **Ready**.
