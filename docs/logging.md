@@ -33,6 +33,7 @@ A missing file, including one that disappears after discovery, does not count as
 A successful read counts as recovery even when the file contains no usable usage records.
 When OpenCode finds databases again after a directory read failure, recovery is evaluated together with the database reads.
 Database read failures keep the failure state active; an empty database list does not confirm directory recovery.
+An OpenCode database that disappears after discovery counts as unreadable; if none can be read, the refresh fails instead of showing zero usage.
 The shared diagnostic module writes one local record for each reported failure: Error for a failed operation, Warning when an optional step fails and the main result remains usable.
 The record includes a fixed operation, error category, and available local context or error domain and code; raw error descriptions are excluded.
 Normal missing-login, unavailable-plan, and empty Reset Watch vote results stay at Info, and user cancellation is not treated as a failure.
