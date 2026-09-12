@@ -66,7 +66,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 `npm run build`는 페이지만 만듦.
 조립 전 `site/`에서 `npm ci` 실행 필요.
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
-현재 `Deploy Pages`는 `gh-pages` 내용만 배포하며 랜딩 페이지 배포 연결은 별도 작업.
+`main` 브랜치에 사이트 변경이 푸시되면 `Publish landing page` 워크플로우가 피드를 보존한 채 `gh-pages`에 반영하고, `Deploy Pages`가 GitHub Pages에 배포.
 
 ```sh
 cd .. # 저장소 루트에서 실행

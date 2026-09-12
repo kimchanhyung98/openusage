@@ -1,0 +1,57 @@
+# Publishes the landing page site to the gh-pages branch whenever site assets change on main.
+#
+# Shares the release and pricing supplement workflows' concurrency group: all publish to gh-pages
+# with keep_files, so serializing them prevents lost updates from concurrent pushes to the branch.
+#
+# After publishing to gh-pages, the Deploy Pages workflow triggers via workflow_run to deploy the
+# updated content to GitHub Pages.
+name: Publish landing page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'script/site_*.sh'
+      - 'Sources/OpenUsage/**'
+      - '.github/workflows/publish-site.yml'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-appcast
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd site
+          npm ci
+
+      - name: Assemble landing page
+        run: |
+          ./script/site_assemble.sh .build/site-preview "$GITHUB_SHA"
+
+      - name: Publish landing page to GitHub Pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: .build/site-preview
+          keep_files: true
+          # The site and feed are served from the custom domain, so gh-pages must carry its CNAME.
+          cname: openusage.chanhyung.kim

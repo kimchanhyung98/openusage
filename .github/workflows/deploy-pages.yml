@@ -14,7 +14,7 @@ name: Deploy Pages
 
 on:
   workflow_run:
-    workflows: ["Release", "Publish pricing supplement"]
+    workflows: ["Release", "Publish pricing supplement", "Publish landing page"]
     types: [completed]
   workflow_dispatch:
 
