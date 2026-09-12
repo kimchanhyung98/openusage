@@ -1,0 +1,59 @@
+---
+// bounded 지표 행. Views/WidgetRowView.swift.
+// 라벨 행(제목 + Spacer(8) + 페이스) / meter(트랙 + 채움 + pace 눈금) / 값 행(헤드라인 + Spacer(8) + 리셋).
+// used/left와 Countdown/Exact Time 두 상태를 모두 렌더하고 루트의 data-mode로 하나만 보임.
+// JS가 없어도 기본 상태(used, Exact Time)가 그대로 나옴.
+import Glyph from './Glyph.astro';
+import { boundedView, paceView, type BoundedRow } from '../../data/demo';
+
+interface Props { r: BoundedRow; metric?: string; hidden?: boolean }
+const { r, metric, hidden = false } = Astro.props;
+const used = boundedView(r, 'used');
+const left = boundedView(r, 'left');
+const p = paceView(r);
+const sev = p.severity !== 'normal' ? ` is-${p.severity}` : '';
+// 값 없는 행은 오른쪽이 "No data", 시작 전 session은 "Not started" — 리셋 라벨만 클릭 불가.
+const fixedTrailing = r.noData ? 'No data' : r.notStarted ? 'Not started' : null;
+---
+
+<div class="am-row" data-metric={metric} data-pace-severity={p.severity} hidden={hidden}>
+  <div class="am-row-label">
+    <b>{r.label}</b>
+    {
+      p.pace && (
+        <span class="am-pace">
+          {p.flame && <Glyph name="flame" class={`am-flame is-${p.flame}`} />}
+          <span data-preview-time={p.pace}>{p.pace}</span>
+        </span>
+      )
+    }
+  </div>
+  <span class="am-meter">
+    <i class={`u am-w${used.fill}${sev}`}></i>
+    <i class={`l am-w${left.fill}${sev}`}></i>
+    {used.tick >= 0 && <b class={`u am-t${used.tick}`}></b>}
+    {left.tick >= 0 && <b class={`l am-t${left.tick}`}></b>}
+  </span>
+  <div class="am-row-value">
+    {
+      r.noData ? (
+        <span class="am-headline is-flat">{used.headline}</span>
+      ) : (
+        <button type="button" class="am-headline" data-toggle-meter title={`${used.opposite} / ${left.opposite}`}>
+          <span class="u">{used.headline}</span>
+          <span class="l">{left.headline}</span>
+        </button>
+      )
+    }
+    {
+      fixedTrailing ? (
+        <span class="am-reset is-flat">{fixedTrailing}</span>
+      ) : (
+        <button type="button" class="am-reset" data-toggle-reset>
+          <span class="abs" data-preview-time={r.resetAbsolute}>{r.resetAbsolute}</span>
+          <span class="rel">{r.resetRelative}</span>
+        </button>
+      )
+    }
+  </div>
+</div>

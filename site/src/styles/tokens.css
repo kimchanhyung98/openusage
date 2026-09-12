@@ -1,0 +1,66 @@
+/* 페이지 팔레트·타이포·간격 토큰. 앱 미리보기 토큰과 분리. */
+:root {
+  --bg: #fbfbf8;
+  --ink: #3c2e2a;
+  --ink-2: rgba(60, 46, 42, 0.7);
+  --ink-3: rgba(60, 46, 42, 0.45);
+  --line: rgba(60, 46, 42, 0.06);
+  --line-strong: rgba(60, 46, 42, 0.24);
+  --accent: #2b7fff;
+  --accent-ink: #0f62e6;
+  --wash: #e6eff9;
+  --pill: #cee5ee;
+  --surface: #ffffff;
+  --surface-2: #f3f3ee;
+  --cta-bg: #3c2e2a;
+  --cta-fg: #ffffff;
+  --meter-ok: #007aff;
+  --meter-warn: #ffcc00;
+  --meter-crit: #ff3b30;
+  --meter-idle: #8e8e93;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Noto Sans KR", "Noto Sans", "Segoe UI", Roboto, "Helvetica Neue", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-mono: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Noto Sans KR", "Noto Sans", "Segoe UI", Roboto, "Helvetica Neue", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --fs-hero: clamp(22px, 3.1vw, 46px);
+  --fs-h2: 18px;
+  --fs-body: 18px;
+  --fs-base: 15px;
+  --fs-label: 11px;
+  --fs-cta: 12px;
+  --fs-index: 11px;
+
+  --space-section: clamp(4rem, 8.9vw, 8rem);
+  --space-cta: clamp(8rem, 17.8vw, 16rem);
+  --nav-h: 74px;
+  --gap: 40px;
+  --container: min(100% - 12vw, 1440px);
+
+  --r-pill: 999px;
+  --r-card: 12px;
+  --r-panel: 13px;
+  --r-sm: 6px;
+  --shadow-frame: 0 24px 60px -24px rgba(60, 46, 42, 0.28);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (max-width: 1279px) {
+  :root {
+    --gap: 32px;
+    --container: min(100% - 8vw, 1440px);
+  }
+}
+
+@media (max-width: 899px) {
+  :root {
+    --gap: 24px;
+    --container: calc(100% - 48px);
+  }
+}
+
+@media (max-width: 599px) {
+  :root {
+    --gap: 16px;
+    --container: calc(100% - 40px);
+    --fs-body: 17px;
+  }
+}

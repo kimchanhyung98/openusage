@@ -1,0 +1,83 @@
+---
+// provider 섹션 = 헤더 행 + 카드. 헤더는 카드 밖, 좌 10 / 우 12 들여쓰기.
+// 카드에는 테두리·그림자·행 구분선이 없음.
+// caret은 접힘 상태에서 카드의 마지막 요소이고, 펼치면 그 자리에 그대로 남아 아래로 내용이 붙음.
+// 계정 메뉴는 등록 계정이 둘 이상인 family의 Single Card 모드에서 표시.
+import Glyph from './Glyph.astro';
+import Row from './Row.astro';
+import type { Card } from '../../data/demo';
+import { completeCard } from '../../data/dashboard';
+import { accountFamilies } from '../../data/accounts';
+
+interface Props { c: Card; uid: string; hidden?: boolean }
+const { c: card, uid, hidden = false } = Astro.props;
+const c = completeCard(card);
+const hasMore = c.onDemand.length > 0 || c.links.length > 0;
+const accounts = c.accountOptions ?? [];
+const activeAccount = accountFamilies.find((family) => family.id === c.provider)?.activeAccount;
+---
+
+<div class="am-section" data-card={c.id} data-provider={c.provider} data-account-id={c.accountID} hidden={hidden || (c.accountID && c.accountID !== activeAccount)}>
+  <div class="am-head">
+    <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${c.icon}`} /></svg>
+    <span class="am-head-title">
+      <b data-account-title data-family-title={c.title} data-separate-title={c.account ? `${c.title}: ${c.account}` : c.title}>{c.title}</b>
+      {c.plan && <span class="am-plan">{c.plan}</span>}
+    </span>
+    <span class="am-head-sp"></span>
+    {
+      c.account && accounts.length > 1 && (
+        <span class="am-acctwrap">
+          <button type="button" class="am-acct" data-picker={`acct-${c.provider}`} aria-label={`${c.title} Account`} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-acct-${c.id}`}>
+            <span data-picker-value>{c.account}</span>
+            <Glyph name="chevron-down" />
+          </button>
+          <ul class="am-menu am-pickmenu" id={`${uid}-acct-${c.id}`} role="menu" aria-label={`${c.title} Account`} hidden>
+            {accounts.map((a) => (
+              <li role="none">
+                <button type="button" role="menuitemradio" aria-checked={a.id === c.accountID ? 'true' : 'false'} data-pick={`acct-${c.provider}`} data-value={a.id}>
+                  <Glyph name="check" class="am-check" />
+                  {a.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </span>
+      )
+    }
+  </div>
+  <div class="am-card">
+    {c.always.map((r) => <Row r={r} provider={c.provider} />)}
+    {
+      hasMore && (
+        <button type="button" class="am-caret" data-expand={c.id} aria-expanded="false" aria-controls={`${uid}-more-${c.id}`}>
+          <Glyph name="chevron-down" class="down" />
+          <Glyph name="chevron-up" class="up" />
+          <span class="am-sr">
+            <span class="down">Show more</span>
+            <span class="up">Show less</span>
+          </span>
+        </button>
+      )
+    }
+    {
+      hasMore && (
+        <div class="am-more" id={`${uid}-more-${c.id}`} hidden>
+          {c.onDemand.map((r) => <Row r={r} provider={c.provider} />)}
+          {
+            c.links.length > 0 && (
+              <div class="am-links">
+                {c.links.map((l) => (
+                  <a class="am-link" href={l.href} target="_blank" rel="noopener noreferrer">
+                    {l.label}
+                    <Glyph name="arrow-out" />
+                  </a>
+                ))}
+              </div>
+            )
+          }
+        </div>
+      )
+    }
+  </div>
+</div>

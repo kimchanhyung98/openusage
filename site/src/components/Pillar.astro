@@ -1,0 +1,22 @@
+---
+interface Props {
+  label: string;
+  id?: string;
+}
+const { label, id } = Astro.props;
+---
+
+<section class="section" id={id}>
+  <div class="container content reveal">
+    <h2 class="h2 center">{label}</h2>
+    <slot />
+  </div>
+</section>
+
+<style>
+  .content {
+    max-width: 720px;
+    display: grid;
+    gap: 48px;
+  }
+</style>

@@ -1,0 +1,63 @@
+---
+// 공통 문서 골격. 메타·OG·폰트 preload·스킵 링크·런타임 스크립트.
+import '../styles/tokens.css';
+import '../styles/base.css';
+// 앱 화면 재현 그래픽 스타일. 토큰을 먼저 읽어야 나머지가 참조 가능.
+import '../styles/app-tokens.css';
+import '../styles/app-popover.css';
+import '../styles/app-spend.css';
+import '../styles/app-settings.css';
+import '../styles/app-customize.css';
+import '../styles/app-strip.css';
+import '../styles/app-scale.css';
+import { site } from '../data/site';
+import { copy } from '../data/copy';
+
+interface Props {
+  title?: string;
+  description?: string;
+  noindex?: boolean;
+  page?: string;
+}
+
+const {
+  title = copy['meta-title'],
+  description = copy['meta-desc'],
+  noindex = false,
+  page = 'home',
+} = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+---
+
+<!doctype html>
+<html lang="ko" class:list={{ 'snap-pages': page === 'home' }}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#fbfbf8" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    {!noindex && <link rel="canonical" href={canonical} />}
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/NotoSansKR-400.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/NotoSansKR-700.woff2" as="font" type="font/woff2" crossorigin />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {!noindex && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={`${site.url}/og.png`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <!-- 첫 페인트 전에 html.js를 켜는 외부 1줄 스크립트(same-origin, CSP script-src 'self'). 인라인 본문 아님. -->
+    <script is:inline src="/js-flag.js"></script>
+  </head>
+  <body data-page={page}>
+    <a class="skip" href="#main">본문으로 건너뛰기</a>
+    <slot />
+    <script src="../scripts/app.ts"></script>
+  </body>
+</html>

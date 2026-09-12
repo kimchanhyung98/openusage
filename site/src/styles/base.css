@@ -1,0 +1,278 @@
+/* 셀프호스팅 폰트(OFL). 파일은 public/fonts, 라이선스는 같은 폴더 OFL-*.txt. */
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/NotoSansKR-400.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/NotoSansKR-500.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/fonts/NotoSansKR-700.woff2) format("woff2");
+}
+@font-face {
+  font-family: "Noto Sans KR";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url(/fonts/NotoSansKR-800.woff2) format("woff2");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+}
+html.snap-pages {
+  scroll-snap-type: y mandatory;
+  scroll-padding-block-start: var(--nav-h);
+  scroll-behavior: smooth;
+}
+html.snap-pages[data-scroll-ready] {
+  scroll-snap-type: none;
+}
+/* 높이는 최소값만 지정해 작은 화면이나 확대 시 긴 섹션도 끝까지 읽을 수 있게 유지. */
+.snap-pages #main > section {
+  min-block-size: calc(100svh - var(--nav-h));
+  display: grid;
+  align-content: center;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 var(--fs-base) / 1.5 var(--font-sans);
+  letter-spacing: 0;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
+}
+[hidden] {
+  display: none !important;
+}
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+h1,
+h2,
+h3,
+p,
+ul {
+  margin: 0;
+  font-weight: 400;
+}
+ul {
+  padding: 0;
+  list-style: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.container {
+  width: var(--container);
+  margin-inline: auto;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--gap);
+}
+.section {
+  padding-block: var(--space-section);
+}
+.center {
+  text-align: center;
+}
+.rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+/* 평평한 타입 스케일: 위계는 크기가 아니라 여백·잉크 농도로. */
+.h2 {
+  font-size: var(--fs-h2);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.body {
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.body strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.label {
+  display: inline-block;
+  font: 700 var(--fs-label) / 1 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--pill);
+  border-radius: var(--r-pill);
+  padding: 4px 8px;
+}
+.index {
+  font: 700 var(--fs-index) / 1 var(--font-sans);
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+.index-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-pill);
+  font: 700 var(--fs-cta) / 1 var(--font-sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+}
+.btn-outline {
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
+.btn-outline:hover {
+  background: var(--ink);
+  color: var(--cta-fg);
+  border-color: var(--ink);
+}
+.btn-dark {
+  background: var(--cta-bg);
+  color: var(--cta-fg);
+}
+.btn-dark:hover {
+  background: #2b1f1c;
+}
+.link {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (pointer: coarse) {
+  .btn {
+    height: 44px;
+  }
+}
+
+.skip {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 100;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--cta-fg);
+  border-radius: var(--r-sm);
+}
+.skip:focus {
+  top: 8px;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* forced-colors 모드에서는 투명 outline이 시스템 색으로 그려지므로 outline: none을 쓰지 않음. */
+.btn-dark:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--accent);
+}
+
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.pi {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+  flex: none;
+}
+
+/* 스크롤 리빌. JS가 html에 .js를 붙인 뒤에만 숨기므로 JS 없는 환경에서는 전부 보임. */
+.js .reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.5s var(--ease), transform 0.5s var(--ease);
+}
+.js .reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+/* 탭 패널 200ms 크로스페이드(app.ts가 is-in 토글). */
+.js .panel {
+  transition: opacity 0.2s var(--ease);
+}
+.js .panel:not(.is-in) {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.snap-pages {
+    scroll-behavior: auto;
+  }
+  .js .reveal,
+  .js .panel {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+/* 인쇄: 스크롤 리빌 전 요소도 모두 보이게. */
+@media print {
+  html.snap-pages {
+    scroll-snap-type: none;
+  }
+  .snap-pages #main > section {
+    min-block-size: auto;
+  }
+  .js .reveal,
+  .js .w,
+  .js .panel {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

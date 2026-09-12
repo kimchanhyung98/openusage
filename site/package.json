@@ -1,0 +1,26 @@
+{
+  "name": "openusage-site",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "check": "astro check",
+    "build": "astro build",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:e2e": "npm run build && playwright test",
+    "verify": "npm run check && npm test && npm run test:e2e",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "7.3.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.4",
+    "typescript": "5.9.3"
+  }
+}

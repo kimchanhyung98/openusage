@@ -1,0 +1,160 @@
+---
+// 팝오버 한 채. 320px 폭, radius 13.
+// 앱은 화면을 밀어 넣지 않고 제자리 교체함(PopoverNavigationStore) — dashboard · customize · L2 · settings.
+// 그래서 여기서도 화면을 전부 미리 그려 두고 hidden만 바꾼다. JS가 없으면 start 화면 하나만 보임.
+// data-screen은 화면 위치라 이 팝오버에만 있고 저장하지 않음.
+// 반대로 data-mode / data-reset은 앱의 UserDefaults 설정이라 모든 팝오버에 함께 적용되고 저장됨.
+import Section from './Section.astro';
+import SpendCard from './SpendCard.astro';
+import TopBar from './TopBar.astro';
+import Customize from './Customize.astro';
+import MetricList from './MetricList.astro';
+import Settings from './Settings.astro';
+import Glyph from './Glyph.astro';
+import { cards, customize, appVersion } from '../../data/demo';
+import { emptyCard, accountCardVariants } from '../../data/dashboard';
+
+type Screen = 'dashboard' | 'customize' | 'settings';
+
+interface Props {
+  parts?: Array<'spend' | 'claude' | 'codex' | 'antigravity'>;
+  footer?: boolean;
+  label: string;
+  /** JS 없이도 보이는 첫 화면. */
+  start?: Screen;
+  /** 화면 이동을 켤지. 끄면 그 화면 하나만 그리고 이동 컨트롤을 만들지 않음. */
+  nav?: boolean;
+  /** 인스턴스가 여럿이라 메뉴 id가 겹치지 않게 하는 접두사. */
+  uid: string;
+  demonstration?: boolean;
+}
+
+const { parts = ['spend', 'claude', 'codex', 'antigravity'], footer = true, label, start = 'dashboard', nav = false, uid, demonstration = false } = Astro.props;
+const selected = cards.filter((c) => parts.includes(c.id as never));
+const shown = demonstration ? selected : selected.flatMap(accountCardVariants);
+// Customize에서 켜면 나타날 나머지 provider — 자료가 없으니 값 없는 행으로만 그려 두고 기본은 감춤.
+// 앱도 credential이 없는 provider를 이런 카드로 그림. 미리 그려 두어야 JS가 보이기만 바꿀 수 있음.
+const dormant = nav && !demonstration ? customize.filter((p) => !cards.some((c) => c.id === p.id)).map((p) => emptyCard(p.id, p.name)) : [];
+const has = (s: Screen): boolean => nav || start === s;
+
+// Options 메뉴. Views/HeaderView.swift:60-88 순서 그대로.
+// 화면을 옮기는 두 개만 실제로 동작하고 나머지는 앱에만 있는 동작이라 눌리지 않음을 보이게 둠.
+const optionItems = [
+  { label: 'Customize', icon: 'sliders' as const, go: 'customize' },
+  { label: 'Settings', icon: 'gear' as const, go: 'settings' },
+  { sep: true },
+  { label: 'Share Screenshot', icon: 'share' as const },
+  { label: 'Check for Updates…', icon: 'refresh' as const },
+  { sep: true },
+  { label: 'About OpenUsage', icon: 'info' as const },
+  { label: 'Quit OpenUsage', icon: 'power' as const },
+];
+---
+
+<div class="am" lang="en" role="group" aria-label={label} aria-hidden={demonstration ? 'true' : undefined} inert={demonstration} data-mock={demonstration ? undefined : true} data-tour-mock={demonstration ? true : undefined} data-mode="used" data-reset="absolute" data-screen={start}>
+  {
+    has('dashboard') && (
+      <div class="am-scr" data-scr="dashboard" hidden={start !== 'dashboard'}>
+        <div class="am-body">
+          <div class="am-content">
+          {parts.includes('spend') && <SpendCard uid={uid} />}
+            {shown.map((c) => (
+              <Section c={c} uid={uid} />
+            ))}
+            {dormant.map((c) => (
+              <Section c={c} uid={uid} hidden />
+            ))}
+          </div>
+        </div>
+        {footer && (
+          <div class="am-foot">
+            <span class="am-foot-id">
+              <span>OpenUsage {appVersion}</span>
+              <span>Next update in 4m</span>
+            </span>
+            {nav ? (
+              <span class="am-optwrap">
+                <button type="button" class="am-options" data-options aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-options`}>
+                  Options
+                  <Glyph name="chevron-down" />
+                </button>
+                <ul class="am-optmenu" id={`${uid}-options`} role="menu" aria-label="Options" hidden>
+                  {optionItems.map((it) =>
+                    it.sep ? (
+                      <li role="separator" class="am-optsep" />
+                    ) : (
+                      <li role="none">
+                        {it.go ? (
+                          <button type="button" role="menuitem" data-go={it.go}>
+                            <Glyph name={it.icon!} />
+                            {it.label}
+                          </button>
+                        ) : (
+                          <span role="menuitem" aria-disabled="true">
+                            <Glyph name={it.icon!} />
+                            {it.label}
+                          </span>
+                        )}
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </span>
+            ) : (
+              <span class="am-options">
+                Options
+                <Glyph name="chevron-down" />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  {
+    has('customize') && (
+      <div class="am-scr" data-scr="customize" hidden={start !== 'customize'}>
+        <TopBar title="Customize" back={nav ? 'dashboard' : undefined} />
+        <div class="am-body"><Customize nav={nav} /></div>
+      </div>
+    )
+  }
+
+  {
+    nav &&
+      customize.map((p) => (
+        <div class="am-scr" data-scr={`metrics:${p.id}`} hidden>
+          <TopBar title={p.name} back="customize" />
+          <div class="am-body"><MetricList provider={p.id} nav={nav} /></div>
+        </div>
+      ))
+  }
+
+  {
+    has('settings') && (
+      <div class="am-scr" data-scr="settings" hidden={start !== 'settings'}>
+        <TopBar title="Settings" back={nav ? 'dashboard' : undefined} />
+        <div class="am-body"><Settings nav={nav} uid={uid} onboarding={demonstration} /></div>
+        {footer && nav && (
+          <div class="am-foot">
+            <span class="am-foot-id">
+              <span>OpenUsage {appVersion}</span>
+              <span>Next update in 4m</span>
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  {nav && <p class="am-pill" data-pill role="status" aria-live="polite" hidden />}
+  {nav && <dialog class="am-account-dialog" data-account-dialog aria-labelledby={`${uid}-switch-title`} aria-describedby={`${uid}-switch-description`}>
+    <h2 id={`${uid}-switch-title`}>Switch Account?</h2>
+    <p id={`${uid}-switch-description`} data-account-confirm-text></p>
+    <div class="am-dialog-actions">
+      <button type="button" class="am-chip" data-account-cancel>Cancel</button>
+      <button type="button" class="am-chip am-confirm" data-account-confirm>Switch Account</button>
+    </div>
+  </dialog>}
+</div>

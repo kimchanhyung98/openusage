@@ -1,0 +1,85 @@
+---
+import { site } from '../data/site';
+import { copy } from '../data/copy';
+---
+
+<div data-nav-sentinel aria-hidden="true"></div>
+<header class="nav" data-nav>
+  <div class="container inner">
+    <a class="brand" href="/"><span class="wordmark">{site.brand}</span></a>
+    <nav class="actions" aria-label="사이트">
+      <a class="btn btn-outline" href={site.repo}>{copy['nav-github']}</a>
+      <a class="btn btn-outline" href={site.releasesLatest} data-download>{copy['nav-cta']}</a>
+    </nav>
+  </div>
+</header>
+
+<style>
+  [data-nav-sentinel] {
+    height: 1px;
+  }
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    height: var(--nav-h);
+    display: flex;
+    align-items: center;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .nav.is-scrolled {
+    background: rgba(251, 251, 248, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 1px 0 var(--line);
+  }
+  @supports not (backdrop-filter: blur(8px)) {
+    .nav.is-scrolled {
+      background: var(--bg);
+    }
+  }
+  .inner {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+  .wordmark {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  /* GitHub·다운로드를 오른쪽에 한 쌍으로. 테두리 유무로만 위계를 둠. */
+  .actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .actions .btn {
+    min-width: 104px;
+    justify-content: center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .nav {
+      transition: none;
+    }
+  }
+  @media (max-width: 419px) {
+    .inner {
+      gap: 12px;
+    }
+    .actions {
+      gap: 4px;
+    }
+    .actions .btn {
+      min-width: 0;
+      padding: 0 10px;
+    }
+  }
+  @media (max-width: 359px) {
+    .actions .btn {
+      padding-inline: 6px;
+    }
+  }
+</style>

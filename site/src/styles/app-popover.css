@@ -1,0 +1,439 @@
+/* 앱 화면 재현 그래픽 — 팝오버·provider 카드·지표 행.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+/* ---------- 팝오버 골격 ---------- */
+
+.am {
+  position: relative;              /* 알림 필의 기준 상자 */
+  width: 320px;                    /* DashboardView.popoverWidth */
+  /* 320은 앱의 실제 폭이라 줄이면 픽셀 대응이 깨짐. flex/grid 안에서 찌그러지지 않게 고정. */
+  flex: none;
+  min-width: 320px;
+  border-radius: var(--am-panel-r);
+  background: var(--am-tray);
+  color: var(--am-primary);
+  font-family: var(--am-font);
+  font-size: var(--am-fs-support);
+  line-height: 1.25;
+  overflow: hidden;
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+  /* 높이는 nav.ts가 보이는 화면을 재서 px로 넣음. 넣지 않으면 auto라 그냥 튐. */
+  transition: height 0.22s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am { transition: none; }
+}
+
+.am-content {
+  padding: 10px var(--am-content-pad) 12px; /* contentTopPadding / outerPadding / contentBottomGap */
+  display: flex;
+  flex-direction: column;
+  gap: var(--am-section-gap);
+}
+
+/* 상단 바 — Settings·Customize 전용. 대시보드에는 없음. */
+.am-topbar {
+  height: 44px;
+  padding: 0 14px;
+  display: grid;
+  grid-template-columns: 16px 1fr 16px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 0.5px solid var(--am-sep);
+}
+
+.am-topbar b {
+  grid-column: 2;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.am-topbar span {
+  color: var(--am-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* ---------- provider 섹션 ---------- */
+
+.am-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--am-header-gap);
+}
+
+.am-head {
+  position: relative;              /* 지표 메뉴의 기준 상자 */
+  display: flex;
+  align-items: baseline;           /* firstTextBaseline */
+  gap: 5px;
+  padding: 2px 12px 2px 10px;      /* 자체 2/4 + 호출부 8 */
+}
+
+/* sprite는 fill 속성을 제거하므로 명시하지 않으면 검정으로 떨어짐. */
+.am-mark { fill: currentColor; }
+
+.am-head .am-mark {
+  width: 14px;                     /* density.headerIconSize (Default 16) */
+  height: 14px;
+  flex: none;
+  align-self: center;
+  color: var(--am-secondary);      /* Theme.iconGray = .secondary */
+}
+
+.am-head-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.am-head-title > b {
+  font-size: var(--am-fs-header);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* plan 배지 — pill 아님. 이름과 달리 .secondary 평문. */
+.am-plan {
+  font-size: var(--am-fs-plan);
+  color: var(--am-secondary);
+  white-space: nowrap;
+}
+
+.am-stale {
+  font-size: var(--am-fs-plan);
+  color: var(--am-secondary);
+  white-space: nowrap;
+}
+
+.am-warn {
+  width: 10px;
+  height: 10px;
+  align-self: center;
+  color: var(--am-notice);
+  flex: none;
+}
+
+.am-head-sp { margin-left: auto; }
+
+/* 지표 메뉴 chevron — 9/semibold */
+.am-head-chev {
+  width: 9px;
+  height: 9px;
+  color: var(--am-secondary);
+  align-self: center;
+  flex: none;
+}
+
+/* 앱 마크 대체 게이지 글리프(웹에 SF Symbol 없음) */
+.am-gauge {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* 카드 — 테두리 없음, 그림자 없음, 행 사이 구분선 없음. */
+.am-card {
+  border-radius: var(--am-card-r);
+  background: var(--am-card);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- bounded 지표 행 ---------- */
+
+.am-row {
+  padding: var(--am-bar-row-pad) var(--am-row-pad-x);
+  display: flex;
+  flex-direction: column;
+  gap: var(--am-row-inner);
+}
+
+.am-row-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.am-row-label > b {
+  font-size: var(--am-fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.am-pace {
+  margin-left: auto;
+  padding-left: 8px;               /* Spacer(minLength: 8) */
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: var(--am-fs-support);
+  color: var(--am-secondary);      /* 문구는 항상 secondary — 색은 글리프만 */
+  white-space: nowrap;
+}
+
+.am-flame {
+  width: 9px;
+  height: 11px;
+  align-self: center;
+  flex: none;
+}
+
+.am-flame.is-critical { color: var(--am-critical); }
+.am-flame.is-warning { color: var(--am-warning); }
+
+/* meter — Capsule 트랙 + 심각도 채움 + pace 눈금 */
+.am-meter {
+  position: relative;
+  display: block;
+  height: var(--am-meter-h);
+  border-radius: 999px;
+  background: var(--am-track);
+}
+
+.am-meter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--am-normal);
+}
+
+.am-meter i.is-warning { background: var(--am-warning); }
+.am-meter i.is-critical { background: var(--am-critical); }
+.am-meter i.is-neutral { background: var(--am-neutral); }
+
+/* paceTickWidth 2 · 높이 = meterHeight + paceTickOverhang = 4 + 4 = 8 · radius 1 · primary 55% */
+.am-meter b {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgba(242, 242, 247, 0.55);
+}
+
+.am-row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--am-fs-support);
+}
+
+.am-row-value > span:last-child {
+  margin-left: auto;
+  color: var(--am-secondary);
+  white-space: nowrap;
+}
+
+/* ---------- 텍스트 전용 행 ---------- */
+
+.am-trow {
+  padding: var(--am-text-row-pad) var(--am-row-pad-x);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--am-fs-support);
+}
+
+.am-trow + .am-trow { padding-top: 1px; }  /* condensedTextRowTopPadding */
+
+.am-trow > b { font-weight: 600; }
+
+.am-trow-val {
+  margin-left: auto;
+  padding-left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.am-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+
+/* ---------- 확장 caret ---------- */
+
+.am-caret {
+  padding: 5px 0;
+  display: flex;
+  justify-content: center;
+  color: var(--am-secondary);
+}
+
+.am-caret svg { width: 10px; height: 10px; }
+
+/* ---------- 푸터 ---------- */
+
+.am-foot {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.am-foot-id {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: var(--am-fs-caption2);
+  color: var(--am-secondary);
+}
+
+.am-options {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.11);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.am-options svg { width: 9px; height: 9px; }
+button.am-options { cursor: pointer; }
+
+/* ---------- 상호작용 ---------- */
+
+/* 앱의 meterStyle · resetDisplayMode에 대응하는 전역 상태.
+   두 상태를 모두 그려 두고 여기서 하나만 보임 — JS가 없어도 앱 기본값이 그대로 나옴. */
+[data-mode="used"] .am-meter .l,
+[data-mode="used"] .am-headline .l,
+[data-mode="left"] .am-meter .u,
+[data-mode="left"] .am-headline .u { display: none; }
+
+[data-reset="absolute"] .am-reset .rel,
+[data-reset="relative"] .am-reset .abs { display: none; }
+
+/* 클릭 가능한 헤드라인과 리셋 라벨. 앱에서는 텍스트 자체가 버튼이라 장식이 없음. */
+.am-headline,
+.am-reset {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+
+.am-reset {
+  margin-left: auto;
+  color: var(--am-secondary);
+  white-space: nowrap;
+}
+
+.am-headline:hover,
+.am-reset:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* 확장 caret. 접힘 상태에서 카드의 마지막 요소이고, 펼쳐도 자리를 지킴. */
+.am-caret {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: var(--am-secondary);
+  padding: 5px 0;
+  display: flex;
+  justify-content: center;
+  cursor: pointer;
+  width: 100%;
+}
+
+.am-caret svg { width: 10px; height: 10px; }
+.am-caret .up,
+.am-caret[aria-expanded="true"] .down { display: none; }
+.am-caret[aria-expanded="true"] .up { display: block; }
+
+.am-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 펼침 영역. Motion.spring 대신 웹에서 다루기 쉬운 근사값. */
+.am-more { display: flex; flex-direction: column; }
+
+/* quick links — LazyVGrid 최대 3열, 간격 density.expandedGridSpacing(Compact 4). */
+.am-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px 14px;
+}
+
+.am-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: var(--am-fs-support);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.am-link svg { width: 9px; height: 9px; color: var(--am-secondary); }
+
+/* Usage Trend 스파크라인. 높이 density.trendChartHeight(Compact 14), 막대 radius 1. */
+.am-trend { align-items: flex-end; }
+
+.am-spark {
+  margin-left: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.am-spark i {
+  display: block;
+  width: 4px;
+  border-radius: 1px;
+  background: var(--am-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .am-meter i { transition: none; }
+}
+
+/* JS가 없으면 눌러도 아무 일이 없으므로 감춤. 탭 목록과 같은 처리. */
+html:not(.js) .am-caret,
+html:not(.js) .am-metric-btn .am-head-chev { display: none; }
+
+html:not(.js) .am-headline,
+html:not(.js) .am-reset { cursor: default; }
+
+html:not(.js) .am-headline:hover,
+html:not(.js) .am-reset:hover { text-decoration: none; }
+
+/* 값 없는 행·시작 전 session — 누를 수 없으므로 버튼이 아니라 평문. */
+.am-headline.is-flat,
+.am-reset.is-flat {
+  cursor: default;
+  text-decoration: none;
+}
+
+.am-reset.is-flat { color: var(--am-secondary); }

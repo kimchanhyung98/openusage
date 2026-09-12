@@ -1,0 +1,62 @@
+/* 앱 화면 재현 그래픽 — 토큰.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+:root {
+  /* 시맨틱 색(소스에 hex 없음 → macOS 다크 근사) */
+  --am-tray: #1e1e1e;              /* Theme.traySurface = NSColor.textBackgroundColor */
+  --am-card: rgba(255, 255, 255, 0.05); /* Theme.cardFill = .fill.quaternary */
+  --am-track: rgba(255, 255, 255, 0.1); /* .quaternary */
+  --am-quinary: rgba(255, 255, 255, 0.05);
+  --am-primary: #f2f2f7;
+  --am-secondary: rgba(242, 242, 247, 0.55);
+  --am-tertiary: rgba(242, 242, 247, 0.35);
+  --am-quaternary: rgba(242, 242, 247, 0.2);
+  --am-sep: rgba(255, 255, 255, 0.12);
+
+  /* Theme.meterFill 심각도 매핑 */
+  --am-normal: #0a84ff;            /* systemBlue */
+  --am-warning: #ffd60a;           /* systemYellow */
+  --am-critical: #ff453a;          /* systemRed */
+  --am-neutral: #8e8e93;           /* systemGray */
+  --am-notice: #ff9f0a;            /* Theme.notice = systemOrange */
+  --am-positive: #30d158;          /* Theme.positive = systemGreen */
+
+  /* TotalSpendPalette (소스에 hex 리터럴, dark 열) */
+  --am-p-claude: #de7356;
+  --am-p-codex: #10a37f;
+  --am-p-cursor: #f5f5f7;
+  --am-p-grok: #98989d;
+  --am-p-opencode: #aeaeb2;
+  --am-p-openrouter: #6467f2;
+  --am-p-antigravity: #4285f4;
+  --am-p-copilot: #a855f7;
+  --am-p-amp: #f34e3f;
+  --am-p-factory: #c7c7cc;
+  --am-p-kimi: #0a66ff;
+  --am-p-minimax: #f5433c;
+  --am-p-zai: #d1d1d6;
+
+  /* 인용 상수 */
+  --am-panel-r: 13px;              /* StatusItemController.cornerRadius */
+  --am-card-r: 12px;               /* Theme.cardCornerRadius */
+  --am-content-pad: 14px;          /* DashboardView.outerPadding */
+  --am-row-pad-x: 14px;
+  --am-bar-row-pad: 5px;           /* density.barRowPadding (Default 10) */
+  --am-text-row-pad: 4px;          /* density.textRowPadding (Default 6) */
+  --am-row-inner: 3px;             /* density.rowInnerSpacing (Default 4) */
+  --am-section-gap: 8px;           /* density.sectionSpacing (Default 14) */
+  --am-header-gap: 2px;            /* density.headerToCardSpacing (Default 4) */
+  --am-control-pad: 6px;           /* density.controlRowPadding (Default 9) */
+  --am-meter-h: 4px;               /* density.meterHeight (Default 5) */
+
+  /* 폰트 크기. label/headline/caption 계열은 소스에 숫자가 없어 근사 */
+  --am-fs-label: 12px;             /* density.labelPointSize = headline(13) − 1 */
+  --am-fs-header: 13px;            /* density.headerPointSize (Default 14) */
+  --am-fs-support: 11px;           /* density.supportingPointSize (Default 12) */
+  --am-fs-plan: 10px;              /* density.planBadgePointSize (Default 11) */
+  --am-fs-caption: 10px;           /* .caption */
+  --am-fs-caption2: 10px;          /* .caption2 */
+
+  --am-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "SF Pro", "Noto Sans KR", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}

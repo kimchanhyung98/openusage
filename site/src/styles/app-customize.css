@@ -1,0 +1,214 @@
+/* 앱 화면 재현 그래픽 — 화면 이동과 Customize L2.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+/* ---------- 화면 ---------- */
+
+/* 화면은 전부 미리 그려 두고 hidden으로 하나만 보임. 앱도 밀어 넣지 않고 제자리 교체.
+   상단 바·푸터는 고정이고 가운데 본문만 스크롤 — 앱의 PopoverScrollView + pinned chrome 구조. */
+.am-scr {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.am-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+/* 앱은 overlay scroller를 투명하게 만들어 막대를 숨김(InvisibleOverlayScroller). */
+.am-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* 뒤로 가기 — 44 바의 첫 열(16px). 앱은 원형 glass 버튼이지만 다크에서 거의 보이지 않아 글리프만. */
+.am-back {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--am-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.am-back svg {
+  width: 12px;
+  height: 12px;
+}
+
+button.am-back { cursor: pointer; }
+
+/* L1 행의 chevron 버튼. 앱에서는 행 전체와 chevron이 같은 동작이라 여기서도 행을 함께 누를 수 있게 함. */
+.am-open {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex: none;
+}
+
+/* 행 전체가 하나의 열기 타깃 — grip과 스위치만 제외(ProviderListRow.swift:19,22,37). */
+.am-prow[data-open] { cursor: pointer; }
+
+/* ---------- Customize L2 지표 행 ---------- */
+
+.am-mrow {
+  padding: var(--am-control-pad) 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* L1 제목과 달리 semibold가 아님 — 기본 본문(13). CustomizeRow.swift:16-17. */
+.am-mrow-title {
+  flex: 1;
+  min-width: 0;
+  padding-right: 8px;
+  font-size: var(--am-fs-header);
+}
+
+/* 별(메뉴 막대 고정). 채우면 pinned, 선만 그리면 unpinned. 18×18 히트 박스. */
+.am-star {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--am-secondary);
+}
+
+.am-star svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.am-star.is-on {
+  color: var(--am-normal);
+}
+
+.am-star.is-on svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+button.am-star { cursor: pointer; }
+
+/* ---------- Options 메뉴 ---------- */
+
+.am-optwrap {
+  margin-left: auto;
+  position: relative;
+  display: flex;
+}
+
+/* 푸터에서 위로 열림. 흐름에 두면 팝오버가 통째로 늘어남. */
+.am-optmenu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  z-index: 4;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  width: max-content;
+  border-radius: 8px;
+  background: #333336;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.am-optmenu button,
+.am-optmenu [role='menuitem'] {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: var(--am-primary);
+  font: inherit;
+  font-size: var(--am-fs-support);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 12px 4px 8px;
+  border-radius: 5px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.am-optmenu button { cursor: pointer; }
+.am-optmenu button:hover { background: rgba(255, 255, 255, 0.1); }
+
+.am-optmenu svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--am-secondary);
+}
+
+/* 앱에서는 전부 눌리지만 여기서 옮길 곳이 없는 항목 — 살아 있는 척하지 않게 흐림. */
+.am-optmenu [aria-disabled='true'] {
+  color: var(--am-tertiary);
+  cursor: default;
+}
+
+.am-optsep {
+  margin: 4px 8px;
+  height: 0.5px;
+  background: var(--am-sep);
+}
+
+/* ---------- 알림 필 ---------- */
+
+/* Views/TransientPill.swift. Customize 스크롤 위에 떠서 아래에서 12만큼 띄움. */
+.am-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  z-index: 5;
+  transform: translateX(-50%);
+  margin: 0;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border-radius: var(--am-panel-r);
+  background: #3a3a3c;
+  border: 0.5px solid var(--am-sep);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: normal;
+  text-align: center;
+  color: var(--am-positive);
+}
+
+.am-pill.is-notice { color: var(--am-notice); }
+
+/* ---------- JS 없을 때 ---------- */
+
+/* 눌러도 반응하지 않을 컨트롤은 감춤. 다른 화면은 hidden이라 애초에 보이지 않음. */
+html:not(.js) button.am-options,
+html:not(.js) .am-open,
+html:not(.js) button.am-back { display: none; }

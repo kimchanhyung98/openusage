@@ -1,0 +1,121 @@
+---
+import { copy } from '../data/copy';
+import Device from './Device.astro';
+
+// 단어 리빌용 분할. 단어 사이에는 실제 공백 텍스트 노드를 둬 접근성 트리에서 한 단어로 붙지 않게 함.
+// delay는 app.ts가 data-i를 CSS 변수로 옮겨 적용(인라인 style 속성 금지).
+const words = copy['hero-title'].split(' ');
+---
+
+<section class="hero" id="top">
+  <div class="container area">
+    <div class="wash" aria-hidden="true"></div>
+    <h1 class="h1" data-words>
+      {words.map((w, i) => <Fragment><span class="w" data-i={i}>{w}</span>{' '}</Fragment>)}
+    </h1>
+    <div class="device-slot"><Device /></div>
+  </div>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    overflow: hidden;
+  }
+  /* 카피와 앱 그래픽은 같은 그리드의 서로 다른 열에 둠.
+     예전에는 h1을 device 위에 겹쳐 놓고 열을 피해 배치했는데, 두 요소의 높이가
+     서로를 모르므로 폭이 바뀌면 반드시 겹쳤음. 열을 나누면 겹칠 수가 없음. */
+  .area {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    column-gap: var(--gap);
+    row-gap: clamp(40px, 6vw, 64px);
+    align-items: center;
+    min-block-size: inherit;
+    padding-block: clamp(32px, 5svh, 64px);
+  }
+  .wash {
+    position: absolute;
+    left: 4%;
+    top: 16%;
+    width: min(900px, 70%);
+    height: 260px;
+    background: var(--wash);
+    border-radius: 50%;
+    filter: blur(56px);
+    transform: rotate(-12deg);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .h1 {
+    grid-column: 1 / 7;
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    font-size: var(--fs-hero);
+    font-weight: 500;
+    line-height: 1.22;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  .device-slot {
+    grid-column: 7 / 13;
+    /* wash가 absolute라 positioned가 아니면 z-index가 무시되어 그래픽 위에 얹힘. */
+    position: relative;
+    z-index: 1;
+    min-width: 0;
+    display: flex;
+    justify-content: flex-end;
+  }
+  .w {
+    display: inline-block;
+    overflow-wrap: anywhere;
+  }
+  /* html의 .js는 이 컴포넌트 밖에 있으므로 :global로 스코프를 벗어남. 총 ≤ 600ms(13단어 × 25ms + 300ms). */
+  :global(.js) .w {
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.3s var(--ease) calc(var(--i, 0) * 25ms), transform 0.3s var(--ease) calc(var(--i, 0) * 25ms);
+  }
+  :global(.js) [data-words].is-in .w {
+    opacity: 1;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.js) .w {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  /* 좁아질수록 그래픽 쪽에 열을 더 줌 — 팝오버는 320px에서 줄지 않으므로 카피가 먼저 양보. */
+  @media (max-width: 899px) {
+    .h1 {
+      grid-column: 1 / 6;
+    }
+    .device-slot {
+      grid-column: 6 / 13;
+    }
+    .wash {
+      width: 80%;
+      height: 220px;
+    }
+  }
+  @media (min-width: 720px) and (max-width: 899px) {
+    .h1 {
+      font-size: 2.8vw;
+    }
+  }
+  /* 여기부터는 7열을 줘도 320px가 안 들어감 — 그때 비로소 세로로 쌓음. */
+  @media (max-width: 719px) {
+    .h1,
+    .device-slot {
+      grid-column: 1 / -1;
+    }
+    .device-slot {
+      justify-content: center;
+    }
+  }
+</style>
