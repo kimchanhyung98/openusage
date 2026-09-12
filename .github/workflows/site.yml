@@ -8,6 +8,8 @@ on:
       - 'script/site_*.sh'
       - 'Sources/OpenUsage/**'
       - '.github/workflows/site.yml'
+      - '.github/workflows/publish-site.yml'
+      - '.github/workflows/deploy-pages.yml'
   pull_request:
     branches: [main]
     paths:
@@ -15,6 +17,8 @@ on:
       - 'script/site_*.sh'
       - 'Sources/OpenUsage/**'
       - '.github/workflows/site.yml'
+      - '.github/workflows/publish-site.yml'
+      - '.github/workflows/deploy-pages.yml'
 
 permissions:
   contents: read
@@ -46,7 +50,7 @@ jobs:
           cache-dependency-path: site/package-lock.json
       - run: npm ci
       - run: npm run verify
-      - name: Verify assembled output
+      - name: 조립 결과 검증
         run: ../script/site_assemble.sh
       - uses: actions/upload-artifact@v7
         if: failure()
