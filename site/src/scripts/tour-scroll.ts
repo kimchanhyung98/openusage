@@ -40,7 +40,7 @@ export function initTourScroll(section: HTMLElement, count: number, current: () 
   };
   const move = (gesture: TourScrollGesture, delta: number, event: Event, heldTouch = false, focus = false): void => {
     const target = event.target instanceof Element ? event.target : null;
-    const app = target?.closest<HTMLElement>('[data-mock]');
+    const app = target?.closest<HTMLElement>('[data-mock]') ?? target?.closest<HTMLElement>('[data-tour-terminal]');
     if (app) {
       // 앱의 스크롤 경계·고정 영역에서도 페이지 전환으로 넘기지 않음.
       gesture.reset();

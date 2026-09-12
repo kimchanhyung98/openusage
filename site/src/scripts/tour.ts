@@ -221,7 +221,7 @@ export function initFeatureTour(): void {
     event.preventDefault();
     select(tabs[(next[event.key] + tabs.length) % tabs.length], true);
   });
-  section.addEventListener('keydown', (event) => {
+  document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && running) { running.abort(); settle(); }
   });
   reducedMotion.addEventListener('change', () => {

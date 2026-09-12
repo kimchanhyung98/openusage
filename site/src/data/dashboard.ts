@@ -28,6 +28,18 @@ export interface Card {
   links: QuickLink[];
 }
 
+/** 예시 값이 없는 지표도 Customize에서 켤 수 있도록 No data 행 준비. */
+export function completeCard(card: Card): Card {
+  const metrics = providerMetrics[card.provider];
+  const complete = (rows: Row[], descriptors: Array<{ title: string }>): Row[] => descriptors.map((metric) =>
+    rows.find((row) => row.label === metric.title) ?? { kind: 'text', label: metric.title, values: ['No data'] });
+  return {
+    ...card,
+    always: complete(card.always, metrics.alwaysVisible),
+    onDemand: complete(card.onDemand, metrics.onDemand),
+  };
+}
+
 // elapsed는 pace 투영(used / elapsed)의 입력이라 화면 문구를 되돌려 정한 값.
 // 예: Session 3% 사용에 elapsed 0.0423 → 투영 71 → "~29% left at reset".
 export const cards: Card[] = [
@@ -125,21 +137,16 @@ export function accountCardVariants(card: Card): Card[] {
 
 /**
  * Customize에서 켰지만 아직 자료가 없는 provider의 카드.
- * 앱도 credential이 없으면 지표 행을 값 없는 상태로 그림 — 카드 자체는 나옴.
- * 행 목록은 그 provider의 기본 배치를 그대로 씀.
+ * 실제 한도·사용량을 꾸며 넣지 않고 모든 지표를 No data 텍스트로 준비.
  */
 export function emptyCard(id: string, name: string): Card {
-  const m = providerMetrics[id];
-  const blank = (r: { title: string }): Row => ({
-    kind: 'bounded', label: r.title, used: 0, limit: 100, elapsed: 0, noData: true,
-  });
-  return {
+  return completeCard({
     id,
     icon: id,
     provider: id,
     title: name,
-    always: (m?.alwaysVisible ?? []).filter((r) => r.enabled).map(blank),
-    onDemand: (m?.onDemand ?? []).filter((r) => r.enabled).map(blank),
+    always: [],
+    onDemand: [],
     links: [],
-  };
+  });
 }

@@ -6,17 +6,17 @@
 import Glyph from './Glyph.astro';
 import { boundedView, paceView, type BoundedRow } from '../../data/demo';
 
-interface Props { r: BoundedRow; metric?: string }
-const { r, metric } = Astro.props;
+interface Props { r: BoundedRow; metric?: string; hidden?: boolean }
+const { r, metric, hidden = false } = Astro.props;
 const used = boundedView(r, 'used');
 const left = boundedView(r, 'left');
 const p = paceView(r);
 const sev = p.severity !== 'normal' ? ` is-${p.severity}` : '';
-// 값 없는 행은 오른쪽이 "No data", 시작 전 session은 "Not started" — 둘 다 리셋 시각 대신 들어가고 누를 수 없음.
+// 값 없는 행은 오른쪽이 "No data", 시작 전 session은 "Not started" — 리셋 라벨만 클릭 불가.
 const fixedTrailing = r.noData ? 'No data' : r.notStarted ? 'Not started' : null;
 ---
 
-<div class="am-row" data-metric={metric} data-pace-severity={p.severity}>
+<div class="am-row" data-metric={metric} data-pace-severity={p.severity} hidden={hidden}>
   <div class="am-row-label">
     <b>{r.label}</b>
     {

@@ -121,14 +121,6 @@
 
 .am-head-sp { margin-left: auto; }
 
-.am-head-btn {
-  width: 16px;
-  height: 16px;
-  color: var(--am-secondary);
-  align-self: center;
-  flex: none;
-}
-
 /* 지표 메뉴 chevron — 9/semibold */
 .am-head-chev {
   width: 9px;
@@ -445,12 +437,3 @@ html:not(.js) .am-reset:hover { text-decoration: none; }
 }
 
 .am-reset.is-flat { color: var(--am-secondary); }
-
-/* 복사 글리프는 hover에만 보임 — 자리는 늘 차지해 계정 메뉴 위치가 흔들리지 않음.
-   CopyFeedbackButton.isRevealed = 헤더의 hover 상태. */
-.am-head-btn {
-  opacity: 0;
-  transition: opacity 0.12s ease-out;
-}
-
-.am-head:hover .am-head-btn { opacity: 1; }

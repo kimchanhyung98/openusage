@@ -389,6 +389,13 @@ button.am-chip {
 .am[data-theme='light'] .am-optmenu {
   background: #fff;
 }
+.am[data-theme='light'] .am-seg button[aria-checked='true'] {
+  background: #fff;
+}
+.am[data-theme='light'] .am-menu button:hover,
+.am[data-theme='light'] .am-optmenu button:hover {
+  background: var(--am-quinary);
+}
 .am[data-density='default'] {
   --am-bar-row-pad: 10px;
   --am-text-row-pad: 6px;

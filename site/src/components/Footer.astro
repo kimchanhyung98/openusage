@@ -81,6 +81,14 @@ const { downloadPage = false } = Astro.props;
     display: flex;
     color: var(--ink);
   }
+  @media (pointer: coarse) {
+    .social-link {
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+    }
+  }
   @media (max-width: 400px) {
     .row { gap: 8px; }
   }

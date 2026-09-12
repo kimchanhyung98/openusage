@@ -102,6 +102,14 @@ function syncCards(mock: HTMLElement): void {
       row.hidden = sw ? sw.getAttribute('aria-checked') === 'false' : false;
     }
     section.hidden = !providerOn || (rows.length > 0 && rows.every((r) => r.hidden));
+    const more = section.querySelector<HTMLElement>('.am-more');
+    const caret = section.querySelector<HTMLButtonElement>('[data-expand]');
+    if (more && caret) {
+      const promote = rows.some((row) => !row.hidden && more.contains(row))
+        && !rows.some((row) => !row.hidden && !more.contains(row));
+      more.hidden = !promote && caret.getAttribute('aria-expanded') !== 'true';
+      caret.hidden = promote;
+    }
   });
 
   const spend = mock.querySelector<HTMLElement>('.am-spend-card');

@@ -2,21 +2,22 @@
 // provider 섹션 = 헤더 행 + 카드. 헤더는 카드 밖, 좌 10 / 우 12 들여쓰기.
 // 카드에는 테두리·그림자·행 구분선이 없음.
 // caret은 접힘 상태에서 카드의 마지막 요소이고, 펼치면 그 자리에 그대로 남아 아래로 내용이 붙음.
-// 헤더 오른쪽은 복사 글리프(hover에만 보임)와 계정 선택 메뉴 — 둘은 자리를 다투지 않고 나란히 놓임.
 // 계정 메뉴는 등록 계정이 둘 이상인 family의 Single Card 모드에서 표시.
 import Glyph from './Glyph.astro';
 import Row from './Row.astro';
 import type { Card } from '../../data/demo';
+import { completeCard } from '../../data/dashboard';
 import { accountFamilies } from '../../data/accounts';
 
-interface Props { c: Card; uid: string }
-const { c, uid } = Astro.props;
+interface Props { c: Card; uid: string; hidden?: boolean }
+const { c: card, uid, hidden = false } = Astro.props;
+const c = completeCard(card);
 const hasMore = c.onDemand.length > 0 || c.links.length > 0;
 const accounts = c.accountOptions ?? [];
 const activeAccount = accountFamilies.find((family) => family.id === c.provider)?.activeAccount;
 ---
 
-<div class="am-section" data-card={c.id} data-provider={c.provider} data-account-id={c.accountID} hidden={c.accountID && c.accountID !== activeAccount}>
+<div class="am-section" data-card={c.id} data-provider={c.provider} data-account-id={c.accountID} hidden={hidden || (c.accountID && c.accountID !== activeAccount)}>
   <div class="am-head">
     <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${c.icon}`} /></svg>
     <span class="am-head-title">
@@ -24,7 +25,6 @@ const activeAccount = accountFamilies.find((family) => family.id === c.provider)
       {c.plan && <span class="am-plan">{c.plan}</span>}
     </span>
     <span class="am-head-sp"></span>
-    <Glyph name="copy" class="am-head-btn" />
     {
       c.account && accounts.length > 1 && (
         <span class="am-acctwrap">
@@ -68,10 +68,10 @@ const activeAccount = accountFamilies.find((family) => family.id === c.provider)
             c.links.length > 0 && (
               <div class="am-links">
                 {c.links.map((l) => (
-                  <span class="am-link">
+                  <a class="am-link" href={l.href} target="_blank" rel="noopener noreferrer">
                     {l.label}
                     <Glyph name="arrow-out" />
-                  </span>
+                  </a>
                 ))}
               </div>
             )
