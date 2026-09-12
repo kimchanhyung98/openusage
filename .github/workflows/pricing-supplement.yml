@@ -1,12 +1,10 @@
-# Publishes the pricing supplement to GitHub Pages whenever it changes on main.
+# main의 가격표 변경을 GitHub Pages에 게시.
 #
-# Installed apps fetch https://robinebers.github.io/openusage/pricing_supplement.json on their daily
-# pricing refresh, so merging a change to the supplement updates Cursor-native model pricing (auto,
-# composer-*, github_bugbot), fast multipliers, and model alias rules in the field within ~a day —
-# no tag, no release, no Sparkle involvement.
+# 가격표에는 Cursor 모델 가격(auto, composer-*, github_bugbot), fast 배수, 모델 별칭 규칙 포함.
+# 앱의 가격표 일일 갱신은 태그·릴리스·Sparkle과 독립.
+# 앱의 기본 조회 대상은 upstream이므로 이 포크의 게시만으로 기본 조회 결과가 바뀌지는 않음.
 #
-# Shares the release workflow's concurrency group: both publish to gh-pages with keep_files, so
-# serializing them prevents lost updates from concurrent pushes to the branch.
+# Release·사이트 게시와 실행 그룹 공유. keep_files 게시를 직렬화하여 동시 push의 변경 유실 방지.
 name: Publish pricing supplement
 
 on:
@@ -30,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate supplement JSON
+      - name: 가격표 JSON 검증
         run: |
           python3 - << 'PY'
           import json, re, sys
@@ -57,17 +55,29 @@ jobs:
                 f"{len(supplement['alias_rules'])} alias rules.")
           PY
 
-      - name: Assemble Pages directory
+      - name: Pages 디렉터리 조립
         run: |
           mkdir -p public
           cp Sources/OpenUsage/Resources/pricing_supplement.json public/pricing_supplement.json
 
-      - name: Publish to GitHub Pages
+      - name: GitHub Pages에 가격표 게시
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./public
           keep_files: true
-          # The feed is served from the custom domain, so gh-pages must carry its CNAME.
+          # 사용자 지정 도메인에서 피드를 제공하므로 gh-pages에 CNAME 유지.
           cname: openusage.chanhyung.kim
+
+      - name: 게시된 Pages 커밋 기록
+        run: |
+          git fetch --no-tags --depth=1 origin gh-pages
+          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/revision.txt"
+
+      - name: 검증된 게시 커밋 전달
+        uses: actions/upload-artifact@v7
+        with:
+          name: pages-publication-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/revision.txt
+          if-no-files-found: error

@@ -12,16 +12,22 @@ on:
       - '.github/workflows/publish-site.yml'
   workflow_dispatch:
 
-concurrency:
-  group: release-appcast
-  cancel-in-progress: false
-
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  publish:
+  verify:
     if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/site.yml
+
+  publish:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    concurrency:
+      group: release-appcast
+      cancel-in-progress: false
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -64,3 +70,11 @@ jobs:
             echo "::error::Published feeds changed during landing page publication."
             exit 1
           fi
+          git rev-parse FETCH_HEAD > "$RUNNER_TEMP/revision.txt"
+
+      - name: 검증된 게시 커밋 전달
+        uses: actions/upload-artifact@v7
+        with:
+          name: pages-publication-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/revision.txt
+          if-no-files-found: error

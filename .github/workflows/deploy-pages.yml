@@ -14,6 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
@@ -31,9 +32,29 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: 배포할 게시 커밋 선택
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "PAGES_REF=gh-pages" >> "$GITHUB_ENV"
+          else
+            gh run download "$PUBLISH_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --name "pages-publication-$PUBLISH_RUN_ATTEMPT" --dir "$RUNNER_TEMP/pages-publication"
+            ref="$(cat "$RUNNER_TEMP/pages-publication/revision.txt")"
+            if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Invalid published Pages commit."
+              exit 1
+            fi
+            echo "PAGES_REF=$ref" >> "$GITHUB_ENV"
+          fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUBLISH_RUN_ID: ${{ github.event.workflow_run.id }}
+          PUBLISH_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+
       - uses: actions/checkout@v7
         with:
-          ref: gh-pages
+          ref: ${{ env.PAGES_REF }}
 
       - name: 사이트 배포 산출물 업로드
         uses: actions/upload-pages-artifact@v5

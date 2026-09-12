@@ -1,6 +1,7 @@
 name: Site CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
     paths:
@@ -10,6 +11,8 @@ on:
       - '.github/workflows/site.yml'
       - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/pricing-supplement.yml'
   pull_request:
     branches: [main]
     paths:
@@ -19,16 +22,17 @@ on:
       - '.github/workflows/site.yml'
       - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/pricing-supplement.yml'
 
 permissions:
   contents: read
 
-concurrency:
-  group: site-ci-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   verify:
+    concurrency:
+      group: site-ci-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     container:
