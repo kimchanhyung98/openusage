@@ -70,7 +70,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 ```sh
 cd .. # 저장소 루트에서 실행
 WITH_FEED=1 ./script/site_assemble.sh /tmp/site-preview "$(git rev-parse --short HEAD)"
-python3 -m http.server 8080 -d /tmp/site-preview
+(cd site && npx astro preview --outDir /tmp/site-preview --host 127.0.0.1 --port 8080)
 ./script/site_smoke.sh http://127.0.0.1:8080 /tmp/site-preview
 ```
 
@@ -82,7 +82,7 @@ python3 -m http.server 8080 -d /tmp/site-preview
 - `site_smoke.sh`: 배포 후 검증. 두 번째 인자로 해당 배포에 포함된 feed 두 개의 사본 폴더를 필수 지정. 응답이 기준 사본과 바이트 단위로 같은지, appcast에 유효한 정식 릴리스가 있는지, 링크·자산이 응답하는지 확인.
 - 링크·자산 URL은 한 항목씩 그대로 요청. 로컬 파일명에 따른 와일드카드 확장 방지.
 - 피드 불일치나 기준 누락은 실패. 캐시 전파가 끝난 뒤 같은 기준으로 다시 실행. 검사 중 새 릴리스가 생겨도 기준은 바뀌지 않으며 원격 브랜치를 조회하지 않음.
-- `python3 -m http.server`는 자체 404 본문을 주므로 `404 page` 항목만 FAIL로 나옴. `npm run preview`나 실제 Pages에서는 통과.
+- 조립 결과는 Astro preview로 제공하여 알 수 없는 경로에도 사이트의 404 페이지 반환.
 - 로컬 예제는 조립 결과의 라이브 feed 사본과 비교하는 HTTP 경로 점검. 운영 배포 검증은 검사 대상 서버에서 다시 받은 파일이 아닌 해당 배포 산출물의 원본 사본 사용.
 
 ## 제약
@@ -95,7 +95,7 @@ python3 -m http.server 8080 -d /tmp/site-preview
 
 ## 구조
 
-```
+```text
 src/data/         site.ts(브랜드·URL) copy.ts(페이지 문자열) providers.ts(지원 업체)
                   demo.ts(파생 규칙 · Total Spend · 스트립) dashboard.ts(카드 더미 값)
                   metrics.ts(지표 목록) settings.ts(Settings 화면 목록)
@@ -176,7 +176,10 @@ provider 마크는 사본을 두지 않고 `Sources/OpenUsage/Resources/Provider
 
 - 상태 조합은 빌드 시 전부 렌더해 두고 JS는 보이기만 바꿈. 그래서 JS가 없어도 앱 기본값(Used · Exact Time · Today · Cost)이 그대로 나옴.
 - 화면도 같은 방식 — 전부 그려 두고 `hidden`만 바꿈. JS가 없으면 각 그래픽의 시작 화면 하나만 보임.
-- Customize에서 켤 수 있는 나머지 provider는 값 없는 예시 카드로 준비.
+- Customize에서 켤 수 있는 모든 지표를 미리 준비. 예시 값이 없는 지표는 한도나 사용량을 꾸며 넣지 않고 `No data` 텍스트 표시.
+- Always Visible 지표를 모두 끄면 남은 On Demand 지표를 바로 표시하여 빈 카드 방지.
+- 기본 비활성 provider는 JavaScript가 꺼져 있어도 숨김.
+- 펼친 카드의 Status·Dashboard는 해당 서비스 링크로 이동. 동작 없는 복사 아이콘은 표시하지 않음.
 - Show Usage As·Reset Times는 헤드라인·리셋 라벨과 같은 상태. 어느 쪽에서 바꿔도 반대쪽 표시가 따라옴.
 - JS가 없으면 눌러도 반응하지 않는 컨트롤(확장 화살표, 지표 메뉴 표시, Options·뒤로·열기 버튼)은 감춤.
 - Options 메뉴는 앱의 8줄을 그대로 두되 화면을 옮기는 두 개만 동작하고, 나머지는 `aria-disabled`로 흐리게 둠.
@@ -214,6 +217,7 @@ E2E는 Chromium·Firefox·WebKit 데스크톱과 Chromium·WebKit 모바일 에�
 `.github/workflows/site.yml`은 GitHub Actions의 Playwright 공식 Docker 이미지에서 같은 검증과 조립 수행. 배포 동작 없음.
 이미지는 `mcr.microsoft.com/playwright:v1.63.0-noble`, Node는 24 사용.
 브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 프로젝트 의존성은 `npm ci`로 설치.
+컨테이너는 GitHub Actions 홈 디렉터리와 같은 UID 1001로 실행하여 Firefox의 root·홈 소유권 충돌 방지.
 사이트 빌드·미리보기 서버·E2E가 같은 컨테이너 안에서 실행되므로 호스트 포트 공개 불필요.
 `@playwright/test`를 갱신할 때 workflow의 이미지 버전도 함께 갱신.
 Docker 안의 WebKit 검사는 Linux 환경이며 실제 macOS Safari·iPhone 검증과 별개.
