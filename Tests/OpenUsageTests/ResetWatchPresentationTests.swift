@@ -84,9 +84,51 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertFalse(data.hasMeterStyleToggle)
         XCTAssertNil(data.meterStyleTooltip)
         XCTAssertFalse(data.hasResetLabel(now: now))
-        XCTAssertNil(data.resetTooltip(now: now))
+        XCTAssertEqual(data.resetTooltip(now: now), "Resets in 1d 0h")
         XCTAssertNil(data.paceTick(for: state, now: now))
         XCTAssertNil(state.tooltip)
+    }
+
+    func testForecastTooltipMatchesUsageResetCountdownAndUpdatesWithTime() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let deadline = now.addingTimeInterval(5 * 24 * 3_600)
+        var quota = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 50, limit: 100)
+        quota.resetsAt = deadline
+        quota.resetDisplayMode = .absolute
+
+        for scheduled in [false, true] {
+            var data = forecast(chance: scheduled ? 99 : 75, deadline: deadline)
+            data.forecast?.isScheduled = scheduled
+            for mode in [ResetDisplayMode.absolute, .relative] {
+                data.resetDisplayMode = mode
+                XCTAssertEqual(data.resetTooltip(now: now), quota.resetTooltip(now: now))
+                XCTAssertEqual(data.resetTooltip(now: now), "Resets in 5d 0h")
+                XCTAssertEqual(data.resetTooltip(now: now.addingTimeInterval(3_600)), "Resets in 4d 23h")
+                XCTAssertEqual(data.resetTooltip(now: deadline.addingTimeInterval(-300)), "Resets soon")
+            }
+        }
+    }
+
+    func testForecastTooltipRequiresDisplayedTimeAndHandlesExpiry() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for scheduled in [false, true] {
+            var data = forecast(chance: scheduled ? 99 : 75, deadline: now.addingTimeInterval(3_600))
+            data.forecast?.isScheduled = scheduled
+            data.hasData = false
+            XCTAssertNil(data.resetTooltip(now: now))
+            data.hasData = true
+            data.forecast?.refreshFailed = true
+            XCTAssertNil(data.resetTooltip(now: now))
+            data.forecast?.refreshFailed = false
+            data.subtitleOverride = "Custom text"
+            XCTAssertNil(data.resetTooltip(now: now))
+            data.subtitleOverride = nil
+            data.forecast?.deadline = nil
+            XCTAssertNil(data.resetTooltip(now: now))
+            data.forecast?.deadline = now
+            XCTAssertEqual(data.resetTooltip(now: now), scheduled ? "Resets soon" : nil)
+            XCTAssertEqual(data.presented(at: now).resetTooltip(now: now), scheduled ? "Resets soon" : nil)
+        }
     }
 
     func testForecastExpiresAtItsSemanticDeadline() {
