@@ -1,20 +1,15 @@
-# Deploys the gh-pages branch content (appcast.xml, pricing_supplement.json) to the live Pages site.
+# gh-pages의 랜딩 페이지·appcast.xml·pricing_supplement.json을 Pages로 배포.
 #
-# The repo's Pages source is "GitHub Actions", not "Deploy from a branch": GitHub's legacy
-# branch-deploy pipeline repeatedly failed server-side ("Deployment failed, try again later",
-# deployments stuck in deployment_queued) in July 2026, leaving the live appcast stale while the
-# branch was current. This workflow replaces it.
+# 2026년 7월 기존 브랜치 배포의 서버 오류·대기 상태 고착으로 최신 appcast가 반영되지 않아
+# 저장소의 Pages 소스를 GitHub Actions로 전환. 이 워크플로우에서 배포 처리.
 #
-# Trigger notes (why workflow_run and not `on: push branches: [gh-pages]`): the Release and
-# Publish pricing supplement workflows push to gh-pages with the built-in GITHUB_TOKEN, and GitHub
-# suppresses workflow triggers from GITHUB_TOKEN pushes. workflow_run on their completion is the
-# reliable signal — and it requires this file to live on the default branch, which also makes
-# manual dispatch work.
+# 세 게시 워크플로우의 GITHUB_TOKEN push는 후속 push 워크플로우를 실행하지 않으므로 workflow_run 사용.
+# workflow_run과 수동 실행을 위해 이 파일을 기본 브랜치에 유지.
 name: Deploy Pages
 
 on:
   workflow_run:
-    workflows: ["Release", "Publish pricing supplement"]
+    workflows: ["Release", "Publish pricing supplement", "Publish landing page"]
     types: [completed]
   workflow_dispatch:
 
@@ -29,7 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    # Deploy after a successful publish; a failed Release never touched gh-pages, so skip.
+    # 게시와 사후 검증까지 성공한 실행만 자동 배포.
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
@@ -40,11 +35,11 @@ jobs:
         with:
           ref: gh-pages
 
-      - name: Upload site artifact
+      - name: 사이트 배포 산출물 업로드
         uses: actions/upload-pages-artifact@v5
         with:
           path: .
 
-      - name: Deploy to GitHub Pages
+      - name: GitHub Pages 배포
         id: deployment
         uses: actions/deploy-pages@v5

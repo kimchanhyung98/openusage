@@ -1,0 +1,66 @@
+# main의 랜딩 페이지를 gh-pages에 게시한 뒤 Deploy Pages로 배포 연결.
+# Release·가격표 게시와 같은 그룹으로 직렬화. 대기 작업 취소 시 수동 재실행 필요.
+name: Publish landing page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'script/site_*.sh'
+      - 'Sources/OpenUsage/Resources/ProviderIcons/**'
+      - '.github/workflows/publish-site.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: release-appcast
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: 게시된 피드 기준값 기록
+        run: |
+          git fetch --no-tags --depth=1 origin gh-pages
+          bash script/site_feed_snapshot.sh FETCH_HEAD > "$RUNNER_TEMP/site-feeds-before"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: 의존성 설치
+        run: |
+          cd site
+          npm ci
+
+      - name: 랜딩 페이지 조립
+        run: |
+          ./script/site_assemble.sh .build/site-preview "$GITHUB_SHA"
+
+      - name: gh-pages 브랜치에 랜딩 페이지 게시
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: .build/site-preview
+          keep_files: true
+          # 기존 피드와 같은 사용자 지정 도메인 유지.
+          cname: openusage.chanhyung.kim
+
+      - name: 게시 전후 피드 불변 확인
+        run: |
+          git fetch --no-tags --depth=1 origin gh-pages
+          bash script/site_feed_snapshot.sh FETCH_HEAD > "$RUNNER_TEMP/site-feeds-after"
+          if ! cmp -s "$RUNNER_TEMP/site-feeds-before" "$RUNNER_TEMP/site-feeds-after"; then
+            echo "::error::Published feeds changed during landing page publication."
+            exit 1
+          fi
