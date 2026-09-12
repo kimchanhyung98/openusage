@@ -138,6 +138,13 @@ struct SettingsScreen: View {
                         .hoverTooltip("Show how you're pacing on every metric, not just ones near their limit")
                 }
             }
+            SoftLimitSettingsSection(
+                settings: container.softLimitSettings,
+                coordinator: container.softLimitCoordinator,
+                providers: container.registry.providers.filter {
+                    !ProviderAccountID.isAccountCard($0.id) && container.enablement.isEnabled($0.id)
+                }
+            )
             notificationsSection
             section("Privacy") {
                 row("Hide From Screen Share") {

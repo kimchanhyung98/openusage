@@ -61,8 +61,10 @@ final class OpenCodeProvider: ProviderRuntime {
         // 하단 spend tile + trend는 OpenCode-hosted(Go + Zen) 합산 spend
         [
             .boundedDollars(id: "opencode.session", provider: provider, title: "Session", limit: OpenCodeUsageMapper.sessionCap)
+                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "usd", estimated: true),
             .boundedDollars(id: "opencode.weekly", provider: provider, title: "Weekly", limit: OpenCodeUsageMapper.weeklyCap)
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "usd", estimated: true),
             .boundedDollars(id: "opencode.monthly", provider: provider, title: "Monthly", limit: OpenCodeUsageMapper.monthlyCap)
                 .exportingLimit("monthly", unit: "usd", estimated: true),
