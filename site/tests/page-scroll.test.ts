@@ -17,6 +17,7 @@ function pageHarness(firstHeight = 867) {
     scrollHeight = 0;
     clientHeight = 0;
     isApp = false;
+    isTerminal = false;
     index: number;
     top: number;
     height: number;
@@ -38,6 +39,7 @@ function pageHarness(firstHeight = 867) {
       let node: Page | null = this;
       while (node) {
         if (selector === '[data-mock]' && node.isApp) return node;
+        if (selector === '[data-tour-terminal]' && node.isTerminal) return node;
         node = node.parentElement;
       }
       return null;
@@ -116,6 +118,12 @@ function pageHarness(firstHeight = 867) {
       inner.scrollHeight = 200;
       inner.clientHeight = 100;
       return inner;
+    },
+    terminalSurface() {
+      const terminal = this.innerScroll();
+      terminal.parentElement = pages[2];
+      terminal.isTerminal = true;
+      return terminal;
     },
     restore() {
       for (const [key, descriptor] of originals) {
@@ -239,6 +247,27 @@ test('navigation keys focused inside the app cannot turn the page', () => {
     assert.equal(page.calls.length, 0);
     page.key(3200, false);
     assert.equal(page.calls.at(-1)?.index, 1);
+  } finally { page.restore(); }
+});
+
+test('terminal surface permits internal wheel, touch, and keyboard scrolling only before each boundary', () => {
+  const page = pageHarness();
+  try {
+    const terminal = page.terminalSurface();
+    for (const delta of [-100, 100]) {
+      terminal.scrollTop = 50;
+      const key = delta < 0 ? 'PageUp' : 'PageDown';
+      assert.equal(page.wheel(delta, 0, terminal), false);
+      assert.equal(page.swipe(delta, 400, terminal), false);
+      assert.equal(page.key(800, false, terminal, key), false);
+      terminal.scrollTop = delta < 0 ? 0 : 100;
+      assert.equal(page.wheel(delta, 1200, terminal), true);
+      assert.equal(page.swipe(delta, 1600, terminal), true);
+      assert.equal(page.key(2000, false, terminal, key), true);
+    }
+    assert.equal(page.calls.length, 0);
+    assert.equal(page.position(), 0);
+    assert.equal(page.selected(), 0);
   } finally { page.restore(); }
 });
 
