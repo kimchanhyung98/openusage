@@ -51,6 +51,15 @@ test('deployment smoke requires both feeds to match the supplied deployment base
       const result = await run(directory);
       assert.equal(result.status, 0, result.output);
     });
+    await t.test('missing social preview metadata fails validation', async () => {
+      const originalIndex = routes.get('/')!;
+      routes.set('/', ['text/html', '<title>OpenUsage</title>']);
+      try {
+        const result = await run(directory);
+        assert.equal(result.status, 1, result.output);
+        assert.match(result.output, /FAIL og:image meta missing/);
+      } finally { routes.set('/', originalIndex); }
+    });
     await t.test('asset URLs are passed literally without shell pathname expansion', async () => {
       const assetPath = `${directory}/asset-*.txt`;
       writeFileSync(join(directory, 'asset-found.txt'), 'local file');

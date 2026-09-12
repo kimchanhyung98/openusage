@@ -8,7 +8,10 @@ test('the page remains readable and downloadable with JavaScript disabled', asyn
   await expect(page.locator('.tour-fallback')).toBeVisible();
   await expect(page.locator('[data-tour-description="menu-bar"]')).toBeVisible();
   await expect(page.locator('[data-mock]').getByRole('button', { name: 'Options', exact: true })).toBeHidden();
-  for (const link of await page.locator('[data-download]').all()) {
+  await expect(page.locator('[data-mock] .am-section[data-provider]:visible')).toHaveCount(3);
+  const downloads = page.locator('[data-download]');
+  expect(await downloads.count()).toBeGreaterThan(0);
+  for (const link of await downloads.all()) {
     await expect(link).toHaveAttribute('href', 'https://github.com/kimchanhyung98/openusage/releases/latest');
   }
 });

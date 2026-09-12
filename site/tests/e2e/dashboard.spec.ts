@@ -1,4 +1,65 @@
-import { test, expect, openHome } from './fixtures';
+import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
+
+test('Customize can enable metrics without sample data in existing and dormant providers', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  for (const [provider, name, metric, card] of [
+    ['claude', 'Claude', 'claude.extra', 'claude-account-1'],
+    ['cursor', 'Cursor', 'cursor.credits', 'cursor'],
+  ]) {
+    await app.getByRole('button', { name: 'Options', exact: true }).click();
+    await app.getByRole('menuitem', { name: 'Customize', exact: true }).click();
+    if (provider === 'cursor') await app.getByRole('switch', { name, exact: true }).click();
+    await app.getByRole('button', { name: `Open ${name}`, exact: true }).click();
+    await app.locator(`[data-metric-toggle="${metric}"]`).click();
+    await app.getByRole('button', { name: 'Back', exact: true }).click();
+    await app.getByRole('button', { name: 'Back', exact: true }).click();
+    const section = app.locator(`[data-card="${card}"]`);
+    await section.getByRole('button', { name: 'Show more', exact: true }).click();
+    const row = section.locator(`[data-metric="${metric}"]`);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('No data');
+    await expect(row.locator('.am-meter')).toHaveCount(0);
+  }
+});
+
+test('On Demand metrics remain visible when every Always Visible metric is disabled', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await app.getByRole('button', { name: 'Options', exact: true }).click();
+  await app.getByRole('menuitem', { name: 'Customize', exact: true }).click();
+  await app.getByRole('button', { name: 'Open Claude', exact: true }).click();
+  for (const metric of ['claude.session', 'claude.weekly', 'claude.fable']) await app.locator(`[data-metric-toggle="${metric}"]`).click();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(app.locator('[data-card="claude-account-1"] [data-metric="claude.trend"]')).toBeVisible();
+});
+
+test('provider quick links expose their destinations', async ({ page }) => {
+  await openHome(page);
+  const card = page.locator('[data-mock] [data-card="claude-account-1"]');
+  await card.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(card.getByRole('link', { name: 'Status', exact: true })).toHaveAttribute('href', 'https://status.claude.com/');
+  await expect(card.getByRole('link', { name: 'Dashboard', exact: true })).toHaveAttribute('href', 'https://claude.ai/settings/usage');
+});
+
+test('selected spend periods remain readable in the Light theme', async ({ page }) => {
+  await openHome(page);
+  await openSettings(page);
+  await chooseSetting(page, 'Theme', 'Light');
+  const app = page.locator('[data-mock]');
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  const colors = await app.locator('[data-period="today"]').evaluate((element) => ({
+    text: getComputedStyle(element).color,
+    background: getComputedStyle(element).backgroundColor,
+  }));
+  const luminance = (color: string) => (color.match(/[\d.]+/g) ?? []).slice(0, 3)
+    .map((value) => Number(value) / 255)
+    .map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const values = [luminance(colors.text), luminance(colors.background)].sort((a, b) => a - b);
+  expect((values[1] + 0.05) / (values[0] + 0.05)).toBeGreaterThanOrEqual(4.5);
+});
 
 test('Customize provider and metric switches update dashboard visibility', async ({ page }) => {
   await openHome(page);

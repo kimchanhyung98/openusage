@@ -20,12 +20,22 @@ test('home assets load locally with CSP, unique IDs, and no horizontal overflow'
     expect((await request.get(asset)).ok(), asset).toBe(true);
   }
   expect(failed).toEqual([]);
-  await page.setViewportSize({ width: 320, height: 640 });
-  const navigation = await page.locator('.nav .inner').evaluate((element) => ({
-    width: element.clientWidth,
-    contentWidth: element.scrollWidth,
-  }));
-  expect(navigation.contentWidth).toBeLessThanOrEqual(navigation.width + 1);
+  for (const width of [320, 720, 768]) {
+    await page.setViewportSize({ width, height: 640 });
+    await page.evaluate(() => document.fonts.ready);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    const heading = await page.locator('h1').evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return { text: range.getBoundingClientRect().right, container: element.getBoundingClientRect().right };
+    });
+    expect(heading.text, `heading at ${width}px`).toBeLessThanOrEqual(heading.container + 1);
+    const navigation = await page.locator('.nav .inner').evaluate((element) => ({
+      width: element.clientWidth,
+      contentWidth: element.scrollWidth,
+    }));
+    expect(navigation.contentWidth).toBeLessThanOrEqual(navigation.width + 1);
+  }
 });
 
 test('unknown routes return a noindex 404 with working home recovery', async ({ page }) => {

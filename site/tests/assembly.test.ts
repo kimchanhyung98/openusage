@@ -98,6 +98,25 @@ test('assembly rejects feed collisions while preserving the previous output', ()
   } finally { fixture.cleanup(); }
 });
 
+for (const name of ['appcast.xml', 'copy.bak']) {
+  test(`assembly rejects many ${name} output paths without losing the previous preview`, () => {
+    const fixture = assemblyFixture();
+    try {
+      assert.equal(fixture.run().status, 0);
+      const previous = readFileSync(join(fixture.output, 'index.html'), 'utf8');
+      for (let index = 0; index < 1000; index++) {
+        const directory = join(fixture.fixture, `${'nested-'.repeat(20)}${index}`);
+        mkdirSync(directory);
+        writeFileSync(join(directory, name), 'invalid build output');
+      }
+      const result = fixture.run();
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.match(result.stderr, /must not be produced|backup files/);
+      assert.equal(readFileSync(join(fixture.output, 'index.html'), 'utf8'), previous);
+    } finally { fixture.cleanup(); }
+  });
+}
+
 test('assembly allows native provider sign-in copy while still rejecting site endorsement claims', () => {
   const fixture = assemblyFixture();
   try {

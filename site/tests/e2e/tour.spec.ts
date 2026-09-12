@@ -2,6 +2,29 @@ import { test, expect, openHome } from './fixtures';
 
 const stages = ['menu-bar', 'dashboard', 'statistics', 'accounts', 'integrations'];
 
+test('terminal boundary keyboard input stays inside the feature preview', async ({ page }) => {
+  await openHome(page);
+  await page.locator('[data-tour-tab="integrations"]').click();
+  const terminal = page.locator('[data-tour-terminal]');
+  await terminal.focus();
+  await terminal.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const position = await page.evaluate(() => scrollY);
+  await page.keyboard.press('PageDown');
+  expect(await page.evaluate(() => scrollY)).toBe(position);
+  await terminal.evaluate((element) => { element.scrollTop = 0; });
+  await page.keyboard.press('PageUp');
+  await expect(page.locator('[data-feature-tour]')).toHaveAttribute('data-tour-stage', 'integrations');
+});
+
+test('Escape completes a running tour when focus remains outside the section', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openHome(page);
+  await page.locator('[data-tour-tab="accounts"]').click();
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-feature-tour]')).toHaveAttribute('data-tour-phase', 'account-added');
+});
+
 test('all tour tabs support keyboard navigation without moving the page', async ({ page }) => {
   await openHome(page);
   const tour = page.locator('[data-feature-tour]');
