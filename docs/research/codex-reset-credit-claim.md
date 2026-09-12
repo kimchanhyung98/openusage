@@ -1,31 +1,31 @@
-# Codex Rate-Limit Reset Credits: How Claiming Works
+# Codex 레이트 리밋 재설정 크레딧: 클레임 방식
 
-Research + live verification of the Codex "reset credit" claim flow, done 2026-07-12.
-This started as the protocol reference for adding in-app claims.
-OpenUsage now implements the two-click, per-card claim flow described in the [Codex provider guide](/docs/providers/codex.md#using-a-reset-from-the-popover).
-The endpoint details below remain the protocol reference for that implementation.
+Codex "reset credit" 클레임 흐름 조사 및 실계정 검증 기록(2026-07-12).
+앱 내 클레임 추가를 위한 프로토콜 참조로 시작.
+현재 OpenUsage에 [Codex 프로바이더 안내](/docs/providers/codex.md#팝오버에서-재설정-사용)의 2단계 클릭 방식과 카드별 클레임 흐름 구현 완료.
+아래 엔드포인트 세부 정보는 해당 구현의 프로토콜 참조로 유지.
 
-Sources: the open-source Codex CLI (`openai/codex`, `codex-rs/backend-client/src/client/rate_limit_resets.rs`, `codex-rs/tui/src/chatwidget/reset_credits.rs`, `codex-rs/tui/src/chatwidget/usage.rs`, `codex-rs/app-server/src/request_processors/account_processor/rate_limit_resets.rs`), plus a live end-to-end claim against a real account (one credit, hours before it expired).
+출처: 오픈 소스 Codex CLI(`openai/codex`, `codex-rs/backend-client/src/client/rate_limit_resets.rs`, `codex-rs/tui/src/chatwidget/reset_credits.rs`, `codex-rs/tui/src/chatwidget/usage.rs`, `codex-rs/app-server/src/request_processors/account_processor/rate_limit_resets.rs`)와 실제 계정에서 수행한 전체 클레임 검증(만료를 몇 시간 앞둔 크레딧 하나).
 
-## What a reset credit is
+## 재설정 크레딧의 의미
 
-OpenAI grants Codex users occasional free "rate limit resets".
-Redeeming one immediately resets the account's Codex rate-limit windows — on paid plans the 5-hour **and** weekly windows together (`windows_reset: 2`); on Free/Go plans the monthly window.
-Credits expire (typically 30 days after being granted) and are gone once redeemed or expired.
+OpenAI에서 Codex 사용자에게 가끔 무료 "rate limit resets"를 지급.
+하나를 사용하면 계정의 Codex 레이트 리밋 기간을 즉시 재설정하며, 유료 요금제에서는 5시간 **및** 주간 기간을 함께 재설정(`windows_reset: 2`), Free/Go 요금제에서는 월간 기간 재설정.
+일반적으로 지급 후 30일인 만료 기한이 있으며, 사용하거나 만료되면 소멸.
 
-## Endpoints
+## 엔드포인트
 
-Both live under the ChatGPT backend base URL (`https://chatgpt.com/backend-api`).
-The CLI also has a `PathStyle::CodexApi` variant (`/api/codex/...` instead of `/wham/...`) for enterprise/alternative base URLs; OpenUsage uses the ChatGPT style.
+둘 다 ChatGPT 백엔드 기본 URL(`https://chatgpt.com/backend-api`) 아래에 위치.
+CLI에는 Enterprise/대체 기본 URL용 `PathStyle::CodexApi` 변형(`/wham/...` 대신 `/api/codex/...`)도 있지만, OpenUsage에서는 ChatGPT 방식 사용.
 
-Headers on every call:
+모든 호출의 헤더:
 
-- `Authorization: Bearer <access_token>` (the ChatGPT OAuth access token from `~/.codex/auth.json`)
-- `ChatGPT-Account-Id: <account_id>` (from the same file)
-- `OpenAI-Beta: codex-1` and `originator: Codex Desktop` — the reset-credit endpoints expect the Codex desktop client headers; OpenUsage's plain usage fetch does not send them
-- `Content-Type: application/json` on the POST
+- `Authorization: Bearer <access_token>`(`~/.codex/auth.json`의 ChatGPT OAuth 액세스 토큰)
+- `ChatGPT-Account-Id: <account_id>`(같은 파일에서 확인)
+- `OpenAI-Beta: codex-1`과 `originator: Codex Desktop` — 재설정 크레딧 엔드포인트에서 요구하는 Codex 데스크톱 클라이언트 헤더이며 OpenUsage의 일반 사용량 조회에서는 전송하지 않음
+- POST의 `Content-Type: application/json`
 
-### List (already implemented in OpenUsage)
+### 목록 조회(OpenUsage에 이미 구현)
 
 `GET /wham/rate-limit-reset-credits`
 
@@ -37,7 +37,7 @@ Headers on every call:
       "reset_type": "codex_rate_limits",
       "status": "available",            // available | redeeming | redeemed
       "granted_at": "2026-06-12T03:57:42.677034Z",
-      "expires_at": "2026-07-12T03:57:42.677034Z",   // may be null (never expires)
+      "expires_at": "2026-07-12T03:57:42.677034Z",   // null 가능(만료 없음)
       "redeem_started_at": null,
       "redeemed_at": null,
       "profile_image_url": "https://…/codex-icon-200.png",
@@ -50,9 +50,9 @@ Headers on every call:
 }
 ```
 
-Note: redeemed/expired credits drop out of the list entirely (after the live claim the list had 3 entries, not 4 with one `redeemed`).
+참고: 사용되거나 만료된 크레딧은 목록에서 완전히 제외되며, 실제 클레임 후에도 하나가 `redeemed`인 4개가 아니라 3개 항목만 반환.
 
-### Consume (the claim)
+### 사용(클레임)
 
 `POST /wham/rate-limit-reset-credits/consume`
 
@@ -63,13 +63,13 @@ Note: redeemed/expired credits drop out of the list entirely (after the live cla
 }
 ```
 
-- `redeem_request_id` — **idempotency key**, a plain UUID v4 minted by the client (`Uuid::new_v4().to_string()` in the TUI).
-  The CLI generates one key per credit shown in its picker and **reuses the same key when the user retries after an error**, so a retry can never burn a second credit; the server replies `already_redeemed`, which the CLI treats as success.
-- `credit_id` — optional.
-  When present the server redeems exactly that credit; when omitted the server picks one.
-  The CLI always sends it (it sorts available credits by soonest `expires_at` and lets the user pick; it only omits `credit_id` in a fallback path when the detail list couldn't be fetched).
+- `redeem_request_id` — 클라이언트가 발급하는 단순 UUID v4인 **멱등 키**(TUI의 `Uuid::new_v4().to_string()`).
+  CLI에서 선택기에 표시된 크레딧마다 키 하나를 생성하고 **사용자가 오류 후 재시도할 때 같은 키를 재사용**하므로 재시도로 두 번째 크레딧이 소모될 수 없으며, 서버의 `already_redeemed` 응답도 성공으로 처리.
+- `credit_id` — 선택 사항.
+  값이 있으면 서버에서 해당 크레딧을 정확히 사용하고, 없으면 서버에서 하나를 선택.
+  CLI에서는 항상 이 값을 전송하며 사용 가능한 크레딧을 가장 이른 `expires_at` 순으로 정렬해 사용자가 선택하도록 구성하고, 세부 목록을 가져오지 못한 대체 경로에서만 `credit_id` 생략.
 
-Response (HTTP 200 even for the "failure" codes — the outcome is in `code`):
+응답(`code`에 결과를 담으므로 실패 코드도 HTTP 200으로 반환):
 
 ```json
 {
@@ -85,38 +85,38 @@ Response (HTTP 200 even for the "failure" codes — the outcome is in `code`):
 }
 ```
 
-`code` values (from `ConsumeRateLimitResetCreditCode` in the CLI):
+`code` 값(CLI의 `ConsumeRateLimitResetCreditCode` 기준):
 
-| code | meaning | credit burned? |
+| code | 의미 | 크레딧 소모 여부 |
 |---|---|---|
-| `reset` | success; `windows_reset` = number of windows reset (2 = 5h + weekly) | yes |
-| `already_redeemed` | same `redeem_request_id` was already processed — treat as success | already was |
-| `nothing_to_reset` | usage doesn't need a reset right now (CLI shows "Your usage does not need a reset right now.") | no |
-| `no_credit` | the targeted credit is no longer available (raced away / expired), or none available at all | no |
+| `reset` | 성공 — `windows_reset` = 재설정된 기간 수(2 = 5시간 + 주간) | 소모 |
+| `already_redeemed` | 같은 `redeem_request_id`가 이미 처리된 상태 — 성공으로 처리 | 이미 소모 |
+| `nothing_to_reset` | 현재 사용량에 재설정이 불필요한 상태(CLI에서 "Your usage does not need a reset right now." 표시) | 미소모 |
+| `no_credit` | 대상 크레딧이 경쟁 상황이나 만료로 더 이상 유효하지 않거나, 사용 가능한 크레딧이 전혀 없는 상태 | 미소모 |
 
-The consume response's `credit` object is richer than the CLI's own struct decodes — it carries `redeem_started_at` / `redeemed_at` / `profile_*` fields the CLI ignores.
+consume 응답의 `credit` 객체에는 CLI 자체 구조체에서 무시하는 `redeem_started_at`, `redeemed_at`, `profile_*` 필드까지 포함.
 
-## Live verification (2026-07-12, Pro plan)
+## 실계정 검증(2026-07-12, Pro 요금제)
 
-Full verbose log (every request/response, token redacted): kept out of the repo; the run was a one-shot Python script with hard guards (claim at most one credit, only the soonest-expiring one, only if it expired within 4 h, explicit `credit_id`).
+모든 요청과 응답을 담은 상세 로그는 토큰을 가린 뒤 저장소 밖에 보관했으며, 실행에는 크레딧 최대 하나, 만료가 가장 임박한 항목, 4시간 이내 만료, 명시적 `credit_id` 조건을 강제한 일회성 Python 스크립트 사용.
 
-- Before: 4 credits available; 5h window 96% used (reset in ~25 min), weekly 52% used (reset in ~6 days).
-  Target credit expired 2.18 h later.
-- `POST …/consume` with a fresh UUID + explicit `credit_id` → HTTP 200, `code: "reset"`, `windows_reset: 2`, credit `status: "redeemed"`.
-  Round-trip ~1.1 s (`redeem_started_at` → `redeemed_at` ≈ 0.7 s server-side).
-- After (fetched ~1 s later): both the 5h and weekly windows read **0% used** with full window durations (`reset_after_seconds` = 18000 / 604800), `available_count` = 3, and the redeemed credit no longer appears in the list.
-  The reset also zeroed the windows of the `additional_rate_limits` entry (the model-specific limit was already 0%, so this is suggestive, not proven).
+- 이전: 크레딧 4개 사용 가능, 5시간 기간 96% 사용(약 25분 후 재설정), 주간 기간 52% 사용(약 6일 후 재설정).
+  대상 크레딧의 남은 유효 시간은 2.18시간.
+- 새 UUID와 명시적 `credit_id`로 `POST …/consume` 전송 → HTTP 200, `code: "reset"`, `windows_reset: 2`, 크레딧 `status: "redeemed"`.
+  왕복 약 1.1초(`redeem_started_at` → `redeemed_at` 기준 서버 측 약 0.7초).
+- 약 1초 뒤 조회 결과: 5시간 및 주간 기간 모두 전체 기간(`reset_after_seconds` = 18000 / 604800)으로 **0% 사용**, `available_count` = 3, 사용한 크레딧은 목록에서 제외.
+  `additional_rate_limits` 항목의 기간별 사용량도 0%로 재설정되었지만, 모델별 리밋은 이미 0%였으므로 확증이 아닌 정황.
 
-## Implementation notes adopted by OpenUsage
+## OpenUsage에 반영된 구현 참고 사항
 
-- The current claim implementation is a single POST on infrastructure OpenUsage already talks to.
-  Authentication, headers, and account id handling are identical to `CodexUsageClient`'s existing calls.
-- OpenUsage mints the `redeem_request_id` UUID **when the user is shown the claim affordance** for each credit.
-  It keeps the UUID for the duration of the interaction and reuses it on retry — the same double-spend protection as the CLI.
-- It always passes an explicit `credit_id`.
-  The user picks a specific credit in the timeline (ordered soonest-expiring first, the CLI's sort order), and the claim targets exactly that credit's id, re-matched against a fresh list at claim time.
-- It treats `already_redeemed` as success and surfaces `nothing_to_reset` as an informational message because the credit is not lost.
-  On `no_credit` with a `credit_id`, it refreshes the list because the credit raced away.
-- This is an irreversible, user-visible spend of a scarce grant, so the UI keeps it behind an explicit confirmation and never claims automatically.
-- After a successful claim, OpenUsage refreshes usage and the credit list immediately.
-  Both windows drop to 0% and the count decrements, which the widgets should reflect right away.
+- 현재 클레임 구현은 OpenUsage에서 이미 사용하는 인프라를 향한 단일 POST.
+  인증, 헤더, 계정 ID 처리는 `CodexUsageClient`의 기존 호출과 동일.
+- OpenUsage에서 크레딧별 `redeem_request_id` UUID를 **사용자에게 클레임 UI를 표시할 때** 발급.
+  상호작용 동안 UUID를 유지하고 재시도에도 재사용해 CLI와 같은 방식으로 중복 소모 방지.
+- 항상 명시적 `credit_id` 전달.
+  사용자가 CLI와 같은 만료 임박 순서의 타임라인에서 특정 크레딧을 선택하고, 클레임 시점에 새 목록과 다시 대조한 정확한 ID만 대상에 포함.
+- `already_redeemed`는 성공으로 처리하고, 크레딧이 소모되지 않는 `nothing_to_reset`은 정보성 메시지로 표시.
+  `credit_id`와 함께 `no_credit`이 오면 경쟁 상황으로 크레딧이 사라진 경우이므로 목록 새로 고침.
+- 수량이 제한된 지급 크레딧을 되돌릴 수 없게 소모하는 사용자 동작이므로, UI에서 명시적 확인을 거치며 자동 클레임 금지.
+- 클레임 성공 후 OpenUsage에서 사용량과 크레딧 목록을 즉시 새로 고침.
+  두 기간의 사용량이 0%로 내려가고 개수가 감소한 결과를 위젯에 즉시 반영.

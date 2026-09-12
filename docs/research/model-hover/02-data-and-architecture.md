@@ -1,141 +1,141 @@
-# Model Hover Panel: data and architecture feasibility
+# 모델 호버 패널: 데이터와 아키텍처 실현 가능성
 
-> **Historical / superseded.**
-> This feasibility report is a 2026-07-04 preimplementation snapshot.
-> The model-breakdown data path and spend-row hover panel described as proposed below shipped that day; see [Dashboard rows](../../dashboard.md#rows), [`SpendTileMapper.swift`](../../../Sources/OpenUsage/Providers/SpendTileMapper.swift), [`HoverPopoverState.swift`](../../../Sources/OpenUsage/Views/HoverPopoverState.swift), and [`ModelUsageDetail.swift`](../../../Sources/OpenUsage/Views/ModelUsageDetail.swift) for the current implementation.
-> The analysis remains a historical record rather than current-state documentation; narrow implementation references may be corrected as the code evolves.
+> **과거 기록 / 대체됨.**
+> 이 실현 가능성 보고서는 2026-07-04 시점의 구현 전 스냅샷.
+> 아래에서 제안하는 모델별 내역 데이터 경로와 지출 행 호버 패널은 같은 날 출시됐으며, 현재 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/OpenUsage/Providers/SpendTileMapper.swift), [`HoverPopoverState.swift`](/Sources/OpenUsage/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
+> 이 분석은 현재 상태 문서가 아닌 과거 기록이며, 코드 변화에 따라 세부 구현 참조 수정 가능.
 
-Research date: 2026-07-04.
-Scope: current `main`-line SwiftPM app architecture in this worktree.
-This is read-only technical research for a hover-revealed per-model spend/usage breakdown on the existing `Today`, `Yesterday`, and `Last 30 Days` spend rows.
+조사 날짜: 2026-07-04.
+범위: 이 작업 트리의 현재 `main` 개발선 SwiftPM 앱 아키텍처.
+기존 `Today`, `Yesterday`, `Last 30 Days` 지출 행에서 호버로 표시되는 모델별 지출·사용량 내역에 관한 읽기 전용 기술 조사.
 
-> **Status update (2026-07-10):** This document records the preimplementation architecture at its research date.
-> The current code now carries per-model usage through `ModelUsageSeries`; Cursor's boundary parser also throws on unusable CSV structure and returns `CursorUsageCSVParseResult` (`rows` plus `rejectedRowCount`).
-> See [Cursor](../../providers/cursor.md) for current user-facing behavior.
+> **상태 업데이트(2026-07-10):** 이 문서는 조사 날짜 시점의 구현 전 아키텍처 기록.
+> 현재 코드는 `ModelUsageSeries`를 통해 모델별 사용량을 전달하며, Cursor 경계 파서는 사용할 수 없는 CSV 구조에서 예외를 던지고 `CursorUsageCSVParseResult`(`rows`와 `rejectedRowCount`) 반환.
+> 현재 사용자 대상 동작은 [Cursor](/docs/providers/cursor.md) 참고.
 
-## Executive conclusion
+## 핵심 결론
 
-This feature is technically feasible for Cursor, Claude, Codex, and partially for Grok without adding new external usage APIs.
-The raw provider inputs already carry a model dimension before the current spend pipeline collapses them into `DailyUsageSeries`.
+새 외부 사용량 API 추가 없이 Cursor, Claude, Codex에서 기술적으로 실현 가능하고 Grok에서는 부분적으로 가능.
+현재 지출 파이프라인이 원시 프로바이더 입력을 `DailyUsageSeries`로 축소하기 전에 이미 모델 차원 존재.
 
-The main gap is structural: current spend rows only receive per-day totals (`DailyUsageEntry.date`, `totalTokens`, `costUSD`) plus unknown-model names.
-No `MetricLine`, `WidgetData`, or cached `ProviderSnapshot` currently carries the per-model rows needed by a hover panel.
+주요 공백은 구조적 문제로, 현재 지출 행은 일별 합계(`DailyUsageEntry.date`, `totalTokens`, `costUSD`)와 알 수 없는 모델 이름만 수신.
+호버 패널에 필요한 모델별 행을 담는 `MetricLine`, `WidgetData`, 캐시된 `ProviderSnapshot`은 현재 없음.
 
-Recommended shape: compute a provider-neutral per-day-per-model aggregate at the same time the existing scanners/CSV mapper compute `DailyUsageSeries`, pass it through `SpendTileMapper`, attach the period-scoped breakdown directly to the corresponding `MetricLine.values` for `Today`, `Yesterday`, and `Last 30 Days`, then render a SwiftUI hover popover from `WidgetRowView` for usage-period rows.
+권장 구조: 기존 스캐너·CSV 매퍼가 `DailyUsageSeries`를 계산할 때 프로바이더 중립적인 일별·모델별 집계도 함께 계산해 `SpendTileMapper`로 전달하고, `Today`, `Yesterday`, `Last 30 Days`에 대응하는 `MetricLine.values`에 기간별 내역을 직접 첨부한 뒤 사용 기간 행의 SwiftUI 호버 팝오버를 `WidgetRowView`에서 렌더링.
 
-## Current spend data path
+## 현재 지출 데이터 경로
 
-Shared spend tiles are produced in `Sources/OpenUsage/Providers/SpendTileMapper.swift`.
+공유 지출 타일 생성 위치는 `Sources/OpenUsage/Providers/SpendTileMapper.swift`.
 
-`SpendTileMapper.appendTokenUsage(_:to:now:estimated:unknownModelsByDay:)` appends three `.values` lines:
+`SpendTileMapper.appendTokenUsage(_:to:now:estimated:unknownModelsByDay:)`에서 세 개의 `.values` 행 추가:
 
 - `Today`
 - `Yesterday`
 - `Last 30 Days`
 
-It consumes `DailyUsageSeries` from `Sources/OpenUsage/Models/DailyUsageSeries.swift`.
-That type is intentionally provider-neutral and contains only:
+입력은 `Sources/OpenUsage/Models/DailyUsageSeries.swift`의 `DailyUsageSeries`.
+의도적으로 프로바이더 중립적인 이 타입의 필드는 다음뿐:
 
 - `DailyUsageEntry.date`
 - `DailyUsageEntry.totalTokens`
 - `DailyUsageEntry.costUSD`
 
-`LogUsageScan` adds only one extra side channel today:
+현재 `LogUsageScan`에서 추가하는 보조 채널은 하나뿐:
 
 - `series: DailyUsageSeries`
 - `unknownModelsByDay: [String: Set<String>]`
 
-That means current spend rows have enough data to show total cost/tokens and unknown pricing warnings, but not enough to show model-by-model totals.
+따라서 현재 지출 행에는 총비용·토큰과 가격을 알 수 없는 모델 경고를 표시할 데이터만 존재해 모델별 합계 표시에는 부족.
 
-The shared pricing engine is in `Sources/OpenUsage/Pricing/`:
+공유 가격 엔진 위치는 `Sources/OpenUsage/Pricing/`:
 
-- `ModelPricing.resolve(model:)` returns `ModelRates?`.
-- `ModelPricing.estimatedCostDollars(model:tokens:)` prices a `TokenBreakdown`.
-- `TokenBreakdown` carries `input`, `cacheWrite5m`, `cacheWrite1h`, `cacheRead`, `output`, and `isFast`.
-- `ModelRates.costDollars(for:)` applies per-million rates, cache-write/cache-read rates, 1-hour cache-write pricing, above-200k tiers where present, and fast multipliers.
-- `ModelPricingStore.current()` serves the freshest loaded pricing snapshot and starts a background refresh when a source is due; pricing source refresh is roughly daily.
+- `ModelPricing.resolve(model:)`에서 `ModelRates?` 반환.
+- `ModelPricing.estimatedCostDollars(model:tokens:)`에서 `TokenBreakdown` 가격 계산.
+- `TokenBreakdown`에 `input`, `cacheWrite5m`, `cacheWrite1h`, `cacheRead`, `output`, `isFast` 포함.
+- `ModelRates.costDollars(for:)`에서 백만 토큰당 요율, 캐시 쓰기·읽기 요율, 1시간 캐시 쓰기 가격, 존재하는 경우 200k 초과 구간, fast 배율 적용.
+- `ModelPricingStore.current()`에서 로드된 최신 가격 스냅샷을 제공하고 소스 갱신 시점이면 백그라운드 새로 고침 시작하며, 가격 소스 갱신 주기는 약 하루.
 
-## Provider data availability
+## 프로바이더 데이터 가용성
 
-### Cursor: high feasibility
+### Cursor: 높은 실현 가능성
 
-Spend source today:
+현재 지출 소스:
 
-- `CursorProvider.appendSpendLines(to:accessToken:)` fetches `https://cursor.com/api/dashboard/export-usage-events-csv` through `CursorUsageClient.fetchUsageCSV(accessToken:start:end:)`.
-- The query window starts 29 days before local start-of-today and ends at `now`, so it covers today plus the previous 29 calendar days.
-- `CursorUsageCSV.parse(csv:pricing:)` parses the CSV into `[CursorUsageCSVRow]`.
-- `CursorUsageMapper.appendSpendLines(rows:now:to:)` aggregates rows into `DailyUsageSeries`, then calls `SpendTileMapper.appendTokenUsage(... estimated: false ...)` and `appendUsageTrend(...)`.
+- `CursorProvider.appendSpendLines(to:accessToken:)`에서 `CursorUsageClient.fetchUsageCSV(accessToken:start:end:)`를 통해 `https://cursor.com/api/dashboard/export-usage-events-csv` 가져오기.
+- 쿼리 기간은 현지 시각 오늘 시작 29일 전부터 `now`까지이므로 오늘과 이전 29개 달력일 포함.
+- `CursorUsageCSV.parse(csv:pricing:)`에서 CSV를 `[CursorUsageCSVRow]`로 파싱.
+- `CursorUsageMapper.appendSpendLines(rows:now:to:)`에서 행을 `DailyUsageSeries`로 집계한 뒤 `SpendTileMapper.appendTokenUsage(... estimated: false ...)`와 `appendUsageTrend(...)` 호출.
 
-Per-model data available before collapse:
+축소 전 사용 가능한 모델별 데이터:
 
-- `CursorUsageCSVRow` in `Sources/OpenUsage/Providers/Cursor/CursorUsageCSV.swift` carries:
+- `Sources/OpenUsage/Providers/Cursor/CursorUsageCSV.swift`의 `CursorUsageCSVRow` 필드:
   - `date: Date`
   - `model: String`
   - `maxMode: Bool`
   - `tokens: TokenBreakdown`
   - `imputedCostDollars: Double?`
-- The parser maps CSV columns `Model`, `Max Mode`, `Input (w/o Cache Write)`, `Input (w/ Cache Write)`, `Cache Read`, and `Output Tokens`.
-- `imputedCostDollars` is already computed per row through `ModelPricing.estimatedCostDollars(model:tokens:)`.
+- 파서에서 CSV 열 `Model`, `Max Mode`, `Input (w/o Cache Write)`, `Input (w/ Cache Write)`, `Cache Read`, `Output Tokens` 매핑.
+- `imputedCostDollars`는 이미 `ModelPricing.estimatedCostDollars(model:tokens:)`를 통해 행별 계산됨.
 
-Can build per-day-per-model aggregates with existing data:
+기존 데이터로 일별·모델별 집계 생성 가능 여부:
 
-- Yes.
-  `CursorUsageMapper.appendSpendLines` currently loops all rows and groups only by day.
-  It can also group by `(day, model)` in the same pass.
-- Cost should follow the existing behavior: sum raw row costs and round once at the aggregate boundary, not per row.
-  Current day totals round to cents after summing.
-- Rows where `imputedCostDollars == nil` should still contribute tokens and should mark the model as unpriced/unknown for the hover panel.
-  Existing unknown-model warnings already use this rule.
-- `maxMode` is available if the UI wants to label variants later, though current cost imputation does not apply a separate Max Mode uplift because the CSV rows are aggregates.
+- 가능.
+  현재 `CursorUsageMapper.appendSpendLines`는 모든 행을 순회해 일별로만 그룹화.
+  같은 순회에서 `(day, model)` 그룹화도 가능.
+- 비용은 기존 동작에 따라 원시 행 비용을 모두 더한 뒤 행마다가 아닌 집계 경계에서 한 번만 반올림.
+  현재 일별 합계도 합산 후 센트 단위로 반올림.
+- `imputedCostDollars == nil`인 행도 토큰에 포함하고, 호버 패널에서 해당 모델을 가격 미산정·알 수 없음으로 표시 필요.
+  기존의 알 수 없는 모델 경고도 같은 규칙 사용.
+- 향후 UI에서 변형 라벨에 `maxMode` 사용 가능하지만 CSV 행이 집계값이므로 현재 비용 추정에 별도 Max Mode 할증은 미적용.
 
-Verdict: strongest starting point.
-Cursor already has row-level model, tokens, and cost before `DailyUsageSeries` is built.
+결론: 가장 유력한 시작점.
+`DailyUsageSeries` 생성 전부터 Cursor에 행별 모델·토큰·비용 존재.
 
-### Claude: high feasibility
+### Claude: 높은 실현 가능성
 
-Spend source today:
+현재 지출 소스:
 
-- `ClaudeProvider.probe(state:)` calls `ClaudeLogUsageScanner.scan(now:pricing:)`.
-- The scanner reads Claude Code local session logs under roots derived from `CLAUDE_CONFIG_DIR`, `$XDG_CONFIG_HOME/claude`, `~/.claude`, and Claude desktop Cowork local-agent-mode session directories.
-- The log files are `<config dir>/projects/**/*.jsonl`.
-- The scanner returns `LogUsageScan`, then `ClaudeProvider` calls `SpendTileMapper.appendTokenUsage(scan.series, ..., unknownModelsByDay: scan.unknownModelsByDay)` and `appendUsageTrend(...)`.
+- `ClaudeProvider.probe(state:)`에서 `ClaudeLogUsageScanner.scan(now:pricing:)` 호출.
+- 스캐너에서 `CLAUDE_CONFIG_DIR`, `$XDG_CONFIG_HOME/claude`, `~/.claude`로부터 파생된 루트와 Claude Desktop Cowork 로컬 에이전트 모드 세션 디렉터리 아래 Claude Code 로컬 세션 로그 읽기.
+- 로그 파일은 `<config dir>/projects/**/*.jsonl`.
+- 스캐너에서 `LogUsageScan`을 반환한 뒤 `ClaudeProvider`에서 `SpendTileMapper.appendTokenUsage(scan.series, ..., unknownModelsByDay: scan.unknownModelsByDay)`와 `appendUsageTrend(...)` 호출.
 
-Per-model data available before collapse:
+축소 전 사용 가능한 모델별 데이터:
 
-- `ClaudeLogUsageScanner.Entry` in `Sources/OpenUsage/Providers/Claude/ClaudeLogUsageScanner.swift` carries:
+- `Sources/OpenUsage/Providers/Claude/ClaudeLogUsageScanner.swift`의 `ClaudeLogUsageScanner.Entry` 필드:
   - `timestamp: Date`
   - `tokens: TokenBreakdown`
   - `costUSD: Double?`
   - `model: String?`
-  - dedup fields such as `messageID`, `requestID`, `isSidechain`, and `hasSpeed`
-- `parseLine(_:)` reads `message.model`, maps `<synthetic>` to `nil`, parses input/output/cache token buckets, and carries `costUSD` when the log line provides it.
-- `TokenBreakdown.isFast` is set from Claude's `usage.speed == "fast"`.
-- `aggregate(entries:since:pricing:)` deduplicates entries first, then prices by event:
-  - use carried `costUSD` when present
-  - otherwise price `model + TokenBreakdown` through `ModelPricing`
-  - unknown models contribute tokens and populate `unknownModelsByDay`
+  - `messageID`, `requestID`, `isSidechain`, `hasSpeed` 등의 중복 제거 필드
+- `parseLine(_:)`에서 `message.model`을 읽어 `<synthetic>`을 `nil`로 매핑하고 입력·출력·캐시 토큰 버킷을 파싱하며, 로그 행에 있으면 `costUSD` 유지.
+- Claude의 `usage.speed == "fast"` 값으로 `TokenBreakdown.isFast` 설정.
+- `aggregate(entries:since:pricing:)`에서 항목 중복 제거 후 이벤트별 가격 계산:
+  - 전달된 `costUSD`가 있으면 사용
+  - 없으면 `ModelPricing`으로 `model + TokenBreakdown` 가격 계산
+  - 알 수 없는 모델도 토큰에 포함하고 `unknownModelsByDay`에 추가
 
-Can build per-day-per-model aggregates with existing data:
+기존 데이터로 일별·모델별 집계 생성 가능 여부:
 
-- Yes.
-  The aggregate function already has deduplicated event-level `Entry` records with timestamp, model, token buckets, and cost source.
-- The feature should extend or parallel `ClaudeLogUsageScanner.aggregate` before it collapses into `tokensByDay` and `costByDay`.
-- Entries with `model == nil` can contribute to total daily spend/tokens today only if they carry `costUSD`; for a model panel they need an explicit display bucket such as `Unknown Model` or should be omitted with a note.
-  Avoid hiding their tokens silently if totals would otherwise disagree.
+- 가능.
+  집계 함수에 타임스탬프, 모델, 토큰 버킷, 비용 출처가 있는 중복 제거된 이벤트 단위 `Entry` 레코드 존재.
+- `tokensByDay`와 `costByDay`로 축소하기 전에 `ClaudeLogUsageScanner.aggregate` 확장 또는 병렬 처리 필요.
+- `model == nil`인 항목은 `costUSD`가 있을 때만 현재 일별 총지출·토큰에 포함 가능하며, 모델 패널에는 `Unknown Model` 같은 명시적 표시 버킷을 두거나 설명과 함께 생략 필요.
+  숨긴 토큰 때문에 합계가 달라지지 않도록 주의.
 
-Verdict: feasible with scanner aggregation changes only; no new API needed.
+결론: 스캐너 집계 변경만으로 실현 가능하며 새 API 불필요.
 
-### Codex: high feasibility
+### Codex: 높은 실현 가능성
 
-Spend source today:
+현재 지출 소스:
 
-- `CodexProvider.probe(authState:)` calls `CodexLogUsageScanner.scan(now:pricing:)`.
-- The scanner reads Codex CLI rollout/session logs from `CODEX_HOME` or `~/.codex`, including `sessions/` and `archived_sessions/`.
-- It returns `LogUsageScan`, then `CodexProvider` calls `SpendTileMapper.appendTokenUsage(scan.series, ..., unknownModelsByDay: scan.unknownModelsByDay)` and `appendUsageTrend(...)`.
+- `CodexProvider.probe(authState:)`에서 `CodexLogUsageScanner.scan(now:pricing:)` 호출.
+- 스캐너에서 `sessions/`와 `archived_sessions/`를 포함한 `CODEX_HOME` 또는 `~/.codex`의 Codex CLI 롤아웃·세션 로그 읽기.
+- `LogUsageScan` 반환 후 `CodexProvider`에서 `SpendTileMapper.appendTokenUsage(scan.series, ..., unknownModelsByDay: scan.unknownModelsByDay)`와 `appendUsageTrend(...)` 호출.
 
-Per-model data available before collapse:
+축소 전 사용 가능한 모델별 데이터:
 
-- `CodexLogUsageScanner.Event` in `Sources/OpenUsage/Providers/Codex/CodexLogUsageScanner.swift` carries:
+- `Sources/OpenUsage/Providers/Codex/CodexLogUsageScanner.swift`의 `CodexLogUsageScanner.Event` 필드:
   - `timestamp: Date`
   - `model: String`
   - `input: Int`
@@ -143,310 +143,310 @@ Per-model data available before collapse:
   - `output: Int`
   - `reasoning: Int`
   - `total: Int`
-- `parseFile(_:)` tracks the current model from `turn_context` records, handles `token_count` events, and uses `resolveModel(...)` to:
-  - use explicit model metadata when present
-  - fall back to the current session model
-  - fall back to `gpt-5` for early sessions without model metadata
-  - map retired `codex-auto-review` to date-specific model fallbacks
-- `aggregate(events:since:pricing:fastTier:)` deduplicates identical events across copied logs, groups by day, resolves rates per model, and prices with `CodexLogUsageScanner.cost(rates:event:fastTier:)`.
+- `parseFile(_:)`에서 `turn_context` 레코드의 현재 모델 추적, `token_count` 이벤트 처리, `resolveModel(...)`로 다음 동작 수행:
+  - 명시적 모델 메타데이터가 있으면 사용
+  - 없으면 현재 세션 모델로 대체
+  - 모델 메타데이터가 없는 초기 세션은 `gpt-5`로 대체
+  - 폐기된 `codex-auto-review`는 날짜별 대체 모델로 매핑
+- `aggregate(events:since:pricing:fastTier:)`에서 복사된 로그 전체의 동일 이벤트 중복 제거, 일별 그룹화, 모델별 요율 확인, `CodexLogUsageScanner.cost(rates:event:fastTier:)`로 가격 계산.
 
-Can build per-day-per-model aggregates with existing data:
+기존 데이터로 일별·모델별 집계 생성 가능 여부:
 
-- Yes.
-  `Event` has enough data to group by `(day, model)` and compute tokens/cost.
-- The fast/priority service tier is account-wide for the scan, read from `config.toml`; the per-model aggregate must use the same `fastTier` flag and the same `cost(rates:event:fastTier:)` helper so totals match the existing spend tiles.
-- The `reasoning` field is included in `total`, but current cost math charges `output` only.
-  The report UI should be careful about token labels: either show total tokens to match the tile, or show an expanded input/cached/output/reasoning breakdown only if the cost rules are clear.
+- 가능.
+  `Event`에 `(day, model)` 그룹화와 토큰·비용 계산에 충분한 데이터 존재.
+- fast/priority 서비스 티어는 `config.toml`에서 읽는 스캔 전체의 계정 단위 설정이므로, 기존 지출 타일과 합계를 맞추려면 모델별 집계에도 동일한 `fastTier` 플래그와 `cost(rates:event:fastTier:)` 도우미 사용 필요.
+- `reasoning` 필드는 `total`에 포함되지만 현재 비용 계산에서는 `output`만 과금.
+  리포트 UI의 토큰 라벨에 주의 필요: 타일과 맞도록 총 토큰을 표시하거나 비용 규칙이 명확할 때만 input/cached/output/reasoning 상세 표시.
 
-Verdict: feasible with scanner aggregation changes only; no new API needed.
+결론: 스캐너 집계 변경만으로 실현 가능하며 새 API 불필요.
 
-### Grok: medium feasibility
+### Grok: 중간 실현 가능성
 
-Spend source today:
+현재 지출 소스:
 
-- `GrokProvider.probe(state:accessToken:)` calls `GrokLogUsageScanner.scan(daysBack:now:pricing:)`.
-- The scanner reads one append-only log: `$GROK_HOME/logs/unified.jsonl` or `~/.grok/logs/unified.jsonl`.
-- It returns `DailyUsageSeries?` directly, then `GrokProvider` calls `SpendTileMapper.appendTokenUsage(tokenUsage, ...)` and `appendUsageTrend(...)`.
+- `GrokProvider.probe(state:accessToken:)`에서 `GrokLogUsageScanner.scan(daysBack:now:pricing:)` 호출.
+- 스캐너에서 추가 전용 로그 `$GROK_HOME/logs/unified.jsonl` 또는 `~/.grok/logs/unified.jsonl` 하나 읽기.
+- `DailyUsageSeries?`를 직접 반환한 뒤 `GrokProvider`에서 `SpendTileMapper.appendTokenUsage(tokenUsage, ...)`와 `appendUsageTrend(...)` 호출.
 
-Per-model data available before collapse:
+축소 전 사용 가능한 모델별 데이터:
 
-- `GrokLogUsageScanner.parse(_:since:pricing:)` tracks `modelByPID: [Int: String]`.
-- Model-change events come from messages such as:
+- `GrokLogUsageScanner.parse(_:since:pricing:)`에서 `modelByPID: [Int: String]` 추적.
+- 다음과 같은 메시지에서 모델 변경 이벤트 수집:
   - `model changed`
   - `model catalog: notifying clients`
   - `backend_search: model switch`
   - `subagent model resolved`
-- Token rows are `shell.turn.inference_done` lines.
-  They include prompt/completion/reasoning/cache token counts but do not directly include the model id.
-- The scanner attributes a token row to the current model for that process id, then prices it through `ModelPricing.estimatedCostDollars(...)`.
+- 토큰 행은 `shell.turn.inference_done` 라인.
+  prompt/completion/reasoning/cache 토큰 수를 포함하지만 모델 id는 직접 포함하지 않음.
+- 스캐너에서 토큰 행을 해당 프로세스 id의 현재 모델에 귀속한 뒤 `ModelPricing.estimatedCostDollars(...)`로 가격 계산.
 
-Can build per-day-per-model aggregates with existing data:
+기존 데이터로 일별·모델별 집계 생성 가능 여부:
 
-- Mostly yes, but weaker than the other providers.
-- The current parser has the inferred model at the exact point it computes cost, so it can group by `(day, model)` before returning.
-- It currently returns only `DailyUsageSeries`, not `LogUsageScan`, and it does not track `unknownModelsByDay`.
-  Unknown or unattributed Grok rows contribute tokens but leave cost unpriced without naming the missing model in the UI.
-- If a token row has no prior model event for its `pid`, the existing daily total still counts tokens but does not price the row.
-  A model panel needs a clear `Unattributed` bucket or a note explaining that some tokens could not be tied to a model.
+- 대부분 가능하지만 다른 프로바이더보다 제약이 큼.
+- 현재 파서는 비용 계산 시점에 추론된 모델을 보유하므로 반환 전에 `(day, model)` 그룹화 가능.
+- 현재 `LogUsageScan`이 아닌 `DailyUsageSeries`만 반환하고 `unknownModelsByDay`는 미추적.
+  알 수 없거나 귀속되지 않은 Grok 행은 토큰에 포함되지만 가격은 미산정 상태이며 UI에 누락 모델 이름도 표시되지 않음.
+- 토큰 행보다 앞선 해당 `pid`의 모델 이벤트가 없으면 기존 일별 합계에 토큰은 포함되지만 가격은 계산되지 않음.
+  모델 패널에 명확한 `Unattributed` 버킷을 두거나 일부 토큰을 모델에 연결하지 못했다는 설명 필요.
 
-Verdict: feasible for rows with inferred model ids, but the first implementation should explicitly handle unattributed rows and add unknown-model tracking if Grok is included.
+결론: 추론된 모델 id가 있는 행은 실현 가능하지만, Grok을 포함하는 첫 구현에서 귀속되지 않은 행을 명시적으로 처리하고 알 수 없는 모델 추적 추가 필요.
 
-## Rendering path for spend rows
+## 지출 행 렌더링 경로
 
-Metric identity:
+지표 식별:
 
-- `WidgetDescriptor.spendTiles(provider:)` in `Sources/OpenUsage/Models/WidgetDescriptor+Factories.swift` declares the three spend descriptors:
+- `Sources/OpenUsage/Models/WidgetDescriptor+Factories.swift`의 `WidgetDescriptor.spendTiles(provider:)`에서 지출 디스크립터 세 개 선언:
   - `<provider>.today`
   - `<provider>.yesterday`
   - `<provider>.last30`
-- Each descriptor is a `.combined(...)` row with `isUsagePeriod: true`.
-- The descriptor `metricLabel` is the title: `Today`, `Yesterday`, or `Last 30 Days`.
+- 각 디스크립터는 `isUsagePeriod: true`인 `.combined(...)` 행.
+- 디스크립터 `metricLabel`이 제목: `Today`, `Yesterday`, `Last 30 Days` 중 하나.
 
-Layout defaults:
+레이아웃 기본값:
 
-- `DefaultLayout.metricIDs` enables spend rows for Claude, Codex, Cursor, and Grok.
-- `DefaultLayout.expandedMetricIDs` places those spend rows below the provider caret by default.
-- `DefaultLayout.pinnedMetricIDs` does not pin these rows by default.
+- `DefaultLayout.metricIDs`에서 Claude, Codex, Cursor, Grok의 지출 행 활성화.
+- `DefaultLayout.expandedMetricIDs`에서 해당 지출 행을 기본적으로 프로바이더 캐럿 아래 배치.
+- `DefaultLayout.pinnedMetricIDs`에서 해당 행을 기본적으로 고정하지 않음.
 
-Snapshot to view:
+스냅샷에서 뷰까지:
 
-- Provider refreshes produce `ProviderSnapshot.lines: [MetricLine]`.
-- `WidgetDataStore.data(for:)` resolves a `WidgetDescriptor` by looking up `snapshot.line(label: descriptor.metricLabel)`.
-- For `.values` rows, `WidgetDataStore.resolve` copies raw `values`, `expiriesAt`, and `unknownModels` into `WidgetData`, then stamps:
-  - global meter style
-  - reset display mode
+- 프로바이더 새로 고침 결과로 `ProviderSnapshot.lines: [MetricLine]` 생성.
+- `WidgetDataStore.data(for:)`에서 `snapshot.line(label: descriptor.metricLabel)`을 조회해 `WidgetDescriptor` 해석.
+- `.values` 행의 경우 `WidgetDataStore.resolve`에서 원시 `values`, `expiriesAt`, `unknownModels`를 `WidgetData`에 복사한 뒤 다음 값 설정:
+  - 전역 미터 스타일
+  - 재설정 표시 모드
   - `alwaysShowPacing`
-- `WidgetGroupedListView` resolves each row and renders `WidgetRowView(data: ...)`.
+- `WidgetGroupedListView`에서 각 행을 해석하고 `WidgetRowView(data: ...)` 렌더링.
 
-Current row structure:
+현재 행 구조:
 
-- `WidgetRowView` has three row paths:
-  - chart rows: `UsageSparkline(data:)`
-  - bounded meter rows
-  - unbounded text rows
-- Spend rows are unbounded text rows.
-- `unboundedRow` renders:
-  - `labelColumn` with `data.title`
-  - optional unknown-model warning icon
-  - right-aligned `data.unboundedDetail`
-  - optional subtitle
-- Existing hover on spend rows is limited to:
-  - value text `.hoverTooltip(data.unboundedValueTooltip)`
-  - unknown-model warning icon `.hoverTooltip(data.unknownModelTooltip)`
-- Labels intentionally have no tooltip: `WidgetData.unboundedLabelTooltip` returns `nil`.
+- `WidgetRowView`의 행 경로 세 가지:
+  - 차트 행: `UsageSparkline(data:)`
+  - 상한이 있는 미터 행
+  - 상한이 없는 텍스트 행
+- 지출 행은 상한이 없는 텍스트 행.
+- `unboundedRow` 렌더링 항목:
+  - `data.title`을 포함한 `labelColumn`
+  - 선택적인 알 수 없는 모델 경고 아이콘
+  - 오른쪽 정렬 `data.unboundedDetail`
+  - 선택적 부제
+- 지출 행의 기존 호버 범위:
+  - 값 텍스트 `.hoverTooltip(data.unboundedValueTooltip)`
+  - 알 수 없는 모델 경고 아이콘 `.hoverTooltip(data.unknownModelTooltip)`
+- 라벨에는 의도적으로 툴팁 없음: `WidgetData.unboundedLabelTooltip`에서 `nil` 반환.
 
-## Existing hover and overlay patterns
+## 기존 호버와 오버레이 패턴
 
 `hoverTooltip`:
 
-- Implemented in `Sources/OpenUsage/Views/HoverTooltip.swift`.
-- It is a View modifier that shows text in a separate borderless, non-activating, click-through `NSPanel`.
-- The comments explicitly say a SwiftUI overlay inside the popover would be clipped by the popover window and scroll view, so tooltips use a separate panel.
-- The tooltip panel sits one level above `.popUpMenu`, does not become key/main, and is dismissed from `StatusItemController.hidePanel()` and `DashboardView.resetTransientState()`.
+- 구현 위치는 `Sources/OpenUsage/Views/HoverTooltip.swift`.
+- 별도의 테두리 없는 비활성 클릭 통과 `NSPanel`에 텍스트를 표시하는 View 수정자.
+- 주석에 따르면 팝오버 내부 SwiftUI 오버레이는 팝오버 윈도우와 스크롤 뷰에서 잘리므로 툴팁은 별도 패널 사용.
+- 툴팁 패널은 `.popUpMenu`보다 한 단계 위에 위치하고 key/main 상태가 되지 않으며, `StatusItemController.hidePanel()`과 `DashboardView.resetTransientState()`에서 닫힘.
 
-Usage trend hover:
+사용량 추세 호버:
 
-- `UsageSparkline` in `Sources/OpenUsage/Views/UsageSparkline.swift` attaches hover only to the bar strip, not the whole row title.
-- It uses `TrendHoverState` from `Sources/OpenUsage/Views/UsageTrendDetail.swift`:
-  - 400ms reveal dwell
-  - 180ms hide grace while moving from inline row to detail popover
-  - dismissal on teardown
-- It presents `UsageTrendDetail` through SwiftUI `.popover(isPresented:arrowEdge:)`.
-- `UsageTrendDetail` has its own internal bar hover state for highlighting the hovered day.
-- Tests in `Tests/OpenUsageTests/UsageTrendTests.swift` cover the open/close/quick-pass behavior.
+- `Sources/OpenUsage/Views/UsageSparkline.swift`의 `UsageSparkline`은 전체 행 제목이 아닌 막대 영역에만 호버 연결.
+- `Sources/OpenUsage/Views/UsageTrendDetail.swift`의 `TrendHoverState` 사용:
+  - 400ms 머문 뒤 표시
+  - 인라인 행에서 상세 팝오버로 이동하는 동안 180ms 숨김 유예
+  - 뷰 해체 시 닫기
+- SwiftUI `.popover(isPresented:arrowEdge:)`로 `UsageTrendDetail` 표시.
+- `UsageTrendDetail`에 호버한 날짜를 강조하는 자체 내부 막대 호버 상태 존재.
+- `Tests/OpenUsageTests/UsageTrendTests.swift`의 테스트에서 열기·닫기·빠른 통과 동작 검증.
 
-Popover constraints:
+팝오버 제약:
 
-- The app no longer relies on a stock `NSPopover`; `StatusItemController` owns a borderless non-activating `MenuBarPanel` (`NSPanel`) at `.popUpMenu` level.
-- The panel is fixed width (`320`) and dynamic height.
-  `DashboardView` measures content height and forwards it through `PanelHeightModifier` / `PanelHeightBridge`.
-- `StatusItemController` opens the panel at a persisted/clamped height and applies SwiftUI-driven height morphs as content changes.
-- A hover detail panel must not accidentally change the dashboard's measured content height unless that is intended.
-  A SwiftUI `.popover` like the trend detail should not contribute to the main panel's content height, which is desirable here.
-- A pure in-window overlay risks clipping in the scroll view and root panel, as documented in `HoverTooltip.swift`.
+- 앱은 더 이상 기본 `NSPopover`에 의존하지 않으며, `StatusItemController`가 `.popUpMenu` 레벨의 테두리 없는 비활성 `MenuBarPanel`(`NSPanel`) 소유.
+- 패널 너비는 고정(`320`), 높이는 동적.
+  `DashboardView`에서 콘텐츠 높이를 측정해 `PanelHeightModifier` / `PanelHeightBridge`로 전달.
+- `StatusItemController`에서 저장된 높이를 허용 범위로 제한해 패널을 열고 콘텐츠 변화에 따라 SwiftUI 주도 높이 전환 적용.
+- 의도한 경우가 아니라면 호버 상세 패널이 대시보드의 측정 콘텐츠 높이를 바꾸지 않도록 주의.
+  추세 상세 같은 SwiftUI `.popover`는 메인 패널 콘텐츠 높이에 포함되지 않으며, 여기서는 바람직한 동작.
+- 순수한 윈도우 내부 오버레이는 `HoverTooltip.swift`에 문서화된 대로 스크롤 뷰와 루트 패널에서 잘릴 위험 존재.
 
-UI recommendation:
+UI 권장 사항:
 
-- Reuse the `UsageSparkline` / `TrendHoverState` pattern for the Models panel instead of `hoverTooltip`.
-- Use `hoverTooltip` only for short text notes; the model breakdown is structured content and may need interaction/hover inside the panel, so it fits a SwiftUI `.popover` better.
-- Hook the trigger at `WidgetRowView` for `data.isUsagePeriod && data.modelBreakdown != nil`, not in `WidgetGroupedListView`, because `WidgetRowView` owns the row layout and already handles chart-vs-bounded-vs-unbounded rendering.
-- Make the hover target deliberate.
-  The task says hovering the spend metric row should open the panel, but row-level hover may interfere with drag/reorder hit testing in `WidgetGroupedListView.row`.
-  A practical compromise is to attach the hover to the unbounded row content shape inside `WidgetRowView` while preserving the existing drag gesture outside; test quick passes and drag starts.
+- Models 패널에는 `hoverTooltip` 대신 `UsageSparkline` / `TrendHoverState` 패턴 재사용.
+- `hoverTooltip`은 짧은 텍스트 메모에만 사용하고, 모델 내역은 구조화된 콘텐츠이며 패널 내부의 상호작용·호버가 필요할 수 있어 SwiftUI `.popover`가 더 적합.
+- `WidgetGroupedListView`가 아닌 `WidgetRowView`에서 `data.isUsagePeriod && data.modelBreakdown != nil`에 트리거 연결: `WidgetRowView`가 행 레이아웃을 소유하고 차트·상한 있음·상한 없음 렌더링을 이미 처리하기 때문.
+- 호버 대상은 의도적으로 지정.
+  작업 설명상 지출 지표 행에 호버하면 패널이 열려야 하지만, 행 단위 호버가 `WidgetGroupedListView.row`의 드래그·재정렬 히트 테스트를 방해할 가능성 존재.
+  실용적인 절충안은 `WidgetRowView` 내부의 상한 없는 행 content shape에 호버를 연결하면서 외부의 기존 드래그 제스처를 유지하는 방식이며, 빠른 통과와 드래그 시작 테스트 필요.
 
-## Caching and refresh behavior
+## 캐싱과 새로 고침 동작
 
-Provider refresh cadence:
+프로바이더 새로 고침 주기:
 
-- `AppContainer.startPeriodicRefresh` calls `WidgetDataStore.refreshAll()` on launch and every `RefreshSetting.interval`.
-- `RefreshSetting.interval` is fixed at 5 minutes.
-- Manual refresh uses `dataStore.refreshAll(force: true)`.
-- `WidgetDataStore.refresh(providerID:force:)` honors `ProviderSnapshotCache.snapshot(providerID:)` unless forced.
-- `ProviderSnapshotCache` TTL is the same 5-minute interval.
-- Snapshots loaded from disk display immediately but are not considered fresh for gating the first post-launch refresh.
+- `AppContainer.startPeriodicRefresh`에서 실행 시점과 매 `RefreshSetting.interval`마다 `WidgetDataStore.refreshAll()` 호출.
+- `RefreshSetting.interval`은 5분으로 고정.
+- 수동 새로 고침은 `dataStore.refreshAll(force: true)` 사용.
+- `WidgetDataStore.refresh(providerID:force:)`에서 강제 실행이 아니면 `ProviderSnapshotCache.snapshot(providerID:)` 사용.
+- `ProviderSnapshotCache` TTL도 동일한 5분.
+- 디스크에서 불러온 스냅샷은 즉시 표시되지만 실행 후 첫 새로 고침 여부를 판단할 때 최신으로 간주되지 않음.
 
-Pricing refresh cadence:
+가격 새로 고침 주기:
 
-- `ModelPricingStore.current()` is synchronous from the scanner's point of view and returns loaded pricing immediately.
-- It starts a background refresh when sources are due.
-- Pricing sources are refreshed roughly daily, with failed-source retry after 30 minutes.
-- Scanners always price against the current loaded snapshot; they do not block on pricing network fetches.
+- 스캐너 관점에서 `ModelPricingStore.current()`는 동기식이며 로드된 가격을 즉시 반환.
+- 소스 갱신 시점이면 백그라운드 새로 고침 시작.
+- 가격 소스는 약 하루마다 갱신하고 실패한 소스는 30분 후 재시도.
+- 스캐너는 항상 현재 로드된 스냅샷으로 가격을 계산하고, 가격 네트워크 가져오기를 기다리며 차단하지 않음.
 
-Provider scanner computation:
+프로바이더 스캐너 연산:
 
-- Claude and Codex scanners are actors with per-file parse caches keyed by path, size, and mtime.
-  Every refresh reuses unchanged parsed entries/events and reruns dedup + aggregation.
-- Cursor fetches the CSV on each provider refresh and parses rows in memory.
-- Grok reads and parses the single unified log on each refresh; there is no per-file parse cache today.
+- Claude와 Codex 스캐너는 경로·크기·mtime을 키로 한 파일별 파싱 캐시를 가진 actor.
+  새로 고칠 때마다 변경되지 않은 파싱 항목·이벤트를 재사용하고 중복 제거와 집계를 다시 실행.
+- Cursor는 프로바이더를 새로 고칠 때마다 CSV를 가져와 메모리에서 행 파싱.
+- Grok은 새로 고칠 때마다 단일 통합 로그를 읽고 파싱하며 현재 파일별 파싱 캐시 없음.
 
-Would a model breakdown require extra computation?
+모델 내역에 추가 연산 필요 여부:
 
-- Cursor: minimal.
-  The rows are already parsed and priced.
-  Add a second aggregation pass or extend the current pass.
-- Claude: minimal-to-moderate.
-  Deduped entries are already in memory; group them by `(day, model)` while aggregating.
-- Codex: minimal-to-moderate.
-  Deduped events are already in memory; group by `(day, model)` while aggregating and reuse the same cost function.
-- Grok: moderate.
-  The parser has the model during the line pass but currently throws it away.
-  Add grouping in the same pass; consider whether to add caching if the log grows large.
+- Cursor: 최소.
+  행은 이미 파싱 및 가격 계산 완료.
+  두 번째 집계 과정을 추가하거나 현재 과정 확장.
+- Claude: 최소에서 보통.
+  중복 제거된 항목이 이미 메모리에 있으므로 집계 중 `(day, model)`로 그룹화.
+- Codex: 최소에서 보통.
+  중복 제거된 이벤트가 이미 메모리에 있으므로 집계 중 `(day, model)`로 그룹화하고 같은 비용 함수 재사용.
+- Grok: 보통.
+  파서가 행을 순회할 때 모델을 보유하지만 현재는 폐기.
+  같은 순회에서 그룹화를 추가하고 로그가 커지면 캐싱 도입 검토.
 
-Natural data ownership:
+자연스러운 데이터 소유권:
 
-- The raw collection layer should not be the UI owner.
-  It should emit provider-neutral model aggregates alongside day totals.
-- `SpendTileMapper` is the best boundary for choosing which aggregate attaches to `Today`, `Yesterday`, and `Last 30 Days`, because it already owns period selection and unknown-model union behavior.
-- `WidgetDataStore` should remain a resolver, not recompute aggregates from labels or raw provider data.
+- 원시 수집 계층이 UI 소유자가 되어서는 안 됨.
+  일별 합계와 함께 프로바이더 중립적인 모델 집계 출력 필요.
+- `SpendTileMapper`는 기간 선택과 알 수 없는 모델 합집합 동작을 이미 소유하므로 `Today`, `Yesterday`, `Last 30 Days`에 연결할 집계를 선택하는 최적의 경계.
+- `WidgetDataStore`는 리졸버로 유지하고 라벨이나 원시 프로바이더 데이터에서 집계를 다시 계산하지 않음.
 
-## Recommended data model
+## 권장 데이터 모델
 
-Add provider-neutral internal models near `DailyUsageSeries`:
+`DailyUsageSeries` 근처에 프로바이더 중립적인 내부 모델 추가:
 
 - `ModelUsageEntry`
   - `model: String`
   - `totalTokens: Int`
   - `costUSD: Double?`
-  - optional `inputTokens`, `cacheWriteTokens`, `cacheReadTokens`, `outputTokens` if the first UI wants token-bucket detail
-  - optional `isUnpriced: Bool` or derive from `costUSD == nil`
+  - 첫 UI에 토큰 버킷 상세가 필요하면 선택적 `inputTokens`, `cacheWriteTokens`, `cacheReadTokens`, `outputTokens`
+  - 선택적 `isUnpriced: Bool`, 또는 `costUSD == nil`에서 파생
 - `DailyModelUsageEntry`
   - `date: String`
   - `models: [ModelUsageEntry]`
 - `ModelUsageSeries`
   - `daily: [DailyModelUsageEntry]`
 
-Or use a dictionary shape internally:
+또는 내부적으로 딕셔너리 형태 사용:
 
 - `[String: [String: ModelUsageAccumulator]]`
-- outer key: `yyyy-MM-dd`
-- inner key: display/canonical model name
+- 외부 키: `yyyy-MM-dd`
+- 내부 키: 표시·정규 모델 이름
 
-Then normalize to sorted arrays only at the mapper boundary.
+이후 매퍼 경계에서만 정렬된 배열로 정규화.
 
-Sorting should be deterministic:
+정렬은 결정적이어야 함:
 
-- priced spend descending
-- token count descending
-- model display name ascending
-- unpriced models should remain visible and not be folded into `Other`
+- 가격이 산정된 지출 내림차순
+- 토큰 수 내림차순
+- 모델 표시 이름 오름차순
+- 가격 미산정 모델도 계속 표시하고 `Other`에 통합하지 않음
 
-Cost rounding:
+비용 반올림:
 
-- Preserve exact summed costs internally.
-- Round to cents once per displayed model/period, matching Cursor's existing day-total strategy.
-- The period total shown in the existing spend row must still match the sum of the existing daily path, not a separately rounded model sum.
+- 내부에서는 정확한 합산 비용 유지.
+- 표시 모델·기간마다 한 번 센트 단위로 반올림해 Cursor의 기존 일별 합계 전략과 일치.
+- 기존 지출 행에 표시하는 기간 합계는 별도로 반올림한 모델 합계가 아닌 기존 일별 경로의 합계와 계속 일치 필요.
 
-Unknown/unattributed rows:
+알 수 없음·귀속되지 않음 행:
 
-- Unknown priced source means "model is known but no rate exists".
-  Show the model with tokens and no dollar cost, plus warning copy.
-- Unattributed means "tokens could not be tied to a model" (mainly Grok, possibly Claude synthetic rows).
-  Use a separate `Unattributed` bucket only if needed, and explain it in the panel note.
+- 가격 미산정은 모델은 알려져 있지만 요율이 없는 상태를 의미.
+  해당 모델의 토큰은 표시하되 달러 비용은 표시하지 않고 경고 문구 제공.
+- 귀속되지 않음은 토큰을 모델에 연결할 수 없는 상태를 의미하며 주로 Grok, 경우에 따라 Claude 합성 행에 해당.
+  필요할 때만 별도의 `Unattributed` 버킷을 사용하고 패널 설명에 명시.
 
-## Recommended integration point
+## 권장 통합 지점
 
-Data path:
+데이터 경로:
 
-1. Extend `LogUsageScan` in `DailyUsageSeries.swift` to carry model aggregates, or introduce a sibling result type such as `SpendUsageScan`.
-2. Update:
+1. `DailyUsageSeries.swift`의 `LogUsageScan`을 확장해 모델 집계를 포함하거나 `SpendUsageScan` 같은 별도 결과 타입 도입.
+2. 다음 항목 업데이트:
    - `ClaudeLogUsageScanner.aggregate(entries:since:pricing:)`
    - `CodexLogUsageScanner.aggregate(events:since:pricing:fastTier:)`
    - `GrokLogUsageScanner.parse(_:since:pricing:)`
    - `CursorUsageMapper.appendSpendLines(rows:now:to:)`
-3. Extend `SpendTileMapper.appendTokenUsage` to accept optional model aggregates and attach the correct period breakdown:
-   - `Today`: today's model list
-   - `Yesterday`: yesterday's model list
-   - `Last 30 Days`: aggregate all days in the fetched/scanned window
-4. Add a structured field to `.values` lines, for example `modelBreakdown: ModelUsageBreakdown?`.
-5. Thread that field through:
-   - `MetricLine` Codable encode/decode
+3. `SpendTileMapper.appendTokenUsage`를 확장해 선택적 모델 집계를 받고 적절한 기간별 내역 첨부:
+   - `Today`: 오늘 모델 목록
+   - `Yesterday`: 어제 모델 목록
+   - `Last 30 Days`: 가져오거나 스캔한 기간의 모든 날짜 집계
+4. `.values` 행에 구조화된 필드 추가(예: `modelBreakdown: ModelUsageBreakdown?`).
+5. 해당 필드를 다음 경로로 전달:
+   - `MetricLine` Codable 인코딩·디코딩
    - `WidgetData`
    - `WidgetDataStore.resolve(_:)`
-   - `ProviderSnapshotCache` storage key bump
-6. Decide local API behavior in `LocalUsageAPI.WireLine`.
-   - If model details are UI-only, omit them from the public wire shape deliberately and document that.
-   - If exposed, add an explicit documented field to `docs/local-http-api.md` rather than relying on internal `MetricLine` Codable.
+   - `ProviderSnapshotCache` 저장소 키 버전 증가
+6. `LocalUsageAPI.WireLine`의 로컬 API 동작 결정.
+   - 모델 상세가 UI 전용이면 공개 와이어 형태에서 의도적으로 제외하고 이를 문서화.
+   - 외부에 노출한다면 내부 `MetricLine` Codable에 의존하지 않고 `docs/local-http-api.md`에 명시적인 필드 문서화.
 
-UI path:
+UI 경로:
 
-1. Add a `ModelUsageDetail` SwiftUI view modeled after `UsageTrendDetail`.
-2. Add a hover coordinator modeled after `TrendHoverState` or generalize `TrendHoverState` into a reusable delayed-hover-popover state.
-3. In `WidgetRowView.unboundedRow`, when `data.isUsagePeriod && data.modelBreakdown != nil`, attach a `.popover` with the coordinator.
-4. Keep existing `hoverTooltip` behavior for exact figures and unknown-model icons.
-   Do not add extra `hoverTooltip` affordances inside the model panel unless explicitly requested.
-5. Keep the panel small enough for the 320pt host width.
-   A width around the trend detail's 240pt is plausible; if a chart is included, cap height and use internal scrolling rather than letting content force dashboard panel height.
+1. `UsageTrendDetail`을 본뜬 `ModelUsageDetail` SwiftUI 뷰 추가.
+2. `TrendHoverState`를 본뜬 호버 코디네이터 추가 또는 `TrendHoverState`를 재사용 가능한 지연 호버 팝오버 상태로 일반화.
+3. `WidgetRowView.unboundedRow`에서 `data.isUsagePeriod && data.modelBreakdown != nil`이면 코디네이터와 함께 `.popover` 연결.
+4. 정확한 수치와 알 수 없는 모델 아이콘에는 기존 `hoverTooltip` 동작 유지.
+   명시적인 요청 없이는 모델 패널 내부에 추가 `hoverTooltip` 상호작용 미추가.
+5. 패널 크기를 320pt 호스트 너비에 맞게 제한.
+   추세 상세의 240pt 정도 너비가 적절한 후보이며, 차트가 있다면 높이를 제한하고 내부 스크롤을 사용해 콘텐츠가 대시보드 패널 높이를 강제로 늘리지 않도록 처리.
 
-## Risks and constraints
+## 위험과 제약
 
-Swift 6 strict concurrency:
+Swift 6 엄격 동시성:
 
-- Provider classes are `@MainActor`, while scanners are actors or `Sendable` structs.
-  New aggregate types must be `Sendable`.
-- `MetricLine` and `ProviderSnapshot` are `Sendable` and `Codable`; any new attached payload must be both.
-- Avoid capturing non-Sendable store/view state inside scanner task groups.
-- `PanelHeightModifier` deliberately uses a nonisolated `GeometryEffect` because `Animatable` has nonisolated requirements.
-  Do not add model-hover height logic that synchronously mutates AppKit from SwiftUI layout.
+- 프로바이더 클래스는 `@MainActor`, 스캐너는 actor 또는 `Sendable` 구조체.
+  새 집계 타입은 `Sendable` 필수.
+- `MetricLine`과 `ProviderSnapshot`은 `Sendable`이자 `Codable`이므로 새 첨부 페이로드도 두 프로토콜 준수 필요.
+- 스캐너 태스크 그룹에서 Sendable이 아닌 저장소·뷰 상태 캡처 금지.
+- `PanelHeightModifier`는 `Animatable`의 nonisolated 요구 사항 때문에 의도적으로 nonisolated `GeometryEffect` 사용.
+  SwiftUI 레이아웃에서 AppKit을 동기 변경하는 모델 호버 높이 로직 추가 금지.
 
-Popover and hover behavior:
+팝오버와 호버 동작:
 
-- A large in-window overlay can be clipped by the panel or scroll view.
-  Use SwiftUI `.popover` or a separate non-activating `NSPanel` pattern.
-- `hoverTooltip`'s panel is click-through and text-only; it is not appropriate for a structured Models panel with a chart or internal hover.
-- Row-level hover must coexist with reorder drag gestures and context menus in `WidgetGroupedListView`.
-- The dashboard SwiftUI tree survives panel close; any hover coordinator must be dismissed from the same close paths as tooltips/trend popovers.
+- 큰 윈도우 내부 오버레이는 패널이나 스크롤 뷰에서 잘릴 수 있음.
+  SwiftUI `.popover` 또는 별도의 비활성 `NSPanel` 패턴 사용.
+- `hoverTooltip` 패널은 클릭 통과 및 텍스트 전용이므로 차트나 내부 호버가 있는 구조화된 Models 패널에는 부적합.
+- 행 단위 호버는 `WidgetGroupedListView`의 재정렬 드래그 제스처 및 컨텍스트 메뉴와 공존 필요.
+- 패널을 닫아도 대시보드 SwiftUI 트리는 유지되므로 모든 호버 코디네이터를 툴팁·추세 팝오버와 같은 닫기 경로에서 해제 필요.
 
-Performance:
+성능:
 
-- Cursor CSV parse cost already exists on every Cursor refresh.
-  Model grouping is cheap relative to network fetch and parse.
-- Claude/Codex per-file parse caches keep repeated refreshes cheap; model grouping reruns over cached entries/events each refresh, like current day aggregation.
-- Grok scans a single append-only file without a parse cache.
-  A model panel increases only aggregation state, not file reads, but large logs could make Grok the highest-risk provider.
+- Cursor CSV 파싱 비용은 이미 Cursor를 새로 고칠 때마다 발생.
+  모델 그룹화 비용은 네트워크 가져오기와 파싱보다 작음.
+- Claude·Codex의 파일별 파싱 캐시 덕분에 반복 새로 고침 비용이 낮고, 모델 그룹화는 현재 일별 집계처럼 새로 고칠 때마다 캐시된 항목·이벤트를 다시 순회.
+- Grok은 파싱 캐시 없이 단일 추가 전용 파일 스캔.
+  모델 패널은 파일 읽기가 아닌 집계 상태만 늘리지만, 큰 로그에서는 Grok의 위험이 가장 클 수 있음.
 
-Data quality:
+데이터 품질:
 
-- Cursor CSV spend is described in UI as "From your Cursor usage history"; internally it is locally imputed from CSV token rows and `ModelPricing`, with `estimated: false` currently suppressing the local-estimate info icon.
-  Be careful with copy: the dollars are not directly billed dollars from a `Cost` CSV column in current code.
-- Claude may carry explicit `costUSD` on some log lines; those should win over local pricing, including in model aggregates.
-- Codex model fallback (`gpt-5`) and `codex-auto-review` date mapping are approximations inherited from the scanner.
-  The panel should not imply perfect billing truth.
-- Grok model attribution depends on prior model events per process id.
-  Missing model context should be visible as unattributed usage, not silently dropped.
-- Display grouping is unresolved.
-  Current `ModelPricing` resolves slugs to rates but does not expose a user-facing family display name.
-  A first version can group by raw model/canonical slug; a polished version may need supplement metadata or a small display-name formatter.
+- Cursor CSV 지출의 UI 설명은 "From your Cursor usage history"이며, 내부에서는 CSV 토큰 행과 `ModelPricing`으로 로컬 추정하고 현재 `estimated: false`가 로컬 추정 정보 아이콘을 숨김.
+  문구 작성 시 주의 필요: 현재 코드의 달러 값은 `Cost` CSV 열에서 직접 가져온 청구 금액이 아님.
+- 일부 Claude 로그 행에 명시적 `costUSD`가 포함될 수 있으며 모델 집계에서도 로컬 가격보다 우선 사용 필요.
+- Codex 모델 대체 규칙(`gpt-5`)과 `codex-auto-review` 날짜 매핑은 스캐너에서 이어진 근사치.
+  패널에서 완벽한 청구 정확도를 암시하지 않도록 주의.
+- Grok 모델 귀속은 프로세스 id별 이전 모델 이벤트에 의존.
+  모델 컨텍스트 누락을 조용히 버리지 않고 귀속되지 않은 사용량으로 표시 필요.
+- 표시 그룹화 방식은 미정.
+  현재 `ModelPricing`은 슬러그를 요율로 해석하지만 사용자 대상 모델군 표시 이름은 노출하지 않음.
+  첫 버전은 원시 모델·정규 슬러그로 그룹화 가능하지만 완성도 높은 버전에는 보충 메타데이터나 간단한 표시 이름 포매터가 필요할 수 있음.
 
-## Final recommendation
+## 최종 권장 사항
 
-Build the data feature as an extension of the shared spend spine, not as a separate provider-specific widget.
+데이터 기능을 별도의 프로바이더별 위젯이 아닌 공유 지출 경로의 확장으로 구현.
 
-The best integration point is:
+최적의 통합 지점:
 
-- compute per-model aggregates inside each provider's existing scan/CSV aggregation function, before `DailyUsageSeries` loses the model dimension
-- pass those aggregates into `SpendTileMapper`
-- attach the period-specific breakdown to the same `MetricLine.values` rows that back `Today`, `Yesterday`, and `Last 30 Days`
-- render from `WidgetRowView` using a delayed SwiftUI hover popover patterned after `UsageSparkline` and `UsageTrendDetail`
+- 각 프로바이더의 기존 스캔·CSV 집계 함수에서 `DailyUsageSeries`가 모델 차원을 잃기 전에 모델별 집계 계산
+- 해당 집계를 `SpendTileMapper`로 전달
+- `Today`, `Yesterday`, `Last 30 Days`를 뒷받침하는 동일한 `MetricLine.values` 행에 기간별 내역 첨부
+- `UsageSparkline`과 `UsageTrendDetail` 패턴을 따른 지연 SwiftUI 호버 팝오버를 사용해 `WidgetRowView`에서 렌더링
 
-Provider rollout order should be Cursor first, then Claude and Codex, then Grok once unattributed/unknown handling is defined.
-This gives immediate value with the least risk while keeping the architecture provider-neutral from the start.
+프로바이더 출시 순서는 Cursor, Claude·Codex, 귀속되지 않음·알 수 없음 처리를 정의한 뒤 Grok 순서 권장.
+아키텍처를 처음부터 프로바이더 중립적으로 유지하면서 최소 위험으로 즉각적인 가치 제공 가능.

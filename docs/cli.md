@@ -1,65 +1,65 @@
-# Command-Line Interface
+# 명령줄 인터페이스
 
-OpenUsage ships a one-shot `openusage` command for agents and scripts.
-It prints the documented [`/v1/limits`](local-http-api.md#get-v1limits) JSON and exits; it never launches or leaves the menu-bar app running.
-The output contains stable scalar limits and balances, not UI rows, colors, subtitles, charts, or spend-history tiles.
-It uses the HTTP route's schema, but its trusted local output may keep the resolved Claude or Codex account name in `displayName`; integrations should match provider IDs instead.
-
-```sh
-openusage                 # every enabled provider, refreshing stale cache entries
-openusage codex           # one provider, refreshing when its cache is stale
-openusage codex --force   # refresh through the shared provider engine, cache, print, exit
-```
-
-The command and app import the same providers, authentication stores, pricing, refresh coordinator, and snapshot cache.
-A normal read reuses snapshots less than five minutes old and refreshes missing or stale ones.
-`--force` is the CLI equivalent of the app's manual refresh: it bypasses that freshness gate and writes successful results to the same cache.
-Credentials are used locally and never appear in the output.
-
-A provider argument names providers by plain string matching, exactly like the [local HTTP API](local-http-api.md): an exact provider ID names that provider, and a family ID (`claude`, `codex`) names every account card of that family — with one account that's exactly the one card, so existing usage keeps working unchanged as multi-account support arrives.
-One exception: inactive managed accounts' read-only snapshot cards are app-only — their credentials live in app-created Keychain items the one-shot CLI must not touch — so the CLI's family match covers only cards backed by on-disk logins, while the app's local API also serves those cards.
-The output envelope contains every matched provider; an ID that names nothing exits with an error.
-There is no aliasing or account-picking logic.
-
-## Install on `PATH`
-
-In OpenUsage, open **Settings → Command Line** and click **Install…**.
-After the standard macOS administrator prompt, `openusage` is available globally in new terminal sessions.
-The installed symlink points to the signed helper inside OpenUsage, so in-place app updates also update the command.
-
-Exit codes are `0` for success, `2` for invalid arguments or an unknown provider, and `4` when a refresh or local read fails.
-
-## Accounts
-
-Account management lives in [**Settings → Accounts**](/docs/settings.md) in the app.
-The CLI reads the same registered accounts and selected terminal account:
+OpenUsage는 에이전트와 스크립트용 1회 실행 명령 `openusage`를 제공.
+문서에 정의된 [`/v1/limits`](/docs/local-http-api.md#get-v1limits) JSON을 출력한 뒤 종료 — 메뉴 막대 앱을 실행하지도, 프로세스를 남겨 두지도 않음.
+출력에 담기는 것은 UI 행이나 색상, 부제목, 차트, 지출 내역 타일이 아니라 안정적인 스칼라 한도와 잔액.
+HTTP 라우트와 같은 스키마를 사용하지만, 신뢰된 로컬 출력의 `displayName`에는 해석된 Claude·Codex 계정명이 유지될 수 있으므로 연동은 프로바이더 ID 기준으로 매칭.
 
 ```sh
-openusage account list [claude|codex] [--json]   # registered accounts; * marks the selected one
-openusage account current [claude|codex]         # the selected account's name (scriptable)
+openusage                 # 활성화된 모든 프로바이더, 오래된 캐시 항목만 새로 고침
+openusage codex           # 프로바이더 하나, 캐시가 오래됐을 때만 새로 고침
+openusage codex --force   # 공유 프로바이더 엔진으로 새로 고침 후 캐시·출력·종료
 ```
 
-`current` without a tool prints both tools.
-With a tool, it prints the bare account name or nothing when no account is selected.
-Exit codes are `0` for success, `2` for usage errors, and `4` when the saved account registry cannot be read or validated.
-In that case, the CLI prints an error instead of an empty account list.
-The account list keeps registry order, not the custom display order saved in Settings.
+이 명령과 앱은 같은 프로바이더, 인증 스토어, 가격 정보, 새로 고침 코디네이터, 스냅샷 캐시를 가져다 씀.
+일반 조회는 5분 이내의 스냅샷을 재사용하고, 없거나 오래된 것만 새로 고침.
+`--force`는 앱의 수동 새로 고침에 해당 — 이 신선도 검사를 건너뛰고 성공한 결과를 같은 캐시에 기록.
+인증 정보는 로컬에서만 사용되며 출력에 절대 노출되지 않음.
 
-Accounts have no user-visible folders and no launch commands.
-Switching replaces the shared configuration home's authentication, so a plain `claude` or `codex` in a new terminal runs as the selected account with or without the `openusage` command installed.
+프로바이더 인자는 [로컬 HTTP API](/docs/local-http-api.md)와 똑같이 단순 문자열 일치로 해석 — 정확한 프로바이더 ID는 해당 프로바이더 하나를, 패밀리 ID(`claude`, `codex`)는 그 패밀리의 모든 계정 카드를 가리키며, 계정이 하나면 그 카드 하나가 전부이므로 멀티 계정 지원이 들어와도 기존 사용 방식은 그대로 유지.
+예외 하나: 비활성 관리형 계정의 읽기 전용 스냅샷 카드는 앱 전용 — 인증 정보가 앱이 만든 Keychain 항목에 있고 1회 실행 CLI는 이를 건드리지 않기 때문 — 따라서 CLI의 패밀리 매칭은 디스크 로그인이 있는 카드만 다루고, 앱의 로컬 API는 그 카드까지 제공.
+출력 객체에는 일치한 모든 프로바이더가 담기고, 아무것도 가리키지 않는 ID는 오류로 종료.
+별칭이나 계정 선택 로직은 없음.
 
-When Settings switches an account, it first asks for confirmation.
-On approval, OpenUsage replaces the shared configuration home's authentication and installs or updates a small `claude`/`codex` function in the detected login shell's startup file.
-Supported startup files are `~/.zshrc` and `~/.config/fish/config.fish`.
-Other login shells are not supported, and the switch stops with an error.
-The function pins the shared configuration home to `~/.claude` or `~/.codex` and launches the real `claude` or `codex` directly.
-For Claude, it strips `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, and `CLAUDE_CODE_OAUTH_SCOPES`.
-For Codex, it strips `OPENAI_API_KEY`, `CODEX_API_KEY`, and `CODEX_ACCESS_TOKEN` and keeps the file credential store.
-The function never reads the selected account itself because switching is implemented by replacing authentication in the shared home.
-Open a new terminal after the first setup, or reload the shell's startup file in an already-open terminal.
+## `PATH`에 설치
 
-The wrapper also applies to Claude's official authentication commands.
-When the selected managed Claude account signs in through `/login` in an ordinary `claude` session or through `claude auth login`, the result is written to the same shared home that OpenUsage observes.
-After verifying a usable provider identity, OpenUsage replaces the selected account's Keychain snapshot and stored provider identity automatically; **Sign In Again** and an app restart are not required.
-The account name and selection stay unchanged even when the new login belongs to a different provider identity, and OpenUsage never silently reselects another named account.
-An incomplete or unverifiable login leaves the saved snapshot unchanged.
+OpenUsage에서 **Settings → Command Line**(설정 → 명령줄)을 열고 **Install…**(설치…) 클릭.
+표준 macOS 관리자 프롬프트를 거치면 새 터미널 세션에서 `openusage`를 전역으로 사용 가능.
+설치된 심볼릭 링크는 OpenUsage 안의 서명된 헬퍼를 가리키므로, 앱을 제자리 업데이트하면 명령도 함께 갱신.
+
+종료 코드는 성공 `0`, 잘못된 인자나 알 수 없는 프로바이더 `2`, 새로 고침이나 로컬 읽기 실패 `4`.
+
+## 계정
+
+계정 관리는 앱의 [**Settings → Accounts**(설정 → 계정)](/docs/settings.md)에 있음.
+CLI는 동일한 등록 계정과 선택된 터미널 계정을 조회:
+
+```sh
+openusage account list [claude|codex] [--json]   # 등록된 계정; *는 선택된 계정 표시
+openusage account current [claude|codex]         # 선택된 계정의 이름(스크립트용)
+```
+
+도구를 생략한 `current`는 두 도구를 모두 출력.
+도구를 지정하면 계정 이름만 출력하고, 선택된 계정이 없으면 아무것도 출력하지 않음.
+종료 코드는 성공 `0`, 사용법 오류 `2`, 저장된 계정 레지스트리를 읽거나 검증할 수 없을 때 `4`.
+이때 CLI는 빈 계정 목록 대신 오류를 출력.
+계정 목록은 Settings에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
+
+계정에는 사용자에게 보이는 폴더도, 실행 명령도 없음.
+전환은 공유 설정 홈의 인증 정보를 교체하므로, `openusage` 명령 설치 여부와 무관하게 새 터미널에서 그냥 `claude`나 `codex`를 실행하면 선택된 계정으로 동작.
+
+설정에서 계정을 전환하면 먼저 확인을 요청.
+승인하면 OpenUsage가 공유 설정 홈의 인증 정보를 교체하고, 감지된 로그인 셸의 시작 파일에 작은 `claude`/`codex` 함수를 설치하거나 갱신.
+지원하는 시작 파일은 `~/.zshrc`와 `~/.config/fish/config.fish`.
+다른 로그인 셸은 지원하지 않으며, 전환은 오류로 중단.
+이 함수는 공유 설정 홈을 `~/.claude` 또는 `~/.codex`로 고정하고 실제 `claude` 또는 `codex`를 직접 실행.
+Claude에서는 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_OAUTH_REFRESH_TOKEN`, `CLAUDE_CODE_OAUTH_SCOPES`를 제거.
+Codex에서는 `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 제거하고 파일 인증 정보 저장소를 유지.
+전환 자체가 공유 홈의 인증 정보를 교체하는 방식이므로, 함수는 선택된 계정을 직접 읽지 않음.
+처음 설정한 뒤에는 새 터미널을 열거나, 이미 열린 터미널에서 셸 시작 파일을 다시 읽기.
+
+wrapper는 Claude의 공식 인증 명령에도 똑같이 적용.
+선택된 관리형 Claude 계정으로 일반 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 OpenUsage가 관찰하는 같은 공유 홈에 기록.
+사용 가능한 프로바이더 신원을 검증한 뒤 OpenUsage가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
+새 로그인이 이전과 다른 프로바이더 신원이어도 계정명과 선택 상태는 유지하며, 다른 계정명을 조용히 다시 선택하지 않음.
+완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.

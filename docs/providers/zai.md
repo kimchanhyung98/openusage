@@ -1,63 +1,63 @@
 # Z.ai
 
-Tracks [Z.ai](https://z.ai) (Zhipu AI) GLM Coding Plan usage quotas for coding subscriptions.
+코딩 구독용 [Z.ai](https://z.ai)(Zhipu AI) GLM Coding Plan 사용량 한도 추적.
 
-## What it tracks
+## 추적 항목
 
-| Metric | Meaning |
+| 지표 | 의미 |
 |---|---|
-| Session | 5-hour rolling window token usage (percentage) |
-| Weekly | 7-day rolling window token usage (percentage) |
-| Web Searches | Monthly web-search / web-reader / Zread calls (used / limit) |
+| Session | 5시간 순환 기간의 토큰 사용량(백분율) |
+| Weekly | 7일 순환 기간의 토큰 사용량(백분율) |
+| Web Searches | 월간 웹 검색 / 웹 리더 / Zread 호출 횟수(사용 / 한도) |
 
-When Z.ai reports your plan name, OpenUsage shows it beside the provider name.
+Z.ai가 요금제 이름을 반환하면 프로바이더 이름 옆에 표시.
 
-## Where credentials come from
+## 인증 정보 출처
 
-Z.ai has no companion CLI/app that OpenUsage can reuse a credential from, so you supply an API key.
-OpenUsage reads it from the first place it finds one, in this order:
+Z.ai에는 OpenUsage가 인증 정보를 재사용할 수 있는 연동 CLI나 앱이 없어 API 키를 직접 제공해야 함.
+다음 순서에서 처음 찾은 키 사용:
 
-1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}` (the file Settings writes to)
+1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}`(Settings에서 쓰는 파일)
 2. `~/.config/zai/key.json`
-3. The `ZAI_API_KEY` environment variable
-4. The `GLM_API_KEY` environment variable (the legacy Zhipu name, still accepted)
+3. `ZAI_API_KEY` 환경 변수
+4. `GLM_API_KEY` 환경 변수(레거시 Zhipu 이름도 계속 지원)
 
-You can also add and rotate the key from **Settings → API Keys** without touching a file.
-Saving or removing a key in the app starts a refresh with the effective key, waiting for any earlier request to finish and ignoring that earlier result.
-If the earlier request outlasts the waiting limit, the next scheduled refresh retries with the current key.
-If the provider is disabled, this refresh is deferred until it is enabled again.
-Previously displayed last-known values remain while the new request runs or fails; restarting the app can also restore those values before fetching with the current key.
-Either way, nothing leaves your Mac except the same API calls Z.ai's own subscription UI makes.
+파일을 직접 편집하지 않고 **Settings → API Keys**에서 키를 추가하거나 교체 가능.
+앱에서 키를 저장하거나 삭제하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
+이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.
+비활성 프로바이더는 다시 활성화될 때 조회.
+새 요청이 진행 중이거나 실패하면 이전에 표시하던 마지막 정상 값 유지; 앱 재실행 시에도 현재 키로 조회하기 전 마지막 값 복원 가능.
+어느 방법이든 Z.ai 자체 구독 UI와 동일한 API 호출 외에는 Mac 밖으로 데이터를 전송하지 않음.
 
-## Setup
+## 설정
 
-1. [Subscribe to a GLM Coding plan](https://z.ai/subscribe) and get your API key from the [Z.ai console](https://z.ai/manage-apikey/apikey-list).
-2. Add the key to OpenUsage via **Settings → API Keys**, **or** export it:
+1. [GLM Coding 요금제를 구독](https://z.ai/subscribe)하고 [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 API 키 발급.
+2. **Settings → API Keys**에서 OpenUsage에 키를 추가하거나 다음과 같이 내보내기:
 
 ```bash
 export ZAI_API_KEY="YOUR_API_KEY"
 ```
 
-3. Z.ai appears on the dashboard and (after you star a metric) the menu bar on the next refresh.
+3. 다음 새로 고침부터 대시보드에 Z.ai가 나타나며, 지표에 별표를 지정한 뒤에는 메뉴 막대에도 표시.
 
-## Under the hood
+## 내부 동작
 
-Two undocumented internal endpoints Z.ai's own subscription UI uses (stable in practice):
+Z.ai 자체 구독 UI가 사용하는 문서화되지 않은 내부 엔드포인트 두 개 사용(실제로 안정적으로 동작):
 
-- `GET https://api.z.ai/api/biz/subscription/list` — plan name (best-effort; a failure here doesn't blank the meters).
-- `GET https://api.z.ai/api/monitor/usage/quota/limit` — the quota meters.
+- `GET https://api.z.ai/api/biz/subscription/list` — 요금제 이름(가능한 범위에서 조회하며, 이 호출이 실패해도 미터는 비워지지 않음).
+- `GET https://api.z.ai/api/monitor/usage/quota/limit` — 할당량 미터.
 
-The quota response carries a `limits` array.
-Each `TOKENS_LIMIT` entry is a token window; its window length decides which meter it feeds (sub-daily → Session, multi-day → Weekly), while a `TIME_LIMIT` entry is the monthly web-search count.
-Reset times come back as epoch milliseconds.
-Missing required usage values are reported as an invalid response instead of being shown as zero.
+할당량 응답에 `limits` 배열 포함.
+각 `TOKENS_LIMIT` 항목은 토큰 사용 기간으로 길이에 따라 반영할 미터가 정해지며(하루 미만 → Session, 여러 날 → Weekly), `TIME_LIMIT` 항목은 월간 웹 검색 횟수.
+초기화 시각은 epoch 밀리초로 반환.
+필수 사용량 값이 누락되면 0으로 표시하지 않고 유효하지 않은 응답으로 보고.
 
-## Troubleshooting
+## 문제 해결
 
-- **"No Z.ai API key"** — add a key in Settings → API Keys, or export `ZAI_API_KEY`.
-- **"Z.ai API key invalid"** — the key was rejected (401/403).
-  Regenerate it in the [Z.ai console](https://z.ai/manage-apikey/apikey-list).
-- **"No active GLM Coding Plan"** (amber notice by the name) — the key is valid, but the account has no GLM Coding Plan, so there's nothing to meter.
-  Subscribe at [z.ai/subscribe](https://z.ai/subscribe); usage appears once your plan is active.
-- **Meters show "No usage data"** — you have a plan, but the quota endpoint returned no usable limits yet.
-  Check your [plan](https://z.ai/manage-apikey/coding-plan/personal/my-plan).
+- **"No Z.ai API key"** — Settings → API Keys에서 키를 추가하거나 `ZAI_API_KEY` 환경 변수 내보내기.
+- **"Z.ai API key invalid"** — 키 거부(401/403).
+  [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 다시 생성.
+- **"No active GLM Coding Plan"**(이름 옆 황색 안내) — 키는 유효하지만 계정에 GLM Coding Plan이 없어 측정할 항목이 없는 상태.
+  [z.ai/subscribe](https://z.ai/subscribe)에서 구독하면 요금제 활성화 후 사용량 표시.
+- **미터에 "No usage data" 표시** — 요금제가 있지만 할당량 엔드포인트에서 아직 사용 가능한 한도를 반환하지 않은 상태.
+  [요금제](https://z.ai/manage-apikey/coding-plan/personal/my-plan) 확인.

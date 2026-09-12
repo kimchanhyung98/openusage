@@ -1,71 +1,71 @@
-# Refreshing & Caching
+# 새로 고침 및 캐싱
 
-## When data updates
+## 데이터가 갱신되는 때
 
-- All enabled providers refresh together: once at launch, then every 5 minutes (a fixed cadence — there's no setting for it).
-  Opening the popover does not start a second automatic pass.
-  Providers fetch in parallel, so fast cards update without waiting for a slow one.
-  The batch itself still finishes only after every provider returns; notifications, history sync, and the next five-minute wait begin after that point.
-- Codex Reset Watch is the exception: while active, it checks its public forecast independently every 15 minutes and never holds the provider refresh batch.
-- Turning a provider on (yourself in Customize, or automatically by first-launch/new-provider detection) fetches it promptly instead of waiting out the interval — even when the change lands in the middle of a refresh that's already running.
-- The Dashboard and Settings footer shows `Next update in Nm`.
-  **Clicking it (or pressing ⌘R while that footer is present)** refreshes immediately, skipping the cache.
-  When Reset Watch is active, this also revalidates its forecast and community vote share alongside usage; the footer stays **Updating…** until the current refresh work finishes.
-  A deferred community vote share lookup does not keep the footer updating: manual refresh can finish while that lookup waits for its next retry.
-  Reset Watch still respects retry delays after failures or rate limits, shares any request already in flight, and keeps its separate automatic cadence.
-  A failed community vote share lookup defers only that lookup; usage and AI forecasts can still update, and community vote share updates resume on the next check after the delay.
-- The one-shot `openusage` command reuses this same persisted cache for five minutes, refreshes missing or stale entries without starting the app, and exits.
-  `openusage --force` runs the same forced provider refresh as ⌘R regardless of cache age.
-- While a provider is fetching, a small spinner appears next to its name (and one shows in the footer beside the countdown), so you can tell a refresh is in flight rather than wondering if the numbers are stale.
-- Enabled Claude, Codex, Cursor, and Copilot families also check their official public status components at launch, when enabled, every 5 minutes, and during a Dashboard manual refresh.
-  These checks run separately from usage fetching, so an unavailable status page does not become an authentication or usage error.
-  Providers without explicit status support make no status request.
-- With [iCloud Sync](icloud-sync.md) on, a refresh batch writes one machine-history file after the whole batch finishes.
-  Manual provider refreshes write after that provider finishes, and adjacent changes are debounced into one write.
+- 활성화된 모든 프로바이더가 함께 새로 고침 — 실행 시 한 번, 그다음 5분마다(고정 주기이며 설정 항목 없음).
+  팝오버를 열어도 두 번째 자동 순회가 시작되지는 않음.
+  프로바이더는 병렬로 조회하므로 빠른 카드가 느린 카드를 기다리지 않고 갱신.
+  다만 배치 자체는 모든 프로바이더가 응답한 뒤에야 끝나며, 알림·히스토리 동기화·다음 5분 대기는 그 지점 이후에 시작.
+- 예외는 Codex Reset Watch — 활성 상태에서 공개 예측을 별도 15분 주기로 조회하며 프로바이더 새로 고침 배치를 기다리게 하지 않음.
+- 프로바이더를 켜면(Customize에서 직접, 또는 첫 실행/신규 프로바이더 감지로 자동) 주기를 기다리지 않고 즉시 조회 — 이미 진행 중인 새로 고침 도중에 변경이 들어와도 마찬가지.
+- 대시보드와 설정 푸터에 `Next update in Nm`이 표시.
+  **이를 클릭하거나(푸터가 보이는 상태에서 ⌘R을 누르면)** 캐시를 건너뛰고 즉시 새로 고침.
+  Reset Watch 활성 상태에서는 예측과 커뮤니티 투표율도 사용량과 함께 재검증하며, 현재 새로 고침 작업이 끝날 때까지 푸터에 **Updating…** 표시.
+  연기된 커뮤니티 투표율 조회는 푸터의 갱신 상태를 유지하지 않음 — 해당 조회의 재시도 대기 중에도 수동 새로 고침 종료 가능.
+  Reset Watch의 실패·요청 제한 후 재시도 대기는 유지, 이미 진행 중인 요청은 공유하며 별도 자동 주기도 유지.
+  커뮤니티 투표율 조회만 실패하면 해당 조회만 연기 — 사용량·AI 예측은 갱신 가능하며 대기 시간이 지난 다음 조회에서 커뮤니티 투표율 갱신 재개.
+- 1회 실행 명령 `openusage`는 이 영속 캐시를 5분간 재사용하고, 없거나 오래된 항목만 앱을 실행하지 않은 채 새로 고친 뒤 종료.
+  `openusage --force`는 캐시 나이와 무관하게 ⌘R과 같은 강제 프로바이더 새로 고침을 실행.
+- 프로바이더를 조회하는 동안 이름 옆에 작은 스피너가 나타나고(푸터의 카운트다운 옆에도 하나), 그래서 숫자가 오래된 것인지 헷갈리지 않고 새로 고침이 진행 중임을 알 수 있음.
+- 활성화된 Claude, Codex, Cursor, Copilot 패밀리는 실행 시, 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 공식 공개 상태 컴포넌트도 확인.
+  이 확인은 사용량 조회와 분리되어 있어 상태 페이지에 접근할 수 없어도 인증 또는 사용량 오류로 취급하지 않음.
+  명시적인 상태 지원이 없는 프로바이더는 상태 요청을 보내지 않음.
+- [iCloud 동기화](/docs/icloud-sync.md)가 켜져 있으면 새로 고침 배치는 배치 전체가 끝난 뒤 기기 히스토리 파일 하나를 기록.
+  수동 프로바이더 새로 고침은 해당 프로바이더가 끝난 뒤 기록하고, 짧은 간격의 연속 변경은 한 번의 쓰기로 합침.
 
-## Caching
+## 캐싱
 
-Snapshots are cached on disk and load instantly at launch, so you see your last-known values immediately instead of placeholders — even before the first fetch finishes.
+스냅샷은 디스크에 캐시돼 실행 시 즉시 로드되므로, 첫 조회가 끝나기 전에도 플레이스홀더 대신 마지막으로 알던 값을 바로 확인 가능.
 
-Claude and Codex cache entries also remember which account produced them.
-If you swap the account signed in at the provider's default home between launches, the previous account's cached values are discarded at the next launch (the card starts empty and fills on its first fetch) instead of briefly showing the old account's limits and plan under the new login.
-If a known account becomes unidentifiable while the app is running, its previous cached values stay hidden until the same account is verified again or a new fetch succeeds.
-Other account-list changes and fresh-cache checks do not restore those hidden values.
-If the account is already unidentifiable at launch, the existing last-known-value behavior still applies.
+Claude와 Codex 캐시 항목은 어떤 계정이 만든 값인지까지 기억.
+실행 사이에 프로바이더 기본 홈에 로그인된 계정을 바꾸면, 새 로그인 아래에 이전 계정의 한도와 요금제를 잠깐 보여 주는 대신 다음 실행에서 이전 계정의 캐시 값을 폐기(카드는 비어 있는 상태로 시작해 첫 조회로 채움).
+앱 실행 중 식별되던 계정을 식별할 수 없게 되면, 같은 계정이 다시 확인되거나 새 조회가 성공할 때까지 이전 캐시 값 숨김.
+다른 계정 목록 변경이나 최신 캐시 확인으로는 숨긴 값을 복원하지 않음.
+처음 실행할 때부터 계정을 식별할 수 없는 경우에는 기존 마지막 값 표시 동작 유지.
 
-A cached value only counts as *fresh* (skip-a-refresh fresh) when it was fetched **during the current running session**.
-So a value cached in an earlier session always re-fetches on the first pass after launch — you still see it instantly, but the app never waits out the old interval before getting live numbers.
-This matters after an update: a new app version refreshes right away instead of showing the previous version's data until its interval lapses.
-Within a session, a freshly fetched value then counts as fresh for one refresh interval before the next pass re-fetches it.
+캐시된 값이 *최신*(새로 고침을 건너뛸 만큼 최신)으로 인정되는 것은 **현재 실행 중인 세션에서** 가져온 경우뿐.
+따라서 이전 세션에서 캐시된 값은 실행 후 첫 순회에서 항상 다시 조회 — 값 자체는 즉시 보이지만, 앱이 실시간 숫자를 얻기 위해 옛 주기가 끝날 때까지 기다리는 일은 없음.
+업데이트 직후에 이 점이 중요 — 새 버전이 자기 주기가 지날 때까지 이전 버전 데이터를 보여 주는 대신 곧바로 새로 고침.
+세션 안에서는 새로 가져온 값이 다음 순회가 다시 조회하기까지 한 주기 동안 최신으로 취급.
 
-Official server status has its own five-minute cache and is kept in memory only.
-Claude and Codex account cards share the result for their provider family instead of checking once per account.
-A relevant component reporting degraded performance, a partial outage, or a major/full outage produces the server skull.
-Scheduled maintenance and unknown results do not produce one.
-A failed status check cannot create a new skull, but it can retain a previously confirmed issue.
-Each refresh pass clears a result whose last successful check is at least 15 minutes old; crossing that age during a request is handled on the next pass, not by a separate timer.
-A successfully decoded maintenance-only result clears it immediately.
+공식 서버 상태는 별도의 5분 캐시를 사용하며 메모리에만 유지.
+Claude와 Codex 계정 카드는 계정마다 확인하지 않고 프로바이더 패밀리 결과 하나를 공유.
+관련 컴포넌트가 성능 저하, 부분 장애, 중대/전체 장애를 보고하면 서버 해골 표시.
+예약된 유지보수와 알 수 없는 결과에는 미표시.
+상태 확인 실패는 새 해골을 만들 수 없지만 직전에 확인된 문제 유지 가능.
+각 새로 고침 순회에서 마지막 성공 확인으로부터 15분 이상 지난 결과 제거 — 요청 도중 해당 시간이 지나면 별도 타이머가 아닌 다음 순회에서 처리.
+정상 해석된 유지보수 전용 결과는 즉시 제거.
 
-Claude, Codex, and pi spend history has a separate local-log parse cache under `~/Library/Application Support/OpenUsage/log-scan-cache/`.
-It stores parsed usage events before OpenUsage applies model-rate estimates, so pricing updates take effect without re-reading unchanged JSONL.
-On relaunch, an entry is reused only when its path, size, modification time, and parser version still match.
-Same-home cards share parsed data, and changing one source file rewrites only that file's record.
-Old files leave the cache as the history window advances, and identities unused for 35 days are removed.
-App writes are debounced until after refresh; the one-shot CLI drains pending writes before it exits.
+Claude, Codex, pi의 지출 히스토리에는 `~/Library/Application Support/OpenUsage/log-scan-cache/` 아래 별도의 로컬 로그 파싱 캐시가 존재.
+OpenUsage가 모델 요금 추정을 적용하기 전의 파싱된 사용 이벤트를 저장하므로, 가격이 갱신돼도 변경되지 않은 JSONL을 다시 읽지 않고 반영.
+재실행 시에는 경로, 크기, 수정 시각, 파서 버전이 모두 그대로일 때만 항목을 재사용.
+같은 홈을 쓰는 카드는 파싱된 데이터를 공유하고, 소스 파일 하나가 바뀌면 그 파일의 레코드만 다시 씀.
+히스토리 기간이 전진하면 오래된 파일이 캐시에서 빠지고, 35일 동안 쓰이지 않은 identity도 제거.
+앱의 쓰기는 새로 고침이 끝날 때까지 모아서 처리하고, 1회 실행 CLI는 종료 전에 대기 중인 쓰기를 모두 비움.
 
-## When a fetch fails
+## 가져오기에 실패한 경우
 
-A failed refresh **never wipes your data**: the last good values stay on screen, and a small warning triangle appears next to the provider's name — hover it for the error message (e.g. "Not logged in").
-The error clears on the next successful refresh or when you save or remove that provider's API key in the app.
+실패한 새로 고침은 **데이터를 절대 지우지 않음** — 마지막 정상 값이 화면에 남고 프로바이더 이름 옆에 작은 경고 삼각형이 표시되며, 마우스를 올리면 오류 메시지 확인 가능(예: "Not logged in"(로그인되지 않음)).
+오류 표시는 다음 새로 고침 성공 또는 앱에서 해당 프로바이더의 API 키 저장·삭제 시 제거.
 
-The last good normalized history is preserved too, so a temporary provider failure—or a successful limit refresh whose local log scan is temporarily unavailable—does not remove this Mac's previous contribution from an iCloud-combined spend total.
+마지막 정상 정규화 히스토리도 함께 보존되므로, 일시적인 프로바이더 실패 — 또는 로컬 로그 스캔을 잠시 쓸 수 없는 상태에서 성공한 한도 새로 고침 — 가 iCloud 합산 지출 총액에서 이 Mac의 기존 기여분을 지우지 않음.
 
-Rows that have never had data show "No data" rather than made-up numbers.
+한 번도 데이터가 없던 행에는 꾸며 낸 숫자 대신 "No data"(데이터 없음)를 표시.
 
-## Stale data
+## 오래된 데이터
 
-Because a failed refresh keeps the last good values on screen, those values can persist if refreshes keep failing — so a plan or limit that changed on the provider's side could otherwise keep showing the old figures indefinitely.
-To make that obvious, a small **"Outdated"** tag appears next to the provider's name once its data is more than a couple of refresh cycles old (about ten minutes); hover it for the precise age ("Last updated 3h ago").
-The tag stays short so it never crowds a long plan name.
-When you see it, the numbers below are from that earlier time, not live — usually because the provider is failing to refresh (check the warning triangle) or the Mac was asleep.
-A successful refresh clears it.
+실패한 새로 고침이 마지막 정상 값을 화면에 유지하므로, 새로 고침이 계속 실패하면 그 값이 계속 남을 수 있음 — 프로바이더 쪽에서 바뀐 요금제나 한도가 무한정 옛 숫자로 표시될 수 있다는 뜻.
+이를 분명히 드러내기 위해, 데이터가 새로 고침 주기 두어 번(약 10분)보다 오래되면 프로바이더 이름 옆에 작은 **"Outdated"**(오래됨) 태그가 나타나고, 마우스를 올리면 정확한 경과 시간을 확인 가능("Last updated 3h ago"(마지막 업데이트: 3시간 전)).
+태그는 긴 요금제 이름을 밀어내지 않도록 짧게 유지.
+이 태그가 보이면 아래 숫자는 실시간이 아니라 그 시점의 값 — 보통 프로바이더가 새로 고침에 실패하고 있거나(경고 삼각형 확인) Mac이 잠자기 상태였던 경우.
+새로 고침이 성공하면 사라짐.

@@ -1,39 +1,39 @@
 # Kimi
 
-Tracks the coding quota reported for the Kimi account already signed in through Kimi Code.
+Kimi Code에 이미 로그인된 계정의 코딩 할당량 추적.
 
-## What it tracks
+## 추적 항목
 
-| Metric | Meaning |
+| 지표 | 의미 |
 |---|---|
-| Session | Usage in the rolling 5-hour window, with its reset time |
-| Weekly | Usage in the 7-day window, with its reset time |
+| Session | 5시간 순환 기간의 사용량과 초기화 시각 |
+| Weekly | 7일 기간의 사용량과 초기화 시각 |
 
-The plan label maps Kimi's internal membership level to its official international plan names: Adagio, Moderato, Allegretto, Allegro, and Vivace.
-Unknown levels stay readable.
-OpenUsage does not track spend or show the optional booster wallet.
+요금제 레이블은 Kimi 내부 멤버십 등급에 따라 공식 글로벌 요금제명 Adagio, Moderato, Allegretto, Allegro, Vivace 중 하나를 표시.
+알 수 없는 등급도 읽기 쉬운 형태로 유지.
+지출은 추적하지 않고 선택 사항인 booster wallet도 표시하지 않음.
 
-## Where credentials come from
+## 인증 정보 출처
 
-OpenUsage checks the current Kimi Code home first:
+현재 Kimi Code 홈을 먼저 확인:
 
-- `$KIMI_CODE_HOME/credentials/kimi-code.json` when `KIMI_CODE_HOME` is set
-- `~/.kimi-code/credentials/kimi-code.json` otherwise
+- `KIMI_CODE_HOME`이 설정된 경우 `$KIMI_CODE_HOME/credentials/kimi-code.json`
+- 그 외에는 `~/.kimi-code/credentials/kimi-code.json`
 
-It then falls back to the legacy `~/.kimi/credentials/kimi-code.json` path.
-Current credentials for the default Kimi hosts can be refreshed using the same lock protocol as the CLI.
-Legacy credentials are read-only and work only while their access token remains valid.
+이후 레거시 경로인 `~/.kimi/credentials/kimi-code.json`을 대체 경로로 확인.
+기본 Kimi 호스트의 현재 인증 정보는 CLI와 동일한 잠금 프로토콜로 갱신 가능.
+레거시 인증 정보는 읽기 전용이며 액세스 토큰이 유효한 동안만 사용 가능.
 
-Custom API or OAuth hosts and scoped `kimi-code-env-*.json` credentials are not supported.
-OpenUsage will not send a custom-host token to Kimi's default service.
+사용자 지정 API 또는 OAuth 호스트와 범위가 지정된 `kimi-code-env-*.json` 인증 정보는 미지원.
+사용자 지정 호스트용 토큰을 Kimi 기본 서비스로 전송하지 않음.
 
-## Troubleshooting
+## 문제 해결
 
-- **"Not logged in to Kimi"** — run `kimi`, complete sign-in, then refresh OpenUsage.
-- **"Kimi session expired"** — sign in through `kimi` again, then refresh.
-- **"Custom Kimi API or OAuth hosts are not supported"** — use the default Kimi Code hosts for this provider.
+- **"Not logged in to Kimi"** — `kimi`를 실행해 로그인을 마친 뒤 OpenUsage 새로 고침.
+- **"Kimi session expired"** — `kimi`에서 다시 로그인한 뒤 새로 고침.
+- **"Custom Kimi API or OAuth hosts are not supported"** — 이 프로바이더에는 Kimi Code 기본 호스트 사용.
 
-## Under the hood
+## 내부 동작
 
-OpenUsage calls Kimi Code's unofficial `GET https://api.kimi.com/coding/v1/usages` endpoint.
-When a current credential needs rotation, it uses Kimi Code's OAuth endpoint and updates that credential file without discarding fields owned by the CLI.
+Kimi Code의 비공식 `GET https://api.kimi.com/coding/v1/usages` 엔드포인트 호출.
+현재 인증 정보 교체가 필요하면 Kimi Code OAuth 엔드포인트를 사용하며, CLI 소유 필드를 버리지 않고 해당 인증 정보 파일 갱신.

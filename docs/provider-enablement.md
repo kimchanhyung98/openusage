@@ -1,56 +1,56 @@
-# Which Providers Are On
+# 활성화되는 프로바이더
 
-How OpenUsage decides which providers start on, what happens when an update adds a new provider, and the one rule that governs it all: **your own toggles always win and are never overridden.**
+OpenUsage가 처음에 어떤 프로바이더를 켜는지, 업데이트로 새 프로바이더가 들어오면 어떻게 되는지, 그리고 이 모든 것을 지배하는 한 가지 규칙: **사용자가 직접 바꾼 토글은 항상 우선하며 절대 덮어쓰이지 않음.**
 
-## First install
+## 첫 설치
 
-A fresh install doesn't turn on every provider OpenUsage knows about.
-It starts with Claude and Codex, then quickly checks which providers have credentials available on your Mac — an existing local login, saved API key, or supported environment variable; nothing is sent anywhere — and switches to exactly that set.
-All providers are checked at once, so detection takes as long as the slowest single check, not the sum of them.
-If nothing is found, the Claude/Codex starter set stays.
-Providers the check turns on are fetched right away, so they appear with data instead of waiting for the next scheduled refresh.
-See [Dashboard § First launch](dashboard.md#first-launch) for how the dashboard presents this.
+새로 설치한 앱은 OpenUsage가 아는 프로바이더를 전부 켜지 않음.
+Claude와 Codex로 시작한 뒤 Mac에서 인증 정보를 확보할 수 있는 프로바이더를 빠르게 확인해(기존 로컬 로그인, 저장된 API 키, 지원되는 환경 변수 — 어디로도 전송하지 않음) 정확히 그 조합으로 전환.
+모든 프로바이더를 한꺼번에 확인하므로 감지 시간은 각 확인의 합이 아니라 가장 느린 하나만큼.
+아무것도 찾지 못하면 Claude/Codex 시작 세트를 그대로 유지.
+확인으로 켜진 프로바이더는 곧바로 데이터를 가져오므로, 다음 예약 새로 고침을 기다리지 않고 값이 채워진 상태로 등장.
+대시보드가 이를 어떻게 보여 주는지는 [대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조.
 
-## When an update adds a new provider
+## 업데이트로 새 프로바이더가 추가될 때
 
-The same detection runs for providers that arrive later.
-On the first launch after an update, OpenUsage compares the providers it now ships with the ones this install has seen before.
-For each brand-new one, it runs the same local-only credential check:
+나중에 들어온 프로바이더에도 같은 감지가 동작.
+업데이트 후 첫 실행에서 OpenUsage는 지금 앱에 포함된 프로바이더와 이 설치가 전에 본 프로바이더를 비교.
+완전히 새로운 프로바이더마다 같은 로컬 전용 인증 정보 확인을 실행:
 
-- **Credentials are available locally** → the provider turns on and appears on the dashboard.
-- **No credentials are available** → it stays off.
-  You can always turn it on later in **Customize**.
+- **로컬에서 인증 정보 확보 가능** → 프로바이더가 켜지고 대시보드에 표시.
+- **인증 정보 없음** → 꺼진 상태 유지.
+  나중에 **Customize**(사용자화)에서 언제든 켜기 가능.
 
-This check happens **once per provider**.
-After that, the provider is yours to manage: if you turn it off, no update will ever turn it back on, and installing the tool later won't flip it on behind your back either — head to Customize when you want it.
+이 확인은 **프로바이더당 한 번**만 일어남.
+그 뒤부터는 사용자가 관리하는 영역 — 한 번 끄면 어떤 업데이트도 다시 켜지 않고, 나중에 도구를 설치해도 몰래 켜지지 않으므로, 필요해지면 Customize에서 직접 켜기.
 
-## Your choices always stick
+## 선택은 항상 그대로
 
-Everything you set in Customize — providers on or off, metric layout, menu-bar stars — carries across updates untouched.
-The only thing an update may ever change is turning **on** a provider you have never seen before, and only when you actually have that tool installed.
+Customize에서 설정한 모든 것 — 프로바이더 온/오프, 지표 레이아웃, 메뉴 막대 별표 — 은 업데이트를 건너도 그대로 유지.
+업데이트가 바꿀 수 있는 것은 한 번도 본 적 없는 프로바이더를 **켜는** 것뿐이며, 그마저도 해당 도구가 실제로 설치돼 있을 때만.
 
-The one exception is deliberate: the **Reset All Customization** button at the top of the Customize provider list.
-Because you asked for a clean slate, it re-runs the same local credential detection as first launch and switches the enabled set back to exactly the providers with credentials available on your Mac (Claude/Codex if none are found) — so it can turn a provider off even if you had it on, or back on if you had turned it off.
-It also asks for confirmation first.
-See [Dashboard](dashboard.md) for the metric side of that reset.
+의도된 예외가 하나 있음 — Customize 프로바이더 목록 상단의 **Reset All Customization**(모든 사용자화 초기화) 버튼.
+사용자가 백지 상태를 요청한 것이므로 첫 실행과 같은 로컬 인증 정보 감지를 다시 실행해, Mac에서 인증 정보를 확보한 프로바이더만으로 활성 세트를 되돌림(아무것도 없으면 Claude/Codex) — 그래서 켜 두었던 프로바이더가 꺼질 수도, 꺼 두었던 프로바이더가 다시 켜질 수도 있음.
+실행 전에 확인도 요청.
+이 초기화의 지표 쪽 동작은 [대시보드](/docs/dashboard.md) 참조.
 
-## Status checks follow enablement
+## 상태 확인과 활성화
 
-Only enabled providers take part in official server-status checks.
-Claude, Codex, Cursor, and Copilot currently have explicit status sources; an enabled provider without one makes no status request.
-Claude and Codex account cards share one status result for their provider family rather than sending one request per account.
-These public checks are separate from local credential detection, use no authentication, and send none of the credentials that enabled the provider.
+공식 서버 상태 확인에는 활성화된 프로바이더만 참여.
+현재 Claude, Codex, Cursor, Copilot에 명시적인 상태 소스가 있으며, 상태 소스가 없는 활성 프로바이더는 상태 요청을 보내지 않음.
+Claude와 Codex 계정 카드는 계정별로 요청하지 않고 프로바이더 패밀리의 상태 결과 하나를 공유.
+이 공개 확인은 로컬 인증 정보 감지와 분리되어 있고 인증을 사용하지 않으며, 프로바이더를 활성화한 인증 정보를 전송하지 않음.
 
-## How it works (for the curious)
+## 동작 방식(궁금한 분을 위해)
 
-The app persists three small lists in its settings:
+앱은 설정에 작은 목록 세 개를 보관:
 
-- **Enabled providers** — the providers currently on.
-  This is the source of truth the dashboard and menu bar read.
-- **Known providers** — every provider this install has ever seen.
-  This is what makes "new in this update" distinguishable from "you turned it off": a provider missing from the enabled list but present in the known list is a deliberate choice, and is left alone.
-  Only providers missing from *both* get the credential check, and each is marked known immediately so the check never repeats.
-- Each provider implements a cheap, local-only credential probe (`hasLocalCredentials()`) — the same files, keychain entries, saved keys, and environment variables its normal refresh reads, never the network.
+- **활성화된 프로바이더** — 현재 켜져 있는 프로바이더.
+  대시보드와 메뉴 막대가 읽는 기준.
+- **알려진 프로바이더** — 이 설치가 지금까지 본 모든 프로바이더.
+  덕분에 "이번 업데이트의 신규"와 "사용자가 끈 것"을 구분 가능 — 활성 목록에는 없지만 알려진 목록에 있는 프로바이더는 의도적인 선택이므로 건드리지 않음.
+  *둘 다*에 없는 프로바이더만 인증 정보 확인을 받고, 확인과 동시에 알려진 것으로 표시되므로 확인이 반복되지 않음.
+- 각 프로바이더는 가볍고 로컬 전용인 인증 정보 프로브(`hasLocalCredentials()`)를 구현 — 일반 새로 고침이 읽는 것과 같은 파일, 키체인 항목, 저장된 키, 환경 변수만 보고 네트워크는 쓰지 않음.
 
-Older installs (from before first-run detection existed) started with every provider on and stored only the ones turned *off*.
-A one-time settings migration converts them to the lists above with the exact same providers on and off as before — nothing visibly changes on the launch that migrates; those installs simply join the same new-provider detection from then on.
+(첫 실행 감지가 생기기 전의) 오래된 설치는 모든 프로바이더가 켜진 상태로 시작하고 *꺼진* 것만 저장했음.
+일회성 설정 마이그레이션이 이를 위 목록들로 변환하며 켜짐/꺼짐 프로바이더는 이전과 완전히 동일 — 마이그레이션이 일어나는 실행에서 눈에 보이는 변화는 없고, 그 설치들도 그때부터 같은 신규 프로바이더 감지에 합류.

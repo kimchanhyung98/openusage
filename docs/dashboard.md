@@ -1,258 +1,258 @@
-# Dashboard
+# 대시보드
 
-The popover that opens from the menu bar icon.
-Providers are sections; each section shows the metrics you've enabled.
+메뉴 막대 아이콘에서 열리는 팝오버.
+프로바이더별 섹션으로 구성되며, 각 섹션에 활성화한 지표 표시.
 
-## First launch
+## 첫 실행
 
-A fresh install doesn't turn on every provider OpenUsage knows about.
-It starts with Claude and Codex, then quickly checks which providers have credentials available on your Mac (existing local logins, saved API keys, or supported environment variables — nothing is sent anywhere) and switches to exactly that set.
-If nothing is found, the Claude/Codex starter set stays.
-A one-time card at the top of the dashboard explains this and points to **Customize**, where you can turn any provider on or off; the card stays until you close it with its ✕ button.
+새로 설치해도 OpenUsage가 아는 모든 프로바이더가 켜지지는 않음.
+Claude와 Codex로 시작한 뒤 Mac에 인증 정보가 있는 프로바이더(기존 로컬 로그인, 저장된 API 키, 지원하는 환경 변수 — 어디에도 전송하지 않음)를 빠르게 찾아 해당 조합만 활성화.
+아무것도 찾지 못하면 Claude/Codex 시작 세트 유지.
+대시보드 상단의 일회성 카드가 이 동작을 설명하고 **Customize**로 안내 — 여기서 모든 프로바이더를 켜고 끌 수 있으며, 카드는 ✕ 버튼으로 닫을 때까지 유지.
 
-This full detection only happens on a brand-new install.
-Updates never change the providers you already have on or off — but when an update ships a provider you've never seen, the same local check runs once for just that provider and turns it on only if you actually have the tool.
-See [Which Providers Are On](provider-enablement.md) for the full lifecycle.
+전체 감지는 완전히 새로 설치한 경우에만 실행.
+업데이트는 이미 켜거나 꺼 둔 프로바이더를 절대 바꾸지 않음 — 다만 업데이트로 처음 보는 프로바이더가 들어오면 그 프로바이더에만 같은 로컬 점검을 한 번 실행하고, 실제로 그 도구가 있을 때만 켬.
+전체 동작 흐름은 [활성화되는 프로바이더](/docs/provider-enablement.md) 참조.
 
-Each provider card leads with its **Always Visible** metrics.
-Any metrics you've moved below the **On Demand** line are tucked away behind the in-card caret — click it to reveal them below the caret, click again to collapse.
-Open cards stay open across popover closes and app restarts.
-A provider with neither On Demand metrics nor quick links shows no caret.
+각 프로바이더 카드는 **Always Visible**(항상 표시) 지표를 먼저 표시.
+**On Demand**(필요 시 표시) 선 아래로 옮긴 지표는 카드 안 캐럿 뒤에 숨김 — 캐럿을 클릭하면 그 아래로 펼치고, 다시 클릭하면 접음.
+펼친 카드는 팝오버를 닫거나 앱을 재시작해도 펼친 상태 유지.
+필요 시 표시 지표도 빠른 링크도 없는 프로바이더에는 캐럿이 없음.
 
-When you expand a card, the tucked-away metrics open below the caret as a single-column list, so each detail row keeps the full card width.
+카드를 펼치면 숨겨 둔 지표가 캐럿 아래 단일 열 목록으로 열려, 각 상세 행이 카드 전체 너비 사용.
 
-A provider card can also show **quick-link buttons** pinned at the bottom of its expanded section — Status, Console, Dashboard, and the like — that open the provider's own pages in your default browser.
-They're part of the expander, so collapsing the caret hides them along with the tucked-away metrics.
-Buttons lay out up to three across, wrapping to a second row when there are more.
+프로바이더 카드는 펼친 영역 하단에 고정된 **빠른 링크 버튼**(Status, Console, Dashboard 등)도 표시 가능 — 누르면 기본 브라우저에서 해당 프로바이더 페이지 열기.
+이 버튼은 확장 영역의 일부라, 캐럿을 접으면 숨겨 둔 지표와 함께 가려짐.
+버튼은 한 줄에 최대 세 개까지 배치하고, 더 많으면 둘째 줄로 넘김.
 
-## Header status
+## 헤더 상태
 
-Transient status indicators follow the provider title: a yellow warning triangle for an authentication or usage-refresh problem, then a red skull for a problem reported on the provider's official status page.
-The warning and skull can appear together because they describe different failures.
-VoiceOver exposes the warning's detail as the Usage Issue value.
+일시 상태 표시는 프로바이더 제목 다음에 배치 — 인증 또는 사용량 새로 고침 문제의 노란 경고 삼각형, 프로바이더 공식 상태 페이지가 보고한 문제의 빨간 해골 순서.
+두 표시는 서로 다른 실패를 나타내므로 경고와 해골이 함께 나타날 수 있음.
+VoiceOver에서 Usage Issue 값으로 경고 상세 내용 제공.
 
-For enabled Claude, Codex, Cursor, and Copilot cards, OpenUsage checks the relevant components on each provider's official status page.
-A component reporting degraded performance, a partial outage, or a major/full outage shows the skull.
-Scheduled maintenance, an unrelated component problem, and providers without status support do not create a skull.
-An unavailable, malformed, or changed status feed cannot create a new skull; a previously confirmed issue remains until a refresh pass finds the last successful check at least 15 minutes old, or a successful maintenance-only result clears it.
-Server status belongs to the provider family rather than the selected account and stays in memory only.
+활성화된 Claude, Codex, Cursor, Copilot 카드에서는 OpenUsage가 각 프로바이더의 공식 상태 페이지에서 관련 컴포넌트를 확인.
+컴포넌트가 성능 저하, 부분 장애, 중대/전체 장애를 보고하면 해골 표시.
+예약된 유지보수, 관련 없는 컴포넌트 문제, 상태 확인을 지원하지 않는 프로바이더는 해골을 만들지 않음.
+상태 피드 접근 실패·잘못된 응답·스키마 변경은 새 해골을 만들 수 없지만, 직전에 확인된 문제는 새로 고침 순회에서 마지막 성공 확인 후 15분 이상 경과를 확인하거나 정상 해석된 유지보수 전용 결과를 받을 때까지 유지.
+서버 상태는 선택 계정이 아닌 프로바이더 패밀리 단위이며 메모리에만 유지.
 
-## Total Spend
+## 총 지출
 
-When any enabled provider tracks daily spend (Claude, Codex, Cursor, Grok, or OpenCode), a card sits above the provider sections.
-The title is a pull-down menu for **Cost**, **Cost/MTok**, or **Tokens** (Cost is the default; the choice sticks across restarts).
-A capsule switcher flips the period between **Today**, **Yesterday**, and **30 Days**.
-The ring, center total, and ranked legend follow the selected metric:
+활성화된 프로바이더 중 하나라도 일일 지출을 추적하면(Claude, Codex, Cursor, Grok, OpenCode) 프로바이더 섹션 위에 카드 표시.
+제목이 **Cost**(비용), **Cost/MTok**, **Tokens**(토큰)를 고르는 풀다운 메뉴(기본값은 Cost, 선택은 재시작 후에도 유지).
+캡슐형 전환 버튼으로 기간을 **Today**(오늘), **Yesterday**(어제), **30 Days**(30일) 사이에서 전환.
+링, 중앙 합계, 순위 범례 모두 선택한 지표를 따름:
 
-- **Cost** — each segment is that provider's share of combined dollars (biggest spender first).
-- **Cost/MTok** — each segment is sized by that provider's dollars-per-million-tokens rate; the center is the blended rate across providers that have both spend and tokens; the legend lists each provider's own rate.
-- **Tokens** — each segment is that provider's share of combined tokens.
+- **Cost** — 각 세그먼트는 해당 프로바이더가 합산 달러에서 차지하는 비중(지출이 가장 큰 프로바이더부터).
+- **Cost/MTok** — 각 세그먼트 크기는 해당 프로바이더의 백만 토큰당 달러 요율에 비례하며, 중앙은 지출과 토큰이 모두 있는 프로바이더들의 혼합 요율, 범례는 프로바이더별 자체 요율.
+- **Tokens** — 각 세그먼트는 해당 프로바이더가 합산 토큰에서 차지하는 비중.
 
-The ring center is always two short lines — a compact number on top and a quiet unit underneath (`$533` / `dollars`, `12.4` / `million`, or `$1.37` / `MTok`) — so Cost/MTok and big totals stay readable in the hole.
-Cost modes keep the `$` on the number.
-Hover the center for the exact one-line figure (and a note when any contributor's dollars are a local estimate — Cost and Cost/MTok only).
-Each provider keeps a fixed color drawn from its brand (Claude's terracotta, OpenAI's green, and so on), and even a tiny share keeps a visible sliver of the ring.
-Providers with nothing for the selected metric simply don't appear — they're never counted as zero.
-(An enabled provider counts even if you've hidden its own spend rows in Customize; other dollar rows, like OpenRouter's API spend, never mix in.)
-The header's share icon (or right-clicking the card) copies a branded PNG of the ring to your clipboard, just like sharing a provider card.
-The header also carries a small ⓘ naming the providers that feed the total.
-A period with nothing to show for the active metric shows a quiet empty state instead of hiding the card.
-Don't want the card at all?
-Turn it off with **Show Total Spend** at the top of [Settings](settings.md).
+링 중앙은 항상 짧은 두 줄 — 위에 간결한 숫자, 아래에 작은 단위(`$533` / `dollars`, `12.4` / `million`, `$1.37` / `MTok`) — 덕분에 Cost/MTok와 큰 합계도 링 안쪽에서 읽기 쉬움.
+Cost 모드는 숫자에 `$` 유지.
+중앙에 마우스를 올리면 정확한 수치를 한 줄로 확인 — 합계에 포함된 프로바이더의 달러 값이 로컬 추정치인 경우 Cost와 Cost/MTok에서만 안내 추가.
+프로바이더마다 브랜드에서 가져온 고정 색을 유지하고(Claude의 테라코타, OpenAI의 초록 등), 비중이 아주 작아도 링에 보이는 조각은 남김.
+선택한 지표에 값이 없는 프로바이더는 아예 등장하지 않음 — 0으로 계산하는 일 없음.
+(Customize에서 지출 행을 숨겨 두었어도 활성화된 프로바이더는 합계에 포함하지만, OpenRouter의 API 지출 같은 다른 달러 행은 절대 섞이지 않음.)
+헤더의 공유 아이콘(또는 카드 우클릭)으로 링의 브랜드 PNG를 클립보드에 복사 — 프로바이더 카드 공유와 동일.
+헤더에는 합계에 들어가는 프로바이더 이름을 알려 주는 작은 ⓘ도 있음.
+활성 지표에 보여 줄 값이 없는 기간에는 카드를 숨기지 않고 간결한 빈 상태 표시.
+카드가 아예 필요 없다면?
+[설정](/docs/settings.md) 상단의 **Show Total Spend**(총 지출 표시)로 끄기.
 
-## Rows
+## 행
 
-**Metrics with a limit** (session, weekly, credits with a cap) show a progress bar with:
+**한도가 있는 지표**(세션, 주간, 상한이 있는 크레딧)는 다음을 담은 진행 막대 표시:
 
-- A fill whose color is a verdict on the whole window, based on your current burn rate: blue while you're on course to finish with at least 10% to spare, yellow when you're projected to land inside the last 10% with a little cushion to spare, red when you're projected to run out before the reset — or to finish right at the limit with nothing to spare.
-  So a half-full bar burning too fast is already red, and a nearly-drained bar coasting to the reset stays blue.
-  Bars without a reset window (like a credit balance), and fresh windows too young to project, color by the level itself instead: yellow once 80% is used, red once 10% or less is left.
-  The colors come from the system palette, so they adapt to light/dark and accessibility settings, and they never flip with the Used/Left toggle.
-- A headline like `52% left` or `48% used`.
-  **Click it** to flip between Used and Left everywhere — hovering shows the opposite reading.
-- A reset label like `Resets in 3h 25m` or `Resets today at 6:38 PM`.
-  **Click it** to flip between countdown and exact time everywhere — hovering shows the other format.
-- A blue bar carries nothing extra by default.
-  With **Always Show Pacing** on (Settings), it also shows an even-pace tick on the bar and a quiet `~35% left at reset` note next to the metric name.
-- A yellow bar adds a `~3% spare` note right-aligned next to the metric name, plus the even-pace tick on the bar (where usage would sit if you burned evenly across the window).
-  That cushion is always at least 1%; if you're projected to finish with nothing to spare it turns red instead (so a yellow bar never reads `~0% spare`).
-- A red bar swaps the note for a red flame next to the metric name with the projected run-out time — `Limit in 3h 5m` or `Limit today at 11:49 PM`, following the same countdown/exact format as the reset label — and still shows the even-pace tick on the bar.
-  **Click the time** to flip the format everywhere, just like clicking the reset label.
-  When you're projected to finish right at the limit — no run-out before the reset, just no cushion left — the flame shows alone with no time.
-- Once the balance is spent — actually empty, or so close it rounds to `0` (like `0% left` or `$0.00`) — the bar stays red and the flame reads `Limit reached`, no matter how gentle the burn rate looked.
-  A visibly empty bar never shows a calmer color.
-- **Hover the bar**, the spare note, or the flame for the pace projection at reset — the one number not already on the row: a blue bar shows the cushion you're on course to finish with (`~35% left at reset`), a yellow bar the usage it complements the spare note with (`~92% used at reset`), a red bar how far past the limit you're projected to land (`~12% over limit at reset`, or `~100% used at reset` when you're projected to finish right at it).
-  Once spent it reads `Limit reached`.
+- 채움 색은 현재 소진 속도를 근거로 기간 전체를 판정한 결과: 최소 10%를 남기고 끝낼 궤도면 파랑, 마지막 10% 안쪽에 들어가지만 약간의 여유는 남을 전망이면 노랑, 초기화 전에 다 쓰거나 여유 없이 한도에 딱 맞춰 끝날 전망이면 빨강.
+  그래서 절반만 찬 막대도 소진이 너무 빠르면 이미 빨강, 거의 비운 막대도 초기화까지 느긋하면 파랑 유지.
+  초기화 기간이 없는 막대(크레딧 잔액 등)와 예측하기엔 너무 이른 새 기간은 대신 사용량 수준 자체로 색 결정: 80%를 쓰면 노랑, 10% 이하가 남으면 빨강.
+  색은 시스템 팔레트를 따라 라이트·다크 모드와 손쉬운 사용 설정에 적응하며, Used/Left 전환에서도 변경 없음.
+- `52% left`나 `48% used` 같은 헤드라인.
+  **클릭하면** 모든 곳에서 Used와 Left 전환 — 마우스를 올리면 반대쪽 수치 표시.
+- `Resets in 3h 25m`이나 `Resets today at 6:38 PM` 같은 리셋 라벨.
+  **클릭하면** 모든 곳에서 카운트다운과 정확한 시각 전환 — 마우스를 올리면 다른 형식 표시.
+- 파란 막대는 기본적으로 추가 표시 없음.
+  **Always Show Pacing**(사용 속도 항상 표시)을 켜면(설정) 막대의 균등 속도 눈금과 지표 이름 옆 작은 `~35% left at reset` 메모까지 표시.
+- 노란 막대는 지표 이름 옆 오른쪽에 `~3% spare` 메모를 붙이고, 막대에 균등 속도 눈금(기간 내내 균등하게 썼다면 사용량이 놓일 지점)도 표시.
+  그 여유는 항상 최소 1%이며, 여유 없이 끝날 전망이면 대신 빨강으로 전환(따라서 노란 막대가 `~0% spare`로 읽히는 일 없음).
+- 빨간 막대는 메모 대신 지표 이름 옆에 예상 소진 시각을 붙인 빨간 불꽃 표시 — `Limit in 3h 5m` 또는 `Limit today at 11:49 PM`으로, 리셋 라벨과 같은 카운트다운/정확한 시각 형식을 따르며, 막대의 균등 속도 눈금도 그대로.
+  **시각을 클릭하면** 리셋 라벨을 클릭할 때와 똑같이 모든 곳에서 형식 전환.
+  한도에 딱 맞춰 끝날 전망일 때, 즉 초기화 전에 소진되지는 않지만 여유가 남지 않을 때는 불꽃만 시각 없이 표시.
+- 잔액을 다 쓰면 — 실제로 비었거나 반올림해서 `0`이 될 만큼 가까우면(`0% left`나 `$0.00`처럼) — 소진 속도가 아무리 느려 보였든 막대는 빨강을 유지하고 불꽃은 `Limit reached`로 표시.
+  눈에 보이게 빈 막대가 더 차분한 색으로 읽히는 일 없음.
+- **막대, 여유 메모, 불꽃에 마우스를 올리면** 초기화 시점 속도 예측, 즉 행에 아직 없는 그 한 숫자 확인: 파란 막대는 끝낼 때 남을 여유(`~35% left at reset`), 노란 막대는 여유 메모를 보완하는 사용량(`~92% used at reset`), 빨간 막대는 한도를 얼마나 넘길 전망인지(`~12% over limit at reset`, 딱 맞춰 끝날 전망이면 `~100% used at reset`).
+  다 쓴 뒤에는 `Limit reached`로 표시.
 
-**Codex Reset Watch** uses the same meter shape but is a forecast, not a quota.
-It shows a chance and a fixed `By …` deadline, and does not react to Used/Left, reset-format, pacing, or quota-notification settings.
-The community vote share (the percentage of all responses that are **Yes**) is shown separately from the AI chance; missing totals or failed lookups read **Vote share unavailable** while the forecast stays available.
-The fixed deadline shares the usage reset date's `date at time` format and 12/24-hour setting.
-The meter uses neutral styling below 40%, blue from 40% through 59%, a yellow warning triangle from 60% through 69%, and a red flame from 70% upward.
-Higher bands warn you to use available tokens before a likely reset.
-Failed checks show an unavailable or cached-forecast notice instead of the deadline.
-After a successful check, no active signal, a missing chance, or an expired forecast shows **0% chance** without a deadline or community vote share; before the first check, the row shows **No data**.
-The row stops its timer after the forecast deadline until another forecast arrives.
+**Codex Reset Watch**는 같은 막대 형태를 쓰지만 할당량이 아닌 예측 지표.
+확률과 고정 `By …` 기한을 표시하며 Used/Left, 리셋 형식, 속도, 할당량 알림 설정의 영향을 받지 않음.
+커뮤니티 투표율(전체 응답 중 **Yes** 비율)은 AI 확률과 별도로 표시, 집계가 없거나 조회 실패 시 예측을 유지하면서 **Vote share unavailable** 표시.
+고정 기한은 사용량 재설정 날짜와 같은 `날짜 at 시각` 형식과 12/24시간 설정 사용.
+막대는 40% 미만에서 중립 상태, 40–59%에서 파랑, 60–69%에서 노란 경고 삼각형, 70% 이상에서 빨간 불꽃 표시.
+확률이 높을수록 예상 재설정 전에 남은 토큰을 먼저 쓰라는 경고 강화.
+조회 실패 시 기한 대신 사용 불가 또는 캐시 예측 안내 표시.
+조회 성공 후 활성 신호가 없거나 확률이 없거나 예측이 만료되면 기한·커뮤니티 투표율 없이 **0% chance** 표시, 첫 조회 전에는 **No data** 표시.
+예측 기한 이후에는 새 예측이 도착할 때까지 행 타이머 중단.
 
-**Metrics without a limit** (daily spend, balances) show as a single line like `$4.08 spent` or `1.2M tokens`.
-The Today / Yesterday / Last 30 Days rows combine cost and tokens (`$4.08 · 1.2M tokens`) and can be turned on or off in Customize.
-A day with no usage reads "No data" rather than a misleading `$0.00 · 0 tokens` — the same as when the source can't be loaded at all.
-Big numbers are abbreviated to keep rows tidy (`$2.06K`, `1.5B`) — hover the value to see the exact figures and source note, such as a local estimate.
+**한도가 없는 지표**(일일 지출, 잔액)는 `$4.08 spent`나 `1.2M tokens` 같은 한 줄로 표시.
+Today / Yesterday / Last 30 Days 행은 비용과 토큰을 함께 묶고(`$4.08 · 1.2M tokens`), Customize에서 켜고 끌 수 있음.
+사용량이 없는 날은 오해의 소지가 있는 `$0.00 · 0 tokens` 대신 "No data"로 표시 — 소스를 읽을 수 없을 때와 동일.
+큰 숫자는 행을 깔끔하게 두려고 축약(`$2.06K`, `1.5B`) — 값에 마우스를 올리면 정확한 수치와 로컬 추정치 같은 출처 안내 확인.
 
-For Claude, Codex, Cursor, Grok, and OpenCode spend rows, the value gently highlights when you point at it, signaling it's interactive; hovering it for a moment opens a small model breakdown for that period: a ranked list of models, each showing its name and spend on one line, its share percentage and tokens on the next, and a thin share bar.
-Cursor groups its per-thinking-effort export slugs (like `claude-opus-4-8-thinking-max`) under the base model.
-Long tails fold into **Other** — anything past the top named models or under 5% of the period.
-Models no pricing source can price don't appear here (or in the row's totals) at all; the row's warning triangle names them instead (see [Pricing](pricing.md)).
+Claude, Codex, Cursor, Grok, OpenCode 지출 행은 값에 포인터를 올리면 은은하게 강조되어 상호작용 가능함을 알림 — 잠시 올려 두면 해당 기간의 모델별 내역을 작은 패널로 표시하며, 모델별로 첫 줄에 이름과 지출, 다음 줄에 비중과 토큰, 그 아래에 얇은 비중 막대 표시.
+Cursor는 추론 강도별 내보내기 슬러그(예: `claude-opus-4-8-thinking-max`)를 기본 모델 아래로 묶음.
+나머지 소수 항목은 **Other**(기타)로 묶음 — 이름을 따로 표시하는 상위 모델 이후 항목 또는 해당 기간의 5% 미만인 항목.
+어떤 가격 소스로도 가격을 매길 수 없는 모델은 여기에도, 행 합계에도 아예 등장하지 않고, 대신 행의 경고 삼각형이 그 이름을 알려 줌([가격](/docs/pricing.md) 참조).
 
-**Usage Trend** (Claude, Codex, Cursor, Grok, and OpenCode) is a small bar chart of the last 30 days of token usage — one bar per day, drawn from the same source as that provider's spend rows (local logs for Claude, Codex, Grok, and OpenCode; Cursor's usage export for Cursor).
-**Hover it** for the peak day, the date range, and the source.
-It's on by default; turn it off or reorder it from Customize like any other metric.
-It can't be starred for the menu bar — the strip shows single values, not a chart.
+**Usage Trend**(사용량 추이, Claude, Codex, Cursor, Grok, OpenCode)는 최근 30일 토큰 사용량을 담은 작은 막대 차트 — 하루에 막대 하나로, 해당 프로바이더의 지출 행과 같은 소스에서 가져옴(Claude, Codex, Grok, OpenCode는 로컬 로그, Cursor는 사용량 내보내기).
+**마우스를 올리면** 최고 사용일, 날짜 범위, 소스 확인.
+기본값은 켜기이며, 다른 지표처럼 Customize에서 끄거나 순서 변경 가능.
+메뉴 막대용 별표는 불가 — 스트립은 차트가 아니라 단일 값을 보여 주기 때문.
 
-With [iCloud Sync](icloud-sync.md) on, the machine-local providers' spend rows, trends, warnings, and model breakdowns are rebuilt from all synced Macs.
-Cursor stays unchanged because its export is already account-wide.
-Quotas, plans, balances, and provider errors always describe this Mac's refresh.
+[iCloud 동기화](/docs/icloud-sync.md)를 켜면 기기 로컬 프로바이더의 지출 행, 추이, 경고, 모델별 내역을 동기화된 모든 Mac의 데이터로 재구성.
+Cursor는 내보내기가 이미 계정 전체 기준이라 그대로.
+할당량, 요금제, 잔액, 프로바이더 오류는 항상 이 Mac의 새로 고침 기준.
 
-Rows with a reset date or Reset Watch deadline re-render every 30 seconds, so countdowns, pace, and forecast expiry stay live between network refreshes.
-This UI tick makes no network request; Reset Watch checks its source on a separate 15-minute cadence.
-Manual Refresh (⌘R) also revalidates an active Reset Watch's forecast and community vote share alongside usage, while retaining retry delays after errors.
+초기화 시각이나 Reset Watch 기한이 있는 행은 30초마다 다시 렌더링되어 네트워크 새로 고침 사이에도 카운트다운·속도·예측 만료가 최신 상태 유지.
+이 UI 갱신은 네트워크 요청을 만들지 않으며, Reset Watch 소스 조회는 별도 15분 주기로 실행.
+수동 Refresh(⌘R)도 활성 Reset Watch의 예측·커뮤니티 투표율을 사용량과 함께 재검증하되 오류 후 재시도 대기는 유지.
 
-## Account cards
+## 계정 카드
 
-Choose one shared **Usage Cards** mode for all providers that support accounts in [**Settings → Accounts**](/docs/settings.md).
-The choice persists across app restarts.
+[**Settings → Accounts**(설정 → 계정)](/docs/settings.md)에서 계정 기능을 지원하는 모든 프로바이더의 공통 **Usage Cards** 모드 선택.
+선택은 앱 재시작 후에도 유지.
 
-- **Single Card**, the default, shows the selected account's usage in one card titled **Claude** or **Codex** — it does not add multiple accounts' live limits together.
-  The header's account selector appears only when at least two registered account cards are available.
-- **Separate Cards** shows a card for each available account and keeps the same provider's cards together.
-  Each card uses the fixed **{Provider}: {name}** title format, such as **Claude: Account 1** or **Codex: Account 2**, with no account selector or header dragging.
+- 기본값인 **Single Card**는 **Claude** 또는 **Codex** 제목의 카드 하나에 선택한 계정의 사용량 표시 — 여러 계정의 실시간 한도를 합산하지 않음.
+  표시 가능한 등록 계정 카드가 두 장 이상일 때만 헤더 계정 선택기 표시.
+- **Separate Cards**는 표시 가능한 계정마다 카드를 만들고 같은 프로바이더의 카드를 연속 배치.
+  각 카드의 제목은 **Claude: Account 1**, **Codex: Account 2** 같은 **{Provider}: {name}** 형식이며 계정 선택기와 헤더 드래그 동작 없음.
 
-A registered account's `{name}` is its existing **Account Name**.
-The title format is not editable; renaming the account in **Settings → Accounts → Manage…** updates the title automatically.
+등록 계정의 `{name}`은 기존 **Account Name** 사용.
+제목 형식은 수정 불가; **Settings → Accounts → Manage…**에서 계정명을 바꾸면 제목 자동 갱신.
 
-When a provider has registered accounts, the dashboard, account selector, Share Screenshot, and menu bar use only those accounts.
-An account uses its existing registered name, including when its card reads the current shared-home login (`~/.claude`, `~/.codex`).
-When account identities are refreshed, a Codex shared-home login matching another registered account uses that account's live card instead of its snapshot, keeping shared-home history available.
-This presentation mapping does not change the account selected in Settings or any saved authentication.
-Claude keeps its existing [terminal reauthentication behavior](/docs/providers/claude.md): a verified new shared-home login replaces the identity and saved authentication under the account name selected in Settings, even if another registered name has the same provider identity.
-An unregistered shared-home login does not add another card or selector entry.
-Without registered accounts for that provider, its default usage card remains available.
-A registered account without saved authentication stays in Settings but gets no selector entry or empty dashboard card until it can provide usage again.
-An account can still show a sign-in error even when a saved snapshot exists.
-A Claude login kept in some other configuration directory is not listed until you register it there.
-An inactive account's usage is read from its private Keychain authentication snapshot.
-Registered accounts are distinguished by their account names, so two of them remain separate selector entries and individual cards even when their saved authentication currently proves the same provider identity.
+프로바이더에 등록 계정이 있으면 대시보드·계정 선택기·Share Screenshot·메뉴 막대는 해당 계정만 사용.
+현재 공유 홈(`~/.claude`, `~/.codex`)의 로그인으로 조회하는 카드도 기존 등록 계정명 사용.
+계정 신원을 갱신할 때 Codex 공유 홈 로그인이 다른 등록 계정과 일치하면 해당 계정의 스냅샷 대신 실시간 카드를 사용해 공유 홈 기록 유지.
+이 표시 매핑은 Settings에서 선택한 계정과 저장된 인증 정보를 변경하지 않음.
+Claude는 기존 [터미널 재인증 동작](/docs/providers/claude.md) 유지: 검증된 새 공유 홈 로그인으로 Settings에서 선택한 계정명의 신원과 저장 인증을 교체하며, 다른 등록 계정명이 같은 프로바이더 신원을 가져도 동일 적용.
+미등록 공유 홈 로그인은 별도 카드나 선택기 항목으로 추가하지 않음.
+해당 프로바이더의 등록 계정이 없으면 기본 사용량 카드 유지.
+저장 인증이 없는 등록 계정은 Settings에 남지만 사용량을 다시 제공할 수 있을 때까지 선택기 항목이나 빈 대시보드 카드를 만들지 않음.
+저장된 스냅샷이 있어도 계정별 로그인 오류 표시 가능.
+그 밖의 설정 디렉터리에 둔 Claude 로그인은 Settings에 등록하기 전까지 표시하지 않음.
+비활성 계정의 사용량은 비공개 Keychain 인증 스냅샷에서 읽음.
+등록 계정은 사용자가 붙인 계정명으로 구분하므로, 두 계정의 저장 인증 정보가 현재 같은 프로바이더 신원을 증명해도 선택기 항목과 개별 카드로 유지.
 
-The selector is view-only and never signs anything in or out or changes which account a new terminal session uses.
-The dashboard keeps the selected registered account even when the terminal login changes.
-If an older version remembered only the shared-home card, select the registered account once again to apply this behavior.
-Terminal switching remains in Settings.
-A confirmed Settings switch moves the dashboard selection to the same account once.
-Changing display modes preserves the selected account, so returning to Single Card restores it if it is still available.
-Mode changes apply immediately to the dashboard without a network refresh.
-Adding, renaming, re-signing, or removing an account in Settings also updates the dashboard immediately.
+선택기는 보기 전용이며, 로그인이나 로그아웃을 실행하지도, 새 터미널 세션이 사용할 계정을 바꾸지도 않음.
+대시보드에서 선택한 등록 계정은 터미널 로그인 계정이 바뀌어도 유지.
+이전 버전에서 공유 홈 카드만 기억한 경우, 등록 계정을 한 번 다시 선택하면 적용.
+터미널 계정 전환은 Settings에서만 수행.
+Settings에서 전환을 확정하면 대시보드 선택을 같은 계정으로 한 번 이동.
+표시 모드를 바꿔도 선택 계정을 보존하므로 Single Card로 돌아오면 해당 계정이 여전히 표시 가능한 경우 복원.
+모드 변경은 네트워크 새로 고침 없이 대시보드에 즉시 반영.
+Settings에서 계정 추가·이름 변경·재로그인·제거 시에도 대시보드 즉시 갱신.
 
-Change provider order in **Customize** and account order within a provider by dragging accounts in **Settings → Accounts**.
-Settings, the Single Card selector, Separate Cards, and Share use the same relative order for registered accounts available on each surface.
-Accounts unavailable on the dashboard keep their Settings positions and return to those positions when available again.
-Reordering accounts preserves the selected account, active terminal login, provider order, and display mode.
+**Customize**에서 프로바이더 순서를, **Settings → Accounts**의 계정 드래그로 프로바이더 내부 계정 순서를 변경.
+Settings, Single Card 선택기, Separate Cards, Share는 각 화면에 표시 가능한 등록 계정의 상대 순서 공유.
+대시보드에 표시할 수 없는 계정도 Settings 위치를 유지하고 다시 표시 가능해지면 같은 위치로 복귀.
+계정 정렬 시 선택 계정, 활성 터미널 로그인, 프로바이더 순서, 표시 모드 유지.
 
-The card's layout — which metrics show, their order, the Always Visible / On Demand split, whether the caret is open, and the menu-bar stars — is one setting per provider that every account shares.
-Opening or closing one separate card's caret applies to every card of the same provider.
-Local spend and trend logs stay attached to their configuration home rather than being attributed to registered accounts.
-In **Single Card**, those rows can still read **No data** while the selector is showing an inactive snapshot account.
-In **Separate Cards**, **Usage Trend**, **Today**, and **Yesterday** appear only on the active account card backed by the actual shared-home login, following the existing metric settings and regardless of the dashboard selection.
-Inactive cards omit these three rows entirely instead of showing **No data**.
-Codex **Reset Watch** also appears only on the active shared-home account card in **Separate Cards**, including Share Screenshot.
-Quotas, **Rate Limit Resets**, **Last 30 Days**, and other metrics keep their existing behavior.
-This is a display-only rule; it changes neither saved metric layout nor the underlying statistics.
-If hiding these rows leaves no metrics, the inactive card is omitted from the dashboard and Share Screenshot.
-If other metrics remain but none are Always Visible, they appear above the caret so the card stays usable.
-Reordering those temporarily promoted rows preserves their saved On Demand placement, even with the card's caret open.
+카드 레이아웃 — 표시 지표, 순서, Always Visible·On Demand 구분, 캐럿 펼침 상태, 메뉴 막대 별표 — 는 프로바이더당 설정 하나이며 모든 계정이 공유.
+개별 카드 하나의 캐럿을 열거나 닫으면 같은 프로바이더의 모든 카드에 반영.
+로컬 지출·추이 로그는 등록 계정에 귀속되지 않고 해당 설정 홈에 그대로 남음.
+**Single Card**에서 선택기가 비활성 스냅샷 계정을 보여 주는 동안 이 행들은 기존처럼 **No data**로 표시될 수 있음.
+**Separate Cards**에서는 대시보드 선택과 관계없이 실제 공유 홈 로그인에 해당하는 활성 계정 카드에만 **Usage Trend**·**Today**·**Yesterday**를 기존 지표 설정에 따라 표시.
+비활성 카드에서는 **No data** 대신 이 세 행 자체를 숨김.
+Codex **Reset Watch**도 **Separate Cards**에서는 활성 공유 홈 계정 카드에만 표시하며 Share Screenshot에도 동일 적용.
+한도, **Rate Limit Resets**, **Last 30 Days** 및 다른 지표는 기존 동작 유지.
+저장된 지표 레이아웃이나 원본 통계를 바꾸지 않는 표시 전용 규칙.
+이 행들을 숨긴 뒤 지표가 하나도 남지 않으면 해당 비활성 카드를 대시보드와 Share Screenshot에서 제외.
+다른 지표가 남아 있지만 Always Visible 지표가 없으면 남은 지표를 캐럿 위에 임시 표시하여 카드 사용 가능 상태 유지.
+임시 표시된 행끼리 순서를 바꿔도 저장된 On Demand 배치는 유지되며 카드 캐럿이 열린 상태에서도 동일.
 
-## Right-click menus
+## 우클릭 메뉴
 
-Every row: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…** (Customize opens straight to that provider's metrics.)
-Provider headers: **Hide \<provider\> · Refresh \<provider\> · Customize…** plus **Share Screenshot** (see below).
-Hide turns the whole provider off, including its separate account cards, and Customize turns it back on or opens directly to its shared metrics.
-Menu actions keep the provider name, such as **Refresh Claude** or **Hide Claude**.
-Refresh targets the account card whose menu was opened, and **Share Screenshot** copies that card with its displayed title.
+모든 행: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…**(Customize는 해당 프로바이더의 지표 화면으로 바로 이동.)
+프로바이더 헤더: **Hide \<provider\> · Refresh \<provider\> · Customize…** 와 **Share Screenshot**(아래 참조).
+Hide는 분리된 계정 카드를 포함해 프로바이더 전체를 끄고, Customize는 다시 켜거나 해당 프로바이더의 공유 지표 화면으로 이동.
+메뉴 동작은 **Refresh Claude**, **Hide Claude**처럼 프로바이더 이름 유지.
+Refresh는 메뉴를 연 계정 카드를 대상으로 하고, **Share Screenshot**은 해당 카드와 표시 제목을 복사.
 
-## Share
+## 공유
 
-Copy a clean, branded PNG of one usage card to your clipboard, ready to paste into a chat, a tweet, or a doc.
-There are two ways to reach it:
+사용량 카드 하나를 깔끔한 브랜드 PNG로 클립보드에 복사해 채팅, 트윗, 문서에 바로 붙여넣기 가능.
+방법은 두 가지:
 
-- Right-click a provider header and choose **Share Screenshot**.
-- Open the footer's **Options** menu and choose **Share Screenshot** ▸ *\<card title\>*.
-  The submenu follows the dashboard's card list, order, and titles: one selected card per provider in Single Card, or each displayed account card in Separate Cards.
+- 프로바이더 헤더를 우클릭하고 **Share Screenshot** 선택.
+- 푸터의 **Options**(옵션) 메뉴에서 **Share Screenshot** ▸ *\<카드 제목\>* 선택.
+  하위 메뉴는 대시보드의 카드 목록·순서·제목을 따르며, Single Card에서는 프로바이더별 선택 카드 하나, Separate Cards에서는 표시 중인 계정 카드 각각을 나열.
 
-The image is a flexible-height PNG using the app's look — the provider's mark and displayed card title up top, that card's current metric rows, and a small OpenUsage mark centered at the bottom.
-It follows your Light/Dark appearance and keeps the visible metric values as-is (nothing is blurred).
-Transient header indicators — the warning triangle, server skull, and refresh spinner — are left out.
-Separate Cards images include the account name in the title.
+이미지는 앱 스타일을 따르는 가변 높이 PNG — 상단에 프로바이더 마크와 표시 중인 카드 제목, 중간에 해당 카드의 현재 지표 행, 하단 중앙에 작은 OpenUsage 마크 배치.
+라이트/다크 설정을 따르고 표시 중인 지표 값은 그대로 유지(흐리게 처리하는 것 없음).
+경고 삼각형, 서버 해골, 새로 고침 스피너 같은 일시 헤더 표시는 제외.
+Separate Cards 이미지에는 제목에 계정명 포함.
 
-## Footer
+## 푸터
 
-The bar pinned to the bottom of the popover.
-On the left: the app version, and a live "Next update in …" countdown you can click (or press **⌘R**) to refresh right away.
-On the right: an **Options** menu button.
-It holds everything in one place — **Customize**, **Settings**, **Share Screenshot** (submenu of displayed cards), **Check for Updates…**, **About OpenUsage**, and **Quit OpenUsage**.
+팝오버 하단에 고정된 막대.
+왼쪽에는 앱 버전과, 클릭(또는 **⌘R**)하면 즉시 새로 고쳐지는 실시간 "Next update in …" 카운트다운.
+오른쪽에는 **Options** 메뉴 버튼.
+여기에 모든 것이 모여 있음 — **Customize**, **Settings**, **Share Screenshot**(표시 중인 카드 하위 메뉴), **Check for Updates…**, **About OpenUsage**, **Quit OpenUsage**.
 
-## Customize
+## 사용자 지정(Customize)
 
-Open Customize from the footer's **Options** menu (or press **Return**).
-It's a two-level screen: a list of providers, then a provider's detail.
+Customize는 푸터의 **Options** 메뉴(또는 **Return** 키)로 열기.
+두 단계 화면 — 프로바이더 목록, 그다음 개별 프로바이더 상세.
 
-The **provider list** shows every provider with a switch to turn it on or off, a count of its metrics, and a chevron into its detail.
-Turn a provider off and it stays in the list, greyed — its metrics hide from the dashboard and menu bar but keep their setup for when you turn it back on.
-Drag enabled providers by their grip to reorder; tap a row to open its detail.
-Both display modes keep one entry per provider, and moving it moves all of that provider's account cards while preserving their account order.
-Account order is changed separately in **Settings → Accounts**.
-On a fresh install only the providers detected on your Mac start on (see "First launch" above); this list is where you add the rest.
+**프로바이더 목록**에는 모든 프로바이더가 켜기/끄기 스위치, 지표 개수, 상세로 들어가는 셰브론과 함께 표시.
+프로바이더를 끄면 목록에 회색으로 남고 — 지표는 대시보드와 메뉴 막대에서 사라지지만, 다시 켤 때를 위해 설정은 유지.
+활성화된 프로바이더는 손잡이를 드래그해 순서 변경, 행을 누르면 상세 화면 열기.
+두 표시 모드 모두 프로바이더당 항목 하나를 유지하며, 이동 시 계정 순서를 유지한 채 해당 프로바이더의 계정 카드 전체를 이동.
+계정 순서는 **Settings → Accounts**에서 별도로 변경.
+새로 설치하면 Mac에서 감지된 프로바이더만 켜진 상태로 시작하고(위 "첫 실행" 참조), 나머지는 이 목록에서 추가.
 
-A provider's **detail** has a back button and provider-specific Reset control in its top bar.
-There is one entry per provider — a Claude or Codex entry holds the layout for every account of that provider, and nothing here renames a card.
-Then come two metric sections: **Always Visible** (shown on the dashboard card) and **On Demand** (tucked behind the card's caret).
-Each metric row has a drag grip, its name, an always-visible star for the menu bar, and an on/off switch.
-Drag a metric into the other section or onto one of its rows to move it between Always Visible and On Demand.
-An empty section shows a dashed **Drag metrics here** target.
-You can star up to two metrics per provider.
-OpenRouter and Z.ai also show an **API Key** section where you can add, replace, reveal, or clear that provider's key.
+프로바이더 **상세** 상단에 뒤로 가기 버튼과 프로바이더별 Reset 컨트롤 표시.
+항목은 프로바이더당 하나 — Claude·Codex 항목 하나가 그 프로바이더의 모든 계정 레이아웃을 보유하며, 이 화면에서 카드 이름은 바꾸지 않음.
+그다음 지표 섹션 두 개 — **Always Visible**(대시보드 카드에 표시)과 **On Demand**(카드 캐럿 뒤에 숨김).
+각 지표 행에는 드래그 손잡이, 이름, 항상 보이는 메뉴 막대 별표, 켜기/끄기 스위치.
+지표를 다른 섹션이나 그 섹션의 행 위로 드래그하면 Always Visible과 On Demand 사이 이동.
+빈 섹션에는 점선의 **Drag metrics here**(지표를 여기로 드래그) 대상 표시.
+별표는 프로바이더당 최대 두 개까지.
+OpenRouter와 Z.ai에는 해당 프로바이더의 키를 추가·교체·표시·삭제하는 **API Key** 섹션도 있음.
 
-Drag-reorder also works directly on the dashboard — drag a row within its provider or across the caret boundary while the card is open; every account of the same provider shares the result.
-Single Card and ordinary single-account providers allow header dragging to reorder sections.
-Separate Cards headers cannot be dragged; change provider order in Customize and account order in Settings.
-On a Force Touch trackpad you'll feel a light tap each time the dragged item snaps into a new slot.
+드래그 순서 변경은 대시보드에서도 바로 동작 — 같은 프로바이더 안에서 행을 드래그하거나 카드가 열린 상태에서 캐럿 경계를 넘겨 이동하며, 결과는 같은 프로바이더의 모든 계정이 공유.
+Single Card와 일반 단일 계정 프로바이더에서는 헤더 드래그로 섹션 순서 변경 가능.
+Separate Cards의 헤더는 드래그 불가; 프로바이더 순서는 Customize에서, 계정 순서는 Settings에서 변경.
+Force Touch 트랙패드에서는 드래그한 항목이 새 위치에 맞춰질 때마다 가벼운 진동 제공.
 
-The default reset layout mirrors this fork's owner setup: Claude keeps Session, Weekly, and Fable always visible; Codex keeps Session and Weekly; Kimi keeps Session and Weekly.
-The Claude and Codex Usage Trend rows plus optional limits, reset details, and spend-history rows start on demand.
-Reset Watch is assigned to **On Demand** but starts off and remains available in Customize.
+기본 초기화 레이아웃은 이 포크 소유자의 설정을 반영 — Claude는 Session, Weekly, Fable을, Codex는 Session과 Weekly를, Kimi는 Session과 Weekly를 Always Visible에 배치.
+Claude와 Codex의 Usage Trend, 선택적 한도·리셋 상세·지출 기록 행은 필요 시 표시에 배치.
+Reset Watch도 **On Demand**에 배치하지만 기본값은 꺼짐이며 Customize에서 언제든 켤 수 있음.
 
-Made a change you didn't mean to?
-Press **⌘Z** to undo — it works anywhere in the popover (the dashboard and Customize alike) and steps back through your recent customization changes one at a time: hiding or showing a metric, reordering metrics or whole providers, starring or unstarring, and moving a metric across the divider all undo.
-Each step restores the exact previous arrangement.
-Undo is per-session (it starts fresh after a relaunch), and resetting clears it.
+의도하지 않은 변경을 했다면?
+**⌘Z**로 실행 취소 — 팝오버 어디서든(대시보드든 Customize든) 동작하며 최근 사용자 지정 변경을 하나씩 되돌림: 지표 숨기기·표시, 지표나 프로바이더 전체 순서 변경, 별표 지정·해제, 구분선을 넘나든 지표 이동 모두 취소 대상.
+각 단계는 직전 배치를 정확히 복원.
+실행 취소는 세션 단위이며(재실행하면 새로 시작), 리셋하면 지워짐.
 
-When OpenUsage ships a new default metric, existing layouts get it once.
-If you turn it off, it stays off.
-A provider's **Reset** button (top right of its detail) restores that provider's default metrics, order, menu-bar stars, and which metrics start on demand, but leaves other providers and the provider order untouched.
-The **Reset All Customization** button (top right of the provider list) does the same for every provider at once, restores the default provider order, and re-detects your installed tools — turning providers back on for exactly the tools set up on your Mac, just like first launch (see [Which Providers Are On](provider-enablement.md)).
-It asks for confirmation first, since it wipes the whole layout and re-detects providers, and can't be undone.
+OpenUsage가 새 기본 지표를 출시하면 기존 레이아웃에 한 번 추가.
+꺼 두면 계속 꺼진 상태.
+프로바이더의 **Reset** 버튼(상세 오른쪽 위)은 그 프로바이더의 기본 지표, 순서, 메뉴 막대 별표, 필요 시 표시로 시작할 지표를 복원하되, 다른 프로바이더와 프로바이더 순서는 건드리지 않음.
+**Reset All Customization**(모든 사용자 지정 초기화) 버튼(프로바이더 목록 오른쪽 위)은 같은 작업을 모든 프로바이더에 한 번에 적용하고, 기본 프로바이더 순서를 복원하며, 설치된 도구를 다시 감지 — 첫 실행처럼 Mac에 설정된 도구에만 정확히 프로바이더를 다시 켬([활성화되는 프로바이더](/docs/provider-enablement.md) 참조).
+전체 레이아웃을 지우고 프로바이더를 다시 감지하며 실행 취소도 불가하므로, 먼저 확인 요청.
 
-## Keyboard
+## 키보드
 
-| Key | Action |
+| 키 | 동작 |
 |---|---|
-| Return | From the dashboard, open Customize; from a provider detail, return to the provider list; from the provider list or Settings, return to the dashboard |
-| Esc | From a provider detail, return to the provider list; from the provider list or Settings, return to the dashboard; from the dashboard, close the popover |
-| ⌘Z | Undo the last customization change (app-wide; repeat to step back) |
-| ⌘R | Refresh now from the dashboard or Settings (skips the cache) |
-| ⌘, | Open / close Settings (in the popover) |
+| Return | 대시보드에서는 Customize 열기, 프로바이더 상세에서는 프로바이더 목록으로, 프로바이더 목록이나 설정에서는 대시보드로 |
+| Esc | 프로바이더 상세에서는 프로바이더 목록으로, 프로바이더 목록이나 설정에서는 대시보드로, 대시보드에서는 팝오버 닫기 |
+| ⌘Z | 마지막 사용자 지정 변경 실행 취소(앱 전체, 반복하면 계속 되돌아감) |
+| ⌘R | 대시보드나 설정에서 즉시 새로 고침(캐시 건너뜀) |
+| ⌘, | 설정 열기/닫기(팝오버 안) |
 
-A global shortcut (recorded in Settings) toggles the popover from anywhere.
+전역 단축키(설정에서 기록)로 어디서든 팝오버 토글.
 
-## Closing
+## 닫기
 
-Closing the popover resets navigation state: scroll position returns to the top and Customize / Settings close.
-Provider cards remember whether their expand caret was open.
+팝오버를 닫으면 탐색 상태 초기화 — 스크롤 위치는 맨 위로 복귀하고 Customize / Settings는 닫힘.
+프로바이더 카드는 확장 캐럿이 열려 있었는지 기억.

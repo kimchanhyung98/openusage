@@ -1,33 +1,33 @@
 # Devin
 
-Tracks your Devin quota using the login from the Devin CLI or the Devin app.
+Devin CLI 또는 Devin 앱의 로그인으로 Devin 할당량 추적.
 
-## What it tracks
+## 추적 항목
 
-| Metric | Meaning |
+| 지표 | 의미 |
 |---|---|
-| Weekly | Weekly quota used (falls back to the daily figure when Devin reports no weekly quota) |
-| Daily | Daily quota used (hidden when Devin hides the daily quota) |
-| Extra Balance | Overage/extra-usage balance in dollars |
+| Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 보고하지 않으면 일간 수치로 대체) |
+| Daily | 일간 할당량 사용량(Devin이 일간 할당량을 숨기면 미표시) |
+| Extra Balance | 초과/추가 사용 잔액(달러) |
 
-When Devin reports your plan name, OpenUsage shows it beside the provider name.
+Devin이 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
 
-## Where credentials come from
+## 인증 정보 출처
 
-Checked in this order — whichever works first wins:
+다음 순서로 확인하며, 먼저 정상 동작하는 인증 정보 사용:
 
-1. Devin CLI credentials: `~/.local/share/devin/credentials.toml` (uses `windsurf_api_key`, and `api_server_url` when present)
-2. The Devin app's local state database
+1. Devin CLI 인증 정보: `~/.local/share/devin/credentials.toml`(`windsurf_api_key` 사용, `api_server_url`이 있으면 함께 사용)
+2. Devin 앱의 로컬 상태 데이터베이스
 
-If the CLI credentials fail but the app is signed in with a different account, the app's auth is used instead.
+CLI 인증 정보가 실패해도 앱에서 다른 계정으로 로그인한 상태면 앱의 인증 정보 사용.
 
-## Troubleshooting
+## 문제 해결
 
-- **"Not logged in"** — run `devin auth login`, or sign into the Devin app, then refresh.
-- **Weekly shows the daily figure** — when Devin reports no separate weekly quota, the daily quota is shown in the Weekly row so it stays meaningful.
+- **"Not logged in"** — `devin auth login`을 실행하거나 Devin 앱에 로그인한 뒤 새로 고침.
+- **Weekly에 일간 수치 표시** — Devin이 별도 주간 할당량을 보고하지 않으면 의미 있는 값을 유지하도록 Weekly 행에 일간 할당량 표시.
 
-## Under the hood
+## 내부 동작
 
-Connect RPC `GetUserStatus` on the configured API server (default `server.codeium.com`).
-Quota percentages arrive as "remaining" and are flipped to "used".
-No token refresh — a 401/403 switches to the next auth source instead.
+설정된 API 서버(기본값 `server.codeium.com`)에서 Connect RPC `GetUserStatus` 호출.
+할당량 백분율은 "remaining"으로 전달되며 "used"로 변환.
+토큰 갱신 없이 401/403 발생 시 다음 인증 출처로 전환.

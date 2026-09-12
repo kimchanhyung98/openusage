@@ -1,78 +1,78 @@
 # Copilot
 
-Tracks your GitHub Copilot quota using a GitHub token that Copilot tooling already left on your machine.
-No login flow, no browser cookies.
+Copilot 도구가 Mac에 남긴 GitHub 토큰으로 GitHub Copilot 할당량 추적.
+별도 로그인 절차나 브라우저 쿠키 불필요.
 
-## What it tracks
+## 추적 항목
 
-| Metric | Meaning |
+| 지표 | 의미 |
 |---|---|
-| Credits | Share of your monthly AI-credit allotment used (the headline meter) |
-| Extra Usage | Premium interactions used beyond your included credits, once extra spend is enabled |
-| Org Credits | AI credits your whole organization used this month (org-managed Business/Enterprise seats) |
-| Org Spend | Dollars your organization was billed for AI credits beyond the included pool |
-| Chat | Chat-message quota used |
-| Completions | Code-completion quota used |
+| Credits | 월간 AI 크레딧 할당량 중 사용 비율(대표 미터) |
+| Extra Usage | 추가 지출 활성화 후 기본 제공 크레딧을 초과해 사용한 프리미엄 인터랙션 |
+| Org Credits | 조직 전체가 이번 달 사용한 AI 크레딧(조직 관리 Business/Enterprise 좌석) |
+| Org Spend | 기본 제공분을 초과한 AI 크레딧으로 조직에 청구된 달러 금액 |
+| Chat | 채팅 메시지 할당량 사용량 |
+| Completions | 코드 완성 할당량 사용량 |
 
-Credits and Extra Usage are Always Visible by default; Org Credits, Org Spend, Chat, and Completions start in On Demand behind the card's caret.
-Each meter shows percent used and, when the response includes one, a countdown to the next reset.
-The plan name (Pro, Business, Free, …) shows next to the provider.
+Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org Spend, Chat, Completions는 카드 캐럿 아래의 On Demand로 시작.
+각 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
+요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
 
-Since June 2026 GitHub Copilot bills all plans by **AI credits**, so what each account shows differs by plan:
+2026년 6월부터 GitHub Copilot은 모든 요금제를 **AI 크레딧**으로 청구하므로 계정별 표시 내용은 요금제에 따라 다름.
 
-- **Paid plans** meter the credit pool — so you see Credits (and Extra Usage if you've turned on additional spend).
-  Chat and completions are unlimited on paid plans, so those rows read "No data".
-- **Free plans** have no credits, so Credits reads "No data"; instead you see your fixed Chat and Completions counts under the caret.
-- **Org-managed seats (Copilot Business / Enterprise assigned by an organization)** return no per-seat quota, so the personal meters have nothing to show.
-  OpenUsage then looks the usage up in the organization's billing instead: it lists your organizations, finds the one whose billing reports Copilot AI-credit usage, and shows **Org Credits** (credits the whole org used this month) and **Org Spend** (dollars billed beyond the included pool).
-  Two caveats:
-  - The numbers are **organization-wide**, not your personal share — GitHub doesn't expose per-seat usage.
-  - Reading an org's billing requires you to be an **org owner or billing manager**.
-    Regular members keep the previous behavior: the plan shows, the meters read "No data".
-- Org Credits is shown as a plain count, not a percentage: the billing API reports usage only, never the org's credit allotment, and OpenUsage doesn't fabricate a denominator.
+- **유료 요금제**는 크레딧 풀 사용량을 집계하므로 Credits 표시(추가 지출을 켰으면 Extra Usage도 표시).
+  유료 요금제의 Chat과 Completions는 무제한이므로 해당 행에는 "No data" 표시.
+- **무료 요금제**는 크레딧이 없어 Credits에 "No data"를 표시하고, 대신 고정된 Chat과 Completions 개수를 캐럿 아래에 표시.
+- **조직 관리 좌석(조직에서 할당한 Copilot Business / Enterprise)**은 좌석별 할당량을 반환하지 않아 개인 미터에 표시할 값 없음.
+  이 경우 OpenUsage가 조직 청구 정보에서 사용량 조회: 조직 목록에서 Copilot AI 크레딧 사용량을 보고하는 조직을 찾아 **Org Credits**(이번 달 조직 전체 사용 크레딧)와 **Org Spend**(기본 제공분을 초과해 청구된 금액) 표시.
+  두 가지 유의 사항:
+  - 수치는 개인 몫이 아닌 **조직 전체** 사용량 — GitHub에서 좌석별 사용량 미제공.
+  - 조직 청구 정보 조회에는 **조직 소유자 또는 청구 관리자** 권한 필요.
+    일반 멤버는 기존과 같이 요금제만 표시되고 미터에는 "No data" 표시.
+- Org Credits는 백분율이 아닌 단순 개수로 표시: 청구 API는 사용량만 보고하고 조직의 크레딧 할당량은 제공하지 않으므로 OpenUsage에서 분모를 임의 생성하지 않음.
 
-A dollar credit figure (e.g. "$12 of $15 used") isn't shown: GitHub only exposes that through its logged-in web billing page, which would require reading browser cookies — OpenUsage does not do that.
-Editors like VS Code show the same credit *percentage* from this endpoint, not a dollar amount.
+달러 크레딧 수치(예: "$12 of $15 used")는 미표시: GitHub에서 로그인된 웹 청구 페이지를 통해서만 제공하며, 이를 읽으려면 브라우저 쿠키가 필요하므로 OpenUsage에서는 사용하지 않음.
+VS Code 같은 편집기도 이 엔드포인트에서 달러 금액이 아닌 동일한 크레딧 *백분율* 표시.
 
-## Where credentials come from
+## 인증 정보 출처
 
-Checked in this order (prompt-free files first, Keychain last):
+다음 순서로 확인(사용자 확인이 필요 없는 파일 우선, 키체인 마지막):
 
-1. Copilot editor token: `~/.config/github-copilot/apps.json` (older `hosts.json`) — written by the VS Code / JetBrains / Neovim Copilot plugins.
-2. GitHub CLI config: `~/.config/gh/hosts.yml` (`oauth_token`), when `gh` stores its token in a file.
-3. GitHub CLI Keychain item (service `gh:github.com`), when `gh` stores its token in the system keyring.
+1. Copilot 편집기 토큰: `~/.config/github-copilot/apps.json`(이전 `hosts.json`) — VS Code / JetBrains / Neovim Copilot 플러그인에서 기록
+2. GitHub CLI 설정: `~/.config/gh/hosts.yml`(`oauth_token`) — `gh`에서 토큰을 파일에 저장하는 경우
+3. GitHub CLI 키체인 항목(서비스 `gh:github.com`) — `gh`에서 토큰을 시스템 키링에 저장하는 경우
 
-### Setup
+### 설정
 
-If usage doesn't appear, authenticate with the GitHub CLI:
+사용량이 표시되지 않으면 GitHub CLI로 인증:
 
 ```bash
-brew install gh   # if needed
-gh auth login     # choose GitHub.com and follow the prompts
+brew install gh   # 필요한 경우
+gh auth login     # GitHub.com 선택 후 안내에 따라 진행
 ```
 
-Using Copilot in a supported editor is enough on its own — the editor writes the token to `apps.json`.
+지원되는 편집기에서 Copilot을 사용하면 편집기가 토큰을 `apps.json`에 기록하므로 별도 설정 불필요.
 
-## Service status
+## 서비스 상태
 
-While Copilot is enabled, OpenUsage checks the Copilot component on [GitHub Status](https://www.githubstatus.com/) at launch, when enabled, every five minutes, and during Dashboard manual refreshes.
-Enabling rechecks status while respecting the five-minute success cache and any server-requested Retry-After delay.
-The public request is unauthenticated and sends no GitHub credentials or usage data.
-Degraded performance, a partial outage, or a major outage on that component shows the server skull; scheduled maintenance and unknown results do not.
+Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [GitHub Status](https://www.githubstatus.com/)의 Copilot 컴포넌트 확인.
+활성화 시에도 5분 성공 캐시와 서버가 지정한 Retry-After 대기를 존중하며 상태 재확인.
+공개 요청은 인증 없이 실행되며 GitHub 인증 정보나 사용량 데이터를 보내지 않음.
+해당 컴포넌트가 성능 저하, 부분 장애, 중대 장애를 보고하면 서버 해골 표시; 예약된 유지보수와 알 수 없는 결과에는 미표시.
 
-## Troubleshooting
+## 문제 해결
 
-- **"Sign in to GitHub Copilot…"** — no token was found.
-  Sign in to Copilot in your editor, or run `gh auth login`.
-- **"GitHub token invalid or expired"** — the token was rejected (401/403).
-  Re-authenticate with `gh auth login`.
-- **Meters show "No data" but the plan is shown** — expected on an org-managed Copilot Business/Enterprise seat when you aren't an owner or billing manager of the org (GitHub doesn't expose per-seat quota, and org billing is admin-only).
-  If you *are* an org admin and still see no Org Credits, make sure your token can list your orgs — the GitHub CLI token from `gh auth login` can; some editor-plugin tokens can't.
+- **"Sign in to GitHub Copilot…"** — 토큰을 찾지 못한 상태.
+  편집기에서 Copilot에 로그인하거나 `gh auth login` 실행.
+- **"GitHub token invalid or expired"** — 토큰이 거부된 상태(401/403).
+  `gh auth login`으로 재인증.
+- **미터에 "No data"가 표시되지만 요금제는 표시됨** — 조직 관리 Copilot Business/Enterprise 좌석에서 조직 소유자나 청구 관리자가 아닐 때 예상되는 동작(GitHub은 좌석별 할당량을 제공하지 않으며 조직 청구 정보는 관리자 전용).
+  조직 관리자인데도 Org Credits가 보이지 않으면 토큰의 조직 목록 조회 가능 여부 확인 — `gh auth login`의 GitHub CLI 토큰은 가능하지만 일부 편집기 플러그인 토큰은 불가능.
 
-## Under the hood
+## 내부 동작
 
-`GET https://api.github.com/copilot_internal/user` with the standard Copilot client headers (API version `2025-04-01`).
-The response reports each bucket as percent *remaining*; the meters show percent *used*.
+표준 Copilot 클라이언트 헤더(API 버전 `2025-04-01`)로 `GET https://api.github.com/copilot_internal/user` 호출.
+응답은 각 버킷을 *남은* 백분율로 보고하며 미터에는 *사용한* 백분율 표시.
 
-For org-managed seats (identified by the token-based-billing placeholder in that response), the provider additionally calls the public REST billing API: `GET /user/orgs` to list your organizations, then `GET /orgs/{org}/settings/billing/usage/summary` per org until one reports Copilot AI-credit usage.
-The matching org is remembered, so steady-state refreshes make a single extra call; it's re-discovered automatically if it stops answering.
+조직 관리 좌석(응답의 토큰 기반 청구 자리표시자로 식별)은 공개 REST 청구 API도 호출: `GET /user/orgs`로 조직 목록을 가져온 뒤 Copilot AI 크레딧 사용량이 나올 때까지 조직별 `GET /orgs/{org}/settings/billing/usage/summary` 호출.
+일치하는 조직을 기억해 이후 새로 고침에서는 추가 호출 한 번만 수행하며, 응답하지 않으면 자동으로 다시 탐색.

@@ -1,79 +1,79 @@
-# iCloud Sync
+# iCloud 동기화
 
-**Sync Across Macs** is off by default.
-When it is on, each Mac writes one versioned OpenUsage history file to the app's private iCloud container and reads the files written by other Macs signed into the same iCloud account.
-A random device ID is kept in the login Keychain so the same Mac continues updating its existing file after app preferences are reset or the app is reinstalled.
-There is no folder picker, pairing code, or separate account.
+**Sync Across Macs**(Mac 간 동기화)는 기본값이 꺼짐.
+켜면 각 Mac이 버전이 붙은 OpenUsage 히스토리 파일 하나를 앱 전용 iCloud 컨테이너에 기록하고, 같은 iCloud 계정으로 로그인된 다른 Mac이 쓴 파일을 읽음.
+임의의 기기 ID는 로그인 키체인에 보관하므로, 앱 환경 설정을 재설정하거나 앱을 재설치한 뒤에도 같은 Mac은 기존 파일을 계속 갱신.
+폴더 선택기도, 페어링 코드도, 별도 계정도 없음.
 
-The file contains normalized daily tokens and spend, model totals, and unknown-model names for sources that are local to one Mac: Claude, Codex, Grok, and OpenCode.
-It does not contain credentials, account limits, raw logs, or provider responses.
-Cursor's history is already account-wide, so it stays local and is never added across Macs.
-Disabling a provider immediately removes its peer contributions from the combined view and omits it from this Mac's next iCloud write, while its local cached snapshot remains.
+파일에 담기는 것은 한 Mac에만 있는 소스(Claude, Codex, Grok, OpenCode)의 정규화된 일일 토큰과 지출, 모델별 합계, 알 수 없는 모델 이름.
+인증 정보, 계정 한도, 원시 로그, 프로바이더 응답은 담기지 않음.
+Cursor의 히스토리는 이미 계정 전체 기준이므로 로컬에만 남고 Mac 간에 합산되지 않음.
+프로바이더를 비활성화하면 그 프로바이더의 피어 기여분이 결합 보기에서 즉시 빠지고 이 Mac의 다음 iCloud 기록에서도 제외되며, 로컬 캐시 스냅샷은 그대로 유지.
 
-Managed account names, their current provider-identity bindings, selected terminal/dashboard accounts, sign-in readiness, and Keychain authentication snapshots stay on this Mac and are never included.
-The shared **Single Card** / **Separate Cards** choice for all supported providers and Settings account order also stay on this Mac, so each Mac can have its own card arrangement.
-A discovered configuration home whose logs belong to one proven account keeps an opaque identity for cross-Mac matching.
-Managed `~/.claude` and `~/.codex` histories can contain sessions from several switched accounts.
-They therefore sync only as a provider-family total and are not assigned to the currently selected managed account.
+관리형 계정명, 현재 프로바이더 신원 연결, 터미널/대시보드에서 선택한 계정, 로그인 준비 상태, Keychain 인증 스냅샷은 이 Mac에만 남고 절대 포함되지 않음.
+모든 지원 프로바이더에 적용하는 공통 **Single Card** / **Separate Cards** 선택과 Settings 계정 순서도 이 Mac에만 저장되므로 Mac마다 카드 구성을 따로 지정 가능.
+로그가 특정 계정 하나에 속한다고 확인된 자동 탐색 설정 홈은 Mac 간 매칭용으로 불투명한 식별 정보를 유지.
+관리형 `~/.claude`와 `~/.codex` 히스토리에는 전환해 쓴 여러 계정의 세션이 섞여 있을 수 있음.
+따라서 이 히스토리는 프로바이더 패밀리 합계로만 동기화하며, 현재 선택된 관리형 계정에 귀속시키지 않음.
 
-OpenUsage combines the valid files in memory and rebuilds Today, Yesterday, Last 30 Days, Usage Trend, unknown-model warnings, and model breakdowns.
-The same combined spend rows feed the dashboard, Total Spend, menu-bar pins, share cards, and the local HTTP API.
-Both `/v1/usage` and `/v1/limits` read the same rendered snapshots; the former is the deprecated UI-oriented format and the latter is the normalized format.
-Quotas, plans, balances, and provider errors remain this Mac's own values inside those snapshots.
-Rows retained in an older peer file are ignored once they fall outside the same calendar window used by the local history scanners.
+OpenUsage는 유효한 파일들을 메모리에서 합쳐 Today, Yesterday, Last 30 Days, Usage Trend, 알 수 없는 모델 경고, 모델별 내역을 다시 계산.
+이렇게 합쳐진 지출 행이 대시보드, Total Spend, 메뉴 막대 고정 항목, 공유 카드, 로컬 HTTP API에 그대로 공급.
+`/v1/usage`와 `/v1/limits` 모두 같은 렌더링 스냅샷을 읽으며, 전자는 더 이상 권장되지 않는 UI 중심 형식이고 후자가 정규화된 형식.
+할당량, 요금제, 잔액, 프로바이더 오류는 그 스냅샷 안에서도 이 Mac 자체의 값으로 유지.
+오래된 피어 파일에 남아 있는 행은 로컬 히스토리 스캐너가 쓰는 것과 같은 달력 기간을 벗어나면 무시.
 
-This Mac updates its file after a five-minute refresh batch, a manual refresh, or a provider enablement change.
-iCloud delivery is eventually consistent, so another Mac can take longer than five minutes to receive it, especially while offline.
-Downloaded changes reload immediately when macOS reports them.
+이 Mac은 5분 새로 고침 배치, 수동 새로 고침, 프로바이더 활성화 변경 후에 파일을 갱신.
+iCloud 전달은 최종적 일관성이므로, 특히 오프라인 상태라면 다른 Mac이 받는 데 5분 이상 걸릴 수 있음.
+다운로드된 변경은 macOS가 알려 주는 즉시 다시 읽음.
 
-## Multiple accounts across Macs
+## Mac 간 다중 계정
 
-Histories from an account-pinned configuration home match by **account**, not by card name.
-Each Mac's file records which account every such card belongs to using an opaque account/organization identifier, never an email.
-The same account therefore merges into the same card everywhere, even when one Mac shows it as the main card and another as an extra account card.
-A managed shared-home family total is the exception.
-It has no profile identity and merges with the same bare provider family on peers.
+계정에 고정된 설정 홈의 히스토리는 카드 이름이 아니라 **계정** 기준으로 매칭.
+각 Mac의 파일은 그런 카드가 어느 계정에 속하는지 불투명한 계정/조직 식별자로 기록하며, 이메일은 절대 쓰지 않음.
+그래서 한 Mac에서는 메인 카드, 다른 Mac에서는 추가 계정 카드로 보이더라도 같은 계정은 어디서나 같은 카드로 병합.
+관리형 공유 홈의 패밀리 합계는 예외.
+이 합계는 프로필 식별 정보가 없어 피어의 같은 단순 프로바이더 패밀리와 병합.
 
-An account you use on another Mac but have no login for here doesn't become a card: it appears as its own slice in **Total Spend**, named by its account code ("claude@ab12cd34") — so the number at the top is the whole truth across your Macs, and several such accounts stay tellable apart.
-That code is the same id the account's card carries on any Mac it's signed in on (the synced file holds no emails or names to label it with).
-The moment you log that account in locally, its usage is available under that same id with the full cross-machine history already attached.
-In this Mac's **Single Card** mode, the account selection determines which available account card appears.
-**Separate Cards** shows all available account cards regardless of that selection.
+다른 Mac에서는 쓰지만 이곳에 로그인이 없는 계정은 카드가 되지 않음 — 대신 **Total Spend**에서 계정 코드("claude@ab12cd34")로 이름 붙은 자체 조각으로 표시되므로, 상단의 숫자는 모든 Mac을 아우른 전부이고 그런 계정이 여러 개여도 서로 구분 가능.
+이 코드는 해당 계정이 로그인된 어느 Mac에서든 그 계정의 카드가 갖는 것과 같은 id(동기화된 파일에는 라벨로 쓸 이메일이나 이름이 없음).
+그 계정을 로컬에서 로그인하는 순간, 같은 id 아래에 Mac 전체 히스토리가 이미 붙은 사용량을 조회 가능.
+이 Mac의 **Single Card** 모드에서는 계정 선택 상태에 따라 표시 가능한 계정 카드 하나를 표시.
+**Separate Cards**에서는 해당 선택 상태와 무관하게 표시 가능한 모든 계정 카드 표시.
 
-Macs running an older OpenUsage read their own format but report this Mac's newer file as "update OpenUsage" — update both sides to sync multi-account machines.
+이전 버전 OpenUsage를 쓰는 Mac은 자기 형식은 읽지만 이 Mac의 새 형식 파일은 "update OpenUsage"로 보고 — 멀티 계정 환경을 동기화하려면 양쪽 모두 업데이트.
 
-Settings lists each valid device file with the time that Mac generated it.
-To remove a Mac from the combined summary, turn sync off on that Mac; this deletes its file from iCloud.
-Turning sync off also stops that Mac from reading peers and immediately returns every surface there to local-only spend.
-If iCloud is unreachable at that moment, this Mac's device-file deletion is remembered and retried on later launches until it succeeds.
-If this Mac's saved device identity changes first, the earlier file stays excluded from the combined summary while its deletion is pending.
-Settings shows an error after each failed attempt even while sync is off.
-Malformed files are ignored and reported in Settings and the app log.
+설정에는 유효한 각 기기 파일이 해당 Mac이 생성한 시각과 함께 나열.
+결합 요약에서 어떤 Mac을 빼려면 그 Mac에서 동기화를 끄기 — 그러면 해당 Mac의 파일이 iCloud에서 삭제.
+동기화를 끄면 그 Mac은 피어 읽기도 멈추고, 그곳의 모든 표시 영역이 즉시 로컬 전용 지출로 복귀.
+그 시점에 iCloud에 접근할 수 없으면 이 Mac 기기 파일의 삭제 요청을 기억해 성공할 때까지 이후 실행에서 재시도.
+그 전에 이 Mac의 저장된 기기 식별 정보가 바뀌면, 이전 파일은 삭제 대기 중 결합 요약에서 제외.
+동기화가 꺼져 있어도 실패한 시도마다 설정에 오류 표시.
+형식이 잘못된 파일은 무시하고 설정과 앱 로그에 보고.
 
-## Development and release setup
+## 개발 및 릴리스 설정
 
-Apple requires the iCloud container assignment to be present in the provisioning profile embedded in the app.
-OpenUsage uses separate resources so development builds cannot write production history:
+Apple은 앱에 임베딩된 프로비저닝 프로파일에 iCloud 컨테이너 할당이 들어 있을 것을 요구.
+OpenUsage는 개발 빌드가 프로덕션 히스토리를 쓰지 못하도록 리소스를 분리:
 
-- `com.kimchanhyung98.openusage.dev` uses `iCloud.com.kimchanhyung98.openusage.dev`.
-- `com.kimchanhyung98.openusage` uses `iCloud.com.kimchanhyung98.openusage`.
+- `com.kimchanhyung98.openusage.dev`는 `iCloud.com.kimchanhyung98.openusage.dev` 사용.
+- `com.kimchanhyung98.openusage`는 `iCloud.com.kimchanhyung98.openusage` 사용.
 
-Create a `MAC_APP_DEVELOPMENT` profile that includes every registered development Mac and a `MAC_APP_DIRECT` profile for releases.
-Install the development profile on each included Mac.
-The development build automatically selects the newest non-expired profile matching the development bundle and iCloud container from Xcode's current profile directory or the legacy MobileDevice directory:
+등록된 모든 개발 Mac을 포함하는 `MAC_APP_DEVELOPMENT` 프로파일과 릴리스용 `MAC_APP_DIRECT` 프로파일을 생성.
+포함된 각 Mac에 개발 프로파일을 설치.
+개발 빌드는 Xcode의 현재 프로파일 디렉터리나 레거시 MobileDevice 디렉터리에서 개발 번들 및 iCloud 컨테이너와 일치하는, 만료되지 않은 가장 최신 프로파일을 자동 선택:
 
 ```bash
 ./script/build_and_run.sh
 ```
 
-Set `ICLOUD_PROVISIONING_PROFILE=/path/to/profile.mobileprovision` only when you need to override that automatic selection.
-An explicit missing path fails the build instead of silently producing an app without iCloud access.
+자동 선택을 재정의해야 할 때만 `ICLOUD_PROVISIONING_PROFILE=/path/to/profile.mobileprovision`을 설정.
+명시한 경로가 없으면 iCloud 접근 권한이 빠진 앱을 조용히 만들어 내는 대신 빌드가 실패.
 
-The release workflow reads the base64-encoded `MAC_APP_DIRECT` profile from the repository Actions secret `APPLE_DEVELOPER_ID_ICLOUD_PROFILE`.
-Keep the original provisioning profiles and signing `.p12` in a password manager, never in the repository.
-A provisioning profile contains certificates and entitlements rather than private keys, but treating it as a signing asset keeps rotation predictable.
+릴리스 워크플로는 리포지토리 Actions 시크릿 `APPLE_DEVELOPER_ID_ICLOUD_PROFILE`에서 base64로 인코딩된 `MAC_APP_DIRECT` 프로파일을 읽음.
+원본 프로비저닝 프로파일과 서명용 `.p12`는 리포지토리가 아니라 비밀번호 관리자에 보관.
+프로비저닝 프로파일에는 개인 키가 아니라 인증서와 권한(entitlements)이 들어 있지만, 서명 자산으로 취급하면 교체(rotation)를 예측 가능하게 유지.
 
-To inspect the actual history written by a running build, find the file first and only call `jq` when a file exists:
+실행 중인 빌드가 실제로 기록한 히스토리를 확인하려면 파일을 먼저 찾고, 파일이 있을 때만 `jq` 호출:
 
 ```bash
 file=$(find "$HOME/Library/Mobile Documents" \
@@ -86,5 +86,5 @@ else
 fi
 ```
 
-No file is expected when sync is off, the app is signed without the matching profile, or the first write has not completed.
-The Settings error and app log distinguish those cases; the spinner only appears while an iCloud read or write is actually in progress.
+동기화가 꺼져 있거나, 앱이 일치하는 프로파일 없이 서명됐거나, 첫 쓰기가 아직 끝나지 않았다면 파일이 없는 것이 정상.
+설정 오류와 앱 로그가 이 경우들을 구분해 주며, 스피너는 iCloud 읽기나 쓰기가 실제로 진행 중일 때만 표시.

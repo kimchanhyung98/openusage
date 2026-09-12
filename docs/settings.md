@@ -1,286 +1,286 @@
-# Settings
+# 설정
 
-Settings lives inside the popover — there is no separate window.
-Open it from the footer's **Options** menu, with ⌘, while the popover is showing, or by right-clicking the menu bar icon and choosing Settings.
-The dashboard slides over to the Settings screen, which carries a back button in its top-left corner.
-Go back with that button, the ⌘, shortcut, or Esc (Esc always backs out to the dashboard first — pressing it again closes the popover).
+설정은 팝오버 안에 있음 — 별도 창 없음.
+푸터의 **Options** 메뉴 · 팝오버가 열린 상태의 ⌘, 단축키 · 메뉴 막대 아이콘 우클릭 후 Settings 선택 중 하나로 열기.
+대시보드가 옆으로 밀리며 설정 화면으로 전환되고, 왼쪽 위에 뒤로 가기 버튼 표시.
+해당 버튼, ⌘, 단축키, Esc로 대시보드에 복귀(Esc는 항상 대시보드로 먼저 돌아가며, 한 번 더 누르면 팝오버 닫기).
 
-## General
+## 일반
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Show Total Spend | on/off | Whether the cross-provider [Total Spend](dashboard.md#total-spend) card shows at the top of the dashboard.<br>On by default; the card appears whenever at least one enabled provider tracks spend (Claude, Codex, Cursor, Grok, OpenCode). |
-| Launch at Login | on/off | Registers the app as a login item (the system's login-item registry is the source of truth). |
-| Global Shortcut | record a shortcut | Global shortcut that toggles the popover from anywhere.<br>Click the field and press a combo; the ⓧ clears it and disables the shortcut. |
+| Show Total Spend(총 지출 표시) | 켜기/끄기 | 프로바이더를 합산한 [총 지출](/docs/dashboard.md#총-지출) 카드를 대시보드 상단에 표시할지 여부.<br>기본값은 켜기이며, 지출을 추적하는 프로바이더(Claude, Codex, Cursor, Grok, OpenCode)가 하나라도 활성화되어 있으면 카드 등장. |
+| Launch at Login(로그인 시 실행) | 켜기/끄기 | 앱을 로그인 항목으로 등록(시스템의 로그인 항목 레지스트리가 기준). |
+| Global Shortcut(전역 단축키) | 단축키 기록 | 어디서든 팝오버를 토글하는 전역 단축키.<br>필드를 클릭하고 조합키 입력, ⓧ를 누르면 지워지고 단축키 비활성. |
 
-**Upgrading from the legacy (pre-0.7) edition:** the old edition managed start-on-login with its own launcher file, which an in-place update left behind.
-That leftover could start the app a second time at every login and showed up in System Settings → Login Items under the signing company's name ("SUNSTORY LLC") instead of OpenUsage.
-The app now removes it automatically on launch — only when the file verifiably points at OpenUsage itself — so login starts exactly one copy, controlled by the Launch at Login toggle above.
+**레거시(0.7 이전) 에디션에서 업그레이드하는 경우:** 예전 에디션은 자체 런처 파일로 로그인 시 실행을 관리했고, 덮어쓰기 업데이트는 그 파일을 그대로 남겨 둠.
+남은 파일 때문에 로그인할 때마다 앱이 두 번 실행될 수 있었고, 시스템 설정 → 로그인 항목에는 OpenUsage가 아닌 서명 회사명("SUNSTORY LLC")으로 표시.
+현재는 실행 시 해당 파일이 OpenUsage를 가리키는지 확인한 뒤에만 자동 제거 — 로그인 시 위 Launch at Login 토글이 관리하는 앱 하나만 실행.
 
-## Accounts
+## 계정
 
-The Accounts section manages Claude and Codex accounts.
-An account is a user-named record that stores a provider sign-in — there are no folders to pick and no paths to edit.
-Your existing `~/.claude` and `~/.codex` configuration (MCP settings, memory, plugins, skills, and session history) always stays in place.
-Switching accounts replaces only the sign-in that new terminal sessions use.
+Accounts 섹션에서 Claude와 Codex 계정 관리.
+계정은 프로바이더 로그인을 저장하는 사용자 이름 레코드 — 고를 폴더도, 편집할 경로도 없음.
+기존 `~/.claude`와 `~/.codex` 설정(MCP 설정, 메모리, 플러그인, 스킬, 세션 기록)은 항상 그대로.
+계정 전환은 새 터미널 세션이 쓰는 로그인만 교체.
 
-An account name such as `alpha` or `beta` is a user-managed local title, not an email address or a permanent provider identity.
-A verified sign-in can replace the provider identity and authentication currently stored under that name.
-Two account names may therefore temporarily hold authentication for the same provider identity; the names, not provider identity, distinguish the managed records.
-For example, you can rename `beta` to `gamma` and sign in again under the renamed account, or select `alpha`, sign in with the provider account previously stored under `beta`, and then remove the old `beta` record.
+`alpha`, `beta` 같은 계정명은 사용자가 관리하는 로컬 제목이며 이메일 주소나 영구 프로바이더 신원이 아님.
+검증된 재로그인은 해당 계정명에 현재 저장된 프로바이더 신원과 인증 정보를 교체 가능.
+따라서 두 계정명에 같은 프로바이더 신원의 인증 정보가 일시적으로 저장될 수 있으며, 관리형 레코드는 프로바이더 신원이 아니라 계정명으로 구분.
+예를 들어 `beta`를 `gamma`로 이름 변경한 뒤 그 계정에서 재로그인하거나, `alpha`를 선택해 기존 `beta`에 저장된 프로바이더 계정으로 로그인한 뒤 예전 `beta` 레코드 제거 가능.
 
-- The add (+) button opens the Add Account flow.
-  If you are already signed in and no account is registered yet, the current sign-in is imported directly — no new browser login.
-  Otherwise, the official Claude or Codex sign-in opens.
-  An additional account signs in inside a private workspace owned by OpenUsage, so your current account and open terminals keep working while you sign in.
-  A cancelled or failed sign-in registers nothing.
-- Each account's authentication is kept as a private snapshot in the macOS Keychain.
-  **Ready** requires a usable saved sign-in and a successful usage check in the current app session, with no outstanding error or warning.
-  **Session Expired** means token renewal reported an expired session; expired access tokens, revoked tokens, and conflicting tokens show **Sign-In Needed**.
-  **Refresh Failed** reports connection, server, or usage-check problems without treating them as session expiry.
-  Before the first check, or after signing in again, the badge shows **Not Checked**, then **Checking** while the request runs.
-  Signing in again clears the previous authentication warning while keeping the last usage available for the new check.
-  Missing or mismatched saved sign-ins show **Sign-In Needed**.
-  The account row and Manage screen follow the same account's dashboard refresh result, including while Settings stays open.
-  Old usage can remain visible with **Outdated**, but reading that cache does not clear an error or establish **Ready**.
-  For the selected Claude account, the login in the shared `~/.claude` home must also be usable and match the identity currently saved under that account name.
-- With two or more accounts for one provider, each row gains a toggle that picks the account new terminal sessions use.
-  Switching asks for confirmation.
-  Approval keeps the one shared Claude or Codex configuration home and replaces only its authentication with the selected account.
-  The result is verified, and the previous sign-in is restored if anything fails.
-  Approval also installs or updates a small `claude`/`codex` function in your login shell's startup file (zsh or fish), so new terminal sessions follow the switch.
-  Switching requires a zsh or fish login shell; with another login shell the switch stops with an error and nothing is changed.
-  See the [CLI](/docs/cli.md) page for details; the `openusage` command-line tool is not required.
-  A toggle requires locally usable sign-in information and is disabled for **Session Expired** or **Sign-In Needed**.
-  **Not Checked**, **Checking**, and temporary **Refresh Failed** states do not themselves prevent switching.
-  While any registered accounts remain, one account stays selected even if it later needs sign-in.
-  Status changes never select a different account automatically.
-  Already-running sessions are never changed.
-  If the selected Claude account signs in again from an ordinary terminal — either with `/login` inside `claude` or with `claude auth login` — OpenUsage verifies the login in the shared home and replaces the authentication and provider identity stored under that same account name automatically.
-  This path requires neither **Sign In Again** nor an OpenUsage restart; a manual refresh is enough if the UI has not observed the change yet.
-  A login for a different Claude identity keeps the selected account name and selection; it never silently switches to another named account.
-- Customize lists Claude or Codex once, and its on/off setting applies to every account card in that provider family.
-  In **Single Card** mode, the dashboard's account selector lists the available accounts registered here and picks whose usage the card shows; an unregistered shared-home login is not an additional option.
-  A confirmed Settings switch moves the saved dashboard selection to that same account once, even while separate cards are showing; the menu-bar stars are a provider setting and stay put.
-  Changing the dashboard selector later is view-only and never runs another terminal switch.
-  An inactive account's usage is read from its private Keychain snapshot.
-  When that snapshot's token expires, the refreshed token is saved back into the same snapshot — never into the shared home or the active account.
-- **Manage…** renames an account, re-runs the official sign-in when the account's session expires, and removes the account.
-  The account name is the only editable field.
-  **Sign In Again** remains an in-app recovery path, but it is not required when the selected Claude account was reauthenticated from an ordinary terminal.
-  **Sign In Again** accepts any complete, verifiable provider login and replaces that named account's saved authentication and provider identity.
-  Manage shows the current failure's explanation beside this recovery action.
-  A completed sign-in clears that account's previous check result and requests a new check when the provider is enabled, even when the provider identity is unchanged.
-  A successful check restores **Ready**; results from a request started before the sign-in change are discarded.
-  It does not rename the account or select another account, even when the provider identity changes or is also stored under another account name.
-  Removing deletes the account's OpenUsage sign-in workspace first, then its Keychain snapshot, and finally unregisters the record.
-  Your `~/.claude` and `~/.codex` data is never touched.
-  If either deletion fails, the account stays registered so you can retry.
-  A workspace failure also leaves the snapshot ready for switching.
-  The selected account can't be removed while another account exists; switch first.
-- Adding, renaming, re-signing, or removing an account updates the dashboard's account cards and selector immediately.
-  Restarting OpenUsage is not required.
-- If the saved account registry cannot be decoded or validated, OpenUsage leaves the original data untouched.
-  It shows an error in Accounts and blocks account changes instead of replacing the registry with an empty list.
+- 추가(+) 버튼으로 계정 추가 흐름 열기.
+  이미 로그인된 상태이고 등록된 계정이 아직 없으면 현재 로그인을 바로 가져옴 — 새 브라우저 로그인 없음.
+  그 외에는 공식 Claude 또는 Codex 로그인 열림.
+  추가 계정은 OpenUsage 소유의 비공개 작업 공간 안에서 로그인하므로, 로그인 중에도 현재 계정과 열려 있는 터미널은 계속 동작.
+  로그인을 취소하거나 실패하면 아무것도 등록되지 않음.
+- 계정별 인증 정보는 macOS Keychain의 비공개 스냅샷으로 보관.
+  **Ready**는 사용 가능한 저장 로그인과 현재 앱 실행 중 성공한 사용량 확인이 필요하며, 남아 있는 오류나 경고가 없어야 표시.
+  **Session Expired**는 토큰 갱신에서 세션 만료가 확인된 상태 — 만료된 액세스 토큰·폐기된 토큰·충돌한 토큰은 **Sign-In Needed**.
+  **Refresh Failed**는 연결·서버·사용량 확인 문제이며 세션 만료로 취급하지 않음.
+  첫 확인 전이나 재로그인 직후에는 **Not Checked**, 요청 진행 중에는 **Checking** 표시.
+  재로그인하면 이전 인증 경고를 지우고, 새 확인 중에도 마지막 사용량 유지.
+  저장된 로그인 부재·신원 불일치는 **Sign-In Needed**.
+  계정 행과 Manage 화면은 같은 계정의 대시보드 갱신 결과를 반영하며, Settings가 열린 동안에도 갱신.
+  과거 사용량은 **Outdated**와 함께 남을 수 있지만, 해당 캐시를 읽는 것만으로 오류를 해제하거나 **Ready**로 판정하지 않음.
+  선택된 Claude 계정은 공유 `~/.claude` 홈의 로그인도 사용 가능하고 해당 계정명에 현재 저장된 신원과 일치해야 함.
+- 한 프로바이더에 계정이 둘 이상이면 각 행에 새 터미널 세션이 쓸 계정을 고르는 토글 추가.
+  전환은 확인 요청.
+  승인하면 공유되는 Claude 또는 Codex 설정 홈 하나는 그대로 두고, 그 인증 정보만 선택 계정으로 교체.
+  결과는 검증하고, 무엇이든 실패하면 이전 로그인 복원.
+  승인 시 로그인 셸 시작 파일(zsh 또는 fish)에 작은 `claude`/`codex` 함수도 설치·갱신하므로, 새 터미널 세션이 전환을 따라감.
+  전환에는 zsh 또는 fish 로그인 셸 필요 — 다른 로그인 셸에서는 오류로 중단되고 아무것도 바뀌지 않음.
+  자세한 내용은 [CLI](/docs/cli.md) 문서 참조 — `openusage` 명령줄 도구는 필요 없음.
+  토글은 로컬에서 사용 가능한 로그인 정보가 필요하며 **Session Expired**나 **Sign-In Needed**이면 비활성.
+  **Not Checked**, **Checking**, 일시적인 **Refresh Failed** 자체로는 전환을 막지 않음.
+  등록 계정이 남아 있는 한, 나중에 재로그인이 필요해져도 계정 하나는 선택 상태 유지.
+  상태가 바뀌어도 다른 계정을 자동 선택하지 않음.
+  이미 실행 중인 세션은 절대 바뀌지 않음.
+  선택된 Claude 계정으로 일반 터미널에서 `claude`의 `/login` 또는 `claude auth login`을 실행해 다시 로그인하면, OpenUsage가 공유 홈의 로그인을 검증하고 같은 계정명에 저장된 인증 정보와 프로바이더 신원을 자동 교체.
+  이 경로는 **Sign In Again**이나 OpenUsage 재실행이 필요 없으며, UI가 아직 변경을 감지하지 못했을 때는 수동 새로 고침으로 충분.
+  이전과 다른 Claude 신원으로 로그인해도 선택된 계정명과 선택 상태를 유지하며, 다른 계정명을 조용히 선택하지 않음.
+- Customize에는 Claude 또는 Codex가 한 번만 나오고, 켜기/끄기는 해당 프로바이더 계열의 모든 계정 카드에 적용.
+  **Single Card** 모드의 대시보드 계정 선택기는 여기 등록한 계정 중 표시 가능한 계정을 나열하고, 카드에 어느 계정의 사용량을 표시할지 선택 — 미등록 공유 홈 로그인은 추가 선택지에서 제외.
+  Settings에서 전환을 확정하면 개별 카드 표시 중에도 저장된 대시보드 선택이 같은 계정으로 한 번 이동 — 메뉴 막대 별표는 프로바이더 설정이라 그대로 유지.
+  이후 대시보드 선택기 변경은 보기 전용이며 터미널 전환을 다시 실행하지 않음.
+  비활성 계정의 사용량은 비공개 Keychain 스냅샷에서 읽음.
+  그 스냅샷의 토큰이 만료되면 갱신된 토큰을 같은 스냅샷에 다시 저장 — 공유 홈이나 활성 계정에는 절대 쓰지 않음.
+- **Manage…**에서 계정 이름 변경, 세션이 만료된 계정의 공식 로그인 재실행, 계정 제거 처리.
+  편집 가능한 필드는 계정명뿐.
+  **Sign In Again**은 앱 안의 복구 경로로 계속 제공하지만, 선택된 Claude 계정을 일반 터미널에서 재인증한 경우에는 필수 아님.
+  **Sign In Again**은 완전하고 검증 가능한 프로바이더 로그인이면 계정명에 저장된 인증 정보와 프로바이더 신원을 교체.
+  Manage는 이 복구 동작과 함께 현재 실패의 상세 원인 표시.
+  재로그인 완료 시 해당 계정의 이전 확인 결과를 해제하고, 프로바이더가 켜져 있으면 신원이 같아도 새 확인 요청.
+  확인 성공 시 **Ready** 복구 — 로그인 변경 전에 시작된 요청의 결과는 폐기.
+  프로바이더 신원이 바뀌거나 다른 계정명에도 같은 신원이 저장돼 있어도 계정명을 바꾸거나 다른 계정을 선택하지 않음.
+  제거는 그 계정의 OpenUsage 로그인 작업 공간을 먼저, 다음으로 Keychain 스냅샷을 지우고, 마지막에 레코드 등록 해제.
+  `~/.claude`와 `~/.codex` 데이터는 절대 건드리지 않음.
+  둘 중 하나라도 삭제가 실패하면 다시 시도할 수 있도록 계정 등록 유지.
+  작업 공간 삭제가 실패한 경우에는 스냅샷도 전환 가능한 상태로 남김.
+  다른 계정이 있는 동안에는 선택된 계정 제거 불가 — 먼저 전환 필요.
+- 계정 추가·이름 변경·재로그인·제거는 대시보드 계정 카드와 계정 선택기를 즉시 갱신.
+  OpenUsage 재실행 불필요.
+- 저장된 계정 레지스트리를 디코딩하거나 검증할 수 없으면 OpenUsage는 원본 데이터를 그대로 둠.
+  레지스트리를 빈 목록으로 바꾸는 대신 Accounts에 오류를 표시하고 계정 변경 차단.
 
 ### Usage Cards
 
-One **Usage Cards** setting at the top of Accounts applies the same display mode to all providers that support accounts.
-It appears only when at least one provider has two or more registered accounts; one Claude account plus one Codex account does not meet this condition.
-The saved choice is preserved if the setting becomes hidden when account counts decrease.
+Accounts 맨 위의 **Usage Cards** 설정 하나로 계정 기능을 지원하는 모든 프로바이더에 같은 표시 모드 적용.
+한 프로바이더에 등록 계정이 둘 이상일 때만 표시하며, Claude 1개와 Codex 1개는 이 조건에 해당하지 않음.
+계정 수가 줄어 설정이 숨겨져도 저장된 선택 유지.
 
-| Option | Behavior |
+| 옵션 | 동작 |
 | --- | --- |
-| **Single Card** | The default.<br>Shows the selected account under the provider name and keeps the dashboard account selector. |
-| **Separate Cards** | Shows each available account card with a fixed **{Provider}: {name}** title, such as `Claude: Account 1` or `Codex: Account 2`.<br>No header account selector. |
+| **Single Card** | 기본값.<br>선택한 계정을 프로바이더 이름 아래 표시하고 대시보드 계정 선택기 유지. |
+| **Separate Cards** | 사용 가능한 계정 카드를 `Claude: Account 1`, `Codex: Account 2` 같은 고정 제목 `{Provider}: {name}`으로 각각 표시.<br>헤더 계정 선택기 없음. |
 
-`{name}` uses the account's existing **Account Name**.
-The title format is not editable; renaming an account in **Manage…** updates its card and Share Screenshot titles immediately.
-See [Dashboard](/docs/dashboard.md) for account display and shared layout behavior.
+`{name}`은 계정의 기존 **Account Name** 사용.
+제목 형식은 편집 불가이며, **Manage…**에서 계정명을 변경하면 카드 제목과 Share Screenshot 제목에 즉시 반영.
+계정 표시와 공유 레이아웃 동작은 [대시보드](/docs/dashboard.md) 참조.
 
-Display modes apply immediately and persist across restarts.
-Before a shared choice is saved, **Separate Cards** is inherited if any per-provider setting from an earlier development build used it; otherwise, **Single Card** is used.
-Changing modes preserves the dashboard selection and does not switch the terminal account or refresh usage.
-Returning to **Single Card** restores the previous selection if it is still available; otherwise, an available account is selected.
-Removing a provider's last registered account returns that provider to a single card but preserves the saved preference for accounts added later.
-An unreadable account registry also uses a single card while preserving the preference until the registry recovers.
+표시 모드는 즉시 적용되고 재실행 후에도 유지.
+공통 선택을 저장하기 전에는 초기 개발 빌드의 프로바이더별 설정 중 **Separate Cards**가 하나라도 있으면 승계하며, 그렇지 않으면 **Single Card** 사용.
+모드를 변경해도 대시보드 선택을 보존하며 터미널 계정 전환이나 사용량 새로 고침은 실행하지 않음.
+**Single Card**로 돌아오면 이전 선택이 여전히 표시 가능한 경우 복원하고, 그렇지 않으면 사용 가능한 계정 선택.
+한 프로바이더의 마지막 등록 계정을 제거하면 해당 프로바이더는 단일 카드로 돌아가지만, 이후 추가할 계정을 위해 저장된 설정 보존.
+계정 레지스트리를 읽을 수 없는 경우에도 단일 카드를 사용하며 레지스트리가 복구될 때까지 설정 보존.
 
-### Account order
+### 계정 순서
 
-With two or more registered accounts for a provider, drag the account row itself, without a separate handle, to move it within that provider's list.
-Rows can move regardless of their sign-in or refresh status; accounts cannot move between Claude and Codex.
-Clicking **Manage…** or the switch toggle keeps its existing behavior without starting a reorder.
-The list scrolls automatically near its top or bottom edge during a drag.
-VoiceOver provides **Move Up** and **Move Down** actions on the account row and announces the account's position.
+한 프로바이더에 등록 계정이 둘 이상이면 별도 핸들 없이 계정 행 블록을 드래그해 해당 프로바이더 목록 안에서 이동.
+로그인·갱신 상태와 관계없이 행 이동 가능하며 Claude와 Codex 사이의 이동은 허용하지 않음.
+**Manage…**와 전환 토글 클릭은 정렬을 시작하지 않고 기존 동작 유지.
+드래그 중 목록 위·아래 가장자리에서 자동 스크롤.
+VoiceOver는 계정 행에 **Move Up**과 **Move Down** 동작을 제공하고 계정 위치 안내.
 
-Account order applies immediately wherever an account appears in Settings, the **Single Card** selector, **Separate Cards**, and **Options → Share Screenshot**.
-Dragged order persists after leaving Settings, closing the popover, and restarting the app.
+계정 순서는 Settings, **Single Card** 계정 선택기, **Separate Cards**, **Options → Share Screenshot**에 해당 계정이 표시되는 곳마다 즉시 적용.
+드래그로 바꾼 순서는 Settings 이탈·팝오버 닫기·앱 재실행 후에도 유지.
 
-The default order is registration order, and new accounts append to the custom order.
-Order survives renaming, re-signing, active account switching, display mode changes, and restarts.
-Removing an account preserves the remaining accounts' relative order; registering the same name again creates a new account at the end.
-An account temporarily missing a usage card keeps its Settings position and returns to that position when its card becomes available again.
+기본 순서는 계정 등록순이며 새 계정은 사용자 지정 순서의 마지막에 추가.
+이름 변경, 재로그인, 활성 계정 전환, 표시 모드 변경과 재실행 후에도 순서 유지.
+계정 제거 시 남은 계정의 상대 순서를 유지하며 같은 이름을 다시 등록하면 새 계정으로 마지막에 추가.
+일시적으로 사용량 카드가 없는 계정도 Settings에서 위치를 유지하고, 카드가 다시 사용 가능해지면 해당 위치로 복귀.
 
-Customize manages the whole provider block; Settings manages account order within it.
-Moving either preserves the other order, and Customize undo or **Reset All** does not reset account order.
-Reordering accounts does not change account selection, authentication, metric layout, or usage data.
-Display modes and account order are stored only on this Mac and are excluded from iCloud sync.
+Customize는 프로바이더 블록 전체, Settings는 블록 내부 계정 순서 관리.
+어느 쪽을 이동해도 다른 쪽 순서는 유지하며, Customize 실행 취소나 **Reset All**은 계정 순서를 초기화하지 않음.
+계정 정렬은 계정 선택, 인증 정보, 지표 레이아웃과 사용량 데이터를 변경하지 않음.
+표시 모드와 계정 순서는 이 Mac에만 저장하며 iCloud 동기화에서 제외.
 
-## iCloud Sync
+## iCloud 동기화
 
-**Sync Across Macs** is off by default.
-Turning it on shares normalized OpenUsage history through the app's private iCloud container and combines machine-local tokens and spend across Macs signed into the same iCloud account.
-Settings shows the five-minute write cadence and each Mac's relative **Updated** time; it also reports unavailable iCloud, loading, write, and malformed-file states.
-See [iCloud Sync](icloud-sync.md) for what is included and which surfaces use the combined values.
+**Sync Across Macs**(Mac 간 동기화)는 기본값 꺼짐.
+켜면 앱의 비공개 iCloud 컨테이너로 정규화된 OpenUsage 기록을 공유하고, 같은 iCloud 계정으로 로그인한 Mac들의 로컬 토큰과 지출을 합산.
+설정에는 5분 저장 주기와 Mac별 상대 **Updated** 시각이 표시되며, iCloud 사용 불가·불러오기·저장·잘못된 파일 형식 상태도 함께 표시.
+무엇이 포함되고 어느 화면이 합산 값을 쓰는지는 [iCloud 동기화](/docs/icloud-sync.md) 참조.
 
-## Appearance
+## 화면
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Icon Style | Text / Bars | How starred metrics render in the menu bar.<br>Bars is the default.<br>See [Menu bar](menu-bar.md). |
-| Theme | System / Light / Dark | App-wide appearance override for the popover. |
-| Density | Default / Compact | Compact is the default for new installs.<br>Default breathes; Compact is a real information-dense mode — text steps down one size, rows and provider sections pull together, and Customize / Settings rows tighten with them.<br>In both, consecutive one-line metrics (Today / Yesterday / …) pull together; Compact pulls harder. |
-| Time Format | Auto / 12-hour / 24-hour | How exact times read (e.g. "Resets today at 6:38 PM" vs "18:38").<br>24-hour is the default; Auto follows the system. |
-| Increase Transparency | Off / On | Off (default) keeps the popover a solid panel.<br>On makes it translucent so your desktop shows through, while keeping the numbers and Options control legible with adaptive frosted surfaces.<br>It pauses automatically when you have the macOS **Reduce Transparency** or **Increase Contrast** accessibility setting turned on (a note explains why), so it never works against those preferences. |
+| Icon Style(아이콘 스타일) | Text / Bars | 별표한 지표를 메뉴 막대에 그리는 방식.<br>기본값은 Bars.<br>[메뉴 막대](/docs/menu-bar.md) 참조. |
+| Theme(테마) | System / Light / Dark | 팝오버에 적용할 앱 전체 화면 스타일 재정의. |
+| Density(밀도) | Default / Compact | 새로 설치하면 Compact가 기본값.<br>Default는 여백이 넓고, Compact는 정보 밀도가 높은 모드 — 글자가 한 단계 작아지고, 행과 프로바이더 섹션 간격이 줄며, Customize / Settings 행도 함께 축소.<br>두 모드 모두 연속된 한 줄 지표(Today / Yesterday / …) 간격이 줄며, Compact에서 더 촘촘하게 표시. |
+| Time Format(시간 형식) | Auto / 12-hour / 24-hour | 정확한 시각을 읽는 방식(예: "Resets today at 6:38 PM" 대 "18:38").<br>기본값은 24-hour, Auto는 시스템을 따름. |
+| Increase Transparency(투명도 높이기) | 끄기 / 켜기 | 끄기(기본값)는 팝오버를 불투명 패널로 유지.<br>켜면 반투명해져 데스크톱이 비치지만, 배경에 맞춰 조정되는 반투명 표면으로 숫자와 Options 컨트롤의 가독성 유지.<br>macOS 손쉬운 사용의 **Reduce Transparency**(투명도 줄이기)나 **Increase Contrast**(대비 증가)를 켜 두면 자동으로 일시 중지하고 이유를 안내하여, 해당 설정과의 충돌 방지. |
 
-## Usage Display
+## 사용량 표시
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Show Usage As | Used / Left | Whether bounded metrics read "48% used" or "52% left" — Used is the default; this is the same toggle as clicking a headline. |
-| Reset Times | Countdown / Exact time | "Resets in 3h 25m" vs "Resets today at 6:38 PM" — Exact Time is the default; this is the same toggle as clicking a reset label. |
-| Always Show Pacing | Off / On | On (default) surfaces pacing on every metric with a reset window: on-track rows gain their projection ("~33% left at reset") and an even-pace tick marking where steady use would put you right now.<br>Off limits pacing to metrics close to or over their limit.<br>Metrics without a reset window have no pace to show. |
+| Show Usage As(사용량 표시 방식) | Used / Left | 상한이 있는 지표를 "48% used"로 읽을지 "52% left"로 읽을지 — 기본값은 Used이며, 헤드라인 클릭과 같은 토글. |
+| Reset Times(초기화 시각 표시) | Countdown / Exact time | "Resets in 3h 25m" 대 "Resets today at 6:38 PM" — 기본값은 Exact Time이며, 리셋 라벨 클릭과 같은 토글. |
+| Always Show Pacing(사용 속도 항상 표시) | 끄기 / 켜기 | 켜기(기본값)는 초기화 기간이 있는 모든 지표에 사용 속도 표시 — 정상 궤도인 행에는 예측치("~33% left at reset")와, 꾸준히 썼다면 지금 어디쯤일지 알려 주는 균등 속도 눈금 추가.<br>끄면 한도에 가깝거나 넘긴 지표로만 제한.<br>초기화 기간이 없는 지표에는 보여 줄 속도 자체가 없음. |
 
-## Notifications
+## 알림
 
-OpenUsage can alert you with a macOS notification when a metric runs low or its pace gets worse, so you don't have to keep the popover open to catch a quota creeping toward its limit.
-Alerts work while the app runs in the menu bar, even with the popover closed.
+사용량이 한도에 가까워지는 상태를 지켜보려고 팝오버를 계속 열어 둘 필요 없이, 지표 잔량이 부족해지거나 사용 속도가 나빠지면 OpenUsage가 macOS 알림으로 통지.
+알림은 앱이 메뉴 막대에서 실행 중이면 동작하며, 팝오버가 닫혀 있어도 마찬가지.
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Almost Out | On / Off | Alerts when a metric crosses under 10% remaining, including balances without a reset window. |
-| Cutting It Close | On / Off | Alerts when a metric is projected to finish the period with little left — close to its limit. |
-| Will Run Out | On / Off | Alerts when a metric is projected to run out before it resets. |
+| Almost Out(거의 소진) | 켜기 / 끄기 | 초기화 기간이 없는 잔액까지 포함해, 지표 잔량이 10% 아래로 내려가면 통지. |
+| Cutting It Close(한도에 근접) | 켜기 / 끄기 | 이번 기간 종료 시 지표 잔량이 거의 남지 않아 한도에 가깝게 끝날 전망이면 통지. |
+| Will Run Out(곧 소진) | 켜기 / 끄기 | 지표가 초기화 전에 소진될 전망이면 통지. |
 
-Alerts fire on a new crossing or pace worsening, then stay deduplicated while that condition is unchanged, so you do not get repeats on every refresh.
-A quota already in a bad state when OpenUsage launches establishes the baseline without alerting.
-If a card's account identity changes or is removed, its notification baseline is cleared; the replacement account's first sample does not trigger a quota warning.
-If a Claude or Codex card's account cannot be identified, account list changes also clear its notification baseline and stop alerts still in progress.
-After an account change, unsubmitted quota alerts for the previous account are stopped, and requests already being submitted are removed when submission finishes.
-If it recovers and later worsens again, the alert re-arms; a new reset period also clears the reset-based history.
-**Almost Out** is based only on the remaining share, so it also works for bounded balances without a reset window.
-**Cutting It Close** and **Will Run Out** require reset-window pace context.
-Metrics whose data cannot be read never alert.
-Turn all three triggers off to silence everything.
-When several alerts fire at once, they stack into a single grouped banner.
+알림은 새로 임계선을 넘거나 속도가 나빠질 때 발생하고, 그 상태가 그대로인 동안에는 중복을 제거하므로 새로 고침마다 반복되지 않음.
+OpenUsage를 실행한 시점에 이미 나쁜 상태인 할당량은 통지 없이 기준선으로만 기록.
+카드의 계정 신원이 바뀌거나 제거되면 알림 기준선 초기화; 교체 계정의 첫 관측에서는 할당량 경고를 발생시키지 않음.
+Claude 또는 Codex 카드의 계정을 식별할 수 없는 경우, 계정 목록 변경 시에도 해당 카드의 알림 기준선을 초기화하고 진행 중인 알림 중단.
+계정 교체 시 이전 계정의 미제출 할당량 알림은 중단하고, 이미 제출 중인 요청은 완료 후 제거.
+회복한 뒤 다시 나빠지면 알림 재활성화, 새 초기화 기간이 시작되면 초기화 기반 기록도 정리.
+**Almost Out**은 남은 비중만 기준이라, 초기화 기간이 없는 상한 잔액에도 동작.
+**Cutting It Close**와 **Will Run Out**은 초기화 기간의 사용 속도 정보 필요.
+데이터를 읽을 수 없는 지표는 알림 제외.
+세 알림 조건을 모두 끄면 전체 알림 중지.
+여러 알림이 동시에 발생하면 하나의 그룹 배너로 묶임.
 
-All three alerts default off.
-The first time you turn one on, OpenUsage asks for notification permission; if you decline (or turn notifications off for OpenUsage in System Settings later), a warning mark appears on the Notifications header and an "Open System Settings" button shows under the toggles so you can re-enable them.
-A notification's title is the alert name, its subtitle names the provider and metric, and its body is the plain-language verdict.
-Tapping an alert opens the popover on the dashboard.
+세 알림 모두 기본값 꺼짐.
+처음 하나를 켤 때 OpenUsage가 알림 권한 요청 — 거절하거나 나중에 시스템 설정에서 OpenUsage 알림을 끄면 알림 섹션 헤더에 경고 표시가 붙고, 다시 켤 수 있도록 토글 아래에 "Open System Settings"(시스템 설정 열기) 버튼 등장.
+알림 제목은 알림 이름, 부제목은 프로바이더와 지표, 본문은 쉬운 문장으로 쓴 상태 설명.
+알림을 누르면 대시보드 화면으로 팝오버 열기.
 
-## Privacy
+## 개인정보
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Hide From Screen Share | On / Off | On (default) replaces the menu bar strip with the OpenUsage icon and wordmark while your screen is being shared or recorded, and restores your starred metrics the moment the capture ends.<br>See [Menu bar](menu-bar.md#hiding-usage-while-screen-sharing). |
-| Share Anonymous Usage | On / Off | Off by default.<br>Shares daily summaries, limited failure/recovery diagnostics, and eligible crash reports without account details, credentials, or usage values.<br>See [Privacy & Usage Data](/docs/privacy.md) for the fields and consent behavior. |
+| Hide From Screen Share(화면 공유 중 숨기기) | 켜기 / 끄기 | 켜기(기본값)는 화면을 공유하거나 녹화하는 동안 메뉴 막대 스트립을 OpenUsage 아이콘과 워드마크로 교체하고, 캡처가 끝나는 즉시 별표 지표 복원.<br>[메뉴 막대](/docs/menu-bar.md#화면-공유-중-사용량-숨기기) 참조. |
+| Share Anonymous Usage(익명 사용량 공유) | 켜기 / 끄기 | 기본값은 끄기.<br>계정 정보·인증 정보·사용량 값 없이 일일 요약·제한된 실패/복구 진단·조건에 맞는 크래시 리포트 공유.<br>필드와 동의 동작은 [개인정보 및 사용 데이터](/docs/privacy.md) 참조. |
 
-## Tokscale CLI Sync
+## Tokscale CLI 동기화
 
-The Tokscale section provides a separate **Usage Sync** action for publishing local usage to your public Tokscale profile.
-It remains independent of iCloud Sync, Share Anonymous Usage, provider enablement, refreshes, the `openusage` command, and the local API.
+Tokscale 섹션에서 local usage를 공개 Tokscale profile에 게시하는 별도 **Usage Sync** 동작 제공.
+iCloud Sync, Share Anonymous Usage, 프로바이더 활성화, 새로 고침, `openusage` 명령, local API와 독립.
 
-Device-name management opens the **Tokscale Device Name** sheet, where you can view or edit this Mac's OpenUsage override.
-The override is unset by default.
-The value is trimmed, must be non-empty and no more than 120 UTF-8 bytes, and cannot contain control characters.
-Saving keeps the name locally for this Mac without starting a command or network request.
-Reopening the sheet prefills the saved name, including after an app restart.
-Each later sync passes it to Tokscale as `TOKSCALE_DEVICE_NAME`.
-Tokscale keeps the stable device ID, so changing the name updates the same public device on the next successful submission instead of creating another device.
-**Remove OpenUsage Override** removes the local override without clearing Tokscale's existing public name; later submissions let Tokscale use a name from its environment or stored device record again.
+기기 이름 관리에서 **Tokscale Device Name** sheet를 열어 이 Mac의 OpenUsage override 확인·편집 가능.
+기본값은 override 없음.
+값의 앞뒤 공백을 제거하고 비어 있지 않은 UTF-8 기준 최대 120byte만 허용하며 control character는 거부.
+저장 시 command나 network request를 시작하지 않고 이 Mac의 이름을 로컬에 보관.
+Sheet를 다시 열면 저장한 이름을 미리 채우며 app 재시작 후에도 유지.
+이후 sync마다 `TOKSCALE_DEVICE_NAME`으로 Tokscale에 전달.
+Tokscale의 stable device ID는 유지되므로 이름을 바꿔도 새 기기를 만들지 않고 다음 성공 submit에서 같은 public device 이름 갱신.
+**Remove OpenUsage Override**는 Tokscale의 기존 public name을 삭제하지 않고 로컬 override만 제거하며, 이후 sync에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
 
-**Usage Sync** explains that syncing publishes local usage to a public profile and links to the official [Tokscale Privacy Policy](https://tokscale.ai/privacy).
-Detailed command, installation, and sharing information is kept in these docs and [Privacy & Usage Data](/docs/privacy.md#tokscale-public-sharing).
-**Sync** runs this command once with no provider, date, or OpenUsage-data arguments:
+**Usage Sync**에서 local usage를 public profile에 게시하는 동기화임을 안내하고 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 연결 제공.
+명령·설치·공개 범위 상세 정보는 이 문서와 [개인정보 및 사용 데이터](/docs/privacy.md#tokscale-공개-공유)에 유지.
+**Sync**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
 
 ```sh
 bunx tokscale@latest submit
 ```
 
-OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
-Tokscale decides which supported sources and fields are included.
-The current CLI may include usage, client, model, device, and discovered MCP-server information in a public profile that can appear in search results.
-Because `bunx` uses `@latest`, it may download and run a newer package whose behavior changed after the OpenUsage release.
-Package resolution follows the user's Bun configuration and may prefer a matching package under the home directory.
+선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
+포함할 지원 소스와 field는 Tokscale에서 결정.
+현재 CLI는 usage, client, model, device, 발견된 MCP server 정보를 검색 결과에 노출될 수 있는 public profile에 포함 가능.
+`bunx`에서 `@latest`를 사용하므로 OpenUsage release 이후 동작이 바뀐 최신 package를 내려받아 실행할 수 있음.
+Package 해석은 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
 
-Opening OpenUsage or Settings never runs a Tokscale command.
-The first-use flow begins only when the user chooses **Sync**:
+OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 않음.
+최초 사용 흐름은 사용자가 **Sync**를 선택할 때만 시작:
 
-1. OpenUsage looks for usable `bunx` and `bun` executables in the app environment, the login-shell path, and Bun's configured installation directory.
-2. When the Bun runtime itself is unavailable, the card shows **Installing Bun…**, downloads and runs Bun's official installer, verifies `bunx` in the directory selected by the installer, and continues the same action without requiring an app restart.
-3. OpenUsage runs `bunx tokscale@latest submit` once, forwarding only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings from the app and login shell.
-   It anchors `HOME` and the working directory to the current macOS account, excludes unrelated secrets and unknown variables, and lets the saved device name override only `TOKSCALE_DEVICE_NAME`.
-   Tokscale still discovers supported sources; use `TOKSCALE_EXTRA_DIRS` for additional directories when a new path variable is not yet allowed.
-4. **Log In…** appears only when that submit result matches Tokscale's verified missing-login response.
-5. Before login starts, OpenUsage explains that Tokscale stores GitHub identity details, a later public profile can show the username, avatar, and display name, and the login command uses `CLI on <hostname>` as the personal-token name.
-6. **Log In…** opens a small **Log In to Tokscale** sheet; choosing **Log In** inside it runs `bunx tokscale@latest login` once with no standard input and keeps the browser URL and user code visible while authorization is pending.
-7. When login finishes, the card shows **Tokscale Login Finished. Sync Has Not Started.**
-8. Login never submits usage automatically; another explicit **Sync** starts submission.
+1. App environment, login shell path, Bun의 설정된 install directory에서 사용 가능한 `bunx`와 `bun` executable 탐색.
+2. Bun runtime 자체가 없으면 카드에 **Installing Bun…** 표시, Bun 공식 installer 다운로드·실행, installer가 선택한 directory의 `bunx` 검증 뒤 app restart 없이 같은 동작 계속 진행.
+3. `bunx tokscale@latest submit`을 한 번 실행하며, app과 login shell에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
+   `HOME`과 작업 directory는 현재 macOS account로 고정하고 무관한 secret·미등록 변수를 제외하며, 저장한 device name은 `TOKSCALE_DEVICE_NAME`만 override.
+   지원 source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수가 아직 허용되지 않은 경우 추가 directory에 `TOKSCALE_EXTRA_DIRS` 사용.
+4. Submit 결과가 검증된 Tokscale 미로그인 응답과 일치할 때만 **Log In…** 표시.
+5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
+6. **Log In…**으로 작은 **Log In to Tokscale** sheet 표시, sheet 안 **Log In** 선택 시 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행하며 승인 대기 중 browser URL과 user code 표시.
+7. Login 종료 시 카드에 **Tokscale Login Finished. Sync Has Not Started.** 표시.
+8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync**를 선택할 때 제출 시작.
 
-Only one Tokscale command runs at a time.
-The card distinguishes installing Bun, running Tokscale, login-required, finished, and failed states.
-The card keeps ANSI/control-sequence-cleaned, bounded command output visible through completion or failure until dismissed with **Done**, a new operation begins, or the app terminates; the login sheet shows the same login output while it remains open.
-**Done** clears the result, command output, and error, returning the card to its initial state without changing the device name or Tokscale credentials.
-It is unavailable while an installation or command is running.
-After a zero-exit submit, **Sync** stays disabled until the result is closed with **Done**, then remains disabled for at least 10 minutes from that dismissal.
-**Sync Available at** shows when the next sync can run; reaching that time only re-enables the button and never submits automatically.
-Closing an error, missing-login notice, or login result does not start a new waiting period, so recovery and explicit retries remain available.
-The waiting period survives closing and reopening Settings within the same app session and resets when the app restarts.
-A zero exit can also mean there was no usage to submit, so completion copy stays neutral rather than claiming an upload succeeded.
-Every other nonzero result remains a normal failure.
-Expired or revoked stored credentials are a known limitation and must be recovered outside OpenUsage with Tokscale's own CLI.
+동시에 Tokscale command 하나만 실행.
+카드에서 Bun 설치 중, Tokscale 실행 중, login 필요, 완료, 실패 상태 구분.
+Card에서 ANSI/control sequence를 제거한 bounded command output을 완료·실패 뒤에도 **Done**으로 닫거나 다음 operation 또는 app 종료까지 표시하고, login sheet가 열려 있는 동안 같은 login output도 표시.
+**Done**으로 결과·command output·오류를 비우고 초기 카드로 복귀하며 기기 이름과 Tokscale 인증은 유지.
+설치나 command 실행 중에는 Done 사용 불가.
+Submit exit 0 뒤에는 **Done**으로 결과를 닫기 전까지 **Sync** 비활성화, 닫은 시점부터 최소 10분 동안 비활성화 유지.
+**Sync Available at**으로 다음 실행 가능 시각 안내, 해당 시각에는 버튼만 다시 활성화하고 자동 제출 없음.
+오류·미로그인 안내·login 결과를 닫을 때는 새 대기 시간 없이 복구와 명시적 재시도 가능.
+대기 상태는 같은 앱 세션에서 Settings를 닫고 다시 열어도 유지하며 앱 재시작 시 초기화.
+Exit 0도 제출할 usage가 없다는 뜻일 수 있어 upload 성공을 단정하지 않는 중립적 완료 문구 사용.
+그 밖의 nonzero 결과는 일반 실패로 유지.
+만료되거나 revoke된 저장 credential은 알려진 제한이며 OpenUsage 밖에서 Tokscale 자체 CLI로 복구.
 
-The automatic Bun path uses the official [Bun installer](https://bun.com/docs/installation), installs in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default, and may update the login shell's profile.
-An incompatible `BUN_INSTALL` is not modified; the card reports the failure and offers the manual installation guide.
-OpenUsage does not replace an existing usable Bun installation.
-Existing runtimes remain discoverable through symbolic links or a configured directory outside the home; the home-directory restriction applies only to automatic installation.
-An existing Bun runtime with no usable `bunx` reports an error instead of being reinstalled.
-If installation or verification fails, submission does not start and the card offers the official installation guide as a recovery action.
+자동 Bun 경로에서 공식 [Bun installer](https://bun.com/docs/installation)를 사용해 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 설치하며 login shell profile을 갱신할 수 있음.
+호환되지 않는 `BUN_INSTALL`은 수정하지 않고 card에서 실패와 수동 설치 안내 표시.
+사용 가능한 기존 Bun 설치는 교체하지 않음.
+Symbolic link나 home 밖의 설정 directory에서도 기존 runtime 탐색 가능 — home 경로 제한은 자동 설치에만 적용.
+기존 Bun runtime은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오류 표시.
+설치나 검증 실패 시 submit을 시작하지 않고 카드에서 공식 설치 안내를 복구 동작으로 제공.
 
-## Advanced
+## 고급
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Log Level | Error / Warning / Info / Debug | How much detail the app writes to its log file.<br>Defaults to Info and persists across launches; raise to Debug while reproducing a problem.<br>Applies immediately. |
-| Copy Log Path | button | Copies the log file path (`~/Library/Logs/OpenUsage/OpenUsage.log`) to the clipboard. |
-| Reveal in Finder | button | Opens a Finder window with the log file selected. |
+| Log Level(로그 레벨) | Error / Warning / Info / Debug | 앱이 로그 파일에 기록하는 상세 수준.<br>기본값은 Info이며 재실행 후에도 유지, 문제를 재현하는 동안에는 Debug로 올리기.<br>즉시 적용. |
+| Copy Log Path(로그 경로 복사) | 버튼 | 로그 파일 경로(`~/Library/Logs/OpenUsage/OpenUsage.log`)를 클립보드에 복사. |
+| Reveal in Finder(Finder에서 보기) | 버튼 | 로그 파일이 선택된 Finder 창 열기. |
 
-See [Logging](logging.md) for the full behavior: subsystem tags, the file size cap, and the guarantee that secrets are never written.
+전체 동작 — 서브시스템 태그, 파일 크기 상한, 비밀 값을 절대 기록하지 않는다는 보장 — 은 [로깅](/docs/logging.md) 참조.
 
-## Updates
+## 업데이트
 
-The Updates section appears in official packaged builds that include the signed update feed.
-Local developer builds do not show it.
+업데이트 섹션은 서명된 업데이트 피드를 포함한 공식 패키지 빌드에만 등장.
+로컬 개발 빌드에는 없음.
 
-| Setting | Options | What it does |
+| 설정 | 옵션 | 동작 |
 |---|---|---|
-| Update Automatically | On / Off | Whether Sparkle checks for updates in the background.<br>You can still check manually when this is off. |
-| Beta Updates | On / Off | Adds pre-release builds to the updates you can receive.<br>Stable releases remain available either way. |
-| Check for Updates… | button | Starts a manual update check and opens Sparkle's update window. |
+| Update Automatically(자동 업데이트) | 켜기 / 끄기 | Sparkle이 백그라운드에서 업데이트를 확인할지 여부.<br>꺼 두어도 수동 확인은 가능. |
+| Beta Updates(베타 업데이트) | 켜기 / 끄기 | 받을 수 있는 업데이트에 프리릴리스 빌드 추가.<br>안정 릴리스는 어느 쪽이든 계속 제공. |
+| Check for Updates…(업데이트 확인…) | 버튼 | 수동 업데이트 확인을 시작하고 Sparkle 업데이트 창 열기. |
 
-See [Updates](updates.md) for the dashboard banner, channels, and signature verification.
+대시보드 배너, 채널, 서명 검증은 [업데이트](/docs/updates.md) 참조.
 
-## Version
+## 버전
 
-The app version shows in the popover footer.
+앱 버전은 팝오버 푸터에 표시.
 
-Your settings carry across updates — layout, stars, preferences, and the menu-bar shortcut all stay put.
-When an update changes how a setting is stored, the app upgrades it in place on launch, stepping through any in-between versions if you skipped a few.
-Nothing is reset.
-(Earlier betas wiped all settings on every update; that no longer happens.)
+설정은 업데이트 후에도 그대로 유지 — 레이아웃, 별표, 환경 설정, 메뉴 막대 단축키 모두 보존.
+업데이트로 설정 저장 방식이 바뀌면 실행 시 기존 설정을 제자리에서 업그레이드하고, 중간 버전을 몇 개 건너뛰었다면 해당 단계도 순서대로 적용.
+초기화되는 것은 없음.
+(초기 베타는 업데이트마다 모든 설정을 지웠지만, 이제는 그렇지 않음.)
 
-Which providers you have on also carries across updates — your choices are never overridden.
-A brand-new install picks its starting set by detecting the AI tools on your Mac (see [Dashboard § First launch](dashboard.md#first-launch)).
-When an update ships a provider you've never seen, the same local detection runs once for just that provider and turns it on only if you actually have the tool; everything you've already decided about stays exactly as you set it.
-See [Which Providers Are On](provider-enablement.md).
+켜 둔 프로바이더도 업데이트 후에 그대로 유지 — 사용자 선택을 덮어쓰지 않음.
+완전히 새로 설치한 경우에는 Mac의 AI 도구를 감지해 시작 세트 결정([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조).
+업데이트로 처음 보는 프로바이더가 들어오면 그 프로바이더에만 같은 로컬 감지를 한 번 실행해 실제로 그 도구가 있을 때만 켜고, 이미 결정해 둔 나머지는 설정한 그대로 유지.
+[활성화되는 프로바이더](/docs/provider-enablement.md) 참조.

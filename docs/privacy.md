@@ -1,162 +1,162 @@
-# Privacy & Usage Data
+# 개인정보 및 사용 데이터
 
-OpenUsage can share **anonymous** usage data to help understand how the app is used and catch problems.
-It is off by default; opt in any time in **Settings → Privacy → Share Anonymous Usage**.
+OpenUsage는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 데 도움이 되도록 **익명** 사용 데이터를 공유할 수 있음.
+기본값은 꺼짐이며, **Settings → Privacy → Share Anonymous Usage**(설정 → 개인정보 → 익명 사용 데이터 공유)에서 언제든 켜기 가능.
 
-## Anonymous analytics: what is shared
+## 익명 분석에서 공유되는 항목
 
-When sharing is on, OpenUsage sends daily app, provider, and feature summaries, plus a limited number of failure and recovery events:
+공유가 켜져 있으면 앱·프로바이더·기능의 일일 요약과 제한된 실패·복구 이벤트 전송:
 
-- **App use** — that the app was active today, the app and macOS version, which providers and metrics you have enabled, and which metrics you've pinned to the menu bar or tucked behind the "show more" caret.
-  A random ID (not tied to you or any account) lets us count daily active users without identifying anyone.
-- **Provider refreshes** — success, failure, and partial-failure counts, coarse error categories, and refresh reasons such as scheduled, manual, account change, credential change, or reset claim.
-  All account cards are combined under the provider name; account IDs and account counts are excluded.
-  Each summary retains its collection date, app version, and build channel, including across an update.
-- **Feature diagnostics** — fixed operation names and results for account management, credential storage, history reads, iCloud, Tokscale, Reset Watch, reset claims, pricing, provider status, notifications, updates, screenshots, and local integrations.
-  Repeated results are counted locally; the first failure or recovery for a result category can be sent promptly, with a limit of 30 immediate diagnostic events per local day.
-  These records contain no command output, screenshots, account labels, device labels, or raw error messages.
+- **앱 사용** — 오늘 앱이 활성 상태였다는 사실, 앱과 macOS 버전, 켜 둔 프로바이더와 지표, 메뉴 막대에 고정했거나 "show more"(더 보기) 캐럿 뒤로 넣은 지표.
+  사용자나 계정과 연결되지 않은 임의 ID 덕분에 누구도 식별하지 않고 일일 활성 사용자 수를 셀 수 있음.
+- **프로바이더 새로 고침** — 성공·실패·부분 실패 횟수, 대략적인 오류 범주, 정기·수동·계정 변경·인증 변경·재설정 크레딧 사용 등의 갱신 원인.
+  모든 계정 카드를 프로바이더 이름 아래 합산하며 계정 ID와 계정 수 제외.
+  업데이트 전후에도 각 요약의 수집 날짜·앱 버전·빌드 채널 유지.
+- **기능 진단** — 계정 관리, 인증 저장, 히스토리 읽기, iCloud, Tokscale, Reset Watch, 재설정 크레딧 사용, 가격, 프로바이더 상태, 알림, 업데이트, 스크린샷, 로컬 연동의 고정 작업명과 결과.
+  반복 결과는 로컬 집계; 결과 범주별 첫 실패·복구는 즉시 전송 가능하며 현지 날짜 기준 하루 최대 30개 즉시 진단 이벤트로 제한.
+  명령 출력·스크린샷·계정명·기기명·원본 오류 메시지는 기록에 포함하지 않음.
 
-It also reports **crashes**, so we can find and fix the bugs that make the app quit unexpectedly:
+또한 앱이 예기치 않게 종료되게 만드는 버그를 찾아 고칠 수 있도록 **크래시**도 보고:
 
-- **Crash reports** — when the crash handler is available, it saves a report for a later opted-in launch.
-  Before sending, OpenUsage retains only fixed exception types, stack addresses, binary identifiers needed to resolve those addresses, and app and macOS versions.
-  It removes exception messages, file paths, function text, and recorded action details.
-  Reports from an earlier consent period are rejected.
-  Re-enabling sharing uses the saved start time of the new consent period.
+- **크래시 리포트** — 크래시 핸들러를 사용할 수 있으면 이후 공유가 켜진 실행에서 보낼 리포트 저장.
+  전송 전 고정 예외 유형·스택 주소·주소 해석에 필요한 바이너리 식별자·앱 및 macOS 버전만 유지.
+  예외 메시지·파일 경로·함수 텍스트·기록된 동작 상세는 제거.
+  이전 동의 구간의 리포트는 전송 제외.
+  공유를 다시 켜면 저장된 새 동의 구간의 시작 시각 적용.
 
-## Anonymous analytics: what is never shared
+## 익명 분석에서 공유되지 않는 항목
 
-- No account details, names, emails, or credentials.
-- No actual usage **values** (no spend amounts, token counts, or limits).
-- No error **messages** or file paths — only coarse error categories as counts.
-- Nothing while the toggle is off.
+- 계정 정보, 이름, 이메일, 인증 정보.
+- 실제 사용량 **값**(지출 금액, 토큰 수, 한도).
+- 오류 **메시지**나 파일 경로 — 대략적인 오류 범주의 횟수만.
+- 토글이 꺼져 있는 동안에는 아무것도.
 
-## Credentials stored on this Mac
+## 이 Mac에 저장된 인증 정보
 
-OpenUsage primarily reads credentials that provider tools already keep on your Mac.
-When it writes a user-supplied API key or saves a refreshed credential, the file is replaced atomically and restricted to your macOS account (owner read and write only).
-Antigravity's short-lived refreshed-token cache is tied to the current Keychain login using a one-way fingerprint; the refresh credential itself is not copied.
-The cache is never used after logout, an account change, or while Keychain access is unavailable.
+OpenUsage는 주로 프로바이더 도구가 이미 Mac에 보관 중인 인증 정보를 읽음.
+사용자가 제공한 API 키를 쓰거나 갱신된 인증 정보를 저장할 때는 파일을 원자적으로 교체하고 해당 macOS 계정으로 접근을 제한(소유자 읽기·쓰기만).
+Antigravity의 수명 짧은 갱신 토큰 캐시는 단방향 지문으로 현재 키체인 로그인에 묶이며, 갱신 인증 정보 자체는 복사하지 않음.
+이 캐시는 로그아웃 후, 계정 변경 후, 키체인 접근이 불가능한 동안에는 절대 사용되지 않음.
 
-Claude Desktop access is strictly read-only.
-OpenUsage may ask macOS for permission to use the `Claude Safe Storage` Keychain item so it can decrypt Desktop's current access token.
-It never uses Desktop's rotating refresh token and never modifies Desktop's config, cookies, or Keychain data.
+Claude Desktop 접근은 철저히 읽기 전용.
+OpenUsage는 Desktop의 현재 액세스 토큰을 복호화하기 위해 macOS에 `Claude Safe Storage` 키체인 항목 사용 권한을 요청할 수 있음.
+Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의 설정·쿠키·키체인 데이터도 절대 수정하지 않음.
 
-Managed account switching ([**Settings → Accounts**](/docs/settings.md)) keeps one authentication snapshot per account in your macOS Keychain under a service name that starts with `OpenUsage Account Authentication`.
-This snapshot lets OpenUsage restore the previous sign-in when you switch back.
-Each snapshot holds the credential file contents currently saved under that account name, stays private to your macOS login Keychain, and is never sent anywhere.
-When the selected managed Claude account signs in through the official CLI in an ordinary terminal, OpenUsage verifies the new shared-home credential and replaces that account's snapshot and stored provider identity.
-The account name and selection remain unchanged even if the verified provider identity changes; an incomplete or unverifiable credential is not copied.
-Official sign-ins for additional accounts run in an app-owned workspace under `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/`.
-Workspace directories use `0700`, and credential files use `0600`.
-Removing an account deletes that workspace first and then its Keychain snapshot.
-If either deletion fails, the account remains registered so you can retry.
-Your `~/.claude` and `~/.codex` data is never moved or deleted.
-A confirmed switch also updates a small `claude`/`codex` function in `~/.zshrc` or `~/.config/fish/config.fish`.
-The function is wrapped in `>>> OpenUsage` comment markers, and deleting that marked block removes it.
+관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 `OpenUsage Account Authentication`으로 시작하는 서비스 이름 아래, 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
+이 스냅샷 덕분에 다시 전환할 때 이전 로그인을 복원 가능.
+각 스냅샷에는 해당 계정명에 현재 저장된 인증 파일 내용이 담기고, macOS 로그인 키체인에만 비공개로 남으며, 어디에도 전송되지 않음.
+선택된 관리형 Claude 계정으로 일반 터미널에서 공식 CLI 로그인을 완료하면, OpenUsage가 공유 홈의 새 인증 정보를 검증하고 해당 계정의 스냅샷과 저장 프로바이더 신원을 교체.
+검증된 프로바이더 신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 복사하지 않음.
+추가 계정의 공식 로그인은 `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
+작업 공간 디렉터리는 `0700`, 인증 정보 파일은 `0600` 권한 사용.
+계정을 제거하면 작업 공간을 먼저 삭제한 다음 Keychain 스냅샷을 삭제.
+어느 한쪽 삭제가 실패하면 다시 시도할 수 있도록 계정 등록은 그대로 유지.
+`~/.claude`와 `~/.codex` 데이터는 절대 이동하거나 삭제하지 않음.
+전환을 확정하면 `~/.zshrc` 또는 `~/.config/fish/config.fish`의 작은 `claude`/`codex` 함수도 갱신.
+이 함수는 `>>> OpenUsage` 주석 마커로 감싸여 있어, 표시된 블록을 삭제하면 함수도 제거.
 
-Managed account names, current provider-identity bindings, selected-account state, sign-in readiness, and authentication snapshots are local to this Mac and are not included in iCloud Sync.
-Only normalized usage history is eligible for iCloud.
-Shared managed-home history is synced as a provider-family total, not under the currently selected account.
+관리형 계정명, 현재 프로바이더 신원 연결, 선택된 계정 상태, 로그인 준비 상태, 인증 스냅샷은 이 Mac에만 있고 iCloud 동기화에 포함되지 않음.
+iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
+공유 관리형 홈의 히스토리는 현재 선택된 계정이 아니라 프로바이더 패밀리 합계로 동기화.
 
 ## Share Screenshot
 
-A selected card is copied to the clipboard as a PNG only when you explicitly use **Share Screenshot**.
-The image uses the same card title as the dashboard, so **Separate Cards** includes the displayed Account Name in titles such as `Claude: Account 1` and `Codex: Account 2`.
-Sharing the image can therefore expose the account name to its recipients.
+**Share Screenshot**을 직접 실행한 경우에만 선택한 카드를 PNG로 클립보드에 복사.
+이미지는 대시보드와 같은 카드 제목을 사용하므로 **Separate Cards**에서는 `Claude: Account 1`·`Codex: Account 2` 같은 제목에 화면의 Account Name 포함.
+따라서 이미지를 공유하면 받는 사람에게 계정명이 노출될 수 있음.
 
-## Other network requests
+## 기타 네트워크 요청
 
-Besides the provider API calls the vendor's own tools would make, OpenUsage fetches public [model price lists](pricing.md) about once an hour (from `raw.githubusercontent.com`, `models.dev`, and this project's GitHub Pages).
-These are plain downloads of public data — they carry no usage, log, or account information, and they run regardless of the Share Anonymous Usage setting.
-While a supported provider is enabled, OpenUsage also fetches public component status from [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), or [GitHub Status](https://www.githubstatus.com/) at launch, when that provider is enabled, every five minutes, and during Dashboard manual refreshes.
-These requests are unauthenticated and include no provider credentials, account information, usage values, or logs.
+벤더 도구가 어차피 수행하는 프로바이더 API 호출 외에, OpenUsage는 공개 [모델 가격 목록](/docs/pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
+공개 데이터를 그대로 내려받는 요청이라 사용량·로그·계정 정보가 실리지 않으며, Share Anonymous Usage 설정과 무관하게 실행.
+지원되는 프로바이더가 활성화돼 있으면 OpenUsage가 실행 시, 해당 프로바이더 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), [GitHub Status](https://www.githubstatus.com/)에서 공개 컴포넌트 상태도 가져옴.
+인증 없는 요청이며 프로바이더 인증 정보, 계정 정보, 사용량 값, 로그를 포함하지 않음.
 
-OpenUsage computes spend tiles from local CLI logs on your Mac and does not send those logs during normal refreshes or through anonymous analytics.
+OpenUsage는 로컬 CLI 로그로 Mac에서 지출 타일을 계산하고 일반 새로 고침이나 익명 분석으로 해당 로그를 전송하지 않음.
 
-When Codex is enabled and you enable **Reset Watch** on the dashboard or star it for the menu bar, OpenUsage checks the public [codex-resets.com API](https://codex-resets.com/api/docs) without authentication on a separate 15-minute cadence.
-For a recognized active source post, it also reads the same site's `/api/watch/votes` totals without authentication to calculate the community vote share; it never submits votes.
-While Reset Watch is active, manual Refresh (⌘R) also triggers these checks, subject to retry delays and requests already in flight.
-These checks do not use Codex sign-in and run independently from the regular five-minute subscription-usage refresh.
-Once the metric is both disabled and unstarred, or Codex is disabled, future checks stop; a Reset Watch request already underway may still finish.
-Neither request carries a Codex token, account ID, usage values, local logs, or cookies.
-The independent service still receives ordinary network metadata, such as your IP address and OpenUsage user agent.
-These checks are separate from anonymous usage sharing and are not controlled by the Share Anonymous Usage setting.
+Codex 프로바이더가 켜져 있고 **Reset Watch**를 대시보드에서 켜거나 메뉴 막대에 별표하면, OpenUsage가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
+인식 가능한 활성 출처 게시물이 있으면 커뮤니티 투표율 계산을 위해 같은 사이트의 `/api/watch/votes` 집계도 인증 없이 조회하며 투표는 제출하지 않음.
+Reset Watch 활성 상태에서는 수동 Refresh(⌘R)도 같은 조회를 실행하되 재시도 대기와 이미 진행 중인 요청을 고려.
+이 조회는 Codex 로그인을 사용하지 않으며 일반 구독 사용량 5분 새로 고침과 독립적으로 실행.
+대시보드 표시와 메뉴 막대 별표가 모두 해제되거나 Codex 프로바이더를 끄면 이후 조회 중단 — 이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
+두 요청 모두 Codex 토큰, 계정 ID, 사용량 값, 로컬 로그, Cookie가 실리지 않음.
+독립 서비스에는 IP 주소와 OpenUsage 사용자 에이전트 같은 일반 네트워크 메타데이터가 전달됨.
+이 조회는 익명 사용 데이터 공유와 별개이며 Share Anonymous Usage 설정의 제어 대상이 아님.
 
-To avoid re-reading unchanged Claude, Codex, and pi logs after every relaunch, OpenUsage keeps their parsed usage events in `~/Library/Application Support/OpenUsage/log-scan-cache/`.
-These records contain the usage metadata needed for local totals, including any per-event cost already recorded by a provider, but not raw JSONL lines or conversation text.
-They are private to your macOS account and are never sent to PostHog, a provider, or iCloud.
-Old source-file records are dropped as the scan window advances, and identity caches that have not been used for 35 days are removed.
-OpenUsage's pricing engine runs after the cache is read, so its computed aggregates and totals are not persisted in this cache.
+재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, OpenUsage는 파싱된 사용 이벤트를 `~/Library/Application Support/OpenUsage/log-scan-cache/`에 보관.
+이 레코드에는 로컬 합계에 필요한 사용량 메타데이터(프로바이더가 이미 기록한 이벤트별 비용 포함)가 담기지만, 원시 JSONL 줄이나 대화 텍스트는 담기지 않음.
+해당 macOS 계정에만 비공개로 남고, PostHog나 프로바이더, iCloud 어디에도 절대 전송되지 않음.
+오래된 소스 파일 레코드는 스캔 범위가 전진하면서 버려지고, 35일 동안 쓰이지 않은 식별 정보 캐시는 제거.
+OpenUsage의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산된 집계와 합계는 이 캐시에 남지 않음.
 
-If you explicitly turn on [iCloud Sync](icloud-sync.md), OpenUsage writes normalized daily tokens, spend, and model totals to its private iCloud container so your own Macs can show one combined summary.
-Credentials, account limits, provider responses, and raw logs are never written there.
-This is separate from anonymous usage sharing: iCloud Sync defaults off and uses your iCloud account, while the analytics toggle controls PostHog events.
+[iCloud 동기화](/docs/icloud-sync.md)를 직접 켜면, OpenUsage는 사용자의 Mac들이 하나의 결합 요약을 볼 수 있도록 정규화된 일일 토큰, 지출, 모델별 합계를 앱 전용 iCloud 컨테이너에 기록.
+인증 정보, 계정 한도, 프로바이더 응답, 원시 로그는 절대 기록하지 않음.
+이는 익명 사용 데이터 공유와 별개 — iCloud 동기화는 기본값이 꺼짐이고 사용자의 iCloud 계정을 쓰는 반면, 애널리틱스 토글은 PostHog 이벤트를 제어.
 
-## Tokscale public sharing
+## Tokscale 공개 공유
 
-The Tokscale action is a third, independent sharing flow.
-Neither iCloud Sync nor Share Anonymous Usage enables it, and changing Tokscale state changes neither of those settings.
-No app launch, refresh, background task, widget update, `openusage` CLI invocation, or local API request triggers Bun installation or Tokscale.
-Settings summarizes public usage syncing and links to the official policy; the detailed sharing, command, and installation information remains here.
+Tokscale 동작은 세 번째 독립 공유 흐름.
+iCloud Sync나 Share Anonymous Usage로 활성화되지 않으며, Tokscale 상태 변경도 두 설정을 바꾸지 않음.
+App launch, 새로 고침, background task, widget update, `openusage` CLI 호출, local API 요청으로 Bun 설치나 Tokscale 실행 금지.
+Settings에서는 공개 사용량 동기화를 요약하고 공식 policy 연결 제공 — 공개 범위·명령·설치 상세 정보는 이 문서에 유지.
 
-Only an explicit **Sync** in Settings runs:
+Settings의 명시적 **Sync**에서만 다음 명령 실행:
 
 ```sh
 bunx tokscale@latest submit
 ```
 
-That command asks the Tokscale package resolved by `bunx` to discover its supported sources and update a public profile that may be indexed by search engines.
-OpenUsage supplies `n` followed by a newline once, then closes input, to explicitly decline an optional GitHub star request.
-Verified against Tokscale v4.15.1 on 2026-09-04, the CLI may include token and cost breakdowns, dates, clients, models, message and timing statistics, device information, discovered MCP server names, and the Tokscale CLI version.
-The CLI may read local session files to calculate those aggregates, but Tokscale's current policy excludes prompts, responses and conversation content, source code, file contents and names, and AI-provider API keys or credentials from submission.
-OpenUsage does not derive the submission from its widgets, iCloud history, or anonymous analytics and does not apply its provider settings as a filter.
-OpenUsage forwards only explicitly allowed locale, network, package-registry, Tokscale authentication/configuration, and known source-path settings from the app and captured login-shell environments.
-Unrelated credentials such as AI-provider API keys and GitHub tokens, unknown variables, runtime-injection settings, Tokscale test hooks, and custom Tokscale API endpoints are not forwarded.
-Allowed settings can still contain credentials, such as Tokscale's own token or proxy authentication; OpenUsage does not log those values.
-This limits environment inheritance, not file access: Bun and Tokscale are not sandboxed and can still read local files and their own configuration.
-The command uses the current macOS account's home as both `HOME` and its working directory, ignoring a custom terminal `HOME`.
-Tokscale uses its own token to authenticate the request; its current policy excludes AI-provider API keys and credentials from the submitted usage data.
+`bunx`가 해석한 Tokscale package에서 지원 소스를 직접 탐색해 검색 engine에 색인될 수 있는 public profile을 갱신하도록 요청하는 명령.
+선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
+2026-09-04 Tokscale v4.15.1 검토 기준, CLI는 token·cost breakdown, 날짜, client, model, message·timing 통계, device 정보, 발견된 MCP server 이름, Tokscale CLI 버전을 포함 가능.
+해당 집계를 계산하기 위해 local session file을 읽을 수 있지만, Tokscale 현재 policy에서는 prompt·response·conversation content, source code, file content·name, AI provider API key·credential을 제출에서 제외.
+OpenUsage widget, iCloud history, 익명 분석에서 제출 데이터를 역산하지 않고 OpenUsage provider 설정을 filter로 적용하지 않음.
+App과 캡처된 login shell environment에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
+AI provider API key·GitHub token 같은 무관한 credential, 미등록 변수, runtime injection 설정, Tokscale test hook, custom Tokscale API endpoint는 전달하지 않음.
+허용한 설정에도 Tokscale 자체 token이나 proxy 인증 같은 credential이 포함될 수 있으며, OpenUsage에서 해당 값을 기록하지 않음.
+Environment 상속만 제한하며 file 접근 제한은 아님: Bun과 Tokscale는 sandbox로 격리하지 않으므로 local file과 자체 설정을 계속 읽을 수 있음.
+Custom terminal `HOME`은 무시하고 현재 macOS account의 home을 `HOME`과 작업 directory로 사용.
+Tokscale 자체 token은 request 인증에 사용하고, Tokscale 현재 policy에서는 AI provider API key와 credential을 제출 usage data에서 제외.
 
-The device name saved in the **Tokscale Device Name** sheet is a public label and can identify the machine on the Tokscale profile.
-OpenUsage stores it locally and supplies it only to the submit process as `TOKSCALE_DEVICE_NAME`; a value such as `m1-max` replaces the display label for the same stable device on its next successful submission.
-Saving or changing the name alone makes no network request.
-Removing the override does not clear Tokscale's existing public name; it lets later submissions use the name from Tokscale's environment or stored device record again.
+**Tokscale Device Name** sheet에서 저장한 device name은 Tokscale profile에서 기기를 식별할 수 있는 public label.
+OpenUsage에 로컬로 보관하고 submit process에만 `TOKSCALE_DEVICE_NAME`으로 전달하며, `m1-max` 같은 값은 다음 성공 submit에서 같은 stable device의 표시 이름을 교체.
+이름 저장이나 변경만으로 network request를 실행하지 않음.
+Override 제거로 Tokscale의 기존 public name을 삭제하지 않으며, 이후 submit에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
 
-If the submit command reports a verified missing-login result, OpenUsage offers a separate **Log In…** action that runs `bunx tokscale@latest login` with no standard input.
-Login alone does not submit usage, and completing it never starts submit automatically.
-The current login flow lets Tokscale store the GitHub numeric ID, username, display name, avatar URL, and email.
-During a new login, the command also sends `CLI on <hostname>` as the personal-token name; that token name is separate from the public submission-device label and is not changed by device-name management.
-A later submission creates or updates the public profile, which can show the GitHub username, avatar, and display name.
+Submit 명령에서 검증된 미로그인 결과를 받으면 OpenUsage에서 별도 **Log In…** 동작을 제공하고 표준 입력 없이 `bunx tokscale@latest login` 실행.
+Login 자체는 usage를 제출하지 않으며, 완료 뒤에도 submit을 자동 시작하지 않음.
+현재 login 흐름에서 Tokscale는 GitHub numeric ID, username, display name, avatar URL, email을 저장 가능.
+새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 기기 이름 관리로 변경되지 않음.
+이후 submit에서 public profile을 생성·갱신하며 GitHub username, avatar, display name을 표시할 수 있음.
 
-When an explicit **Sync** cannot find a usable Bun runtime, OpenUsage downloads and runs Bun's official installer before continuing.
-The installer creates or updates files in a safe configured `BUN_INSTALL` directory below the current user's home or `~/.bun` by default and may append Bun's path setup to the login shell profile; it does not require administrator access.
-Its child process receives exported proxy and certificate settings for the binary download, but not other login-shell values.
-OpenUsage does not modify an incompatible `BUN_INSTALL` outside that boundary and instead offers the manual installation guide.
-The mutable Bun installer and `@latest` are part of the disclosure boundary: they may download and execute Bun or Tokscale code that changed without an OpenUsage update.
-The exact `bunx` command follows the user's Bun configuration and may prefer a matching package under the home directory.
-Use only registry endpoints you trust, preferably over HTTPS; an HTTP registry can expose package downloads to tampering.
-See the official [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun installation guide](https://bun.com/docs/installation), and [Bun `bunx` documentation](https://bun.com/docs/pm/bunx).
+명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못하면 OpenUsage에서 Bun 공식 installer를 다운로드·실행한 뒤 계속 진행.
+Installer는 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 file을 생성·갱신하고 login shell profile에 Bun path 설정을 추가할 수 있으며 administrator 권한은 불필요.
+Installer child에는 binary download용으로 export된 proxy·certificate 설정을 전달하지만 그 밖의 login-shell 값은 전달하지 않음.
+OpenUsage는 이 경계 밖의 호환되지 않는 `BUN_INSTALL`을 수정하지 않고 수동 설치 안내 제공.
+변경 가능한 Bun installer와 `@latest`가 고지 경계에 포함 — OpenUsage update 없이 바뀐 Bun 또는 Tokscale code를 내려받아 실행할 수 있음.
+정확한 `bunx` command는 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
+신뢰하는 registry endpoint와 가급적 HTTPS 사용 권장 — HTTP registry에서는 package download 변조 위험 존재.
+공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun 설치 안내](https://bun.com/docs/installation), [Bun `bunx` 문서](https://bun.com/docs/pm/bunx) 참조.
 
-Installer and command output can contain usernames, browser URLs, authorization codes, local paths, model names, profile URLs, and usage values.
-OpenUsage shows a bounded in-memory copy in the Settings card and login sheet, retains completion or failure output until the card's **Done** dismisses the result, the next command begins, or the app terminates, and never writes it to the OpenUsage log, telemetry, UserDefaults, a file, or the clipboard automatically.
-OpenUsage does not read or copy Tokscale's credential file and provides no Tokscale logout, disconnect, or remote-data deletion UI.
+Installer와 command output에는 username, browser URL, authorization code, local path, model 이름, profile URL, usage 값이 포함될 수 있음.
+OpenUsage에서는 bounded memory 사본을 Settings card와 login sheet에 표시하고 완료·실패 output도 카드의 **Done**으로 결과를 닫거나 다음 command 또는 app 종료까지 유지하며, OpenUsage log, telemetry, UserDefaults, file, clipboard에 자동 기록하지 않음.
+OpenUsage에서 Tokscale credential file을 읽거나 복사하지 않으며 Tokscale logout, disconnect, remote data 삭제 UI도 제공하지 않음.
 
-## How anonymous analytics works
+## 익명 분석 동작 방식
 
-- OpenUsage uses random installation identifiers, never calls the analytics service's identify function, and creates no person profile.
-  The service still receives ordinary network metadata such as the sender's IP address; location enrichment is disabled on events.
-- Crash reports use the **same** Share Anonymous Usage switch.
-  An opted-out launch does not start the SDK or install its crash handler.
-  Switching off cancels pending transport requests and discards unsent SDK queues and local summary counters; already transmitted data cannot be recalled.
-  A native crash handler installed earlier in the process can keep writing a local report until the app restarts, but that report is excluded from later sharing.
-  Restart after changing the switch to apply crash-handler changes reliably; capture also depends on the project's exception setting and whether a debugger is attached.
-- Daily summaries are checked independently of provider refresh completion, including when no provider is enabled.
-  Immediate diagnostics are deduplicated and capped; normal successful refreshes remain daily counts.
-- Your choice and the anonymous ID are stored separately from the rest of the app's settings, so settings migrations and updates do not re-enable sharing or change your ID.
-- Development builds use a separate consent store and require an explicitly supplied test project token before sending analytics.
+- 임의 설치 식별자를 사용하며 분석 서비스의 사용자 식별 함수를 호출하거나 person profile을 생성하지 않음.
+  서비스에는 송신 IP 주소 등의 일반적인 네트워크 메타데이터가 전달되며, 이벤트의 위치 정보 보강은 비활성화.
+- 크래시 리포트도 **같은** Share Anonymous Usage 스위치 사용.
+  공유가 꺼진 상태로 실행하면 SDK와 크래시 핸들러를 시작하지 않음.
+  공유를 끄면 대기 중인 전송 요청 취소 및 미전송 SDK 큐·로컬 집계 폐기; 이미 전송된 데이터는 회수 불가.
+  해당 프로세스에서 이미 설치된 네이티브 크래시 핸들러는 앱 재시작까지 로컬 리포트를 기록할 수 있으나, 그 리포트는 이후 공유에서 제외.
+  크래시 핸들러 변경을 확실히 적용하려면 스위치 변경 후 재시작 필요; 수집은 프로젝트의 예외 설정과 디버거 연결 여부에도 의존.
+- 프로바이더 갱신 완료와 독립적으로 일일 요약을 확인하며, 활성 프로바이더가 없어도 동작.
+  즉시 진단은 중복 제거·횟수 제한 적용; 일반적인 갱신 성공은 일일 횟수로 유지.
+- 사용자의 선택과 익명 ID는 앱의 나머지 설정과 분리해 저장하므로, 설정 마이그레이션이나 업데이트가 공유를 다시 켜거나 ID를 바꾸지 않음.
+- 개발 빌드는 별도 동의 저장소를 사용하며, 분석 전송에는 명시적으로 제공한 테스트 프로젝트 토큰 필요.
 
-## Controlling anonymous analytics
+## 익명 분석 공유 설정
 
-Open **Settings → Privacy** and switch **Share Anonymous Usage** on to opt in.
-Switching it off stops sharing immediately.
+**Settings → Privacy**를 열고 **Share Anonymous Usage**를 켜면 공유에 참여.
+끄면 공유가 즉시 중단.

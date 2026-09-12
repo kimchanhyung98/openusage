@@ -1,96 +1,96 @@
-# Adding a Provider
+# 프로바이더 추가
 
-How to add a new AI provider to OpenUsage.
-Read the [architecture overview](architecture.md) first so the pieces below make sense.
+OpenUsage에 새 AI 프로바이더를 추가하는 방법.
+아래 구성 요소가 맞물리는 방식을 이해하려면 먼저 [아키텍처 개요](/docs/architecture.md)부터 읽기.
 
-## What a provider is
+## 프로바이더란
 
-A provider is a small Swift module under `Sources/OpenUsage/Providers/<Name>/` that conforms to `ProviderRuntime`.
-It has three parts:
+프로바이더는 `Sources/OpenUsage/Providers/<Name>/` 아래에 두는, `ProviderRuntime`을 준수하는 작은 Swift 모듈.
+세 부분으로 구성:
 
-- an **auth store** that reads credentials already on the user's machine (config files, keychain),
-- a **usage client** that calls the provider's API,
-- a **mapper** that turns the response into the app's metric vocabulary.
+- 사용자 Mac에 이미 있는 인증 정보(설정 파일, 키체인)를 읽는 **인증 스토어**,
+- 프로바이더 API를 호출하는 **사용량 클라이언트**,
+- 응답을 앱의 지표 어휘로 변환하는 **매퍼**.
 
-OpenUsage never asks the user to paste a token — if the provider's own CLI or app has already logged in, OpenUsage reads those existing credentials.
+OpenUsage는 사용자에게 토큰을 붙여 넣으라고 요구하지 않음 — 프로바이더 자체 CLI나 앱이 이미 로그인돼 있으면 그 기존 인증 정보를 읽는 방식.
 
-Besides `refresh()`, every provider implements `hasLocalCredentials()` — a cheap, local-only check (files, keychain; never the network) for whether those credentials exist at all.
-A fresh install probes it once to turn on exactly the providers the user actually has (see `FirstRunSeeder`), and existing installs probe it once on the first launch after your provider ships (see `NewProviderSeeder`) — so implementing it correctly is what gets the new provider auto-enabled for the users who actually have the tool (see [Which Providers Are On](provider-enablement.md)).
-Mirror the same credential sources `refresh()` reads, and run blocking loads via `loadOffMainActor`.
+`refresh()` 외에 모든 프로바이더는 `hasLocalCredentials()`도 구현 — 인증 정보가 존재하는지만 확인하는 저비용 로컬 전용 검사(파일, 키체인만 확인, 네트워크 사용 없음).
+새 설치는 이 검사를 한 번 실행해 사용자가 실제로 쓰는 프로바이더만 켜고(`FirstRunSeeder` 참조), 기존 설치는 새 프로바이더가 추가된 뒤 첫 실행 때 한 번 실행(`NewProviderSeeder` 참조) — 그래서 이 메서드를 제대로 구현해야 해당 도구를 가진 사용자에게 새 프로바이더가 자동으로 켜짐([활성화되는 프로바이더](/docs/provider-enablement.md) 참조).
+`refresh()`가 읽는 것과 같은 인증 정보 출처를 그대로 확인하고, 블로킹 로드는 `loadOffMainActor`로 실행.
 
-## The metric contract
+## 지표 계약
 
-`refresh()` returns a `ProviderSnapshot` whose `lines` are `MetricLine` values.
-Pick the case by the shape of the number, not by the provider:
+`refresh()`는 `lines`에 `MetricLine` 값을 담은 `ProviderSnapshot`을 반환.
+케이스는 프로바이더가 아니라 숫자의 형태에 따라 선택:
 
-- **`.progress`** — a bounded meter with `used`, `limit`, and a `format`:
-  - `.percent` for quota-style limits (session, weekly),
-  - `.dollars` for a capped dollar amount (credits with a ceiling),
-  - `.count(suffix:)` for a capped count (e.g. requests per cycle).
-  - Add `resetsAt` when the window resets at a known time, and `periodDurationMs` for the cycle length.
-- **`.values`** — an unbounded row carrying one or more raw numbers (each a `MetricValue`: a number, its kind, an optional unit label like `"tokens"`).
-  Use it for any limitless numeric row — a spend day carries dollars *and* tokens, Codex credits carry dollars *and* a count.
-  The widget picks which to show (cost-only, tokens-only, or both) via its descriptor, and formatting happens at the display edge, so the menu bar never re-parses a string.
-  Prefer this for numbers.
-- **`.badge`** — a short status pill, like `Disabled` or a pay-as-you-go cap.
-  Use it for state rather than a fillable number.
-- **`.chart`** — dated numeric points for a compact usage-trend row.
-- **`.text`** — a string-valued provider notice preserved in the local API.
-  It does not render a widget; use `.progress`, `.values`, `.badge`, or `.chart` for every descriptor-backed row.
+- **`.progress`** — `used`, `limit`, `format`을 가진 상한 있는 미터:
+  - `.percent`는 할당량 형태의 한도(세션, 주간)에,
+  - `.dollars`는 상한이 있는 달러 금액(상한 있는 크레딧)에,
+  - `.count(suffix:)`는 상한이 있는 횟수(예: 주기당 요청 수)에 사용.
+  - 기간이 정해진 시각에 초기화되면 `resetsAt`을, 주기 길이에는 `periodDurationMs`를 추가.
+- **`.values`** — 원시 숫자 하나 이상(각각 `MetricValue`: 숫자, 종류, `"tokens"` 같은 선택적 단위 레이블)을 담는 상한 없는 행.
+  하루 지출은 달러 *와* 토큰을, Codex 크레딧은 달러 *와* 개수를 함께 담듯, 상한 없는 숫자 행에는 모두 이 케이스를 사용.
+  무엇을 보여 줄지(비용만, 토큰만, 둘 다)는 위젯이 디스크립터로 선택하고 포매팅은 표시 단계에서 처리하므로, 메뉴 막대가 문자열을 다시 파싱할 일 없음.
+  숫자에는 이 케이스를 우선.
+- **`.badge`** — `Disabled`나 종량제 상한 같은 짧은 상태 표시.
+  채워지는 숫자보다 상태를 나타낼 때 사용.
+- **`.chart`** — 컴팩트한 사용량 추이 행을 위한, 날짜가 붙은 숫자 포인트.
+- **`.text`** — 로컬 API에 그대로 보존되는 문자열 값 프로바이더 알림.
+  위젯을 렌더링하지 않으므로, 디스크립터 기반 행에는 전부 `.progress`, `.values`, `.badge`, `.chart`를 사용.
 
-Set the snapshot's `plan` when the provider exposes a plan name.
-On failure, return `ProviderSnapshot.error(provider:error:)` with a typed provider error when possible, so telemetry can group the failure by a stable, non-private reason such as "not logged in" or "network".
-Use the message-only factory only when there is no typed error, and never return stale or empty data silently.
+프로바이더가 요금제 이름을 제공하면 스냅샷의 `plan`에 설정.
+실패 시에는 가능하면 타입이 지정된 프로바이더 오류와 함께 `ProviderSnapshot.error(provider:error:)`를 반환 — 텔레메트리가 "not logged in"(로그인되지 않음), "network"(네트워크)처럼 안정적이고 개인을 식별하지 않는 사유로 실패를 그룹화할 수 있도록.
+메시지 전용 팩토리는 타입이 지정된 오류가 없을 때만 사용하고, 오래되거나 빈 데이터를 조용히 반환하는 것은 금지.
 
-## Steps
+## 단계
 
-1. **Check first.**
-   Look at open issues and `docs/providers/` to see if the provider is already requested or in progress.
-2. **Create the module.**
-   Add `Sources/OpenUsage/Providers/<Name>/` with the auth store, usage client, and mapper, conforming to `ProviderRuntime` — both `refresh()` and `hasLocalCredentials()` (the compiler enforces the latter; there is no default).
-   The probe must stay local-only and reuse the same auth-store loaders and credential-usability filters that `refresh()` starts with — don't write a second credential-reading path.
-   Reuse the shared helpers in `Support/` (`ProviderParse` for JSON/number/percent parsing, `OpenUsageISO8601` for timestamps) instead of copying them.
-3. **Declare its widgets.**
-   Expose the provider's metrics as `WidgetDescriptor`s using the factories in `WidgetDescriptor+Factories.swift` (`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge`, and so on).
-4. **Register it.**
-   Add the provider to the list in `AppContainer`.
-5. **Test it.**
-   Add focused tests under `Tests/OpenUsageTests/`, including a mapper test that feeds a sample API response and checks the resulting metric lines.
-6. **Document it.**
-   Add a page under `docs/providers/` covering what it tracks, where its credentials come from, the endpoints it calls, and what its error states mean.
-7. **Run it.**
-   Build and launch with `./script/build_and_run.sh` and confirm the provider shows up.
+1. **먼저 확인.**
+   열린 이슈와 `docs/providers/`를 살펴 해당 프로바이더가 이미 요청됐거나 작업 중인지 확인.
+2. **모듈 생성.**
+   인증 스토어, 사용량 클라이언트, 매퍼를 갖춘 `Sources/OpenUsage/Providers/<Name>/`를 추가하고 `ProviderRuntime`을 준수 — `refresh()`와 `hasLocalCredentials()` 둘 다 필요(후자는 컴파일러가 강제하며 기본 구현 없음).
+   프로브는 로컬 전용으로 유지하고, `refresh()`가 시작할 때 쓰는 것과 같은 인증 스토어 로더와 인증 정보 유효성 필터를 재사용 — 인증 정보를 읽는 두 번째 경로를 만드는 것은 금지.
+   `Support/`의 공유 헬퍼(JSON/숫자/퍼센트 파싱용 `ProviderParse`, 타임스탬프용 `OpenUsageISO8601`)는 복사하지 말고 재사용.
+3. **위젯 선언.**
+   `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
+4. **등록.**
+   `AppContainer`의 목록에 프로바이더를 추가.
+5. **테스트.**
+   샘플 API 응답을 넣고 결과 지표 행을 검사하는 매퍼 테스트를 포함해, `Tests/OpenUsageTests/` 아래에 집중적인 테스트를 추가.
+6. **문서화.**
+   추적 항목, 인증 정보 출처, 호출하는 엔드포인트, 오류 상태의 의미를 다루는 페이지를 `docs/providers/` 아래에 추가.
+7. **실행.**
+   `./script/build_and_run.sh`로 빌드·실행해 프로바이더가 표시되는지 확인.
 
-## Conventions
+## 컨벤션
 
-- Validate only at the boundary (the API response); trust the app's internal types.
-- Match the metric labels and units the provider's own dashboard uses, so numbers are recognizable.
-- Declare the provider's **quick links** on its `Provider` value (`links:`).
-  Each link is a `ProviderLink(label:url:)` rendered as a button in the card's expanded area that opens the URL in the default browser.
-  Ship the provider's own Status / Console / Dashboard pages where they exist; leave `links` off (it defaults to empty) for providers without any.
-  Cap at **two** links per provider (standard labels: Status, Dashboard, API Keys, or Usage).
-  Only `http(s)` URLs with a non-empty label render.
+- 검증은 경계(API 응답)에서만, 앱 내부 타입은 신뢰.
+- 숫자를 알아보기 쉽도록 프로바이더 자체 대시보드가 쓰는 지표 레이블과 단위에 맞추기.
+- 프로바이더의 **빠른 링크**는 `Provider` 값(`links:`)에 선언.
+  각 링크는 카드 확장 영역에 버튼으로 렌더링되는 `ProviderLink(label:url:)`이며, 기본 브라우저에서 URL을 여는 방식.
+  프로바이더 자체 Status / Console / Dashboard 페이지가 있으면 포함하고, 없는 프로바이더는 `links` 생략(기본값은 비어 있음).
+  프로바이더당 링크는 최대 **두 개**(표준 레이블: Status, Dashboard, API Keys, Usage).
+  레이블이 비어 있지 않은 `http(s)` URL만 렌더링.
 
-## Optional server-status support
+## 선택적 서버 상태 지원
 
-Official server status is separate from `ProviderRuntime` and is opt-in.
-Add a status-catalog entry only when the provider publishes a public HTTPS component feed with stable identifiers.
-Record the exact endpoint, status vocabulary, and exact component ids and names; do not use a broad name fallback or infer an outage from a usage-refresh error.
-Providers without a catalog entry make no status request.
+공식 서버 상태는 `ProviderRuntime`과 분리된 선택 기능.
+프로바이더가 안정적인 식별자를 가진 공개 HTTPS 컴포넌트 피드를 제공할 때만 상태 카탈로그 항목 추가.
+정확한 엔드포인트, 상태 어휘, 컴포넌트 ID와 이름을 기록하고, 광범위한 이름 대체나 사용량 새로 고침 오류를 통한 장애 추론은 금지.
+카탈로그 항목이 없는 프로바이더는 상태 요청을 보내지 않음.
 
-The request must remain unauthenticated and must not include provider credentials, account information, or usage data.
-Status is keyed by provider family, so account-specific provider ids share one check.
-Add focused tests for relevant and unrelated components, maintenance, unknown states, malformed responses, and each documented outage severity, then update the provider's EN/KO pages.
+요청은 인증 없이 유지하고 프로바이더 인증 정보, 계정 정보, 사용량 데이터를 포함하지 않아야 함.
+상태는 프로바이더 패밀리를 키로 사용하므로 계정별 프로바이더 ID가 확인 하나를 공유.
+관련·무관 컴포넌트, 유지보수, 알 수 없는 상태, 잘못된 응답, 문서화된 각 장애 심각도에 대한 집중 테스트를 추가한 뒤 해당 프로바이더의 한국어 문서 갱신.
 
-## User-supplied API keys
+## 사용자 제공 API 키
 
-Most providers read credentials already on the machine (a companion CLI/app's session, the keychain).
-A provider with nothing local to read — OpenRouter is the first — conforms to `APIKeyManaging` so the in-app **Settings → API Keys** card manages its key with no per-provider UI work:
+대부분의 프로바이더는 Mac에 이미 있는 인증 정보(연동 CLI/앱의 세션, 키체인)를 읽는 방식.
+로컬에서 읽을 것이 전혀 없는 프로바이더(OpenRouter가 첫 사례)는 `APIKeyManaging`을 준수해, 프로바이더별 UI 작업 없이 앱 내 **Settings → API Keys**(설정 → API 키) 카드가 키를 관리:
 
-- The auth store exposes a four-state `keyStatus()` (`notSet` / `fromEnvironment` / `saved` / `overrideActive`), a `currentAPIKey()` for the reveal toggle, and `saveAPIKey(_:)` / `deleteAPIKey()` that write to a config file the auth store already reads.
-  Config-file precedence over the env var is what makes a saved key an override for free.
-- The provider conforms by delegating those to its auth store, and reports its storage path and env name for the card's copy.
-- `AppContainer` collects every `APIKeyManaging` provider into `apiKeyProviders`, which the card lists.
-  Add the provider to the registry as usual and the card picks it up.
+- 인증 스토어는 네 가지 상태의 `keyStatus()`(`notSet` / `fromEnvironment` / `saved` / `overrideActive`), 표시 토글용 `currentAPIKey()`, 인증 스토어가 이미 읽는 설정 파일에 쓰는 `saveAPIKey(_:)` / `deleteAPIKey()`를 노출.
+  설정 파일이 환경 변수보다 우선하므로, 저장된 키는 별도 작업 없이 오버라이드로 동작.
+- 프로바이더는 이들을 인증 스토어에 위임하는 방식으로 준수하고, 카드 문구에 쓸 저장 경로와 환경 변수 이름을 보고.
+- `AppContainer`가 모든 `APIKeyManaging` 프로바이더를 `apiKeyProviders`로 모으고, 카드가 이를 나열.
+  평소처럼 프로바이더를 레지스트리에 추가하면 카드가 자동 인식.
 
-Persist the key to a file the auth store already checks (don't introduce a parallel store), so the file remains the source of truth and a user can still edit it by hand.
+키는 인증 스토어가 이미 확인하는 파일에 저장(별도 저장소 도입 금지) — 그래야 그 파일이 기준으로 남고 사용자가 직접 편집하는 것도 가능.

@@ -1,134 +1,134 @@
-# Account-First Multi-Account Plan
+# 계정 우선 멀티 계정 계획
 
-The execution plan for multi-account Claude/Codex support, replacing the closed PR #1014 (branch `claude/provider-management-ux-780d96`, continued on `agent/multi-account-cli-pr1014`).
-Those branches stay alive as **cherry-pick material** — most of their auth-store scoping, discovery internals, swap timeline, iCloud remapping, and ~4k test lines port into the phases below.
+닫힌 PR #1014(브랜치 `claude/provider-management-ux-780d96`, 이후 `agent/multi-account-cli-pr1014`에서 계속 진행)를 대체하는 Claude/Codex 멀티 계정 지원 실행 계획.
+해당 브랜치는 **체리픽 자료**로 유지하며, 인증 스토어 범위 지정, 탐색 내부 구현, 전환 타임라인, iCloud 재매핑, 약 4천 줄의 테스트 대부분을 아래 단계로 이식 가능.
 
-> Managed account switching in **Settings → Accounts** was implemented on top of this plan's record model; [Settings](/docs/settings.md) and [CLI](/docs/cli.md) document the current behavior.
-> Managed accounts have a Remove action that deletes only OpenUsage's snapshot and workspace, while unmanaged discovered cards still follow the no-Remove rule below.
-> This plan's identity-stable records describe discovered provider-account cards.
-> A managed account is instead a user-named authentication record: re-sign-in may replace its provider identity, and multiple managed names may temporarily carry the same identity.
-> Since then the card model changed: all supported providers share one **Single Card** / **Separate Cards** choice, layout is stored once per provider, a config-dir login is shown only after it is registered in Settings, and card titles cannot be edited directly — see [Dashboard](/docs/dashboard.md).
+> 이 계획의 레코드 모델 위에 **Settings → Accounts**의 관리형 계정 전환을 구현했으며, 현재 동작은 [설정](/docs/settings.md)과 [CLI](/docs/cli.md) 문서 참조.
+> 관리형 계정의 Remove 동작은 OpenUsage의 스냅샷과 작업 공간만 삭제하며, 자동 탐색된 비관리 카드는 아래의 Remove 미지원 규칙을 계속 따름.
+> 이 계획의 신원 고정 레코드는 자동 탐색된 프로바이더 계정 카드를 설명.
+> 관리형 계정은 사용자가 이름 붙인 인증 레코드로, 재로그인 시 프로바이더 신원 교체가 가능하고 여러 관리형 계정명에 같은 신원이 일시적으로 저장될 수도 있음.
+> 이후 카드 모델 변경 — 모든 지원 프로바이더에 적용하는 공통 **Single Card** / **Separate Cards** 선택, 레이아웃은 프로바이더 단위 1벌 저장, 설정 디렉터리 로그인은 Settings 등록 후에만 표시, 카드 제목 직접 편집 불가. [대시보드](/docs/dashboard.md) 참조.
 
-## Why the restart
+## 재시작 이유
 
-PR #1014 keyed the default card by *location* (the default home) and every extra account by *identity*.
-Review traced nearly every high-priority bug to that split: the default card's identity is mutable, so the branch accreted ~1.5–2k lines of guard machinery (same-account folds, duplicate suppression, launch gating, history withholding) defending a structural flaw — guards its own follow-up plan would then delete.
-Since none of it ever shipped, no user has state that needs the staged migrate-shadow-flip choreography.
-This plan flips to the account-first model **before** any multi-account discovery ships, so the guards never get written.
+PR #1014에서는 기본 카드를 *위치*(기본 홈)로, 나머지 계정을 *계정 식별 정보*로 구분.
+리뷰 결과 높은 우선순위의 버그 대부분이 이 구분에서 시작된 것으로 확인되었으며, 기본 카드의 계정 식별 정보가 가변적이어서 구조적 결함을 방어하는 약 1,500~2,000줄의 보호 장치(동일 계정 병합, 중복 억제, 실행 제한, 기록 보류)가 쌓였지만 후속 계획에서 다시 삭제할 코드였음.
+출시 이력이 없어 단계적인 migrate-shadow-flip 절차가 필요한 사용자 상태도 없음.
+멀티 계정 탐색을 출시하기 **전에** 계정 우선 모델로 전환해 해당 보호 장치 자체를 만들지 않는 계획.
 
-## Target model
+## 목표 모델
 
-Every card is an **account**: an opaque identity key with a stable record id minted at creation.
-Places an account is signed in are **sources** (default home, config dir, cswap vault slot, Desktop/Cowork, Codex home) attached to its record.
-"Default" is a badge on a source (`holdsDefaultSource`) used for the bare-id alias, CLI resolution, and attribution — never a key, never live sort order.
-A swap re-points source edges; cards, history, layout, and pins never move.
-An unresolved source claims no account.
-A card renders only while at least one of its sources is found on this computer; when every source is gone the card stops rendering, and its record, layout, and history are retained so the card reattaches if the login reappears (owner decision 4 — no Remove affordance yet).
+모든 카드는 생성 시 발급된 안정적인 레코드 ID와 불투명한 식별 키를 가진 **계정**.
+계정에 로그인된 위치는 레코드에 연결된 **소스**(기본 홈, config 디렉터리, cswap 볼트 슬롯, Desktop/Cowork, Codex 홈).
+"Default"는 bare ID 별칭, CLI 해석, 귀속에 쓰이는 소스의 배지(`holdsDefaultSource`)일 뿐, 키나 실시간 정렬 기준이 아님.
+전환 시 소스 연결만 바뀌며 카드, 기록, 레이아웃, 고정 상태는 이동하지 않음.
+해석되지 않은 소스는 어떤 계정에도 귀속되지 않음.
+카드는 소스가 하나라도 이 컴퓨터에서 발견되는 동안에만 표시하며, 모든 소스가 사라지면 표시를 중단하되 레코드, 레이아웃, 기록은 보존해 로그인이 다시 나타날 때 재연결 가능(소유자 결정 4 — 아직 Remove 기능 없음).
 
-### The migration-killing decision
+### 마이그레이션을 없애는 결정
 
-The account occupying the default home at conversion time **keeps the bare id (`claude`, `codex`) as its permanent record id**.
-Ids are opaque, so nothing is special about the shape.
-Every existing install migrates by doing nothing: layout keys, pins, history bindings, snapshot cache entries, and third-party API consumers keep working untouched.
-If the user later swaps accounts at the default home, the new account mints `claude@<hash8>` and takes the default badge; the old card stays under its old id.
-The bare id doubles as the family id in CLI/API requests, but there is **no alias resolution**: an id names providers by plain string matching (exact card id, or family id → every card of that family), and every match is returned.
-The answer never depends on runtime state — which login holds the badge, what's enabled — and both surfaces always return the multi-provider shape (the limits envelope; a JSON array on `/v1/usage/:id`).
+계정 우선 모델로 전환할 때 기본 홈을 차지한 계정이 **bare ID(`claude`, `codex`)를 영구 레코드 ID로 유지**.
+ID는 불투명하므로 형태 자체에 특별한 의미 없음.
+기존 설치는 아무 작업 없이 마이그레이션되며, 레이아웃 키, 고정, 기록 바인딩, 스냅샷 캐시 항목, 서드파티 API 소비자 모두 변경 없이 유지.
+이후 사용자가 기본 홈의 계정을 전환하면 새 계정에서 `claude@<hash8>`을 발급받아 기본 배지를 가져가고, 기존 카드는 기존 ID에 유지.
+bare ID는 CLI/API 요청의 패밀리 ID 역할도 겸하지만 **별칭 해석은 없음** — ID는 단순 문자열로 비교하며, 정확한 카드 ID면 해당 카드, 패밀리 ID면 해당 패밀리의 모든 카드를 반환.
+응답은 어느 로그인이 배지를 보유하는지, 무엇이 활성화되었는지 같은 런타임 상태와 무관하며, 두 표면 모두 항상 멀티 프로바이더 형태(limits 응답 객체, `/v1/usage/:id`의 JSON 배열)로 반환.
 
-## Phases
+## 단계
 
-Each phase is one PR, shipped to the **beta channel** and soaked before the next starts.
-Docs and tests land in-slice (repo policy).
-Estimated source LOC excludes tests.
+각 단계는 PR 하나로 구성해 **베타 채널**에 출시하고, 충분한 검증 기간을 거친 뒤 다음 단계 시작.
+문서와 테스트는 해당 변경 단위에 함께 포함(저장소 정책).
+예상 소스 LOC에서 테스트 제외.
 
-### Phase 0 — Standalone reliability (no model change, ~300 LOC)
+### Phase 0 — 독립적 안정성(모델 변경 없음, 약 300 LOC)
 
-- Shell-environment snapshot: discovery-grade env facts survive a slow login shell (cherry-pick `22c8e97`).
-- File splits along provider seams where they help review (`c96fc75`, as needed).
-- Exit: beta with zero behavior change beyond launch reliability.
+- 셸 환경 스냅샷: 느린 로그인 셸에서도 탐색에 필요한 환경 정보 유지(체리픽 `22c8e97`).
+- 리뷰에 도움이 되는 경우 프로바이더 경계를 따라 파일 분리(필요에 따라 `c96fc75`).
+- 완료 조건: 실행 안정성 외에 동작 변경이 전혀 없는 베타.
 
-### Phase 1 — Account-first core, single account per family (~800 LOC)
+### Phase 1 — 계정 우선 코어, 패밀리당 단일 계정(약 800 LOC)
 
-- `ProviderAccountsStore` (`openusage.providerAccounts.v1`): account records with id, family, identityKey, label, sources (+ badge), tombstone.
-  Port from `e052ef9`, dropping the shadow-comparison half — the registry is authoritative from day one.
-- Default-home identity reading for Claude and Codex (the proven slice of discovery — **no candidate scanning yet**).
-  Resolved identity attaches the default source; unresolved leaves the family rendering its current state.
-- Cards render from account records.
-  With exactly one account per family this is pixel-identical to today, so the structural flip ships invisibly.
-- CLI + local HTTP API answer ids by plain string matching (family id → all its cards, always the multi-provider shape; unknown id → 404).
-  One deliberate `/v1` break — `/v1/usage/:id` returns an array — made now, before multi-account ships, instead of aliasing forever.
-- Snapshot-cache identity stamp (v9): cached values remember the producing account; a swap between launches discards the stale entry instead of painting it under the new account (port `fef9ad0`).
-- Exit: beta soak; logs confirm identity-resolution rates in the wild; existing users see nothing.
-- *Shipped as #1026 + #1027 (v0.7.7-beta.1).
-  Signed-out rendering and "Remove Account…" were cut entirely per owner decision 4.*
+- `ProviderAccountsStore`(`openusage.providerAccounts.v1`): id, family, identityKey, label, sources(+ badge), tombstone을 가진 계정 레코드.
+  `e052ef9`에서 이식하되 shadow 비교 절반은 제외하며, 첫날부터 레지스트리를 단일 기준으로 사용.
+- Claude와 Codex의 기본 홈 계정 식별 정보 읽기(검증된 탐색 단계만 포함하고 **아직 후보 스캔 없음**).
+  계정 식별 정보가 해석되면 기본 소스를 연결하고, 해석되지 않으면 패밀리의 현재 상태를 그대로 표시.
+- 계정 레코드에서 카드 표시.
+  패밀리당 계정이 정확히 하나이면 현재와 픽셀 단위로 같아, 구조 전환을 사용자에게 보이지 않게 출시 가능.
+- CLI와 로컬 HTTP API에서 단순 문자열 비교로 ID 처리(패밀리 ID → 해당 패밀리의 모든 카드, 항상 멀티 프로바이더 형태, 알 수 없는 ID → 404).
+  멀티 계정 출시 전인 이 단계에서 `/v1/usage/:id`가 배열을 반환하도록 의도적인 `/v1` 호환성 변경 한 번 적용해, 별칭을 영구 유지할 필요 제거.
+- 스냅샷 캐시 계정 식별 스탬프(v9): 캐시 값에 생성 계정을 기록해, 실행 사이에 계정이 전환되면 오래된 항목을 새 계정에 표시하지 않고 폐기(`fef9ad0` 이식).
+- 완료 조건: 베타 검증 기간, 로그로 실제 환경의 계정 식별 정보 해석률 확인, 기존 사용자에게 보이는 변경 없음.
+- *#1026 + #1027(v0.7.7-beta.1)로 출시.
+  로그아웃 상태 표시와 "Remove Account…"는 소유자 결정 4에 따라 완전히 제외.*
 
-### Phase 2 — Claude multi-account: config-dir discovery (~1,200 LOC)
+### Phase 2 — Claude 멀티 계정: config 디렉터리 탐색(약 1,200 LOC)
 
-> Superseded: a config-dir login is no longer a card and cannot be renamed; a provider has one card whose layout is stored once, and only registered accounts appear in its selector.
+> 대체됨: config 디렉터리 로그인은 더 이상 카드가 아니고 이름 변경도 불가. 프로바이더는 카드 하나에 레이아웃 한 벌을 쓰고, 선택기에는 등록 계정만 표시.
 
-- Candidate scan (dot-dirs at `~`, dirs under `~/.config`), identity-extraction-is-validation, support-trail log lines.
-  Port the discovery internals; **omit** fold/suppression plumbing — a candidate naming a known account just attaches as another source/log root on that record, so duplicate cards are structurally impossible.
-- New account → new record → new card named by account label ("Claude — Sunstory"), falling back to the short-hash id; user rename in the card's context menu and in Customize.
-  Cards seed enabled; layout seeded from `DefaultLayout.translatedForAccountCards` (pins never seeded).
-  A card renders only while one of its sources is still found on this computer.
-- Scoped `ClaudeAuthStore` (per-config-dir keychain names), per-account spend from each home's logs.
-- iCloud identity routing: `PeerHistoryRemapper`, account-identity matching, v1-peer histories to a family bucket rendered as remote-only Total Spend slices named by account code (`claude@ab12cd34`).
-  Required the moment two accounts can exist.
-- Exit: beta soak with real multi-config-dir users; lifecycle test suite re-targeted green.
-- *Shipped as #1030.*
+- 후보 스캔(`~`의 dot 디렉터리, `~/.config` 아래 디렉터리), 계정 식별 정보 추출을 통한 검증, 지원 추적 로그.
+  탐색 내부 구현을 이식하되 병합/억제 배관은 **제외** — 알려진 계정을 가리키는 후보는 해당 레코드의 다른 소스/로그 루트로 연결되므로 중복 카드가 구조적으로 불가능.
+- 새 계정 → 새 레코드 → 계정 라벨로 이름 붙인 새 카드("Claude — Sunstory"), 라벨이 없으면 짧은 해시 ID를 사용하고 카드의 컨텍스트 메뉴와 Customize에서 사용자 이름 변경 지원.
+  카드는 활성화 상태로 시드하고, 레이아웃은 `DefaultLayout.translatedForAccountCards`에서 시드하되 고정 상태는 시드하지 않음.
+  소스 중 하나라도 이 컴퓨터에서 계속 발견되는 동안에만 카드 표시.
+- 범위가 지정된 `ClaudeAuthStore`(config 디렉터리별 키체인 이름), 각 홈의 로그에서 계정별 지출 산출.
+- iCloud 계정 식별 정보 라우팅: `PeerHistoryRemapper`, 계정 식별 정보 비교, v1 peer 기록을 패밀리 버킷으로 보내 계정 코드(`claude@ab12cd34`)로 이름 붙인 원격 전용 Total Spend 구간으로 표시.
+  계정이 두 개 존재할 수 있는 시점부터 필수.
+- 완료 조건: 실제 다중 config 디렉터리 사용자로 베타 검증, 수명 주기 테스트 스위트를 새 대상으로 재조정해 통과.
+- *#1030으로 출시.*
 
-### Phase 2b — One name resolver (~150 LOC)
+### Phase 2b — 단일 이름 해석기(약 150 LOC)
 
-- Follow-up to Phase 2's rename feature: name resolution had no single seam — some surfaces read the rename live from the registry, others (Total Spend legend, share export, menu bar accessibility, notifications, CLI/API) showed the name baked into the `Provider` at launch, so a mid-session rename drifted between surfaces.
-- The rule: `Provider.displayName` only ever carries the *derived* default; a rename lives solely in the account registry (`ProviderAccountRecord.resolvedDisplayName`) and is resolved at render time.
-  Renames are never baked at launch and never persist into the snapshot cache or iCloud.
-- Total Spend slices carry a caller-resolved title (so the live legend and the outside-the-environment share render agree); menu bar VoiceOver text, quota notifications, and the CLI/HTTP API resolve through the same registry at their boundaries.
+- Phase 2의 이름 변경 기능 후속 작업: 이름을 해석하는 단일 경계가 없어, 일부 표면은 레지스트리의 변경된 이름을 실시간으로 읽고 다른 표면(Total Spend 범례, 공유 내보내기, 메뉴 막대 접근성, 알림, CLI/API)은 실행 시점에 `Provider`에 저장된 이름을 표시하므로 세션 중 이름을 바꾸면 표면마다 다른 이름이 나타나는 문제.
+- 규칙: `Provider.displayName`에는 *파생된* 기본값만 포함하고, 변경된 이름은 계정 레지스트리(`ProviderAccountRecord.resolvedDisplayName`)에만 두어 표시 시점에 해석.
+  변경된 이름을 실행 시점에 굳혀 넣지 않고 스냅샷 캐시나 iCloud에도 저장하지 않음.
+- Total Spend 구간에는 호출자가 해석한 제목을 포함해 실시간 범례와 별도 환경의 공유 렌더링을 일치시키고, 메뉴 막대 VoiceOver 텍스트, 할당량 알림, CLI/HTTP API에서도 각 경계에서 같은 레지스트리를 통해 해석.
 
-### Phase 3 — Claude: Cowork / Desktop accounts (~500 LOC)
+### Phase 3 — Claude: Cowork/Desktop 계정(약 500 LOC)
 
-- Cowork sandbox walk with per-sandbox identity; sandboxes matching an existing account attach as its log roots; a distinct account becomes one Desktop-backed card (org-pinned identity, Safe Storage credentials).
-- Purely a new source kind on the existing model.
+- 샌드박스별 계정 식별 정보로 Cowork 샌드박스를 탐색하고, 기존 계정과 일치하는 샌드박스는 해당 계정의 로그 루트로 연결하며, 별도 계정은 조직에 고정된 계정 식별 정보와 Safe Storage 인증 정보를 사용하는 Desktop 기반 카드 하나로 생성.
+- 기존 모델에 새로운 소스 종류만 추가.
 
-### Phase 4 — Claude: cswap (~500 LOC)
+### Phase 4 — Claude: cswap(약 500 LOC)
 
-- Vault slot discovery: each parked slot is a source of its account; the active slot is whoever holds the default badge.
-- Switch-log timeline partitions the shared home's spend logs per account.
-- A swap is the badge moving between records — no suppression, no restart requirement.
-  A mid-process swap marks the source stale; reconcile next launch.
+- 볼트 슬롯 탐색: 보관된 각 슬롯은 해당 계정의 소스이며, 활성 슬롯은 기본 배지를 보유한 계정.
+- 전환 로그 타임라인으로 공유 홈의 지출 로그를 계정별 분할.
+- 전환은 레코드 간 배지 이동일 뿐, 억제나 재시작 요구 없음.
+  프로세스 도중 전환하면 소스를 오래된 상태로 표시하고 다음 실행에서 조정.
 
-### Phase 5 — Codex multi-account + per-card resets (~700 LOC)
+### Phase 5 — Codex 멀티 계정과 카드별 재설정(약 700 LOC)
 
-- **5a:** `CODEX_HOME` candidate scan with the strict identity rule — `tokens.account_id` or the id_token's ChatGPT account claim; a credential file that can't name its account never becomes a card (port `93e741e`).
-  Scoped auth stores and per-identity log-root grouping.
-  The per-card `CodexResetClaimRouter` already landed with the managed-account layer, so every account's row claims its own reset credits from day one.
-- **5b (separate if needed):** keyring-mode homes — an unverified keyring source claims no account until the one-time post-launch account-scoped read binds it (`CodexHomeIdentityCache`).
-  The nichest slice; keeping it out of 5a keeps 5a simple.
+- **5a:** 엄격한 계정 식별 규칙을 적용한 `CODEX_HOME` 후보 스캔 — `tokens.account_id` 또는 id_token의 ChatGPT 계정 claim을 사용하며, 자신의 계정을 특정할 수 없는 인증 파일은 카드로 만들지 않음(`93e741e` 이식).
+  범위가 지정된 인증 스토어와 계정 식별 정보별 로그 루트 그룹화.
+  카드별 `CodexResetClaimRouter`는 관리형 계정 계층과 함께 이미 반영되어, 모든 계정 행에서 처음부터 해당 계정의 재설정 크레딧만 클레임.
+- **5b(필요하면 분리):** keyring 모드 홈 — 검증되지 않은 keyring 소스는 실행 후 한 번 수행하는 계정 범위 읽기에서 바인딩할 때까지 어떤 계정에도 귀속되지 않음(`CodexHomeIdentityCache`).
+  5b는 적용 대상이 가장 적으므로 5a에서 제외해 5a의 단순성 유지.
 
-### Phase 6 — Attribution polish (small)
+### Phase 6 — 귀속 다듬기(소규모)
 
-- Pi spend attribution routed through the resolver to the badge holder.
-- Family-keyed telemetry rollups (`accounts_per_family` gauge).
-- Total Spend family grouping/tinting if still wanted (see `c6a63eb` on the old branch for why plain size order won before).
+- Pi 지출을 해석기를 통해 배지 보유자에게 귀속.
+- 패밀리 키 기반 텔레메트리 집계(`accounts_per_family` gauge).
+- 여전히 필요하다면 Total Spend 패밀리 그룹화/색조 구분(이전에는 단순 크기 순서를 선택한 이유를 기존 브랜치의 `c6a63eb`에서 확인 가능).
 
-## Owner decisions (locked 2026-07-19)
+## 소유자 결정(2026-07-19 확정)
 
-1. **Bare id as the first account's record id** — yes (kills all migration).
-2. Label fallback when an account has no email/org name: the short-hash record id (`claude@ab12cd34`).
-   Superseded: rename was removed, so the fallback stands on its own.
-3. Newly discovered accounts seed **enabled** (PR #1014 behavior).
-4. **No "Remove Account…" yet.**
-   Only accounts found on this computer render as cards; a card whose account is no longer found anywhere simply stops rendering (its record, layout, and history are retained and reattach if the login reappears).
-   Unwanted cards are handled by the existing per-provider disable.
-   Tombstones stay schema-only until a later phase needs true removal.
+1. **첫 계정의 레코드 ID로 bare ID 사용** — 승인(모든 마이그레이션 제거).
+2. 계정에 이메일/조직 이름이 없을 때 라벨 대체값은 짧은 해시 레코드 ID(`claude@ab12cd34`).
+   대체됨: 이름 변경 기능을 제거해 대체값을 그대로 사용.
+3. 새로 발견된 계정은 **활성화** 상태로 시드(PR #1014 동작).
+4. **아직 "Remove Account…" 미지원.**
+   이 컴퓨터에서 발견된 계정만 카드로 표시하며, 더 이상 어디에서도 발견되지 않는 계정의 카드는 표시를 중단하되 레코드, 레이아웃, 기록은 보존해 로그인이 다시 나타나면 재연결.
+   원치 않는 카드는 기존의 프로바이더별 비활성화 기능으로 처리.
+   실제 제거가 필요한 후속 단계까지 tombstone은 스키마에만 유지.
 
-## Release verification for the managed-account layer
+## 관리형 계정 계층의 릴리스 검증
 
-- Run `swift build` and the full `swift test` suite.
-  Include the account registry, credential transaction, workspace, shell installer, dashboard-selection, and per-card claim regressions.
-- Verify that unmanaged config-dir cards still render independently with zero or one managed profile.
-  Verify that two or more managed profiles collapse only their own cards into the selector.
-- Run `script/build_and_run.sh`, then inspect `~/Library/Logs/OpenUsage/OpenUsage.log` for account registry, identity, switch, rollback, and refresh failures.
-- Exercise both Claude and Codex live: import the first account, add a second account, switch, start a fresh terminal session, view an inactive account, re-sign in, and remove it.
-  Verify that an expired credential either refreshes or becomes **Session Expired** or **Sign-In Needed**, and that a completed re-sign-in replaces the selected managed account's authentication and provider identity without changing its name or selection.
-- Verify the read-only account CLI plus the existing card CLI/API ids and response shapes.
-- Repeat the two-Mac iCloud compatibility check before release.
-  Managed account metadata and credentials remain local, while synced usage history must keep working with older readers.
+- `swift build`와 전체 `swift test` 스위트 실행.
+  계정 레지스트리, 인증 정보 트랜잭션, 작업 공간, 셸 설치기, 대시보드 선택, 카드별 클레임 회귀 테스트 포함.
+- 관리형 프로필이 0개 또는 1개일 때 비관리 config 디렉터리 카드가 계속 독립적으로 표시되는지 확인.
+  관리형 프로필이 2개 이상일 때 선택기가 해당 관리형 카드만 묶는지도 확인.
+- `script/build_and_run.sh` 실행 후 `~/Library/Logs/OpenUsage/OpenUsage.log`에서 계정 레지스트리, 계정 식별 정보, 전환, 롤백, 새로 고침 실패 확인.
+- Claude와 Codex 모두 실계정으로 첫 계정 가져오기, 두 번째 계정 추가, 전환, 새 터미널 세션 시작, 비활성 계정 보기, 재로그인, 제거 수행.
+  만료된 인증 정보가 갱신되거나 **Session Expired** 또는 **Sign-In Needed**가 되고, 완료된 재로그인은 선택된 관리형 계정의 이름과 선택 상태를 유지하면서 인증 정보와 프로바이더 신원을 교체하는지 확인.
+- 읽기 전용 계정 CLI와 기존 카드 CLI/API ID 및 응답 형태 확인.
+- 릴리스 전에 Mac 두 대로 iCloud 호환성 재확인.
+  관리형 계정 메타데이터와 인증 정보는 로컬에 남고, 동기화된 사용 기록은 이전 버전에서도 계속 읽을 수 있어야 함.

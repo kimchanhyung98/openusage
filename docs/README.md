@@ -1,47 +1,49 @@
-# OpenUsage Documentation
+# OpenUsage 문서
 
-What the app does and how it behaves.
-These pages describe **behavior, not visuals**, and they are updated together with any change to that behavior — if the app and a page here disagree, that's a bug.
+문서 기본 언어는 한국어이며, `docs/` 아래에서 단일 문서로 관리.
 
-## The app
+앱이 하는 일과 그 동작 방식.
+이 문서들은 **화면 모양이 아니라 동작**을 다루며, 그 동작이 바뀔 때 함께 갱신 — 앱과 이 문서가 어긋난다면 그건 버그.
 
-- [Dashboard](dashboard.md) — the popover: rows, toggles, reordering, keyboard shortcuts
-- [Menu bar](menu-bar.md) — pinning metrics into the menu bar
-- [Settings](settings.md) — every option, what it changes
-- [Refreshing & caching](refreshing.md) — when data updates and what happens when a fetch fails
-- [iCloud Sync](icloud-sync.md) — how spend history is combined across Macs
-- [Model pricing](pricing.md) — how spend tiles price tokens, and where the rates come from
-- [Updates](updates.md) — automatic updates, manual checks, and the beta channel
-- [Privacy & usage data](privacy.md) — what anonymous data is shared, and how to turn it off
+## 앱
 
-## Integrations
+- [대시보드](/docs/dashboard.md) — 팝오버: 행, 토글, 순서 바꾸기, 키보드 단축키
+- [메뉴 막대](/docs/menu-bar.md) — 지표를 메뉴 막대에 고정하기
+- [설정](/docs/settings.md) — 모든 옵션과 각 옵션이 바꾸는 것
+- [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
+- [iCloud 동기화](/docs/icloud-sync.md) — 여러 Mac의 지출 기록을 합치는 방식
+- [모델 가격](/docs/pricing.md) — 지출 타일이 토큰에 가격을 매기는 방식과 요율의 출처
+- [업데이트](/docs/updates.md) — 자동 업데이트, 수동 확인, 베타 채널
+- [개인정보 및 사용 데이터](/docs/privacy.md) — 공유되는 익명 데이터와 끄는 방법
 
-- [Command-line interface](cli.md) — one-shot cached and forced usage reads for agents and scripts
-- [Local HTTP API](local-http-api.md) — read your usage from other apps on `127.0.0.1:6736`
-- [Proxy](proxy.md) — route provider requests through SOCKS5 or HTTP(S)
+## 통합
 
-## Providers
+- [명령줄 인터페이스](/docs/cli.md) — 에이전트와 스크립트를 위한 1회 실행 캐시 조회와 강제 조회
+- [로컬 HTTP API](/docs/local-http-api.md) — `127.0.0.1:6736`에서 다른 앱이 사용량을 읽는 방법
+- [프록시](/docs/proxy.md) — 프로바이더 요청을 SOCKS5 또는 HTTP(S)로 라우팅
 
-What each provider tracks, where its credentials come from, and what to do when it shows an error.
+## 프로바이더
 
-- [Antigravity](providers/antigravity.md)
-- [Claude](providers/claude.md)
-- [Codex](providers/codex.md)
-- [Copilot](providers/copilot.md)
-- [Cursor](providers/cursor.md)
-- [Devin](providers/devin.md)
-- [Grok](providers/grok.md)
-- [Kimi](providers/kimi.md)
-- [Kiro](providers/kiro.md)
-- [OpenCode](providers/opencode.md)
-- [OpenRouter](providers/openrouter.md)
-- [Z.ai](providers/zai.md)
+각 프로바이더가 추적하는 항목, 인증 정보의 출처, 오류가 표시될 때 할 일.
 
-## For developers
+- [Antigravity](/docs/providers/antigravity.md)
+- [Claude](/docs/providers/claude.md)
+- [Codex](/docs/providers/codex.md)
+- [Copilot](/docs/providers/copilot.md)
+- [Cursor](/docs/providers/cursor.md)
+- [Devin](/docs/providers/devin.md)
+- [Grok](/docs/providers/grok.md)
+- [Kimi](/docs/providers/kimi.md)
+- [Kiro](/docs/providers/kiro.md)
+- [OpenCode](/docs/providers/opencode.md)
+- [OpenRouter](/docs/providers/openrouter.md)
+- [Z.ai](/docs/providers/zai.md)
 
-How the app is built and how to extend it.
+## 개발자용
 
-- [Architecture](architecture.md) — composition root, stores, the provider pipeline, the AppKit bridge
-- [Adding a provider](adding-a-provider.md) — the metric contract and the register/test/document steps
-- [Debugging & capturing logs](debugging.md) — running a local build and streaming logs
-- [Logging](logging.md) — the file log, log levels, subsystem tags, and what is never logged
+앱이 어떻게 만들어졌고 어떻게 확장하는지.
+
+- [아키텍처](/docs/architecture.md) — 구성 루트, 스토어, 프로바이더 파이프라인, AppKit 브리지
+- [프로바이더 추가](/docs/adding-a-provider.md) — 지표 계약과 등록/테스트/문서화 단계
+- [디버깅과 로그 캡처](/docs/debugging.md) — 로컬 빌드 실행과 로그 스트리밍
+- [로깅](/docs/logging.md) — 파일 로그, 로그 레벨, 서브시스템 태그, 절대 기록되지 않는 것

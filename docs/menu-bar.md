@@ -1,57 +1,57 @@
-# Menu Bar
+# 메뉴 막대
 
-Star your most important metrics straight into the menu bar strip.
+가장 중요한 지표에 별표를 달아 메뉴 막대 스트립에 바로 올리기.
 
-## Right-clicking the icon
+## 아이콘 우클릭
 
-Right-click (or control-click) the menu bar icon for a quick menu with **Settings** and **Quit**.
-Left-click opens the popover as usual.
+메뉴 막대 아이콘을 우클릭(또는 Control-클릭)하면 **Settings**(설정)와 **Quit**(종료)가 담긴 빠른 메뉴가 열림.
+좌클릭은 평소처럼 팝오버를 여는 동작.
 
-## Starring
+## 별표 지정
 
-Star a metric from any row's right-click menu, or from the always-visible star beside a metric in Customize.
+지표에 별표를 달려면 각 행의 우클릭 메뉴, 또는 Customize에서 지표 옆에 항상 보이는 별표 버튼을 사용.
 
-- On first launch the app ships with a default set of stars (Antigravity Session/Weekly, Claude Weekly, Codex Weekly, Cursor Auto Usage/API Usage, Copilot Credits, Kimi Weekly, Kiro Credits, OpenRouter Credits, Z.ai Session/Weekly) so the strip shows numbers right away.
-  Change them anytime; a provider's Reset restores its defaults, and Reset All restores the full set.
-  Only providers that are turned on render in the strip — and a fresh install starts with just the providers detected on your Mac (see [Dashboard § First launch](dashboard.md#first-launch)) — so the default stars don't crowd the menu bar with tools you don't use.
-- At most **2 stars per provider**.
-- When a star isn't allowed, the star button stays clickable — clicking it shakes and shows the reason in a temporary pill over the bottom of Customize (for example, "Up to 2 stars per provider").
-- Stars belong to the provider, not to one account: every Claude or Codex account shares the same stars, and the strip shows the values of the account selected in the dashboard.
-  Choosing an account from the **Single Card** header switches the strip's numbers, but never the terminal account or which metrics are starred.
+- 첫 실행 시 앱에는 기본 별표 세트(Antigravity Session/Weekly, Claude Weekly, Codex Weekly, Cursor Auto Usage/API Usage, Copilot Credits, Kimi Weekly, Kiro Credits, OpenRouter Credits, Z.ai Session/Weekly)가 들어 있어 스트립에 곧바로 숫자가 표시.
+  언제든 변경 가능하며, 프로바이더의 Reset은 그 프로바이더의 기본값을, Reset All은 전체 세트를 복원.
+  스트립에는 켜져 있는 프로바이더만 렌더링되고, 새로 설치한 앱은 Mac에서 감지된 프로바이더만 켜므로([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조) 기본 별표가 쓰지 않는 도구로 메뉴 막대를 채우지 않음.
+- 별표는 **프로바이더당 최대 2개**.
+- 별표를 더 달 수 없을 때도 버튼은 그대로 클릭 가능 — 누르면 흔들리면서 Customize 하단에 이유가 임시 배지로 표시(예: "Up to 2 stars per provider"(프로바이더당 최대 2개)).
+- 별표는 계정이 아니라 프로바이더 소유 — Claude·Codex의 모든 계정이 같은 별표를 공유하고, 스트립에는 대시보드에서 선택한 계정의 값이 표시.
+  **Single Card** 헤더에서 계정을 고르면 스트립의 숫자만 바뀌며, 터미널 계정이나 별표 지정은 그대로.
 
-In **Separate Cards**, the menu bar keeps the same selected account without adding a separate segment for every account.
-Segment names remain provider names such as `Claude` and `Codex`, not account-card titles.
-To change the strip's account, return to **Single Card**, use the dashboard account selector, then switch back to **Separate Cards** if needed.
-Reordering accounts in Settings changes neither this selection nor the strip's provider order.
+**Separate Cards**에서도 메뉴 막대는 같은 선택 계정을 유지하며, 계정마다 별도 구간을 추가하지 않음.
+구간 이름은 계정 카드 제목 대신 `Claude`·`Codex` 같은 프로바이더명 유지.
+스트립의 표시 계정을 바꾸려면 **Single Card**로 돌아가 대시보드 계정 선택기를 사용한 뒤 필요하면 다시 **Separate Cards**로 변경.
+Settings에서 계정 순서를 바꿔도 이 선택 상태나 스트립의 프로바이더 순서는 변경되지 않음.
 
-## Styles
+## 스타일
 
 Settings → Appearance → Icon Style:
 
-- **Text** — provider icon plus values; two starred metrics from the same provider stack as a labeled pair.
-- **Bars** — a compact glyph containing the first four starred metrics that have a limit (metrics without limits only appear in Text style).
+- **Text**(텍스트) — 프로바이더 아이콘과 값을 함께 표시하며, 같은 프로바이더의 별표 지표 두 개는 라벨이 붙은 쌍으로 쌓임.
+- **Bars**(막대) — 한도가 있는 별표 지표 중 앞의 네 개를 담는 작은 기호(한도가 없는 지표는 Text 스타일에서만 표시).
 
-## Hiding usage while screen sharing
+## 화면 공유 중 사용량 숨기기
 
-Settings → Privacy → **Hide From Screen Share** (on by default).
-While your screen is being shared or recorded — a Zoom/Meet/Teams share, a screen recording, macOS Screen Sharing — the strip is replaced with the OpenUsage icon and wordmark, so token counts and spend never show up in front of an audience.
-The moment the capture ends, your starred metrics come right back.
-Captures you start yourself (a screen recording, for example) count too, so those get the wordmark as well.
+Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값 켬).
+화면이 공유되거나 녹화되는 동안 — Zoom/Meet/Teams 공유, 화면 녹화, macOS 화면 공유 — 스트립이 OpenUsage 아이콘과 워드마크로 대체되므로, 토큰 수와 지출이 다른 사람 앞에 드러나지 않음.
+캡처가 끝나는 순간 별표 지표가 바로 복귀.
+직접 시작한 캡처(예: 화면 녹화)도 해당되므로 그때도 워드마크가 표시.
 
-Detection rides the system's own "an app is capturing the screen" signal — the same one that lights the capture indicator in the menu bar — checked the instant it changes and re-checked every few seconds while the setting is on.
+감지는 시스템 자체의 "어떤 앱이 화면을 캡처 중" 신호를 사용 — 메뉴 막대의 캡처 표시기를 켜는 그 신호이며, 신호가 바뀌는 즉시 확인하고 설정이 켜져 있는 동안 몇 초마다 다시 확인.
 
-Normally:
+평소:
 
-![The menu bar strip showing usage values](assets/menu-bar-privacy-idle.png)
+![사용량 값이 표시된 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-idle.png)
 
-While the screen is shared or recorded:
+화면이 공유되거나 녹화되는 동안:
 
-![The menu bar strip concealed behind the OpenUsage wordmark](assets/menu-bar-privacy-sharing.png)
+![OpenUsage 워드마크 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
 
-## What the strip shows
+## 스트립에 표시되는 내용
 
-The strip only renders real data.
-A starred metric with nothing fetched yet is skipped; a provider whose stars all lack data disappears entirely (icon included).
-When nothing has data, the strip falls back to the app icon.
-Stars follow your Customize order — Always Visible metrics first, then On Demand ones.
-A metric can be starred whether it's Always Visible or On Demand.
+스트립은 실제 데이터만 렌더링.
+아직 아무것도 가져오지 못한 별표 지표는 건너뛰고, 별표 지표가 전부 데이터 없는 프로바이더는 아이콘까지 통째로 사라짐.
+아무 지표에도 데이터가 없으면 스트립은 앱 아이콘으로 대체.
+별표는 Customize 순서를 따르며, 항상 표시 지표가 먼저, 그다음이 필요 시 표시 지표.
+항상 표시든 필요 시 표시든 어느 쪽 지표에도 별표 지정 가능.

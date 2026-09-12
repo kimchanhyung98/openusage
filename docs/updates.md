@@ -1,32 +1,32 @@
-# Updates
+# 업데이트
 
-OpenUsage keeps itself up to date using [Sparkle](https://sparkle-project.org), the standard update framework for Mac apps.
-Updates are downloaded from OpenUsage's own release feed and verified before they install, so you always get a genuine, unmodified build.
+OpenUsage는 Mac 앱의 표준 업데이트 프레임워크인 [Sparkle](https://sparkle-project.org)로 스스로를 최신 상태로 유지.
+업데이트는 OpenUsage 자체 릴리스 피드에서 내려받고 설치 전에 검증하므로, 항상 변조되지 않은 정식 빌드만 받게 됨.
 
-## How it works
+## 동작 방식
 
-- **Automatic checks.**
-  The app quietly checks for a new version in the background (about once an hour).
-  When one is found, an **Update Available** banner appears at the top of the popover instead of a window popping up behind your other apps.
-  Click **Install Update** to open the update window (release notes, download, install) front and center.
-  The banner's close button snoozes it; it comes back the next time the app finds the update.
-- **Manual check.**
-  Open **Settings → Updates** and click **Check for Updates…** at any time.
-  For both manual checks and banner installs, OpenUsage brings itself to the foreground before opening Sparkle so the update window doesn't get buried behind another app.
-  Because OpenUsage normally lives only in the menu bar, it briefly shows a Dock icon for the update session, then hides again.
-- **Turn it off.**
-  The **Update Automatically** switch in **Settings → Updates** stops the background checks.
-  You can still check manually.
+- **자동 확인.**
+  앱이 백그라운드에서 조용히 새 버전을 확인(약 한 시간에 한 번).
+  새 버전을 찾으면 다른 앱 뒤에 창을 띄우는 대신 팝오버 상단에 **Update Available**(업데이트 있음) 배너를 표시.
+  **Install Update**(업데이트 설치)를 클릭하면 릴리스 노트·다운로드·설치가 담긴 업데이트 창이 앞으로 열림.
+  배너의 닫기 버튼은 잠시 미루는 동작 — 앱이 그 업데이트를 다시 발견하면 배너도 다시 등장.
+- **수동 확인.**
+  언제든 **Settings → Updates**(설정 → 업데이트)를 열고 **Check for Updates…**(업데이트 확인…) 클릭.
+  수동 확인이든 배너를 통한 설치든, OpenUsage는 Sparkle을 열기 전에 스스로를 앞으로 가져와 업데이트 창이 다른 앱 뒤에 묻히지 않게 함.
+  평소에는 메뉴 막대에만 있으므로, 업데이트 세션 동안만 Dock 아이콘을 잠깐 보여 준 뒤 다시 숨김.
+- **끄기.**
+  **Settings → Updates**의 **Update Automatically**(자동 업데이트) 스위치를 끄면 백그라운드 확인이 중단.
+  수동 확인은 계속 가능.
 
-## Beta updates
+## 베타 업데이트
 
-**Settings → Updates → Beta Updates** opts you into pre-release builds before they ship to everyone.
-Turn it off to go back to stable-only; you'll stay on your current version until the next stable release catches up.
+**Settings → Updates → Beta Updates**(설정 → 업데이트 → 베타 업데이트)를 켜면 모두에게 배포되기 전의 프리릴리스 빌드까지 받게 됨.
+끄면 안정 버전만 받는 상태로 돌아가고, 다음 안정 릴리스가 따라잡을 때까지 현재 버전을 유지.
 
-Everyone always receives stable releases — the beta option only *adds* pre-release builds on top.
+안정 릴리스는 누구나 항상 받음 — 베타 옵션은 그 위에 프리릴리스 빌드를 *더할* 뿐.
 
-## Where updates come from
+## 업데이트 출처
 
-Update builds are published on OpenUsage's GitHub releases, and the list of available versions (the "appcast") is served from `https://openusage.chanhyung.kim/appcast.xml`.
-Each download is signed two ways — Apple notarization plus OpenUsage's own signature — and the app refuses anything that doesn't match.
-This is only available in the official signed release build, not in local developer builds.
+업데이트 빌드는 OpenUsage의 GitHub 릴리스에 게시되고, 사용 가능한 버전 목록("appcast")은 `https://openusage.chanhyung.kim/appcast.xml`에서 제공.
+각 다운로드는 Apple 공증과 OpenUsage 자체 서명으로 이중 서명되며, 일치하지 않는 것은 앱이 거부.
+이 기능은 공식 서명 릴리스 빌드에만 있고 로컬 개발 빌드에는 없음.
