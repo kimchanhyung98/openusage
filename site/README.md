@@ -67,15 +67,22 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 조립 전 `site/`에서 `npm ci` 실행 필요.
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
 `main`에 사이트·조립 스크립트·provider 아이콘·게시 workflow 변경을 푸시하면 `Publish landing page`가 `gh-pages`에 반영.
-게시 전후 `appcast.xml`·`pricing_supplement.json`·`CNAME`의 Git blob을 비교하고, 모두 같을 때 `Deploy Pages`가 GitHub Pages에 배포.
-필수 파일 누락·도메인 불일치·`gh-pages/.github` 존재 시 게시 전 실패.
-현재 변경은 새 publisher를 두는 방식이며 `Deploy Pages`는 완성된 `gh-pages` 내용만 배포.
+자동·수동 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
+게시 전후 `appcast.xml`·`pricing_supplement.json`·`CNAME`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
+필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·도메인 불일치·`gh-pages/.github` 존재 시 게시 전 실패.
+Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
+`Deploy Pages`는 성공한 실행의 해당 산출물을 받아 그 커밋만 배포하므로, 대기 중 다른 게시가 시작돼도 배포 내용 고정.
+자동 배포에서 산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
 
 Release·가격표 게시와 `release-appcast` 실행 그룹 공유.
+사이트는 검증을 마친 게시 작업만 이 그룹에 진입하며, 검증 작업은 호출 workflow별 별도 실행 그룹 사용.
 동시 쓰기는 직렬화되지만 기본 대기열은 하나뿐이므로 새 실행이 기존 대기 실행을 취소할 수 있음.
 취소된 workflow를 확인한 뒤 해당 게시 작업을 다시 실행하고, 후속 `Deploy Pages` 성공까지 확인.
 사이트 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/openusage --ref main`.
-게시가 성공하고 Pages 배포만 실패한 경우 `gh workflow run deploy-pages.yml --repo kimchanhyung98/openusage --ref main`으로 재배포.
+Pages 배포만 실패하면 해당 배포 실행을 재실행하여 같은 게시 커밋으로 재시도.
+산출물 도입 전 게시 실행이나 산출물이 만료된 실행은 새 게시 실행 필요.
+직접 복구할 때는 현재 `gh-pages`의 피드·도메인·사이트 내용을 확인한 뒤 `gh workflow run deploy-pages.yml --repo kimchanhyung98/openusage --ref main`으로 수동 배포.
+이 수동 경로는 현재 `gh-pages`를 배포하며 이전 게시 실행의 커밋에 고정되지 않음.
 두 명령 모두 운영 배포를 실행하므로 로컬 검증용으로 사용하지 않음.
 대기열 동작은 [GitHub concurrency 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) 기준.
 
@@ -96,7 +103,7 @@ WITH_FEED=1 ./script/site_assemble.sh /tmp/site-preview "$(git rev-parse --short
 - 기본 출력은 `.build/site-preview`. 빈 폴더 또는 `.openusage-site-output` 표식이 있는 이전 결과만 교체 가능.
 - 소스·상위 폴더·심볼릭 링크 출력과 무관한 기존 폴더는 거부. 빌드·검증 실패 시 이전 결과 보존.
 - `WITH_FEED=1`은 라이브 `appcast.xml`·`pricing_supplement.json`을 미리보기용으로만 복사. 배포 경로는 이 파일들을 절대 쓰지 않음.
-- `site_feed_snapshot.sh`: 게시 ref의 필수 파일·도메인 검사 후 blob ID 출력. publisher에서 게시 전후 결과 비교.
+- `site_feed_snapshot.sh`: 게시 ref의 필수 파일이 일반 파일인지 확인하고 도메인 검사 후 blob ID 출력. publisher에서 게시 전후 결과 비교.
 - `site_smoke.sh`: 배포 후 검증. 두 번째 인자로 해당 배포에 포함된 feed 두 개의 사본 폴더를 필수 지정. 응답이 기준 사본과 바이트 단위로 같은지, appcast에 유효한 정식 릴리스가 있는지, 링크·자산이 응답하는지 확인.
 - 링크·자산 URL은 한 항목씩 그대로 요청. 로컬 파일명에 따른 와일드카드 확장 방지.
 - 피드 불일치나 기준 누락은 실패. 캐시 전파가 끝난 뒤 같은 기준으로 다시 실행. 검사 중 새 릴리스가 생겨도 기준은 바뀌지 않으며 원격 브랜치를 조회하지 않음.
