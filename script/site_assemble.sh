@@ -62,7 +62,7 @@ PY
 
 # 4. 출력 단언.
 for f in "${FEED_NAMES[@]}"; do
-  if find "$OUT" -name "$f" | grep -q .; then
+  if [ -n "$(find "$OUT" -name "$f" -print -quit)" ]; then
     echo "error: $f must not be produced by the site build" >&2
     exit 1
   fi
@@ -70,7 +70,7 @@ done
 for f in index.html 404.html robots.txt sitemap.xml js-flag.js; do
   [ -f "$OUT/$f" ] || { echo "error: $OUT/$f missing" >&2; exit 1; }
 done
-if find "$OUT" -name '*.bak' | grep -q .; then
+if [ -n "$(find "$OUT" -name '*.bak' -print -quit)" ]; then
   echo "error: backup files in output" >&2
   exit 1
 fi

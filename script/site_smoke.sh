@@ -43,7 +43,7 @@ check "pricing"  "/pricing_supplement.json"    200 "application/json" '"pricing"
 
 # og:image가 실제로 서빙되는지(절대 URL의 경로만 BASE에 붙여 확인).
 ogpath="$(python3 -c 'import re,sys,urllib.parse as u; m=re.search(r"property=\"og:image\" content=\"([^\"]+)\"", open(sys.argv[1], encoding="utf-8").read()); print(u.urlparse(m.group(1)).path if m else "")' "$tmpdir/index.html")"
-if [ -n "$ogpath" ]; then check "og:image" "$ogpath" 200 "image/"; else echo "WARN og:image meta missing"; fi
+if [ -n "$ogpath" ]; then check "og:image" "$ogpath" 200 "image/"; else echo "FAIL og:image meta missing"; fail=1; fi
 
 # 검사 도중 바뀔 수 있는 원격 브랜치 대신 해당 배포의 사본과 바이트 단위 대조.
 for f in appcast.xml pricing_supplement.json; do
