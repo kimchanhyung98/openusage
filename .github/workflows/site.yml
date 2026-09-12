@@ -30,7 +30,7 @@ jobs:
     container:
       # site/package.json의 @playwright/test 버전과 함께 갱신.
       image: mcr.microsoft.com/playwright:v1.63.0-noble
-      options: --init --ipc=host
+      options: --init --ipc=host --user 1001
     defaults:
       run:
         shell: bash
