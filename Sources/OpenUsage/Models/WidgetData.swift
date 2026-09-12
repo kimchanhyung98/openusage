@@ -73,18 +73,28 @@ struct WidgetData: Hashable {
         var deadline: Date?
         var refreshFailed = false
         var communityYesPercent: Double?
+        var isScheduled = false
     }
 
     var isForecast: Bool { forecast != nil }
-    var forecastDeadline: Date? { forecast?.deadline }
+    var forecastDeadline: Date? { forecast?.isScheduled == true ? nil : forecast?.deadline }
     var communityVoteTick: Double? {
-        guard hasData, let percent = forecast?.communityYesPercent else { return nil }
+        guard hasData, forecast?.isScheduled != true, let percent = forecast?.communityYesPercent else { return nil }
         return percent / 100
     }
     var communityVoteLabel: String? {
-        guard hasData, let forecast, forecast.deadline != nil else { return nil }
+        guard hasData, let forecast, !forecast.isScheduled, forecast.deadline != nil else { return nil }
         guard let percent = forecast.communityYesPercent else { return "Vote share unavailable" }
         return "\(Int(percent))% expect a reset"
+    }
+
+    private var resetWatchLabel: String? {
+        guard let forecast else { return nil }
+        if forecast.isScheduled {
+            guard let date = forecast.deadline else { return "Reset time unknown" }
+            return "Scheduled \(Formatters.monthDayTimeLabel(date))"
+        }
+        return forecast.deadline.map { Formatters.resetWatchDeadlineLabel(at: $0) }
     }
     var isBounded: Bool { limit != nil }
     var isQuotaMeter: Bool { isBounded && !isForecast }
@@ -239,9 +249,7 @@ struct WidgetData: Hashable {
         if let subtitleOverride {
             return subtitleOverride
         }
-        if isForecast, let forecastDeadline {
-            return Formatters.resetWatchDeadlineLabel(at: forecastDeadline)
-        }
+        if let resetWatchLabel { return resetWatchLabel }
         if let resetLabel {
             return resetLabel
         }
@@ -491,9 +499,7 @@ extension WidgetData {
         }
         guard hasData else { return Self.noDataSubtitle }
         if let subtitleOverride { return subtitleOverride }
-        if isForecast, let forecastDeadline {
-            return Formatters.resetWatchDeadlineLabel(at: forecastDeadline)
-        }
+        if let resetWatchLabel { return resetWatchLabel }
         if isFreshSessionWindow(now: now) { return "Not started" }
         if let resetsAt {
             return resetDisplayMode == .absolute
@@ -519,9 +525,15 @@ extension WidgetData {
     /// "Not started" trailing label의 hover 설명 문구 — 첫 메시지 전에는 countdown 없음.
     static let freshSessionTooltip = "Sessions start after you send your first message."
 
-    /// reset label의 hover tooltip — 현재 표시와 반대 format.
+    /// reset label의 hover tooltip — 현재 표시와 반대 format, 예측 시각은 countdown.
     /// fresh("Not started") session은 reset 시각 대신 자체 설명 표시.
     func resetTooltip(now: Date = Date()) -> String? {
+        if let forecast {
+            guard hasData, !forecast.refreshFailed, subtitleOverride == nil, let deadline = forecast.deadline,
+                forecast.isScheduled || deadline > now
+            else { return nil }
+            return Formatters.resetRelativeLabel(until: deadline, now: now)
+        }
         if isFreshSessionWindow(now: now) { return Self.freshSessionTooltip }
         guard hasResetLabel(now: now), let resetsAt else { return nil }
         return resetDisplayMode == .absolute

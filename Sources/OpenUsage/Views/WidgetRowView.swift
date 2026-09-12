@@ -33,7 +33,7 @@ struct WidgetRowView: View {
         // reset 날짜가 있는 행은 시계 기반 상태를 위해 30초 tick으로 re-render — forecast는 semantic deadline도
         // 별도 tick으로 삽입해 마감 즉시 No data 전환. TimelineView는 popover 표시 중에만 tick 스케줄.
         Group {
-            if data.resetsAt != nil || data.forecastDeadline != nil || !data.expiriesAt.isEmpty {
+            if data.resetsAt != nil || data.forecast?.deadline != nil || !data.expiriesAt.isEmpty {
                 TimelineView(WidgetRowTimelineSchedule(deadline: data.forecastDeadline)) { context in
                     rowContent(data.presented(at: context.date))
                 }
@@ -216,7 +216,14 @@ struct WidgetRowView: View {
     @ViewBuilder
     private func trailingContext(_ rowData: WidgetData) -> some View {
         if let text = rowData.boundedTrailingText() {
-            if rowData.hasResetLabel(), let onToggleResetDisplay {
+            if rowData.forecast?.isScheduled == true {
+                Text(text)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(nil)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hoverTooltip(rowData.resetTooltip())
+            } else if rowData.hasResetLabel(), let onToggleResetDisplay {
                 Button(action: onToggleResetDisplay) {
                     Text(text).foregroundStyle(.secondary)
                 }

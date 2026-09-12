@@ -2,9 +2,18 @@ import Foundation
 
 struct CodexResetWatch: Equatable, Sendable {
     let chancePercent: Double
-    let deadline: Date
+    let deadline: Date?
     var episodeID: String?
     var communityYesPercent: Double?
+    var isScheduled = false
+
+    /// 예정 시각 경과는 실행 완료 증거가 아니므로 예측 기한만 만료 처리.
+    var expiresAt: Date? { isScheduled ? nil : deadline }
+
+    func isExpired(at date: Date) -> Bool {
+        guard let expiresAt else { return false }
+        return date >= expiresAt
+    }
 }
 
 struct CodexResetWatchResult: Equatable, Sendable {
@@ -77,7 +86,7 @@ actor CodexResetWatchStore {
     func currentResult(force: Bool = false) async -> CodexResetWatchResult {
         if let refreshTask { return await refreshTask.value }
         let readAt = now()
-        if case .watch(let watch) = representation, readAt >= watch.deadline {
+        if case .watch(let watch) = representation, watch.isExpired(at: readAt) {
             representation = nil
             etag = nil
             freshUntil = .distantPast
@@ -102,8 +111,9 @@ actor CodexResetWatchStore {
     }
 
     private func watchIfUsable(at date: Date, validUntil: Date) -> CodexResetWatch? {
-        guard !lastPolicy.requiresValidation,
-              date < validUntil, case .watch(let watch) = representation, date < watch.deadline else {
+        guard !lastPolicy.requiresValidation, date < validUntil,
+            case .watch(let watch) = representation, !watch.isExpired(at: date)
+        else {
             return nil
         }
         return watch
@@ -184,12 +194,14 @@ actor CodexResetWatchStore {
     }
 
     private func watch(from representation: Representation, at date: Date) -> CodexResetWatch? {
-        guard case .watch(let watch) = representation, date < watch.deadline else { return nil }
+        guard case .watch(let watch) = representation, !watch.isExpired(at: date) else { return nil }
         return watch
     }
 
     private func withCommunityVotes(_ representation: Representation) async -> Representation {
-        guard case .watch(var watch) = representation, watch.deadline > now() else { return representation }
+        guard case .watch(var watch) = representation, !watch.isScheduled, !watch.isExpired(at: now()) else {
+            return representation
+        }
         watch.communityYesPercent = nil
         guard now() >= votesRetryNotBefore else { return .watch(watch) }
         if let episodeID = watch.episodeID {
@@ -207,7 +219,8 @@ actor CodexResetWatchStore {
 
     private func extendStaleUntilRetry() {
         guard case .watch(let watch) = representation else { return }
-        staleUntil = min(max(staleUntil, retryNotBefore), watch.deadline)
+        staleUntil = max(staleUntil, retryNotBefore)
+        if let expiresAt = watch.expiresAt { staleUntil = min(staleUntil, expiresAt) }
     }
 
     private func applyFreshness(
@@ -222,9 +235,9 @@ actor CodexResetWatchStore {
         }
         var nextFresh = receivedAt.addingTimeInterval(policy.freshAge)
         var nextStale = nextFresh.addingTimeInterval(policy.staleAge)
-        if case .watch(let watch) = representation {
-            nextFresh = min(nextFresh, watch.deadline)
-            nextStale = min(nextStale, watch.deadline)
+        if case .watch(let watch) = representation, let expiresAt = watch.expiresAt {
+            nextFresh = min(nextFresh, expiresAt)
+            nextStale = min(nextStale, expiresAt)
         }
         freshUntil = nextFresh
         staleUntil = nextStale
@@ -232,6 +245,16 @@ actor CodexResetWatchStore {
 
     private static func decodeRepresentation(_ body: Data, at date: Date) throws -> Representation {
         let payload = try JSONDecoder().decode(StatusPayload.self, from: body)
+        if let scheduled = payload.data.scheduledReset {
+            let scheduledFor: Date?
+            if let rawDate = scheduled.scheduledFor {
+                guard let date = OpenUsageISO8601.date(from: rawDate) else { throw FetchError.invalidDeadline }
+                scheduledFor = date
+            } else {
+                scheduledFor = nil
+            }
+            return .watch(CodexResetWatch(chancePercent: 99, deadline: scheduledFor, isScheduled: true))
+        }
         guard let activeWatch = payload.data.activeWatch,
               let chance = activeWatch.resetChancePercent
         else {
@@ -297,9 +320,11 @@ private struct StatusPayload: Decodable {
     let data: DataPayload
 
     struct DataPayload: Decodable {
+        let scheduledReset: ScheduledReset?
         let activeWatch: ActiveWatch?
 
         private enum CodingKeys: String, CodingKey {
+            case scheduledReset = "scheduled_reset"
             case activeWatch = "active_watch"
         }
 
@@ -311,7 +336,26 @@ private struct StatusPayload: Decodable {
                     .init(codingPath: decoder.codingPath, debugDescription: "Missing active_watch")
                 )
             }
+            scheduledReset = try container.decodeIfPresent(ScheduledReset.self, forKey: .scheduledReset)
             activeWatch = try container.decodeIfPresent(ActiveWatch.self, forKey: .activeWatch)
+        }
+    }
+
+    struct ScheduledReset: Decodable {
+        enum Status: String, Decodable { case scheduled }
+
+        let status: Status
+        let scheduledFor: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case status
+            case scheduledFor = "scheduled_for"
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            status = try container.decode(Status.self, forKey: .status)
+            scheduledFor = try container.decode(String?.self, forKey: .scheduledFor)
         }
     }
 
