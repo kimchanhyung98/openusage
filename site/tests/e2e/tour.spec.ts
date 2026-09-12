@@ -12,9 +12,34 @@ test('terminal boundary keyboard input stays inside the feature preview', async 
   await page.keyboard.press('PageDown');
   expect(await page.evaluate(() => scrollY)).toBe(position);
   await terminal.evaluate((element) => { element.scrollTop = 0; });
+  const topPosition = await page.evaluate(() => scrollY);
   await page.keyboard.press('PageUp');
+  expect(await page.evaluate(() => scrollY)).toBe(topPosition);
   await expect(page.locator('[data-feature-tour]')).toHaveAttribute('data-tour-stage', 'integrations');
 });
+
+for (const key of ['PageDown', 'PageUp']) {
+  test(`${key} scrolls enlarged terminal content without moving the page`, async ({ page }) => {
+    await openHome(page);
+    await page.locator('[data-tour-tab="integrations"]').click();
+    const terminal = page.locator('[data-tour-terminal]');
+    await terminal.locator('.code').evaluateAll((elements) => {
+      elements.forEach((element) => { (element as HTMLElement).style.fontSize = '24px'; });
+    });
+    expect(await terminal.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(0);
+    await terminal.focus();
+    const initial = await terminal.evaluate((element, key) => {
+      element.scrollTop = key === 'PageUp' ? element.scrollHeight : 0;
+      return element.scrollTop;
+    }, key);
+    const position = await page.evaluate(() => scrollY);
+    await page.keyboard.press(key);
+    const scroll = expect.poll(() => terminal.evaluate((element) => element.scrollTop));
+    if (key === 'PageUp') await scroll.toBeLessThan(initial);
+    else await scroll.toBeGreaterThan(initial);
+    expect(await page.evaluate(() => scrollY)).toBe(position);
+  });
+}
 
 test('Escape completes a running tour when focus remains outside the section', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
