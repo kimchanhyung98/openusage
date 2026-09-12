@@ -1,0 +1,37 @@
+---
+import Popover from './app/Popover.astro';
+---
+
+<div class="device">
+  <Popover
+    uid="hero"
+    parts={['spend', 'claude', 'codex', 'antigravity']}
+    footer={true}
+    nav={true}
+    label="OpenUsage 사용량 대시보드. Options에서 Customize와 Settings로 이동"
+  />
+</div>
+
+<style>
+  .device {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: end;
+    width: 100%;
+    max-width: 520px;
+    overflow: clip;
+  }
+  .device :global(.am) {
+    transform: scale(var(--hero-scale, 1));
+    transform-origin: top right;
+  }
+  @media (max-width: 719px) {
+    .device {
+      justify-items: center;
+      max-width: none;
+    }
+    .device :global(.am) {
+      transform-origin: top center;
+    }
+  }
+</style>

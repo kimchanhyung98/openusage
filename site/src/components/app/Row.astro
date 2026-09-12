@@ -1,0 +1,30 @@
+---
+// 텍스트 전용 행과 Usage Trend 스파크라인. Views/WidgetRowView.swift · Views/UsageSparkline.swift.
+import type { Row } from '../../data/demo';
+import { metricID } from '../../data/metrics';
+import Meter from './Meter.astro';
+
+interface Props { r: Row; provider: string }
+const { r, provider } = Astro.props;
+const metric = metricID(provider, r.label);
+---
+
+{r.kind === 'bounded' && <Meter r={r} metric={metric} />}
+{
+  r.kind === 'text' && (
+    <div class="am-trow" data-metric={metric} data-account-history={['Today', 'Yesterday'].includes(r.label) ? '' : undefined}>
+      <b>{r.label}</b>
+      <span class="am-trow-val">{r.values.join(' · ')}</span>
+    </div>
+  )
+}
+{
+  r.kind === 'trend' && (
+    <div class="am-trow am-trend" data-metric={metric} data-account-history>
+      <b>{r.label}</b>
+      <span class="am-spark" aria-hidden="true">
+        {r.bars.map((h) => <i class={`am-h${Math.round(h * 100)}`} />)}
+      </span>
+    </div>
+  )
+}

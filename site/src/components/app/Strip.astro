@@ -1,0 +1,52 @@
+---
+// 메뉴 막대 스트립. Support/MenuBarStripRenderer.swift.
+// Text: provider 그룹 간 11, 마크↔값 4, 마크 16, 값 1개는 12/bold·2개는 9/semibold 2줄.
+// Bars: 18×18 캔버스, 최대 4줄. 화면 공유 중에는 마크 + "OpenUsage"만.
+// 스트립은 template 이미지라 macOS가 색을 입힘 — 다크 메뉴 막대에서는 밝게 보임.
+import { strip } from '../../data/demo';
+
+interface Props { mode: 'text' | 'bars' | 'private' }
+const { mode } = Astro.props;
+---
+
+{
+  mode === 'text' && (
+    <span class="am-strip">
+      {strip.text.map((g) => (
+        <span class="am-strip-seg">
+          <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${g.icon}`} /></svg>
+          {g.values.length === 1 ? (
+            <span class="am-strip-one">{g.values[0]}</span>
+          ) : (
+            <span class="am-strip-two">{g.values.map((v) => <span>{v}</span>)}</span>
+          )}
+        </span>
+      ))}
+    </span>
+  )
+}
+{
+  mode === 'bars' && (
+    <span class="am-strip">
+      <span class="am-bars">
+        {strip.bars.map((f) => (
+          <i>
+            <b class={`am-w${Math.round(f * 100)}`} />
+          </i>
+        ))}
+      </span>
+    </span>
+  )
+}
+{
+  mode === 'private' && (
+    <span class="am-strip">
+      <span class="am-strip-wordmark">
+        <svg class="am-gauge" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 2a6 6 0 0 0-5.2 9h1.9a4.2 4.2 0 1 1 6.6 0h1.9A6 6 0 0 0 8 2Zm2.4 3.1L7.3 7.6a.9.9 0 1 0 1.2 1.3l2.3-3.3a.3.3 0 0 0-.4-.5Z" />
+        </svg>
+        OpenUsage
+      </span>
+    </span>
+  )
+}

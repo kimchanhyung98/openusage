@@ -1,0 +1,418 @@
+/* 앱 화면 재현 그래픽 — Settings·Customize.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+/* ---------- Settings / Customize ---------- */
+
+.am-screen {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--am-section-gap);
+}
+
+.am-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--am-header-gap);
+}
+
+.am-group > b {
+  padding: 0 8px;
+  font-size: var(--am-fs-caption);
+  font-weight: 600;
+  color: var(--am-secondary);
+}
+
+.am-list {
+  border-radius: var(--am-card-r);
+  background: var(--am-card);
+  display: flex;
+  flex-direction: column;
+}
+
+.am-item {
+  padding: var(--am-control-pad) 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.am-item > span:first-child { white-space: nowrap; }
+
+.am-item-ctl {
+  margin-left: auto;
+  padding-left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--am-secondary);
+  white-space: nowrap;
+}
+
+.am-note {
+  padding: 0 12px 10px;
+  font-size: var(--am-fs-caption);
+  color: var(--am-secondary);
+}
+
+.am-sub {
+  padding: 4px 12px 2px;
+  font-size: var(--am-fs-caption);
+  font-weight: 600;
+  color: var(--am-secondary);
+}
+
+/* 토글 — 소스에 실제 크기 없음. 드래그 미러 값 28×16 기준. */
+.am-toggle {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--am-quaternary);
+  position: relative;
+  flex: none;
+}
+
+.am-toggle.is-on { background: var(--am-normal); }
+
+.am-toggle::after {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.am-toggle.is-on::after { left: 13.5px; }
+
+/* Customize provider 행 */
+.am-prow {
+  padding: var(--am-control-pad) 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.am-prow.is-off { opacity: 0.55; }
+
+.am-grip {
+  width: 10px;
+  height: 14px;
+  color: var(--am-tertiary);
+  flex: none;
+}
+
+.am-prow .am-mark {
+  width: 18px;
+  height: 18px;
+  color: var(--am-secondary);
+  flex: none;
+}
+
+.am-prow-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.am-prow-text span:last-child {
+  font-size: var(--am-fs-caption);
+  color: var(--am-secondary);
+}
+
+.am-chev {
+  width: 16px;
+  height: 16px;
+  color: var(--am-tertiary);
+  flex: none;
+}
+
+/* 화면 이동 행 */
+.am-cross {
+  padding: var(--am-control-pad) 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.am-cross-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--am-secondary);
+  flex: none;
+}
+
+.am-cross-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.am-cross-text span:last-child {
+  font-size: var(--am-fs-caption);
+  color: var(--am-secondary);
+}
+
+/* 누를 수 있는 토글(Customize L1). 끄면 행 전체가 0.55로 흐려지는 것이 앱의 전부. */
+button.am-toggle { cursor: pointer; }
+.am-toggle::after { transition: left 0.15s var(--ease, ease); }
+
+/* ---------- 헤더 accessory · 계정 선택 ---------- */
+
+.am-item-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.am-accessory {
+  width: 11px;
+  height: 11px;
+  color: var(--am-secondary);
+  flex: none;
+}
+
+.am-group > b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Global Shortcut의 ShortcutRecorderField — 이 화면의 유일한 전용 컨트롤. */
+.am-chip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--am-quinary);
+  border: 1px solid var(--am-sep);
+  color: var(--am-secondary);
+}
+
+/* .menu picker — 값 + chevron.up.chevron.down. 배경 있는 팝업 버튼. */
+.am-pickwrap {
+  position: relative;
+  display: flex;
+}
+
+.am-picker {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  font: inherit;
+  color: var(--am-primary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 9px;
+  border-radius: 6px;
+  background: var(--am-quinary);
+  white-space: nowrap;
+}
+
+button.am-picker { cursor: pointer; }
+button.am-picker:hover { background: rgba(255, 255, 255, 0.11); }
+
+.am-picker svg {
+  width: 9px;
+  height: 9px;
+  color: var(--am-secondary);
+  flex: none;
+}
+
+/* 팝업은 컨트롤 오른쪽 끝에 맞춰 아래로. 흐름에 두면 아래 행이 밀림. */
+.am-pickmenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: auto;
+  right: 0;
+  z-index: 4;
+}
+
+/* Accounts family 하위 카드 */
+.am-family {
+  padding: 4px 0 0;
+}
+
+.am-family-head {
+  padding: 4px 12px 2px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.am-family-head .am-mark {
+  width: 14px;
+  height: 14px;
+  color: var(--am-secondary);
+  flex: none;
+}
+
+.am-family-head b {
+  font-size: var(--am-fs-header);
+  font-weight: 600;
+}
+
+/* 행 사이에만 들어가는 구분선. 마지막 행 뒤에는 없음. */
+.am-div {
+  margin: 0 12px;
+  border: 0;
+  border-top: 0.5px solid var(--am-sep);
+}
+
+/* AccountStatusBadge — 점 + 상태. Ready는 초록, Sign-In Needed는 주황. */
+.am-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--am-fs-caption2);
+  font-weight: 500;
+  color: var(--am-positive);
+}
+
+.am-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.am-badge.is-warn { color: var(--am-notice); }
+
+/* 카드 헤더의 계정 선택 — 배경 없는 11/medium 텍스트 + 8px chevron. */
+.am-acctwrap {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
+.am-acct {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--am-secondary);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 92px;
+  white-space: nowrap;
+}
+
+.am-acct [data-picker-value] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.am-acct svg { width: 8px; height: 8px; flex: none; }
+button.am-acct { cursor: pointer; }
+
+.am-icon-action {
+  display: inline-flex;
+  border: 0;
+  padding: 2px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+button.am-chip {
+  font: inherit;
+  cursor: pointer;
+}
+.am-action-row .am-item-ctl {
+  width: 100%;
+  padding-left: 0;
+}
+.am-action-row .am-chip {
+  width: 100%;
+}
+.am-topbar,
+.am-foot {
+  flex-shrink: 0;
+}
+.am-account-dialog {
+  width: min(288px, calc(100% - 32px));
+  padding: 20px;
+  border: 1px solid var(--am-sep);
+  border-radius: var(--am-panel-r);
+  background: var(--am-tray);
+  color: var(--am-primary);
+  font: 13px / 1.45 var(--am-font);
+}
+.am-account-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.3);
+}
+.am-account-dialog h2 {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.am-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+.am-dialog-actions .am-confirm {
+  background: var(--am-normal);
+  color: #fff;
+}
+
+.am[data-theme='light'] {
+  --am-tray: #fff;
+  --am-card: rgba(0, 0, 0, 0.04);
+  --am-track: rgba(0, 0, 0, 0.1);
+  --am-quinary: rgba(0, 0, 0, 0.05);
+  --am-primary: #1c1c1e;
+  --am-secondary: rgba(28, 28, 30, 0.65);
+  --am-tertiary: rgba(28, 28, 30, 0.45);
+  --am-quaternary: rgba(28, 28, 30, 0.2);
+  --am-sep: rgba(0, 0, 0, 0.12);
+}
+.am[data-theme='light'] .am-menu,
+.am[data-theme='light'] .am-optmenu {
+  background: #fff;
+}
+.am[data-density='default'] {
+  --am-bar-row-pad: 10px;
+  --am-text-row-pad: 6px;
+  --am-row-inner: 4px;
+  --am-section-gap: 14px;
+  --am-header-gap: 4px;
+  --am-control-pad: 9px;
+  --am-meter-h: 5px;
+  --am-fs-label: 13px;
+  --am-fs-header: 14px;
+  --am-fs-support: 12px;
+  --am-fs-plan: 11px;
+}
+.am[data-transparency='true'] {
+  background: rgba(30, 30, 30, 0.8);
+  backdrop-filter: blur(16px);
+}
+.am[data-transparency='true'][data-theme='light'] {
+  background: rgba(255, 255, 255, 0.8);
+}
+.am[data-pacing='false'] .am-row[data-pace-severity='normal'] .am-pace,
+.am[data-pacing='false'] .am-row[data-pace-severity='normal'] .am-meter b {
+  visibility: hidden;
+}
+.am[data-usage-cards='separate'] .am-section[data-inactive-account='true'] [data-account-history] {
+  display: none;
+}

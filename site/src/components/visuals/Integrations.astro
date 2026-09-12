@@ -1,0 +1,51 @@
+---
+// CLI·로컬 API 코드 카드. 형식은 docs/local-http-api.md의 limits envelope(schema openusage.limits.v1)을 데모 값으로 축약.
+const cli = `$ openusage codex
+{
+  "schema": "openusage.limits.v1",
+  "providers": {
+    "codex": {
+      "displayName": "Codex",
+      "resources": {
+        "session": {
+          "kind": "consumption", "unit": "percent",
+          "used": 5, "limit": 100, "remaining": 95,
+          "resetsAt": "2026-09-09T13:41:00Z"
+        },
+        "weekly": {
+          "kind": "consumption", "unit": "percent",
+          "used": 64, "limit": 100, "remaining": 36,
+          "resetsAt": "2026-09-10T16:10:00Z"
+        }
+      }
+    }
+  },
+  "errors": []
+}`;
+const curl = `$ curl 127.0.0.1:6736/v1/limits/claude`;
+---
+
+<div class="cards">
+  <pre class="code"><code>{cli}</code></pre>
+  <pre class="code"><code>{curl}</code></pre>
+</div>
+
+<style>
+  .cards {
+    display: grid;
+    gap: 16px;
+    width: 100%;
+  }
+  /* 스크롤 영역 대신 줄바꿈: 키보드로 닿을 수 없는 scroll region을 만들지 않음. */
+  .code {
+    margin: 0;
+    padding: 14px 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    font: 400 12px / 1.5 var(--font-sans);
+    color: var(--ink);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>

@@ -1,0 +1,127 @@
+---
+// Settings 화면. Views/SettingsScreen.swift.
+// 그룹 제목 .caption/semibold/.secondary, 좌우 패딩 8. 행은 좌우 12 · 상하 6(Compact).
+// picker는 앱의 .menu 팝업이라 흐름을 밀지 않고 위에 겹쳐 뜸.
+import Glyph from './Glyph.astro';
+import { settingGroups, settingsCrossLink } from '../../data/settings';
+
+interface Props { nav: boolean; uid: string; onboarding?: boolean }
+const { nav, uid, onboarding = false } = Astro.props;
+---
+
+<div class="am-screen">
+  {
+    settingGroups.map((g) => (
+      <div class="am-group" data-settings-group={g.id}>
+        <b>
+          {g.title}
+          {g.accessory === 'add' && <button type="button" class="am-icon-action" data-native-action="Add and sign in to accounts in the Mac app." aria-label="Add Account"><Glyph name="plus" class="am-accessory" /></button>}
+          {g.accessory === 'info' && <Glyph name="info" class="am-accessory" />}
+          {g.accessory === 'manage' && <button type="button" class="am-icon-action" data-native-action="Manage the Tokscale device name in the Mac app." aria-label="Manage Tokscale Device Name"><Glyph name="more" class="am-accessory" /></button>}
+        </b>
+        <div class="am-list">
+          {onboarding && g.id === 'accounts' && <p class="am-account-empty" data-tour-accounts-empty>Add a Claude or Codex account to switch which sign-in new terminal sessions use.</p>}
+          {g.rows.filter((row) => !onboarding || row.id !== 'usageCards').map(({ id, label, control, info, note }) => (
+            <>
+              <div class:list={['am-item', { 'am-action-row': !label }]}>
+                {label && <span class="am-item-label">
+                  {label}
+                  {info && <Glyph name="info" class="am-accessory" />}
+                </span>}
+                <span class="am-item-ctl">
+                  {control.kind === 'toggle' &&
+                    (nav ? (
+                      <button type="button" class:list={['am-toggle', { 'is-on': control.on }]} role="switch" aria-checked={control.on ? 'true' : 'false'} data-setting={id}>
+                        <span class="am-sr">{label}</span>
+                      </button>
+                    ) : (
+                      <span class:list={['am-toggle', { 'is-on': control.on }]} role="img" aria-label={control.on ? 'On' : 'Off'} />
+                    ))}
+                  {control.kind === 'action' && <button type="button" class="am-chip" data-native-action={control.message}>{control.label}</button>}
+                  {control.kind === 'picker' &&
+                    (nav ? (
+                      <span class="am-pickwrap">
+                        <button type="button" class="am-picker" data-picker={id} aria-label={label} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-pick-${id}`}>
+                          <span data-picker-value>{control.value}</span>
+                          <Glyph name="updown" />
+                        </button>
+                        <ul class="am-menu am-pickmenu" id={`${uid}-pick-${id}`} role="menu" aria-label={label} hidden>
+                          {control.options.map((o) => (
+                            <li role="none">
+                              <button type="button" role="menuitemradio" aria-checked={o === control.value ? 'true' : 'false'} data-pick={id} data-value={o}>
+                                <Glyph name="check" class="am-check" />
+                                {o}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </span>
+                    ) : (
+                      <span class="am-picker">
+                        <span>{control.value}</span>
+                        <Glyph name="updown" />
+                      </span>
+                    ))}
+                </span>
+              </div>
+              {note && <p class="am-note">{note}</p>}
+            </>
+          ))}
+          {
+            g.families?.filter((f) => !onboarding || f.id === 'claude').map((f) => (
+              <div class="am-family" data-tour-account={onboarding ? true : undefined} hidden={onboarding}>
+                <div class="am-family-head">
+                  <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${f.id}`} /></svg>
+                  <b>{f.name}</b>
+                </div>
+                {(onboarding ? f.profiles.slice(0, 1) : f.profiles).map((a, i) => (
+                  <>
+                    {i > 0 && <hr class="am-div" />}
+                    <div class="am-item">
+                      <span class="am-item-label">
+                        {a.name}
+                        <button type="button" class="am-icon-action" data-native-action="Rename, sign in again, or remove an account in the Mac app." aria-label={`Manage ${f.name} ${a.name}`}><Glyph name="more" class="am-accessory" /></button>
+                      </span>
+                      <span class="am-item-ctl">
+                        <span class:list={['am-badge', { 'is-warn': a.status !== 'Ready' }]}>{a.status}</span>
+                        {!onboarding && (nav ? (
+                          <button type="button" class:list={['am-toggle', { 'is-on': a.id === f.activeAccount }]} role="switch" aria-checked={a.id === f.activeAccount ? 'true' : 'false'} data-account-switch={f.id} data-account-id={a.id} disabled={a.status !== 'Ready'}>
+                            <span class="am-sr">{f.name} {a.name}</span>
+                          </button>
+                        ) : (
+                          <span class:list={['am-toggle', { 'is-on': a.id === f.activeAccount }]} role="img" aria-label={a.id === f.activeAccount ? 'On' : 'Off'} />
+                        ))}
+                      </span>
+                    </div>
+                  </>
+                ))}
+              </div>
+            ))
+          }
+          {g.id === 'icloud' && <p class="am-note" data-icloud-preview hidden>iCloud syncing is available in the Mac app. This preview does not share data.</p>}
+          {g.id === 'notifications' && <div class="am-item am-action-row" data-notification-permission hidden><button type="button" class="am-chip" data-native-action="Allow notifications in the Mac app to receive usage alerts.">Allow Notifications</button></div>}
+        </div>
+      </div>
+    ))
+  }
+
+  <div class="am-list">
+    <div class="am-cross">
+      <Glyph name="sliders" class="am-cross-icon" />
+      <span class="am-cross-text">
+        <span>{settingsCrossLink.title}</span>
+        <span>{settingsCrossLink.subtitle}</span>
+      </span>
+      <span class="am-head-sp"></span>
+      {
+        nav ? (
+          <button type="button" class="am-open" data-go="customize" aria-label="Open Customize">
+            <Glyph name="chevron-right" class="am-chev" />
+          </button>
+        ) : (
+          <Glyph name="chevron-right" class="am-chev" />
+        )
+      }
+    </div>
+  </div>
+</div>

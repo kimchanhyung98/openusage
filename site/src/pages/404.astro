@@ -1,0 +1,25 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+import { site } from '../data/site';
+import { copy } from '../data/copy';
+---
+
+<Base title={`${copy['404-h']} — ${site.brand}`} noindex page="404">
+  <Nav />
+  <main id="main" class="container section" data-page="404">
+    <h1 class="h2">{copy['404-h']}</h1>
+    <p class="body"><a class="link" href="/">{copy['404-link']}</a></p>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  main {
+    min-height: 50vh;
+    display: grid;
+    gap: 24px;
+    align-content: start;
+  }
+</style>

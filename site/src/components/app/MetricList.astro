@@ -1,0 +1,65 @@
+---
+// Customize L2 — provider 한 곳의 지표 상세. Views/CustomizeProviderDetailView.swift.
+// 카드 두 장뿐이고 제목은 "Always Visible" / "On Demand" 고정.
+// 행: HStack(10) grip · 제목 · (별) · 토글. 부제 없음.
+// 꺼진 행은 흐려지지 않음 — L1과 달리 스위치 위치만 다름(CustomizeRow.swift:16-17).
+// 별은 Usage Trend에만 없음. tray가 차트를 못 그려 pinnable false.
+import Glyph from './Glyph.astro';
+import { providerMetrics } from '../../data/metrics';
+
+interface Props { provider: string; nav: boolean }
+const { provider, nav } = Astro.props;
+const m = providerMetrics[provider];
+const groups: Array<[string, typeof m.alwaysVisible]> = [
+  ['Always Visible', m.alwaysVisible],
+  ['On Demand', m.onDemand],
+];
+---
+
+<div class="am-screen">
+  {
+    groups.map(([title, rows]) => (
+      <div class="am-group">
+        <b>{title}</b>
+        <div class="am-list">
+          {rows.map((r) => (
+            <div class="am-mrow">
+              <Glyph name="grip" class="am-grip" />
+              <span class="am-mrow-title">{r.title}</span>
+              {r.pinnable &&
+                (nav ? (
+                  <button
+                    type="button"
+                    class:list={['am-star', { 'is-on': r.starred }]}
+                    aria-pressed={r.starred ? 'true' : 'false'}
+                    data-star={r.id}
+                    data-provider={provider}
+                  >
+                    <Glyph name="star" />
+                    <span class="am-sr">Star {r.title} for menu bar</span>
+                  </button>
+                ) : (
+                  <span class:list={['am-star', { 'is-on': r.starred }]} role="img" aria-label={r.starred ? 'Starred' : 'Not starred'}>
+                    <Glyph name="star" />
+                  </span>
+                ))}
+              {nav ? (
+                <button
+                  type="button"
+                  class:list={['am-toggle', { 'is-on': r.enabled }]}
+                  role="switch"
+                  aria-checked={r.enabled ? 'true' : 'false'}
+                  data-metric-toggle={r.id}
+                >
+                  <span class="am-sr">{r.title}</span>
+                </button>
+              ) : (
+                <span class:list={['am-toggle', { 'is-on': r.enabled }]} role="img" aria-label={r.enabled ? 'On' : 'Off'} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    ))
+  }
+</div>

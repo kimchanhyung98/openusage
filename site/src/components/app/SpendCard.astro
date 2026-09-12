@@ -1,0 +1,141 @@
+---
+// Total Spend 카드. Views/TotalSpendCard.swift + Views/RingSectorShape.swift.
+// 도넛: 지름 104, 내반경비 0.618, 조각 간극 1.6(바깥 호 길이), 모서리 3, 12시 시작 시계방향, 최소 조각 2.5%.
+// 카드 제목은 지표 이름 자체 — 앱에 "Total Spend"라는 문자열은 없음.
+// 기간 3 × 지표 3 = 9개 상태를 전부 그려 두고 하나만 보임. JS 없이도 기본값(Today · Cost)이 나옴.
+import Glyph from './Glyph.astro';
+
+interface Props { uid: string }
+const { uid } = Astro.props;
+import { spendPeriods, spendMetrics, spendView, type SpendPeriodId, type SpendMetricId } from '../../data/demo';
+
+const R = 52;              // 104 / 2
+const RI = R * 0.618;      // innerRadiusRatio
+const CR = 3;              // RingSectorShape.cornerRadius
+const GAP = 1.6 / R / 2;   // gapWidth를 바깥 반경 기준 각도로 환산해 양끝에서 트림
+const C = 52;
+
+const pt = (rad: number, ang: number) => `${(C + rad * Math.cos(ang)).toFixed(3)} ${(C + rad * Math.sin(ang)).toFixed(3)}`;
+
+// 모서리 둥근 환형 섹터. 경계를 시계방향으로 돌며 네 모서리에 반지름 CR 필렛.
+// 180°를 넘는 조각은 large-arc-flag를 세워야 함.
+function sector(a0: number, a1: number): string {
+  const dO = CR / R;
+  const dI = CR / RI;
+  if (a1 - a0 <= dO * 2) return '';
+  const bigO = a1 - dO - (a0 + dO) > Math.PI ? 1 : 0;
+  const bigI = a1 - dI - (a0 + dI) > Math.PI ? 1 : 0;
+  return [
+    `M ${pt(R - CR, a0)}`,
+    `A ${CR} ${CR} 0 0 1 ${pt(R, a0 + dO)}`,
+    `A ${R} ${R} 0 ${bigO} 1 ${pt(R, a1 - dO)}`,
+    `A ${CR} ${CR} 0 0 1 ${pt(R - CR, a1)}`,
+    `L ${pt(RI + CR, a1)}`,
+    `A ${CR} ${CR} 0 0 1 ${pt(RI, a1 - dI)}`,
+    `A ${RI.toFixed(3)} ${RI.toFixed(3)} 0 ${bigI} 0 ${pt(RI, a0 + dI)}`,
+    `A ${CR} ${CR} 0 0 1 ${pt(RI + CR, a0)}`,
+    'Z',
+  ].join(' ');
+}
+
+// 한 조각만 있으면 시작·끝이 같은 지점이라 간극 없이 꽉 찬 고리로 그림.
+function arcs(shares: number[]): string[] {
+  if (shares.length === 1) {
+    const top = -Math.PI / 2;
+    return [`${sector(top, top + Math.PI)} ${sector(top + Math.PI, top + Math.PI * 2)}`];
+  }
+  let cur = -Math.PI / 2;
+  return shares.map((s) => {
+    const sweep = s * Math.PI * 2;
+    const d = sector(cur + GAP, cur + sweep - GAP);
+    cur += sweep;
+    return d;
+  });
+}
+
+const states = spendPeriods.flatMap((p) =>
+  spendMetrics.map((m) => {
+    const v = spendView(p.id as SpendPeriodId, m.id as SpendMetricId);
+    return { p, m, v, paths: arcs(v.slices.map((s) => s.share)) };
+  }),
+);
+---
+
+<div class="am-section am-spend-card">
+  <div class="am-head">
+    <span class="am-head-title">
+      <button type="button" class="am-metric-btn" data-metric-btn aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-metric-menu`}>
+        {spendMetrics.map((m) => <b class="am-metric-title" data-metric-label={m.id} hidden={m.id !== 'cost'}>{m.title}</b>)}
+        <Glyph name="chevron-down" class="am-head-chev" />
+      </button>
+    </span>
+    <ul class="am-menu" id={`${uid}-metric-menu`} role="menu" aria-label="Total Spend Metric" hidden>
+      {
+        spendMetrics.map((m) => (
+          <li role="none">
+            <button type="button" role="menuitemradio" aria-checked={m.id === 'cost' ? 'true' : 'false'} data-spend-metric={m.id}>
+              <Glyph name="check" class="am-check" />
+              {m.title}
+            </button>
+          </li>
+        ))
+      }
+    </ul>
+    <span class="am-head-sp"></span>
+  </div>
+  <div class="am-card">
+    <div class="am-spend">
+      <div class="am-seg" role="radiogroup" aria-label="Total Spend Period">
+        {
+          spendPeriods.map((p) => (
+            <button type="button" role="radio" aria-checked={p.id === 'today' ? 'true' : 'false'} tabindex={p.id === 'today' ? 0 : -1} data-period={p.id}>
+              {p.segment}
+            </button>
+          ))
+        }
+      </div>
+      {
+        states.map(({ p, m, v, paths }) => (
+          <div class="am-state" data-state={`${p.id}:${m.id}`} hidden={!(p.id === 'today' && m.id === 'cost')}>
+            {v.empty ? (
+              <p class="am-empty">{v.empty}</p>
+            ) : (
+              <div class="am-ring-wrap">
+                <div class="am-ring">
+                  <svg viewBox="0 0 104 104" aria-hidden="true">
+                    {v.slices.map((s, i) => <path d={paths[i]} class={`fill-${s.id}`} />)}
+                  </svg>
+                  <span class="am-ring-center">
+                    <b>{v.center}</b>
+                    <span>{v.unit}</span>
+                  </span>
+                </div>
+                <div class="am-legend">
+                  {v.slices.map((s) => (
+                    <div class="am-legend-row">
+                      <i class:list={['am-dot', `bg-${s.id}`]} />
+                      <span>{s.title}</span>
+                      <span>{s.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</div>
+
+<style>
+  /* TotalSpendPalette의 dark 도넛 팔레트 값. */
+  .fill-claude { fill: var(--am-p-claude); }
+  .fill-codex { fill: var(--am-p-codex); }
+  .fill-cursor { fill: var(--am-p-cursor); }
+  .fill-grok { fill: var(--am-p-grok); }
+  .bg-claude { background: var(--am-p-claude); }
+  .bg-codex { background: var(--am-p-codex); }
+  .bg-cursor { background: var(--am-p-cursor); }
+  .bg-grok { background: var(--am-p-grok); }
+</style>

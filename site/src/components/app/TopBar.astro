@@ -1,0 +1,21 @@
+---
+// 화면 상단 바. Views/PopoverTopBar.swift — 높이 44, 좌우 14, 제목은 바 전체 폭 기준 가운데.
+// back이 없으면(단일 화면 그래픽) 누를 수 없는 장식이므로 button으로 만들지 않음.
+import Glyph from './Glyph.astro';
+
+interface Props { title: string; back?: string }
+const { title, back } = Astro.props;
+---
+
+<div class="am-topbar">
+  {
+    back ? (
+      <button type="button" class="am-back" data-go={back} aria-label="Back">
+        <Glyph name="chevron-left" />
+      </button>
+    ) : (
+      <span class="am-back" aria-hidden="true"><Glyph name="chevron-left" /></span>
+    )
+  }
+  <b>{title}</b>
+</div>

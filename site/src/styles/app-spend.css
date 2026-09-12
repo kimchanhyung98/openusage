@@ -1,0 +1,188 @@
+/* 앱 화면 재현 그래픽 — Total Spend 카드.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+/* ---------- Total Spend 카드 ---------- */
+
+.am-spend {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.am-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--am-quinary);
+}
+
+.am-ring-wrap {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.am-ring {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  flex: none;
+}
+
+.am-ring svg { display: block; width: 104px; height: 104px; }
+
+.am-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 10px;
+  text-align: center;
+}
+
+.am-ring-center b {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.am-ring-center span {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--am-secondary);
+}
+
+.am-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+
+.am-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--am-fs-support);
+}
+
+.am-legend-row span:nth-child(2) { color: var(--am-primary); }
+
+.am-legend-row span:last-child {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* ---------- 상호작용 ---------- */
+
+/* 지표 메뉴. 카드 제목 자체가 드롭다운. */
+.am-metric-btn {
+  appearance: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.am-metric-title {
+  font-size: var(--am-fs-header);
+  font-weight: 600;
+}
+
+/* 앱의 Menu는 팝업이라 카드 위에 겹쳐 뜸. 흐름에 두면 아래 내용이 통째로 밀림. */
+.am-menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 10px;                      /* .am-head의 왼쪽 padding — 제목 왼쪽 끝에 맞춤 */
+  z-index: 3;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  width: max-content;
+  border-radius: 8px;
+  background: #333336;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.am-menu button {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: var(--am-primary);
+  font: inherit;
+  font-size: var(--am-fs-support);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px 4px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.am-menu button:hover { background: rgba(255, 255, 255, 0.1); }
+.am-check { width: 11px; height: 11px; flex: none; visibility: hidden; }
+.am-menu [aria-checked="true"] .am-check { visibility: visible; }
+
+/* 메뉴는 앱 높이에 관여하지 않고 브라우저 화면 경계 안에서만 배치. */
+.am [role='menu'][popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+}
+
+/* 기간 세그먼트 — 실제로 누를 수 있는 radio. */
+.am-seg button {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+  flex: 1;
+  padding: 4px 12px;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--am-secondary);
+  background: none;
+  white-space: nowrap;
+}
+
+.am-seg button[aria-checked="true"] {
+  font-weight: 600;
+  color: var(--am-primary);
+  background: #3a3a3c;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.am-empty {
+  padding: 18px 0;
+  text-align: center;
+  font-size: var(--am-fs-support);
+  color: var(--am-secondary);
+}

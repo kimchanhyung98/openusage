@@ -1,0 +1,55 @@
+---
+import { site } from '../data/site';
+import { copy } from '../data/copy';
+---
+
+<section class="section" id="install">
+  <div class="container content reveal">
+    <h2 class="h2">{copy['s03-label']}</h2>
+    <p class="req mono">{copy['s03-req']}</p>
+    <a class="btn btn-dark download" href={site.releasesLatest} data-download>
+      <span class="download-label">{copy['s03-cta']}</span>
+      <span class="version" data-download-meta hidden></span>
+    </a>
+  </div>
+</section>
+
+<style>
+  .section {
+    display: grid;
+    align-content: center;
+    padding-block: clamp(16px, 4svh, 48px);
+  }
+  .content {
+    display: grid;
+    gap: 24px;
+    justify-items: center;
+    text-align: center;
+  }
+  .req {
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+  }
+  .download {
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    min-block-size: 72px;
+    block-size: auto;
+    padding: 14px 28px;
+  }
+  .download-label {
+    font-size: calc(var(--fs-cta) * 2);
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+  .version {
+    font-size: 12px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    opacity: 0.75;
+  }
+</style>

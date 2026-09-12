@@ -1,0 +1,59 @@
+---
+// Customize L1 provider 목록. Views/CustomizeProviderListView.swift + Views/ProviderListRow.swift.
+// 행: HStack(10) grip · 마크 18 · 이름 + "N metrics" · 토글 · chevron.
+// 끄면 행 전체 opacity 0.55 — 그것이 전부이고 다른 변화는 없음. 꺼도 행은 남고 열 수 있음.
+// L1에는 그룹 제목이 없음. 하단은 Settings로 가는 별도 카드.
+import Glyph from './Glyph.astro';
+import { customize } from '../../data/demo';
+
+interface Props { nav: boolean }
+const { nav } = Astro.props;
+---
+
+<div class="am-screen">
+  <div class="am-list">
+    {
+      customize.map((p) => (
+        <div class:list={['am-prow', { 'is-off': !p.on }]} data-prow={p.id} data-open={nav ? `metrics:${p.id}` : undefined}>
+          <Glyph name="grip" class="am-grip" />
+          <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${p.id}`} /></svg>
+          <span class="am-prow-text">
+            <span>{p.name}</span>
+            <span>{p.metrics} metrics</span>
+          </span>
+          <button type="button" class:list={['am-toggle', { 'is-on': p.on }]} role="switch" aria-checked={p.on ? 'true' : 'false'} data-provider-toggle={p.id}>
+            <span class="am-sr">{p.name}</span>
+          </button>
+          {
+            nav ? (
+              <button type="button" class="am-open" data-go={`metrics:${p.id}`} aria-label={`Open ${p.name}`}>
+                <Glyph name="chevron-right" class="am-chev" />
+              </button>
+            ) : (
+              <Glyph name="chevron-right" class="am-chev" />
+            )
+          }
+        </div>
+      ))
+    }
+  </div>
+  <div class="am-list">
+    <div class="am-cross">
+      <Glyph name="gear" class="am-cross-icon" />
+      <span class="am-cross-text">
+        <span>Settings</span>
+        <span>Notifications, appearance and more</span>
+      </span>
+      <span class="am-head-sp"></span>
+      {
+        nav ? (
+          <button type="button" class="am-open" data-go="settings" aria-label="Open Settings">
+            <Glyph name="chevron-right" class="am-chev" />
+          </button>
+        ) : (
+          <Glyph name="chevron-right" class="am-chev" />
+        )
+      }
+    </div>
+  </div>
+</div>

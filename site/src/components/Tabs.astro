@@ -1,0 +1,57 @@
+---
+import { copy, tabs } from '../data/copy';
+import Strip from './app/Strip.astro';
+import Popover from './app/Popover.astro';
+import AccountAddSheet from './app/AccountAddSheet.astro';
+import Integrations from './visuals/Integrations.astro';
+import '../styles/feature-tour.css';
+---
+
+<section class="section feature-tour" id="features" data-feature-tour data-tour-stage="menu-bar" data-tour-phase="overview">
+  <div class="container tour-content">
+    <h2 class="h2 center">{copy['s02-label']}</h2>
+    <div class="tour-tabs" role="tablist" aria-label={copy['s02-label']} data-tour-tabs>
+      {tabs.map((t, i) => (
+        <button class="tour-tab" type="button" role="tab" id={`tab-${t.id}`} aria-controls="feature-stage"
+          aria-selected={i === 0 ? 'true' : 'false'} tabindex={i === 0 ? 0 : -1}
+          data-tour-tab={t.id} data-tour-label={t.visualLabel}>{t.name}</button>
+      ))}
+    </div>
+    <div class="tour-stage" id="feature-stage" role="tabpanel" aria-labelledby="tab-menu-bar">
+      <div class="tour-viewport" data-tour-viewport>
+        <div class="tour-camera" data-tour-camera aria-hidden="true">
+          <div class="tour-lid">
+            <div class="tour-desktop">
+              <div class="tour-menubar">
+                <span class="tour-finder">Finder</span>
+                <span class="tour-status" data-tour-status><Strip mode="text" /></span>
+              </div>
+              <div class="tour-popover" data-tour-popover>
+                <Popover uid="feature-tour" parts={['spend', 'claude', 'codex']} label="OpenUsage 사용량 대시보드" nav={true} demonstration={true} />
+                <AccountAddSheet />
+              </div>
+              <div class="tour-terminal" data-tour-terminal role="region" aria-label="CLI와 로컬 API 예시" tabindex="0" hidden>
+                <div class="tour-terminal-title">Terminal</div>
+                <Integrations />
+              </div>
+            </div>
+            <div class="tour-notch"></div>
+          </div>
+          <div class="tour-base"></div>
+          <div class="tour-cursor" data-tour-cursor>
+            <svg viewBox="0 0 24 32" aria-hidden="true"><path d="M3 2v23l6-6 5 11 4-2-5-10h9Z" /></svg>
+          </div>
+        </div>
+        <div class="tour-fallback" role="img" aria-label="메뉴 막대의 AI 사용량"><Strip mode="text" /></div>
+      </div>
+      <div class="tour-caption" data-tour-caption>
+        {tabs.map((t, i) => (
+          <p data-tour-description={t.id} hidden={i !== 0}>
+            {t.description.map((line) => <span>{line}</span>)}
+          </p>
+        ))}
+      </div>
+    </div>
+    <p class="am-sr" data-tour-announcement role="status" aria-live="polite"></p>
+  </div>
+</section>

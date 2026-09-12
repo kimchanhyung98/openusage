@@ -1,0 +1,56 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Hero from '../components/Hero.astro';
+import Pillar from '../components/Pillar.astro';
+import Tabs from '../components/Tabs.astro';
+import Install from '../components/Install.astro';
+import Footer from '../components/Footer.astro';
+import { providerSymbols } from '../utils/sprite';
+import { copy } from '../data/copy';
+import { providers } from '../data/providers';
+
+const symbols = providerSymbols();
+---
+
+<Base>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    {symbols.map((s) => <symbol id={`pi-${s.id}`} viewBox={s.viewBox} set:html={s.body} />)}
+  </svg>
+  <Nav />
+  <main id="main">
+    <Hero />
+    <Pillar label={copy['s00-label']} id="providers">
+      <ul class="provider-list" aria-label="지원 AI 서비스">
+        {providers.map((provider) => (
+          <li>
+            <svg class="pi" viewBox="0 0 24 24" aria-hidden="true">
+              <use href={`#pi-${provider.id}`} />
+            </svg>
+            <span>{provider.name}</span>
+          </li>
+        ))}
+      </ul>
+    </Pillar>
+    <Tabs />
+  </main>
+  <Footer downloadPage>
+    <Install />
+  </Footer>
+</Base>
+
+<style>
+  .provider-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+    gap: 24px 16px;
+  }
+  .provider-list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 32px;
+    font-size: 16px;
+    color: var(--ink);
+  }
+</style>

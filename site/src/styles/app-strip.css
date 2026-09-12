@@ -1,0 +1,77 @@
+/* 앱 화면 재현 그래픽 — 메뉴 막대 스트립·데모 수치 클래스.
+   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   1 CSS px = 1 SwiftUI pt. */
+
+/* ---------- 메뉴 막대 스트립 ---------- */
+
+.am-strip {
+  display: flex;
+  align-items: center;
+  gap: 11px;                       /* providerGroupSpacing */
+  font-family: var(--am-font);
+  font-variant-numeric: tabular-nums;
+  color: var(--am-primary);        /* template 이미지 — 다크 메뉴 막대에서 밝게 */
+}
+
+.am-strip-seg {
+  display: flex;
+  align-items: center;
+  gap: 4px;                        /* glyphToMetricsSpacing */
+}
+
+.am-strip-seg .am-mark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.am-strip-one {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.am-strip-two {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.05;               /* VStack spacing −2 근사 */
+}
+
+.am-bars {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 1px;
+  flex: none;
+}
+
+.am-bars i {
+  display: block;
+  height: 3px;
+  border-radius: 1px;
+  background: rgba(242, 242, 247, 0.16);
+  position: relative;
+}
+
+.am-bars i b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.am-strip-wordmark {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.am-strip-wordmark .am-mark { width: 16px; height: 16px; flex: none; }
