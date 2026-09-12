@@ -86,6 +86,101 @@ final class ShareCardRendererTests: XCTestCase {
         )
     }
 
+    func testRendersSoftLimitAndResetWatchInBothDensitiesAndDisplayModes() throws {
+        let suite = "OpenUsageTests.SoftLimit.Rendering.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let provider = CodexProvider().provider
+        let deadline = Date().addingTimeInterval(3600)
+        for density in DensitySetting.allCases {
+            defaults.set(density.rawValue, forKey: DensitySetting.key)
+            for mode in [WidgetDisplayMode.used, .remaining] {
+                var quota = WidgetData(title: "Weekly", icon: provider.icon, kind: .percent, used: 95, limit: 100)
+                quota.softLimitUsedFraction = 0.95
+                quota.displayMode = mode
+                var watch = WidgetData(title: "Reset Watch", icon: provider.icon, kind: .percent, used: 75, limit: 100)
+                watch.displayMode = mode
+                watch.forecast = .init(deadline: deadline, communityYesPercent: 100)
+                var unavailable = watch
+                unavailable.forecast?.communityYesPercent = nil
+                unavailable.forecast?.refreshFailed = true
+                let rows = [quota, watch, unavailable, watch.presented(at: deadline)]
+                for appearance in [ColorScheme.light, .dark] {
+                    let dashboard = VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                            WidgetRowView(data: row)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(width: 320)
+                    .background(appearance == .light ? Color.white : Color.black)
+                    .environment(\.colorScheme, appearance)
+                    .environment(\.hoverTooltipsDisabled, true)
+                    .defaultAppStorage(defaults)
+                    let card = ShareCardView(provider: provider, rows: rows, appearance: appearance)
+                        .defaultAppStorage(defaults)
+                    for (name, image, width) in [
+                        ("dashboard", ShareCardRenderer.image(for: dashboard), 320),
+                        ("share", ShareCardRenderer.image(for: card), Int(ShareCardView.width))
+                    ] {
+                        let rendered = try XCTUnwrap(image, "\(name), \(density), \(mode), \(appearance)")
+                        let rep = try XCTUnwrap(rendered.representations.first)
+                        XCTAssertGreaterThan(rep.pixelsWide, 0)
+                        XCTAssertEqual(rep.pixelsWide % width, 0)
+                        XCTAssertGreaterThan(rep.pixelsHigh, 0)
+                        let png = try XCTUnwrap(ShareCardRenderer.pngData(from: rendered))
+                        XCTAssertNotNil(NSImage(data: png))
+                    }
+                }
+            }
+        }
+    }
+
+    func testSoftLimitMarkerRendersYellowWithoutChangingItsWidth() throws {
+        let suite = "OpenUsageTests.SoftLimit.YellowMarker.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for density in DensitySetting.allCases {
+            defaults.set(density.rawValue, forKey: DensitySetting.key)
+            for mode in [WidgetDisplayMode.used, .remaining] {
+                for appearance in [ColorScheme.light, .dark] {
+                    var row = WidgetData(title: "Weekly", icon: .providerMark("codex"), kind: .percent, used: 40, limit: 100)
+                    row.displayMode = mode
+                    for showsMarker in [false, true] {
+                        row.softLimitUsedFraction = showsMarker ? 0.90 : nil
+                        let view = WidgetRowView(data: row)
+                            .padding(.horizontal, 14)
+                            .frame(width: 320)
+                            .background(appearance == .light ? Color.white : Color.black)
+                            .environment(\.colorScheme, appearance)
+                            .environment(\.hoverTooltipsDisabled, true)
+                            .defaultAppStorage(defaults)
+                        let image = try XCTUnwrap(ShareCardRenderer.image(for: view))
+                        let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
+                        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+                        var yellowColumns: Set<Int> = []
+                        for y in 0..<bitmap.pixelsHigh {
+                            for x in 0..<bitmap.pixelsWide {
+                                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                                if color.redComponent > 0.6, color.greenComponent > 0.4,
+                                   color.blueComponent < min(color.redComponent, color.greenComponent) * 0.6 {
+                                    yellowColumns.insert(x)
+                                }
+                            }
+                        }
+                        let context = "\(density), \(mode), \(appearance), marker: \(showsMarker)"
+                        if showsMarker {
+                            XCTAssertFalse(yellowColumns.isEmpty, context)
+                            XCTAssertLessThanOrEqual(yellowColumns.count, 2 * bitmap.pixelsWide / 320, context)
+                        } else {
+                            XCTAssertTrue(yellowColumns.isEmpty, context)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testCondensedTextRowIndicesFollowsNeighborRule() {
         let rows = MockData.descriptors(for: MockData.claude.id).map { $0.sample }
         XCTAssertGreaterThan(rows.count, 1, "sample fixture should have multiple rows")

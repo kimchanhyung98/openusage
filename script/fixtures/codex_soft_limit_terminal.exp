@@ -1,0 +1,20 @@
+set timeout 1
+set fixture_home [lindex $argv 0]
+set socket_path [lindex $argv 1]
+set ready_path [lindex $argv 2]
+if {![string match "/tmp/openusage-soft-limit-e2e-*" $fixture_home]} {
+    error "A dedicated Soft Limit fixture directory is required"
+}
+log_user 1
+spawn -noecho codex --remote unix://$socket_path --no-alt-screen -a never -s read-only -C $fixture_home "Harmless local terminal cancellation fixture."
+stty rows 40 columns 120 < $spawn_out(slave,name)
+set ready [open $ready_path {WRONLY CREAT EXCL} 0600]
+puts $ready [exp_pid]
+close $ready
+while {1} {
+    expect {
+        -re {\x1b\[6n} { send -- "\033\[1;1R" }
+        eof { exit 0 }
+        timeout {}
+    }
+}
