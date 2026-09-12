@@ -12,10 +12,13 @@ if [ -n "$(git ls-tree --name-only "$REF" -- .github)" ]; then
 fi
 
 for file in appcast.xml pricing_supplement.json CNAME; do
-  if [ "$(git cat-file -t "$REF:$file")" != blob ]; then
-    echo "error: published $file is missing or is not a file" >&2
-    exit 1
-  fi
+  case "$(git ls-tree --format='%(objectmode)' "$REF" -- "$file")" in
+    100644|100755) ;;
+    *)
+      echo "error: published $file is missing or is not a regular file" >&2
+      exit 1
+      ;;
+  esac
   git rev-parse --verify "$REF:$file"
 done
 
