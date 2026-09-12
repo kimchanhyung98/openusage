@@ -63,10 +63,10 @@ Every PR description must follow this structure so reviewers can skim it quickly
 
 - Logic changes must update any docs in `docs/` that describe the affected behavior.
 - Keep docs simple, less-technical, and easy to skim; exclude visual design details.
-- Break lines per sentence or list item in every docs page (EN and KO alike).
-- `docs/ko/` mirrors `docs/` content exactly; verify EN↔KO parity whenever either side changes.
+- Break lines per sentence or list item in every docs page.
+- `docs/` uses Korean as the default language, with no separate English or `docs/ko/` mirror.
 - Korean pages use the concise clipped style (개조식/명사형) — never "~합니다" endings. Example: "계정 전환 시 공유 홈의 인증만 교체. MCP 설정·메모리·세션 유지."
-- New internal doc links use repo-root absolute paths (`/docs/...`, `/docs/ko/...`); EN links EN, KO links KO.
+- New internal doc links use repo-root absolute paths (`/docs/...`).
 - External doc links point only to the official documentation for the relevant provider or feature.
 
 ## Code Conventions
