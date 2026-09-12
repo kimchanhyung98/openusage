@@ -33,6 +33,13 @@ export async function openHome(page: Page): Promise<void> {
   await page.goto('/');
   await expect(page.locator('html')).toHaveAttribute('data-ready', '1');
   await expect(page.locator('html')).toHaveAttribute('data-scroll-ready', 'true');
+  // 준비 속성 이후에도 폰트 배치와 WebKit의 초기 스크롤 보정이 이어질 수 있음.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  });
+  await expect.poll(() => page.evaluate(() => scrollY), 'Home starts at the top').toBe(0);
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 }
 
 export async function openSettings(page: Page): Promise<void> {
