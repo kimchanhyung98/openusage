@@ -3,6 +3,31 @@ import XCTest
 
 @MainActor
 final class ProviderRefreshDeadlineTests: XCTestCase {
+    func testSynchronousProviderPrefixConsumesDeadline() async {
+        let gate = Gate()
+        let result = await ProviderRefreshDeadline.run(timeout: .milliseconds(10), sleep: { remaining in
+            XCTAssertEqual(remaining, .zero)
+        }) {
+            Self.blockMainActor()
+            await gate.wait()
+            return ProviderSnapshot(providerID: "codex", displayName: "Codex", lines: [])
+        }
+        guard case .timedOut = result else { return XCTFail("Expected timeout") }
+        gate.open()
+    }
+
+    func testSynchronousCompletionAfterDeadlineIsNotPublished() async {
+        let result = await ProviderRefreshDeadline.run(timeout: .milliseconds(10)) {
+            Self.blockMainActor()
+            return ProviderSnapshot(providerID: "codex", displayName: "Codex", lines: [])
+        }
+        guard case .timedOut = result else { return XCTFail("Late snapshot must not win") }
+    }
+
+    private static func blockMainActor() {
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+
     func testSuccessfulWorkCancelsItsTimer() async {
         let timerStarted = expectation(description: "Timer started")
         let timerCancelled = expectation(description: "Timer cancelled")
