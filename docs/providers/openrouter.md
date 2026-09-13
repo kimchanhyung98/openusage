@@ -11,7 +11,7 @@
 | Today | 오늘 현재까지의 사용액 |
 | This Week | 이번 주 현재까지의 사용액 |
 | This Month | 이번 달 현재까지의 사용액 |
-| Key Limit | 키 상한 대비 사용액 — 키에 상한이 설정된 경우에만 표시 |
+| Key Limit | 현재 키 한도 기간의 사용액 — 키에 상한과 유효한 잔여액이 있는 경우 표시 |
 
 반환된 등급(예: "Pay as you go" 또는 "Free tier")을 프로바이더 이름 옆에 표시.
 
@@ -46,15 +46,20 @@
 - **"No OpenRouter API key"** — Settings → API Keys, 설정 파일 또는 환경 변수에 키를 추가한 뒤 새로 고침.
 - **"API key invalid"** — 키 거부(401/403).
   openrouter.ai/keys에서 확인하거나 다시 생성.
+- **"Key Limit is unavailable"** — 키 한도의 잔여액을 확인할 수 없는 상태.
+  Key Limit을 생략하고 조회에 성공한 잔액·기간 사용액은 계속 표시하며, 다음 정상 조회에서 경고 해제.
 
 ## 내부 동작
 
 `https://openrouter.ai/api/v1`에 `Bearer` 토큰을 사용한 REST 호출 두 번 수행:
 
 - `GET /credits` — 계정 전체 `total_credits`와 `total_usage`로, Credits 미터와 Balance의 출처.
-  사용 가능한 스냅샷에 필수.
+  이 호출이 실패해도 `/key`에서 조회한 사용액 표시 가능.
 - `GET /key` — 가능한 범위에서 등급, 일간/주간/월간 사용액, 설정된 경우 키별 상한 조회.
   이 호출이 실패해도 `/credits` 결과로 잔액 표시.
 
 기간 사용액 `$0.00`은 "No data"가 아니라 API에서 직접 반환한 실제 측정값 0으로 표시.
+Key Limit은 [키의 한도와 잔여 크레딧](https://openrouter.ai/docs/api_reference/limits)의 차이로 계산하며, 전체 기간 누적 사용액은 사용하지 않음.
+현재 한도 기간의 초기화 이후에도 남은 한도에 맞는 사용액 표시.
+상한이 있는데 잔여액이 누락되거나 유효하지 않으면 0 사용 또는 소진 상태로 추정하지 않음.
 크레딧 값은 OpenRouter 측에서 최대 약 60초 지연될 수 있음.
