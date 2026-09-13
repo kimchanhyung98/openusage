@@ -155,6 +155,26 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertFalse(encoded.contains("PRIVATE_"))
     }
 
+    func testNativeInvalidNumbersLogOnceBeforeRepeatedAggregation() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let claude = ClaudeLogUsageScanner.parseFile(Data(#"{"timestamp":"2026-09-12T10:00:00Z","message":{"model":"PRIVATE_MODEL","usage":{"input_tokens":-123456789,"output_tokens":0}}}"#.utf8))
+        let codex = CodexLogUsageScanner.parseFile(Data(#"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-123456789}}}}"#.utf8))
+        for _ in 0..<2 {
+            let scans = [ClaudeLogUsageScanner.aggregate(entries: claude, since: .distantPast, pricing: .empty),
+                         CodexLogUsageScanner.aggregate(events: codex, since: .distantPast, pricing: .empty)]
+            XCTAssertEqual(DailyUsageAccumulator.merged(scans)?.rejectedNumericRows, 2)
+        }
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 2)
+        for source in ["claude", "codex"] {
+            XCTAssertTrue(lines.contains { $0.contains("source=\(source); invalid_numeric_rows=1") })
+        }
+        XCTAssertFalse(lines.joined().contains("PRIVATE_"))
+        XCTAssertFalse(lines.joined().contains("123456789"))
+        XCTAssertEqual(capture.events.count, 2)
+    }
+
     func testClaimFallbackKeepsAccountCandidatesAndRecordsOnlyFinalFailure() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }
