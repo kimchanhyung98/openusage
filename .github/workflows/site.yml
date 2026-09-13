@@ -5,11 +5,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'site/**'
-      - 'script/site_*.sh'
       - 'Sources/OpenUsage/**'
+      - '!Sources/OpenUsage/Resources/ProviderIcons/**'
       - '.github/workflows/site.yml'
-      - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'
       - '.github/workflows/release.yml'
       - '.github/workflows/pricing-supplement.yml'
