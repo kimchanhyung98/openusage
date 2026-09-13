@@ -36,10 +36,15 @@ final class StaleWhileRevalidateTests: XCTestCase {
 
         XCTAssertEqual(store.data(for: descriptor).used, 40)
         XCTAssertTrue(store.data(for: descriptor).hasData)
+        var freshCount = 0
+        store.onFreshSnapshot = { _, _ in freshCount += 1 }
 
         await store.refreshAll()
         XCTAssertEqual(runtime.refreshCount, 1)
         XCTAssertEqual(store.data(for: descriptor).used, 55)
+        XCTAssertEqual(freshCount, 1)
+        await store.refreshAll()
+        XCTAssertEqual(freshCount, 1, "A cache hit must not be a cancellation input")
     }
 
     func testFailedRefreshKeepsLastGoodSnapshotAndRecordsError() async {
@@ -62,7 +67,10 @@ final class StaleWhileRevalidateTests: XCTestCase {
             defaults: defaults
         )
 
+        var freshCount = 0
+        store.onFreshSnapshot = { _, _ in freshCount += 1 }
         await store.refreshAll(force: true)
+        XCTAssertEqual(freshCount, 1)
         XCTAssertTrue(store.data(for: descriptor).hasData)
         XCTAssertNil(store.errorMessage(for: provider.id))
 
@@ -72,6 +80,8 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertTrue(store.data(for: descriptor).hasData)
         XCTAssertEqual(store.data(for: descriptor).used, 40)
 
+        XCTAssertEqual(freshCount, 1, "A failed fetch must not republish retained quota for cancellation")
+
         runtime.snapshot = ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
@@ -80,6 +90,7 @@ final class StaleWhileRevalidateTests: XCTestCase {
         await store.refreshAll(force: true)
         XCTAssertNil(store.errorMessage(for: provider.id))
         XCTAssertEqual(store.data(for: descriptor).used, 60)
+        XCTAssertEqual(freshCount, 2)
     }
 
     func testSuccessfulRefreshWithoutHistoryPreservesOnlyLastGoodHistory() async throws {
@@ -257,6 +268,8 @@ final class StaleWhileRevalidateTests: XCTestCase {
         _ = await store.refresh(providerID: provider.id, force: true)
         var historyChangeCount = 0
         store.onLocalHistoryChanged = { historyChangeCount += 1 }
+        var freshCount = 0
+        store.onFreshSnapshot = { _, _ in freshCount += 1 }
 
         runtime.snapshot = ProviderSnapshot(
             providerID: provider.id,
@@ -290,6 +303,7 @@ final class StaleWhileRevalidateTests: XCTestCase {
         XCTAssertEqual(retained.plan, "Last good")
         XCTAssertEqual(retained.usageHistory, history)
         XCTAssertEqual(historyChangeCount, 0)
+        XCTAssertEqual(freshCount, 0)
         XCTAssertFalse(store.refreshingProviderIDs.contains(provider.id))
         XCTAssertEqual(cache.loadSnapshots(providerIDs: [provider.id])[provider.id]?.plan, "Last good")
     }
@@ -396,6 +410,10 @@ final class StaleWhileRevalidateTests: XCTestCase {
         )
 
         oldRuntime.blockNextRefresh = true
+        var freshCount = 0
+        var invalidationCount = 0
+        store.onFreshSnapshot = { _, _ in freshCount += 1 }
+        store.onQuotaInvalidated = { invalidationCount += 1 }
         let inFlight = Task { await store.refresh(providerID: provider.id, force: true) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !oldRuntime.isWaiting, ContinuousClock.now < deadline {
@@ -423,6 +441,10 @@ final class StaleWhileRevalidateTests: XCTestCase {
             return XCTFail("a fetch crossing a catalog swap must be discarded, got \(outcome)")
         }
         XCTAssertNil(store.localSnapshots[provider.id], "the old account's late result must not publish")
+        XCTAssertEqual(freshCount, 0)
+        XCTAssertEqual(invalidationCount, 1)
+        store.providerEnablementDidChange()
+        XCTAssertEqual(invalidationCount, 2)
         XCTAssertTrue(cache.loadSnapshots(providerIDs: [provider.id]).isEmpty,
                       "the late result must never be stamped with the new account's identity")
     }

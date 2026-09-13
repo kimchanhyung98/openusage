@@ -5,6 +5,7 @@ struct ClaudeMappedUsage: Equatable, Sendable {
     var lines: [MetricLine]
     /// usage에 동반되는 provider header notice(amber 삼각형 + tooltip) — clean fetch면 `nil`.
     var warning: String?
+    var liveQuotaObservedAt: Date?
 }
 
 enum ClaudeUsageMapper {
@@ -190,4 +191,3 @@ private enum HTTPDateFormatter {
         return formatter.date(from: value)
     }
 }
-

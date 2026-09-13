@@ -21,6 +21,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var authenticationIssue: ProviderAuthenticationIssue?
     /// 성공한 응답에 포함된 부분 실패 여부 — 이전 cache의 누락 필드는 nil.
     var isDegraded: Bool?
+    /// 실제 quota 응답 시각 — 내부 last-good 재사용 시 제거, nil이면 자동 취소 판정 제외.
+    var liveQuotaObservedAt: Date?
 
     init(
         providerID: String,
@@ -32,7 +34,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         warning: String? = nil,
         errorCategory: ErrorCategory? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
-        isDegraded: Bool? = nil
+        isDegraded: Bool? = nil,
+        liveQuotaObservedAt: Date? = nil
     ) {
         self.providerID = providerID
         self.displayName = displayName
@@ -44,6 +47,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.errorCategory = errorCategory
         self.authenticationIssue = authenticationIssue
         self.isDegraded = isDegraded
+        self.liveQuotaObservedAt = liveQuotaObservedAt
     }
 
     func line(label: String) -> MetricLine? {
@@ -60,7 +64,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
-        isDegraded: Bool? = nil
+        isDegraded: Bool? = nil,
+        liveQuotaObservedAt: Date? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
@@ -71,7 +76,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             usageHistory: usageHistory,
             warning: warning,
             authenticationIssue: authenticationIssue,
-            isDegraded: isDegraded
+            isDegraded: isDegraded,
+            liveQuotaObservedAt: liveQuotaObservedAt
         )
     }
 

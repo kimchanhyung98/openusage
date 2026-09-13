@@ -29,6 +29,8 @@ final class AppContainer {
     let apiKeyProviders: [any APIKeyManaging]
     /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
     let notificationSettings: NotificationSettingsStore
+    let softLimitSettings: SoftLimitSettingsStore
+    let softLimitCoordinator: SoftLimitCoordinator
     /// Settings opt-in 토글과 앱 종료 flush가 공유하는 일간 rollup.
     let telemetry: TelemetryRecorder
     /// SwiftUI surface와 AppKit panel이 공유하는 Popover 투명도 단일 상태.
@@ -103,6 +105,7 @@ final class AppContainer {
         let apiKeyProviders = providers.compactMap { $0 as? any APIKeyManaging }
         let enablement = ProviderEnablementStore()
         let notificationSettings = NotificationSettingsStore()
+        let softLimitSettings = SoftLimitSettingsStore()
         let layout = LayoutStore(
             registry: registry,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
@@ -113,6 +116,7 @@ final class AppContainer {
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             orderedDescriptors: { [layout] in layout.orderedRenderedDescriptors() },
             notificationSettings: { notificationSettings },
+            softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
             familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
             resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
@@ -142,9 +146,6 @@ final class AppContainer {
                 )
             }
         )
-        dataStore.onRefreshOutcome = { [weak telemetry] providerID, outcome, category, trigger, degraded in
-            telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
-        }
         self.telemetry = telemetry
         // iCloud identity 초기화 오류도 기존 공유 동의에 따라 수집하도록 먼저 구독.
         telemetry.startDiagnostics()
@@ -186,6 +187,23 @@ final class AppContainer {
         self.enablement = enablement
         self.apiKeyProviders = apiKeyProviders
         self.notificationSettings = notificationSettings
+        self.softLimitSettings = softLimitSettings
+        let softLimitCoordinator = SoftLimitCoordinator(
+            settings: softLimitSettings,
+            adapters: [CodexSoftLimitAdapter()],
+            isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
+        )
+        self.softLimitCoordinator = softLimitCoordinator
+        dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
+            telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
+            if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
+        }
+        softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
+        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
+        dataStore.onFreshSnapshot = { [weak softLimitCoordinator] snapshot, descriptors in
+            softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
+            Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
+        }
         self.layout = layout
         self.dataStore = dataStore
         self.providerStatus = providerStatus
@@ -232,6 +250,7 @@ final class AppContainer {
             }
         )
         localAPI.start()
+        softLimitCoordinator.start()
         // notification-center delegate 등록 — frontmost 상태에서도 배너 표시. 권한 요청은 런치가 아니라 Settings의 트리거 첫 활성화 시.
         AppNotifications.shared.registerAsDelegate()
     }

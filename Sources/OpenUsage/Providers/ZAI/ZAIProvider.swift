@@ -30,9 +30,11 @@ final class ZAIProvider: ProviderRuntime {
         [
             .percent(id: "zai.session", provider: provider, title: "Session",
                      metricLabel: "Session")
+                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "zai.weekly", provider: provider, title: "Weekly",
                      metricLabel: "Weekly")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
             .boundedCount(id: "zai.webSearches", provider: provider, title: "Web Searches",
                           metricLabel: "Web Searches", limit: 1000, suffix: "searches",

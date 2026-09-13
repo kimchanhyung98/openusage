@@ -25,6 +25,8 @@ final class WidgetDataStore {
     private let slowProviderRefreshThreshold: TimeInterval
     /// Quota-notification 설정 — nil이면 notification 전체 비활성(테스트·프리뷰).
     private let notificationSettings: (@MainActor () -> NotificationSettingsStore)?
+    /// Soft-limit 표시 설정 — nil이면 기존 렌더와 동일하게 안내선 없음.
+    private let softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)?
     /// Card id → 현재 로그인된 account identity(launch 시 `ProviderAccountAssembly`가 해석).
     /// snapshot cache의 account stamp 근거 — 쓰기는 producer를 기록, launch 로드는 stamp 일치 entry만 paint.
     private var providerIdentityKeys: [String: String]
@@ -73,6 +75,9 @@ final class WidgetDataStore {
     /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
     /// 테스트·프리뷰에서는 nil(no-op).
     @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
+    /// GUI 전용 quota 제어 입력 — cache·실패·취소·폐기된 catalog 결과는 전달 금지.
+    @ObservationIgnored var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor]) -> Void)?
+    @ObservationIgnored var onQuotaInvalidated: (@MainActor () -> Void)?
     /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
     @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
     @ObservationIgnored private var peerHistoryDocuments: [UsageHistoryDocument] = []
@@ -105,6 +110,7 @@ final class WidgetDataStore {
         monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         slowProviderRefreshThreshold: TimeInterval = WidgetDataStore.defaultSlowProviderRefreshThreshold,
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
+        softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)? = nil,
         postNotification: QuotaNotificationEvaluator.Post? = nil,
         providerIdentityKeys: [String: String] = [:],
         familyTotalHistoryCardIDs: Set<String> = [],
@@ -121,6 +127,7 @@ final class WidgetDataStore {
         self.monotonicNow = monotonicNow
         self.slowProviderRefreshThreshold = slowProviderRefreshThreshold
         self.notificationSettings = notificationSettings
+        self.softLimitSettings = softLimitSettings
         self.postNotification = postNotification
             ?? { idPrefix, title, subtitle, body, isCurrent in
                 await AppNotifications.shared.post(
@@ -191,6 +198,7 @@ final class WidgetDataStore {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
+        onQuotaInvalidated?()
         providersNeedingCredentialRefresh.insert(providerID)
         refreshResults[providerID] = nil
         clearFailureBackoff(for: providerID)
@@ -269,6 +277,7 @@ final class WidgetDataStore {
                     && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
         }))
         catalogGeneration += 1
+        onQuotaInvalidated?()
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
@@ -295,6 +304,7 @@ final class WidgetDataStore {
             AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
             return
         }
+        onQuotaInvalidated?()
         refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message))
     }
 
@@ -457,6 +467,7 @@ final class WidgetDataStore {
         if notifyHistoryChange { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
         onRefreshOutcome?(providerID, .refreshed, nil, trigger, degraded)
+        onFreshSnapshot?(snapshot, provider.widgetDescriptors)
         return .refreshed
     }
 
@@ -472,6 +483,7 @@ final class WidgetDataStore {
 
     /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
     func providerEnablementDidChange() {
+        onQuotaInvalidated?()
         rebuildRenderedSnapshots()
     }
 
@@ -609,6 +621,7 @@ final class WidgetDataStore {
     func invalidateAuthentication(for providerID: String) {
         guard providersByID[providerID] != nil else { return }
         authenticationGenerations[providerID, default: 0] &+= 1
+        onQuotaInvalidated?()
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil
         if var snapshot = localSnapshots[providerID], snapshot.authenticationIssue != nil {
@@ -680,6 +693,10 @@ final class WidgetDataStore {
         result.displayMode = meterStyle
         result.resetDisplayMode = resetDisplayMode
         result.alwaysShowPacing = alwaysShowPacing
+        result.softLimitUsedFraction = softLimitSettings?().usedFraction(
+            for: descriptor.softLimitWindow,
+            periodDurationMs: result.periodDurationMs
+        )
         // 행 자신의 카드 identity — per-card action(Codex reset-claim router)의 키.
         result.providerID = descriptor.providerID
         return result.presented(at: now())

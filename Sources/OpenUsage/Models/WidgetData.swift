@@ -21,6 +21,8 @@ struct WidgetData: Hashable {
     /// 전역 "always show pacing" opt-in — `WidgetDataStore`가 stamp.
     /// on이면 blue row에도 even-pace tick·projection 문구 표시 — yellow/red는 reset window 있으면 항상 tick 표시.
     var alwaysShowPacing: Bool = false
+    /// 사용자 soft-limit 안내선의 사용량 기준 위치 — 대상이 아니거나 설정이 꺼져 있으면 nil.
+    var softLimitUsedFraction: Double?
     /// quota가 아닌 공개 reset forecast meter — Used/Left·pace·quota 알림 의미에서 분리.
     var forecast: Forecast?
     var resetsAt: Date?

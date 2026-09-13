@@ -53,10 +53,13 @@ final class ClaudeProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "\(provider.id).session", provider: provider, title: "Session", isSessionWindow: true)
+                .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "\(provider.id).weekly", provider: provider, title: "Weekly")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("weekly", unit: "percent"),
             .percent(id: "\(provider.id).fable", provider: provider, title: "Fable")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("fable", unit: "percent"),
             .usageTrend(provider: provider)
                 .exportingHistory(
@@ -67,6 +70,7 @@ final class ClaudeProvider: ProviderRuntime {
             .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage", metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
                 .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),
             .percent(id: "\(provider.id).sonnet", provider: provider, title: "Sonnet")
+                .supportingSoftLimit(.weekly)
                 .exportingLimit("sonnet", unit: "percent")
         ] + WidgetDescriptor.spendTiles(provider: provider)
     }
@@ -292,7 +296,8 @@ final class ClaudeProvider: ProviderRuntime {
             usageHistory: usageHistory,
             warning: warning,
             authenticationIssue: authenticationIssue,
-            isDegraded: refreshIsDegraded ? true : nil
+            isDegraded: refreshIsDegraded ? true : nil,
+            liveQuotaObservedAt: mapped.liveQuotaObservedAt
         )
     }
 
@@ -348,6 +353,7 @@ final class ClaudeProvider: ProviderRuntime {
             authExpired: ClaudeAuthError.tokenExpired
         )
 
+        let quotaObservedAt = now()
         let forceDesktopGeneration = working.source == .desktop
         let currentGeneration = await loadOffMainActor { [authStore] in
             authStore.credentialGeneration(forceDesktopFallback: forceDesktopGeneration)
@@ -362,7 +368,8 @@ final class ClaudeProvider: ProviderRuntime {
             return rateLimitedSnapshot(credentials: working.oauth, retryAfterSeconds: retryAfterSeconds)
         }
 
-        let mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: now())
+        var mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: now())
+        mapped.liveQuotaObservedAt = quotaObservedAt
         lastGoodUsage = mapped
         rateLimitedUntil = nil
         return mapped
@@ -376,6 +383,7 @@ final class ClaudeProvider: ProviderRuntime {
         }
         mapped.lines.append(ClaudeUsageMapper.rateLimitedNote(retryAfterSeconds: retryAfterSeconds))
         mapped.warning = ClaudeUsageMapper.rateLimitedWarning(retryAfterSeconds: retryAfterSeconds)
+        mapped.liveQuotaObservedAt = nil
         return mapped
     }
 

@@ -656,7 +656,7 @@ final class ClaudeProviderTests: XCTestCase {
             guard request.url.absoluteString.hasSuffix("/api/oauth/usage") else {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data())
             }
-            if usageCalls.next() == 1 {
+            if usageCalls.next() != 2 {
                 return HTTPResponse(
                     statusCode: 200,
                     headers: [:],
@@ -684,10 +684,12 @@ final class ClaudeProviderTests: XCTestCase {
         let first = await provider.refresh()
         XCTAssertEqual(Self.progress(first.lines, "Session")?.used, 25)
         XCTAssertNil(first.warning)
+        XCTAssertEqual(first.liveQuotaObservedAt, t0)
 
         // 2) 429: bare "Status" badge 대신 캐시된 Session 바 + staleness note, header warning 동반
         let second = await provider.refresh()
         XCTAssertEqual(Self.progress(second.lines, "Session")?.used, 25)
+        XCTAssertNil(second.liveQuotaObservedAt)
         XCTAssertEqual(text(second.lines, "Note")?.contains("rate limited"), true)
         XCTAssertNil(badge(second.lines, "Status"))
         XCTAssertEqual(second.warning?.hasPrefix("Updates blocked by Anthropic"), true)
@@ -696,8 +698,15 @@ final class ClaudeProviderTests: XCTestCase {
         clock.set(t0.addingTimeInterval(60))
         let third = await provider.refresh()
         XCTAssertEqual(Self.progress(third.lines, "Session")?.used, 25)
+        XCTAssertNil(third.liveQuotaObservedAt)
         XCTAssertEqual(third.warning?.hasPrefix("Updates blocked by Anthropic"), true)
         XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 2)
+        clock.set(t0.addingTimeInterval(601))
+        let recovered = await provider.refresh()
+        XCTAssertEqual(recovered.liveQuotaObservedAt, t0.addingTimeInterval(601))
+        XCTAssertNil(recovered.warning)
+        XCTAssertEqual(Self.progress(recovered.lines, "Session")?.used, 25)
+        XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 3)
     }
 
     func testRefreshSurfacesRequestFailureForNonOAuthRefreshErrorBody() async {
