@@ -99,6 +99,8 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
 새로 고침에 실패해도 마지막 정상 프로바이더 스냅샷은 계속 사용할 수 있고, 오류는 `errors`에 `{"providerId":"…","message":"…"}` 형태로 포함.
 상한이 있는 진행률 리소스에서 `unit`은 프로바이더의 현재 지표 형식을 따름.
 예를 들어 Cursor `totalUsage`는 백분율 기반 요금제에서는 `percent`, 요청 기반 Enterprise 요금제에서는 `requests`, Cursor가 달러 풀을 보고할 때는 `usd`.
+Copilot `premiumCredits`는 할당량 사용 비율일 때 `percent`, 조직 관리 좌석의 개인 사용 크레딧 수일 때 `credits`.
+개인 크레딧 수에는 `used`만 제공하며 `limit`, `remaining`, `utilization`은 생략.
 
 ### 공개 리소스
 
