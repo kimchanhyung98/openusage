@@ -98,6 +98,31 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         }
     }
 
+    func testTombstoneSuppressesSameVersionAliasRegardlessOfKeyOrder() {
+        let earlier = "user:inference user:profile"
+        let later = "user:profile user:inference"
+        for (tombstoneScopes, liveScopes) in [(earlier, later), (later, earlier)] {
+            for useScoped in [false, true] {
+                let key: (String) -> String = { useScoped ? self.scopedKey(scopes: $0) : self.legacyKey(scopes: $0) }
+                let cache: [String: Any] = [key(tombstoneScopes): NSNull(), key(liveScopes): token("live")]
+                assertNotFound(select(v2: cache))
+                assertNotFound(select(v2: nil, v1: cache))
+            }
+        }
+    }
+
+    func testCollidingLiveAliasesKeepTheLaterExpiryRegardlessOfKeyOrder() throws {
+        let earlier = "user:inference user:profile"
+        let later = "user:profile user:inference"
+        for (freshScopes, staleScopes) in [(earlier, later), (later, earlier)] {
+            let cache: [String: Any] = [
+                legacyKey(scopes: freshScopes): token("fresh", expiresIn: 86_400),
+                legacyKey(scopes: staleScopes): token("older", expiresIn: 3_600)
+            ]
+            XCTAssertEqual(try available(select(v2: cache)).accessToken, "fresh")
+        }
+    }
+
     func testExpiredScopedAliasSuppressesReorderedLegacyAndV1Copies() {
         let result = select(
             v2: [

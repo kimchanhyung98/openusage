@@ -140,9 +140,23 @@ extension ClaudeDesktopAuthStore {
                 key = String(parts[1])
             }
             guard let parsed = parseCacheKey(key) else { continue }
-            if isScoped { scoped[parsed] = entry } else { legacy[parsed] = entry }
+            if isScoped {
+                scoped[parsed] = scoped[parsed].map { preferred($0, over: entry) } ?? entry
+            } else {
+                legacy[parsed] = legacy[parsed].map { preferred($0, over: entry) } ?? entry
+            }
         }
         return legacy.merging(scoped) { _, scopedEntry in scopedEntry }
+    }
+
+    /// 같은 cache 버전에서 하나의 key로 접히는 scope alias 충돌 해소.
+    /// 삭제 마커가 항상 우선 — 지워진 토큰이 다른 철자의 alias로 되살아나지 않음.
+    /// 남은 경우는 만료가 늦은 항목 채택 — raw key 문자열 정렬이 결과를 정하지 않도록 명시적 규칙 유지.
+    private static func preferred(_ existing: Any, over candidate: Any) -> Any {
+        guard !(existing is NSNull), !(candidate is NSNull) else { return NSNull() }
+        let existingExpiry = (existing as? [String: Any]).flatMap { number($0["expiresAt"]) } ?? -.infinity
+        let candidateExpiry = (candidate as? [String: Any]).flatMap { number($0["expiresAt"]) } ?? -.infinity
+        return candidateExpiry > existingExpiry ? candidate : existing
     }
 
     private static func parseCacheKey(_ value: String) -> CacheKey? {
