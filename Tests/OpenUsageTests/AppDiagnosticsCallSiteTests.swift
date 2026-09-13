@@ -133,6 +133,28 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertFalse(encoded.contains("source="))
     }
 
+    func testPiInvalidNumbersReportOnePrivateSummaryAndCacheAggregationDoesNotRepeatIt() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let bad = #"{"type":"message","id":"PRIVATE_ID","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-123456789,"totalTokens":150}}}"#
+        let entries = PiUsageScanner.parseFile(Data((bad + "\n" + bad).utf8))
+        for _ in 0..<2 {
+            let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(scan.rejectedNumericRows, 2)
+        }
+
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines.first?.contains("source=pi; invalid_numeric_rows=2") == true)
+        XCTAssertFalse(lines.joined().contains("PRIVATE_"))
+        XCTAssertFalse(lines.joined().contains("123456789"))
+        XCTAssertEqual(capture.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .decoding)])
+        let encoded = String(decoding: try JSONEncoder().encode(capture.events), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("pi"))
+        XCTAssertFalse(encoded.contains("invalid_numeric_rows"))
+        XCTAssertFalse(encoded.contains("PRIVATE_"))
+    }
+
     func testClaimFallbackKeepsAccountCandidatesAndRecordsOnlyFinalFailure() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }

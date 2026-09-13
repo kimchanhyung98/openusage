@@ -286,6 +286,26 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertEqual(points[29].value, 1_000_000, "yesterday's tokens land on the second-to-last bar")
     }
 
+    func testInvalidOnlyLocalHistoryWarnsWithoutClearingHistoryOrFailingWeeklyMeter() async {
+        let scanner = GrokLogUsageScanner(
+            files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
+            {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1e300}}
+            """]),
+            environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/home/test") }
+        )
+        let provider = makeProvider(httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
+        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.usageHistory, "A successful quota refresh must not publish an empty history for invalid logs")
+        XCTAssertNil(values(snapshot.lines, "Today"))
+    }
+
     func testRefreshWithoutLogAppendsNoUsageTrend() async {
         let provider = makeProvider(httpClient: RecordingHTTPClient(handler: Self.defaultRoutes))
 
