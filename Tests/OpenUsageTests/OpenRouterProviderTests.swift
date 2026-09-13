@@ -206,7 +206,8 @@ final class OpenRouterUsageMapperTests: XCTestCase {
             "usage_weekly": 1.25,
             "usage_monthly": 4.5,
             "usage": 2,
-            "limit": 5
+            "limit": 5,
+            "limit_remaining": 3
         ])
 
         XCTAssertEqual(mapped.plan, "Pay as you go")

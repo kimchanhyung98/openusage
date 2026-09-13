@@ -3,14 +3,15 @@ import Foundation
 struct CopilotMappedUsage: Equatable, Sendable {
     var plan: String?
     var lines: [MetricLine]
-    /// per-seat meter가 없는 org 관리(token-based-billing) seat이면 true — 실제 usage가 organization billing에 있으니 provider가 그쪽을 봐야 한다는 신호.
+    /// per-seat 할당량이 없는 org 관리(token-based-billing) seat이면 true — 개인 count와 별도로 organization billing 조회 필요.
     /// 명시적 flag로 유지 — org 조회를 `lines`의 우연한 형태로 gate하지 않음 (issue #839: placeholder `overage_permitted`가 "Extra Usage: 0" 행을 끼워 넣어 조회를 막았던 회귀).
     var isOrgManagedSeat: Bool = false
+    var hasInvalidPersonalCredits: Bool = false
 }
 
-/// `/copilot_internal/user` 응답을 meter로 normalize. 2026-06-01부터 모든 plan이 usage-based billing(AI Credits) — `premium_interactions` bucket이 **Credits**(월 allotment 대비 사용 %), 그 초과분이 **Extra Usage**(실제 Credits meter가 있을 때만 표시 — 포함 pool 없는 overage는 무의미).
+/// `/copilot_internal/user` 응답을 meter로 normalize. 실제 premium allotment는 Credits 사용 비율, 초과분은 Extra Usage로 표시.
 /// 유료 plan의 `chat`/`completions`는 `-1` "unlimited" sentinel(억제), 무료 plan은 실제 count — 현행은 `quota_snapshots`, 구버전 응답은 `limited_user_quotas` 대 `monthly_quotas`.
-/// zero-entitlement placeholder snapshot(Copilot Business token-based-billing seat의 응답)은 신호가 없어 오해를 부르는 "0% used" 막대 대신 억제.
+/// zero-entitlement placeholder는 percent meter 억제 — org 관리 좌석의 양수 개인 credits_used만 별도 count로 표시.
 enum CopilotUsageMapper {
     static let periodMs = MetricPeriod.monthMs
 
@@ -49,15 +50,25 @@ enum CopilotUsageMapper {
             appendIfPresent(&lines, limitedLine(label: "Completions", remaining: limited?["completions"], total: monthly?["completions"], resetsAt: resetsAt))
         }
 
-        // Copilot Business/token-based-billing seat는 per-seat quota 미노출 — 실패가 아닌 정당한 빈 상태. plan은 빈 meter와 함께 표시(타일은 "No data")해 dashboard가 plan을 식별. token-based-billing 표식 없는 진짜 빈/깨진 payload는 실제 문제라 크게 실패.
-        guard !lines.isEmpty else {
-            if ProviderParse.bool(body["token_based_billing"]) == true {
-                return CopilotMappedUsage(plan: plan, lines: [], isOrgManagedSeat: true)
-            }
+        guard lines.isEmpty else {
+            return CopilotMappedUsage(plan: plan, lines: lines)
+        }
+        // 실제 quota가 없는 org 관리 좌석만 개인 count로 보완 — 할당량·초기화 시각을 임의 생성하지 않음.
+        guard ProviderParse.bool(body["token_based_billing"]) == true else {
             throw CopilotUsageError.quotaUnavailable
         }
-
-        return CopilotMappedUsage(plan: plan, lines: lines)
+        var mapped = CopilotMappedUsage(plan: plan, lines: [], isOrgManagedSeat: true)
+        if let rawCredits = (premium as? [String: Any])?["credits_used"], !(rawCredits is NSNull) {
+            guard let credits = ProviderParse.number(rawCredits), credits >= 0 else {
+                mapped.hasInvalidPersonalCredits = true
+                return mapped
+            }
+            // 0·부재는 기존 org-managed no-data 상태 유지.
+            if credits > 0 {
+                mapped.lines = [.values(label: "Credits", values: [MetricValue(number: credits, kind: .count)])]
+            }
+        }
+        return mapped
     }
 
     // MARK: - Lines
