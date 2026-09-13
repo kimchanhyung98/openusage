@@ -22,6 +22,22 @@ final class ZAIQuotaValidationMapperTests: XCTestCase {
         }
     }
 
+    func testEquivalentCreditAndTokenWindowsProduceOneMeter() throws {
+        let body = Data(#"{"data":{"limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":25},{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25}]}}"#.utf8)
+        XCTAssertEqual(try ZAIUsageMapper.mapQuota(body), [.progress(label: "Session", used: 25, limit: 100, format: .percent, periodDurationMs: 18_000_000)])
+    }
+
+    func testConflictingWindowsFailInsteadOfSelectingAnArbitraryQuota() {
+        for values in [("25", "30", "5"), ("25", "25", "3")] {
+            let body = Data("""
+            {"data":{"limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":\(values.0)},{"type":"TOKENS_LIMIT","unit":3,"number":\(values.2),"percentage":\(values.1)}]}}
+            """.utf8)
+            XCTAssertThrowsError(try ZAIUsageMapper.mapQuota(body)) { error in
+                XCTAssertTrue(error is ZAIUsageError)
+            }
+        }
+    }
+
     func testMixedCreditTokenAndSearchQuotasKeepSeparateWindows() throws {
         let body = Data(#"""
         {"data":{"limits":[
