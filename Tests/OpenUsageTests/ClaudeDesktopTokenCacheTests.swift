@@ -188,6 +188,31 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         XCTAssertEqual(try available(result).accessToken, "full-scope")
     }
 
+    func testActiveAccountCandidatePrecedesDifferentLegacyScopesAcrossVersions() throws {
+        let scoped = [scopedKey(scopes: "user:profile"): token("current")]
+        let legacy = [legacyKey(): token("unscoped", expiresIn: 86_400)]
+        for (v2, v1) in [(scoped.merging(legacy) { a, _ in a }, [:]), (legacy, scoped), (scoped, legacy), ([:], scoped.merging(legacy) { a, _ in a })] {
+            XCTAssertEqual(try available(select(v2: v2, v1: v1)).accessToken, "current")
+        }
+    }
+
+    func testMalformedLiveAliasCannotSuppressUsableToken() throws {
+        for bad: [String: Any] in [
+            ["token": " ", "expiresAt": (now.timeIntervalSince1970 + 86_400) * 1000],
+            ["token": "bad", "expiresAt": Double.infinity]
+        ] {
+            for useScoped in [false, true] {
+                let key: (String) -> String = { useScoped ? self.scopedKey(scopes: $0) : self.legacyKey(scopes: $0) }
+                for (goodScopes, badScopes) in [("user:profile user:inference", "user:inference user:profile"), ("user:inference user:profile", "user:profile user:inference")] {
+                    let cache: [String: Any] = [key(goodScopes): token("usable"), key(badScopes): bad]
+                    for useV2 in [false, true] {
+                        XCTAssertEqual(try available(select(v2: useV2 ? cache : nil, v1: useV2 ? nil : cache)).accessToken, "usable")
+                    }
+                }
+            }
+        }
+    }
+
     private func legacyKey(organization: String? = nil, scopes: String = "user:profile user:inference") -> String {
         "\(client):\(organization ?? self.organization):https://api.anthropic.com:\(scopes)"
     }

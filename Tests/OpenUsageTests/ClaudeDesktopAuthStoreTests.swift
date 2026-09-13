@@ -88,7 +88,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(fixture.keyReader.calls, [false])
     }
 
-    func testInvalidDesktopAccountMetadataKeepsOnlyLegacyFallback() throws {
+    func testOnlyMissingDesktopAccountMetadataAllowsLegacyFallback() throws {
         let account = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
         for metadata: String? in [nil, "", "not-a-uuid"] {
             let fixture = try makeFixture(
@@ -98,7 +98,24 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 v1: [cacheKey(organization: organization): tokenEntry("legacy-token", expiresIn: 3_600)]
             )
 
-            XCTAssertEqual(fixture.store.load(allowInteraction: false).oauth?.accessToken, "legacy-token")
+            let result = fixture.store.load(allowInteraction: false)
+            XCTAssertEqual(result.status, metadata == nil ? .available : .invalid)
+            XCTAssertEqual(result.oauth?.accessToken, metadata == nil ? "legacy-token" : nil)
+        }
+    }
+
+    func testWrongTypedAccountMetadataCannotEnableLegacyFallback() throws {
+        for metadata: Any in [NSNull(), 7, true, ["unexpected"]] {
+            let fixture = try makeFixture(activeOrganization: organization,
+                                          v2: [cacheKey(organization: organization): tokenEntry("legacy-token", expiresIn: 3_600)])
+            let path = home.appendingPathComponent("Library/Application Support/Claude/config.json").path
+            let text = try XCTUnwrap(fixture.files.files[path])
+            var config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+            config["lastKnownAccountUuid"] = metadata
+            fixture.files.files[path] = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
+            let result = fixture.store.load(allowInteraction: false)
+            XCTAssertEqual(result.status, .invalid)
+            XCTAssertNil(result.oauth)
         }
     }
 
