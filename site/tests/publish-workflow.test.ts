@@ -239,3 +239,24 @@ test('명시적인 수동 복구 배포는 현재 gh-pages 사용', () => {
     assert.equal(existsSync(fixture.ghArgs), false);
   } finally { fixture.cleanup(); }
 });
+
+test('가격표 게시 작업은 main ref에서만 실행', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/pricing-supplement.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /jobs:\n  publish:\n    if: github\.ref == 'refs\/heads\/main'\n/);
+  assert.match(workflow, /\n  workflow_dispatch:/);
+});
+
+test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 처리', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8');
+  const push = workflow.split('  push:\n')[1].split('  pull_request:\n')[0];
+  for (const path of ['site/**', 'script/site_*.sh', '.github/workflows/publish-site.yml']) {
+    assert.equal(push.includes(`      - '${path}'`), false, path);
+  }
+  assert.ok(push.includes("      - 'Sources/OpenUsage/**'"));
+  assert.ok(push.includes("      - '!Sources/OpenUsage/Resources/ProviderIcons/**'"));
+  assert.match(workflow, /\n  workflow_call:/);
+  const pullRequest = workflow.split('  pull_request:\n')[1].split('\npermissions:')[0];
+  for (const path of ['site/**', 'script/site_*.sh', 'Sources/OpenUsage/**', '.github/workflows/publish-site.yml']) {
+    assert.ok(pullRequest.includes(`      - '${path}'`), path);
+  }
+});
