@@ -78,6 +78,7 @@ Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.co
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 Codex 홈도 동일하게 읽음.
 [pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Codex 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Codex 사용량을 같은 타일과 추세에 합산.
 pi가 자체적으로 기록한 메시지별 비용을 그대로 사용하며 재추정하지 않음.
+pi 로그의 잘못된 토큰 수나 로컬 이력 합산 범위를 넘는 행은 제외하고, [불완전한 로컬 이력 안내](/docs/refreshing.md#가져오기에-실패한-경우) 표시.
 Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 일치.
 각 기간은 비용과 토큰을 함께 보여 주는 단일 타일(`$4.08 · 1.2M tokens`)이며, 사용량 없는 날은 오해를 부르는 `$0.00 · 0 tokens` 대신 **No data** 표시 — 다른 모든 지출 추적 프로바이더와 같은 방식.
 실시간 Session 및 Weekly 미터에는 영향 없음.
