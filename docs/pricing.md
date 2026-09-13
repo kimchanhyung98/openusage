@@ -50,7 +50,7 @@ Claude 로그 줄에 `costUSD`가 명시돼 있으면 그 값을 그대로 사�
 
 ## 개인정보 보호
 
-가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 저장소의 GitHub Pages).
+가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, `openusage.chanhyung.kim`).
 이 요청에는 사용량이나 로그 데이터가 실리지 않음 — 사용량에 관한 어떤 것도 Mac을 떠나지 않음.
 
 ## 유지 관리자 노트
