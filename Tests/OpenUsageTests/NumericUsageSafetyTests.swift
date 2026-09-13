@@ -194,7 +194,120 @@ final class NumericUsageSafetyTests: XCTestCase {
         }
     }
 
+    func testClaudeRejectsEveryInvalidTokenFieldWithoutTrappingOrChangingValidUsage() {
+        for field in [
+            "input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"
+        ] {
+            // `null`은 cache 필드 두 개에 한해 기존 `unsupportedNullableFields` 규칙이 라인째 skip — 숫자 거부 대상 아님.
+            var invalidValues = ["-1", "true", "1.5", "1e300", "\"NaN\"", "9223372036854775808"]
+            if field.hasPrefix("input") || field.hasPrefix("output") { invalidValues.append("null") }
+            for invalid in invalidValues {
+                var usage = ["input_tokens": "100", "output_tokens": "50"]
+                usage[field] = invalid
+                let scan = claudeScan(claudeLine(usage, id: "corrupt"))
+                XCTAssertEqual(scan.series.daily.first?.totalTokens, 150, "\(field)=\(invalid)")
+                XCTAssertEqual(scan.rejectedNumericRows, 1, "\(field)=\(invalid)")
+                XCTAssertNotNil(scan.numericWarning)
+                XCTAssertNotNil(scan.usageHistory)
+            }
+        }
+    }
+
+    func testClaudeRejectsRowBucketOverflowBeforePricing() {
+        for usage in [
+            ["input_tokens": "1", "output_tokens": String(Int.max)],
+            ["input_tokens": String(Int.max), "output_tokens": "0", "cache_read_input_tokens": "1"]
+        ] {
+            let scan = claudeScan(claudeLine(usage, id: "overflow"))
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+            XCTAssertEqual(scan.rejectedNumericRows, 1)
+        }
+    }
+
+    func testClaudeInvalidOnlyHistoryKeepsLastGoodHistory() {
+        let scan = claudeScan(claudeLine(["input_tokens": "1e300", "output_tokens": "1"], id: "corrupt"),
+                              includeValid: false)
+        XCTAssertNil(scan.usageHistory, "Invalid-only history must not erase the last good history")
+        XCTAssertNotNil(scan.numericWarning)
+    }
+
+    func testCodexRejectsEveryInvalidTokenFieldWithoutTrappingOrChangingValidUsage() {
+        for field in ["input_tokens", "output_tokens", "reasoning_output_tokens", "cached_input_tokens"] {
+            for invalid in ["-1", "true", "1.5", "1e300", "null", "\"NaN\"", "9223372036854775808"] {
+                var usage = ["input_tokens": "100", "output_tokens": "50"]
+                usage[field] = invalid
+                let scan = codexScan(codexLine(usage, timestamp: "2026-09-12T11:00:00Z"))
+                XCTAssertEqual(scan.series.daily.first?.totalTokens, 150, "\(field)=\(invalid)")
+                XCTAssertEqual(scan.rejectedNumericRows, 1, "\(field)=\(invalid)")
+                XCTAssertNotNil(scan.numericWarning)
+                XCTAssertNotNil(scan.usageHistory)
+            }
+        }
+    }
+
+    func testCodexRejectsRecomputedTotalOverflowBeforePricing() {
+        let usage = ["input_tokens": "1", "output_tokens": String(Int.max), "reasoning_output_tokens": "1"]
+        let scan = codexScan(codexLine(usage, timestamp: "2026-09-12T11:00:00Z"))
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+    }
+
+    func testCodexCorruptTotalsDoNotPoisonLaterDeltaBaseline() {
+        let scan = CodexLogUsageScanner.aggregate(
+            events: CodexLogUsageScanner.parseFile(Data("""
+            \(codexTotals(["input_tokens": "100", "output_tokens": "50"], timestamp: "2026-09-12T10:00:00Z"))
+            \(codexTotals(["input_tokens": "1e300", "output_tokens": "50"], timestamp: "2026-09-12T10:30:00Z"))
+            \(codexTotals(["input_tokens": "200", "output_tokens": "50"], timestamp: "2026-09-12T11:00:00Z"))
+            """.utf8)),
+            since: .distantPast, pricing: TestPricing.bundled
+        )
+        // 손상 행을 baseline으로 쓰면 마지막 delta가 뒤틀림 — 직전 정상 totals 기준 100 input만 증가.
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 250)
+    }
+
     private var date: Date { OpenUsageISO8601.date(from: "2026-09-12T10:00:00Z")! }
+
+    private func claudeLine(_ usage: [String: String], id: String) -> String {
+        let fields = usage.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
+        return """
+        {"timestamp":"2026-09-12T10:00:00Z","sessionId":"s","requestId":"\(id)","version":"1.0.24",\
+        "message":{"id":"\(id)","model":"claude-opus-4-8","usage":{\(fields)}}}
+        """
+    }
+
+    private func claudeScan(_ line: String, includeValid: Bool = true) -> LogUsageScan {
+        let valid = includeValid
+            ? [claudeLine(["input_tokens": "100", "output_tokens": "50"], id: "valid")] : []
+        let entries = ClaudeLogUsageScanner.parseFile(Data((valid + [line]).joined(separator: "\n").utf8))
+        return ClaudeLogUsageScanner.aggregate(
+            entries: entries, since: .distantPast, pricing: TestPricing.bundled
+        )
+    }
+
+    private func codexLine(_ usage: [String: String], timestamp: String) -> String {
+        let fields = usage.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
+        return """
+        {"timestamp":"\(timestamp)","type":"event_msg","payload":{"type":"token_count",\
+        "info":{"model":"gpt-5.4","last_token_usage":{\(fields)}}}}
+        """
+    }
+
+    private func codexTotals(_ usage: [String: String], timestamp: String) -> String {
+        let fields = usage.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
+        return """
+        {"timestamp":"\(timestamp)","type":"event_msg","payload":{"type":"token_count",\
+        "info":{"model":"gpt-5.4","total_token_usage":{\(fields)}}}}
+        """
+    }
+
+    private func codexScan(_ line: String) -> LogUsageScan {
+        let valid = codexLine(["input_tokens": "100", "output_tokens": "50"], timestamp: "2026-09-12T10:00:00Z")
+        return CodexLogUsageScanner.aggregate(
+            events: CodexLogUsageScanner.parseFile(Data("\(valid)\n\(line)".utf8)),
+            since: .distantPast, pricing: TestPricing.bundled
+        )
+    }
 
     private func grokUsage(_ fields: [String: String], pid: String = "1") -> String {
         let ctx = fields.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
