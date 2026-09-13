@@ -166,6 +166,7 @@ Customize는 프로바이더 블록 전체, Settings는 블록 내부 계정 순
 
 Soft-limit 설정은 이 Mac에 저장되며, 선택 기간을 명시적으로 지원하는 모든 프로바이더 진행 막대에 적용.
 로컬 Codex App Server의 native 취소 연결 구현·테스트 완료, 앱에서 계정 binding 검증은 미완료.
+로컬 제어 소켓은 비어 있지 않은 `CODEX_HOME` 경로를 그대로 사용하며, 미지정·빈 문자열이면 `~/.codex` 사용.
 Enabled를 켜도 자동 취소 차단 유지 — 현재 전체 보호되는 프로바이더 없음.
 독립 Codex CLI·앱·IDE 세션과 다른 모든 프로바이더는 미보호 — 이 Mac 전체 coverage 아님.
 클라이언트를 닫거나 대화를 삭제하지 않고 진행 중 turn만 중단.
