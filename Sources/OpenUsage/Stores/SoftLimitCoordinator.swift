@@ -137,6 +137,15 @@ final class SoftLimitCoordinator {
             }
             var cancelledCount = statuses[providerID]?.cancelledCount ?? 0
             var failures = 0
+            defer {
+                if revision == boundRevision, statuses[providerID]?.phase == .cancelling {
+                    statuses[providerID] = .init(
+                        phase: .waiting,
+                        cancelledCount: cancelledCount,
+                        message: "Cancellation stopped before all tasks were confirmed. Waiting for another check."
+                    )
+                }
+            }
             statuses[providerID] = .init(phase: .cancelling, cancelledCount: cancelledCount, message: "Cancelling connected tasks…")
             for task in pending.sorted(by: { ($0.sessionID, $0.operationID) < ($1.sessionID, $1.operationID) }) {
                 guard canCancel(providerID, revision: boundRevision) else { return }
