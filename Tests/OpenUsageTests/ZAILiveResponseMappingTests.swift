@@ -15,6 +15,30 @@ final class ZAILiveResponseMappingTests: XCTestCase {
     {"code":200,"msg":"Operation successful","data":[{"productName":"GLM Coding Pro","status":"VALID","nextRenewTime":"2026-07-29","billingCycle":"monthly","inCurrentPeriod":true}],"success":true}
     """#
 
+    func testCreditQuotaPreservesReportedPercentageWindowAndOptionalReset() throws {
+        let body = Data(#"""
+        {"data":{"limits":[
+          {"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":0},
+          {"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":10000,"currentValue":9855,"remaining":145,"percentage":98,"nextResetTime":1786685679998}
+        ]}}
+        """#.utf8)
+
+        let mapped = try ZAIUsageMapper.map(quotaBody: body, subscriptionBody: nil)
+
+        XCTAssertEqual(mapped.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertNil(mapped.plan)
+        XCTAssertEqual(progress(mapped.lines, "Session")?.used, 0)
+        XCTAssertEqual(progress(mapped.lines, "Session")?.periodDurationMs, 18_000_000)
+        XCTAssertEqual(progress(mapped.lines, "Weekly")?.used, 98)
+        XCTAssertEqual(progress(mapped.lines, "Weekly")?.periodDurationMs, 604_800_000)
+        guard case .progress(_, _, _, _, let sessionReset, _, _) = mapped.lines.first,
+              case .progress(_, _, _, _, let weeklyReset, _, _) = mapped.lines.last else {
+            return XCTFail("expected credit quota meters")
+        }
+        XCTAssertNil(sessionReset)
+        XCTAssertEqual(try XCTUnwrap(weeklyReset).timeIntervalSince1970, 1_786_685_679.998, accuracy: 0.001)
+    }
+
     func testMapsLiveResponseToSessionWeeklyAndWebSearches() throws {
         let mapped = try ZAIUsageMapper.map(
             quotaBody: Data(liveQuota.utf8),
