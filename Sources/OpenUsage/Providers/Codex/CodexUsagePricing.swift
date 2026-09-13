@@ -6,8 +6,8 @@ enum CodexUsagePricing {
         let canonical = pricing.supplement.canonicalName(for: model) ?? model
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
-        let baseRates = pricing.resolve(model: rateModel)
-        guard let rates = baseRates ?? pricing.resolve(model: model) else { return nil }
+        let baseRates = resolveRates(model: rateModel, pricing: pricing)
+        guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
         // fast-only catalog는 이미 배율 반영된 단가 — base가 있을 때만 Codex 배율 추가.
         var request = tokens
@@ -52,8 +52,17 @@ enum CodexUsagePricing {
         return effective
     }
 
-    private static func datedBaseModel(_ model: String) -> String {
+    private static func resolveRates(model: String, pricing: ModelPricing) -> ModelRates? {
+        // 출처별 명시 요율 우선, 미가격일 때만 접두사 없는 보충 가격표·별칭으로 재조회.
+        pricing.resolve(model: model) ?? pricing.resolve(model: withoutProviderPrefix(model))
+    }
+
+    private static func withoutProviderPrefix(_ model: String) -> String {
         String(model.split(separator: "/").last ?? Substring(model))
+    }
+
+    private static func datedBaseModel(_ model: String) -> String {
+        withoutProviderPrefix(model)
             .replacingOccurrences(of: #"-\d{4}-\d{2}-\d{2}$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"-\d{8}$"#, with: "", options: .regularExpression)
     }

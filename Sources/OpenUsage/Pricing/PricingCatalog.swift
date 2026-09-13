@@ -22,7 +22,8 @@ struct PricingCatalog: Sendable, Equatable {
         let normalizedModel = Self.normalizedKey(model)
         var best: (key: String, rates: ModelRates)?
         for (key, rates) in entries {
-            if excludingFastVariants && key.hasSuffix("-fast") { continue }
+            if excludingFastVariants, key.contains("-fast"),
+               key.range(of: #"-fast($|[^A-Za-z0-9])"#, options: .regularExpression) != nil { continue }
             guard Self.keyMatches(candidate: key, model: model, normalizedModel: normalizedModel) else { continue }
             if let current = best {
                 if key.count > current.key.count || (key.count == current.key.count && key < current.key) {
