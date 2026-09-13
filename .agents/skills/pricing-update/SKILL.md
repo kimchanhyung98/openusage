@@ -34,7 +34,7 @@ Where a model exists in LiteLLM or models.dev, prefer an alias to that canonical
 
 ### 3. Edit the supplement
 
-- Update `updated_at` to today (YYYY-MM-DD).
+- Update `updated_at` to now as a UTC timestamp (`YYYY-MM-DDTHH:MM:SSZ`). The publish workflow rejects any other spelling, including date-only.
 - Keep the file's style: 2-space indent, rates as plain numbers, `$comment` explanations for non-obvious entries.
 - Rates are USD per million tokens; cache read defaults matter — copy the exact numbers from the Cursor page, don't infer.
 
@@ -45,9 +45,16 @@ Run the same checks CI runs, plus the pricing tests:
 ```sh
 python3 - << 'PY'
 import json, re, sys
+from datetime import datetime
 with open("Sources/OpenUsage/Resources/pricing_supplement.json") as f:
     s = json.load(f)
 problems = []
+u = s.get("updated_at")
+if not isinstance(u, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", u):
+    problems.append("updated_at must use YYYY-MM-DDTHH:MM:SSZ UTC format")
+else:
+    try: datetime.strptime(u, "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError: problems.append("updated_at must be a valid UTC date and time")
 for m, e in s["pricing"].items():
     for f_ in ("input_per_million", "output_per_million"):
         if not isinstance(e.get(f_), (int, float)):
