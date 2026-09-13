@@ -155,21 +155,19 @@ final class CodexProvider: ProviderRuntime {
             ? await PiUsageScanner.shared.scan(
                 cardID: provider.id, now: now(), pricing: pricing,
                 costEstimator: { model, tokens, pricing in
-                    CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing)
+                    CodexUsagePricing.estimatePi(model: model, tokens: tokens, pricing: pricing)
                 }
             )
             : nil
         var usageHistory: ProviderUsageHistory?
+        var warning: String?
         // native·pi 스캔 사이 cancellation 가능 — 부분 결과가 WidgetDataStore의 last-good combined history를 대체하지 않도록 쌍을 한 단위로 처리.
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
-            usageHistory = ProviderUsageHistory(
-                series: scan.series,
-                modelUsage: scan.modelUsage,
-                unknownModelsByDay: scan.unknownModelsByDay
-            )
+            usageHistory = scan.usageHistory
+            warning = scan.pricingWarning
             SpendTileMapper.appendTokenUsage(
                 scan.series, to: &mapped.lines, now: now(),
                 unknownModelsByDay: scan.unknownModelsByDay,
@@ -186,6 +184,7 @@ final class CodexProvider: ProviderRuntime {
             lines: mapped.lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
+            warning: warning,
             isDegraded: refreshIsDegraded ? true : nil,
             liveQuotaObservedAt: quotaObservedAt
         )

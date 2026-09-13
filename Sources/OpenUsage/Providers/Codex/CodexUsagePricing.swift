@@ -3,10 +3,6 @@ import Foundation
 /// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
 enum CodexUsagePricing {
     static func estimate(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> Double? {
-        guard tokens.cacheWrite1h == 0 else {
-            AppLog.warn(LogTag.plugin("codex"), "Codex pricing: unsupported one-hour cache-write usage")
-            return nil
-        }
         let canonical = pricing.supplement.canonicalName(for: model) ?? model
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
@@ -17,6 +13,14 @@ enum CodexUsagePricing {
         var request = tokens
         request.isFast = isFastAlias ? baseRates != nil : tokens.isFast
         return adjusted(rates: rates, model: rateModel).costDollars(for: request)
+    }
+
+    static func estimatePi(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> PiUsageScanner.CostEstimate {
+        guard tokens.cacheWrite1h == 0 else {
+            AppLog.warn(LogTag.plugin("codex"), "Codex pricing: unsupported one-hour cache-write usage")
+            return .unsupportedUsage
+        }
+        return .init(estimate(model: model, tokens: tokens, pricing: pricing))
     }
 
     static func adjusted(rates: ModelRates, model: String) -> ModelRates {

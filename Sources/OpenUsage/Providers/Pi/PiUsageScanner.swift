@@ -6,7 +6,17 @@ import Foundation
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
 
-    typealias CostEstimator = @Sendable (String, TokenBreakdown, ModelPricing) -> Double?
+    enum CostEstimate: Sendable {
+        case priced(Double)
+        case unpriced
+        case unsupportedUsage
+
+        init(_ cost: Double?) {
+            self = cost.map(Self.priced) ?? .unpriced
+        }
+    }
+
+    typealias CostEstimator = @Sendable (String, TokenBreakdown, ModelPricing) -> CostEstimate
 
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
@@ -140,9 +150,10 @@ actor PiUsageScanner {
         costEstimator: CostEstimator? = nil
     ) -> LogUsageScan {
         let estimate = costEstimator ?? { model, tokens, pricing in
-            pricing.estimatedCostDollars(model: model, tokens: tokens)
+            CostEstimate(pricing.estimatedCostDollars(model: model, tokens: tokens))
         }
         var accumulator = DailyUsageAccumulator()
+        var unsupportedPricingRows = 0
         for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
             let trimmedModel = entry.model.nilIfEmpty
@@ -151,16 +162,21 @@ actor PiUsageScanner {
             let cost: Double
             if let carried = entry.carriedCost, carried > 0 {
                 cost = carried
-            } else if let model = trimmedModel, let estimated = estimate(model, entry.tokens, pricing) {
-                cost = estimated
             } else {
-                if let model = trimmedModel, entry.reportedTotalTokens > 0 {
-                    accumulator.addUnknownModel(day: day, model: model)
+                let result = trimmedModel.map { estimate($0, entry.tokens, pricing) } ?? .unpriced
+                switch result {
+                case .priced(let estimated):
+                    cost = estimated
+                case .unpriced, .unsupportedUsage:
+                    if case .unsupportedUsage = result { unsupportedPricingRows += 1 }
+                    if let model = trimmedModel, entry.reportedTotalTokens > 0 {
+                        accumulator.addUnknownModel(day: day, model: model)
+                    }
+                    continue
                 }
-                continue
             }
             accumulator.add(day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName)
         }
-        return accumulator.build()
+        return accumulator.build(unsupportedPricingRows: unsupportedPricingRows)
     }
 }

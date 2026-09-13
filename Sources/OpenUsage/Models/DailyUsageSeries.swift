@@ -88,10 +88,27 @@ struct LogUsageScan: Sendable {
     var modelUsage: ModelUsageSeries?
     /// `yyyy-MM-dd` day key → 가격 부재로 합계에서 제외된 그날의 model 목록.
     var unknownModelsByDay: [String: Set<String>]
+    var unsupportedPricingRows: Int
 
-    init(series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil, unknownModelsByDay: [String: Set<String>]) {
+    init(
+        series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil,
+        unknownModelsByDay: [String: Set<String>], unsupportedPricingRows: Int = 0
+    ) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
+        self.unsupportedPricingRows = unsupportedPricingRows
+    }
+
+    var pricingWarning: String? {
+        unsupportedPricingRows > 0
+            ? "Some local usage has unsupported pricing details and was excluded."
+            : nil
+    }
+
+    /// 미지원 가격 입력만 있는 결과는 마지막 정상 이력을 빈 값으로 덮지 않음.
+    var usageHistory: ProviderUsageHistory? {
+        guard unsupportedPricingRows == 0 || !series.daily.isEmpty else { return nil }
+        return ProviderUsageHistory(series: series, modelUsage: modelUsage, unknownModelsByDay: unknownModelsByDay)
     }
 }
