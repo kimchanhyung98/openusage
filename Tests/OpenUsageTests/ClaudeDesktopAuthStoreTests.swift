@@ -39,7 +39,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(result.status, .available)
         XCTAssertEqual(result.oauth?.accessToken, "desktop-token")
         XCTAssertNil(result.oauth?.refreshToken)
-        XCTAssertEqual(result.oauth?.scopes, ["user:profile", "user:inference"])
+        XCTAssertEqual(Set(result.oauth?.scopes ?? []), ["user:profile", "user:inference"])
     }
 
     func testV1FallbackDoesNotOverrideTombstonedV2Key() throws {

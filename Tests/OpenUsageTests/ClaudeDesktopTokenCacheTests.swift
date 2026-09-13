@@ -82,6 +82,34 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         }
     }
 
+    func testScopedTombstoneSuppressesAliasesWithReorderedAndRepeatedScopes() {
+        let reordered = "user:inference user:profile user:profile"
+        let sameVersion: [String: Any] = [
+            legacyKey(): token("legacy"),
+            scopedKey(scopes: reordered): NSNull()
+        ]
+        for useV2 in [false, true] {
+            assertNotFound(select(v2: useV2 ? sameVersion : nil, v1: useV2 ? nil : sameVersion))
+        }
+        for v2Key in [legacyKey(scopes: reordered), scopedKey(scopes: reordered)] {
+            for v1Key in [legacyKey(), scopedKey()] {
+                assertNotFound(select(v2: [v2Key: NSNull()], v1: [v1Key: token("older")]))
+            }
+        }
+    }
+
+    func testExpiredScopedAliasSuppressesReorderedLegacyAndV1Copies() {
+        let result = select(
+            v2: [
+                scopedKey(scopes: "user:inference user:profile user:inference"): token("expired", expiresIn: -1),
+                legacyKey(): token("legacy")
+            ],
+            v1: [legacyKey(): token("older")]
+        )
+
+        guard case .stale = result else { return XCTFail("Expected stale, got \(result)") }
+    }
+
     func testV2DeletionMarkersSuppressV1AcrossBothKeyFormats() {
         for v2Key in [legacyKey(), scopedKey()] {
             for v1Key in [legacyKey(), scopedKey()] {
