@@ -29,6 +29,9 @@ Claude Code 또는 Claude Desktop에 로그인하면 OpenUsage가 기존 로그�
 
 Claude Desktop 지원은 읽기 전용.
 OpenUsage는 macOS 키체인의 `Claude Safe Storage` 항목으로 현재 유효한 액세스 토큰 복호화.
+Desktop의 계정별 로그인 캐시는 현재 활성 계정과 조직에 맞는 항목만 사용.
+이전 캐시 형식도 지원하며, 같은 항목이 새 형식에서 삭제되거나 만료되었으면 이전 토큰으로 되돌리지 않음.
+현재 계정 정보를 읽을 수 없으면 계정별 캐시는 사용하지 않고 이전 형식의 유효한 로그인만 확인.
 Desktop의 갱신 토큰은 읽거나 사용하지 않으며 Desktop의 설정, 쿠키, 키체인 항목도 변경하지 않음.
 이 방식으로 OpenUsage가 Claude Desktop 세션을 무효화하는 문제 방지.
 
