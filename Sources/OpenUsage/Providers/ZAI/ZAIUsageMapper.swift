@@ -1,7 +1,7 @@
 import Foundation
 
 /// Z.ai `/api/monitor/usage/quota/limit` payload와 `/api/biz/subscription/list`의 plan 이름을 metric line으로 매핑.
-/// sub-daily `TOKENS_LIMIT`은 session meter, multi-day는 weekly meter, `TIME_LIMIT`은 web-search count meter.
+/// sub-daily credit/token quota는 session meter, multi-day는 weekly meter, `TIME_LIMIT`은 web-search count meter.
 /// 두 endpoint 모두 Z.ai 자체 UI가 쓰는 비공개 내부 API — mapper는 순수(I/O 없음)라 sample payload로 테스트 가능.
 enum ZAIUsageMapper {
     /// 월간 web-search cycle 1회의 밀리초 (Z.ai 보고값 `unit: 5, number: 1`).
@@ -48,9 +48,14 @@ enum ZAIUsageMapper {
         var lines: [MetricLine] = []
         var sawRecognizedLimit = false
 
-        // TOKENS_LIMIT entry를 window 길이로 분리 — sub-daily는 session, multi-day는 weekly, 둘 다 percentage meter
-        let tokenLimits = limits.filter { ($0["type"] as? String) == "TOKENS_LIMIT" || ($0["name"] as? String) == "TOKENS_LIMIT" }
-        for entry in tokenLimits {
+        // 두 필드 중 하나라도 credit/token quota면 인식 — 기존 name alias 허용 범위 유지.
+        let percentageLimits = limits.filter { entry in
+            let type = entry["type"] as? String
+            let name = entry["name"] as? String
+            return type == "CREDIT_LIMIT" || type == "TOKENS_LIMIT"
+                || name == "CREDIT_LIMIT" || name == "TOKENS_LIMIT"
+        }
+        for entry in percentageLimits {
             guard let window = try classifyTokenWindow(entry) else { continue }
             sawRecognizedLimit = true
             switch window {
@@ -86,7 +91,7 @@ enum ZAIUsageMapper {
 
     // MARK: - Private
 
-    /// `TOKENS_LIMIT` entry의 window가 매핑되는 meter 구분.
+    /// credit/token quota의 window가 매핑되는 meter 구분.
     /// window는 `(unit, number)` 쌍으로 인코딩(`unit: 3` 시간, `unit: 6` 주, `unit: 5` 월) — sub-daily는 session, multi-day는 weekly.
     /// 미지의 unit은 무시 — 새 Z.ai window가 이해 가능한 unit의 meter를 가리지 못하게 함.
     private enum TokenWindow {
@@ -120,7 +125,7 @@ enum ZAIUsageMapper {
         return .weekly(periodMs: periodMs)
     }
 
-    /// `TOKENS_LIMIT` entry에서 percentage meter(Session 또는 Weekly) 생성.
+    /// credit/token quota에서 percentage meter(Session 또는 Weekly) 생성.
     private static func percentLine(_ entry: [String: Any], label: String, periodMs: Int) throws -> MetricLine {
         guard let rawPercentage = ProviderParse.number(entry["percentage"]) else {
             throw ZAIUsageError.invalidResponse
