@@ -30,8 +30,9 @@ enum OpenRouterUsageMapper {
     }
 
     /// `/key`에서 period spend + per-key cap(선택) 생성, tier는 plan 이름으로 노출.
-    static func keyMetrics(from data: [String: Any]) -> (plan: String?, lines: [MetricLine]) {
+    static func keyMetrics(from data: [String: Any]) -> (plan: String?, lines: [MetricLine], hasInvalidKeyLimit: Bool) {
         var lines: [MetricLine] = []
+        var hasInvalidKeyLimit = false
 
         // period spend는 로컬 로그 scan이 아닌 API 직접 값 — 실측 0은 측정된 0으로 유지
         appendSpend(data["usage_daily"], label: "Today", into: &lines)
@@ -39,16 +40,21 @@ enum OpenRouterUsageMapper {
         appendSpend(data["usage_monthly"], label: "This Month", into: &lines)
 
         if let limit = ProviderParse.number(data["limit"]), limit > 0 {
-            lines.append(.progress(
-                label: "Key Limit",
-                used: max(0, ProviderParse.number(data["usage"]) ?? 0),
-                limit: limit,
-                format: .dollars
-            ))
+            // `usage`는 전체 기간 누적액 — 현재 한도 창의 잔여액으로만 사용량 계산.
+            if let remaining = ProviderParse.number(data["limit_remaining"]) {
+                lines.append(.progress(
+                    label: "Key Limit",
+                    used: max(0, limit - max(0, remaining)),
+                    limit: limit,
+                    format: .dollars
+                ))
+            } else {
+                hasInvalidKeyLimit = true
+            }
         }
 
         let plan = (data["is_free_tier"] as? Bool).map { $0 ? "Free tier" : "Pay as you go" }
-        return (plan, lines)
+        return (plan, lines, hasInvalidKeyLimit)
     }
 
     private static func appendSpend(_ value: Any?, label: String, into lines: inout [MetricLine]) {

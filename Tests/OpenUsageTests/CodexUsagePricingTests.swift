@@ -132,6 +132,15 @@ final class CodexUsagePricingTests: XCTestCase {
         XCTAssertEqual(catalog.findFuzzy("custom", excludingFastVariants: true)?.rates, standard)
     }
 
+    func testAutomaticReviewKeepsIdentityWhileUsingRequestPricingForItsReference() throws {
+        let event = CodexLogUsageScanner.Event(timestamp: date, model: "codex-auto-review", input: 300_000,
+            cached: 100_000, output: 10_000, reasoning: 0, total: 310_000, isFast: true, pricingModel: "gpt-5.6-sol")
+        let scan = CodexLogUsageScanner.aggregate(events: [event], since: .distantPast, pricing: pricing)
+        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 3.96, accuracy: 1e-9)
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models.first?.model, "codex-auto-review")
+        XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
+    }
+
     func testNewPricingSnapshotRepricesLongRequestsWithoutReparsing() throws {
         let tokens = TokenBreakdown(input: 300_000, output: 10_000)
         func snapshot(_ rate: Double) -> ModelPricing {

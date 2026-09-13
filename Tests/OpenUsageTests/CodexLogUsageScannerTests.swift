@@ -213,7 +213,9 @@ final class CodexLogUsageScannerTests: XCTestCase {
             )
         ].joined(separator: "\n")
 
-        XCTAssertEqual(CodexLogUsageScanner.parseFile(Data(lines.utf8)).first?.model, "gpt-5.4")
+        let event = CodexLogUsageScanner.parseFile(Data(lines.utf8)).first
+        XCTAssertEqual(event?.model, "codex-auto-review")
+        XCTAssertEqual(event?.pricingModel, "gpt-5.4")
     }
 
     // MARK: - Child-session replay (subagents and forks)
