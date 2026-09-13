@@ -28,7 +28,7 @@ final class KimiProvider: ProviderRuntime {
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
-            .percent(id: "kimi.session", provider: provider, title: "Session", isSessionWindow: true)
+            .percent(id: "kimi.session", provider: provider, title: "Session", sessionStartSignal: .zeroUsage)
                 .supportingSoftLimit(.fiveHours)
                 .exportingLimit("session", unit: "percent"),
             .percent(id: "kimi.weekly", provider: provider, title: "Weekly")

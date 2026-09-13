@@ -742,8 +742,8 @@ final class WidgetDataStore {
                 limitNoun: descriptor.sample.limitNoun,
                 infoNote: descriptor.sample.infoNote
             )
-            // descriptor opt-in flag(session-window meter의 "Not started") — `.progress` 결과는 sample에서 시작하지 않으므로 명시적으로 carry.
-            result.isSessionWindow = descriptor.sample.isSessionWindow
+            // `.progress` 결과는 sample에서 시작하지 않으므로 provider별 미시작 신호 전달.
+            result.sessionStartSignal = descriptor.sample.sessionStartSignal
             return result
         case .text:
             // text line은 local API용 provider notice — 숫자 widget은 typed line만 소비, display text parse 금지.
