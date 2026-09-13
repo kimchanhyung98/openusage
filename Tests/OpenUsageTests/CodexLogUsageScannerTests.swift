@@ -588,34 +588,33 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testCodexLongContextRatesCoverSupportedModels() {
-        let rates = ModelRates(
-            inputPerMillion: 1,
-            outputPerMillion: 1,
-            cacheWritePerMillion: 1,
-            cacheReadPerMillion: 0.1
-        )
         let event = makeEvent(
             "2026-05-12T08:00:00.000Z", input: 300_000, cached: 100_000, output: 10_000
         )
-        let expectedCosts: [(String, Double)] = [
-            ("gpt-5.4", 1.275),
-            ("gpt-5.4-pro-2026-03-05", 20.7),
-            ("gpt-5.5", 2.55),
-            ("gpt-5.5-pro-20260423", 20.7),
-            ("gpt-5.6-sol", 2.55),
-            ("gpt-5.6-terra", 1.02),
-            ("gpt-5.6-luna", 0.102)
+        let cases: [(model: String, input: Double, output: Double, cacheRead: Double, expected: Double)] = [
+            ("gpt-5.4", 2.5, 15, 0.25, 1.275),
+            ("gpt-5.4-pro-2026-03-05", 30, 180, 3, 20.7),
+            ("gpt-5.5", 5, 30, 0.5, 2.55),
+            ("gpt-5.5-pro-20260423", 30, 180, 3, 20.7),
+            ("gpt-5.6-sol", 4, 20, 0.4, 1.98),
+            ("gpt-5.6-terra", 2, 12, 0.2, 1.02),
+            ("gpt-5.6-luna", 0.2, 1.2, 0.02, 0.102),
+            ("gpt-6-astra", 10, 50, 1, 4.95)
         ]
 
-        for (model, expected) in expectedCosts {
+        for entry in cases {
+            let rates = ModelRates(
+                inputPerMillion: entry.input, outputPerMillion: entry.output,
+                cacheWritePerMillion: entry.input, cacheReadPerMillion: entry.cacheRead
+            )
             XCTAssertEqual(
                 CodexLogUsageScanner.cost(
-                    rates: rates, event: event, model: model,
+                    rates: rates, event: event, model: entry.model,
                     fastTier: false, fastMultiplier: 1
                 ),
-                expected,
+                entry.expected,
                 accuracy: 0.000_001,
-                model
+                entry.model
             )
         }
     }
@@ -944,7 +943,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         let scan = await scanner.scan(pricing: pricing)
 
         XCTAssertTrue(scan?.unknownModelsByDay.isEmpty ?? false)
-        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(scan?.series.daily.first?.costUSD ?? 0, 0.6, accuracy: 0.000_001)
     }
 
     func testScanPricesDaybreakRedAsGPT56Cyber() async throws {
