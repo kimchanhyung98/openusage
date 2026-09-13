@@ -66,6 +66,7 @@ enum ClaudeDesktopCredentialError: Error, Sendable {
     case invalidSafeStorageKey
     case keychainFailure(Int)
     case invalidCiphertext
+    case invalidAccountMetadata
     case decryptionFailed(Int32)
 }
 
@@ -221,8 +222,17 @@ struct ClaudeDesktopAuthStore: Sendable {
         else {
             return nil
         }
+        let activeAccountUUID: String?
+        if let rawAccount = root["lastKnownAccountUuid"] {
+            guard let text = rawAccount as? String, let account = UUID(uuidString: text) else {
+                throw ClaudeDesktopCredentialError.invalidAccountMetadata
+            }
+            activeAccountUUID = account.uuidString
+        } else {
+            activeAccountUUID = nil
+        }
         return (
-            activeAccountUUID: (root["lastKnownAccountUuid"] as? String).flatMap { UUID(uuidString: $0)?.uuidString },
+            activeAccountUUID: activeAccountUUID,
             v2: try Self.decodeCache(root[Self.cacheV2Key], key: key),
             v1: try Self.decodeCache(root[Self.cacheV1Key], key: key)
         )
