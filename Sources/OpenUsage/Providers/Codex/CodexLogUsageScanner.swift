@@ -30,7 +30,7 @@ actor CodexLogUsageScanner {
     }
 
     /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Event` semantics 변경 시 bump.
-    static let cacheSchemaVersion = 3
+    static let cacheSchemaVersion = 4
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -221,12 +221,15 @@ actor CodexLogUsageScanner {
             }
 
             // 누적 totals 불변이면 Codex가 재방출한 stale snapshot — last_token_usage가 있어도 신규 usage 아님.
-            if let totals, let previous = previousTotals, totals.equalCounts(previous) {
+            if let totals, !totals.invalid, let previous = previousTotals, totals.equalCounts(previous) {
                 continue
             }
 
             let usage: RawUsage
-            if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
+            // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
+            if let totals, totals.invalid {
+                usage = totals
+            } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
                 usage = last
             } else if let totals {
                 usage = totals.subtracting(previousTotals)
@@ -262,6 +265,7 @@ actor CodexLogUsageScanner {
                 isFast: currentTierIsFast
             ))
         }
+        UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
         return events
     }
 

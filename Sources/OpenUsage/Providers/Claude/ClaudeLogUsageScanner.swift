@@ -37,7 +37,7 @@ actor ClaudeLogUsageScanner {
     /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
     /// 테스트는 격리된 메모리 전용 scanner 주입.
     /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Entry` 의미 변경 시 bump.
-    static let cacheSchemaVersion = 2
+    static let cacheSchemaVersion = 3
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
@@ -235,6 +235,7 @@ actor ClaudeLogUsageScanner {
             if hasUnsupportedNullField(line) { continue }
             entries.append(contentsOf: parseEntries(Data(line)))
         }
+        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "claude")
         return entries
     }
 
@@ -256,6 +257,11 @@ actor ClaudeLogUsageScanner {
         else { return [] }
 
         let model = (message["model"] as? String).flatMap { $0 == "<synthetic>" ? nil : $0 }
+        let cost = (object["costUSD"] as? NSNumber).flatMap { number -> Double? in
+            guard CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.isFinite, number.doubleValue >= 0 else { return nil }
+            return number.doubleValue
+        }
         let parent = Entry(
             timestamp: timestamp,
             tokens: parsedUsage.tokens,
@@ -263,9 +269,9 @@ actor ClaudeLogUsageScanner {
             requestID: object["requestId"] as? String,
             isSidechain: object["isSidechain"] as? Bool ?? false,
             hasSpeed: parsedUsage.hasSpeed,
-            costUSD: (object["costUSD"] as? NSNumber)?.doubleValue,
+            costUSD: cost,
             model: model,
-            invalidNumericValues: !parsedUsage.valid
+            invalidNumericValues: !parsedUsage.valid || (object["costUSD"] != nil && cost == nil)
         )
 
         guard let iterations = usage["iterations"] as? [[String: Any]] else { return [parent] }
@@ -429,8 +435,11 @@ actor ClaudeLogUsageScanner {
         return deduped
     }
 
-    /// 중복 시 선호 순서 — non-sidechain(parent), 큰 토큰 합계, `speed` 필드 보유 순.
+    /// 중복 시 선호 순서 — 정상 숫자, non-sidechain(parent), 큰 토큰 합계, `speed` 필드 보유 순.
     static func shouldReplace(candidate: Entry, existing: Entry) -> Bool {
+        if candidate.invalidNumericValues != existing.invalidNumericValues {
+            return existing.invalidNumericValues
+        }
         if candidate.isSidechain != existing.isSidechain {
             return existing.isSidechain
         }

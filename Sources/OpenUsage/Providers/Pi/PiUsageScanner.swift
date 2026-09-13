@@ -130,13 +130,19 @@ actor PiUsageScanner {
 
     // MARK: - Dedup and aggregation
 
-    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 첫 등장 유지. id 없는 line은 항상 유지.
+    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 정상 숫자 사본 중 첫 등장 유지. id 없는 line은 항상 유지.
     static func dedup(_ entries: [Entry]) -> [Entry] {
-        var seen: Set<String> = []
+        var indices: [String: Int] = [:]
         var out: [Entry] = []
         out.reserveCapacity(entries.count)
         for entry in entries {
-            if let id = entry.id, !seen.insert(id).inserted { continue }
+            if let id = entry.id {
+                if let index = indices[id] {
+                    if out[index].invalidNumericValues && !entry.invalidNumericValues { out[index] = entry }
+                    continue
+                }
+                indices[id] = out.count
+            }
             out.append(entry)
         }
         return out

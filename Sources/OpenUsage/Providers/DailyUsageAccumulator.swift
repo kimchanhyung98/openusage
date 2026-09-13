@@ -23,7 +23,7 @@ struct DailyUsageAccumulator {
         let dayCost = (costByDay[day] ?? 0) + cost
         let modelCost = (modelsByDay[day]?[model]?.costUSD ?? 0) + cost
         // 비음수 전체 합계가 Int 범위 안이면 그 부분집합인 날짜·모델·기간 합계도 안전. 비용·token을 함께 반영.
-        guard tokens >= 0, !nextTotal.overflow, cost.isFinite, nextCost.isFinite,
+        guard tokens >= 0, !nextTotal.overflow, cost.isFinite, cost >= 0, nextCost.isFinite,
               dayCost.isFinite, modelCost.isFinite
         else {
             rejectNumericRow()
