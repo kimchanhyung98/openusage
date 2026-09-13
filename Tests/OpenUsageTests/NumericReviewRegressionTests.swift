@@ -90,6 +90,25 @@ final class NumericReviewRegressionTests: XCTestCase {
         XCTAssertNotNil(store.snapshots[provider.id]?.line(label: "Session"))
     }
 
+    func testOldMalformedGrokModelEventsDoNotPreventAnAuthoritativeEmptyWindow() throws {
+        let since = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-12T00:00:00Z"))
+        let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"grok-build"}}"#
+        let empty = GrokLogUsageScanner.parse(old, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(empty.rejectedNumericRows, 0)
+        XCTAssertNotNil(empty.usageHistory)
+        XCTAssertTrue(empty.series.daily.isEmpty)
+        XCTAssertNil(empty.numericWarning)
+        let current = #"{"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100}}"#
+        let rejected = GrokLogUsageScanner.parse(old + "\n" + current, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(rejected.rejectedNumericRows, 1)
+        XCTAssertNil(rejected.usageHistory)
+        let known = #"{"ts":"2026-08-01T00:00:00Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}"#
+        let valid = current.replacingOccurrences(of: "1e300", with: "1")
+        let recovered = GrokLogUsageScanner.parse(old + "\n" + known + "\n" + valid, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(recovered.series.daily.first?.totalTokens, 100)
+        XCTAssertEqual(recovered.rejectedNumericRows, 0)
+    }
+
     private func claudeLine(cost: String, sidechain: Bool) -> Data {
         Data("""
         {"timestamp":"2026-09-12T10:00:00Z","sessionId":"s","requestId":"r","version":"1.0.24","isSidechain":\(sidechain),"costUSD":\(cost),"message":{"id":"same","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":0}}}

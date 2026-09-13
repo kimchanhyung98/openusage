@@ -175,6 +175,68 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertEqual(capture.events.count, 2)
     }
 
+    func testRestoredNumericMarkersReportOnceWithoutReparsingOrRepeatedAggregation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let claudeHome = directory.appendingPathComponent("claude")
+        let codexHome = directory.appendingPathComponent("codex")
+        let piHome = directory.appendingPathComponent("pi").resolvingSymlinksInPath()
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        let claudeCache = try await seedNumericCache(
+            data: Data(#"{"timestamp":"2026-09-12T10:00:00Z","message":{"model":"PRIVATE_MODEL","usage":{"input_tokens":-1,"output_tokens":0}}}"#.utf8),
+            path: claudeHome.appendingPathComponent("projects/session.jsonl"), namespace: "claude",
+            schema: ClaudeLogUsageScanner.cacheSchemaVersion, identity: "claude-home", parse: ClaudeLogUsageScanner.parseFile)
+        let codexCache = try await seedNumericCache(
+            data: Data(#"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8),
+            path: codexHome.appendingPathComponent("sessions/session.jsonl"), namespace: "codex",
+            schema: CodexLogUsageScanner.cacheSchemaVersion, identity: "codex-home", parse: CodexLogUsageScanner.parseFile)
+        let piCache = try await seedNumericCache(
+            data: Data(#"{"type":"message","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-1}}}"#.utf8),
+            path: piHome.appendingPathComponent("session.jsonl"), namespace: "pi",
+            schema: PiUsageScanner.cacheSchemaVersion, identity: piHome.path, parse: PiUsageScanner.parseFile)
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let claude = ClaudeLogUsageScanner(incrementalScanner: IncrementalJSONLScanner(persistence: claudeCache),
+                                           cacheIdentityOverride: "claude-home", rootsOverride: [claudeHome])
+        let codex = CodexLogUsageScanner(incrementalScanner: IncrementalJSONLScanner(persistence: codexCache),
+                                         cacheIdentityOverride: "codex-home", rootsOverride: [codexHome])
+        let pi = PiUsageScanner(environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": piHome.path]),
+                                incrementalScanner: IncrementalJSONLScanner(persistence: piCache))
+        for _ in 0..<2 {
+            let scans = [await claude.scan(now: now, pricing: .empty), await codex.scan(now: now, pricing: .empty),
+                         await pi.scan(cardID: "claude", now: now, pricing: .empty)]
+            for scan in scans {
+                XCTAssertEqual(scan?.rejectedNumericRows, 1)
+                XCTAssertNotNil(scan?.numericWarning)
+                XCTAssertNil(scan?.usageHistory)
+            }
+        }
+        XCTAssertEqual(capture.events.count, 3)
+        let lines = try capture.lines().filter { $0.contains("invalid_numeric_rows") }
+        XCTAssertEqual(lines.count, 3)
+        for source in ["claude", "codex", "pi"] {
+            XCTAssertTrue(lines.contains { $0.contains("source=\(source); invalid_numeric_rows=1") })
+        }
+        XCTAssertFalse(lines.joined().contains("PRIVATE_MODEL"))
+    }
+
+    private func seedNumericCache<Item: Codable & Sendable>(
+        data: Data, path: URL, namespace: String, schema: Int, identity: String,
+        parse: @Sendable @escaping (Data) -> [Item]?
+    ) async throws -> JSONLScanCachePersistence {
+        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: path)
+        let mtime = try XCTUnwrap(path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        let persistence = JSONLScanCachePersistence(namespace: namespace, schemaVersion: schema,
+            directory: path.deletingLastPathComponent().appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
+        let scanner = IncrementalJSONLScanner<Item>(persistence: persistence)
+        _ = await scanner.items(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
+                                since: .distantPast, cacheIdentity: identity, parse: parse)
+        await scanner.waitForPendingWritesForTesting()
+        return persistence
+    }
+
     func testClaimFallbackKeepsAccountCandidatesAndRecordsOnlyFinalFailure() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }

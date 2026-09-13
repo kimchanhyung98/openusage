@@ -73,7 +73,7 @@ final class NumericUsageSafetyTests: XCTestCase {
         {"pid":"\(largeB)","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
         \(grokUsage(["prompt_tokens": "100"], pid: largeA))
         \(grokUsage(["prompt_tokens": "200"], pid: "\"\(largeB)\""))
-        {"pid":1e300,"msg":"model changed","ctx":{"model":"PRIVATE_MODEL"}}
+        {"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"PRIVATE_MODEL"}}
         \(grokUsage(["prompt_tokens": "300"], pid: "1e300"))
         \(grokUsage(["prompt_tokens": "300"], pid: "0"))
         \(grokUsage(["prompt_tokens": "300"], pid: "true"))
