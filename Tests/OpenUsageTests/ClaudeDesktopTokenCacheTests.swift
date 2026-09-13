@@ -46,14 +46,36 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         XCTAssertEqual(try available(result).accessToken, "scoped")
     }
 
-    func testMalformedPrefixesAndKeysAreRejected() {
+    func testMalformedTokenKeysWithValidOwnersAreIgnored() {
         for key in [
-            "acct:|\(legacyKey())", "acct:not-a-uuid|\(legacyKey())",
-            "acct:\(account)\(legacyKey())", "acct:\(account)||\(legacyKey())",
+            "acct:\(account)||\(legacyKey())",
             "acct:\(account)|acct:\(account)|\(legacyKey())", "acct:\(account)|",
             "acct:\(account)|not-a-client:\(organization):https://api.anthropic.com:user:profile"
         ] {
             assertNotFound(select(v2: [key: token("invalid")]))
+        }
+    }
+
+    func testMalformedOwnerCannotReviveLegacyTokensAcrossCacheVersions() {
+        let malformedKeys = ["acct:|\(legacyKey())", "acct:not-a-uuid|\(legacyKey())", "acct:\(account)\(legacyKey())"]
+        for key in malformedKeys {
+            for badEntry: Any in [token("unverified"), NSNull()] {
+                let invalid = [key: badEntry]
+                let legacy = [legacyKey(): token("previous-account")]
+                for (v2, v1) in [(invalid.merging(legacy) { a, _ in a }, [:]), (legacy, invalid), (invalid, legacy), ([:], invalid.merging(legacy) { a, _ in a })] {
+                    guard case .invalid = select(v2: v2, v1: v1) else {
+                        XCTFail("Malformed owner must block legacy fallback")
+                        continue
+                    }
+                }
+            }
+        }
+    }
+
+    func testWellFormedForeignOwnerDoesNotBlockLegacyCompatibility() throws {
+        let foreignKey = "acct:\(otherAccount)|\(legacyKey())"
+        for badEntry: Any in [token("foreign"), NSNull()] {
+            XCTAssertEqual(try available(select(v2: [foreignKey: badEntry], v1: [legacyKey(): token("legacy")])).accessToken, "legacy")
         }
     }
 
