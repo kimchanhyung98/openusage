@@ -18,6 +18,8 @@ enum ProviderRefreshDeadline {
         },
         operation: @escaping @MainActor () async -> ProviderSnapshot
     ) async -> Result {
+        let clock = SuspendingClock()
+        let deadline = clock.now.advanced(by: timeout)
         let race = Race()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
@@ -31,10 +33,13 @@ enum ProviderRefreshDeadline {
                         race.finish(.cancelled)
                         return
                     }
-                    race.finish(.snapshot(await operation()))
+                    let snapshot = await operation()
+                    race.finish(clock.now >= deadline ? .timedOut : .snapshot(snapshot))
                 }
                 race.timer = Task {
-                    do { try await sleep(timeout) }
+                    // provider의 동기 구간과 timer 실행 대기도 최초 호출의 제한 시간에 포함.
+                    let remaining = max(.zero, clock.now.duration(to: deadline))
+                    do { try await sleep(remaining) }
                     catch { return }
                     guard !Task.isCancelled else { return }
                     race.finish(.timedOut)
