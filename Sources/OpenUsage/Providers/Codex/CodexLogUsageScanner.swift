@@ -27,10 +27,11 @@ actor CodexLogUsageScanner {
         var isFast: Bool = false
         /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
+        var pricingModel: String? = nil
     }
 
-    /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Event` semantics 변경 시 bump.
-    static let cacheSchemaVersion = 4
+    /// 숫자 검증과 자동 리뷰 식별자가 함께 보존되는 형식 — 어느 한쪽만 반영된 캐시도 재파싱.
+    static let cacheSchemaVersion = 5
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -251,7 +252,6 @@ actor CodexLogUsageScanner {
             let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:))
             let model = resolveModel(
                 parsed: parsedModel,
-                timestamp: timestampRaw,
                 currentModel: &currentModel
             )
 
@@ -263,7 +263,8 @@ actor CodexLogUsageScanner {
                 output: usage.output,
                 reasoning: usage.reasoning,
                 total: usage.total,
-                isFast: currentTierIsFast
+                isFast: currentTierIsFast,
+                pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
             ))
         }
         UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
@@ -400,16 +401,14 @@ actor CodexLogUsageScanner {
     }
 
     /// ccusage의 model resolution — line의 명시적 model이 현재 model 갱신, 없으면 추적 중인 model, metadata 전무 시 `gpt-5` fallback.
-    /// 폐기된 `codex-auto-review` slug는 line 날짜 당시의 codex model로 매핑.
     static func resolveModel(
         parsed: String?,
-        timestamp: String,
         currentModel: inout String?
     ) -> String {
         if let parsed {
             currentModel = parsed
         }
-        var model: String
+        let model: String
         if let parsed {
             model = parsed
         } else if let current = currentModel {
@@ -418,15 +417,12 @@ actor CodexLogUsageScanner {
             currentModel = "gpt-5"
             model = "gpt-5"
         }
-        if model == Self.autoReviewModel {
-            model = autoReviewFallback(at: timestamp)
-        }
         return model
     }
 
     private static let autoReviewModel = "codex-auto-review"
 
-    /// `codex-auto-review` release timeline(최신 우선, ccusage 내장 snapshot) — release일 이후의 line은 해당 codex model로 pricing.
+    /// 자동 리뷰의 날짜별 추정 단가 참조표 — 실제 백엔드 모델이나 전환일의 확정 기록 아님.
     private static let autoReviewFallbacks: [(releasedOn: String, model: String)] = [
         ("2026-04-23", "gpt-5.5"),
         ("2026-03-05", "gpt-5.4"),
@@ -450,6 +446,7 @@ actor CodexLogUsageScanner {
     private struct EventKey: Hashable {
         var timestamp: Date
         var model: String
+        var pricingModel: String?
         var input: Int
         var cached: Int
         var output: Int
@@ -473,26 +470,27 @@ actor CodexLogUsageScanner {
                 continue
             }
             let key = EventKey(
-                timestamp: event.timestamp, model: event.model, input: event.input,
+                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel, input: event.input,
                 cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
             )
             guard seen.insert(key).inserted else { continue }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
-            // pricing·unknown-model 경고·breakdown key에 단일 trimmed slug 사용 — 표기 분기 시 경고 triangle과 hover panel 불일치.
+            // 경고·내역은 원래 모델명 유지, 자동 리뷰의 날짜별 참조 모델은 가격 계산에만 사용.
             let trimmedModel = event.model.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
 
             guard let model = trimmedModel else {
                 continue
             }
-            let canonicalModel = pricing.supplement.canonicalName(for: model) ?? model
+            let pricingModel = event.pricingModel ?? model
+            let canonicalModel = pricing.supplement.canonicalName(for: pricingModel) ?? pricingModel
             let isFastAlias = canonicalModel.hasSuffix("-fast")
             let rateModel = isFastAlias ? String(canonicalModel.dropLast("-fast".count)) : canonicalModel
 
             // Codex 속도는 provider tier — Cursor의 `-fast` 가격 변형 아님. fast alias는 unscaled base rate로 resolve 후 Codex multiplier를 정확히 1회 적용.
             // base entry 없는 third-party fast-only model은 이미 scaled된 rate 유지 — speed multiplier 이중 적용 금지.
             let baseRates = pricing.resolve(model: rateModel)
-            let resolvedRates = baseRates ?? pricing.resolve(model: model)
+            let resolvedRates = baseRates ?? pricing.resolve(model: pricingModel)
             guard let rates = resolvedRates else {
                 if event.total > 0 {
                     accumulator.addUnknownModel(day: day, model: model)
