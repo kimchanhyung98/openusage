@@ -100,6 +100,38 @@ final class CodexUsagePricingTests: XCTestCase {
         XCTAssertNil(scan.usageHistory)
     }
 
+    func testBundledSupplementPricesProviderPrefixedCodexRequests() throws {
+        for model in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            for fast in [false, true] {
+                let tokens = TokenBreakdown(input: 200_000, cacheRead: 100_000, output: 10_000, isFast: fast)
+                let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing))
+                XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(model: "openai/\(model)", tokens: tokens, pricing: pricing)), expected, accuracy: 1e-9)
+            }
+        }
+    }
+
+    func testProviderSpecificExactRatesStillPrecedeUnprefixedSupplement() throws {
+        let low = ModelRates(inputPerMillion: 1, outputPerMillion: 2, cacheWritePerMillion: 1, cacheReadPerMillion: 1)
+        let high = ModelRates(inputPerMillion: 7, outputPerMillion: 14, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        let pricing = ModelPricing(supplement: PricingSupplement(pricing: ["gpt-5.6-sol": low]),
+                                   primary: PricingCatalog(entries: ["openai/gpt-5.6-sol": high]), secondary: PricingCatalog())
+        XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(model: "openai/gpt-5.6-sol", tokens: .init(input: 1_000), pricing: pricing)), 0.007, accuracy: 1e-9)
+    }
+
+    func testFastSegmentsWithTrailingQualifiersCannotSupplyStandardRates() throws {
+        let standard = ModelRates(inputPerMillion: 3, outputPerMillion: 15, cacheWritePerMillion: 3, cacheReadPerMillion: 3)
+        let fast = ModelRates(inputPerMillion: 0.2, outputPerMillion: 0.5, cacheWritePerMillion: 0.2, cacheReadPerMillion: 0.2)
+        for suffix in ["-fast", "-fast-non-reasoning", "-fast@20260901", "-fast_preview", "-fast/non-reasoning"] {
+            let key = "azure_ai/grok-4" + suffix
+            let catalog = PricingCatalog(entries: ["azure_ai/grok-4": standard, key: fast])
+            let pricing = ModelPricing(supplement: PricingSupplement(), primary: catalog, secondary: PricingCatalog())
+            XCTAssertEqual(pricing.resolve(model: "grok-4"), standard, key)
+            XCTAssertEqual(pricing.resolve(model: key), fast, "Exact variant rates must remain available")
+        }
+        let catalog = PricingCatalog(entries: ["vendor/custom-faster": standard, "vendor/custom-fast-non-reasoning": fast])
+        XCTAssertEqual(catalog.findFuzzy("custom", excludingFastVariants: true)?.rates, standard)
+    }
+
     func testNewPricingSnapshotRepricesLongRequestsWithoutReparsing() throws {
         let tokens = TokenBreakdown(input: 300_000, output: 10_000)
         func snapshot(_ rate: Double) -> ModelPricing {
