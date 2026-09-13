@@ -72,7 +72,15 @@ struct CodexWebSocketCodec {
                 guard fragments != nil, fragments!.count + payload.count <= Self.maximumBytes else { throw SoftLimitControlError.invalidResponse }
                 fragments!.append(contentsOf: payload)
                 if final { events.append(.message(Data(fragments!))); fragments = nil }
-            case 8: events.append(.closed)
+            case 8:
+                guard payload.count != 1 else { throw SoftLimitControlError.invalidResponse }
+                if !payload.isEmpty {
+                    let status = Int(payload[0]) << 8 | Int(payload[1])
+                    guard (1000..<5000).contains(status), ![1004, 1005, 1006, 1015].contains(status),
+                          String(bytes: payload.dropFirst(2), encoding: .utf8) != nil
+                    else { throw SoftLimitControlError.invalidResponse }
+                }
+                events.append(.closed)
             case 9: events.append(.ping(Data(payload)))
             case 10: break
             default: throw SoftLimitControlError.invalidResponse

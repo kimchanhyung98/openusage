@@ -97,12 +97,17 @@ final class CodexSoftLimitAdapter: SoftLimitCancelling {
     }
 
     private static func localConnection() async throws -> any CodexControlRequesting {
-        let override = await loadOffMainActor { CodexAuthStore().codexHome() }
-        let home = override ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
-        let path = URL(fileURLWithPath: home).appendingPathComponent("app-server-control/app-server-control.sock").path
+        let override = await loadOffMainActor { ProcessEnvironmentReader().value(for: "CODEX_HOME") }
+        let path = controlSocketPath(codexHome: override, homeDirectory: FileManager.default.homeDirectoryForCurrentUser)
         let connection = try CodexControlConnection(socketPath: path)
         do { try await connection.initialize() }
         catch { connection.close(); throw error }
         return connection
+    }
+
+    static func controlSocketPath(codexHome: String?, homeDirectory: URL) -> String {
+        let override = codexHome.flatMap { $0.isEmpty ? nil : $0 }
+        let home = override.map { URL(fileURLWithPath: $0) } ?? homeDirectory.appendingPathComponent(".codex")
+        return home.appendingPathComponent("app-server-control/app-server-control.sock").path
     }
 }
