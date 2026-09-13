@@ -30,7 +30,7 @@ actor CodexLogUsageScanner {
     }
 
     /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Event` semantics 변경 시 bump.
-    static let cacheSchemaVersion = 2
+    static let cacheSchemaVersion = 3
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -216,7 +216,7 @@ actor CodexLogUsageScanner {
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
-                if let totals { previousTotals = totals }
+                if let totals, !totals.invalid { previousTotals = totals }
                 continue
             }
 
