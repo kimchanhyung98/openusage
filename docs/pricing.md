@@ -31,13 +31,22 @@ OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 청구 금액을 직�
 
 비용은 사용 이벤트별로 네 가지 토큰 묶음 — 일반 입력, 캐시 쓰기, 캐시 읽기, 출력 — 에 모델의 백만 토큰당 요금을 적용해 계산하며, 1시간 캐시 쓰기 가격, 긴 컨텍스트 구간, fast 변형 배율까지 반영.
 Claude 로그는 기본 모델명을 그대로 두고 요청의 `speed` 필드로 fast 모드를 표시할 수 있으므로, `-fast` 별칭뿐 아니라 기본 항목도 그 배율을 함께 가짐.
-대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, 지원되는 GPT-5.4, GPT-5.5, GPT-5.6 Codex 모델은 입력 토큰 272k 초과에서 전환.
+대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
+Codex 로그와 pi의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
+해당 Codex 장문 구간은 현재 기본 단가의 입력·캐시 2배, 출력 1.5배로 계산하므로 기본 단가 갱신도 함께 반영.
+pi에 양수 메시지 비용이 있으면 그대로 사용하고, 0이거나 없을 때만 추정.
 어느 경우든 높은 요금은 요청 전체에 적용.
 공개된 캐시 할인이 있으면 사용하고, 출처가 할인을 게시하지 않으면 Codex 캐시 입력은 전체 입력 요금으로 폴백.
 Cursor의 내보내기는 여러 요청을 한 행에 합치므로, 그중 하나가 한도를 넘었다고 추측하지 않고 일반 요금을 사용.
 Claude 로그 줄에 `costUSD`가 명시돼 있으면 그 값을 그대로 사용.
 중첩된 Claude advisor 사용량은 전달받은 비용이 없으므로, advisor 모델을 써서 그 토큰으로 따로 가격을 계산.
 결과는 청구서가 아니라 API 요금 기준의 추정 가치 — 구독 요금제는 토큰 단위로 청구하지 않음.
+과거 로그도 현재 확보한 가격으로 다시 계산하므로, 가격 갱신이 지난 날짜의 추정값을 바꿀 수 있음.
+
+2026-09-13 확인한 [OpenAI 가격 표](https://developers.openai.com/api/docs/pricing)의 GPT-5.6 Sol·GPT-6 Astra 요율과 [Cursor 모델 가격](https://cursor.com/docs/models-and-pricing.md)의 Grok 4.6·Fable 5.1·Kimi K3·Muse Spark 1.3 요율을 번들에 포함.
+GLM 5.3은 [Z.ai 공식 가격](https://docs.z.ai/guides/overview/pricing)의 입력 1.4달러·캐시 읽기 0.26달러·출력 4.4달러 / 100만 토큰 반영.
+Sol의 현행 할인 요율은 공식 안내상 최소 2026-11-21까지 유지되며 이후 변경 시 갱신 필요.
+Grok 4.5 Fast의 출력 18달러와 Grok 4.6 Fast의 출력 12달러 / 100만 토큰은 서로 다른 공식 단가.
 
 ## 개인정보 보호
 
@@ -47,6 +56,7 @@ Claude 로그 줄에 `costUSD`가 명시돼 있으면 그 값을 그대로 사�
 ## 유지 관리자 노트
 
 - **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
+  새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
   `main`에 병합되면 `.github/workflows/pricing-supplement.yml`이 gh-pages에 게시하고, 설치된 앱은 약 한 시간 안에 이를 받아감.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
