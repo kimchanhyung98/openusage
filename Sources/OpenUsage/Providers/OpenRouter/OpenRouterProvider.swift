@@ -63,6 +63,7 @@ final class OpenRouterProvider: ProviderRuntime {
 
         var lines: [MetricLine] = []
         var plan: String?
+        var hasInvalidKeyLimit = false
         if case .success(let data) = credits {
             lines += OpenRouterUsageMapper.creditsLines(from: data)
         }
@@ -70,10 +71,21 @@ final class OpenRouterProvider: ProviderRuntime {
             let mapped = OpenRouterUsageMapper.keyMetrics(from: data)
             plan = mapped.plan
             lines += mapped.lines
+            hasInvalidKeyLimit = mapped.hasInvalidKeyLimit
+            if hasInvalidKeyLimit {
+                AppLog.warn(LogTag.plugin("openrouter"), "key limit remaining is missing or invalid; omitting key limit")
+            }
         }
 
         if !lines.isEmpty {
-            return ProviderSnapshot.make(provider: provider, plan: plan, lines: lines, refreshedAt: now())
+            return ProviderSnapshot.make(
+                provider: provider, plan: plan, lines: lines, refreshedAt: now(),
+                warning: hasInvalidKeyLimit ? "Key Limit is unavailable. Other usage data is still available." : nil,
+                isDegraded: hasInvalidKeyLimit ? true : nil
+            )
+        }
+        if hasInvalidKeyLimit {
+            return ProviderSnapshot.error(provider: provider, error: OpenRouterUsageError.invalidResponse)
         }
 
         // 사용 가능한 응답 전무 — 두 endpoint 모두 401/403일 때만 invalid key 판정

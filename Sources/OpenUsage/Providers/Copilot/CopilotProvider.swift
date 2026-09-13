@@ -38,7 +38,7 @@ final class CopilotProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "copilot.premium", provider: provider, title: "Credits")
-                .exportingLimit("premiumCredits", unit: "percent"),
+                .exportingLimit("premiumCredits", unit: "credits", source: .progressOrValue(kind: .count)),
             .values(id: "copilot.extra", provider: provider, title: "Extra Usage", selection: .kind(.count))
                 .exportingLimit("extraUsage", unit: "count", source: .value(kind: .count)),
             .values(id: "copilot.orgCredits", provider: provider, title: "Org Credits", selection: .kind(.count))
@@ -75,13 +75,20 @@ final class CopilotProvider: ProviderRuntime {
 
             let mapped = try CopilotUsageMapper.map(response)
 
-            // org 관리(token-based-billing) seat는 per-seat quota가 없어 실제 usage는 org billing에 존재. best-effort 조회 — org admin은 Org Credits/Org Spend, 그 외는 기존 plan 전용 카드 유지. mapper의 명시적 flag로만 gate — `lines` 빈 여부로 gate 금지 (issue #839).
+            // 개인 count와 조직 합계는 별도 scope — org 조회는 명시적 flag로 gate하고 기존 개인 행 뒤에 추가.
             var lines = mapped.lines
             if mapped.isOrgManagedSeat {
-                lines = await orgBillingLines(token: token.value)
+                lines += await orgBillingLines(token: token.value)
+            }
+            if mapped.hasInvalidPersonalCredits {
+                AppLog.warn(LogTag.plugin("copilot"), "personal credits used is invalid; omitting personal credits")
             }
 
-            return ProviderSnapshot.make(provider: provider, plan: mapped.plan, lines: lines, refreshedAt: now())
+            return ProviderSnapshot.make(
+                provider: provider, plan: mapped.plan, lines: lines, refreshedAt: now(),
+                warning: mapped.hasInvalidPersonalCredits ? "Personal Credits are unavailable. Try refreshing again later." : nil,
+                isDegraded: mapped.hasInvalidPersonalCredits ? true : nil
+            )
         } catch let error as CopilotUsageError {
             return ProviderSnapshot.error(provider: provider, error: error)
         } catch {
@@ -92,7 +99,7 @@ final class CopilotProvider: ProviderRuntime {
     // MARK: - Org billing lookup
 
     /// org 관리 seat의 org 단위 Copilot billing line. cached org 우선, 다음 사용자의 모든 org를 probe해 Copilot credit usage를 실은 첫 org 기억.
-    /// 아무것도 못 읽으면 `[]` — 일반 org member의 403은 *기대된* 결과(owner·billing manager만 org billing 읽기 가능)라 provider 오류 대신 plan 전용 카드로 강등.
+    /// 아무것도 못 읽으면 `[]` — 일반 org member의 403은 기대된 결과라 provider 오류 없이 기존 개인 행·plan 유지.
     private func orgBillingLines(token: String) async -> [MetricLine] {
         if let cached = defaults.string(forKey: Self.billingOrgDefaultsKey) {
             do {
