@@ -1,7 +1,7 @@
 import Foundation
 
 /// GitHub organization billing 응답을 org 단위 Copilot meter로 normalize. billing usage summary(`/orgs/{org}/settings/billing/usage/summary`)의 Copilot AI-credit 항목이 **Org Credits**(이달 소비 credit, allotment 미노출이라 percentage 조작 없음)와 **Org Spend**(포함 credit 초과로 실제 청구된 달러)가 됨.
-/// 둘 다 organization 전체 합계 — GitHub은 org 관리 Copilot의 per-seat 수치를 노출하지 않음.
+/// 둘 다 organization 전체 합계 — 개인 Credits와 별도 scope.
 enum CopilotOrgBillingMapper {
     /// `/user/orgs` 응답의 org slug, GitHub 순서 그대로. 깨진 body는 빈 배열.
     static func orgLogins(_ response: HTTPResponse) -> [String] {
