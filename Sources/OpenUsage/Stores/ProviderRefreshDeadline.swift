@@ -9,9 +9,13 @@ enum ProviderRefreshDeadline {
         case cancelled
     }
 
+    /// 대기 시간은 store의 경과 측정과 같은 suspending 기준 — 시스템 잠자기 동안은 흐르지 않음.
+    /// ContinuousClock을 쓰면 잠자기에서 깨자마자 정상 조회가 시간 초과로 폐기됨.
     static func run(
         timeout: Duration,
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0, clock: .suspending)
+        },
         operation: @escaping @MainActor () async -> ProviderSnapshot
     ) async -> Result {
         let race = Race()
