@@ -68,6 +68,9 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
 `main`에 사이트·조립 스크립트·provider 아이콘·게시 workflow 변경을 푸시하면 `Publish landing page`가 `gh-pages`에 반영.
 자동·수동 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
+사이트 게시 대상만 바뀐 `main` push는 게시 내부 검증 한 번으로 처리.
+그 밖의 앱 소스·배포 workflow 변경과 PR은 독립 `Site CI`에서 검증하며, 두 변경 범위가 섞인 push는 양쪽에서 검증 가능.
+가격표 자동·수동 게시 작업은 `main`에서만 실행하며 다른 브랜치·태그의 수동 게시 작업은 건너뜀.
 게시 전후 `appcast.xml`·`pricing_supplement.json`·`CNAME`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
 필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·도메인 불일치·`gh-pages/.github` 존재 시 게시 전 실패.
 Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
