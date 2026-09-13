@@ -10,6 +10,10 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         }
         let directory = URL(fileURLWithPath: "/tmp/openusage-soft-limit-e2e-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        defer {
+            do { try FileManager.default.removeItem(at: directory) }
+            catch { XCTFail("Fixture directory cleanup failed: \(error)") }
+        }
         let socket = directory.appendingPathComponent("control.sock").path
         let ready = directory.appendingPathComponent("ready.json")
         let logURL = directory.appendingPathComponent("server.log")
@@ -24,6 +28,7 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         try fixture.run()
         defer {
             if fixture.isRunning { fixture.terminate() }
+            fixture.waitUntilExit()
             try? log.close()
         }
         for _ in 0..<200 {
@@ -54,7 +59,12 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         terminal.standardOutput = log
         terminal.standardError = log
         try terminal.run()
-        defer { if terminal.isRunning { terminal.terminate() } }
+        defer {
+            if terminal.isRunning { terminal.terminate() }
+            terminal.waitUntilExit()
+            XCTAssertEqual(terminal.terminationReason, .exit, "Terminal fixture must report child failures")
+            XCTAssertEqual(terminal.terminationStatus, 0, "Terminal fixture failed; see the native test log")
+        }
         for _ in 0..<100 {
             if try await stats(port)["opened"]?.integer == 2 { break }
             try await Task.sleep(for: .milliseconds(100))

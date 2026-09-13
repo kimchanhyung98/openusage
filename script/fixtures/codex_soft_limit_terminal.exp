@@ -8,13 +8,28 @@ if {![string match "/tmp/openusage-soft-limit-e2e-*" $fixture_home]} {
 log_user 1
 spawn -noecho codex --remote unix://$socket_path --no-alt-screen -a never -s read-only -C $fixture_home "Harmless local terminal cancellation fixture."
 stty rows 40 columns 120 < $spawn_out(slave,name)
+proc stop_child {} {
+    trap SIG_IGN {SIGTERM SIGINT}
+    catch {exec /bin/kill -TERM [exp_pid]}
+    catch {close}
+    catch {wait}
+    exit 0
+}
+trap stop_child {SIGTERM SIGINT}
 set ready [open $ready_path {WRONLY CREAT EXCL} 0600]
 puts $ready [exp_pid]
 close $ready
 while {1} {
     expect {
         -re {\x1b\[6n} { send -- "\033\[1;1R" }
-        eof { exit 0 }
+        eof {
+            set result [wait]
+            if {[lindex $result 2] != 0 || [llength $result] > 4} {
+                puts stderr "Codex process failed: $result"
+                exit 1
+            }
+            exit [lindex $result 3]
+        }
         timeout {}
     }
 }

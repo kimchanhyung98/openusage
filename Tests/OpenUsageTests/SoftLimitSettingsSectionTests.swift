@@ -33,7 +33,8 @@ final class SoftLimitSettingsSectionTests: XCTestCase {
                     hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
                     let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
                     window.close()
-                    XCTAssertEqual(bitmap.pixelsWide % 360, 0)
+                    XCTAssertEqual(bitmap.pixelsWide, Int(hosting.convertToBacking(hosting.bounds).width))
+                    XCTAssertGreaterThan(bitmap.pixelsWide, 0)
                     XCTAssertGreaterThan(bitmap.pixelsHigh, 100)
                     if let export {
                         try png.write(to: export.appendingPathComponent("soft-limit-\(enabled)-\(density.rawValue)-\(appearance).png"))

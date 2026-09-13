@@ -158,12 +158,23 @@ final class ShareCardRendererTests: XCTestCase {
                         let image = try XCTUnwrap(ShareCardRenderer.image(for: view))
                         let png = try XCTUnwrap(ShareCardRenderer.pngData(from: image))
                         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: png))
+                        let cgImage = try XCTUnwrap(bitmap.cgImage)
+                        let raster = try XCTUnwrap(CGContext(
+                            data: nil, width: cgImage.width, height: cgImage.height,
+                            bitsPerComponent: 8, bytesPerRow: cgImage.width * 4,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+                        ))
+                        raster.draw(cgImage, in: CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height))
+                        let pixels = try XCTUnwrap(raster.data).assumingMemoryBound(to: UInt8.self)
                         var yellowColumns: Set<Int> = []
-                        for y in 0..<bitmap.pixelsHigh {
-                            for x in 0..<bitmap.pixelsWide {
-                                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                                if color.redComponent > 0.6, color.greenComponent > 0.4,
-                                   color.blueComponent < min(color.redComponent, color.greenComponent) * 0.6 {
+                        for y in 0..<raster.height {
+                            for x in 0..<raster.width {
+                                let offset = y * raster.bytesPerRow + x * 4
+                                let red = Double(pixels[offset]) / 255
+                                let green = Double(pixels[offset + 1]) / 255
+                                let blue = Double(pixels[offset + 2]) / 255
+                                if red > 0.6, green > 0.4, blue < min(red, green) * 0.6 {
                                     yellowColumns.insert(x)
                                 }
                             }

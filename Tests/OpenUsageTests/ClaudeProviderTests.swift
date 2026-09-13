@@ -656,7 +656,7 @@ final class ClaudeProviderTests: XCTestCase {
             guard request.url.absoluteString.hasSuffix("/api/oauth/usage") else {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data())
             }
-            if usageCalls.next() == 1 {
+            if usageCalls.next() != 2 {
                 return HTTPResponse(
                     statusCode: 200,
                     headers: [:],
@@ -701,6 +701,12 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertNil(third.liveQuotaObservedAt)
         XCTAssertEqual(third.warning?.hasPrefix("Updates blocked by Anthropic"), true)
         XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 2)
+        clock.set(t0.addingTimeInterval(601))
+        let recovered = await provider.refresh()
+        XCTAssertEqual(recovered.liveQuotaObservedAt, t0.addingTimeInterval(601))
+        XCTAssertNil(recovered.warning)
+        XCTAssertEqual(Self.progress(recovered.lines, "Session")?.used, 25)
+        XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 3)
     }
 
     func testRefreshSurfacesRequestFailureForNonOAuthRefreshErrorBody() async {

@@ -277,6 +277,22 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         }
     }
 
+    func testInterruptedCheckDoesNotLeaveCancellingStatus() async {
+        let adapter = RecordingSoftLimitAdapter("codex", operations: ["first", "second"])
+        adapter.interruptedOperations = ["second"]
+        let coordinator = makeCoordinator([adapter])
+        observe("codex", used: 95, coordinator: coordinator)
+
+        await coordinator.check()
+
+        XCTAssertEqual(coordinator.status(for: "codex").phase, .waiting)
+        XCTAssertEqual(coordinator.status(for: "codex").cancelledCount, 1)
+        adapter.interruptedOperations = []
+        await coordinator.check()
+        XCTAssertEqual(coordinator.status(for: "codex").phase, .cancelled)
+        XCTAssertEqual(coordinator.status(for: "codex").cancelledCount, 2)
+    }
+
     private func makeSettings() -> SoftLimitSettingsStore {
         let suite = "OpenUsageTests.SoftLimitCoordinator.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -318,6 +334,7 @@ private final class RecordingSoftLimitAdapter: SoftLimitCancelling {
     var requests: [SoftLimitTask] = []
     var listCalls = 0
     var failedOperations: Set<String> = []
+    var interruptedOperations: Set<String> = []
     var onList: (@MainActor () async -> Void)?
 
     init(_ providerID: String, operations: [String]) {
@@ -333,6 +350,7 @@ private final class RecordingSoftLimitAdapter: SoftLimitCancelling {
 
     func cancel(_ task: SoftLimitTask, isAuthorized: @escaping @MainActor () -> Bool) async throws -> SoftLimitCancellationOutcome {
         guard isAuthorized() else { throw CancellationError() }
+        if interruptedOperations.contains(task.operationID) { throw CancellationError() }
         requests.append(task)
         if failedOperations.contains(task.operationID) { throw SoftLimitControlError.timedOut }
         return .cancelled

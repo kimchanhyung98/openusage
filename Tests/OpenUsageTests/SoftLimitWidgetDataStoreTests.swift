@@ -226,11 +226,12 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
                 return true
             }
         )
+        var reset = now.addingTimeInterval(600)
         func setUsage(_ used: Double) {
             store.snapshots["codex"] = ProviderSnapshot(
                 providerID: "codex", displayName: "Codex",
                 lines: [.progress(label: "Weekly", used: used, limit: 100, format: .percent,
-                                  resetsAt: now.addingTimeInterval(600), periodDurationMs: MetricPeriod.weekMs)],
+                                  resetsAt: reset, periodDurationMs: MetricPeriod.weekMs)],
                 refreshedAt: now
             )
         }
@@ -273,6 +274,14 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
         await store.evaluateNotifications(now: now)
         XCTAssertEqual(posts, ["codex.underTenPercent"])
         XCTAssertNil(store.data(for: weekly).softLimitMarkerFraction)
+        reset = reset.addingTimeInterval(7 * 24 * 60 * 60)
+        setUsage(89)
+        await store.evaluateNotifications(now: now)
+        XCTAssertEqual(posts.count, 1)
+        setUsage(91)
+        await store.evaluateNotifications(now: now)
+        XCTAssertEqual(posts, ["codex.underTenPercent", "codex.underTenPercent"])
+
     }
 
     func testPresentedAccountModesKeepGuidesSeparateFromSharedHomeResetWatch() throws {
