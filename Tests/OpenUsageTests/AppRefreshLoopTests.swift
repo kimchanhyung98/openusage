@@ -115,6 +115,31 @@ final class AppRefreshLoopTests: XCTestCase {
         XCTAssertEqual(passes, 2)
     }
 
+    func testOwnerCancellationFinishesWhileUsageIgnoresCancellation() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let started = expectation(description: "Usage started")
+        let returned = expectation(description: "Loop returned before usage")
+        let gate = Gate()
+        var reconciliations = 0
+        fixture.runtime.onRefresh = { started.fulfill(); await gate.wait() }
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliations += 1 }, interval: 0.001
+        )
+        await fulfillment(of: [started], timeout: 2)
+        loop.cancel()
+        let observer = Task { await loop.value; returned.fulfill() }
+        await fulfillment(of: [returned], timeout: 2)
+        XCTAssertTrue(fixture.dataStore.refreshingProviderIDs.isEmpty)
+        XCTAssertNil(fixture.dataStore.lastRefreshAt)
+        XCTAssertEqual(reconciliations, 1)
+        XCTAssertTrue(fixture.dataStore.providerErrors.isEmpty)
+        gate.open()
+        await observer.value
+    }
+
     func testStatusFailureDoesNotBecomeAUsageErrorOrChangeTheUsageSnapshot() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
