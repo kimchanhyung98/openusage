@@ -155,9 +155,9 @@ extension ClaudeDesktopAuthStore {
         guard UUID(uuidString: clientID) != nil, UUID(uuidString: organization) != nil else {
             return nil
         }
-        let scopes = value[markerRange.upperBound...]
+        let scopes = Set(value[markerRange.upperBound...]
             .split(whereSeparator: \.isWhitespace)
-            .map(String.init)
+            .map(String.init)).sorted()
         return CacheKey(clientID: clientID, organization: organization, apiHost: apiHost, scopes: scopes)
     }
 
