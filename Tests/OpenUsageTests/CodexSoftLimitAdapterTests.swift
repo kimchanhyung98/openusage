@@ -3,6 +3,18 @@ import XCTest
 
 @MainActor
 final class CodexSoftLimitAdapterTests: XCTestCase {
+    func testControlSocketHomeMatchesCodexEmptyOverrideAndExplicitHomeBehavior() {
+        let home = URL(fileURLWithPath: "/tmp/fixture-user")
+        let suffix = "/app-server-control/app-server-control.sock"
+        for override in [nil, ""] as [String?] {
+            XCTAssertEqual(CodexSoftLimitAdapter.controlSocketPath(codexHome: override, homeDirectory: home),
+                           "/tmp/fixture-user/.codex" + suffix)
+        }
+        for override in ["/tmp/custom codex", "/tmp/fixture-user/.config/codex", "/tmp/space "] {
+            XCTAssertEqual(CodexSoftLimitAdapter.controlSocketPath(codexHome: override, homeDirectory: home), override + suffix)
+        }
+    }
+
     func testEnumeratesAllPagesAndOnlyActiveOpenAIThreads() async throws {
         let rpc = FixtureCodexControl()
         let adapter = CodexSoftLimitAdapter(makeConnection: { rpc })

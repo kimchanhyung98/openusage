@@ -49,4 +49,26 @@ final class CodexWebSocketCodecTests: XCTestCase {
         if case .message(let data) = events[0] { XCTAssertEqual(data, Data("{}".utf8)) } else { XCTFail() }
         if case .message(let data) = events[1] { XCTAssertEqual(data, Data("[]".utf8)) } else { XCTFail() }
     }
+
+    func testRejectsMalformedClosePayloads() throws {
+        let invalid: [[UInt8]] = [
+            [0], [0, 0], [3, 237], [3, 238], [3, 247], [19, 136],
+            [3, 232, 0xff], [3, 232, 0xc3],
+        ]
+        for payload in invalid {
+            var codec = CodexWebSocketCodec(key: "dGhlIHNhbXBsZSBub25jZQ==")
+            _ = try codec.receive(handshake)
+            XCTAssertThrowsError(try codec.receive(Data([0x88, UInt8(payload.count)] + payload)), "Payload: \(payload)")
+        }
+    }
+
+    func testAcceptsEmptyAndValidClosePayloads() throws {
+        for payload in [[], [3, 232], [15, 160] + Array("완료".utf8)] as [[UInt8]] {
+            var codec = CodexWebSocketCodec(key: "dGhlIHNhbXBsZSBub25jZQ==")
+            _ = try codec.receive(handshake)
+            let events = try codec.receive(Data([0x88, UInt8(payload.count)] + payload))
+            XCTAssertEqual(events.count, 1)
+            if case .closed = events[0] {} else { XCTFail("Expected a close event") }
+        }
+    }
 }

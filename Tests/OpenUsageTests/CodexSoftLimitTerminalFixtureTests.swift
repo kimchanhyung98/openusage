@@ -15,13 +15,15 @@ final class CodexSoftLimitTerminalFixtureTests: XCTestCase {
     }
 
     func testFixtureTerminationStopsItsSpawnedChild() async throws {
-        try await withStub("exec /bin/sleep 60") { process, directory in
+        try await withStub("trap '' HUP\ntrap 'exit 0' TERM INT\ntouch child-ready\nwhile :; do sleep 0.1; done") { process, directory in
             let ready = directory.appendingPathComponent("terminal.pid")
+            let childReady = directory.appendingPathComponent("child-ready")
             let deadline = Date().addingTimeInterval(5)
-            while !FileManager.default.fileExists(atPath: ready.path), Date() < deadline {
+            while !FileManager.default.fileExists(atPath: childReady.path), Date() < deadline {
                 try await Task.sleep(for: .milliseconds(20))
             }
             let pid = try XCTUnwrap(Int32(String(contentsOf: ready, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: childReady.path))
             XCTAssertEqual(kill(pid, 0), 0)
             process.terminate()
             try await waitForExit(process)
@@ -50,6 +52,7 @@ final class CodexSoftLimitTerminalFixtureTests: XCTestCase {
         process.arguments = [root.appendingPathComponent("script/fixtures/codex_soft_limit_terminal.exp").path,
                              directory.path, directory.appendingPathComponent("unused.sock").path,
                              directory.appendingPathComponent("terminal.pid").path]
+        process.currentDirectoryURL = directory
         process.environment = ["PATH": "\(directory.path):/usr/bin:/bin", "TERM": "xterm-256color"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice

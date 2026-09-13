@@ -80,7 +80,7 @@ final class CodexAuthStoreTests: XCTestCase {
         return "\(header).\(payload).sig"
     }
 
-    func testCodexHomeNormalizesOverridesForAuthAndControlConnections() {
+    func testCodexHomeNormalizesAuthenticationOverrides() {
         for (value, expected) in [("", nil), (" \n", nil), (" /tmp/codex-home \n", "/tmp/codex-home")] as [(String, String?)] {
             let store = CodexAuthStore(environment: FakeEnvironment(["CODEX_HOME": value]), files: FakeFiles([:]), keychain: FakeKeychain())
             XCTAssertEqual(store.codexHome(), expected)
