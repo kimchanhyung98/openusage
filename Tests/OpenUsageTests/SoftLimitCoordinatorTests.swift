@@ -293,6 +293,57 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.status(for: "codex").cancelledCount, 2)
     }
 
+    func testRefreshDeadlineInvalidatesBreachUntilAnotherFreshSuccess() async {
+        let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
+        let coordinator = makeCoordinator([adapter])
+        let runtime = DeadlineRuntime(snapshot: snapshot("codex", used: 95), descriptor: descriptor("codex"))
+        let suite = "OpenUsageTests.SoftLimitDeadline.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WidgetDataStore(
+            registry: .from([runtime]), providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults, providerRefreshTimeout: 0.05
+        )
+        store.onFreshSnapshot = { coordinator.receive($0, descriptors: $1) }
+        store.onRefreshOutcome = { providerID, outcome, _, _, _ in
+            if outcome == .failed { coordinator.invalidate(providerID: providerID) }
+        }
+        await store.refresh(providerID: "codex", force: true)
+        runtime.delays = true
+        let finished = expectation(description: "Timed out provider finished")
+        runtime.onDelayedFinish = { finished.fulfill() }
+        let timeout = await store.refresh(providerID: "codex", force: true)
+        XCTAssertEqual(timeout, .failed)
+        await fulfillment(of: [finished], timeout: 2)
+        await store.refresh(providerID: "codex")
+        await coordinator.check()
+        XCTAssertTrue(adapter.requests.isEmpty)
+        XCTAssertEqual(adapter.listCalls, 0)
+        runtime.delays = false
+        await store.refresh(providerID: "codex", force: true)
+        await coordinator.check()
+        XCTAssertEqual(adapter.requests.count, 1)
+    }
+
+    private final class DeadlineRuntime: ProviderRuntime {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let snapshot: ProviderSnapshot
+        let widgetDescriptors: [WidgetDescriptor]
+        var delays = false
+        var onDelayedFinish: (() -> Void)?
+        init(snapshot: ProviderSnapshot, descriptor: WidgetDescriptor) {
+            self.snapshot = snapshot
+            self.widgetDescriptors = [descriptor]
+        }
+        func refresh() async -> ProviderSnapshot {
+            if delays {
+                try? await Task.sleep(for: .seconds(60))
+                onDelayedFinish?()
+            }
+            return snapshot
+        }
+    }
+
     private func makeSettings() -> SoftLimitSettingsStore {
         let suite = "OpenUsageTests.SoftLimitCoordinator.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

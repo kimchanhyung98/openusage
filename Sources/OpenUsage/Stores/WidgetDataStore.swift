@@ -23,6 +23,7 @@ final class WidgetDataStore {
     /// refresh 시간 측정용 monotonic clock — wall clock 조정이 timing을 왜곡하지 않도록 분리.
     private let monotonicNow: () -> TimeInterval
     private let slowProviderRefreshThreshold: TimeInterval
+    private let providerRefreshTimeout: TimeInterval
     /// Quota-notification 설정 — nil이면 notification 전체 비활성(테스트·프리뷰).
     private let notificationSettings: (@MainActor () -> NotificationSettingsStore)?
     /// Soft-limit 표시 설정 — nil이면 기존 렌더와 동일하게 안내선 없음.
@@ -43,6 +44,7 @@ final class WidgetDataStore {
     /// refresh interval보다 짧아 5분 heartbeat 재시도는 유지; 수동 force refresh(⌘R)는 항상 우회.
     private static let failureRetryBackoff: TimeInterval = 60
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
+    static let defaultProviderRefreshTimeout: TimeInterval = 120
 
     /// 모든 UI/API 표면이 소비하는 렌더링된 snapshot — iCloud sync off면 `localSnapshots`와 동일, on이면 peer union으로 재구성.
     var snapshots: [String: ProviderSnapshot] = [:]
@@ -68,6 +70,8 @@ final class WidgetDataStore {
     /// API 키 변경 전 시작한 결과의 게시·캐시 쓰기를 provider 단위로 무효화.
     @ObservationIgnored private var credentialGenerations: [String: Int] = [:]
     @ObservationIgnored private var providersNeedingCredentialRefresh: Set<String> = []
+    /// 시간 초과·취소 뒤 남은 작업과 같은 runtime의 재실행 차단 — 실제 종료 때만 해제.
+    @ObservationIgnored private var pendingProviderRefreshes: Set<ObjectIdentifier> = []
 
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
@@ -109,6 +113,7 @@ final class WidgetDataStore {
         now: @escaping () -> Date = Date.init,
         monotonicNow: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         slowProviderRefreshThreshold: TimeInterval = WidgetDataStore.defaultSlowProviderRefreshThreshold,
+        providerRefreshTimeout: TimeInterval = WidgetDataStore.defaultProviderRefreshTimeout,
         notificationSettings: (@MainActor () -> NotificationSettingsStore)? = nil,
         softLimitSettings: (@MainActor () -> SoftLimitSettingsStore)? = nil,
         postNotification: QuotaNotificationEvaluator.Post? = nil,
@@ -117,6 +122,7 @@ final class WidgetDataStore {
         resolveDisplayName: (@MainActor (String) -> String?)? = nil
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
+        precondition(providerRefreshTimeout.isFinite && providerRefreshTimeout > 0)
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.cache = cache
@@ -126,6 +132,7 @@ final class WidgetDataStore {
         self.now = now
         self.monotonicNow = monotonicNow
         self.slowProviderRefreshThreshold = slowProviderRefreshThreshold
+        self.providerRefreshTimeout = providerRefreshTimeout
         self.notificationSettings = notificationSettings
         self.softLimitSettings = softLimitSettings
         self.postNotification = postNotification
@@ -158,6 +165,7 @@ final class WidgetDataStore {
     /// Enabled provider 전체를 동시 refresh — 느린 provider 하나가 나머지를 지연시키지 않는 구조.
     /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
     func refreshAll(force: Bool = false, trigger: RefreshTrigger = .scheduled) async {
+        guard !Task.isCancelled else { return }
         // MainActor 격리 유지를 위해 task group 대신 provider별 Task 생성 후 일괄 await.
         let providerIDs = registry.providers.map(\.id).filter { isProviderEnabled($0) }
         let start = monotonicNow()
@@ -165,11 +173,17 @@ final class WidgetDataStore {
         let tasks = providerIDs.map { providerID in
             Task { await self.refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false) }
         }
-        var outcomes: [RefreshOutcome] = []
-        outcomes.reserveCapacity(tasks.count)
-        for task in tasks {
-            outcomes.append(await task.value)
+        let outcomes = await withTaskCancellationHandler {
+            var outcomes: [RefreshOutcome] = []
+            outcomes.reserveCapacity(tasks.count)
+            for task in tasks {
+                outcomes.append(await task.value)
+            }
+            return outcomes
+        } onCancel: {
+            for task in tasks { task.cancel() }
         }
+        guard !Task.isCancelled else { return }
         // pass 종료 시각 stamp — footer 카운트다운이 다음 예정 refresh(이 시각 + 1 interval)를 겨냥.
         lastRefreshAt = Date()
         let durationMs = durationMilliseconds(since: start)
@@ -352,7 +366,7 @@ final class WidgetDataStore {
         trigger: RefreshTrigger = .scheduled,
         notifyHistoryChange: Bool = true
     ) async -> RefreshOutcome {
-        guard isProviderEnabled(providerID) else { return .skipped }
+        guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         // TTL-fresh라도 다른 account 소유가 증명된 entry는 refresh를 short-circuit하면 안 됨 —
         // miss로 취급해 fetch가 덮어쓰도록 처리(persisted freshness의 one-shot CLI에서 특히 위험).
         let staleAccountStamp = cache.hasStaleAccountStamp(
@@ -381,6 +395,11 @@ final class WidgetDataStore {
         }
 
         guard let provider = providersByID[providerID] else { return .skipped }
+        let runtimeID = ObjectIdentifier(provider)
+        guard !pendingProviderRefreshes.contains(runtimeID) else {
+            AppLog.debug(.refresh, "skipped \(providerID) (previous provider work has not finished)")
+            return .skipped
+        }
         // in-flight refresh가 이미 소유 중이면 skip — 동일 provider 중복 network call 방지.
         guard !refreshingProviderIDs.contains(providerID) else {
             AppLog.debug(.refresh, "cache skip \(providerID) (already in flight)")
@@ -392,8 +411,12 @@ final class WidgetDataStore {
         let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         let start = monotonicNow()
-        var snapshot = await ProviderRefreshContext.$isManual.withValue(force) {
-            await provider.refresh()
+        let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self] in
+            self?.pendingProviderRefreshes.insert(runtimeID)
+            defer { self?.pendingProviderRefreshes.remove(runtimeID) }
+            return await ProviderRefreshContext.$isManual.withValue(force) {
+                await provider.refresh()
+            }
         }
         // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
         guard !Task.isCancelled else {
@@ -410,6 +433,19 @@ final class WidgetDataStore {
         }
         guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
             AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
+            return .skipped
+        }
+        var snapshot: ProviderSnapshot
+        switch result {
+        case .snapshot(let value):
+            snapshot = value
+        case .timedOut:
+            snapshot = .error(
+                provider: provider.provider,
+                message: "Refresh timed out. Retrying is available after the previous request finishes.",
+                category: .network
+            )
+        case .cancelled:
             return .skipped
         }
         let durationMs = durationMilliseconds(since: start)
