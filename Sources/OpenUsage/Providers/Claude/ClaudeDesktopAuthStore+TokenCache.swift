@@ -20,8 +20,11 @@ extension ClaudeDesktopAuthStore {
         now: Date
     ) -> Selection {
         let normalizedOrg = activeOrganization.lowercased()
-        let v2Entries = normalizedCache(v2, activeAccountUUID: activeAccountUUID)
-        let v1Entries = normalizedCache(v1, activeAccountUUID: activeAccountUUID)
+        guard let v2Entries = normalizedCache(v2, activeAccountUUID: activeAccountUUID),
+              let v1Entries = normalizedCache(v1, activeAccountUUID: activeAccountUUID) else {
+            AppLog.error(LogTag.auth("claude"), "Claude Desktop cache has malformed account ownership; refusing cached credentials")
+            return .invalid
+        }
         let v2Candidates = candidates(in: v2Entries, organization: normalizedOrg, now: now)
         let v1Candidates = candidates(
             in: v1Entries.filter { v2Entries[$0.key] == nil },
@@ -132,7 +135,7 @@ extension ClaudeDesktopAuthStore {
     /// 현재 계정의 scoped 항목은 삭제 마커까지 legacy alias보다 우선. 다른 계정은 V1 대체 경로도 억제하지 않음.
     private static func normalizedCache(
         _ cache: [String: Any]?, activeAccountUUID: String?
-    ) -> [CacheKey: CacheEntry] {
+    ) -> [CacheKey: CacheEntry]? {
         guard let cache else { return [:] }
         let activeAccount = activeAccountUUID.flatMap(UUID.init(uuidString:))
         var legacy: [CacheKey: Any] = [:]
@@ -142,10 +145,9 @@ extension ClaudeDesktopAuthStore {
             var key = rawKey
             if isScoped {
                 let parts = rawKey.dropFirst(5).split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-                guard parts.count == 2,
-                      let owner = UUID(uuidString: String(parts[0])),
-                      let activeAccount, owner == activeAccount
-                else { continue }
+                // 소유자를 해석할 수 없는 항목은 legacy 선택까지 차단. 정상적인 다른 계정 항목만 제외.
+                guard parts.count == 2, let owner = UUID(uuidString: String(parts[0])) else { return nil }
+                guard let activeAccount, owner == activeAccount else { continue }
                 key = String(parts[1])
             }
             guard let parsed = parseCacheKey(key) else { continue }
