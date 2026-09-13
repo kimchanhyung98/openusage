@@ -86,6 +86,7 @@ actor CodexLogUsageScanner {
             from: files,
             since: since,
             cacheIdentity: identity,
+            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(events: events, since: since, pricing: pricing)

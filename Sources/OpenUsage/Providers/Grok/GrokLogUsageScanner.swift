@@ -70,7 +70,11 @@ struct GrokLogUsageScanner: Sendable {
 
             if let model = modelID(msg: msg, ctx: ctx) {
                 if let pid { modelByPID[pid] = model }
-                else if object["pid"] != nil { accumulator.rejectNumericRow() }
+                else if object["pid"] != nil,
+                        let timestamp = (object["ts"] as? String).flatMap(OpenUsageISO8601.date(from:)),
+                        timestamp >= since {
+                    accumulator.rejectNumericRow()
+                }
                 return
             }
 

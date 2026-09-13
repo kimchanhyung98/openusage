@@ -52,6 +52,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
 
     /// provider/home identity당 in-memory partition 하나 — 같은 home의 multi-account 카드는 재사용, disjoint home끼리는 서로의 파일을 prune하지 못하게 분리.
     private var caches: [String: [String: CachedFile]] = [:]
+    private var unreportedRestoredPaths: [String: Set<String>] = [:]
     private var persistedMetadata: [String: [String: JSONLScanCacheFileMetadata]] = [:]
     private var dirtyUpsertPaths: [String: Set<String>] = [:]
     private var dirtyRemovals: [String: [String: JSONLScanCacheFileMetadata]] = [:]
@@ -90,11 +91,13 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
 
     /// window 안 파일 재파싱(path+size+mtime 불변이면 cache 재사용) 후 입력 순서대로 이어붙여 반환 — 호출자가 경로 정렬 목록을 넘겨 keep-first dedup 유지.
     /// mtime이 `since` 이전인 파일은 skip, 읽기 실패 파일은 cache에 남기지 않아 일시적 오류가 고착되지 않음.
+    /// 디스크에서 복원한 파일을 실제 재사용할 때만 `onDiskCacheHit` 1회 호출 — 반복 메모리 hit·다른 카드 조회는 재보고하지 않음.
     /// `nil`은 취소를 의미 — 완료된 scan의 빈 결과는 `[]`이므로 취소와 "정말 빈 데이터"가 섞이지 않음.
     func items(
         from files: [JSONLScanning.DiscoveredFile],
         since: Date,
         cacheIdentity: String = "default",
+        onDiskCacheHit: (@Sendable ([Item]) -> Void)? = nil,
         parse: @Sendable @escaping (Data) -> [Item]?
     ) async -> [Item]? {
         precondition(!cacheIdentity.isEmpty)
@@ -112,7 +115,11 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             guard file.mtime >= since else { continue }
             if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
                 nextCache[file.path] = cached
+                if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
+                    onDiskCacheHit(cached.items)
+                }
             } else {
+                unreportedRestoredPaths[cacheIdentity]?.remove(file.path)
                 nextCache[file.path] = nil
                 toParse.append(file)
             }
@@ -143,6 +150,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             )
         }
         caches[cacheIdentity] = nextCache
+        unreportedRestoredPaths[cacheIdentity]?.formIntersection(nextCache.keys)
         dirtyUpsertPaths[cacheIdentity, default: []].formUnion(parsedPaths)
         if !dirtyUpsertPaths[cacheIdentity, default: []].isEmpty
             || !dirtyRemovals[cacheIdentity, default: [:]].isEmpty
@@ -261,6 +269,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             }
             persistedMetadata[identity] = manifest.files
             caches[identity] = snapshot.files
+            unreportedRestoredPaths[identity] = Set(snapshot.files.keys)
             dirtyRemovals[identity, default: [:]].merge(snapshot.invalidRecords) { _, new in new }
             if !snapshot.invalidRecords.isEmpty {
                 AppLog.warn(

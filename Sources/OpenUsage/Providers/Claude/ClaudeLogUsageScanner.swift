@@ -95,6 +95,7 @@ actor ClaudeLogUsageScanner {
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
+            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "claude") },
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)

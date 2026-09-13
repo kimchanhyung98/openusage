@@ -63,6 +63,7 @@ actor PiUsageScanner {
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
+            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "pi") },
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(entries: Self.dedup(entries), cardID: cardID, since: since, pricing: pricing)
