@@ -5,6 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
+    static let cacheSchemaVersion = 2
 
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
@@ -12,7 +13,7 @@ actor PiUsageScanner {
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("pi"),
-        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: 1)
+        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: cacheSchemaVersion)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -41,6 +42,8 @@ actor PiUsageScanner {
         var tokens: TokenBreakdown
         /// pi가 보고한 `usage.totalTokens` — 행의 token 수로 표시 (pi 자체 footer와 일치).
         var reportedTotalTokens: Int
+        /// 손상된 행도 날짜·카드와 함께 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
+        var invalidNumericValues = false
     }
 
     /// 카드 하나에 대해 최근 `daysBack`일의 pi 로그 스캔. sessions 디렉토리에 로그 파일이 전혀 없으면 nil — pi usage 없는 provider는 아무것도 합산하지 않음.
@@ -75,6 +78,7 @@ actor PiUsageScanner {
             guard line.range(of: marker) != nil, let entry = parseLine(Data(line)) else { continue }
             entries.append(entry)
         }
+        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "pi")
         return entries
     }
 
@@ -90,26 +94,38 @@ actor PiUsageScanner {
               let usage = message["usage"] as? [String: Any]
         else { return nil }
 
-        let cacheWrite = Int(ProviderParse.number(usage["cacheWrite"]) ?? 0)
-        let cacheWrite1h = Int(ProviderParse.number(usage["cacheWrite1h"]) ?? 0)
-        let tokens = TokenBreakdown(
-            input: Int(ProviderParse.number(usage["input"]) ?? 0),
-            cacheWrite5m: max(cacheWrite - cacheWrite1h, 0),
-            cacheWrite1h: cacheWrite1h,
-            cacheRead: Int(ProviderParse.number(usage["cacheRead"]) ?? 0),
-            output: Int(ProviderParse.number(usage["output"]) ?? 0)
-        )
-
-        let carriedCost = (usage["cost"] as? [String: Any]).flatMap { ProviderParse.number($0["total"]) }
-        return Entry(
+        var entry = Entry(
             id: object["id"] as? String,
             timestamp: timestamp,
             cardID: cardID,
             model: (message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            carriedCost: carriedCost,
-            tokens: tokens,
-            reportedTotalTokens: Int(ProviderParse.number(usage["totalTokens"]) ?? 0)
+            carriedCost: nil,
+            tokens: TokenBreakdown(),
+            reportedTotalTokens: 0,
+            invalidNumericValues: true
         )
+        guard let cacheWrite = UsageLogNumbers.count(usage["cacheWrite"], missing: 0),
+              let cacheWrite1h = UsageLogNumbers.count(usage["cacheWrite1h"], missing: 0),
+              let input = UsageLogNumbers.count(usage["input"], missing: 0),
+              let cacheRead = UsageLogNumbers.count(usage["cacheRead"], missing: 0),
+              let output = UsageLogNumbers.count(usage["output"], missing: 0),
+              let reportedTotal = UsageLogNumbers.count(usage["totalTokens"], missing: 0),
+              UsageLogNumbers.sum(input, max(cacheWrite, cacheWrite1h), cacheRead, output) != nil
+        else { return entry }
+        let tokens = TokenBreakdown(
+            input: input,
+            cacheWrite5m: max(cacheWrite - cacheWrite1h, 0),
+            cacheWrite1h: cacheWrite1h,
+            cacheRead: cacheRead,
+            output: output
+        )
+
+        let carriedCost = (usage["cost"] as? [String: Any]).flatMap { ProviderParse.number($0["total"]) }
+        entry.carriedCost = carriedCost
+        entry.tokens = tokens
+        entry.reportedTotalTokens = reportedTotal
+        entry.invalidNumericValues = false
+        return entry
     }
 
     // MARK: - Dedup and aggregation
@@ -129,7 +145,12 @@ actor PiUsageScanner {
     /// 카드의 entry를 로컬 캘린더 일 단위로 bucket. cost는 pi carried total 우선, 없으면 `pricing`으로 산정 — 산정 불가·cost 없는 모델은 합계에서 제외하고 unknown-model 경고로 표시 (로그 scanner와 동일).
     static func aggregate(entries: [Entry], cardID: String, since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
+        var rejectedNumericRows = 0
         for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
+            guard !entry.invalidNumericValues else {
+                rejectedNumericRows += 1
+                continue
+            }
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
             let trimmedModel = entry.model.nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
@@ -147,6 +168,6 @@ actor PiUsageScanner {
             }
             accumulator.add(day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName)
         }
-        return accumulator.build()
+        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "pi")
     }
 }

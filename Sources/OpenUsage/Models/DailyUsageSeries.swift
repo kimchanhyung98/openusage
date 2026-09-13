@@ -88,10 +88,22 @@ struct LogUsageScan: Sendable {
     var modelUsage: ModelUsageSeries?
     /// `yyyy-MM-dd` day key → 가격 부재로 합계에서 제외된 그날의 model 목록.
     var unknownModelsByDay: [String: Set<String>]
+    var rejectedNumericRows: Int
 
-    init(series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil, unknownModelsByDay: [String: Set<String>]) {
+    init(series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil, unknownModelsByDay: [String: Set<String>], rejectedNumericRows: Int = 0) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
+        self.rejectedNumericRows = rejectedNumericRows
+    }
+
+    var numericWarning: String? {
+        rejectedNumericRows > 0 ? "Some local usage records contain invalid numbers. Usage history may be incomplete." : nil
+    }
+
+    /// 전부 손상된 결과는 정상 빈 history로 게시하지 않아 last-good history 삭제 방지.
+    var usageHistory: ProviderUsageHistory? {
+        guard rejectedNumericRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }
+        return ProviderUsageHistory(series: series, modelUsage: modelUsage, unknownModelsByDay: unknownModelsByDay)
     }
 }

@@ -167,8 +167,9 @@ enum SpendTileMapper {
         private var tokensBySpelling: [String: Int] = [:]
 
         mutating func note(_ spelling: String, weight: Int) {
-            // 0-token 항목(cost-only line)도 투표권 보유.
-            tokensBySpelling[spelling, default: 0] += max(weight, 1)
+            // 0-token 항목도 투표권 보유. 표시명 점수만 포화시켜 Int.max token과 cost-only 행의 조합 보호.
+            let score = tokensBySpelling[spelling, default: 0].addingReportingOverflow(max(weight, 1))
+            tokensBySpelling[spelling] = score.overflow ? Int.max : score.partialValue
         }
 
         var best: String? {

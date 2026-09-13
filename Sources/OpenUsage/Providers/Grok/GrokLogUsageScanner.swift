@@ -66,29 +66,36 @@ struct GrokLogUsageScanner: Sendable {
             else { return }
 
             let ctx = object["ctx"] as? [String: Any] ?? [:]
-            let pid = ProviderParse.number(object["pid"]).map { Int($0) }
+            let pid = UsageLogNumbers.count(object["pid"]).flatMap { $0 > 0 ? $0 : nil }
 
             if let model = modelID(msg: msg, ctx: ctx) {
                 if let pid { modelByPID[pid] = model }
+                else if object["pid"] != nil { accumulator.rejectNumericRow() }
                 return
             }
 
             guard msg == "shell.turn.inference_done",
-                  let promptTokens = ProviderParse.number(ctx["prompt_tokens"]),
+                  ctx["prompt_tokens"] != nil,
                   let timestamp = (object["ts"] as? String).flatMap(OpenUsageISO8601.date(from:)),
                   timestamp >= since
             else { return }
 
-            let completion = Int(ProviderParse.number(ctx["completion_tokens"]) ?? 0)
-            let reasoning = Int(ProviderParse.number(ctx["reasoning_tokens"]) ?? 0)
+            guard object["pid"] == nil || pid != nil,
+                  let promptTokens = UsageLogNumbers.count(ctx["prompt_tokens"]),
+                  let completion = UsageLogNumbers.count(ctx["completion_tokens"], missing: 0),
+                  let reasoning = UsageLogNumbers.count(ctx["reasoning_tokens"], missing: 0),
+                  let cached = UsageLogNumbers.count(ctx["cached_prompt_tokens"], missing: 0),
+                  let output = UsageLogNumbers.sum(completion, reasoning),
+                  let totalTokens = UsageLogNumbers.sum(promptTokens, output)
+            else {
+                accumulator.rejectNumericRow()
+                return
+            }
             // `cached_prompt_tokens`는 `prompt_tokens`의 부분집합 — total에서 prompt는 1회만 집계
-            let cached = min(ProviderParse.number(ctx["cached_prompt_tokens"]) ?? 0, promptTokens)
-            let cacheRead = Int(cached)
-            let inputNoCache = Int(max(0, promptTokens - cached))
-            let output = completion + reasoning
+            let cacheRead = min(cached, promptTokens)
+            let inputNoCache = promptTokens - cacheRead
 
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
-            let totalTokens = Int(promptTokens) + output
 
             // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
             // 가격 없는 model 이름만 `unknownModelsByDay`(warning triangle)로 노출, 미귀속 행은 알릴 이름 자체가 없음
@@ -103,7 +110,7 @@ struct GrokLogUsageScanner: Sendable {
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        return accumulator.build()
+        return accumulator.build(source: "grok")
     }
 
     /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
