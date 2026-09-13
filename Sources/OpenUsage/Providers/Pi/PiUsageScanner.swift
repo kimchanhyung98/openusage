@@ -6,6 +6,8 @@ import Foundation
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
 
+    typealias CostEstimator = @Sendable (String, TokenBreakdown, ModelPricing) -> Double?
+
     private let environment: EnvironmentReading
     private let homeDirectory: @Sendable () -> URL
     private let scanner: IncrementalJSONLScanner<Entry>
@@ -44,7 +46,10 @@ actor PiUsageScanner {
     }
 
     /// 카드 하나에 대해 최근 `daysBack`일의 pi 로그 스캔. sessions 디렉토리에 로그 파일이 전혀 없으면 nil — pi usage 없는 provider는 아무것도 합산하지 않음.
-    func scan(cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+    func scan(
+        cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing,
+        costEstimator: CostEstimator? = nil
+    ) async -> LogUsageScan? {
         let directory = PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let cacheIdentity = directory.resolvingSymlinksInPath().path
@@ -62,7 +67,10 @@ actor PiUsageScanner {
             cacheIdentity: cacheIdentity,
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(entries: Self.dedup(entries), cardID: cardID, since: since, pricing: pricing)
+        return Self.aggregate(
+            entries: Self.dedup(entries), cardID: cardID, since: since, pricing: pricing,
+            costEstimator: costEstimator
+        )
     }
 
     // MARK: - Parsing
@@ -127,7 +135,13 @@ actor PiUsageScanner {
     }
 
     /// 카드의 entry를 로컬 캘린더 일 단위로 bucket. cost는 pi carried total 우선, 없으면 `pricing`으로 산정 — 산정 불가·cost 없는 모델은 합계에서 제외하고 unknown-model 경고로 표시 (로그 scanner와 동일).
-    static func aggregate(entries: [Entry], cardID: String, since: Date, pricing: ModelPricing) -> LogUsageScan {
+    static func aggregate(
+        entries: [Entry], cardID: String, since: Date, pricing: ModelPricing,
+        costEstimator: CostEstimator? = nil
+    ) -> LogUsageScan {
+        let estimate = costEstimator ?? { model, tokens, pricing in
+            pricing.estimatedCostDollars(model: model, tokens: tokens)
+        }
         var accumulator = DailyUsageAccumulator()
         for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
@@ -137,7 +151,7 @@ actor PiUsageScanner {
             let cost: Double
             if let carried = entry.carriedCost, carried > 0 {
                 cost = carried
-            } else if let model = trimmedModel, let estimated = pricing.estimatedCostDollars(model: model, tokens: entry.tokens) {
+            } else if let model = trimmedModel, let estimated = estimate(model, entry.tokens, pricing) {
                 cost = estimated
             } else {
                 if let model = trimmedModel, entry.reportedTotalTokens > 0 {

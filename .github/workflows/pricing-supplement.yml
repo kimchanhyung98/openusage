@@ -33,9 +33,20 @@ jobs:
         run: |
           python3 - << 'PY'
           import json, re, sys
+          from datetime import datetime
           with open("Sources/OpenUsage/Resources/pricing_supplement.json") as f:
               supplement = json.load(f)
           problems = []
+          updated_at = supplement.get("updated_at")
+          if not isinstance(updated_at, str) or not re.fullmatch(
+              r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z", updated_at
+          ):
+              problems.append("updated_at must use YYYY-MM-DDTHH:MM:SSZ UTC format")
+          else:
+              try:
+                  datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%SZ")
+              except ValueError:
+                  problems.append("updated_at must be a valid UTC date and time")
           for model, entry in supplement["pricing"].items():
               for field in ("input_per_million", "output_per_million"):
                   if not isinstance(entry.get(field), (int, float)):

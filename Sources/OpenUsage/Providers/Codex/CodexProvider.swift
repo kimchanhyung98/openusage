@@ -152,7 +152,12 @@ final class CodexProvider: ProviderRuntime {
         let pricing = await pricing()
         let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
         let piScan = includePiUsage
-            ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
+            ? await PiUsageScanner.shared.scan(
+                cardID: provider.id, now: now(), pricing: pricing,
+                costEstimator: { model, tokens, pricing in
+                    CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing)
+                }
+            )
             : nil
         var usageHistory: ProviderUsageHistory?
         // native·pi 스캔 사이 cancellation 가능 — 부분 결과가 WidgetDataStore의 last-good combined history를 대체하지 않도록 쌍을 한 단위로 처리.
