@@ -53,7 +53,7 @@ enum CodexUsagePricing {
     }
 
     private static func datedBaseModel(_ model: String) -> String {
-        model
+        String(model.split(separator: "/").last ?? Substring(model))
             .replacingOccurrences(of: #"-\d{4}-\d{2}-\d{2}$"#, with: "", options: .regularExpression)
             .replacingOccurrences(of: #"-\d{8}$"#, with: "", options: .regularExpression)
     }

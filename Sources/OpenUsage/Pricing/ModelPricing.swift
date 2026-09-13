@@ -56,7 +56,7 @@ final class ModelPricing: Sendable {
         if let exact = primary.findExact(name) { return exact.rates }
         if let fast = fastVariant(name) { return fast }
         if name.hasSuffix("-fast") { return secondary.findExact(name)?.rates }
-        if let fuzzy = primary.findFuzzy(name) { return fuzzy.rates }
+        if let fuzzy = primary.findFuzzy(name, excludingFastVariants: true) { return fuzzy.rates }
         if let exact = secondary.findExact(name) { return exact.rates }
         return nil
     }
@@ -82,7 +82,7 @@ final class ModelPricing: Sendable {
     private func baseEntry(_ base: String) -> (key: String, rates: ModelRates)? {
         if let entry = supplement.pricing[base] { return (base, entry) }
         return primary.findExact(base)
-            ?? primary.findFuzzy(base)
+            ?? primary.findFuzzy(base, excludingFastVariants: true)
             ?? secondary.findExact(base)
     }
 }

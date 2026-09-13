@@ -163,7 +163,7 @@ actor PiUsageScanner {
             if let carried = entry.carriedCost, carried > 0 {
                 cost = carried
             } else {
-                let result = trimmedModel.map { estimate($0, entry.tokens, pricing) } ?? .unpriced
+                let result = estimate(trimmedModel ?? "", entry.tokens, pricing)
                 switch result {
                 case .priced(let estimated):
                     cost = estimated
