@@ -70,6 +70,36 @@ final class CodexUsagePricingTests: XCTestCase {
         )), 0.007, accuracy: 1e-9)
     }
 
+    func testPrimaryFastOnlyEntryIsNotUsedAsStandardBase() throws {
+        let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
+        let pricing = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: ["custom-fast": rates]), secondary: PricingCatalog())
+        XCTAssertNil(pricing.resolve(model: "custom"))
+        XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(model: "custom-fast", tokens: .init(input: 1_000, isFast: true), pricing: pricing)), 0.007, accuracy: 1e-9)
+    }
+
+    func testProviderPrefixedAndDatedModelsKeepCodexLongContextAndPriorityRules() throws {
+        let rates = ModelRates(inputPerMillion: 4, outputPerMillion: 20, cacheWritePerMillion: 5, cacheReadPerMillion: 0.4)
+        for base in ["gpt-5.6-sol", "gpt-5.5", "gpt-5.4-pro"] {
+            let pricing = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: [base: rates]), secondary: PricingCatalog())
+            for fast in [false, true] {
+                let tokens = TokenBreakdown(input: 200_000, cacheRead: 100_000, output: 10_000, isFast: fast)
+                let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: base, tokens: tokens, pricing: pricing))
+                for model in ["openai/\(base)", "openai/\(base)-20260901"] {
+                    XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing)), expected, accuracy: 1e-9, model)
+                }
+            }
+        }
+    }
+
+    func testMissingPiModelStillValidatesUnsupportedWriteRetention() {
+        let entry = PiUsageScanner.Entry(timestamp: date, cardID: "codex", model: "", carriedCost: nil,
+                                        tokens: .init(cacheWrite1h: 1_000), reportedTotalTokens: 1_000)
+        let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "codex", since: .distantPast, pricing: pricing, costEstimator: CodexUsagePricing.estimatePi)
+        XCTAssertEqual(scan.unsupportedPricingRows, 1)
+        XCTAssertNotNil(scan.pricingWarning)
+        XCTAssertNil(scan.usageHistory)
+    }
+
     func testNewPricingSnapshotRepricesLongRequestsWithoutReparsing() throws {
         let tokens = TokenBreakdown(input: 300_000, output: 10_000)
         func snapshot(_ rate: Double) -> ModelPricing {
