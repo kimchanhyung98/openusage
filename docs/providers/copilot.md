@@ -7,7 +7,7 @@ Copilot 도구가 Mac에 남긴 GitHub 토큰으로 GitHub Copilot 할당량 추
 
 | 지표 | 의미 |
 |---|---|
-| Credits | 월간 AI 크레딧 할당량 중 사용 비율(대표 미터) |
+| Credits | 월간 AI 크레딧 할당량 사용 비율, 또는 조직 관리 좌석의 개인 사용 크레딧 수 |
 | Extra Usage | 추가 지출 활성화 후 기본 제공 크레딧을 초과해 사용한 프리미엄 인터랙션 |
 | Org Credits | 조직 전체가 이번 달 사용한 AI 크레딧(조직 관리 Business/Enterprise 좌석) |
 | Org Spend | 기본 제공분을 초과한 AI 크레딧으로 조직에 청구된 달러 금액 |
@@ -15,7 +15,8 @@ Copilot 도구가 Mac에 남긴 GitHub 토큰으로 GitHub Copilot 할당량 추
 | Completions | 코드 완성 할당량 사용량 |
 
 Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org Spend, Chat, Completions는 카드 캐럿 아래의 On Demand로 시작.
-각 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
+할당량 미터에는 사용 백분율과 응답에 포함된 경우 다음 재설정까지의 카운트다운 표시.
+개인·조직 크레딧 수에는 한도나 백분율을 임의로 붙이지 않음.
 요금제 이름(Pro, Business, Free, …)은 프로바이더 옆에 표시.
 
 2026년 6월부터 GitHub Copilot은 모든 요금제를 **AI 크레딧**으로 청구하므로 계정별 표시 내용은 요금제에 따라 다름.
@@ -23,16 +24,18 @@ Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org
 - **유료 요금제**는 크레딧 풀 사용량을 집계하므로 Credits 표시(추가 지출을 켰으면 Extra Usage도 표시).
   유료 요금제의 Chat과 Completions는 무제한이므로 해당 행에는 "No data" 표시.
 - **무료 요금제**는 크레딧이 없어 Credits에 "No data"를 표시하고, 대신 고정된 Chat과 Completions 개수를 캐럿 아래에 표시.
-- **조직 관리 좌석(조직에서 할당한 Copilot Business / Enterprise)**은 좌석별 할당량을 반환하지 않아 개인 미터에 표시할 값 없음.
-  이 경우 OpenUsage가 조직 청구 정보에서 사용량 조회: 조직 목록에서 Copilot AI 크레딧 사용량을 보고하는 조직을 찾아 **Org Credits**(이번 달 조직 전체 사용 크레딧)와 **Org Spend**(기본 제공분을 초과해 청구된 금액) 표시.
+- **조직 관리 좌석(조직에서 할당한 Copilot Business / Enterprise)**은 개인 할당량이 없어도 응답에 양수 개인 사용 크레딧이 있으면 **Credits**에 수치 표시.
+  개인 사용 크레딧이 0이거나 제공되지 않으면 기존처럼 "No data" 표시.
+  별도로 조직 청구 정보를 조회해 **Org Credits**(이번 달 조직 전체 사용 크레딧)와 **Org Spend**(기본 제공분을 초과해 청구된 금액) 표시.
   두 가지 유의 사항:
-  - 수치는 개인 몫이 아닌 **조직 전체** 사용량 — GitHub에서 좌석별 사용량 미제공.
+  - Org Credits와 Org Spend는 **조직 전체** 사용량이며 개인 Credits에 합산하지 않음.
   - 조직 청구 정보 조회에는 **조직 소유자 또는 청구 관리자** 권한 필요.
-    일반 멤버는 기존과 같이 요금제만 표시되고 미터에는 "No data" 표시.
+    일반 멤버도 응답에 개인 사용 크레딧이 있으면 Credits 표시 가능.
+    조직 조회 실패나 권한 부족이 개인 Credits를 지우지 않음.
 - Org Credits는 백분율이 아닌 단순 개수로 표시: 청구 API는 사용량만 보고하고 조직의 크레딧 할당량은 제공하지 않으므로 OpenUsage에서 분모를 임의 생성하지 않음.
 
 달러 크레딧 수치(예: "$12 of $15 used")는 미표시: GitHub에서 로그인된 웹 청구 페이지를 통해서만 제공하며, 이를 읽으려면 브라우저 쿠키가 필요하므로 OpenUsage에서는 사용하지 않음.
-VS Code 같은 편집기도 이 엔드포인트에서 달러 금액이 아닌 동일한 크레딧 *백분율* 표시.
+할당량이 있는 계정의 Credits는 이 엔드포인트가 제공한 크레딧 백분율 사용.
 
 ## 인증 정보 출처
 
@@ -66,13 +69,18 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
   편집기에서 Copilot에 로그인하거나 `gh auth login` 실행.
 - **"GitHub token invalid or expired"** — 토큰이 거부된 상태(401/403).
   `gh auth login`으로 재인증.
-- **미터에 "No data"가 표시되지만 요금제는 표시됨** — 조직 관리 Copilot Business/Enterprise 좌석에서 조직 소유자나 청구 관리자가 아닐 때 예상되는 동작(GitHub은 좌석별 할당량을 제공하지 않으며 조직 청구 정보는 관리자 전용).
+- **미터에 "No data"가 표시되지만 요금제는 표시됨** — 조직 관리 좌석의 개인 사용 크레딧이 0이거나 제공되지 않고 조직 청구 정보도 조회할 수 없을 때 가능한 상태.
   조직 관리자인데도 Org Credits가 보이지 않으면 토큰의 조직 목록 조회 가능 여부 확인 — `gh auth login`의 GitHub CLI 토큰은 가능하지만 일부 편집기 플러그인 토큰은 불가능.
+- **"Personal Credits are unavailable"** — 개인 사용 크레딧 값이 유효하지 않은 상태.
+  개인 Credits만 생략하며 조회한 조직 정보는 유지하고, 다음 정상 조회에서 경고 해제.
 
 ## 내부 동작
 
 표준 Copilot 클라이언트 헤더(API 버전 `2025-04-01`)로 `GET https://api.github.com/copilot_internal/user` 호출.
 응답은 각 버킷을 *남은* 백분율로 보고하며 미터에는 *사용한* 백분율 표시.
+실제 할당량 미터가 없는 조직 관리 좌석은 `premium_interactions.credits_used`의 양수 개인 사용량을 수치로 표시.
+개인 수치를 달러로 환산하거나 조직 전체 값과 합산하지 않음.
 
 조직 관리 좌석(응답의 토큰 기반 청구 자리표시자로 식별)은 공개 REST 청구 API도 호출: `GET /user/orgs`로 조직 목록을 가져온 뒤 Copilot AI 크레딧 사용량이 나올 때까지 조직별 `GET /orgs/{org}/settings/billing/usage/summary` 호출.
-일치하는 조직을 기억해 이후 새로 고침에서는 추가 호출 한 번만 수행하며, 응답하지 않으면 자동으로 다시 탐색.
+일치하는 조직을 기억해 이후 새로 고침에서는 추가 호출 한 번만 수행.
+조직 접근이 불가하거나 사용량이 더 이상 없으면 다시 탐색하며, 일시적 실패에는 기억한 조직을 유지하고 다음 새로 고침에 재시도.

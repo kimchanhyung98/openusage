@@ -1,6 +1,6 @@
 import Foundation
 
-/// GitHub 공개 REST billing endpoint로 org 관리 Copilot seat의 organization을 찾고 월누적 usage 읽기. `/copilot_internal/user`가 per-seat quota 없는 token-based-billing seat(org 관리 Copilot Business/Enterprise)를 보고할 때만 사용 — usage는 organization billing에만 존재.
+/// GitHub 공개 REST billing endpoint로 org 관리 Copilot seat의 organization을 찾고 월누적 usage 읽기. per-seat quota 없는 token-based-billing seat에서 개인 count와 별도로 조직 합계 조회.
 /// org billing 읽기는 org owner/billing manager 권한 필요 — 일반 member는 403. 이는 오류가 아닌 기대 상태로 provider가 처리.
 struct CopilotOrgBillingClient: Sendable {
     static let userOrgsURL = "https://api.github.com/user/orgs?per_page=100"
