@@ -197,12 +197,15 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             schema: PiUsageScanner.cacheSchemaVersion, identity: piHome.path, parse: PiUsageScanner.parseFile)
         let capture = try Capture()
         defer { capture.cleanUp() }
-        let claude = ClaudeLogUsageScanner(incrementalScanner: IncrementalJSONLScanner(persistence: claudeCache),
+        let claudeIncremental = IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(persistence: claudeCache)
+        let codexIncremental = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence: codexCache)
+        let piIncremental = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: piCache)
+        let claude = ClaudeLogUsageScanner(incrementalScanner: claudeIncremental,
                                            cacheIdentityOverride: "claude-home", rootsOverride: [claudeHome])
-        let codex = CodexLogUsageScanner(incrementalScanner: IncrementalJSONLScanner(persistence: codexCache),
+        let codex = CodexLogUsageScanner(incrementalScanner: codexIncremental,
                                          cacheIdentityOverride: "codex-home", rootsOverride: [codexHome])
         let pi = PiUsageScanner(environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": piHome.path]),
-                                incrementalScanner: IncrementalJSONLScanner(persistence: piCache))
+                                incrementalScanner: piIncremental)
         for _ in 0..<2 {
             let scans = [await claude.scan(now: now, pricing: .empty), await codex.scan(now: now, pricing: .empty),
                          await pi.scan(cardID: "claude", now: now, pricing: .empty)]
@@ -212,6 +215,11 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
                 XCTAssertNil(scan?.usageHistory)
             }
         }
+        // fixture와 전역 로그 sink 정리 전에 지연 저장 완료 — 다음 테스트의 로그 캡처로 오류가 새지 않도록 보장.
+        await claudeIncremental.waitForPendingWritesForTesting()
+        await codexIncremental.waitForPendingWritesForTesting()
+        await piIncremental.waitForPendingWritesForTesting()
+        XCTAssertFalse(try capture.lines().contains { $0.contains("could not persist") })
         XCTAssertEqual(capture.events.count, 3)
         let lines = try capture.lines().filter { $0.contains("invalid_numeric_rows") }
         XCTAssertEqual(lines.count, 3)
