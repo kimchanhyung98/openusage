@@ -58,12 +58,19 @@ enum ZAIUsageMapper {
         for entry in percentageLimits {
             guard let window = try classifyTokenWindow(entry) else { continue }
             sawRecognizedLimit = true
+            let line: MetricLine
             switch window {
             case .session(let periodMs):
-                lines.append(try percentLine(entry, label: "Session", periodMs: periodMs))
+                line = try percentLine(entry, label: "Session", periodMs: periodMs)
             case .weekly(let periodMs):
-                lines.append(try percentLine(entry, label: "Weekly", periodMs: periodMs))
+                line = try percentLine(entry, label: "Weekly", periodMs: periodMs)
             }
+            if let existing = lines.first(where: { $0.label == line.label }) {
+                // 동일 quota의 별칭만 병합 — 서로 다른 quota를 배열 순서로 선택하지 않음.
+                guard existing == line else { throw ZAIUsageError.invalidResponse }
+                continue
+            }
+            lines.append(line)
         }
         if let web = findLimit(limits, type: "TIME_LIMIT") {
             sawRecognizedLimit = true
