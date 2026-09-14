@@ -77,7 +77,8 @@ Codex CLI(`codex`)로 한 번 로그인하면 OpenUsage가 같은 인증 파일�
 Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.codex/sessions/`와 `archived_sessions/`(또는 `$CODEX_HOME`) 아래의 Codex CLI 세션 롤아웃을 직접 읽으므로 외부 도구 불필요.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 Codex 홈도 동일하게 읽음.
 [pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Codex 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Codex 사용량을 같은 타일과 추세에 합산.
-pi가 자체적으로 기록한 메시지별 비용을 그대로 사용하며 재추정하지 않음.
+pi가 기록한 메시지별 양수 비용은 그대로 사용하고, 비용이 없거나 0이면 모델 요율로 추정.
+명시된 비용이 잘못된 값이면 재추정하지 않고 해당 행 제외.
 세션 롤아웃과 pi 로그의 잘못된 토큰 수나 정수로 표현 가능한 로컬 이력 합계 범위를 넘는 행은 제외하고, [불완전한 로컬 이력 안내](/docs/refreshing.md#가져오기에-실패한-경우) 표시.
 누적 토큰 값이 손상된 행은 개별 요청 토큰이 정상이더라도 제외 및 경고.
 사용량을 제외한 행의 정상 모델 정보는 유지해 이후 요청을 올바른 모델에 귀속.
