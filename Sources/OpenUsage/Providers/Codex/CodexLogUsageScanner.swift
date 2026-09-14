@@ -30,8 +30,8 @@ actor CodexLogUsageScanner {
         var pricingModel: String? = nil
     }
 
-    /// 손상된 사용량 행의 모델 정보도 보존하는 형식 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 9
+    /// 손상 행의 모델 보존·재전송의 모델 되감기 방지 규칙 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 10
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -218,6 +218,11 @@ actor CodexLogUsageScanner {
 
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
+            // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
+            if replayGate == nil, let totals, !totals.invalid,
+               let previous = previousTotals, totals.equalCounts(previous) {
+                continue
+            }
             if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
                 currentModel = parsedModel
             }
@@ -226,11 +231,6 @@ actor CodexLogUsageScanner {
             if replayGate != nil {
                 previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
                 replayBaselineUnknown = previousTotals == nil
-                continue
-            }
-
-            // 누적 totals 불변이면 Codex가 재방출한 stale snapshot — last_token_usage가 있어도 신규 usage 아님.
-            if let totals, !totals.invalid, let previous = previousTotals, totals.equalCounts(previous) {
                 continue
             }
 
