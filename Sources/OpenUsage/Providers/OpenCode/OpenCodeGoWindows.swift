@@ -57,6 +57,8 @@ enum OpenCodeGoWindowMath {
         let total = costs.reduce(0.0) { partial, row in
             (row.ms >= start && row.ms < end) ? partial + row.cost : partial
         }
+        // 소수부를 표현하지 못하는 큰 Double은 이미 정수 — 배율 곱셈 없이 유지.
+        guard total.ulp < 1 else { return total }
         // meter가 cap으로 나누기 전 float 합산 noise 제거를 위해 1/100 cent 단위로 snap
         return (total * 10000).rounded() / 10000
     }
