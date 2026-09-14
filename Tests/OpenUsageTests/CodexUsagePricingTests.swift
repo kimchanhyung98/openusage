@@ -70,6 +70,39 @@ final class CodexUsagePricingTests: XCTestCase {
         )), 0.007, accuracy: 1e-9)
     }
 
+    func testAlternateTerminalFastSeparatorsApplyOneCodexMultiplier() throws {
+        for model in ["gpt-5.5", "gpt-6-astra-high"] {
+            let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: model + "-fast", tokens: .init(input: 300_000), pricing: pricing))
+            for suffix in [".fast", "@fast"] {
+                for priority in [false, true] {
+                    let actual = try XCTUnwrap(CodexUsagePricing.estimate(model: model + suffix, tokens: .init(input: 300_000, isFast: priority), pricing: pricing))
+                    XCTAssertEqual(actual, expected, accuracy: 1e-9)
+                }
+                let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
+                let snapshot = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: ["custom" + suffix: rates]), secondary: PricingCatalog())
+                XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(model: "custom" + suffix, tokens: .init(input: 1_000, isFast: true), pricing: snapshot)), 0.007, accuracy: 1e-9)
+            }
+        }
+    }
+
+    func testUnprefixedDatedExactRatesPrecedeCanonicalFallback() throws {
+        let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 14, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        for base in ["gpt-6-astra", "gpt-6-astra-high", "gpt-5.6-sol-high"] {
+            for date in ["-20260901", "-2026-09-01"] {
+                for secondary in [false, true] {
+                    let catalog = PricingCatalog(entries: [base + date: rates])
+                    let snapshot = ModelPricing(supplement: pricing.supplement, primary: secondary ? PricingCatalog() : catalog, secondary: secondary ? catalog : PricingCatalog())
+                    for priority in [false, true] {
+                        let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: base + date, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot))
+                        XCTAssertEqual(cost, priority ? 8.4 : 4.2, accuracy: 1e-9)
+                        let fastCost = try XCTUnwrap(CodexUsagePricing.estimate(model: base + "-fast" + date, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot))
+                        XCTAssertEqual(fastCost, 8.4, accuracy: 1e-9)
+                    }
+                }
+            }
+        }
+    }
+
     func testPrimaryFastOnlyEntryIsNotUsedAsStandardBase() throws {
         let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
         let pricing = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: ["custom-fast": rates]), secondary: PricingCatalog())
