@@ -1,8 +1,8 @@
 # main의 가격표 변경을 GitHub Pages에 게시.
 #
 # 가격표에는 Cursor 모델 가격(auto, composer-*, github_bugbot), fast 배수, 모델 별칭 규칙 포함.
-# 앱의 가격표 일일 갱신은 태그·릴리스·Sparkle과 독립.
-# 앱의 기본 조회 대상은 upstream이므로 이 포크의 게시만으로 기본 조회 결과가 바뀌지는 않음.
+# 포크 피드를 읽는 앱의 가격표 갱신은 마지막 성공 후 한 시간 간격이며 태그·릴리스·Sparkle과 독립.
+# upstream 피드를 읽던 기존 앱은 포크 피드로 전환하는 앱 업데이트 필요.
 #
 # Release·사이트 게시와 실행 그룹 공유. keep_files 게시를 직렬화하여 동시 push의 변경 유실 방지.
 name: Publish pricing supplement

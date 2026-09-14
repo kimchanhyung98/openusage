@@ -7,16 +7,25 @@ OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 청구 금액을 직�
 
 가격은 세 출처를 계층으로 쌓아 쓰며, 같은 모델이 둘 이상에 있으면 상위 계층이 우선:
 
-1. **OpenUsage 가격 보충 파일** — 이 저장소에서 관리하고 GitHub Pages에 게시하는 작은 JSON 파일.
+1. **OpenUsage 가격 보충 파일** — 이 포크에서 관리하고 `openusage.chanhyung.kim`에 게시하는 작은 JSON 파일.
    공개 카탈로그에 없는 모델(`auto`, `composer-*` 같은 Cursor 전용 모델), fast 변형 배율, 프로바이더 로그/CSV 슬러그를 카탈로그 키로 연결하는 별칭 규칙을 담당.
 2. **LiteLLM** — 커뮤니티가 관리하는 `model_prices_and_context_window.json`으로, API 가격이 매겨진 모델 대부분을 포함.
 3. **models.dev** — LiteLLM이 놓친 모델(예: 갓 출시된 모델이나 일부 틈새 모델)을 채우는 보완 출처.
 
 앱은 세 출처의 스냅샷을 함께 넣어 배포하므로 오프라인에서도, 첫 실행에서도 가격 계산이 동작.
-실행 중에는 각 출처를 약 한 시간마다 다시 가져오고(ETag 재검증), `~/Library/Application Support/OpenUsage/pricing/`에 캐시.
-새로 고침이 사용량 스캔을 막는 일은 없음 — 스캔은 항상 그 시점에 이미 확보한 가장 최신 데이터로 가격을 계산.
+실행 중에는 마지막 성공 후 한 시간이 지나면 각 출처를 다시 확인하고(ETag 재검증), `~/Library/Application Support/OpenUsage/pricing/`에 캐시.
+연결 실패 시 30분 뒤부터 재시도하며, 앱에서 가격을 읽을 때 갱신 시작.
+새로 고침이 사용량 스캔을 막는 일은 없음 — 스캔은 그 시점에 이미 확보한 데이터로 가격을 계산하고 새 응답은 다음 조회부터 반영.
 
-보충 파일은 병합될 때 GitHub Pages에 게시되므로, 가격 수정은 앱 업데이트 없이 약 한 시간 안에 설치된 앱에 도달.
+보충 파일은 앱에 포함된 사본과 같은 출처의 캐시 중 갱신일이 최신인 사본 사용.
+따라서 앱 업데이트에 더 새로운 가격표가 포함됐다면 오프라인에서도 새 사본 사용.
+날짜만 있는 값은 UTC 자정으로 비교하며, 날짜가 없거나 올바르지 않으면 날짜가 확인된 사본 우선.
+갱신일이 같거나 양쪽 모두 확인할 수 없으면 캐시 우선.
+
+이전 앱이 저장한 원본 프로젝트의 가격표나 출처를 확인할 수 없는 보충 파일 캐시는 사용하지 않고, 앱에 포함된 포크 가격표로 시작해 새 피드 확인.
+LiteLLM·models.dev 캐시는 유지.
+포크 피드를 읽는 앱으로 처음 전환할 때는 앱 업데이트 필요.
+그 이후 가격표 게시·배포가 완료되면 실행 중인 온라인 앱의 다음 갱신에서 받아가므로 일반 가격 수정에는 별도 앱 업데이트 불필요.
 
 ## 모델 이름을 찾아가는 방식
 
@@ -41,13 +50,13 @@ Claude 로그 줄에 `costUSD`가 명시돼 있으면 유효한 비음수 비용
 
 ## 개인정보 보호
 
-가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 저장소의 GitHub Pages).
+가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, `openusage.chanhyung.kim`).
 이 요청에는 사용량이나 로그 데이터가 실리지 않음 — 사용량에 관한 어떤 것도 Mac을 떠나지 않음.
 
 ## 유지 관리자 노트
 
 - **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
-  `main`에 병합되면 `.github/workflows/pricing-supplement.yml`이 gh-pages에 게시하고, 설치된 앱은 약 한 시간 안에 이를 받아감.
+  `main` 병합 후 가격표 게시와 Pages 배포가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 가끔(예: 릴리스 전) `script/update_pricing_snapshots.sh`로 재생성.

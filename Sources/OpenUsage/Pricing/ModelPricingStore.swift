@@ -17,9 +17,16 @@ actor ModelPricingStore {
     }
 
     private struct SourceState: Codable {
+        var sourceURL: URL?
         var etag: String?
         var fetchedAt: Date?
         var failedAt: Date?
+    }
+
+    /// 출처와 본문을 한 파일에 원자적으로 저장 — state 저장 전 중단되어도 다른 피드의 캐시 수용 금지.
+    private struct CachedSupplement: Codable {
+        var sourceURL: URL
+        var body: Data
     }
 
     private let http: any HTTPClient
@@ -50,7 +57,7 @@ actor ModelPricingStore {
     static let defaultSourceURLs: [SourceID: URL] = [
         .litellm: URL(string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")!,
         .modelsDev: URL(string: "https://models.dev/api.json")!,
-        .supplement: URL(string: "https://robinebers.github.io/openusage/pricing_supplement.json")!
+        .supplement: URL(string: "https://openusage.chanhyung.kim/pricing_supplement.json")!
     ]
 
     private static var defaultCacheDirectory: URL {
@@ -89,6 +96,9 @@ actor ModelPricingStore {
         guard !loaded else { return }
         loaded = true
         sourceStates = readSourceStates()
+        if sourceStates[.supplement]?.sourceURL != sourceURLs[.supplement] {
+            sourceStates[.supplement] = SourceState(sourceURL: sourceURLs[.supplement])
+        }
         rebuildPricing()
     }
 
@@ -101,22 +111,60 @@ actor ModelPricingStore {
     }
 
     private func loadSupplement() -> PricingSupplement {
-        if let cached = readCache(.supplement) {
-            do {
-                return try PricingSupplement.decode(from: cached)
-            } catch {
-                AppLog.warn("pricing", "cached supplement unreadable, using bundled: \(error.localizedDescription)")
-            }
+        let cached = decodedCachedSupplement()
+        let bundled = decodedBundledSupplement()
+        if cached == nil {
+            sourceStates[.supplement]?.etag = nil
+            sourceStates[.supplement]?.fetchedAt = nil
         }
+        switch (cached, bundled) {
+        case (let cached?, let bundled?):
+            let cachedDate = Self.supplementDate(cached.updatedAt)
+            let bundledDate = Self.supplementDate(bundled.updatedAt)
+            if let bundledDate, cachedDate.map({ bundledDate > $0 }) ?? true {
+                return bundled
+            }
+            return cached
+        case (let cached?, nil): return cached
+        case (nil, let bundled?): return bundled
+        case (nil, nil): return PricingSupplement()
+        }
+    }
+
+    /// 날짜 전용 값은 UTC 자정으로 해석. 누락·비정상 날짜는 가장 오래된 값, 동률은 캐시 우선.
+    private static func supplementDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let timestamp = value.count == 10 ? "\(value)T00:00:00Z" : value
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: timestamp), formatter.string(from: date) == timestamp else {
+            AppLog.warn("pricing", "Supplement updated_at is not a valid UTC date or timestamp; treating it as undated")
+            return nil
+        }
+        return date
+    }
+
+    private func decodedCachedSupplement() -> PricingSupplement? {
+        guard let data = readCache(.supplement) else { return nil }
+        do {
+            let cached = try JSONDecoder().decode(CachedSupplement.self, from: data)
+            guard cached.sourceURL == sourceURLs[.supplement] else { return nil }
+            return try PricingSupplement.decode(from: cached.body)
+        } catch {
+            AppLog.warn("pricing", "Cached supplement has no readable source and pricing data; using bundled pricing")
+            return nil
+        }
+    }
+
+    private func decodedBundledSupplement() -> PricingSupplement? {
         guard let bundled = bundledData("pricing_supplement") else {
             AppLog.error("pricing", "bundled pricing_supplement.json missing")
-            return PricingSupplement()
+            return nil
         }
         do {
             return try PricingSupplement.decode(from: bundled)
         } catch {
             AppLog.error("pricing", "bundled pricing_supplement.json unreadable: \(error.localizedDescription)")
-            return PricingSupplement()
+            return nil
         }
     }
 
@@ -186,7 +234,10 @@ actor ModelPricingStore {
             let response = try await http.send(request)
             switch response.statusCode {
             case 200:
-                let cacheData = try validatedCacheData(source, body: response.body)
+                let validated = try validatedCacheData(source, body: response.body)
+                let cacheData = source == .supplement
+                    ? try JSONEncoder().encode(CachedSupplement(sourceURL: url, body: validated))
+                    : validated
                 try writeCache(source, data: cacheData)
                 state.etag = response.header("etag")
                 state.fetchedAt = now()
@@ -195,6 +246,11 @@ actor ModelPricingStore {
                 AppDiagnostics.record(operation, result: .success)
                 return true
             case 304:
+                if source == .supplement,
+                   request.headers["If-None-Match"] == nil || decodedCachedSupplement() == nil {
+                    state.etag = nil
+                    throw PricingFetchError.unusableNotModified
+                }
                 state.fetchedAt = now()
                 state.failedAt = nil
                 sourceStates[source] = state
@@ -266,14 +322,19 @@ actor ModelPricingStore {
 
 private enum PricingFetchError: Error, LocalizedError, CategorizedError {
     var errorCategory: ErrorCategory {
-        switch self { case .httpStatus(let code): .http(code) }
+        switch self {
+        case .httpStatus(let code): .http(code)
+        case .unusableNotModified: .decoding
+        }
     }
 
     case httpStatus(Int)
+    case unusableNotModified
 
     var errorDescription: String? {
         switch self {
         case .httpStatus(let code): return "HTTP \(code)"
+        case .unusableNotModified: return "Pricing response did not include a usable supplement"
         }
     }
 }
