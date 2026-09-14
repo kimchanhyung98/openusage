@@ -184,7 +184,7 @@ test('Pages 최초 배포와 새 커밋 전진 후 과거 실행은 배포 생�
   } finally { fixture.cleanup(); }
 });
 
-test('Pages 기준 전진 후 업로드 실패를 가정한 동일 SHA 재시도 허용', () => {
+test('Pages 기준 전진 후 게시 head가 바뀌어도 동일 SHA 재시도 허용', () => {
   const fixture = guardedDeploymentFixture();
   try {
     const verified = fixture.git(fixture.published, 'rev-parse', 'HEAD');
