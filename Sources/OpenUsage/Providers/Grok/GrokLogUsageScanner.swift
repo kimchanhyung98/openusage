@@ -39,10 +39,7 @@ struct GrokLogUsageScanner: Sendable {
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let path = logPath
-        guard files.exists(path) else {
-            await numericFailureReporter.update(path: path, rejectedRows: 0)
-            return nil
-        }
+        guard files.exists(path) else { return nil }
         let text: String
         do {
             text = try files.readText(path)
