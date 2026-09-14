@@ -334,6 +334,8 @@ enum SpendTileMapper {
     }
 
     private static func roundToCents(_ value: Double) -> Double {
-        (value * 100).rounded() / 100
+        // 소수부를 표현하지 못하는 큰 Double은 이미 정수 — 배율 곱셈 없이 유지.
+        guard value.ulp < 1 else { return value }
+        return (value * 100).rounded() / 100
     }
 }

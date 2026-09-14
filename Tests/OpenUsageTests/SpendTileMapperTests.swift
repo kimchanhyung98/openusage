@@ -2,6 +2,30 @@ import XCTest
 @testable import OpenUsage
 
 final class SpendTileMapperTests: XCTestCase {
+    func testLargeVariantCostsAndOrdinaryCentRoundingRemainEncodable() throws {
+        for cost in [1.23456, 1e308, Double.greatestFiniteMagnitude] {
+            var accumulator = DailyUsageAccumulator()
+            accumulator.add(day: "2026-06-26", tokens: 1, cost: cost, model: "model")
+            let scan = accumulator.build()
+            var modelUsage = try XCTUnwrap(scan.modelUsage)
+            modelUsage.daily[0].models[0].variants = [
+                ModelUsageVariant(model: "model-variant", totalTokens: 1, costUSD: cost)
+            ]
+            var lines: [MetricLine] = []
+            SpendTileMapper.appendTokenUsage(
+                scan.series, to: &lines, now: day(2026, 6, 26), estimated: false,
+                modelUsage: modelUsage, modelSourceNote: "From test logs"
+            )
+            for label in ["Today", "Last 30 Days"] {
+                let model = try XCTUnwrap(modelBreakdown(lines, label)?.models.first)
+                let expected = cost == 1.23456 ? 1.23 : cost
+                XCTAssertEqual(model.costUSD, expected)
+                XCTAssertEqual(model.variants?.first?.costUSD, expected)
+            }
+            XCTAssertNoThrow(try JSONEncoder().encode(lines))
+        }
+    }
+
     func testIdleRecentDaysLeftUnbacked() {
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(
