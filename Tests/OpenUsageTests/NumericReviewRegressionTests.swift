@@ -109,6 +109,74 @@ final class NumericReviewRegressionTests: XCTestCase {
         XCTAssertEqual(recovered.rejectedNumericRows, 0)
     }
 
+    func testCodexMergePreservesNumericAndPricingRejectionsWithoutReplacingHistory() throws {
+        let date = Date(timeIntervalSince1970: 1_789_200_000)
+        let native = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(Data(
+            #"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8
+        )), since: .distantPast, pricing: TestPricing.bundled)
+        let unsupported = PiUsageScanner.aggregate(entries: [
+            .init(timestamp: date, cardID: "codex", model: "gpt-5.6-sol", carriedCost: nil,
+                  tokens: .init(cacheWrite1h: 100), reportedTotalTokens: 100)
+        ], cardID: "codex", since: .distantPast, pricing: TestPricing.bundled,
+           costEstimator: CodexUsagePricing.estimatePi)
+        let rejected = try XCTUnwrap(DailyUsageAccumulator.merged([native, unsupported]))
+        XCTAssertEqual(rejected.rejectedNumericRows, 1)
+        XCTAssertEqual(rejected.unsupportedPricingRows, 1)
+        XCTAssertNotNil(rejected.numericWarning)
+        XCTAssertNotNil(rejected.pricingWarning)
+        XCTAssertNil(rejected.usageHistory)
+        XCTAssertTrue(rejected.series.daily.isEmpty)
+        XCTAssertFalse(rejected.unknownModelsByDay.isEmpty)
+
+        let valid = CodexLogUsageScanner.aggregate(events: [
+            .init(timestamp: date, model: "gpt-5.6-sol", input: 300_000, cached: 100_000,
+                  output: 10_000, reasoning: 0, total: 310_000)
+        ], since: .distantPast, pricing: TestPricing.bundled)
+        let partial = try XCTUnwrap(DailyUsageAccumulator.merged([valid, rejected]))
+        XCTAssertEqual(partial.series, valid.series)
+        XCTAssertEqual(try XCTUnwrap(partial.series.daily.first?.costUSD), 1.98, accuracy: 1e-9)
+        XCTAssertEqual(partial.rejectedNumericRows, 1)
+        XCTAssertEqual(partial.unsupportedPricingRows, 1)
+        XCTAssertNotNil(partial.usageHistory)
+    }
+
+    func testPiRejectsInvalidNumbersBeforeCodexPricingAndKeepsAuthoritativeCosts() throws {
+        let rows = [
+            #""input":-1,"cacheWrite1h":100,"cost":{"total":0}"#,
+            #""input":100,"cacheWrite1h":100,"cost":{"total":0}"#,
+            #""input":100,"cacheWrite1h":100,"cost":{"total":0.5}"#
+        ]
+        let entries = try rows.enumerated().map { index, usage in
+            try XCTUnwrap(PiUsageScanner.parseLine(Data("""
+            {"type":"message","id":"\(index)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{\(usage),"totalTokens":200}}}
+            """.utf8)))
+        }
+        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "codex", since: .distantPast,
+            pricing: TestPricing.bundled, costEstimator: CodexUsagePricing.estimatePi)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertEqual(scan.unsupportedPricingRows, 1)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 200)
+        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+        XCTAssertNotNil(scan.numericWarning)
+        XCTAssertNotNil(scan.pricingWarning)
+        XCTAssertNotNil(scan.usageHistory)
+    }
+
+    func testMergeOverflowKeepsBothExistingRejectionCounts() throws {
+        var native = DailyUsageAccumulator()
+        native.add(day: "2026-09-12", tokens: Int.max, cost: 1, model: "a")
+        var pi = DailyUsageAccumulator()
+        pi.add(day: "2026-09-12", tokens: 1, cost: 2, model: "b")
+        let result = try XCTUnwrap(DailyUsageAccumulator.merged([
+            native.build(rejectedNumericRows: 1), pi.build(unsupportedPricingRows: 1)
+        ]))
+        XCTAssertEqual(result.series.daily.first?.totalTokens, Int.max)
+        XCTAssertEqual(result.series.daily.first?.costUSD, 1)
+        XCTAssertEqual(result.rejectedNumericRows, 2)
+        XCTAssertEqual(result.unsupportedPricingRows, 1)
+        XCTAssertNotNil(result.usageHistory)
+    }
+
     private func claudeLine(cost: String, sidechain: Bool) -> Data {
         Data("""
         {"timestamp":"2026-09-12T10:00:00Z","sessionId":"s","requestId":"r","version":"1.0.24","isSidechain":\(sidechain),"costUSD":\(cost),"message":{"id":"same","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":0}}}
