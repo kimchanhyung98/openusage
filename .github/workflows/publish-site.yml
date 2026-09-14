@@ -25,6 +25,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     concurrency:
       group: release-appcast
+      queue: max
       cancel-in-progress: false
     permissions:
       contents: write
