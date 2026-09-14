@@ -30,8 +30,8 @@ actor CodexLogUsageScanner {
         var pricingModel: String? = nil
     }
 
-    /// 숫자 검증과 자동 리뷰 식별자가 함께 보존되는 형식 — 어느 한쪽만 반영된 캐시도 재파싱.
-    static let cacheSchemaVersion = 5
+    /// 손상된 부모 재생 구간의 불확실한 증가분을 제외하는 형식 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 6
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -151,6 +151,7 @@ actor CodexLogUsageScanner {
 
         var events: [Event] = []
         var previousTotals: RawUsage?
+        var replayBaselineUnknown = false
         var currentModel: String?
         var currentTierIsFast = false
         var sawSessionMeta = false
@@ -218,7 +219,10 @@ actor CodexLogUsageScanner {
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
-                if let totals, !totals.invalid { previousTotals = totals }
+                if let totals {
+                    previousTotals = totals.invalid ? nil : totals
+                    replayBaselineUnknown = totals.invalid
+                }
                 continue
             }
 
@@ -227,7 +231,7 @@ actor CodexLogUsageScanner {
                 continue
             }
 
-            let usage: RawUsage
+            var usage: RawUsage
             // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
             if let totals, totals.invalid {
                 usage = totals
@@ -235,11 +239,16 @@ actor CodexLogUsageScanner {
                 usage = last
             } else if let totals {
                 usage = totals.subtracting(previousTotals)
+                // 부모 재생의 기준이 끊겼으면 첫 live 누적값은 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
+                if replayBaselineUnknown { usage.invalid = true }
             } else {
                 continue
             }
             // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
-            if let totals, !totals.invalid { previousTotals = totals }
+            if let totals, !totals.invalid {
+                previousTotals = totals
+                replayBaselineUnknown = false
+            }
             guard !usage.invalid else {
                 events.append(Event(
                     timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
@@ -291,7 +300,7 @@ actor CodexLogUsageScanner {
         var reasoning: Int
         var total: Int
 
-        /// 숫자 손상 행 — 0 토큰으로 두고 집계에서 제외, 경고로 노출.
+        /// 숫자 손상·재생 기준 불확실 — 집계에서 제외하고 경고로 노출.
         var invalid = false
 
         init(json: [String: Any]) {
