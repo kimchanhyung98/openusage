@@ -206,6 +206,52 @@ final class CodexUsagePricingTests: XCTestCase {
         }
     }
 
+    func testNormalizedFastSeparatorsKeepDistinctRates() {
+        let standard = ModelRates(inputPerMillion: 3, outputPerMillion: 15, cacheWritePerMillion: 3, cacheReadPerMillion: 3)
+        let fast = ModelRates(inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        for separator in ["-", ".", "@"] {
+            let catalog = PricingCatalog(entries: ["vendor/grok-4": standard, "vendor/grok-4" + separator + "fast-non-reasoning": fast])
+            let snapshot = ModelPricing(supplement: PricingSupplement(), primary: catalog, secondary: PricingCatalog())
+            XCTAssertEqual(snapshot.resolve(model: "grok-4"), standard)
+            for querySeparator in ["-", ".", "@"] {
+                XCTAssertEqual(snapshot.resolve(model: "grok-4" + querySeparator + "fast-non-reasoning"), fast)
+            }
+        }
+    }
+
+    func testQualifiedEffortModelsRetainCodexTierRules() throws {
+        for (base, effort) in [("gpt-5.6-sol", "high"), ("gpt-5.6-terra", "max"),
+                               ("gpt-5.5", "extra-high"), ("gpt-6-astra", "max")] {
+            for prefix in ["", "openai/"] {
+                for suffix in ["", "-20260901", "-2026-09-01"] {
+                    for priority in [false, true] {
+                        let tokens = TokenBreakdown(input: 300_000, cacheRead: 20_000, output: 1_000, isFast: priority)
+                        let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: base, tokens: tokens, pricing: pricing))
+                        let actual = try XCTUnwrap(CodexUsagePricing.estimate(model: prefix + base + "-" + effort + suffix, tokens: tokens, pricing: pricing))
+                        XCTAssertEqual(actual, expected, accuracy: 1e-9)
+                        var priorityTokens = tokens
+                        priorityTokens.isFast = true
+                        let fastExpected = try XCTUnwrap(CodexUsagePricing.estimate(model: base, tokens: priorityTokens, pricing: pricing))
+                        let fastActual = try XCTUnwrap(CodexUsagePricing.estimate(
+                            model: prefix + base + "-" + effort + "-fast" + suffix, tokens: tokens, pricing: pricing
+                        ))
+                        XCTAssertEqual(fastActual, fastExpected, accuracy: 1e-9)
+                    }
+                }
+            }
+        }
+    }
+
+    func testNativeReasoningIsAlreadyIncludedInOutputCost() throws {
+        let text = CodexLogFixture.tokenCount(timestamp: "2026-09-12T10:00:00Z",
+            last: CodexLogFixture.usage(input: 100, output: 10, reasoning: 5), model: "gpt-5.6-sol")
+        let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+        let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: pricing)
+        let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: "gpt-5.6-sol", tokens: .init(input: 100, output: 10), pricing: pricing))
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 110)
+        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), expected, accuracy: 1e-9)
+    }
+
     func testAutomaticReviewKeepsIdentityWhileUsingRequestPricingForItsReference() throws {
         let event = CodexLogUsageScanner.Event(timestamp: date, model: "codex-auto-review", input: 300_000,
             cached: 100_000, output: 10_000, reasoning: 0, total: 310_000, isFast: true, pricingModel: "gpt-5.6-sol")
