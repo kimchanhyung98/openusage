@@ -165,6 +165,47 @@ final class CodexUsagePricingTests: XCTestCase {
         }
     }
 
+    func testBundledDatedSupplementModelsRetainCodexRequestRates() throws {
+        for base in ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
+            for suffix in ["-20260901", "-2026-09-01"] {
+                for prefix in ["", "openai/"] {
+                    for fast in [false, true] {
+                        let tokens = TokenBreakdown(input: 300_000, cacheRead: 20_000, output: 1_000, isFast: fast)
+                        let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: base, tokens: tokens, pricing: pricing))
+                        XCTAssertEqual(try XCTUnwrap(CodexUsagePricing.estimate(
+                            model: prefix + base + suffix, tokens: tokens, pricing: pricing
+                        )), expected, accuracy: 1e-9)
+                    }
+                }
+            }
+        }
+        for suffix in ["-2", "-202609", "-preview"] {
+            XCTAssertNil(CodexUsagePricing.estimate(model: "openai/gpt-5.6-sol" + suffix, tokens: .init(input: 1_000), pricing: pricing))
+        }
+    }
+
+    func testQualifiedFastAliasesPreserveExactProviderBaseRates() throws {
+        let qualified = ModelRates(inputPerMillion: 7, outputPerMillion: 14, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        let generic = ModelRates(inputPerMillion: 3, outputPerMillion: 6, cacheWritePerMillion: 3, cacheReadPerMillion: 3)
+        for qualifier in ["-high", "-20260901", "-high-20260901", "-high-2026-09-01"] {
+            let base = "openai/gpt-6-astra" + qualifier
+            let fast = qualifier.hasPrefix("-high")
+                ? "openai/gpt-6-astra-high-fast" + qualifier.dropFirst("-high".count)
+                : "openai/gpt-6-astra-fast" + qualifier
+            for secondary in [false, true] {
+                let catalog = PricingCatalog(entries: [base: qualified, "openai/gpt-6-astra": generic])
+                let snapshot = ModelPricing(supplement: pricing.supplement,
+                    primary: secondary ? PricingCatalog() : catalog, secondary: secondary ? catalog : PricingCatalog())
+                for priority in [false, true] {
+                    let cost = try XCTUnwrap(CodexUsagePricing.estimate(
+                        model: fast, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot
+                    ))
+                    XCTAssertEqual(cost, 8.4, accuracy: 1e-9, fast)
+                }
+            }
+        }
+    }
+
     func testAutomaticReviewKeepsIdentityWhileUsingRequestPricingForItsReference() throws {
         let event = CodexLogUsageScanner.Event(timestamp: date, model: "codex-auto-review", input: 300_000,
             cached: 100_000, output: 10_000, reasoning: 0, total: 310_000, isFast: true, pricingModel: "gpt-5.6-sol")
