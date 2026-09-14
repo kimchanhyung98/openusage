@@ -4,6 +4,43 @@ import XCTest
 final class CodexReplayNumericSafetyTests: XCTestCase {
     private let timestamp = "2026-09-12T10:00:00Z"
 
+    func testStaleCumulativeSnapshotCannotUndoANewerTurnModel() {
+        let content = staleModelReplay()
+        let events = CodexLogUsageScanner.parseFile(Data(content.utf8))
+        XCTAssertEqual(events.map(\.model), ["gpt-5.4", "gpt-5.5"])
+        XCTAssertEqual(events.map(\.total), [100, 20])
+        XCTAssertEqual(events.map(\.invalidNumericValues), [false, false])
+    }
+
+    func testVersionNineCacheReparsesModelAfterStaleSnapshot() async throws {
+        let home = try CodexLogFixture.makeHome(files: ["sessions/stale.jsonl": staleModelReplay()])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let directory = home.appendingPathComponent("cache")
+        let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
+            .init(namespace: "codex", schemaVersion: 9, directory: directory, writeDebounce: .milliseconds(1)))
+        let wrongModel = CodexLogUsageScanner.Event(
+            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)), model: "gpt-5.4",
+            input: 20, cached: 0, output: 0, reasoning: 0, total: 20
+        )
+        _ = await old.items(from: files, since: .distantPast, cacheIdentity: "stale-model") { _ in [wrongModel] }
+        await old.waitForPendingWritesForTesting()
+        let scanner = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
+            .init(namespace: "codex", schemaVersion: CodexLogUsageScanner.cacheSchemaVersion, directory: directory))
+        let events = await scanner.items(from: files, since: .distantPast, cacheIdentity: "stale-model", parse: CodexLogUsageScanner.parseFile)
+        XCTAssertEqual(events?.map(\.model), ["gpt-5.4", "gpt-5.5"])
+        await scanner.waitForPendingWritesForTesting()
+    }
+
+    private func staleModelReplay() -> String {
+        [
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0), model: "gpt-5.4"),
+            CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.5"),
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0), model: "gpt-5.4"),
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 120, output: 0))
+        ].joined(separator: "\n")
+    }
+
     func testCorruptLastUsageIsNotRecoveredThroughCurrentOrFutureTotals() {
         let text = [
             CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0), model: "gpt-5.4"),
