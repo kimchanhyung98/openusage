@@ -76,6 +76,52 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertNotNil(snapshot.line(label: "Today"))
     }
 
+    func testExtremeFiniteCostsKeepMetersAndModelBreakdownEncodable() async throws {
+        let now = d("2026-07-12T12:00:00.000Z")
+        for costs in [["1e308"], ["1e308", "1e308"]] {
+            let db = "[" + costs.enumerated().map { index, cost in
+                row("2026-07-12T11:00:00.000Z", cost, 1, "model-\(index)", "opencode-go")
+            }.joined(separator: ",") + "]"
+            let provider = OpenCodeProvider(
+                authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),
+                usageScanner: OpenCodeUsageScanner(
+                    sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
+                    databasePaths: { ["/oc/opencode.db"] }
+                ),
+                now: { now }
+            )
+            let snapshot = await provider.refresh()
+            XCTAssertNil(snapshot.errorCategory)
+            for label in ["Session", "Weekly", "Monthly"] {
+                guard case .progress(_, let used, _, _, _, _, _)? = snapshot.line(label: label) else {
+                    return XCTFail("Missing progress: \(label)")
+                }
+                XCTAssertEqual(used, 1e308)
+            }
+            for label in ["Today", "Last 30 Days"] {
+                guard case .values(_, _, _, _, _, let detail)? = snapshot.line(label: label) else {
+                    return XCTFail("Missing spend: \(label)")
+                }
+                let breakdown = try XCTUnwrap(detail)
+                XCTAssertEqual(breakdown.models.first?.costUSD, 1e308)
+                XCTAssertEqual(breakdown.totalTokens, 1)
+            }
+            XCTAssertEqual(snapshot.warning != nil, costs.count > 1)
+            XCTAssertNoThrow(try JSONEncoder().encode(snapshot.lines))
+            let state = LocalUsageAPI.State(
+                enabledOrderedIDs: ["opencode"], knownIDs: ["opencode"],
+                snapshots: ["opencode": snapshot], limitDescriptors: ["opencode": provider.widgetDescriptors],
+                generatedAt: now
+            )
+            let usage = LocalUsageAPI.respond(method: "GET", path: "/v1/usage", state: state)
+            let usageRows = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(usage.body)) as? [[String: Any]])
+            XCTAssertEqual(usageRows.count, 1, "Finite usage must not trigger the empty-response fallback")
+            let limits = LocalUsageAPI.respond(method: "GET", path: "/v1/limits", state: state)
+            let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(limits.body)) as? [String: Any])
+            XCTAssertNotNil((envelope["providers"] as? [String: Any])?["opencode"])
+        }
+    }
+
     func testRefreshNotLoggedInWhenNoKeyAndNoDatabase() async {
         let now = d("2026-07-12T12:00:00.000Z")
         let provider = OpenCodeProvider(

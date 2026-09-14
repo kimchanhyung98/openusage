@@ -46,6 +46,55 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.goWindows?.sessionSpend ?? -1, 6.0, accuracy: 0.0001)
     }
 
+    func testCostOverflowAcrossDaysAndGatewaysIsExcludedFromGoWindows() async throws {
+        let db = "[" + [
+            row("2026-07-10T10:00:00.000Z", "1e308", 1, "zen", "opencode"),
+            row("2026-07-12T11:00:00.000Z", "1e308", 2, "overflow", "opencode-go"),
+            row("2026-07-12T11:30:00.000Z", "1.23456", 3, "valid", "opencode-go")
+        ].joined(separator: ",") + "]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.logScan.numericWarning)
+        XCTAssertEqual(scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }, 4)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 1.2346)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 1.2346)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1.2346)
+        XCTAssertNoThrow(try JSONEncoder().encode(scan.logScan.usageHistory))
+    }
+
+    func testMonthlyOnlyCostsCannotOverflowOrClearRecentHistory() async throws {
+        // UTC 월간 기간의 첫날이 로컬 타일 범위 밖에 머물도록 로컬 정오 시각 선택.
+        let start = d("2026-08-01T00:00:00.000Z")
+        let now = try XCTUnwrap((0..<23).map { start.addingTimeInterval(Double($0) * 3600) }.first {
+            [12, 13].contains(Calendar.current.component(.hour, from: $0))
+        })
+        let monthlyMs = Int(now.addingTimeInterval(-31 * 86_400 + 3600).timeIntervalSince1970 * 1000)
+        let recentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
+        let db = """
+        [[\(monthlyMs),1e308,1,"monthly","opencode-go"],[\(recentMs),1e308,2,"overflow","opencode-go"]]
+        """
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(
+                data: ["/oc/opencode.db": db],
+                anchors: ["/oc/opencode.db": String(monthlyMs)]
+            ),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertTrue(scan.logScan.series.daily.isEmpty)
+        XCTAssertNil(scan.logScan.usageHistory, "Invalid recent usage must preserve the last successful history")
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 0)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 0)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1e308)
+    }
+
     func testZenOnlyUsageHasNoGoWindows() async throws {
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let scanner = OpenCodeUsageScanner(
