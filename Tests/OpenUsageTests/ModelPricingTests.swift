@@ -191,6 +191,8 @@ final class ModelPricingTests: XCTestCase {
         for suffix in ["-fast", ".fast", "@fast"] {
             let priced = try makePricing(primary: ["gpt-9.5": rates(5, 30, fast: 2.5)])
             XCTAssertEqual(priced.resolve(model: "gpt-9.5" + suffix)?.inputPerMillion, 12.5)
+            let pricedWithSecondary = try makePricing(primary: ["gpt-9.5": rates(5, 30, fast: 2.5)], secondary: ["gpt-9.5" + suffix: rates(7, 21)])
+            XCTAssertEqual(pricedWithSecondary.resolve(model: "gpt-9.5" + suffix)?.inputPerMillion, 12.5, "Primary pricing retains precedence when its fast multiplier is known")
             let unknown = try makePricing(primary: ["gpt-9.5": rates(5, 30)])
             XCTAssertNil(unknown.resolve(model: "gpt-9.5" + suffix))
             let secondary = try makePricing(primary: ["gpt-9.5": rates(5, 30)], secondary: ["gpt-9.5" + suffix: rates(7, 21)])
