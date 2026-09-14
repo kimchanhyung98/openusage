@@ -25,9 +25,17 @@ extension ClaudeDesktopAuthStore {
             AppLog.error(LogTag.auth("claude"), "Claude Desktop cache has malformed account ownership; refusing cached credentials")
             return .invalid
         }
-        let v2Candidates = candidates(in: v2Entries, organization: normalizedOrg, now: now)
+        // 계정 소유권이 버전보다 우선. V2 삭제 마커는 이전 버전의 모든 사본을 계속 억제.
+        let scopedV1Keys = Set(v1Entries.compactMap { key, entry -> CacheKey? in
+            guard entry.isScoped, let newer = v2Entries[key],
+                  !newer.isScoped, !(newer.value is NSNull) else { return nil }
+            return key
+        })
+        let v2Candidates = candidates(
+            in: v2Entries.filter { !scopedV1Keys.contains($0.key) }, organization: normalizedOrg, now: now
+        )
         let v1Candidates = candidates(
-            in: v1Entries.filter { v2Entries[$0.key] == nil },
+            in: v1Entries.filter { v2Entries[$0.key] == nil || scopedV1Keys.contains($0.key) },
             organization: normalizedOrg,
             now: now
         )
