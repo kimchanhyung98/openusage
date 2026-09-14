@@ -165,11 +165,12 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         }
     }
 
-    func testV2TokenTakesPrecedenceAcrossBothKeyFormats() throws {
+    func testV2PrecedenceRespectsVerifiedV1Ownership() throws {
         for v2Key in [legacyKey(), scopedKey()] {
             for v1Key in [legacyKey(), scopedKey()] {
                 let result = select(v2: [v2Key: token("v2")], v1: [v1Key: token("v1", expiresIn: 86_400)])
-                XCTAssertEqual(try available(result).accessToken, "v2")
+                let expected = v2Key == legacyKey() && v1Key == scopedKey() ? "v1" : "v2"
+                XCTAssertEqual(try available(result).accessToken, expected)
             }
         }
     }
@@ -232,6 +233,16 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
                     }
                 }
             }
+        }
+    }
+
+    func testScopedV1OwnsMatchingLegacyV2Alias() throws {
+        let legacy = [legacyKey(): token("unowned", expiresIn: 86_400)]
+        let current = [scopedKey(): token("current")]
+        XCTAssertEqual(try available(select(v2: legacy, v1: current)).accessToken, "current")
+        for entry: Any in [NSNull(), token("expired", expiresIn: -1), ["token": " "]] {
+            let selection = select(v2: legacy, v1: [scopedKey(): entry])
+            if case .available = selection { XCTFail("Unowned V2 must not revive a rejected scoped V1 credential") }
         }
     }
 
