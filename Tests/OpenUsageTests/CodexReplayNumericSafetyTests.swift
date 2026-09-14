@@ -34,13 +34,24 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
             meta: CodexLogFixture.subagentSessionMeta(timestamp: timestamp),
             corrupt: ["input_tokens": -1, "output_tokens": 50]
         )
+        try await assertReplayCacheReparsed(content: content, oldVersion: 5)
+    }
+
+    func testVersionSixCacheReparsesMissingReplayTotals() async throws {
+        let content = missingTotalsReplay(
+            meta: CodexLogFixture.subagentSessionMeta(timestamp: timestamp), seed: 100
+        ).split(separator: "\n").dropLast().joined(separator: "\n")
+        try await assertReplayCacheReparsed(content: content, oldVersion: 6)
+    }
+
+    private func assertReplayCacheReparsed(content: String, oldVersion: Int) async throws {
         let home = try CodexLogFixture.makeHome(files: ["sessions/replay.jsonl": content])
         defer { try? FileManager.default.removeItem(at: home) }
         let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
         let directory = home.appendingPathComponent("cache")
         let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
-            persistence: .init(namespace: "codex", schemaVersion: 5, directory: directory, writeDebounce: .milliseconds(1))
+            persistence: .init(namespace: "codex", schemaVersion: oldVersion, directory: directory, writeDebounce: .milliseconds(1))
         )
         let poisoned = CodexLogUsageScanner.Event(
             timestamp: now, model: "gpt-5.4", input: 100, cached: 0, output: 0, reasoning: 0,
@@ -114,6 +125,68 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
         XCTAssertEqual(scan.rejectedNumericRows, 0)
         XCTAssertNil(scan.numericWarning)
+    }
+
+    func testMissingReplayTotalsRequireANewBaseline() {
+        for meta in [CodexLogFixture.subagentSessionMeta(timestamp: timestamp),
+                     CodexLogFixture.forkSessionMeta(timestamp: timestamp),
+                     #"{"type":"session_meta","payload":{"forked_from_id":"parent"}}"#] {
+            for seed in [nil, 100, 200] as [Int?] {
+                for totalsJSON in [nil, "null", "42", "[]"] as [String?] {
+                    let text = missingTotalsReplay(meta: meta, seed: seed, totalsJSON: totalsJSON)
+                    let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+                    XCTAssertEqual(events.map(\.total), [0, 20])
+                    XCTAssertEqual(events.map(\.invalidNumericValues), [true, false])
+                    let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+                    XCTAssertEqual(scan.series.daily.first?.totalTokens, 20)
+                    XCTAssertEqual(scan.rejectedNumericRows, 1)
+                }
+            }
+        }
+    }
+
+    func testMissingReplayTotalsRecoverOnlyFromValidCumulativeUsage() {
+        for restoreReplay in [false, true] {
+            let text = missingTotalsReplay(
+                meta: CodexLogFixture.subagentSessionMeta(timestamp: timestamp), seed: 100,
+                restoreReplay: restoreReplay, liveLastOnly: !restoreReplay
+            )
+            let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+            XCTAssertEqual(events.map(\.total), restoreReplay ? [20, 20] : [10, 0, 20])
+            XCTAssertEqual(events.map(\.invalidNumericValues), restoreReplay ? [false, false] : [false, true, false])
+        }
+    }
+
+    func testMissingReplayTotalsWithoutLiveUsageDoNotWarn() {
+        let text = [CodexLogFixture.subagentSessionMeta(timestamp: timestamp),
+                    CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 10, output: 0))]
+            .joined(separator: "\n")
+        XCTAssertTrue(CodexLogUsageScanner.parseFile(Data(text.utf8)).isEmpty)
+    }
+
+    private func missingTotalsReplay(
+        meta: String, seed: Int?, totalsJSON: String? = nil,
+        restoreReplay: Bool = false, liveLastOnly: Bool = false
+    ) -> String {
+        var lines = [meta, CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4")]
+        if let seed {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: seed, output: 0)))
+        }
+        let totalField = totalsJSON.map { ",\"total_token_usage\":\($0)" } ?? ""
+        lines.append("{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":10}\(totalField)}}}")
+        if restoreReplay {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 180, output: 0)))
+        }
+        lines.append(CodexLogFixture.taskStarted(
+            timestamp: timestamp, startedAt: Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970)
+        ))
+        if liveLastOnly {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 10, output: 0)))
+        }
+        for input in [200, 220] {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: input, output: 0)))
+        }
+        return lines.joined(separator: "\n")
     }
 
     private func rollout(meta: String, corrupt: [String: Int], last: [String: Int]? = nil, recoveredReplay: [String: Int]? = nil) -> String {
