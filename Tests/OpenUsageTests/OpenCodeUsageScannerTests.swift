@@ -67,7 +67,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         XCTAssertNoThrow(try JSONEncoder().encode(scan.logScan.usageHistory))
     }
 
-    func testMonthlyOnlyCostsCannotOverflowOrClearRecentHistory() async throws {
+    func testMonthlyOnlyCostsRejectOverflowingRecentUsageWithNilHistory() async throws {
         // UTC 월간 기간의 첫날이 로컬 타일 범위 밖에 머물도록 로컬 정오 시각 선택.
         let start = d("2026-08-01T00:00:00.000Z")
         let now = try XCTUnwrap((0..<23).map { start.addingTimeInterval(Double($0) * 3600) }.first {
@@ -89,9 +89,60 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         let scan = try XCTUnwrap(result)
         XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
         XCTAssertTrue(scan.logScan.series.daily.isEmpty)
-        XCTAssertNil(scan.logScan.usageHistory, "Invalid recent usage must preserve the last successful history")
+        XCTAssertNil(scan.logScan.usageHistory, "An all-rejected tile window must yield nil history")
         XCTAssertEqual(scan.goWindows?.sessionSpend, 0)
         XCTAssertEqual(scan.goWindows?.weeklySpend, 0)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1e308)
+    }
+
+    func testCostsOutsideDisplayedWindowsCannotRejectCurrentUsage() async throws {
+        let oldMs = epochMs("2026-06-10T11:00:00.000Z")
+        for provider in ["opencode", "opencode-go"] {
+            for paths in [["/old.db", "/current.db"], ["/current.db", "/old.db"]] {
+                let scanner = OpenCodeUsageScanner(
+                    sqlite: FakeSQLite(data: [
+                        "/old.db": "[" + row("2026-06-10T11:00:00.000Z", "1e308", 1, "old", provider) + "]",
+                        "/current.db": "[" + row("2026-07-12T11:00:00.000Z", "1e308", 2, "current", "opencode-go") + "]"
+                    ], anchors: ["/old.db": String(oldMs)]),
+                    databasePaths: { paths }
+                )
+                let result = try await scanner.scan(now: now, hasGoKey: false)
+                let scan = try XCTUnwrap(result)
+                XCTAssertEqual(scan.logScan.rejectedNumericRows, 0)
+                XCTAssertNil(scan.logScan.numericWarning)
+                XCTAssertEqual(scan.logScan.series.daily.count, 1)
+                XCTAssertEqual(scan.logScan.series.daily.first?.totalTokens, 2)
+                XCTAssertEqual(scan.logScan.series.daily.first?.costUSD, 1e308)
+                let windows = try XCTUnwrap(scan.goWindows)
+                XCTAssertEqual(windows.sessionSpend, 1e308)
+                XCTAssertEqual(windows.weeklySpend, 1e308)
+                XCTAssertEqual(windows.monthlySpend, 1e308)
+                XCTAssertNoThrow(try JSONEncoder().encode(scan.logScan.usageHistory))
+            }
+        }
+    }
+
+    func testZenOutsideTileWindowCannotConsumeActiveGoBudget() async throws {
+        let start = d("2026-08-01T00:00:00.000Z")
+        let now = try XCTUnwrap((0..<23).map { start.addingTimeInterval(Double($0) * 3600) }.first {
+            [12, 13].contains(Calendar.current.component(.hour, from: $0))
+        })
+        let oldMs = Int(now.addingTimeInterval(-31 * 86_400 + 3600).timeIntervalSince1970 * 1000)
+        let currentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": """
+                [[\(oldMs),1e308,1,"old-zen","opencode"],[\(currentMs),1e308,2,"current-go","opencode-go"]]
+                """], anchors: ["/oc/opencode.db": String(oldMs)]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 0)
+        XCTAssertNil(scan.logScan.numericWarning)
+        XCTAssertEqual(scan.logScan.series.daily.first?.totalTokens, 2)
+        XCTAssertEqual(scan.logScan.series.daily.first?.costUSD, 1e308)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 1e308)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 1e308)
         XCTAssertEqual(scan.goWindows?.monthlySpend, 1e308)
     }
 
