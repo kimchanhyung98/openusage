@@ -3,7 +3,8 @@ import Foundation
 /// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
 enum CodexUsagePricing {
     static func estimate(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> Double? {
-        let canonical = pricing.supplement.canonicalName(for: model) ?? model
+        let canonical = pricing.supplement.canonicalName(for: model)
+            ?? pricing.supplement.canonicalName(for: datedBaseModel(model)) ?? model
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
         let prefixedBase: String
