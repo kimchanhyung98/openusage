@@ -190,6 +190,46 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         XCTAssertEqual(events.map(\.invalidNumericValues), [false, false])
     }
 
+    func testRejectedUsageRetainsModelMetadataForLaterTotals() {
+        for modelField in [#""model":"gpt-5.5","info":{"last_token_usage":{"input_tokens":-1}}"#,
+                           #""info":{"model":"gpt-5.5","total_token_usage":{"input_tokens":-1}}"#] {
+            let text = [
+                CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4"),
+                CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0)),
+                "{\"timestamp\":\"\(timestamp)\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\(modelField)}}",
+                CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 150, output: 0))
+            ].joined(separator: "\n")
+            let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+            XCTAssertEqual(events.map(\.model), ["gpt-5.4", "", "gpt-5.5"])
+            XCTAssertEqual(events.map(\.total), [100, 0, 50])
+            XCTAssertEqual(events.map(\.invalidNumericValues), [false, true, false])
+        }
+    }
+
+    func testVersionEightCacheReparsesModelStateAfterRejectedUsage() async throws {
+        let content = [
+            #"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.5","last_token_usage":{"input_tokens":-1}}}}"#,
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0))
+        ].joined(separator: "\n")
+        let home = try CodexLogFixture.makeHome(files: ["sessions/model.jsonl": content])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let directory = home.appendingPathComponent("cache")
+        let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
+            .init(namespace: "codex", schemaVersion: 8, directory: directory, writeDebounce: .milliseconds(1)))
+        let wrongModel = CodexLogUsageScanner.Event(
+            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)), model: "gpt-5",
+            input: 100, cached: 0, output: 0, reasoning: 0, total: 100
+        )
+        _ = await old.items(from: files, since: .distantPast, cacheIdentity: "model-account") { _ in [wrongModel] }
+        await old.waitForPendingWritesForTesting()
+        let scanner = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
+            .init(namespace: "codex", schemaVersion: CodexLogUsageScanner.cacheSchemaVersion, directory: directory))
+        let events = await scanner.items(from: files, since: .distantPast, cacheIdentity: "model-account", parse: CodexLogUsageScanner.parseFile)
+        XCTAssertEqual(events?.map(\.model), ["", "gpt-5.5"])
+        await scanner.waitForPendingWritesForTesting()
+    }
+
     private func truncatedReplay(meta: String, lastOnly: Bool = false) -> String {
         var lines = [meta, CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4"),
                      CodexLogFixture.taskStarted(timestamp: timestamp,

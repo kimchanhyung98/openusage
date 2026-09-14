@@ -229,6 +229,35 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertFalse(lines.joined().contains("PRIVATE_MODEL"))
     }
 
+    func testGrokNumericDiagnosticsTrackFailureAndRecovery() async throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let path = "/grok/logs/unified.jsonl"
+        let bad = #"{"ts":"2026-09-12T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":-1}}"#
+        let files = FakeFiles([path: bad])
+        let scanner = GrokLogUsageScanner(files: files, environment: FakeEnvironment(["GROK_HOME": "/grok"]))
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        for _ in 0..<2 {
+            let scan = await scanner.scan(now: now, pricing: .empty)
+            XCTAssertEqual(scan?.rejectedNumericRows, 1)
+            XCTAssertNotNil(scan?.numericWarning)
+        }
+        files.files[path] = bad + "\n" + #"{"msg":"model changed","pid":1,"ctx":{"model":"grok-build"}}"#
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 1)
+        files.files[path] = bad + "\n" + bad
+        let increased = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(increased?.rejectedNumericRows, 2)
+        XCTAssertEqual(capture.events.count, 2)
+        files.files[path] = ""
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.last?.result, .success)
+        files.files[path] = bad
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 4)
+        XCTAssertEqual(try capture.lines().filter { $0.contains("invalid_numeric_rows") }.count, 3)
+    }
+
     private func seedNumericCache<Item: Codable & Sendable>(
         data: Data, path: URL, namespace: String, schema: Int, identity: String,
         parse: @Sendable @escaping (Data) -> [Item]?

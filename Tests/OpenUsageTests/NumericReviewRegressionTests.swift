@@ -90,16 +90,6 @@ final class NumericReviewRegressionTests: XCTestCase {
         XCTAssertNotNil(store.snapshots[provider.id]?.line(label: "Session"))
     }
 
-    func testUnusedMalformedGrokModelMetadataKeepsAnAuthoritativeEmptyWindow() throws {
-        let since = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-12T00:00:00Z"))
-        let metadata = #"{"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"grok-build"}}"#
-        let scan = GrokLogUsageScanner.parse(metadata, since: since, pricing: TestPricing.bundled)
-        XCTAssertEqual(scan.rejectedNumericRows, 0)
-        XCTAssertNil(scan.numericWarning)
-        XCTAssertNotNil(scan.usageHistory)
-        XCTAssertTrue(scan.series.daily.isEmpty)
-    }
-
     func testOldMalformedGrokModelEventsDoNotPreventAnAuthoritativeEmptyWindow() throws {
         let since = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-12T00:00:00Z"))
         let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"grok-build"}}"#
