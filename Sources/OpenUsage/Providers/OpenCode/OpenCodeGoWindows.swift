@@ -53,6 +53,14 @@ enum OpenCodeGoWindowMath {
         )
     }
 
+    /// 서로 겹치는 세 Go 기간의 합집합 — 어느 미터에도 속하지 않는 행의 합산 제외 기준.
+    static func activeRange(anchorMs: Double?, now: Date) -> Range<Double> {
+        let nowMs = ms(now)
+        let weekStart = startOfUtcWeek(nowMs)
+        let month = anchoredMonthBounds(nowMs: nowMs, anchorMs: anchorMs)
+        return min(nowMs - fiveHoursMs, weekStart, month.start)..<max(weekStart + weekMs, month.end)
+    }
+
     private static func sumRange(_ costs: [(ms: Double, cost: Double)], start: Double, end: Double) -> Double {
         let total = costs.reduce(0.0) { partial, row in
             (row.ms >= start && row.ms < end) ? partial + row.cost : partial

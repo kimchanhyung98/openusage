@@ -99,12 +99,17 @@ struct OpenCodeUsageScanner: Sendable {
             throw OpenCodeUsageError.databaseUnreadable
         }
 
-        // hosted 합산 daily series(opencode-go + opencode) → spend tile + usage trend, cost가 확정값이라 모든 행을 그대로 accumulator에 투입
+        // 지출 타일·현재 Go 기간에 기여하는 확정 비용만 합산. scan 여유분의 과거 행은 숫자 한도에서 제외.
         let tileSince = JSONLScanning.sinceDate(daysBack: 30, now: now)
+        let goRange = OpenCodeGoWindowMath.activeRange(anchorMs: anchorMs, now: now)
         var accumulator = DailyUsageAccumulator()
         var totalCost = 0.0
         var goCosts: [(ms: Double, cost: Double)] = []
         for row in rows {
+            let date = Date(timeIntervalSince1970: row.ms / 1000)
+            guard date >= tileSince || (row.providerID == Self.goProviderID && goRange.contains(row.ms)) else {
+                continue
+            }
             // 타일보다 넓은 monthly window까지 같은 유한 비용 집합 사용. 거부한 행은 meter에서도 제외.
             let nextCost = totalCost + row.cost
             guard nextCost.isFinite else {
@@ -115,7 +120,6 @@ struct OpenCodeUsageScanner: Sendable {
             if row.providerID == Self.goProviderID {
                 goCosts.append((ms: row.ms, cost: row.cost))
             }
-            let date = Date(timeIntervalSince1970: row.ms / 1000)
             guard date >= tileSince else { continue }
             accumulator.add(
                 day: DailyUsageAccumulator.dayKey(from: date),
