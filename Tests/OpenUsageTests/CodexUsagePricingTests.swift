@@ -95,8 +95,28 @@ final class CodexUsagePricingTests: XCTestCase {
                     for priority in [false, true] {
                         let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: base + date, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot))
                         XCTAssertEqual(cost, priority ? 8.4 : 4.2, accuracy: 1e-9)
-                        let fastCost = try XCTUnwrap(CodexUsagePricing.estimate(model: base + "-fast" + date, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot))
-                        XCTAssertEqual(fastCost, 8.4, accuracy: 1e-9)
+                        for separator in ["-", ".", "@"] {
+                            let fastCost = try XCTUnwrap(CodexUsagePricing.estimate(model: base + separator + "fast" + date, tokens: .init(input: 300_000, isFast: priority), pricing: snapshot))
+                            XCTAssertEqual(fastCost, 8.4, accuracy: 1e-9)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testDatedAlternateFastSeparatorsKeepCodexRequestRates() throws {
+        for base in ["gpt-5.5", "gpt-5.6-sol-high", "gpt-6-astra-high"] {
+            for prefix in ["", "openai/"] {
+                for date in ["-20260901", "-2026-09-01"] {
+                    for priority in [false, true] {
+                        let tokens = TokenBreakdown(input: 300_000, cacheRead: 20_000, output: 1_000, isFast: priority)
+                        let expected = try XCTUnwrap(CodexUsagePricing.estimate(model: prefix + base + "-fast" + date, tokens: tokens, pricing: pricing))
+                        for separator in [".", "@"] {
+                            let model = prefix + base + separator + "fast" + date
+                            let actual = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing), model)
+                            XCTAssertEqual(actual, expected, accuracy: 1e-9, model)
+                        }
                     }
                 }
             }
