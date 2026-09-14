@@ -87,6 +87,25 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
     }
 
+    func testRefreshWarnsWhenFiniteCostsOverflowTheSharedAccumulator() async throws {
+        let now = d("2026-07-12T12:00:00.000Z")
+        let db = "[" + [
+            row("2026-07-12T10:00:00.000Z", "1e308", 100, "gpt-5.5", "opencode"),
+            row("2026-07-12T11:00:00.000Z", "1e308", 200, "gpt-5.5", "opencode")
+        ].joined(separator: ",") + "]"
+        let scanner = OpenCodeUsageScanner(sqlite: StubSQLite(data: ["/oc/opencode.db": db]), databasePaths: { ["/oc/opencode.db"] })
+        let scanned = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(scanned)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        let provider = OpenCodeProvider(authStore: authStore(files: FakeFiles()), usageScanner: scanner, now: { now })
+        let snapshot = await provider.refresh()
+        XCTAssertNotNil(snapshot.warning)
+        XCTAssertEqual(snapshot.warning, scan.logScan.numericWarning)
+        XCTAssertEqual(snapshot.usageHistory, scan.logScan.usageHistory)
+        XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 100)
+        XCTAssertNil(snapshot.errorCategory)
+    }
+
     func testRefreshShowsZeroCapMetersWithGoKeyButNoDatabase() async {
         // Go 로그인 직후 첫 local message 이전 — key만으로 plan 확정, cap을 $0으로 표시
         let now = d("2026-07-12T12:00:00.000Z")

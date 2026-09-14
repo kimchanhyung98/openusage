@@ -20,9 +20,9 @@ final class PiUsageScannerTests: XCTestCase {
         id: String = "m1", ts: String = "2026-07-12T10:00:00.000Z", provider: String = "anthropic",
         model: String = "claude-opus-4-8", input: Int = 100, output: Int = 50,
         cacheRead: Int = 0, cacheWrite: Int = 0, cacheWrite1h: Int = 0, total: Int = 150,
-        cost: String? = "0.5"
+        cost: String? = "0.5", costObject: String? = nil
     ) -> Data {
-        let costJSON = cost.map { ",\"cost\":{\"total\":\($0)}" } ?? ""
+        let costJSON = costObject.map { ",\"cost\":\($0)" } ?? cost.map { ",\"cost\":{\"total\":\($0)}" } ?? ""
         let json = """
         {"type":"message","id":"\(id)","timestamp":"\(ts)","message":{"role":"assistant","provider":"\(provider)","model":"\(model)","usage":{"input":\(input),"output":\(output),"cacheRead":\(cacheRead),"cacheWrite":\(cacheWrite),"cacheWrite1h":\(cacheWrite1h),"totalTokens":\(total)\(costJSON)}}}
         """
@@ -90,6 +90,23 @@ final class PiUsageScannerTests: XCTestCase {
             XCTAssertFalse(entry.invalidNumericValues)
             XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), expected, accuracy: 1e-9)
             XCTAssertNil(scan.numericWarning)
+        }
+    }
+
+    func testMalformedCostObjectWarnsButMissingTotalStillUsesPricing() throws {
+        for (costObject, rejected) in [("null", true), ("true", true), ("0", true), ("[]", true),
+                                       (#""invalid""#, true), ("{}", false), (#"{"input":0.5}"#, false)] {
+            let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(provider: "cursor", model: "composer-2.5", costObject: costObject)))
+            let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
+            XCTAssertEqual(entry.invalidNumericValues, rejected, costObject)
+            XCTAssertEqual(scan.rejectedNumericRows, rejected ? 1 : 0, costObject)
+            if rejected {
+                XCTAssertNil(scan.usageHistory, costObject)
+                XCTAssertNotNil(scan.numericWarning, costObject)
+            } else {
+                XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 0.002, accuracy: 1e-9)
+                XCTAssertNil(scan.numericWarning)
+            }
         }
     }
 

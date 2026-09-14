@@ -166,6 +166,11 @@ final class NumericUsageSafetyTests: XCTestCase {
         try await verifyPiCacheMigration(data: data, oldSchema: 2)
     }
 
+    func testPiMalformedCostObjectInvalidatesVersionThreeCache() async throws {
+        let data = piLine(["input": "100", "totalTokens": "100"], costObject: "true")
+        try await verifyPiCacheMigration(data: data, oldSchema: 3)
+    }
+
     private func verifyPiCacheMigration(data: Data, oldSchema: Int) async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -333,10 +338,11 @@ final class NumericUsageSafetyTests: XCTestCase {
         """, since: .distantPast, pricing: TestPricing.bundled)
     }
 
-    private func piLine(_ fields: [String: String], id: String = "pi-id", cost: String = "0.5") -> Data {
+    private func piLine(_ fields: [String: String], id: String = "pi-id", cost: String = "0.5", costObject: String? = nil) -> Data {
         let usage = fields.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
+        let costJSON = costObject ?? "{\"total\":\(cost)}"
         return Data("""
-        {"type":"message","id":"\(id)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{\(usage),"cost":{"total":\(cost)}}}}
+        {"type":"message","id":"\(id)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{\(usage),"cost":\(costJSON)}}}
         """.utf8)
     }
 }
