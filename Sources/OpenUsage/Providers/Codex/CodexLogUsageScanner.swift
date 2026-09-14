@@ -31,7 +31,7 @@ actor CodexLogUsageScanner {
     }
 
     /// 손상된 부모 재생 구간의 불확실한 증가분을 제외하는 형식 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 6
+    static let cacheSchemaVersion = 7
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -219,10 +219,8 @@ actor CodexLogUsageScanner {
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
-                if let totals {
-                    previousTotals = totals.invalid ? nil : totals
-                    replayBaselineUnknown = totals.invalid
-                }
+                previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
+                replayBaselineUnknown = previousTotals == nil
                 continue
             }
 
