@@ -93,14 +93,20 @@ final class CodexAutoReviewIdentityTests: XCTestCase {
         XCTAssertEqual(scan.modelUsage?.daily.first?.models.first?.model, "codex-auto-review")
     }
 
-    func testVersionOneCacheReparsesOriginalLogsForScopedScanner() async throws {
+    func testCachesWithoutReviewIdentityReparseOriginalLogsForScopedScanner() async throws {
+        for version in [1, 4] {
+            try await assertCacheRebuild(version: version)
+        }
+    }
+
+    private func assertCacheRebuild(version: Int) async throws {
         let home = try CodexLogFixture.makeHome(files: ["sessions/review.jsonl": line(model: "codex-auto-review")])
         defer { try? FileManager.default.removeItem(at: home) }
         let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
         let cache = home.appendingPathComponent("cache")
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
             persistence: JSONLScanCachePersistence(
-                namespace: "codex", schemaVersion: 1, directory: cache, writeDebounce: .milliseconds(1)
+                namespace: "codex", schemaVersion: version, directory: cache, writeDebounce: .milliseconds(1)
             )
         )
         let seeded = await old.items(from: files, since: .distantPast, cacheIdentity: "account-a") { data in

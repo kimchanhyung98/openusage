@@ -133,6 +133,154 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertFalse(encoded.contains("source="))
     }
 
+    func testPiInvalidNumbersReportOnePrivateSummaryAndCacheAggregationDoesNotRepeatIt() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let bad = #"{"type":"message","id":"PRIVATE_ID","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-123456789,"totalTokens":150}}}"#
+        let entries = PiUsageScanner.parseFile(Data((bad + "\n" + bad).utf8))
+        for _ in 0..<2 {
+            let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(scan.rejectedNumericRows, 2)
+        }
+
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 1)
+        XCTAssertTrue(lines.first?.contains("source=pi; invalid_numeric_rows=2") == true)
+        XCTAssertFalse(lines.joined().contains("PRIVATE_"))
+        XCTAssertFalse(lines.joined().contains("123456789"))
+        XCTAssertEqual(capture.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .decoding)])
+        let encoded = String(decoding: try JSONEncoder().encode(capture.events), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("pi"))
+        XCTAssertFalse(encoded.contains("invalid_numeric_rows"))
+        XCTAssertFalse(encoded.contains("PRIVATE_"))
+    }
+
+    func testNativeInvalidNumbersLogOnceBeforeRepeatedAggregation() throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let claude = ClaudeLogUsageScanner.parseFile(Data(#"{"timestamp":"2026-09-12T10:00:00Z","message":{"model":"PRIVATE_MODEL","usage":{"input_tokens":-123456789,"output_tokens":0}}}"#.utf8))
+        let codex = CodexLogUsageScanner.parseFile(Data(#"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-123456789}}}}"#.utf8))
+        for _ in 0..<2 {
+            let scans = [ClaudeLogUsageScanner.aggregate(entries: claude, since: .distantPast, pricing: .empty),
+                         CodexLogUsageScanner.aggregate(events: codex, since: .distantPast, pricing: .empty)]
+            XCTAssertEqual(DailyUsageAccumulator.merged(scans)?.rejectedNumericRows, 2)
+        }
+        let lines = try capture.lines()
+        XCTAssertEqual(lines.count, 2)
+        for source in ["claude", "codex"] {
+            XCTAssertTrue(lines.contains { $0.contains("source=\(source); invalid_numeric_rows=1") })
+        }
+        XCTAssertFalse(lines.joined().contains("PRIVATE_"))
+        XCTAssertFalse(lines.joined().contains("123456789"))
+        XCTAssertEqual(capture.events.count, 2)
+    }
+
+    func testRestoredNumericMarkersReportOnceWithoutReparsingOrRepeatedAggregation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let claudeHome = directory.appendingPathComponent("claude")
+        let codexHome = directory.appendingPathComponent("codex")
+        let piHome = directory.appendingPathComponent("pi").resolvingSymlinksInPath()
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        let claudeCache = try await seedNumericCache(
+            data: Data(#"{"timestamp":"2026-09-12T10:00:00Z","message":{"model":"PRIVATE_MODEL","usage":{"input_tokens":-1,"output_tokens":0}}}"#.utf8),
+            path: claudeHome.appendingPathComponent("projects/session.jsonl"), namespace: "claude",
+            schema: ClaudeLogUsageScanner.cacheSchemaVersion, identity: "claude-home", parse: ClaudeLogUsageScanner.parseFile)
+        let codexCache = try await seedNumericCache(
+            data: Data(#"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8),
+            path: codexHome.appendingPathComponent("sessions/session.jsonl"), namespace: "codex",
+            schema: CodexLogUsageScanner.cacheSchemaVersion, identity: "codex-home", parse: CodexLogUsageScanner.parseFile)
+        let piCache = try await seedNumericCache(
+            data: Data(#"{"type":"message","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-1}}}"#.utf8),
+            path: piHome.appendingPathComponent("session.jsonl"), namespace: "pi",
+            schema: PiUsageScanner.cacheSchemaVersion, identity: piHome.path, parse: PiUsageScanner.parseFile)
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let claudeIncremental = IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(persistence: claudeCache)
+        let codexIncremental = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence: codexCache)
+        let piIncremental = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: piCache)
+        let claude = ClaudeLogUsageScanner(incrementalScanner: claudeIncremental,
+                                           cacheIdentityOverride: "claude-home", rootsOverride: [claudeHome])
+        let codex = CodexLogUsageScanner(incrementalScanner: codexIncremental,
+                                         cacheIdentityOverride: "codex-home", rootsOverride: [codexHome])
+        let pi = PiUsageScanner(environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": piHome.path]),
+                                incrementalScanner: piIncremental)
+        for _ in 0..<2 {
+            let scans = [await claude.scan(now: now, pricing: .empty), await codex.scan(now: now, pricing: .empty),
+                         await pi.scan(cardID: "claude", now: now, pricing: .empty)]
+            for scan in scans {
+                XCTAssertEqual(scan?.rejectedNumericRows, 1)
+                XCTAssertNotNil(scan?.numericWarning)
+                XCTAssertNil(scan?.usageHistory)
+            }
+        }
+        // fixture와 전역 로그 sink 정리 전에 지연 저장 완료 — 다음 테스트의 로그 캡처로 오류가 새지 않도록 보장.
+        await claudeIncremental.waitForPendingWritesForTesting()
+        await codexIncremental.waitForPendingWritesForTesting()
+        await piIncremental.waitForPendingWritesForTesting()
+        XCTAssertFalse(try capture.lines().contains { $0.contains("could not persist") })
+        XCTAssertEqual(capture.events.count, 3)
+        let lines = try capture.lines().filter { $0.contains("invalid_numeric_rows") }
+        XCTAssertEqual(lines.count, 3)
+        for source in ["claude", "codex", "pi"] {
+            XCTAssertTrue(lines.contains { $0.contains("source=\(source); invalid_numeric_rows=1") })
+        }
+        XCTAssertFalse(lines.joined().contains("PRIVATE_MODEL"))
+    }
+
+    func testGrokNumericDiagnosticsTrackFailureAndRecovery() async throws {
+        let capture = try Capture()
+        defer { capture.cleanUp() }
+        let path = "/grok/logs/unified.jsonl"
+        let bad = #"{"ts":"2026-09-12T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":-1}}"#
+        let files = FakeFiles([path: bad])
+        let scanner = GrokLogUsageScanner(files: files, environment: FakeEnvironment(["GROK_HOME": "/grok"]))
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        for _ in 0..<2 {
+            let scan = await scanner.scan(now: now, pricing: .empty)
+            XCTAssertEqual(scan?.rejectedNumericRows, 1)
+            XCTAssertNotNil(scan?.numericWarning)
+        }
+        files.files.removeValue(forKey: path)
+        let unavailable = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertNil(unavailable)
+        XCTAssertEqual(capture.events.count, 1, "A missing log does not prove numeric recovery")
+        files.files[path] = bad
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 1, "The same damage must remain deduplicated after reappearance")
+        files.files[path] = bad + "\n" + #"{"msg":"model changed","pid":1,"ctx":{"model":"grok-build"}}"#
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 1)
+        files.files[path] = bad + "\n" + bad
+        let increased = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(increased?.rejectedNumericRows, 2)
+        XCTAssertEqual(capture.events.count, 2)
+        files.files[path] = ""
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.last?.result, .success)
+        files.files[path] = bad
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 4)
+        XCTAssertEqual(try capture.lines().filter { $0.contains("invalid_numeric_rows") }.count, 3)
+    }
+
+    private func seedNumericCache<Item: Codable & Sendable>(
+        data: Data, path: URL, namespace: String, schema: Int, identity: String,
+        parse: @Sendable @escaping (Data) -> [Item]?
+    ) async throws -> JSONLScanCachePersistence {
+        try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: path)
+        let mtime = try XCTUnwrap(path.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        let persistence = JSONLScanCachePersistence(namespace: namespace, schemaVersion: schema,
+            directory: path.deletingLastPathComponent().appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
+        let scanner = IncrementalJSONLScanner<Item>(persistence: persistence)
+        _ = await scanner.items(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
+                                since: .distantPast, cacheIdentity: identity, parse: parse)
+        await scanner.waitForPendingWritesForTesting()
+        return persistence
+    }
+
     func testClaimFallbackKeepsAccountCandidatesAndRecordsOnlyFinalFailure() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }

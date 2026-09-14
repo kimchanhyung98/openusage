@@ -153,11 +153,8 @@ final class OpenCodeProvider: ProviderRuntime {
             plan: plan,
             lines: lines,
             refreshedAt: refreshedAt,
-            usageHistory: ProviderUsageHistory(
-                series: scan.logScan.series,
-                modelUsage: scan.logScan.modelUsage,
-                unknownModelsByDay: scan.logScan.unknownModelsByDay
-            )
+            usageHistory: scan.logScan.usageHistory,
+            warning: scan.logScan.numericWarning
         )
     }
 }

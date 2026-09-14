@@ -30,13 +30,18 @@ actor ClaudeLogUsageScanner {
         var costUSD: Double?
         /// 모델 없음 또는 placeholder `<synthetic>`이면 `nil`(토큰은 집계, 비용 $0).
         var model: String?
+        /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
+        var invalidNumericValues = false
     }
 
     /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
     /// 테스트는 격리된 메모리 전용 scanner 주입.
+    /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Entry` 의미 변경 시 bump.
+    static let cacheSchemaVersion = 3
+
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
-        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: 1)
+        persistence: JSONLScanCachePersistence(namespace: "claude", schemaVersion: cacheSchemaVersion)
     )
 
     static func flushPersistentCacheWrites() async {
@@ -90,6 +95,7 @@ actor ClaudeLogUsageScanner {
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
+            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "claude") },
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
@@ -230,6 +236,7 @@ actor ClaudeLogUsageScanner {
             if hasUnsupportedNullField(line) { continue }
             entries.append(contentsOf: parseEntries(Data(line)))
         }
+        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "claude")
         return entries
     }
 
@@ -251,6 +258,11 @@ actor ClaudeLogUsageScanner {
         else { return [] }
 
         let model = (message["model"] as? String).flatMap { $0 == "<synthetic>" ? nil : $0 }
+        let cost = (object["costUSD"] as? NSNumber).flatMap { number -> Double? in
+            guard CFGetTypeID(number) != CFBooleanGetTypeID(),
+                  number.doubleValue.isFinite, number.doubleValue >= 0 else { return nil }
+            return number.doubleValue
+        }
         let parent = Entry(
             timestamp: timestamp,
             tokens: parsedUsage.tokens,
@@ -258,8 +270,9 @@ actor ClaudeLogUsageScanner {
             requestID: object["requestId"] as? String,
             isSidechain: object["isSidechain"] as? Bool ?? false,
             hasSpeed: parsedUsage.hasSpeed,
-            costUSD: (object["costUSD"] as? NSNumber)?.doubleValue,
-            model: model
+            costUSD: cost,
+            model: model,
+            invalidNumericValues: !parsedUsage.valid || (object["costUSD"] != nil && cost == nil)
         )
 
         guard let iterations = usage["iterations"] as? [[String: Any]] else { return [parent] }
@@ -281,42 +294,47 @@ actor ClaudeLogUsageScanner {
                 isSidechain: parent.isSidechain,
                 hasSpeed: advisorUsage.hasSpeed,
                 costUSD: nil,
-                model: advisorModel
+                model: advisorModel,
+                invalidNumericValues: !advisorUsage.valid
             ))
             advisorIndex += 1
         }
         return entries
     }
 
+    /// `valid: false`는 숫자 손상 — 행을 합계에서 빼고 경고로 알리기 위해 0 토큰으로 반환.
+    /// `nil`은 usage 라인이 아니거나 미지의 `speed` 형태 — 기존처럼 조용히 skip.
     private static func tokenBreakdown(
         from usage: [String: Any]
-    ) -> (tokens: TokenBreakdown, hasSpeed: Bool)? {
-        guard let input = usage["input_tokens"] as? NSNumber,
-              let output = usage["output_tokens"] as? NSNumber
-        else { return nil }
+    ) -> (tokens: TokenBreakdown, hasSpeed: Bool, valid: Bool)? {
+        guard usage["input_tokens"] != nil, usage["output_tokens"] != nil else { return nil }
 
         // 알 수 없는 `speed` 값은 미지의 로그 형태 — 라인 skip(ccusage enum 파싱과 동일).
         let speed = usage["speed"] as? String
         if let speed, speed != "fast", speed != "standard" { return nil }
+        let invalid = (TokenBreakdown(), speed != nil, false)
 
         // cache write: 5m/1h 분리값 우선(1h는 input 2x 과금), 없으면 legacy 합계를 전량 5m 처리.
-        var cacheWrite5m = 0
-        var cacheWrite1h = 0
-        if let cacheCreation = usage["cache_creation"] as? [String: Any] {
-            cacheWrite5m = (cacheCreation["ephemeral_5m_input_tokens"] as? NSNumber)?.intValue ?? 0
-            cacheWrite1h = (cacheCreation["ephemeral_1h_input_tokens"] as? NSNumber)?.intValue ?? 0
-        } else {
-            cacheWrite5m = (usage["cache_creation_input_tokens"] as? NSNumber)?.intValue ?? 0
-        }
+        let cacheCreation = usage["cache_creation"] as? [String: Any]
+        let rawCacheWrite5m = cacheCreation == nil
+            ? usage["cache_creation_input_tokens"]
+            : cacheCreation?["ephemeral_5m_input_tokens"]
+        guard let cacheWrite5m = UsageLogNumbers.count(rawCacheWrite5m, missing: 0),
+              let cacheWrite1h = UsageLogNumbers.count(cacheCreation?["ephemeral_1h_input_tokens"], missing: 0),
+              let input = UsageLogNumbers.count(usage["input_tokens"]),
+              let cacheRead = UsageLogNumbers.count(usage["cache_read_input_tokens"], missing: 0),
+              let output = UsageLogNumbers.count(usage["output_tokens"]),
+              UsageLogNumbers.sum(input, cacheWrite5m, cacheWrite1h, cacheRead, output) != nil
+        else { return invalid }
 
         return (TokenBreakdown(
-            input: input.intValue,
+            input: input,
             cacheWrite5m: cacheWrite5m,
             cacheWrite1h: cacheWrite1h,
-            cacheRead: (usage["cache_read_input_tokens"] as? NSNumber)?.intValue ?? 0,
-            output: output.intValue,
+            cacheRead: cacheRead,
+            output: output,
             isFast: speed == "fast"
-        ), speed != nil)
+        ), speed != nil, true)
     }
 
     /// ccusage 유효성 규칙 — semver 아닌 `version`은 외부 로그 형식, 비어 있는 id/model은 손상 라인.
@@ -418,8 +436,11 @@ actor ClaudeLogUsageScanner {
         return deduped
     }
 
-    /// 중복 시 선호 순서 — non-sidechain(parent), 큰 토큰 합계, `speed` 필드 보유 순.
+    /// 중복 시 선호 순서 — 정상 숫자, non-sidechain(parent), 큰 토큰 합계, `speed` 필드 보유 순.
     static func shouldReplace(candidate: Entry, existing: Entry) -> Bool {
+        if candidate.invalidNumericValues != existing.invalidNumericValues {
+            return existing.invalidNumericValues
+        }
         if candidate.isSidechain != existing.isSidechain {
             return existing.isSidechain
         }
@@ -437,8 +458,13 @@ actor ClaudeLogUsageScanner {
     /// 가격 산정 불가 entry는 모든 표시 합계에서 제외 — unknown 모델명만 `unknownModelsByDay`(경고 삼각형)로 노출.
     static func aggregate(entries: [Entry], since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
+        var rejectedNumericRows = 0
 
         for entry in entries where entry.timestamp >= since {
+            guard !entry.invalidNumericValues else {
+                rejectedNumericRows += 1
+                continue
+            }
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
             // pricing·unknown 경고·breakdown 키가 하나의 trimmed slug 공유 — 표기 분기 시 경고 삼각형과 hover 패널 불일치.
             let trimmedModel = entry.model?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
@@ -459,7 +485,7 @@ actor ClaudeLogUsageScanner {
             accumulator.add(day: day, tokens: entry.tokens.totalTokens, cost: cost, model: modelName)
         }
 
-        return accumulator.build()
+        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "claude")
     }
 }
 

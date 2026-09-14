@@ -95,22 +95,22 @@ final class GrokProvider: ProviderRuntime {
 
         // Grok CLI 로그를 직접 읽어 shared pricing store로 가격 산정 — `scan` await로 읽기+parse는 main actor 밖에서 수행
         var usageHistory: ProviderUsageHistory?
+        var warning: String?
         if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
-            usageHistory = ProviderUsageHistory(
-                series: scan.series,
-                modelUsage: scan.modelUsage,
-                unknownModelsByDay: scan.unknownModelsByDay
-            )
-            SpendTileMapper.appendTokenUsage(
-                scan.series,
-                to: &mapped.lines,
-                now: now(),
-                unknownModelsByDay: scan.unknownModelsByDay,
-                modelUsage: scan.modelUsage,
-                modelSourceNote: "From your Grok logs (estimated)"
-            )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
-                                             note: "From your Grok logs (estimated)")
+            warning = scan.numericWarning
+            usageHistory = scan.usageHistory
+            if usageHistory != nil {
+                SpendTileMapper.appendTokenUsage(
+                    scan.series,
+                    to: &mapped.lines,
+                    now: now(),
+                    unknownModelsByDay: scan.unknownModelsByDay,
+                    modelUsage: scan.modelUsage,
+                    modelSourceNote: "From your Grok logs (estimated)"
+                )
+                SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
+                                                 note: "From your Grok logs (estimated)")
+            }
         }
 
         return ProviderSnapshot.make(
@@ -118,7 +118,8 @@ final class GrokProvider: ProviderRuntime {
             plan: plan,
             lines: mapped.lines,
             refreshedAt: now(),
-            usageHistory: usageHistory
+            usageHistory: usageHistory,
+            warning: warning
         )
     }
 

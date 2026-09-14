@@ -273,18 +273,17 @@ final class ClaudeProvider: ProviderRuntime {
             let note = piScan == nil
                 ? "From your Claude usage history (estimated)"
                 : "From your Claude usage history and pi (estimated)"
-            usageHistory = ProviderUsageHistory(
-                series: scan.series,
-                modelUsage: scan.modelUsage,
-                unknownModelsByDay: scan.unknownModelsByDay
-            )
-            SpendTileMapper.appendTokenUsage(
-                scan.series, to: &mapped.lines, now: now(),
-                unknownModelsByDay: scan.unknownModelsByDay,
-                modelUsage: scan.modelUsage,
-                modelSourceNote: note
-            )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            warning = [warning, scan.numericWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            usageHistory = scan.usageHistory
+            if usageHistory != nil {
+                SpendTileMapper.appendTokenUsage(
+                    scan.series, to: &mapped.lines, now: now(),
+                    unknownModelsByDay: scan.unknownModelsByDay,
+                    modelUsage: scan.modelUsage,
+                    modelSourceNote: note
+                )
+                SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            }
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)

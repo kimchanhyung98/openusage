@@ -25,12 +25,15 @@ actor CodexLogUsageScanner {
         var reasoning: Int
         var total: Int
         var isFast: Bool = false
+        /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
+        var invalidNumericValues = false
         var pricingModel: String? = nil
     }
 
-    /// 자동 리뷰 식별자를 잃은 구형 parse cache의 재사용 방지.
-    static let cacheSchemaVersion = 2
+    /// 손상 행의 모델 보존·재전송의 모델 되감기 방지 규칙 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 10
 
+    /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
         logTag: LogTag.plugin("codex"),
         persistence: JSONLScanCachePersistence(namespace: "codex", schemaVersion: cacheSchemaVersion)
@@ -84,6 +87,7 @@ actor CodexLogUsageScanner {
             from: files,
             since: since,
             cacheIdentity: identity,
+            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(events: events, since: since, pricing: pricing)
@@ -147,6 +151,7 @@ actor CodexLogUsageScanner {
 
         var events: [Event] = []
         var previousTotals: RawUsage?
+        var replayBaselineUnknown = false
         var currentModel: String?
         var currentTierIsFast = false
         var sawSessionMeta = false
@@ -176,6 +181,8 @@ actor CodexLogUsageScanner {
             if type == "session_meta", !sawSessionMeta {
                 sawSessionMeta = true
                 if let payload, isChildSessionMeta(payload) {
+                    previousTotals = nil
+                    replayBaselineUnknown = true
                     if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
                        let created = OpenUsageISO8601.date(from: timestampRaw) {
                         replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
@@ -211,32 +218,51 @@ actor CodexLogUsageScanner {
 
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
+            // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
+            if replayGate == nil, let totals, !totals.invalid,
+               let previous = previousTotals, totals.equalCounts(previous) {
+                continue
+            }
+            if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
+                currentModel = parsedModel
+            }
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
-                if let totals { previousTotals = totals }
+                previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
+                replayBaselineUnknown = previousTotals == nil
                 continue
             }
 
-            // 누적 totals 불변이면 Codex가 재방출한 stale snapshot — last_token_usage가 있어도 신규 usage 아님.
-            if let totals, let previous = previousTotals, totals.equalCounts(previous) {
-                continue
-            }
-
-            let usage: RawUsage
-            if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
+            var usage: RawUsage
+            // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
+            if let totals, totals.invalid {
+                usage = totals
+            } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
                 usage = last
             } else if let totals {
                 usage = totals.subtracting(previousTotals)
+                // 부모 재생의 기준이 끊겼으면 첫 live 누적값은 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
+                if replayBaselineUnknown { usage.invalid = true }
             } else {
                 continue
             }
-            if let totals { previousTotals = totals }
+            // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
+            if let totals, !totals.invalid {
+                previousTotals = totals
+                replayBaselineUnknown = false
+            }
+            guard !usage.invalid else {
+                events.append(Event(
+                    timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
+                    total: 0, invalidNumericValues: true
+                ))
+                continue
+            }
             guard usage.input > 0 || usage.cached > 0 || usage.output > 0 || usage.reasoning > 0 else { continue }
 
-            let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:))
             let model = resolveModel(
-                parsed: parsedModel,
+                parsed: nil,
                 currentModel: &currentModel
             )
 
@@ -252,6 +278,7 @@ actor CodexLogUsageScanner {
                 pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
             ))
         }
+        UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
         return events
     }
 
@@ -275,28 +302,40 @@ actor CodexLogUsageScanner {
         var reasoning: Int
         var total: Int
 
+        /// 숫자 손상·재생 기준 불확실 — 집계에서 제외하고 경고로 노출.
+        var invalid = false
+
         init(json: [String: Any]) {
-            func int(_ keys: String...) -> Int? {
-                for key in keys {
-                    if let number = json[key] as? NSNumber { return number.intValue }
+            // 먼저 등장한 key가 손상이면 다음 key로 넘어가지 않고 행 자체를 거부.
+            func count(_ keys: String...) -> Int? {
+                for key in keys where json[key] != nil {
+                    return UsageLogNumbers.count(json[key])
                 }
-                return nil
+                return 0
             }
-            input = int("input_tokens", "prompt_tokens", "input") ?? 0
-            cached = int("cached_input_tokens", "cache_read_input_tokens", "cached_tokens") ?? 0
-            output = int("output_tokens", "completion_tokens", "output") ?? 0
-            reasoning = int("reasoning_output_tokens", "reasoning_tokens") ?? 0
-            let reported = int("total_tokens") ?? 0
-            let recomputed = input + output + reasoning
-            total = (reported > 0 || recomputed == 0) ? reported : recomputed
+            guard let input = count("input_tokens", "prompt_tokens", "input"),
+                  let cached = count("cached_input_tokens", "cache_read_input_tokens", "cached_tokens"),
+                  let output = count("output_tokens", "completion_tokens", "output"),
+                  let reasoning = count("reasoning_output_tokens", "reasoning_tokens"),
+                  let reported = count("total_tokens"),
+                  let recomputed = UsageLogNumbers.sum(input, output, reasoning)
+            else {
+                self.init(input: 0, cached: 0, output: 0, reasoning: 0, total: 0, invalid: true)
+                return
+            }
+            self.init(
+                input: input, cached: cached, output: output, reasoning: reasoning,
+                total: (reported > 0 || recomputed == 0) ? reported : recomputed
+            )
         }
 
-        private init(input: Int, cached: Int, output: Int, reasoning: Int, total: Int) {
+        private init(input: Int, cached: Int, output: Int, reasoning: Int, total: Int, invalid: Bool = false) {
             self.input = input
             self.cached = cached
             self.output = output
             self.reasoning = reasoning
             self.total = total
+            self.invalid = invalid
         }
 
         /// `other`와 token count 동일 — Codex가 재방출한 불변 누적 snapshot 판정.
@@ -306,13 +345,15 @@ actor CodexLogUsageScanner {
         }
 
         /// 누적 totals에서 turn delta 복원 (`last_token_usage` 부재 시 사용).
+        /// 양쪽 모두 검증된 비음수라 차이는 overflow 불가 — 손상 표시만 전파.
         func subtracting(_ previous: RawUsage?) -> RawUsage {
             RawUsage(
                 input: max(0, input - (previous?.input ?? 0)),
                 cached: max(0, cached - (previous?.cached ?? 0)),
                 output: max(0, output - (previous?.output ?? 0)),
                 reasoning: max(0, reasoning - (previous?.reasoning ?? 0)),
-                total: max(0, total - (previous?.total ?? 0))
+                total: max(0, total - (previous?.total ?? 0)),
+                invalid: invalid || previous?.invalid == true
             )
         }
     }
@@ -432,8 +473,13 @@ actor CodexLogUsageScanner {
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
         var accumulator = DailyUsageAccumulator()
+        var rejectedNumericRows = 0
 
         for event in events where event.timestamp >= since {
+            guard !event.invalidNumericValues else {
+                rejectedNumericRows += 1
+                continue
+            }
             let key = EventKey(
                 timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel, input: event.input,
                 cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
@@ -461,7 +507,7 @@ actor CodexLogUsageScanner {
             accumulator.add(day: day, tokens: event.total, cost: eventCost, model: model)
         }
 
-        return accumulator.build()
+        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "codex")
     }
 
     /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.

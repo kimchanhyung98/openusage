@@ -38,6 +38,36 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         await otherHome.waitForPendingWritesForTesting()
     }
 
+    func testDiskHitReportsOnlyUnchangedRequestedFilesOnce() async throws {
+        let base = try makeDirectory("RestoreReporting")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let now = Date()
+        let first = try makeFile(named: "first.jsonl", contents: "7", in: base, mtime: now)
+        let changed = try makeFile(named: "changed.jsonl", contents: "2", in: base, mtime: now)
+        let deferred = try makeFile(named: "deferred.jsonl", contents: "9", in: base, mtime: now)
+        let old = try makeFile(named: "old.jsonl", contents: "4", in: base, mtime: now.addingTimeInterval(-20))
+        let persistence = JSONLScanCachePersistence(namespace: "test", schemaVersion: 1,
+            directory: base.appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
+        let seed = IncrementalJSONLScanner<Int>(persistence: persistence)
+        _ = await seed.items(from: [first, changed, deferred, old], since: .distantPast, parse: ParseCounter().parse)
+        await seed.waitForPendingWritesForTesting()
+        let updated = try makeFile(named: "changed.jsonl", contents: "11", in: base, mtime: now)
+        let restored = WarningRecorder()
+        let parser = ParseCounter()
+        let scanner = IncrementalJSONLScanner<Int>(persistence: persistence)
+        let observe: @Sendable ([Int]) -> Void = { restored.record($0.first ?? -1) }
+        for _ in 0..<2 {
+            let values = await scanner.items(from: [first, updated, old], since: now.addingTimeInterval(-5),
+                                             onDiskCacheHit: observe, parse: parser.parse)
+            XCTAssertEqual(values, [7, 11])
+        }
+        XCTAssertEqual(restored.counts, [7])
+        XCTAssertEqual(parser.count, 1)
+        _ = await scanner.items(from: [deferred], since: now.addingTimeInterval(-5), onDiskCacheHit: observe, parse: parser.parse)
+        XCTAssertEqual(restored.counts, [7, 9])
+        await scanner.waitForPendingWritesForTesting()
+    }
+
     func testPersistedCacheInvalidatesWhenSizeOrMtimeChanges() async throws {
         let base = try makeDirectory("StatInvalidation")
         defer { try? FileManager.default.removeItem(at: base) }

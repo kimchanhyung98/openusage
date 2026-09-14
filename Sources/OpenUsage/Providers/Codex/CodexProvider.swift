@@ -166,15 +166,17 @@ final class CodexProvider: ProviderRuntime {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
+            warning = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
             usageHistory = scan.usageHistory
-            warning = scan.pricingWarning
-            SpendTileMapper.appendTokenUsage(
-                scan.series, to: &mapped.lines, now: now(),
-                unknownModelsByDay: scan.unknownModelsByDay,
-                modelUsage: scan.modelUsage,
-                modelSourceNote: note
-            )
-            SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            if usageHistory != nil {
+                SpendTileMapper.appendTokenUsage(
+                    scan.series, to: &mapped.lines, now: now(),
+                    unknownModelsByDay: scan.unknownModelsByDay,
+                    modelUsage: scan.modelUsage,
+                    modelSourceNote: note
+                )
+                SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(), note: note)
+            }
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
