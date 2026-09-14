@@ -162,9 +162,8 @@ final class NumericUsageSafetyTests: XCTestCase {
     }
 
     func testPiMalformedCostInvalidatesPreviouslyAcceptedCache() async throws {
-        let text = String(decoding: piLine(["input": "100", "output": "50", "totalTokens": "150"]), as: UTF8.self)
-            .replacingOccurrences(of: "0.5", with: "-0.5")
-        try await verifyPiCacheMigration(data: Data(text.utf8), oldSchema: 2)
+        let data = piLine(["input": "100", "output": "50", "totalTokens": "150"], cost: "-0.5")
+        try await verifyPiCacheMigration(data: data, oldSchema: 2)
     }
 
     private func verifyPiCacheMigration(data: Data, oldSchema: Int) async throws {
@@ -334,10 +333,10 @@ final class NumericUsageSafetyTests: XCTestCase {
         """, since: .distantPast, pricing: TestPricing.bundled)
     }
 
-    private func piLine(_ fields: [String: String], id: String = "pi-id") -> Data {
+    private func piLine(_ fields: [String: String], id: String = "pi-id", cost: String = "0.5") -> Data {
         let usage = fields.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")
         return Data("""
-        {"type":"message","id":"\(id)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{\(usage),"cost":{"total":0.5}}}}
+        {"type":"message","id":"\(id)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{\(usage),"cost":{"total":\(cost)}}}}
         """.utf8)
     }
 }
