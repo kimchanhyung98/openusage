@@ -20,10 +20,12 @@ struct PricingCatalog: Sendable, Equatable {
     /// 전체 entry 대상 fuzzy lookup — 최장 일치 key 우선, 동률은 사전순 최소로 결정성 확보. 정확 lookup miss 후에만 호출.
     func findFuzzy(_ model: String, excludingFastVariants: Bool = false) -> (key: String, rates: ModelRates)? {
         let normalizedModel = Self.normalizedKey(model)
+        let fastSegment = #"-fast($|[^A-Za-z0-9])"#
+        let excludeFast = excludingFastVariants && model.range(of: fastSegment, options: .regularExpression) == nil
         var best: (key: String, rates: ModelRates)?
         for (key, rates) in entries {
-            if excludingFastVariants, key.contains("-fast"),
-               key.range(of: #"-fast($|[^A-Za-z0-9])"#, options: .regularExpression) != nil { continue }
+            if excludeFast, key.contains("-fast"),
+               key.range(of: fastSegment, options: .regularExpression) != nil { continue }
             guard Self.keyMatches(candidate: key, model: model, normalizedModel: normalizedModel) else { continue }
             if let current = best {
                 if key.count > current.key.count || (key.count == current.key.count && key < current.key) {

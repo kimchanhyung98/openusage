@@ -6,7 +6,14 @@ enum CodexUsagePricing {
         let canonical = pricing.supplement.canonicalName(for: model) ?? model
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
-        let baseRates = resolveRates(model: rateModel, pricing: pricing)
+        let prefixedBase: String
+        if isFastAlias, let separator = model.lastIndex(of: "/") {
+            prefixedBase = String(model[...separator]) + withoutProviderPrefix(rateModel)
+        } else {
+            prefixedBase = isFastAlias ? rateModel : model
+        }
+        let baseRates = exactPrefixedRates(model: prefixedBase, pricing: pricing)
+            ?? resolveRates(model: rateModel, pricing: pricing)
         guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
         // fast-only catalog는 이미 배율 반영된 단가 — base가 있을 때만 Codex 배율 추가.
@@ -50,6 +57,14 @@ enum CodexUsagePricing {
             effective.fastMultiplier = rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier
         }
         return effective
+    }
+
+    private static func exactPrefixedRates(model: String, pricing: ModelPricing) -> ModelRates? {
+        guard model.contains("/") else { return nil }
+        // Codex의 출처별 정확 요율은 접두사를 지우는 별칭보다 우선. 공통 가격 엔진의 별칭 순서는 유지.
+        return pricing.supplement.pricing[model]
+            ?? pricing.primary.findExact(model)?.rates
+            ?? pricing.secondary.findExact(model)?.rates
     }
 
     private static func resolveRates(model: String, pricing: ModelPricing) -> ModelRates? {
