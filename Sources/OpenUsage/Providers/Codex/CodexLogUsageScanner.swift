@@ -30,8 +30,8 @@ actor CodexLogUsageScanner {
         var pricingModel: String? = nil
     }
 
-    /// 손상된 부모 재생 구간의 불확실한 증가분을 제외하는 형식 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 7
+    /// 부모 재생 기준이 미확정인 증가분을 제외하는 형식 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 8
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -181,6 +181,8 @@ actor CodexLogUsageScanner {
             if type == "session_meta", !sawSessionMeta {
                 sawSessionMeta = true
                 if let payload, isChildSessionMeta(payload) {
+                    previousTotals = nil
+                    replayBaselineUnknown = true
                     if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
                        let created = OpenUsageISO8601.date(from: timestampRaw) {
                         replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
