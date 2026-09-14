@@ -242,6 +242,13 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             XCTAssertEqual(scan?.rejectedNumericRows, 1)
             XCTAssertNotNil(scan?.numericWarning)
         }
+        files.files.removeValue(forKey: path)
+        let unavailable = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertNil(unavailable)
+        XCTAssertEqual(capture.events.count, 1, "A missing log does not prove numeric recovery")
+        files.files[path] = bad
+        _ = await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(capture.events.count, 1, "The same damage must remain deduplicated after reappearance")
         files.files[path] = bad + "\n" + #"{"msg":"model changed","pid":1,"ctx":{"model":"grok-build"}}"#
         _ = await scanner.scan(now: now, pricing: .empty)
         XCTAssertEqual(capture.events.count, 1)

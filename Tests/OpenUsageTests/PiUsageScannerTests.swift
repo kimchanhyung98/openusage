@@ -72,6 +72,27 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.002, accuracy: 0.00001)
     }
 
+    func testInvalidExplicitCarriedCostRejectsRowInsteadOfEstimating() throws {
+        for cost in ["-0.5", "true", "false", #""NaN""#, #""Infinity""#, #""invalid""#, "null"] {
+            let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(provider: "cursor", model: "composer-2.5", cost: cost)))
+            let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
+            XCTAssertTrue(entry.invalidNumericValues, cost)
+            XCTAssertEqual(scan.rejectedNumericRows, 1, cost)
+            XCTAssertNil(scan.usageHistory, cost)
+            XCTAssertNotNil(scan.numericWarning, cost)
+        }
+    }
+
+    func testMissingAndNumericStringCarriedCostKeepExistingBehavior() throws {
+        for (cost, expected) in [(nil as String?, 0.002), (#""0""#, 0.002), (#""0.5""#, 0.5)] {
+            let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(provider: "cursor", model: "composer-2.5", cost: cost)))
+            let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
+            XCTAssertFalse(entry.invalidNumericValues)
+            XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), expected, accuracy: 1e-9)
+            XCTAssertNil(scan.numericWarning)
+        }
+    }
+
     func testUnpriceableZeroCostBecomesUnknownModel() {
         let entry = PiUsageScanner.parseLine(line(provider: "cursor", model: "mystery-model", cost: "0"))!
         let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: .empty)

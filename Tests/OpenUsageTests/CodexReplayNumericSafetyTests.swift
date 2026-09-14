@@ -4,6 +4,23 @@ import XCTest
 final class CodexReplayNumericSafetyTests: XCTestCase {
     private let timestamp = "2026-09-12T10:00:00Z"
 
+    func testCorruptLastUsageIsNotRecoveredThroughCurrentOrFutureTotals() {
+        let text = [
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 100, output: 0), model: "gpt-5.4"),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: ["input_tokens": -1],
+                totals: CodexLogFixture.usage(input: 150, output: 0), model: "gpt-5.5"),
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 170, output: 0))
+        ].joined(separator: "\n")
+        let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+        XCTAssertEqual(events.map(\.total), [100, 0, 20])
+        XCTAssertEqual(events.map(\.invalidNumericValues), [false, true, false])
+        XCTAssertEqual(events.last?.model, "gpt-5.5")
+        let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.numericWarning)
+    }
+
     func testCorruptParentReplayRequiresANewBaselineForEveryChildGate() {
         let metadata = [
             CodexLogFixture.subagentSessionMeta(timestamp: timestamp),

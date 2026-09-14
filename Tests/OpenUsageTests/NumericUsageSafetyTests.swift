@@ -158,16 +158,25 @@ final class NumericUsageSafetyTests: XCTestCase {
     }
 
     func testPiInvalidMarkerSurvivesMemoryDiskCacheAndSchemaMigration() async throws {
+        try await verifyPiCacheMigration(data: piLine(["input": "-1"]), oldSchema: 1)
+    }
+
+    func testPiMalformedCostInvalidatesPreviouslyAcceptedCache() async throws {
+        let text = String(decoding: piLine(["input": "100", "output": "50", "totalTokens": "150"]), as: UTF8.self)
+            .replacingOccurrences(of: "0.5", with: "-0.5")
+        try await verifyPiCacheMigration(data: Data(text.utf8), oldSchema: 2)
+    }
+
+    private func verifyPiCacheMigration(data: Data, oldSchema: Int) async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
-        let data = piLine(["input": "-1"])
         let url = base.appendingPathComponent("session.jsonl")
         try data.write(to: url)
         let mtime = try XCTUnwrap(url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
         let file = JSONLScanning.DiscoveredFile(path: url.path, size: data.count, mtime: mtime)
         let cacheDirectory = base.appendingPathComponent("cache")
-        let oldPersistence = JSONLScanCachePersistence(namespace: "pi", schemaVersion: 1, directory: cacheDirectory, writeDebounce: .milliseconds(1))
+        let oldPersistence = JSONLScanCachePersistence(namespace: "pi", schemaVersion: oldSchema, directory: cacheDirectory, writeDebounce: .milliseconds(1))
         let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: oldPersistence)
         _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in [] })
         await old.waitForPendingWritesForTesting()
