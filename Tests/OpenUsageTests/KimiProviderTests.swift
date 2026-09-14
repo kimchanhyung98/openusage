@@ -14,7 +14,7 @@ final class KimiProviderTests: XCTestCase {
         XCTAssertTrue(provider.provider.links.isEmpty)
         XCTAssertEqual(provider.widgetDescriptors.map(\.id), ["kimi.session", "kimi.weekly"])
         XCTAssertEqual(provider.widgetDescriptors.map(\.metricLabel), ["Session", "Weekly"])
-        XCTAssertTrue(provider.widgetDescriptors[0].sample.isSessionWindow)
+        XCTAssertEqual(provider.widgetDescriptors[0].sample.sessionStartSignal, .zeroUsage)
         XCTAssertEqual(provider.widgetDescriptors[0].limitResources.first?.key, "session")
         XCTAssertEqual(provider.widgetDescriptors[1].limitResources.first?.key, "weekly")
     }

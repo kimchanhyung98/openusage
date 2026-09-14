@@ -59,9 +59,8 @@ struct WidgetData: Hashable {
     /// unbounded count의 menu-bar 값 뒤에 붙는 tray 전용 단위 단어 (예: "2 resets") — bare 값 tile은 nil.
     /// descriptor가 설정 — tile rename에도 suffix 유지 (title 매칭 대체).
     var traySuffix: String?
-    /// 미사용 시 "Not started"로 읽히는 session-window meter (Claude/Antigravity 5시간 pool).
-    /// descriptor opt-in — hardcoded widget-ID 목록 대체, `WidgetDataStore.resolve`로 전달.
-    var isSessionWindow: Bool = false
+    /// provider가 미시작 할당량 기간을 알리는 신호 — descriptor에서 실제 row까지 전달.
+    var sessionStartSignal: SessionStartSignal?
     /// Usage Trend row 표시 — true면 view가 값 layout 대신 sparkline 렌더.
     /// `chartPoints`는 일별 point(다른 tile은 빈 배열), `chartNote`는 hover에 표시할 source 문구.
     var isChart: Bool = false
@@ -70,6 +69,11 @@ struct WidgetData: Hashable {
     /// 이 row 데이터의 출처 provider(카드) — `WidgetDataStore.data(for:)`가 stamp, per-card action의 key.
     /// direct fixture(preview, share render)에서는 nil — 해당 action 비활성.
     var providerID: String?
+
+    enum SessionStartSignal: Hashable {
+        case zeroUsage
+        case missingResetDate
+    }
 
     struct Forecast: Hashable {
         var deadline: Date?
@@ -511,12 +515,17 @@ extension WidgetData {
         return boundedSubtitle // 주기/limit/suffix context — flip 대상 아님
     }
 
-    /// session meter(Claude/Antigravity) 전용 "Not started" 판정 — 현재 window에서 사용 0 기준.
-    /// window-timing이 아닌 frozen usage(`used == 0`)가 snapshot 일관 신호 — headline과 label의 분리 방지.
-    /// `now < resetsAt` 조건 유지 — reset 경과 후 stale snapshot은 일반 countdown으로 fallback.
+    /// provider별 미시작 신호 판정 — Claude는 0%에도 활성 기간이 있으므로 reset 부재 사용.
+    /// zeroUsage 신호는 reset 경과 후 stale snapshot을 미시작으로 표시하지 않도록 미래 시각만 허용.
     func isFreshSessionWindow(now: Date = Date()) -> Bool {
-        guard isSessionWindow, hasData, limit != nil, let resetsAt, used <= 0 else { return false }
-        return now < resetsAt
+        guard let signal = sessionStartSignal, hasData, limit != nil, used <= 0 else { return false }
+        switch signal {
+        case .zeroUsage:
+            guard let resetsAt else { return false }
+            return now < resetsAt
+        case .missingResetDate:
+            return resetsAt == nil
+        }
     }
 
     /// bounded row trailing text가 클릭 가능한 reset countdown인지 여부 — limit/suffix context·fresh window·reset 없음은 false.

@@ -45,13 +45,12 @@ final class ResetDisplayTests: XCTestCase {
         XCTAssertEqual(data.resetTooltip()?.hasPrefix("Resets in "), true)
     }
 
-    func testFreshSessionWindowShowsNotStartedForClaudeAndAntigravity() {
+    func testZeroUsageSessionSignalPreservesAntigravityAndKimiBehavior() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let period: TimeInterval = 5 * 3600
-        for id in ["claude.session",
-                   "antigravity.geminiPro", "antigravity.claude"] {
+        for id in ["antigravity.geminiPro", "antigravity.claude", "kimi.session"] {
             var data = WidgetData(title: "Session", icon: .providerMark("codex"), kind: .percent, used: 0, limit: 100)
-            data.isSessionWindow = true   // session tile이 갖는 descriptor opt-in
+            data.sessionStartSignal = .zeroUsage
             data.periodDurationMs = Int(period * 1000)
             // window 절반 경과에도 usage 0이면 "Not started" (isFreshSessionWindow 기준)
             data.resetsAt = now.addingTimeInterval(period / 2)
@@ -64,21 +63,69 @@ final class ResetDisplayTests: XCTestCase {
             XCTAssertEqual(state, .level(.normal), id)
             XCTAssertNil(state.tooltip, id)
             XCTAssertNil(data.paceTick(for: state, now: now), id)
+            data.resetsAt = now
+            XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
+            data.resetsAt = nil
+            XCTAssertFalse(data.isFreshSessionWindow(now: now), id)
         }
     }
 
+    func testClaudeSessionStartUsesMissingResetDateInBothDisplayModes() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let future = now.addingTimeInterval(9_000)
+        for mode in [WidgetDisplayMode.used, .remaining] {
+            for resetMode in [ResetDisplayMode.relative, .absolute] {
+                var data = WidgetData(title: "Session", icon: .providerMark("claude"),
+                                      kind: .percent, used: 0, limit: 100, displayMode: mode,
+                                      resetDisplayMode: resetMode, periodDurationMs: MetricPeriod.sessionMs)
+                data.sessionStartSignal = .missingResetDate
+                XCTAssertEqual(data.boundedTrailingText(now: now), "Not started")
+                XCTAssertEqual(data.resetTooltip(now: now), WidgetData.freshSessionTooltip)
+                XCTAssertFalse(data.hasResetLabel(now: now))
+
+                data.resetsAt = future
+                XCTAssertFalse(data.isFreshSessionWindow(now: now))
+                XCTAssertTrue(data.hasResetLabel(now: now))
+                XCTAssertEqual(data.boundedTrailingText(now: now), resetMode == .relative
+                    ? Formatters.resetRelativeLabel(until: future, now: now)
+                    : Formatters.resetAbsoluteLabel(at: future, now: now))
+                XCTAssertEqual(data.meterState(now: now), .level(.normal))
+                XCTAssertNil(data.paceTick(for: data.meterState(now: now), now: now))
+
+                data.resetsAt = now.addingTimeInterval(-1)
+                XCTAssertFalse(data.isFreshSessionWindow(now: now))
+                XCTAssertEqual(data.boundedTrailingText(now: now), "Resets soon")
+            }
+        }
+    }
+
+    func testMissingResetSignalRequiresZeroUsageAndRealBoundedData() {
+        var data = WidgetData(title: "Session", icon: .providerMark("claude"), kind: .percent,
+                              used: 1, limit: 100, sessionStartSignal: .missingResetDate)
+        XCTAssertFalse(data.isFreshSessionWindow())
+        data.used = 0
+        data.hasData = false
+        XCTAssertFalse(data.isFreshSessionWindow())
+        XCTAssertEqual(data.boundedTrailingText(), WidgetData.noDataSubtitle)
+        data.hasData = true
+        data.limit = nil
+        XCTAssertFalse(data.isFreshSessionWindow())
+    }
+
     @MainActor
-    func testSessionWindowFlagIsWiredOnExactlyTheShippingSessionDescriptors() {
+    func testSessionStartSignalsAreWiredOnExactlyTheShippingDescriptors() {
         let providers: [ProviderRuntime] = [
             ClaudeProvider(), CodexProvider(), CursorProvider(),
             AntigravityProvider(), CopilotProvider(), DevinProvider(),
-            GrokProvider(), KimiProvider(), KiroProvider(), OpenRouterProvider(), ZAIProvider()
+            GrokProvider(), KimiProvider(), KiroProvider(), OpenCodeProvider(), OpenRouterProvider(), ZAIProvider()
         ]
         let descriptors = providers.flatMap(\.widgetDescriptors)
-        let sessionIDs = Set(descriptors.filter(\.sample.isSessionWindow).map(\.id))
-        XCTAssertEqual(sessionIDs, ["claude.session",
-                                    "antigravity.geminiPro", "antigravity.claude",
-                                    "kimi.session"])
+        let signals = Dictionary(uniqueKeysWithValues: descriptors.compactMap { descriptor in
+            descriptor.sample.sessionStartSignal.map { (descriptor.id, $0) }
+        })
+        XCTAssertEqual(signals, ["claude.session": .missingResetDate,
+                                 "antigravity.geminiPro": .zeroUsage, "antigravity.claude": .zeroUsage,
+                                 "kimi.session": .zeroUsage])
 
         let suffixed = descriptors.filter { $0.sample.traySuffix != nil }
         XCTAssertEqual(suffixed.map(\.id), ["codex.rateLimitResets"])
