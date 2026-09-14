@@ -4,16 +4,16 @@ import Foundation
 /// template 숫자는 구조용(실데이터 없는 row는 no-data marker 렌더) — 모든 factory가 `used: 0`로 seed.
 extension WidgetDescriptor {
     /// bounded 0–100% meter (session/weekly형 quota).
-    /// `isSessionWindow`는 "Not started" fresh-window 처리 opt-in (rolling 5시간 session pool).
+    /// `sessionStartSignal`은 provider별 "Not started" 미시작 판단 신호.
     static func percent(
         id: String,
         provider: Provider,
         title: String,
         metricLabel: String? = nil,
-        isSessionWindow: Bool = false
+        sessionStartSignal: WidgetData.SessionStartSignal? = nil
     ) -> WidgetDescriptor {
         var sample = WidgetData(title: title, icon: provider.icon, kind: .percent, used: 0, limit: 100)
-        sample.isSessionWindow = isSessionWindow
+        sample.sessionStartSignal = sessionStartSignal
         return make(id: id, provider: provider, metricLabel: metricLabel ?? title, sample: sample)
     }
 

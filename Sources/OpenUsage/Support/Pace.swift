@@ -21,14 +21,13 @@ enum Pace {
         max(60, periodDuration * 0.01)
     }
 
-    /// 전체 pace 평가 — 신호가 없으면 `nil`(window 미시작, 이미 reset, 안정 투영에 너무 이른 시점).
+    /// 전체 pace 평가 — 사용량 없음·window 미시작·reset 경과·안정 투영에 너무 이르면 `nil`.
     static func evaluate(used: Double, limit: Double, resetsAt: Date, periodDuration: TimeInterval,
                          now: Date = Date()) -> Result? {
-        guard limit > 0, periodDuration > 0 else { return nil }
+        guard limit > 0, periodDuration > 0, used > 0 else { return nil }
         let elapsed = now.timeIntervalSince(resetsAt.addingTimeInterval(-periodDuration))
         guard elapsed >= minimumElapsed(periodDuration: periodDuration), now < resetsAt else { return nil }
 
-        if used <= 0 { return Result(status: .ahead, projectedUsage: 0) }   // 지출 없음 → ahead
         let projected = used / elapsed * periodDuration
         if used >= limit { return Result(status: .behind, projectedUsage: projected) } // 한도 도달 → behind
 
