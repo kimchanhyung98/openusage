@@ -164,6 +164,45 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         XCTAssertTrue(CodexLogUsageScanner.parseFile(Data(text.utf8)).isEmpty)
     }
 
+    func testChildWithoutReplayUsageRequiresACumulativeBaseline() {
+        for meta in [CodexLogFixture.subagentSessionMeta(timestamp: timestamp),
+                     CodexLogFixture.forkSessionMeta(timestamp: timestamp),
+                     #"{"type":"session_meta","payload":{"forked_from_id":"parent"}}"#] {
+            for lastOnly in [false, true] {
+                let text = truncatedReplay(meta: meta, lastOnly: lastOnly)
+                let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+                XCTAssertEqual(events.map(\.total), lastOnly ? [10, 0, 20] : [0, 20])
+                XCTAssertEqual(events.map(\.invalidNumericValues), lastOnly ? [false, true, false] : [true, false])
+            }
+        }
+    }
+
+    func testVersionSevenCacheReparsesTruncatedReplay() async throws {
+        let content = truncatedReplay(meta: CodexLogFixture.subagentSessionMeta(timestamp: timestamp))
+            .split(separator: "\n").dropLast().joined(separator: "\n")
+        try await assertReplayCacheReparsed(content: content, oldVersion: 7)
+    }
+
+    func testRootWithoutReplayKeepsItsFirstCumulativeUsage() {
+        let text = truncatedReplay(meta: #"{"type":"session_meta","payload":{"source":"cli"}}"#)
+        let events = CodexLogUsageScanner.parseFile(Data(text.utf8))
+        XCTAssertEqual(events.map(\.total), [200, 20])
+        XCTAssertEqual(events.map(\.invalidNumericValues), [false, false])
+    }
+
+    private func truncatedReplay(meta: String, lastOnly: Bool = false) -> String {
+        var lines = [meta, CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4"),
+                     CodexLogFixture.taskStarted(timestamp: timestamp,
+                         startedAt: Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970))]
+        if lastOnly {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 10, output: 0)))
+        }
+        for input in [200, 220] {
+            lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: input, output: 0)))
+        }
+        return lines.joined(separator: "\n")
+    }
+
     private func missingTotalsReplay(
         meta: String, seed: Int?, totalsJSON: String? = nil,
         restoreReplay: Bool = false, liveLastOnly: Bool = false
