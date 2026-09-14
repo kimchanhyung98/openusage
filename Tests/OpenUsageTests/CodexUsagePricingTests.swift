@@ -132,6 +132,39 @@ final class CodexUsagePricingTests: XCTestCase {
         XCTAssertEqual(catalog.findFuzzy("custom", excludingFastVariants: true)?.rates, standard)
     }
 
+    func testGenuineFastNamedModelsRetainProviderFuzzyRates() throws {
+        let model = "grok-code-fast-1-0825"
+        let explicit = try XCTUnwrap(pricing.primary.findExact("xai/" + model)?.rates)
+        XCTAssertEqual(pricing.resolve(model: model), explicit)
+        let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 14, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        for model in ["grok-code-fast-1-0825", "grok-4-fast-non-reasoning", "custom-fast@20260901"] {
+            let snapshot = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(entries: ["vendor/" + model: rates]), secondary: PricingCatalog())
+            XCTAssertEqual(snapshot.resolve(model: model), rates, model)
+        }
+    }
+
+    func testProviderExactAstraRatesPrecedeBundledAliasesForCodexOnly() throws {
+        let rates = ModelRates(inputPerMillion: 7, outputPerMillion: 14, cacheWritePerMillion: 7, cacheReadPerMillion: 7)
+        for secondary in [false, true] {
+            let catalog = PricingCatalog(entries: ["openai/gpt-6-astra": rates, "openai/gpt-6-astra-high-20260901": rates])
+            let snapshot = ModelPricing(supplement: pricing.supplement,
+                primary: secondary ? PricingCatalog() : catalog, secondary: secondary ? catalog : PricingCatalog())
+            for model in ["openai/gpt-6-astra", "openai/gpt-6-astra-high-20260901"] {
+                XCTAssertEqual(snapshot.resolve(model: model), pricing.resolve(model: "gpt-6-astra"), "Generic alias precedence stays unchanged")
+                for fast in [false, true] {
+                    let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: .init(input: 1_000, isFast: fast), pricing: snapshot))
+                    XCTAssertEqual(cost, fast ? 0.014 : 0.007, accuracy: 1e-9, model)
+                }
+            }
+            for model in ["openai/gpt-6-astra-fast", "openai/gpt-6-astra-high-fast-20260901"] {
+                for fast in [false, true] {
+                    let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: .init(input: 300_000, isFast: fast), pricing: snapshot))
+                    XCTAssertEqual(cost, 8.4, accuracy: 1e-9, model)
+                }
+            }
+        }
+    }
+
     func testAutomaticReviewKeepsIdentityWhileUsingRequestPricingForItsReference() throws {
         let event = CodexLogUsageScanner.Event(timestamp: date, model: "codex-auto-review", input: 300_000,
             cached: 100_000, output: 10_000, reasoning: 0, total: 310_000, isFast: true, pricingModel: "gpt-5.6-sol")
