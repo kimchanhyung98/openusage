@@ -3,8 +3,9 @@ import Foundation
 /// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
 enum CodexUsagePricing {
     static func estimate(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> Double? {
-        let canonical = pricing.supplement.canonicalName(for: model)
-            ?? pricing.supplement.canonicalName(for: datedBaseModel(model)) ?? model
+        let normalized = ModelPricing.normalizedFastName(model)
+        let canonical = pricing.supplement.canonicalName(for: normalized)
+            ?? pricing.supplement.canonicalName(for: datedBaseModel(normalized)) ?? normalized
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
         let prefixedBase: String
@@ -14,10 +15,10 @@ enum CodexUsagePricing {
             prefixedBase = isFastAlias ? rateModel : model
         }
         let qualifiedBase = isFastAlias
-            ? model.replacingOccurrences(of: #"-fast(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#, with: "", options: .regularExpression)
+            ? normalized.replacingOccurrences(of: #"-fast(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#, with: "", options: .regularExpression)
             : model
-        let qualifiedRates = qualifiedBase != model ? exactPrefixedRates(model: qualifiedBase, pricing: pricing) : nil
-        let baseRates = qualifiedRates ?? exactPrefixedRates(model: prefixedBase, pricing: pricing)
+        let qualifiedRates = qualifiedBase != model ? exactQualifiedRates(model: qualifiedBase, pricing: pricing) : nil
+        let baseRates = qualifiedRates ?? exactQualifiedRates(model: prefixedBase, pricing: pricing)
             ?? resolveRates(model: rateModel, pricing: pricing)
         guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
@@ -64,9 +65,9 @@ enum CodexUsagePricing {
         return effective
     }
 
-    private static func exactPrefixedRates(model: String, pricing: ModelPricing) -> ModelRates? {
-        guard model.contains("/") else { return nil }
-        // Codex의 출처별 정확 요율은 접두사를 지우는 별칭보다 우선. 공통 가격 엔진의 별칭 순서는 유지.
+    private static func exactQualifiedRates(model: String, pricing: ModelPricing) -> ModelRates? {
+        guard model.contains("/") || datedBaseModel(model) != model else { return nil }
+        // Codex의 출처·날짜별 정확 요율은 정규화 별칭보다 우선. 공통 가격 엔진의 별칭 순서는 유지.
         return pricing.supplement.pricing[model]
             ?? pricing.primary.findExact(model)?.rates
             ?? pricing.secondary.findExact(model)?.rates
