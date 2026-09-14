@@ -148,6 +148,121 @@ for (const file of ['release.yml', 'pricing-supplement.yml']) {
   });
 }
 
+function guardedDeploymentFixture() {
+  const fixture = publicationFixture();
+  const output = join(fixture.temp, 'github-output');
+  const checkpoint = 'refs/heads/pages-deployment';
+  return {
+    ...fixture, output, checkpoint,
+    deploy(ref: string) {
+      fixture.git(fixture.checkout, 'fetch', '--quiet', 'origin', 'gh-pages');
+      fixture.git(fixture.checkout, 'checkout', '--quiet', '--detach', ref);
+      writeFileSync(output, '');
+      return fixture.run('과거 Pages 배포 차단', 'deploy-pages.yml', { GITHUB_OUTPUT: output });
+    },
+  };
+}
+
+test('Pages 최초 배포와 새 커밋 전진 후 과거 실행은 배포 생략', () => {
+  const fixture = guardedDeploymentFixture();
+  try {
+    const first = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    let result = fixture.deploy(first);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(fixture.output, 'utf8').trim(), 'deploy=true');
+    assert.equal(fixture.git(fixture.published, 'rev-parse', fixture.checkpoint), first);
+    writeFileSync(join(fixture.published, 'appcast.xml'), 'new release\n');
+    fixture.commit();
+    const second = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    result = fixture.deploy(second);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fixture.git(fixture.published, 'rev-parse', fixture.checkpoint), second);
+    result = fixture.deploy(first);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(fixture.output, 'utf8').trim(), 'deploy=false');
+    assert.equal(fixture.git(fixture.published, 'rev-parse', fixture.checkpoint), second);
+  } finally { fixture.cleanup(); }
+});
+
+test('Pages 기준 전진 후 업로드 실패를 가정한 동일 SHA 재시도 허용', () => {
+  const fixture = guardedDeploymentFixture();
+  try {
+    const verified = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    assert.equal(fixture.deploy(verified).status, 0);
+    writeFileSync(join(fixture.published, 'appcast.xml'), 'unverified feed\n');
+    fixture.commit();
+    const result = fixture.deploy(verified);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(readFileSync(fixture.output, 'utf8').trim(), 'deploy=true');
+    assert.equal(fixture.git(fixture.checkout, 'rev-parse', 'HEAD'), verified);
+    assert.equal(fixture.git(fixture.published, 'rev-parse', fixture.checkpoint), verified);
+  } finally { fixture.cleanup(); }
+});
+
+test('과거 Pages 실행으로 최초 보호 기준 생성 금지', () => {
+  const fixture = guardedDeploymentFixture();
+  try {
+    const old = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    writeFileSync(join(fixture.published, 'index.html'), 'newer publication\n');
+    fixture.commit();
+    const result = fixture.deploy(old);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /latest successful publication/);
+    assert.equal(readFileSync(fixture.output, 'utf8'), '');
+    assert.equal(fixture.git(fixture.published, 'for-each-ref', '--format=%(refname)', fixture.checkpoint), '');
+  } finally { fixture.cleanup(); }
+});
+
+test('갈라진 Pages 게시 이력은 강제 전진 없이 실패', () => {
+  const fixture = guardedDeploymentFixture();
+  try {
+    const first = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    writeFileSync(join(fixture.published, 'index.html'), 'deployed branch\n');
+    fixture.commit();
+    const deployed = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    assert.equal(fixture.deploy(deployed).status, 0);
+    fixture.git(fixture.published, 'checkout', '--quiet', '--detach', first);
+    writeFileSync(join(fixture.published, 'index.html'), 'diverged branch\n');
+    fixture.commit();
+    const diverged = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+    fixture.git(fixture.published, 'update-ref', 'refs/heads/gh-pages', diverged);
+    const result = fixture.deploy(diverged);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /not a descendant/);
+    assert.equal(readFileSync(fixture.output, 'utf8'), '');
+    assert.equal(fixture.git(fixture.published, 'rev-parse', fixture.checkpoint), deployed);
+  } finally { fixture.cleanup(); }
+});
+
+for (const failure of ['read', 'write']) {
+  test(`Pages 보호 기준 ${failure} 실패 시 배포 금지`, () => {
+    const fixture = guardedDeploymentFixture();
+    try {
+      const ref = fixture.git(fixture.published, 'rev-parse', 'HEAD');
+      fixture.git(fixture.checkout, 'fetch', '--quiet', 'origin', 'gh-pages');
+      fixture.git(fixture.checkout, 'checkout', '--quiet', '--detach', ref);
+      if (failure === 'read') {
+        fixture.git(fixture.checkout, 'remote', 'set-url', 'origin', join(fixture.temp, 'missing'));
+      } else {
+        writeFileSync(join(fixture.published, '.git/hooks/pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      }
+      writeFileSync(fixture.output, '');
+      const result = fixture.run('과거 Pages 배포 차단', 'deploy-pages.yml', { GITHUB_OUTPUT: fixture.output });
+      assert.notEqual(result.status, 0);
+      assert.equal(readFileSync(fixture.output, 'utf8'), '');
+    } finally { fixture.cleanup(); }
+  });
+}
+
+test('Pages 보호 통과 조건이 산출물 업로드와 실제 배포 모두에 적용', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/deploy-pages.yml', import.meta.url), 'utf8');
+  for (const name of ['사이트 배포 산출물 업로드', 'GitHub Pages 배포']) {
+    assert.ok(workflow.includes(`      - name: ${name}\n        if: steps.revision.outputs.deploy == 'true'`));
+  }
+  assert.match(workflow, /ref: \$\{\{ env.PAGES_REF \}\}\n          fetch-depth: 0/);
+  assert.match(workflow, /group: pages-deploy\n  queue: max\n  cancel-in-progress: false/);
+});
+
 function deploymentFixture() {
   const fixture = publicationFixture();
   const bin = join(fixture.temp, 'bin');
