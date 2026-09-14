@@ -285,3 +285,19 @@ test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 �
     assert.ok(pullRequest.includes(`      - '${path}'`), path);
   }
 });
+
+
+test('서로 다른 세 publisher의 대기 작업을 같은 직렬화 그룹에서 보존', () => {
+  const publishers = ['release.yml', 'pricing-supplement.yml', 'publish-site.yml'];
+  const groups = publishers.map(file => {
+    const workflow = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
+    const block = workflow.match(/^( *)concurrency:\n((?:\1  [^\n]*\n)+)/m);
+    assert.ok(block, `${file}: publisher concurrency is required`);
+    const settings = Object.fromEntries(block[2].trim().split('\n').map(line => line.trim().split(/: +/)));
+    assert.equal(settings.queue, 'max', `${file}: every publisher must preserve pending publications`);
+    assert.equal(settings['cancel-in-progress'], 'false', `${file}: active publication must finish`);
+    return settings.group;
+  });
+  assert.equal(new Set(groups).size, 1, 'all gh-pages writers must share the same lock');
+  assert.equal(groups[0], 'release-appcast');
+});

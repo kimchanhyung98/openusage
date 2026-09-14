@@ -17,6 +17,7 @@ on:
 
 concurrency:
   group: release-appcast
+  queue: max
   cancel-in-progress: false
 
 permissions:

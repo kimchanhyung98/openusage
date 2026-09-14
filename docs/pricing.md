@@ -68,6 +68,10 @@ Grok 4.6의 일반·Fast 요율은 `xai/` 접두사가 붙은 로그 이름에�
 
 ## 유지 관리자 노트
 
+릴리스·가격표·사이트 게시 작업은 같은 대기열에서 한 번에 하나씩 실행.
+[GitHub Actions 대기열](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)의 `queue: max`와 `cancel-in-progress: false`를 세 게시 workflow에 함께 적용해, 새 사이트 게시가 대기 중인 가격표나 릴리스를 취소하지 않도록 보존.
+대기는 최대 100개이며 도착 순서가 배포 버전 순서를 보장하지는 않으므로, 게시·후속 Pages 배포의 실패 및 취소 여부 확인 필요.
+
 - **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
   `main` 병합 후 가격표 게시와 Pages 배포가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.

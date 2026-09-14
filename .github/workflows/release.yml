@@ -21,6 +21,7 @@ permissions:
 # 두 태그가 연이어 push될 때 race로 feed 항목이 누락되는 문제 방지.
 concurrency:
   group: release-appcast
+  queue: max
   cancel-in-progress: false
 
 jobs:
