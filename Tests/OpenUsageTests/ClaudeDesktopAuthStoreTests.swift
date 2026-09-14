@@ -5,13 +5,13 @@ import XCTest
 @testable import OpenUsage
 
 final class ClaudeDesktopAuthStoreTests: XCTestCase {
-    private let home = URL(fileURLWithPath: "/fixture-home", isDirectory: true)
-    private let organization = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    private let otherOrganization = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    private let clientID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
-    private let otherClientID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    private let password = "fixture-safe-storage-password"
-    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let home = URL(fileURLWithPath: "/fixture-home", isDirectory: true)
+    let organization = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    let otherOrganization = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    let clientID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+    let otherClientID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    let password = "fixture-safe-storage-password"
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     func testDecryptsElectronSafeStorageValue() throws {
         let key = try ClaudeDesktopAuthStore.deriveKey(password: password)
@@ -39,7 +39,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertEqual(result.status, .available)
         XCTAssertEqual(result.oauth?.accessToken, "desktop-token")
         XCTAssertNil(result.oauth?.refreshToken)
-        XCTAssertEqual(result.oauth?.scopes, ["user:profile", "user:inference"])
+        XCTAssertEqual(Set(result.oauth?.scopes ?? []), ["user:profile", "user:inference"])
     }
 
     func testV1FallbackDoesNotOverrideTombstonedV2Key() throws {
@@ -53,6 +53,95 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
 
         guard case .notFound = selection else {
             return XCTFail("V2 tombstone should suppress the matching V1 token")
+        }
+    }
+
+    func testLoadsAccountPrefixedDesktopCacheForActiveOwner() throws {
+        let account = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        let fixture = try makeFixture(
+            activeOrganization: organization,
+            activeAccountUUID: account,
+            v2: ["acct:\(account)|\(cacheKey(organization: organization))": tokenEntry("scoped-token", expiresIn: 3_600)]
+        )
+
+        let result = fixture.store.load(allowInteraction: false)
+
+        XCTAssertEqual(result.status, .available)
+        XCTAssertEqual(result.oauth?.accessToken, "scoped-token")
+        XCTAssertNil(result.oauth?.refreshToken)
+    }
+
+    func testAccountMetadataAndScopedCacheReloadTogetherAfterDesktopSwitch() throws {
+        let account = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        let replacement = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+        let caches = [
+            "acct:\(account)|\(cacheKey(organization: organization))": tokenEntry("previous-owner", expiresIn: 7_200),
+            "acct:\(replacement)|\(cacheKey(organization: organization))": tokenEntry("current-owner", expiresIn: 3_600)
+        ]
+        let fixture = try makeFixture(activeOrganization: organization, activeAccountUUID: account, v2: caches)
+        XCTAssertEqual(fixture.store.load(allowInteraction: false).oauth?.accessToken, "previous-owner")
+
+        let replacementFixture = try makeFixture(activeOrganization: organization, activeAccountUUID: replacement, v2: caches)
+        fixture.files.files = replacementFixture.files.files
+
+        XCTAssertEqual(fixture.store.load(allowInteraction: false).oauth?.accessToken, "current-owner")
+        XCTAssertEqual(fixture.keyReader.calls, [false])
+    }
+
+    func testOnlyMissingDesktopAccountMetadataAllowsLegacyFallback() throws {
+        let account = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        for metadata: String? in [nil, "", "not-a-uuid"] {
+            let fixture = try makeFixture(
+                activeOrganization: organization,
+                activeAccountUUID: metadata,
+                v2: ["acct:\(account)|\(cacheKey(organization: organization))": tokenEntry("unverified-owner", expiresIn: 7_200)],
+                v1: [cacheKey(organization: organization): tokenEntry("legacy-token", expiresIn: 3_600)]
+            )
+
+            let result = fixture.store.load(allowInteraction: false)
+            XCTAssertEqual(result.status, metadata == nil ? .available : .invalid)
+            XCTAssertEqual(result.oauth?.accessToken, metadata == nil ? "legacy-token" : nil)
+        }
+    }
+
+    func testWrongTypedAccountMetadataCannotEnableLegacyFallback() throws {
+        for metadata: Any in [NSNull(), 7, true, ["unexpected"]] {
+            let fixture = try makeFixture(activeOrganization: organization,
+                                          v2: [cacheKey(organization: organization): tokenEntry("legacy-token", expiresIn: 3_600)])
+            let path = home.appendingPathComponent("Library/Application Support/Claude/config.json").path
+            let text = try XCTUnwrap(fixture.files.files[path])
+            var config = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+            config["lastKnownAccountUuid"] = metadata
+            fixture.files.files[path] = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
+            let result = fixture.store.load(allowInteraction: false)
+            XCTAssertEqual(result.status, .invalid)
+            XCTAssertNil(result.oauth)
+        }
+    }
+
+    func testScopedDesktopCacheRespectsCredentialScopeAndFallbackGate() throws {
+        let account = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        let cases: [(ClaudeCredentialScope, Bool)] = [
+            (.standard, false),
+            (.configDir(path: "/empty-home", keychainLiteral: "/empty-home"), true),
+            (.accountSnapshot(profileID: "inactive"), true)
+        ]
+        for (scope, allowsDesktopFallback) in cases {
+            let fixture = try makeFixture(
+                activeOrganization: organization,
+                activeAccountUUID: account,
+                v2: ["acct:\(account)|\(cacheKey(organization: organization))": tokenEntry("desktop-token", expiresIn: 3_600)]
+            )
+            let authStore = ClaudeAuthStore(
+                environment: FakeEnvironment([:]), files: fixture.files, keychain: FakeKeychain(nil),
+                desktop: fixture.store, scope: scope, allowsDesktopFallback: allowsDesktopFallback
+            )
+
+            let load = authStore.loadCredentialSet(forceDesktopFallback: true)
+
+            XCTAssertEqual(load.desktopStatus, .notFound)
+            XCTAssertFalse(load.candidates.contains { $0.source == .desktop })
+            XCTAssertTrue(fixture.keyReader.calls.isEmpty)
         }
     }
 
@@ -420,142 +509,4 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         XCTAssertTrue(httpClient.requests.isEmpty)
     }
 
-    private func makeFixture(
-        activeOrganization: String,
-        v2: [String: Any],
-        v1: [String: Any]? = nil,
-        requiresInteraction: Bool = false
-    ) throws -> DesktopFixture {
-        let key = try ClaudeDesktopAuthStore.deriveKey(password: password)
-        let cookieHost = ".claude.ai"
-        let cookiePlaintext = Data(SHA256.hash(data: Data(cookieHost.utf8))) + Data(activeOrganization.utf8)
-        let encryptedCookie = try encrypt(cookiePlaintext, key: key)
-        let v2Data = try JSONSerialization.data(withJSONObject: v2)
-        let encryptedV2 = try encrypt(v2Data, key: key)
-        var config: [String: Any] = ["oauth:tokenCacheV2": encryptedV2.base64EncodedString()]
-        if let v1 {
-            let v1Data = try JSONSerialization.data(withJSONObject: v1)
-            config["oauth:tokenCache"] = try encrypt(v1Data, key: key).base64EncodedString()
-        }
-        let configText = String(decoding: try JSONSerialization.data(withJSONObject: config), as: UTF8.self)
-        let configPath = home.appendingPathComponent("Library/Application Support/Claude/config.json").path
-        let cookiesPath = home.appendingPathComponent("Library/Application Support/Claude/Cookies").path
-        let files = FakeFiles([configPath: configText, cookiesPath: "sqlite-fixture"])
-        let sqlite = FakeClaudeDesktopSQLite(value: "encrypted:\(hex(encryptedCookie))")
-        let keyReader = FakeClaudeDesktopKeyReader(password: password, requiresInteraction: requiresInteraction)
-        let fixtureHome = home
-        let fixtureNow = now
-        let store = ClaudeDesktopAuthStore(
-            files: files,
-            sqlite: sqlite,
-            keyReader: keyReader,
-            homeDirectory: { fixtureHome },
-            now: { fixtureNow }
-        )
-        return DesktopFixture(store: store, files: files, keyReader: keyReader)
-    }
-
-    private func cacheKey(
-        organization: String,
-        clientID: String? = nil,
-        scopes: String = "user:profile user:inference"
-    ) -> String {
-        "\(clientID ?? self.clientID):\(organization):https://api.anthropic.com:\(scopes)"
-    }
-
-    private func tokenEntry(
-        _ token: String,
-        expiresIn seconds: TimeInterval,
-        rateLimitTier: String = "default"
-    ) -> [String: Any] {
-        [
-            "token": token,
-            "expiresAt": (now.timeIntervalSince1970 + seconds) * 1000,
-            "subscriptionType": "max",
-            "rateLimitTier": rateLimitTier
-        ]
-    }
-
-    private func encrypt(_ plaintext: Data, key: Data) throws -> Data {
-        let iv = Data(repeating: 0x20, count: kCCBlockSizeAES128)
-        var output = Data(count: plaintext.count + kCCBlockSizeAES128)
-        var outputLength = 0
-        let capacity = output.count
-        let status = output.withUnsafeMutableBytes { outputBytes in
-            plaintext.withUnsafeBytes { plaintextBytes in
-                key.withUnsafeBytes { keyBytes in
-                    iv.withUnsafeBytes { ivBytes in
-                        CCCrypt(
-                            CCOperation(kCCEncrypt),
-                            CCAlgorithm(kCCAlgorithmAES),
-                            CCOptions(kCCOptionPKCS7Padding),
-                            keyBytes.baseAddress,
-                            key.count,
-                            ivBytes.baseAddress,
-                            plaintextBytes.baseAddress,
-                            plaintext.count,
-                            outputBytes.baseAddress,
-                            capacity,
-                            &outputLength
-                        )
-                    }
-                }
-            }
-        }
-        guard status == kCCSuccess else {
-            throw ClaudeDesktopCredentialError.decryptionFailed(status)
-        }
-        output.count = outputLength
-        return Data("v10".utf8) + output
-    }
-
-    private func hex(_ data: Data) -> String {
-        data.map { String(format: "%02X", $0) }.joined()
-    }
-
-    private func badge(_ lines: [MetricLine], _ label: String) -> String? {
-        guard case .badge(_, let text, _, _) = lines.first(where: { $0.label == label }) else {
-            return nil
-        }
-        return text
-    }
-}
-
-private struct DesktopFixture {
-    var store: ClaudeDesktopAuthStore
-    var files: FakeFiles
-    var keyReader: FakeClaudeDesktopKeyReader
-}
-
-private final class FakeClaudeDesktopKeyReader: ClaudeDesktopSafeStorageKeyReading, @unchecked Sendable {
-    let password: String
-    let requiresInteraction: Bool
-    var calls: [Bool] = []
-
-    init(password: String, requiresInteraction: Bool) {
-        self.password = password
-        self.requiresInteraction = requiresInteraction
-    }
-
-    func readPassword(allowInteraction: Bool) throws -> String? {
-        calls.append(allowInteraction)
-        if requiresInteraction, !allowInteraction {
-            throw ClaudeDesktopCredentialError.permissionRequired
-        }
-        return password
-    }
-}
-
-private final class FakeClaudeDesktopSQLite: SQLiteAccessing, @unchecked Sendable {
-    let value: String?
-
-    init(value: String?) {
-        self.value = value
-    }
-
-    func queryValue(path: String, sql: String) throws -> String? {
-        value
-    }
-
-    func execute(path: String, sql: String) throws {}
 }
