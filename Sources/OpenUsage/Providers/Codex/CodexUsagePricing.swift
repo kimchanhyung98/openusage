@@ -12,7 +12,11 @@ enum CodexUsagePricing {
         } else {
             prefixedBase = isFastAlias ? rateModel : model
         }
-        let baseRates = exactPrefixedRates(model: prefixedBase, pricing: pricing)
+        let qualifiedBase = isFastAlias
+            ? model.replacingOccurrences(of: #"-fast(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#, with: "", options: .regularExpression)
+            : model
+        let qualifiedRates = qualifiedBase != model ? exactPrefixedRates(model: qualifiedBase, pricing: pricing) : nil
+        let baseRates = qualifiedRates ?? exactPrefixedRates(model: prefixedBase, pricing: pricing)
             ?? resolveRates(model: rateModel, pricing: pricing)
         guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
@@ -68,8 +72,9 @@ enum CodexUsagePricing {
     }
 
     private static func resolveRates(model: String, pricing: ModelPricing) -> ModelRates? {
-        // 출처별 명시 요율 우선, 미가격일 때만 접두사 없는 보충 가격표·별칭으로 재조회.
+        // 원래 이름 우선, 미가격일 때만 접두사·날짜를 제거한 보충 가격표·별칭으로 재조회.
         pricing.resolve(model: model) ?? pricing.resolve(model: withoutProviderPrefix(model))
+            ?? pricing.resolve(model: datedBaseModel(model))
     }
 
     private static func withoutProviderPrefix(_ model: String) -> String {
