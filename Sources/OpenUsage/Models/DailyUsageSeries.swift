@@ -89,20 +89,33 @@ struct LogUsageScan: Sendable {
     /// `yyyy-MM-dd` day key → 가격 부재로 합계에서 제외된 그날의 model 목록.
     var unknownModelsByDay: [String: Set<String>]
     var rejectedNumericRows: Int
+    var unsupportedPricingRows: Int
 
-    init(series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil, unknownModelsByDay: [String: Set<String>], rejectedNumericRows: Int = 0) {
+    init(
+        series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil,
+        unknownModelsByDay: [String: Set<String>], rejectedNumericRows: Int = 0,
+        unsupportedPricingRows: Int = 0
+    ) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
         self.rejectedNumericRows = rejectedNumericRows
+        self.unsupportedPricingRows = unsupportedPricingRows
     }
 
     var numericWarning: String? {
         rejectedNumericRows > 0 ? "Some local usage records contain invalid numbers. Usage history may be incomplete." : nil
     }
 
-    /// 전부 손상된 결과는 정상 빈 history로 게시하지 않아 last-good history 삭제 방지.
+    var pricingWarning: String? {
+        unsupportedPricingRows > 0
+            ? "Some local usage has unsupported pricing details and was excluded."
+            : nil
+    }
+
+    /// 손상·미지원 가격 입력뿐인 결과는 마지막 정상 이력을 빈 값으로 덮지 않음.
     var usageHistory: ProviderUsageHistory? {
+        guard unsupportedPricingRows == 0 || !series.daily.isEmpty else { return nil }
         guard rejectedNumericRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }
         return ProviderUsageHistory(series: series, modelUsage: modelUsage, unknownModelsByDay: unknownModelsByDay)
     }

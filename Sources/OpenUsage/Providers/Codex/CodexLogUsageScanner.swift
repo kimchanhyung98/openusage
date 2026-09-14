@@ -493,29 +493,17 @@ actor CodexLogUsageScanner {
             guard let model = trimmedModel else {
                 continue
             }
+            let tokens = TokenBreakdown(
+                input: max(0, event.input - event.cached), cacheRead: event.cached,
+                output: event.output, isFast: event.isFast
+            )
             let pricingModel = event.pricingModel ?? model
-            let canonicalModel = pricing.supplement.canonicalName(for: pricingModel) ?? pricingModel
-            let isFastAlias = canonicalModel.hasSuffix("-fast")
-            let rateModel = isFastAlias ? String(canonicalModel.dropLast("-fast".count)) : canonicalModel
-
-            // Codex 속도는 provider tier — Cursor의 `-fast` 가격 변형 아님. fast alias는 unscaled base rate로 resolve 후 Codex multiplier를 정확히 1회 적용.
-            // base entry 없는 third-party fast-only model은 이미 scaled된 rate 유지 — speed multiplier 이중 적용 금지.
-            let baseRates = pricing.resolve(model: rateModel)
-            let resolvedRates = baseRates ?? pricing.resolve(model: pricingModel)
-            guard let rates = resolvedRates else {
+            guard let eventCost = CodexUsagePricing.estimate(model: pricingModel, tokens: tokens, pricing: pricing) else {
                 if event.total > 0 {
                     accumulator.addUnknownModel(day: day, model: model)
                 }
                 continue
             }
-            let appliesCodexFastTier = isFastAlias ? baseRates != nil : event.isFast
-            let eventCost = cost(
-                rates: rates,
-                event: event,
-                model: rateModel,
-                fastTier: appliesCodexFastTier,
-                fastMultiplier: codexPriorityMultiplier(for: rateModel, rates: rates)
-            )
             accumulator.add(day: day, tokens: event.total, cost: eventCost, model: model)
         }
 
@@ -531,66 +519,13 @@ actor CodexLogUsageScanner {
         fastTier: Bool,
         fastMultiplier: Double
     ) -> Double {
-        var effectiveRates = rates
-        if let longContext = codexLongContextRates(for: model) {
-            effectiveRates.inputAbove200kPerMillion = longContext.input
-            effectiveRates.outputAbove200kPerMillion = longContext.output
-            effectiveRates.cacheReadAbove200kPerMillion = longContext.cacheRead
-            effectiveRates.longContextThresholdTokens = 272_000
-        }
-        if codexModelHasNoCacheDiscount(model) {
-            effectiveRates.cacheReadPerMillion = effectiveRates.inputPerMillion
-            effectiveRates.cacheReadAbove200kPerMillion = effectiveRates.inputAbove200kPerMillion
-        } else if !rates.cacheReadIsExplicit {
-            effectiveRates.cacheReadPerMillion = effectiveRates.inputPerMillion
-            effectiveRates.cacheReadAbove200kPerMillion = effectiveRates.inputAbove200kPerMillion
-        }
+        var effectiveRates = CodexUsagePricing.adjusted(rates: rates, model: model)
         effectiveRates.fastMultiplier = fastMultiplier
-
-        let nonCached = max(0, event.input - event.cached)
         return effectiveRates.costDollars(for: TokenBreakdown(
-            input: nonCached,
+            input: max(0, event.input - event.cached),
             cacheRead: event.cached,
             output: event.output,
             isFast: fastTier
         ))
-    }
-
-    /// Codex priority service-tier multiplier — provider 고유 값, supplement의 Cursor `-fast` multiplier 의도적 미사용. 미등재 model은 catalog/fallback 규칙 유지.
-    private static func codexPriorityMultiplier(for model: String, rates: ModelRates) -> Double {
-        let base = datedBaseModel(model)
-        switch base {
-        case "gpt-5.5", "gpt-5.5-pro": return 2.5
-        case "gpt-5.4", "gpt-5.4-pro",
-             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna": return 2
-        default: return rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier
-        }
-    }
-
-    /// OpenAI가 cached-input 할인을 공표하지 않은 Pro model — 구식 bundled catalog에 cache-rate provenance가 없어도 유지하는 provider 규칙.
-    private static func codexModelHasNoCacheDiscount(_ model: String) -> Bool {
-        switch datedBaseModel(model) {
-        case "gpt-5.4-pro", "gpt-5.5-pro": return true
-        default: return false
-        }
-    }
-
-    private static func codexLongContextRates(for model: String) -> (input: Double, output: Double, cacheRead: Double)? {
-        switch datedBaseModel(model) {
-        case "gpt-5.4": return (5, 22.5, 0.5)
-        case "gpt-5.4-pro": return (60, 270, 60)
-        case "gpt-5.5": return (10, 45, 1)
-        case "gpt-5.5-pro": return (60, 270, 60)
-        case "gpt-5.6-sol": return (10, 45, 1)
-        case "gpt-5.6-terra": return (4, 18, 0.4)
-        case "gpt-5.6-luna": return (0.4, 1.8, 0.04)
-        default: return nil
-        }
-    }
-
-    private static func datedBaseModel(_ model: String) -> String {
-        model
-            .replacingOccurrences(of: #"-\d{4}-\d{2}-\d{2}$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"-\d{8}$"#, with: "", options: .regularExpression)
     }
 }

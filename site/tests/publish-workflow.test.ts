@@ -246,6 +246,31 @@ test('가격표 게시 작업은 main ref에서만 실행', () => {
   assert.match(workflow, /\n  workflow_dispatch:/);
 });
 
+const supplement = JSON.parse(readFileSync(new URL('../../Sources/OpenUsage/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
+for (const [updatedAt, valid] of [
+  [supplement.updated_at, true], ['2024-02-29T23:59:59Z', true],
+  ['2026-09-13', false], ['2026-09-13T00:00:00+00:00', false],
+  ['2026-09-13T00:00:00.000Z', false], ['2026-09-13T00:00:00Z\n', false],
+  ['2026-02-29T00:00:00Z', false], ['2026-13-01T00:00:00Z', false],
+  ['2026-09-13T24:00:00Z', false], ['2026-09-13T00:00:60Z', false],
+  ['2026-9-13T00:00:00Z', false], ['２０２６-09-13T00:00:00Z', false],
+  [undefined, false], [true, false], [12345, false],
+] as const) {
+  test(`가격표 발행 시 updated_at ${JSON.stringify(updatedAt)} ${valid ? '허용' : '거부'}`, () => {
+    const temp = mkdtempSync(join(tmpdir(), 'openusage-pricing-validation-test-'));
+    try {
+      const resources = join(temp, 'Sources/OpenUsage/Resources');
+      mkdirSync(resources, { recursive: true });
+      writeFileSync(join(resources, 'pricing_supplement.json'), JSON.stringify({ ...supplement, updated_at: updatedAt }));
+      const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', workflowStep('가격표 JSON 검증', 'pricing-supplement.yml')], {
+        cwd: temp, encoding: 'utf8', timeout: 5000,
+      });
+      assert.equal(result.status, valid ? 0 : 1, result.stderr || result.stdout);
+      if (!valid) assert.match(result.stderr, /updated_at/);
+    } finally { rmSync(temp, { recursive: true, force: true }); }
+  });
+}
+
 test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 처리', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8');
   const push = workflow.split('  push:\n')[1].split('  pull_request:\n')[0];

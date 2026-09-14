@@ -152,7 +152,12 @@ final class CodexProvider: ProviderRuntime {
         let pricing = await pricing()
         let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
         let piScan = includePiUsage
-            ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
+            ? await PiUsageScanner.shared.scan(
+                cardID: provider.id, now: now(), pricing: pricing,
+                costEstimator: { model, tokens, pricing in
+                    CodexUsagePricing.estimatePi(model: model, tokens: tokens, pricing: pricing)
+                }
+            )
             : nil
         var usageHistory: ProviderUsageHistory?
         var warning: String?
@@ -161,7 +166,7 @@ final class CodexProvider: ProviderRuntime {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
-            warning = scan.numericWarning
+            warning = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

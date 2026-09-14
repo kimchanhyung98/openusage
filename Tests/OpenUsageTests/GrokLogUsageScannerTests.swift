@@ -4,6 +4,26 @@ import XCTest
 final class GrokLogUsageScannerTests: XCTestCase {
     private let since = OpenUsageISO8601.date(from: "2026-06-01T00:00:00.000Z")!
 
+    func testProviderQualifiedGrok46AliasesKeepUsagePriced() throws {
+        for (model, expected) in [
+            ("xai/grok-4.6", 8.0), ("xai/grok-4-6-high", 8.0),
+            ("xai/grok-4.6-fast", 16.0), ("xai/grok-4-6-fast-xhigh", 16.0),
+            ("xai/grok-4.6-high-fast", 16.0)
+        ] {
+            let log = """
+            {"pid":1,"msg":"model changed","ctx":{"model":"\(model)"}}
+            {"ts":"2026-06-10T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":1000000}}
+            """
+            let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+            XCTAssertEqual(usage.series.daily.first?.totalTokens, 2_000_000, model)
+            XCTAssertEqual(try XCTUnwrap(usage.series.daily.first?.costUSD), expected, accuracy: 1e-9, model)
+            XCTAssertTrue(usage.unknownModelsByDay.isEmpty, model)
+        }
+        for model in ["xai/grok-4.7", "xai/grok-4.6-unknown", "reseller/grok-4.6"] {
+            XCTAssertNil(TestPricing.bundled.supplement.canonicalName(for: model), model)
+        }
+    }
+
     func testAttributesTokensToPerProcessModelAndPrices() {
         // fixture: pid 100은 grok-build, pid 200은 grok-composer-2.5-fast — token row는 각 process의 현재 model로 가격 산정
         let log = """

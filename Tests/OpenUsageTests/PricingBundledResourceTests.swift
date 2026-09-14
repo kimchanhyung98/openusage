@@ -37,8 +37,8 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking")?.inputPerMillion, 5)
         XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking-fast")?.inputPerMillion, 30)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.5-xhigh-fast")?.inputPerMillion, 12.5)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra")?.inputPerMillion, 5)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast")?.inputPerMillion, 10)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra")?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast")?.inputPerMillion, 8)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high")?.inputPerMillion, 2)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high-fast")?.inputPerMillion, 4)
         XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna")?.inputPerMillion, 0.2)
@@ -137,15 +137,15 @@ final class PricingBundledResourceTests: XCTestCase {
     func testGPT56PricingAndAliases() throws {
         let pricing = Self.pricing
         let sol = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-sol-ultra"))
-        XCTAssertEqual(sol.inputPerMillion, 5.0)
-        XCTAssertEqual(sol.cacheWritePerMillion, 6.25)
-        XCTAssertEqual(sol.cacheReadPerMillion, 0.5)
-        XCTAssertEqual(sol.outputPerMillion, 30.0)
+        XCTAssertEqual(sol.inputPerMillion, 4.0)
+        XCTAssertEqual(sol.cacheWritePerMillion, 5.0)
+        XCTAssertEqual(sol.cacheReadPerMillion, 0.4)
+        XCTAssertEqual(sol.outputPerMillion, 20.0)
         let solFast = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-sol-ultra-fast"))
-        XCTAssertEqual(solFast.inputPerMillion, 10.0)
-        XCTAssertEqual(solFast.cacheWritePerMillion, 12.5)
-        XCTAssertEqual(solFast.cacheReadPerMillion, 1.0)
-        XCTAssertEqual(solFast.outputPerMillion, 60.0)
+        XCTAssertEqual(solFast.inputPerMillion, 8.0)
+        XCTAssertEqual(solFast.cacheWritePerMillion, 10.0)
+        XCTAssertEqual(solFast.cacheReadPerMillion, 0.8)
+        XCTAssertEqual(solFast.outputPerMillion, 40.0)
 
         let terra = try XCTUnwrap(pricing.resolve(model: "gpt-5.6-terra-high"))
         XCTAssertEqual(terra.inputPerMillion, 2.0)
@@ -254,5 +254,59 @@ final class PricingBundledResourceTests: XCTestCase {
         let expected = entry.inputPerMillion + entry.cacheWritePerMillion + entry.cacheReadPerMillion + entry.outputPerMillion
         XCTAssertEqual(pricing.estimatedCostDollars(model: "composer-1", tokens: tokens)!, expected, accuracy: 1e-9)
         XCTAssertNil(pricing.estimatedCostDollars(model: "nope", tokens: tokens))
+    }
+
+    func testNewBundledModelsUsePublishedRates() throws {
+        let cases: [(String, Double, Double, Double, Double)] = [
+            ("gpt-6-astra", 10, 12.5, 1, 50),
+            ("glm-5.3", 1.4, 1.4, 0.26, 4.4),
+            ("grok-4.6", 2, 2, 0.5, 6),
+            ("grok-4.6-fast", 4, 4, 1, 12),
+            ("claude-fable-5.1", 10, 12.5, 0.25, 50),
+            ("kimi-k3", 3, 3, 0.3, 15),
+            ("muse-spark-1.3", 1.25, 1.25, 0.15, 4.25)
+        ]
+        for (model, input, write, read, output) in cases {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, model)
+            XCTAssertEqual(rates.cacheWritePerMillion, write, model)
+            XCTAssertEqual(rates.cacheReadPerMillion, read, model)
+            XCTAssertEqual(rates.outputPerMillion, output, model)
+        }
+    }
+
+    func testNewModelAliasesPreserveSpeedAndProviderPrefixes() throws {
+        let cases: [(String, String)] = [
+            ("gpt-6-astra-high", "gpt-6-astra"),
+            ("openai/GPT-6-ASTRA-max", "gpt-6-astra"),
+            ("gpt-6-astra-2026-09-01", "gpt-6-astra"),
+            ("gpt-6-astra-max-fast", "gpt-6-astra-fast"),
+            ("gpt-6-astra-fast-20260901", "gpt-6-astra-fast"),
+            ("grok-4-6-high", "grok-4.6"),
+            ("cursor-grok-4.6-high-fast", "grok-4.6-fast"),
+            ("cursor-grok-4-6-fast-xhigh", "grok-4.6-fast"),
+            ("anthropic/claude-fable-5-1-thinking-high", "claude-fable-5.1"),
+            ("moonshot/kimi-k3", "kimi-k3"),
+            ("meta/muse-spark-1.3", "muse-spark-1.3"),
+            ("muse-spark-1.3-extra-high", "muse-spark-1.3"),
+            ("muse-spark-1.3-minimal", "muse-spark-1.3"),
+            ("zai/glm-5.3", "glm-5.3")
+        ]
+        for (slug, canonical) in cases {
+            XCTAssertEqual(Self.pricing.supplement.canonicalName(for: slug), canonical, slug)
+            XCTAssertEqual(Self.pricing.resolve(model: slug), try XCTUnwrap(Self.pricing.resolve(model: canonical)), slug)
+        }
+        XCTAssertEqual(Self.pricing.resolve(model: "gpt-6-astra-fast")?.outputPerMillion, 100)
+        XCTAssertEqual(Self.pricing.resolve(model: "grok-4.5-fast")?.outputPerMillion, 18)
+        XCTAssertEqual(Self.pricing.resolve(model: "grok-4.6-fast")?.outputPerMillion, 12)
+    }
+
+    func testUnverifiedNewAliasesRemainUnmatched() {
+        for slug in ["gpt-6-astra-unrecognized", "gpt-7-astra", "grok-4.7", "grok-bot-default",
+                     "grok-bot-automation", "grok-bot-cua", "muse-spark-1.3-contributor",
+                     "kimi-k3-fast", "claude-fable-5.1-fast", "gemini-default"] {
+            XCTAssertNil(Self.pricing.supplement.canonicalName(for: slug), slug)
+            XCTAssertNil(Self.pricing.resolve(model: slug), slug)
+        }
     }
 }
