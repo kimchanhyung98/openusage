@@ -240,9 +240,15 @@ final class ClaudeDesktopTokenCacheTests: XCTestCase {
         let legacy = [legacyKey(): token("unowned", expiresIn: 86_400)]
         let current = [scopedKey(): token("current")]
         XCTAssertEqual(try available(select(v2: legacy, v1: current)).accessToken, "current")
-        for entry: Any in [NSNull(), token("expired", expiresIn: -1), ["token": " "]] {
+        let rejected: [(Any, ClaudeDesktopAuthStore.Selection)] = [
+            (NSNull(), .notFound), (token("expired", expiresIn: -1), .stale), (["token": " "], .invalid)
+        ]
+        for (entry, expected) in rejected {
             let selection = select(v2: legacy, v1: [scopedKey(): entry])
-            if case .available = selection { XCTFail("Unowned V2 must not revive a rejected scoped V1 credential") }
+            switch (selection, expected) {
+            case (.notFound, .notFound), (.stale, .stale), (.invalid, .invalid): break
+            default: XCTFail("Expected \(expected), got \(selection)")
+            }
         }
     }
 
