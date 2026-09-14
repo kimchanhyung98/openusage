@@ -30,8 +30,8 @@ actor CodexLogUsageScanner {
         var pricingModel: String? = nil
     }
 
-    /// 부모 재생 기준이 미확정인 증가분을 제외하는 형식 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 8
+    /// 손상된 사용량 행의 모델 정보도 보존하는 형식 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 9
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -218,6 +218,9 @@ actor CodexLogUsageScanner {
 
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
+            if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
+                currentModel = parsedModel
+            }
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
@@ -258,9 +261,8 @@ actor CodexLogUsageScanner {
             }
             guard usage.input > 0 || usage.cached > 0 || usage.output > 0 || usage.reasoning > 0 else { continue }
 
-            let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:))
             let model = resolveModel(
-                parsed: parsedModel,
+                parsed: nil,
                 currentModel: &currentModel
             )
 

@@ -72,8 +72,11 @@ struct DailyUsageAccumulator {
 
     /// scan 조립: 일별 tokens/cost(최신순), 모델별 breakdown, unknown-model 집합.
     /// 집계된 날은 전부 priced — `costUSD`는 항상 실제 합계.
-    func build(rejectedNumericRows previouslyRejected: Int = 0, source: String = "local-usage") -> LogUsageScan {
-        UsageLogNumbers.reportRejectedRows(rejectedNumericRows, source: source)
+    func build(
+        rejectedNumericRows previouslyRejected: Int = 0, source: String = "local-usage",
+        reportNumericFailures: Bool = true
+    ) -> LogUsageScan {
+        if reportNumericFailures { UsageLogNumbers.reportRejectedRows(rejectedNumericRows, source: source) }
         let days = tokensByDay.keys.sorted(by: >).map { day in
             DailyUsageEntry(date: day, totalTokens: tokensByDay[day] ?? 0, costUSD: costByDay[day] ?? 0)
         }

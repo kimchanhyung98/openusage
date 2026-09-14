@@ -8,6 +8,7 @@ struct GrokLogUsageScanner: Sendable {
     var environment: EnvironmentReading
     var homeDirectory: @Sendable () -> URL
     private let readFailureReporter: UsageLogReadFailureReporter
+    private let numericFailureReporter = NumericFailureReporter()
 
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
@@ -38,7 +39,10 @@ struct GrokLogUsageScanner: Sendable {
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let path = logPath
-        guard files.exists(path) else { return nil }
+        guard files.exists(path) else {
+            await numericFailureReporter.update(path: path, rejectedRows: 0)
+            return nil
+        }
         let text: String
         do {
             text = try files.readText(path)
@@ -47,13 +51,18 @@ struct GrokLogUsageScanner: Sendable {
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
             return nil
         }
-        return Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now), pricing: pricing)
+        let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
+                              pricing: pricing, reportNumericFailures: false)
+        await numericFailureReporter.update(path: path, rejectedRows: scan.rejectedNumericRows)
+        return scan
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.
     /// model 이벤트는 날짜와 무관하게 `pid`별 current model 갱신 — `since` 경계에 걸친 session도 귀속 유지.
     /// window 내 `inference_done` 행은 해당 `pid`의 current model로 가격 산정 후 로컬 달력일로 bucket 분류.
-    static func parse(_ text: String, since: Date, pricing: ModelPricing) -> LogUsageScan {
+    static func parse(
+        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
+    ) -> LogUsageScan {
         var modelByPID: [Int: String] = [:]
         var accumulator = DailyUsageAccumulator()
 
@@ -109,7 +118,23 @@ struct GrokLogUsageScanner: Sendable {
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        return accumulator.build(source: "grok")
+        return accumulator.build(source: "grok", reportNumericFailures: reportNumericFailures)
+    }
+
+    /// 같은 파일의 손상 행 수 증가만 보고; 정상 window로 돌아오면 복구 기록.
+    private actor NumericFailureReporter {
+        private var rejectedRowsByPath: [String: Int] = [:]
+
+        func update(path: String, rejectedRows: Int) {
+            let previous = rejectedRowsByPath[path] ?? 0
+            if rejectedRows == 0 {
+                rejectedRowsByPath.removeValue(forKey: path)
+                if previous > 0 { AppDiagnostics.record(.historyScan, result: .success, providerID: "grok") }
+            } else {
+                rejectedRowsByPath[path] = rejectedRows
+                if rejectedRows > previous { UsageLogNumbers.reportRejectedRows(rejectedRows - previous, source: "grok") }
+            }
+        }
     }
 
     /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
