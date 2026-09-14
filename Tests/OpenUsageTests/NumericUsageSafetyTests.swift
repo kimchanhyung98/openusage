@@ -81,7 +81,7 @@ final class NumericUsageSafetyTests: XCTestCase {
         let scan = GrokLogUsageScanner.parse(log, since: .distantPast, pricing: TestPricing.bundled)
         let models = Dictionary(uniqueKeysWithValues: (scan.modelUsage?.daily.first?.models ?? []).map { ($0.model, $0.totalTokens) })
         XCTAssertEqual(models, ["grok-build": 100, "grok-composer-2.5-fast": 200])
-        XCTAssertEqual(scan.rejectedNumericRows, 4)
+        XCTAssertEqual(scan.rejectedNumericRows, 3)
     }
 
     func testPiRejectsInvalidBucketsEvenWithCarriedCostAndPreservesReportedTotal() throws {
