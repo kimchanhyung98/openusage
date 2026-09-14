@@ -10,9 +10,12 @@ final class PaceTests: XCTestCase {
         now.addingTimeInterval(period * (1 - elapsed))
     }
 
-    func testZeroUsageIsAhead() {
+    func testNonpositiveUsageHasNoPaceSignal() {
         let reset = resetsAt(elapsed: 0.5, period: week)
-        XCTAssertEqual(Pace.evaluate(used: 0, limit: 100, resetsAt: reset, periodDuration: week, now: now)?.status, .ahead)
+        for used in [0.0, -1.0] {
+            XCTAssertNil(Pace.evaluate(used: used, limit: 100, resetsAt: reset, periodDuration: week, now: now))
+            XCTAssertNil(Pace.secondsToRunOut(used: used, limit: 100, resetsAt: reset, periodDuration: week, now: now))
+        }
     }
 
     func testAtOrOverLimitIsBehind() {
@@ -92,8 +95,18 @@ final class PaceTests: XCTestCase {
         XCTAssertEqual(weeklyData(used: 60).meterState(now: now).tooltip, "~20% over limit at reset")
     }
 
-    func testTooltipBlueCushionAtZeroUsage() {
-        XCTAssertEqual(weeklyData(used: 0).meterState(now: now).tooltip, "~100% left at reset")
+    func testUntouchedMetersKeepPlainLevelWithoutProjectionOrTick() {
+        for used in [0.0, -1.0] {
+            for displayMode in [WidgetDisplayMode.used, .remaining] {
+                for alwaysShowPacing in [false, true] {
+                    var data = weeklyData(used: used, displayMode: displayMode)
+                    data.alwaysShowPacing = alwaysShowPacing
+                    XCTAssertEqual(data.meterState(now: now), .level(.normal))
+                    XCTAssertNil(data.meterState(now: now).tooltip)
+                    XCTAssertNil(tick(data))
+                }
+            }
+        }
     }
 
     func testTooltipRedOverageFlooredToOnePercent() {

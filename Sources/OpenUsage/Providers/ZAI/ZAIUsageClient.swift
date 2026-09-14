@@ -15,7 +15,7 @@ struct ZAIUsageClient: Sendable {
         try await get(Self.subscriptionURL, apiKey: apiKey)
     }
 
-    /// session token 사용량과 web-search quota 조회 — 유효한 snapshot에 필수.
+    /// credit/token quota와 web-search quota 조회 — 유효한 snapshot에 필수.
     func fetchQuota(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.quotaURL, apiKey: apiKey)
     }
