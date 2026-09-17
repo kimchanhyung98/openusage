@@ -52,10 +52,10 @@ final class AppLogTests: XCTestCase {
         let server = LocalUsageServer(state: {
             LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:], limitDescriptors: [:], errors: [:])
         })
-        _ = server.route(head: "GET /v1/limits?token=OPAQUE_PRIVATE_VALUE HTTP/1.1\r\n")
-        _ = server.route(head: "GET /v1/limits/PRIVATE_LIMITS_ACCOUNT_ID HTTP/1.1\r\n")
-        _ = server.route(head: "GET /v1/usage/PRIVATE_USAGE_ACCOUNT_ID HTTP/1.1\r\n")
-        _ = server.route(head: "PRIVATE_METHOD /unknown/private@example.com HTTP/1.1\r\n")
+        _ = server.route(head: "GET /v1/limits?token=OPAQUE_PRIVATE_VALUE HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "GET /v1/limits/PRIVATE_LIMITS_ACCOUNT_ID HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "GET /v1/usage/PRIVATE_USAGE_ACCOUNT_ID HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "PRIVATE_METHOD /unknown/private@example.com HTTP/1.1\r\nHost: localhost\r\n")
         let contents = try fileContents()
         XCTAssertFalse(contents.contains("OPAQUE_PRIVATE_VALUE"))
         XCTAssertFalse(contents.contains("PRIVATE_LIMITS_ACCOUNT_ID"))
@@ -75,7 +75,7 @@ final class AppLogTests: XCTestCase {
         })
 
         for path in ["?", "?/v1/usage", "?/v1/limits", "?/v1/usage/PRIVATE_ACCOUNT"] {
-            XCTAssertEqual(server.route(head: "GET \(path) HTTP/1.1\r\n").status, 404)
+            XCTAssertEqual(server.route(head: "GET \(path) HTTP/1.1\r\nHost: localhost\r\n").status, 404)
         }
 
         let contents = try fileContents()

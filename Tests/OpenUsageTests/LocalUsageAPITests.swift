@@ -124,7 +124,7 @@ final class LocalUsageAPITests: XCTestCase {
     }
 
     @MainActor
-    func testAccountNamesNeverReachTheBrowserReadableWire() throws {
+    func testAccountNamesNeverReachTheLocalWire() throws {
         var state = makeState()
         // bare 카드는 조직명이 snapshot에 구워진 상태, extra 카드는 boundary에서 이메일 label로 해석되는 상태
         state.snapshots["claude"]?.displayName = "Claude — Acme Industries"
@@ -210,7 +210,7 @@ final class LocalUsageAPITests: XCTestCase {
         XCTAssertEqual((try json(post.body) as? [String: Any])?["error"] as? String, "method_not_allowed")
 
         let preflight = LocalUsageAPI.respond(method: "OPTIONS", path: "/v1/usage", state: state)
-        XCTAssertEqual(preflight.status, 204)
+        XCTAssertEqual(preflight.status, 405)
 
         let unknownRoute = LocalUsageAPI.respond(method: "GET", path: "/v2/everything", state: state)
         XCTAssertEqual(unknownRoute.status, 404)
@@ -219,6 +219,20 @@ final class LocalUsageAPITests: XCTestCase {
 }
 
 final class LocalUsageServerRequestLineTests: XCTestCase {
+    private var logDirectory: URL!
+    private var previousSink: LogFile!
+
+    override func setUpWithError() throws {
+        logDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        previousSink = AppLog.sink
+        AppLog.sink = LogFile(directory: logDirectory, fileName: "fixture.log")
+    }
+
+    override func tearDownWithError() throws {
+        AppLog.sink = previousSink
+        try? FileManager.default.removeItem(at: logDirectory)
+    }
+
     @MainActor
     func testQueryOnlyRequestRoutesToNotFound() {
         let state = LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:])
@@ -247,5 +261,49 @@ final class LocalUsageServerRequestLineTests: XCTestCase {
         let (method, path) = LocalUsageServer.parseRequestLine("GET\r\n")
         XCTAssertEqual(method, "GET")
         XCTAssertEqual(path, "/")
+    }
+
+    @MainActor
+    func testRouteAcceptsOnlyLoopbackHostWithoutOrigin() {
+        var stateReads = 0
+        let state = LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:])
+        let server = LocalUsageServer(state: {
+            stateReads += 1
+            return state
+        })
+
+        for host in ["127.0.0.1", "127.0.0.1:6736", "localhost", "LOCALHOST:6736"] {
+            XCTAssertEqual(server.route(head: "GET /v1/usage HTTP/1.1\r\nHost: \(host)\r\n").status, 200, host)
+        }
+        XCTAssertEqual(stateReads, 4)
+
+        for head in [
+            "GET /v1/usage HTTP/1.1\r\n",
+            "GET /v1/usage HTTP/1.1\r\nHost: attacker.example\r\n",
+            "GET /v1/usage HTTP/1.1\r\nHost: localhost.attacker.example\r\n",
+            "GET /v1/usage HTTP/1.1\r\nHost: localhost\r\nHost: 127.0.0.1\r\n",
+        ] {
+            XCTAssertEqual(server.route(head: head).status, 400, head)
+        }
+        for origin in ["https://attacker.example", "null", ""] {
+            let head = "GET /v1/usage HTTP/1.1\r\nHost: localhost:6736\r\nOrigin: \(origin)\r\n"
+            XCTAssertEqual(server.route(head: head).status, 403, origin)
+        }
+        XCTAssertEqual(stateReads, 4, "rejected requests must not read live provider state")
+    }
+
+    func testSerializedResponsesNeverContainCorsHeaders() {
+        for response in [
+            LocalUsageAPI.Response(status: 200, body: Data("[]".utf8)),
+            LocalUsageAPI.Response(status: 204, body: nil),
+            LocalUsageAPI.badRequest,
+            LocalUsageAPI.forbidden,
+            LocalUsageAPI.busy,
+        ] {
+            let wire = String(decoding: LocalUsageServer.serializedResponse(response), as: UTF8.self).lowercased()
+            XCTAssertFalse(wire.contains("access-control-allow-origin"))
+            XCTAssertFalse(wire.contains("access-control-allow-private-network"))
+            XCTAssertFalse(wire.contains("access-control-allow-methods"))
+        }
     }
 }
