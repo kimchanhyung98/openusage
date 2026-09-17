@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// 실행 중인 Codeium 계열 language server(Antigravity 번들 `language_server`, `agy` CLI) 탐지 — 로컬 Connect-RPC 호출용 CSRF token + listening port 반환.
@@ -25,9 +26,10 @@ struct LanguageServerDiscovery: Sendable {
     var processRunner: ProcessRunning = SystemProcessRunner()
 
     func discover(_ options: Options) -> Result? {
+        let currentUID = getuid()
         guard let psOutput = try? processRunner.run(
             executable: "/bin/ps",
-            arguments: ["-ax", "-o", "pid=,command="],
+            arguments: Self.processListArguments(currentUID: currentUID),
             environment: [:],
             timeout: 5
         ), psOutput.succeeded else {
@@ -60,7 +62,7 @@ struct LanguageServerDiscovery: Sendable {
             var ports: [Int] = []
             if let lsofPath, let result = try? processRunner.run(
                 executable: lsofPath,
-                arguments: ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-p", String(candidate.pid)],
+                arguments: Self.listeningPortArguments(pid: candidate.pid, currentUID: currentUID),
                 environment: [:],
                 timeout: 5
             ), result.succeeded {
@@ -80,7 +82,15 @@ struct LanguageServerDiscovery: Sendable {
 
     // MARK: - Pure helpers (port of the Rust host logic; unit-tested directly)
 
-    /// `ps -ax -o pid=,command=` 출력을 process+marker 매칭 candidate로 파싱 — marker rank 순 정렬(정확 flag 매칭이 경로 substring보다 우선).
+    static func processListArguments(currentUID: uid_t) -> [String] {
+        ["-x", "-U", String(currentUID), "-o", "pid=,command="]
+    }
+
+    static func listeningPortArguments(pid: Int32, currentUID: uid_t) -> [String] {
+        ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-u", String(currentUID), "-p", String(pid)]
+    }
+
+    /// 현재 사용자의 `ps -x -U <uid> -o pid=,command=` 출력을 process+marker 매칭 candidate로 파싱 — marker rank 순 정렬(정확 flag 매칭이 경로 substring보다 우선).
     static func rankedCandidates(psOutput: String, options: Options) -> [(pid: Int32, command: String)] {
         let processNameLower = options.processName.lowercased()
         let markersLower = options.markers
