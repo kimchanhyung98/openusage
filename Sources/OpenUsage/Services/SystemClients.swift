@@ -313,9 +313,14 @@ extension KeychainAccessing {
 
 struct SecurityKeychainAccessor: KeychainAccessing {
     let processRunner: ProcessRunning
+    let passwordWriter: any GenericPasswordWriting
 
-    init(processRunner: ProcessRunning = SystemProcessRunner()) {
+    init(
+        processRunner: ProcessRunning = SystemProcessRunner(),
+        passwordWriter: any GenericPasswordWriting = SecurityFrameworkGenericPasswordWriter()
+    ) {
         self.processRunner = processRunner
+        self.passwordWriter = passwordWriter
     }
 
     // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.
@@ -399,7 +404,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func writeGenericPassword(service: String, value: String) throws {
-        try writePassword(["add-generic-password", "-U", "-s", service, "-w", value])
+        try writePassword(service: service, account: nil, value: value)
     }
 
     func deleteGenericPassword(service: String) throws {
@@ -422,18 +427,20 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
-        try writePassword(["add-generic-password", "-U", "-a", currentUserAccount(), "-s", service, "-w", value])
+        try writePassword(service: service, account: currentUserAccount(), value: value)
     }
 
-    private func writePassword(_ arguments: [String]) throws {
-        let result = try processRunner.run(
-            executable: "/usr/bin/security",
-            arguments: arguments,
-            environment: [:],
-            timeout: 5
-        )
-        if !result.succeeded {
-            throw KeychainError.writeFailed(result.stderr)
+    private func writePassword(service: String, account: String?, value: String) throws {
+        do {
+            try passwordWriter.write(
+                service: service,
+                account: account,
+                value: Data(value.utf8)
+            )
+        } catch let error as GenericPasswordWriteError {
+            throw KeychainError.writeFailed(error.localizedDescription)
+        } catch {
+            throw KeychainError.writeFailed("")
         }
     }
 
