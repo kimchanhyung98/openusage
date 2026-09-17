@@ -142,7 +142,12 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 - **"Updates blocked by Anthropic"**(Claude 헤더의 황색 경고) — 사용량 API가 OpenUsage를 제한하는 상태.
   같은 로그인의 마지막 값을 유지하고 재시도 시각을 표시하며 그동안 재시도 간격을 늘림.
   다른 로그인은 새 캐시와 쿨다운으로 시작.
-- **지출 타일에 "No data" 표시** — 지난 30일간 Claude Code 로그를 찾지 못한 상태.
+- **지출 타일에 "No data" 표시** — 해당 기간에 합산 가능한 로컬 기록이 없는 상태.
+  기록 부재·파싱 제외·가격 미확정으로 발생 가능하며, 한도 API와 별도 데이터 출처이므로 Session·Weekly 정상 표시와 공존 가능.
+  JSONL의 `usage` 키와 콜론·객체 사이 공백·탭 허용; 이전 캐시도 버전 변경 후 재파싱.
+  형식 제외는 `history_scan/decoding`, 모델 가격 미확정은 `history_scan/other`로 기존 로그·동의 기반 익명 진단에 기록.
+  형식 제외는 파일 재파싱 시에만 기록하므로 캐시 hit의 이벤트 부재를 정상 스캔 증거로 해석하지 않음.
+  제보 근거와 검증 범위는 [로컬 사용량 누락 검토](/docs/research/claude-local-usage-diagnostics.md) 참조.
   관리형 계정 전환 외의 경우 로그가 커스텀 위치에 있으면 `CLAUDE_CONFIG_DIR`을 설정해 Claude Code와 OpenUsage가 같은 위치 사용.
   관리형 터미널 전환은 공유 `~/.claude` 홈 사용.
   다른 커스텀 홈에 둔 로그인은 Settings에 등록하기 전까지 아예 표시하지 않음.
