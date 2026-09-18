@@ -36,8 +36,8 @@ actor ClaudeLogUsageScanner {
 
     /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
     /// 테스트는 격리된 메모리 전용 scanner 주입.
-    /// 숫자 검증 이전 형식의 parse cache 재사용 방지 — `Entry` 의미 변경 시 bump.
-    static let cacheSchemaVersion = 3
+    /// 공백이 있는 usage를 제외하던 이전 parse cache의 재사용 방지.
+    static let cacheSchemaVersion = 4
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
@@ -229,12 +229,24 @@ actor ClaudeLogUsageScanner {
 
     /// 세션 파일 1개의 모든 usage 라인 파싱 — 날짜 window는 집계 시 적용, window 이동에도 캐시된 파싱 유효.
     static func parseFile(_ data: Data) -> [Entry] {
-        let marker = Data(#""usage":{"#.utf8)
+        let marker = Data(#""usage""#.utf8)
         var entries: [Entry] = []
+        var rejected = false
         for line in data.split(separator: UInt8(ascii: "\n")) {
             guard line.range(of: marker) != nil else { continue }
-            if hasUnsupportedNullField(line) { continue }
-            entries.append(contentsOf: parseEntries(Data(line)))
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else {
+                rejected = true
+                continue
+            }
+            guard let message = object["message"] as? [String: Any],
+                  message["usage"] is [String: Any] else { continue }
+            let parsed = hasUnsupportedNullValue(object) ? [] : parseEntries(object)
+            if parsed.isEmpty { rejected = true }
+            entries.append(contentsOf: parsed)
+        }
+        if rejected {
+            AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding, providerID: "claude",
+                                  localContext: "Claude usage records were skipped because their format is unsupported")
         }
         UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "claude")
         return entries
@@ -248,8 +260,12 @@ actor ClaudeLogUsageScanner {
     /// top-level usage는 main-model entry 유지, `usage.iterations`의 advisor-message만 별도 entry —
     /// ccusage와 동일, 일반 iteration 재집계 금지.
     private static func parseEntries(_ data: Data) -> [Entry] {
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let timestampRaw = object["timestamp"] as? String,
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
+        return parseEntries(object)
+    }
+
+    private static func parseEntries(_ object: [String: Any]) -> [Entry] {
+        guard let timestampRaw = object["timestamp"] as? String,
               let timestamp = OpenUsageISO8601.date(from: timestampRaw),
               let message = object["message"] as? [String: Any],
               let usage = message["usage"] as? [String: Any],
@@ -362,28 +378,19 @@ actor ClaudeLogUsageScanner {
         return index < bytes.count && bytes[index].isASCIIDigit
     }
 
-    /// Claude가 `null`을 쓰지 않는 필드에 null이 있으면 외부/손상 로그 — ccusage와 byte 단위 동일 기준으로 skip.
+    /// 디코딩된 필드로 null 검사 — 공백 우회와 문자열 본문의 가짜 키 오인 방지.
     static func hasUnsupportedNullField(_ line: Data.SubSequence) -> Bool {
-        let nullMarker = Data(":null".utf8)
-        let quote = UInt8(ascii: "\"")
-        let bytes = Data(line) // 새 복사본 — 인덱스 0 기준
-        var offset = bytes.startIndex
-        while let markerRange = bytes.range(of: nullMarker, in: offset..<bytes.endIndex) {
-            let start = markerRange.lowerBound
-            var fieldEnd = start > 0 ? start - 1 : 0
-            if bytes[fieldEnd] != quote {
-                while fieldEnd > 0, bytes[fieldEnd] != quote { fieldEnd -= 1 }
+        guard let object = try? JSONSerialization.jsonObject(with: Data(line)) else { return false }
+        return hasUnsupportedNullValue(object)
+    }
+
+    private static func hasUnsupportedNullValue(_ value: Any) -> Bool {
+        if let object = value as? [String: Any] {
+            return object.contains { key, value in
+                (unsupportedNullableFields.contains(key) && value is NSNull) || hasUnsupportedNullValue(value)
             }
-            if bytes[fieldEnd] == quote, fieldEnd > 0 {
-                var fieldStart = fieldEnd - 1
-                while fieldStart > 0, bytes[fieldStart] != quote { fieldStart -= 1 }
-                if bytes[fieldStart] == quote {
-                    let field = String(decoding: bytes[(fieldStart + 1)..<fieldEnd], as: UTF8.self)
-                    if Self.unsupportedNullableFields.contains(field) { return true }
-                }
-            }
-            offset = markerRange.upperBound
         }
+        if let array = value as? [Any] { return array.contains(where: hasUnsupportedNullValue) }
         return false
     }
 
@@ -459,6 +466,7 @@ actor ClaudeLogUsageScanner {
     static func aggregate(entries: [Entry], since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var pricingUnavailable = false
 
         for entry in entries where entry.timestamp >= since {
             guard !entry.invalidNumericValues else {
@@ -478,6 +486,7 @@ actor ClaudeLogUsageScanner {
             } else {
                 if let model = trimmedModel, entry.tokens.totalTokens > 0 {
                     accumulator.addUnknownModel(day: day, model: model)
+                    pricingUnavailable = true
                 }
                 continue
             }
@@ -485,6 +494,10 @@ actor ClaudeLogUsageScanner {
             accumulator.add(day: day, tokens: entry.tokens.totalTokens, cost: cost, model: modelName)
         }
 
+        if pricingUnavailable {
+            AppDiagnostics.record(.historyScan, result: .degraded, category: .other, providerID: "claude",
+                                  localContext: "Claude usage records were excluded because model pricing is unavailable")
+        }
         return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "claude")
     }
 }
