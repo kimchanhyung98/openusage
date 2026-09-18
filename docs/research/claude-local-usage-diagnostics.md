@@ -21,7 +21,7 @@
 ## 로그와 PostHog
 
 기존 `AppDiagnostics` → `TelemetryRecorder` → `TelemetryPrivacy` 경로 사용.
-`"usage"` 후보의 JSON 디코딩 실패와 사용량 형식 제외는 `history_scan`, `degraded`, `decoding`으로 기록.
+`"usage"` 후보의 JSON 디코딩 실패와 디코딩된 `message.usage` 객체의 지원되지 않는 필드·값 제외는 `history_scan`, `degraded`, `decoding`으로 기록.
 유효한 JSON 객체에 사용량 데이터가 없는 경우는 진단 대상에서 제외.
 모델명이 있고 토큰이 0보다 크지만 가격 부재로 합계에서 제외한 기록은 `history_scan`, `degraded`, `other`로 기록.
 각각 파일 재파싱 또는 집계 호출당 한 번 기록하며, 숫자 손상은 기존 진단 유지.
