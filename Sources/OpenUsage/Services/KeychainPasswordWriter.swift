@@ -22,20 +22,22 @@ enum GenericPasswordWriteError: Error, LocalizedError, Equatable {
 
 struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
     private let keychainPathOverride: String?
+    private let searchListPathsOverride: [String]?
 
-    init(keychainPath: String? = nil) {
+    init(keychainPath: String? = nil, searchListPaths: [String]? = nil) {
         keychainPathOverride = keychainPath
+        searchListPathsOverride = searchListPaths
     }
 
     func write(service: String, account requestedAccount: String?, value: Data) throws {
-        let keychain = try defaultKeychain()
+        let keychains = try keychainsToSearch()
         let existingItem: ExistingItem?
         let account: String
         if let requestedAccount {
             account = requestedAccount
-            existingItem = try singleExistingItem(service: service, account: account, keychain: keychain)
+            existingItem = try singleExistingItem(service: service, account: account, keychains: keychains)
         } else {
-            existingItem = try singleExistingItem(service: service, account: nil, keychain: keychain)
+            existingItem = try singleExistingItem(service: service, account: nil, keychains: keychains)
             account = existingItem?.account ?? ""
         }
         if let existingItem {
@@ -43,6 +45,7 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
             return
         }
 
+        let keychain = try defaultKeychain()
         var item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -60,7 +63,7 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
             guard let racedItem = try singleExistingItem(
                 service: service,
                 account: account,
-                keychain: keychain
+                keychains: [keychain]
             ) else {
                 throw GenericPasswordWriteError.securityStatus(errSecDuplicateItem)
             }
@@ -76,13 +79,25 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
     }
 
     private func defaultKeychain() throws -> SecKeychain {
-        var keychain: SecKeychain?
-        let status: OSStatus
         if let keychainPathOverride {
-            status = SecKeychainOpen(keychainPathOverride, &keychain)
-        } else {
-            status = SecKeychainCopyDefault(&keychain)
+            return try openKeychain(at: keychainPathOverride)
         }
+        var keychain: SecKeychain?
+        let status = SecKeychainCopyDefault(&keychain)
+        guard status == errSecSuccess, let keychain else {
+            throw GenericPasswordWriteError.securityStatus(status)
+        }
+        return keychain
+    }
+
+    private func keychainsToSearch() throws -> [SecKeychain]? {
+        let paths = searchListPathsOverride ?? keychainPathOverride.map { [$0] }
+        return try paths?.map { try openKeychain(at: $0) }
+    }
+
+    private func openKeychain(at path: String) throws -> SecKeychain {
+        var keychain: SecKeychain?
+        let status = SecKeychainOpen(path, &keychain)
         guard status == errSecSuccess, let keychain else {
             throw GenericPasswordWriteError.securityStatus(status)
         }
@@ -92,17 +107,19 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
     private func singleExistingItem(
         service: String,
         account: String?,
-        keychain: SecKeychain
+        keychains: [SecKeychain]?
     ) throws -> ExistingItem? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecMatchSearchList as String: [keychain],
-            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecMatchLimit as String: account == nil ? kSecMatchLimitAll : kSecMatchLimitOne,
             kSecReturnAttributes as String: true,
             kSecReturnPersistentRef as String: true,
             kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
         ]
+        if let keychains {
+            query[kSecMatchSearchList as String] = keychains
+        }
         if let account {
             query[kSecAttrAccount as String] = account
         }
