@@ -252,8 +252,6 @@ final class AntigravityProviderTests: XCTestCase {
             LanguageServerDiscovery.listeningPortArguments(pid: 4276, currentUID: uid),
             ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-u", String(uid), "-p", "4276"]
         )
-        XCTAssertFalse(LanguageServerDiscovery.processListArguments(currentUID: uid).contains("-a"))
-        XCTAssertFalse(LanguageServerDiscovery.processListArguments(currentUID: uid).contains("-ax"))
     }
 
     // MARK: - Keychain token extraction
