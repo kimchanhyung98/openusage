@@ -103,6 +103,70 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(try keychain.read(service: "Shared Service", account: "Second"), "second")
     }
 
+    func testNativeWriterUpdatesExistingItemOutsideDefaultKeychain() throws {
+        for account in ["Saved Account", nil] {
+            let primary = try TemporaryKeychain()
+            let secondary = try TemporaryKeychain()
+            try secondary.add(service: "Saved Service", account: "Saved Account", value: "old")
+
+            try SecurityFrameworkGenericPasswordWriter(
+                keychainPath: primary.path,
+                searchListPaths: [secondary.path, primary.path]
+            ).write(service: "Saved Service", account: account, value: Data("new".utf8))
+
+            XCTAssertEqual(try secondary.read(service: "Saved Service", account: "Saved Account"), "new")
+            XCTAssertNil(try primary.read(service: "Saved Service", account: "Saved Account"))
+            XCTAssertNil(try primary.read(service: "Saved Service", account: ""))
+        }
+    }
+
+    func testNativeWriterUsesFirstMatchingKeychainForAnExplicitAccount() throws {
+        let primary = try TemporaryKeychain()
+        let secondary = try TemporaryKeychain()
+        try primary.add(service: "Shared Service", account: "Shared Account", value: "primary-old")
+        try secondary.add(service: "Shared Service", account: "Shared Account", value: "secondary-old")
+
+        try SecurityFrameworkGenericPasswordWriter(
+            keychainPath: primary.path,
+            searchListPaths: [secondary.path, primary.path]
+        ).write(service: "Shared Service", account: "Shared Account", value: Data("new".utf8))
+
+        XCTAssertEqual(try secondary.read(service: "Shared Service", account: "Shared Account"), "new")
+        XCTAssertEqual(try primary.read(service: "Shared Service", account: "Shared Account"), "primary-old")
+    }
+
+    func testNativeWriterRejectsServiceOnlyMatchesAcrossKeychains() throws {
+        let primary = try TemporaryKeychain()
+        let secondary = try TemporaryKeychain()
+        try primary.add(service: "Shared Service", account: "First", value: "first")
+        try secondary.add(service: "Shared Service", account: "Second", value: "second")
+
+        XCTAssertThrowsError(try SecurityFrameworkGenericPasswordWriter(
+            keychainPath: primary.path,
+            searchListPaths: [secondary.path, primary.path]
+        ).write(service: "Shared Service", account: nil, value: Data("new".utf8))) { error in
+            XCTAssertEqual(error as? GenericPasswordWriteError, .ambiguousService)
+        }
+
+        XCTAssertEqual(try primary.read(service: "Shared Service", account: "First"), "first")
+        XCTAssertEqual(try secondary.read(service: "Shared Service", account: "Second"), "second")
+    }
+
+    func testNativeWriterCreatesMissingItemOnlyInDefaultKeychain() throws {
+        for account in ["New Account", nil] {
+            let primary = try TemporaryKeychain()
+            let secondary = try TemporaryKeychain()
+
+            try SecurityFrameworkGenericPasswordWriter(
+                keychainPath: primary.path,
+                searchListPaths: [secondary.path, primary.path]
+            ).write(service: "New Service", account: account, value: Data("new".utf8))
+
+            XCTAssertEqual(try primary.read(service: "New Service", account: account ?? ""), "new")
+            XCTAssertNil(try secondary.read(service: "New Service", account: account ?? ""))
+        }
+    }
+
     func testNativeWriterUpdatesLegacyCLIItemWithoutUserInteraction() throws {
         let keychain = try TemporaryKeychain()
         let runner = SystemProcessRunner()
