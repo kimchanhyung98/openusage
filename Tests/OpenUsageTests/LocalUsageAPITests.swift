@@ -251,7 +251,7 @@ final class LocalUsageServerRequestLineTests: XCTestCase {
     }
 
     func testEmptyHeadDegradesToDefaultsInsteadOfCrashing() {
-        // 빈 head에서 `head.split(...)[0]` force-index가 process를 trap시키던 회귀 방지 — ("", "/")로 degrade해 404 유도
+        // 빈 head의 force-index trap 회귀 방지 — helper 기본값과 route의 400 거부 구분.
         let (method, path) = LocalUsageServer.parseRequestLine("")
         XCTAssertEqual(method, "")
         XCTAssertEqual(path, "/")

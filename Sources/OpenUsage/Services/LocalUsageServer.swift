@@ -129,8 +129,8 @@ final class LocalUsageServer {
         return "unknown"
     }
 
-    /// HTTP request line을 `(method, path)`로 파싱 — 비어 있거나 malformed head 허용.
-    /// request line 부재는 trap 대신 일반 `404`로 라우팅 — 과거 force-index가 loopback payload로 `@MainActor` 프로세스 전체를 crash. `nonisolated` + pure로 listener 없이 unit-test 가능.
+    /// HTTP request line을 `(method, path)`로 파싱 — 부재 시 빈 method와 기본 경로 반환.
+    /// 빈 request line은 호출부의 request head 검증에서 `400`으로 거부.
     nonisolated static func parseRequestLine(_ head: String) -> (method: String, path: String) {
         guard let requestLine = head.split(separator: "\r\n", maxSplits: 1).first else {
             return ("", "/")
