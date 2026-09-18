@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import OpenUsage
 
@@ -238,6 +239,19 @@ final class AntigravityProviderTests: XCTestCase {
         )
         let candidates = LanguageServerDiscovery.rankedCandidates(psOutput: ps, options: options)
         XCTAssertEqual(candidates.map(\.pid), [4276])
+    }
+
+    func testDiscoveryCommandsAreScopedToTheCurrentUser() {
+        let uid = getuid()
+
+        XCTAssertEqual(
+            LanguageServerDiscovery.processListArguments(currentUID: uid),
+            ["-x", "-U", String(uid), "-o", "pid=,command="]
+        )
+        XCTAssertEqual(
+            LanguageServerDiscovery.listeningPortArguments(pid: 4276, currentUID: uid),
+            ["-nP", "-iTCP", "-sTCP:LISTEN", "-a", "-u", String(uid), "-p", "4276"]
+        )
     }
 
     // MARK: - Keychain token extraction

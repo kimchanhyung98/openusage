@@ -28,6 +28,7 @@ Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 �
 OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 정보를 읽음.
 
 - **Antigravity 실행 중** — 앱의 로컬 언어 서버와 통신(가장 풍부한 정보 출처이자 요금제 이름의 출처).
+  현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
 - **앱 종료됨** — Antigravity / `agy`가 macOS 키체인에 저장한 OAuth 토큰으로 전환해 Google Cloud Code API 조회.
   만료된 토큰은 자동 갱신(OpenUsage는 Antigravity 자체 키체인 항목에 다시 쓰지 않음).
   단기 캐시는 같은 키체인 로그인이 존재하며 읽을 수 있을 때만 재사용.
