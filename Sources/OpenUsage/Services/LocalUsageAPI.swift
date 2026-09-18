@@ -36,8 +36,8 @@ enum LocalUsageAPI {
             return state
         }
 
-        /// wildcard CORS 응답용 복사본 — 계정 label은 고정 provider 카드 제목으로 교체.
-        func redactingAccountNamesForBrowserWire() -> State {
+        /// 인증 없는 loopback 응답용 복사본 — 계정 label은 고정 provider 카드 제목으로 교체.
+        func redactingAccountNamesForLocalWire() -> State {
             var state = self
             state.snapshots = snapshots.mapValues { snapshot in
                 var snapshot = snapshot
@@ -57,11 +57,6 @@ enum LocalUsageAPI {
     }
 
     static func respond(method: String, path: String, state: State) -> Response {
-        // preflight 지원 — 모든 경로의 OPTIONS는 204 + 서버 상시 CORS 헤더.
-        if method == "OPTIONS" {
-            return Response(status: 204, body: nil)
-        }
-
         let segments = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)[0]
             .split(separator: "/")
             .map(String.init)
@@ -104,6 +99,8 @@ enum LocalUsageAPI {
     }
 
     static let busy = error(503, "server_busy")
+    static let badRequest = error(400, "bad_request")
+    static let forbidden = error(403, "forbidden")
 
     private static func error(_ status: Int, _ code: String) -> Response {
         Response(status: status, body: Data(#"{"error":"\#(code)"}"#.utf8))

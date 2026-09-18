@@ -97,18 +97,27 @@ final class LocalUsageServer {
     }
 
     func route(head: String) -> LocalUsageAPI.Response {
-        let (method, path) = Self.parseRequestLine(head)
+        guard let request = Self.parseRequestHead(head), Self.isAllowedHost(request.headers["host"]) else {
+            AppDiagnostics.record(.localAPIRequest, result: .failure, category: .http4xx)
+            return LocalUsageAPI.badRequest
+        }
+        guard request.headers["origin"] == nil else {
+            AppDiagnostics.record(.localAPIRequest, result: .failure, category: .permission)
+            return LocalUsageAPI.forbidden
+        }
+        let method = request.method
+        let path = request.path
         // 외부 입력은 고정 route·method 분류만 기록 — 계정 경로·쿼리·임의 문자열 제외.
         AppLog.debug(.localAPI, "\(Self.logMethod(method)) \(Self.logRoute(path))")
         return LocalUsageAPI.respond(
             method: method,
             path: path,
-            state: state().redactingAccountNamesForBrowserWire()
+            state: state().redactingAccountNamesForLocalWire()
         )
     }
 
     private nonisolated static func logMethod(_ method: String) -> String {
-        ["GET", "OPTIONS"].contains(method) ? method : "other"
+        method == "GET" ? method : "other"
     }
 
     private nonisolated static func logRoute(_ path: String) -> String {
@@ -120,8 +129,8 @@ final class LocalUsageServer {
         return "unknown"
     }
 
-    /// HTTP request line을 `(method, path)`로 파싱 — 비어 있거나 malformed head 허용.
-    /// request line 부재는 trap 대신 일반 `404`로 라우팅 — 과거 force-index가 loopback payload로 `@MainActor` 프로세스 전체를 crash. `nonisolated` + pure로 listener 없이 unit-test 가능.
+    /// HTTP request line을 `(method, path)`로 파싱 — 부재 시 빈 method와 기본 경로 반환.
+    /// 빈 request line은 호출부의 request head 검증에서 `400`으로 거부.
     nonisolated static func parseRequestLine(_ head: String) -> (method: String, path: String) {
         guard let requestLine = head.split(separator: "\r\n", maxSplits: 1).first else {
             return ("", "/")
@@ -130,6 +139,40 @@ final class LocalUsageServer {
         let method = parts.indices.contains(0) ? String(parts[0]) : ""
         let path = parts.indices.contains(1) ? String(parts[1]) : "/"
         return (method, path)
+    }
+
+    struct RequestHead: Equatable, Sendable {
+        var method: String
+        var path: String
+        var headers: [String: [String]]
+    }
+
+    nonisolated static func parseRequestHead(_ head: String) -> RequestHead? {
+        let lines = head.components(separatedBy: "\r\n")
+        guard let first = lines.first, !first.isEmpty else { return nil }
+        let (method, path) = parseRequestLine(first)
+        guard !method.isEmpty else { return nil }
+
+        var headers: [String: [String]] = [:]
+        for line in lines.dropFirst() where !line.isEmpty {
+            guard let separator = line.firstIndex(of: ":") else { return nil }
+            let name = line[..<separator].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !name.isEmpty else { return nil }
+            let value = line[line.index(after: separator)...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            headers[name, default: []].append(value)
+        }
+        return RequestHead(method: method, path: path, headers: headers)
+    }
+
+    nonisolated static func isAllowedHost(_ values: [String]?) -> Bool {
+        guard let values, values.count == 1 else { return false }
+        switch values[0].lowercased() {
+        case "127.0.0.1", "127.0.0.1:\(port)", "localhost", "localhost:\(port)":
+            return true
+        default:
+            return false
+        }
     }
 
     private func finish(_ connection: NWConnection, with response: LocalUsageAPI.Response?) {
@@ -141,33 +184,33 @@ final class LocalUsageServer {
         }
     }
 
-    private nonisolated static func send(_ response: LocalUsageAPI.Response, over connection: NWConnection) {
+    nonisolated static func serializedResponse(_ response: LocalUsageAPI.Response) -> Data {
         let reason: String = switch response.status {
         case 200: "OK"
         case 204: "No Content"
+        case 400: "Bad Request"
+        case 403: "Forbidden"
         case 404: "Not Found"
         case 405: "Method Not Allowed"
         case 503: "Service Unavailable"
         default: "OK"
         }
         var head = "HTTP/1.1 \(response.status) \(reason)\r\n"
-        head += "Access-Control-Allow-Origin: *\r\n"
-        head += "Access-Control-Allow-Methods: GET, OPTIONS\r\n"
-        head += "Access-Control-Allow-Headers: Content-Type\r\n"
         head += "Connection: close\r\n"
         if let body = response.body {
             head += "Content-Type: application/json\r\n"
             head += "Content-Length: \(body.count)\r\n\r\n"
-            connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
-                if let error { Self.recordTransportFailure(error) }
-                connection.cancel()
-            })
+            return Data(head.utf8) + body
         } else {
             head += "Content-Length: 0\r\n\r\n"
-            connection.send(content: Data(head.utf8), completion: .contentProcessed { error in
-                if let error { Self.recordTransportFailure(error) }
-                connection.cancel()
-            })
+            return Data(head.utf8)
         }
+    }
+
+    private nonisolated static func send(_ response: LocalUsageAPI.Response, over connection: NWConnection) {
+        connection.send(content: serializedResponse(response), completion: .contentProcessed { error in
+            if let error { Self.recordTransportFailure(error) }
+            connection.cancel()
+        })
     }
 }
