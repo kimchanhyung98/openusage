@@ -72,6 +72,32 @@ final class ClaudeLogParsingTests: XCTestCase {
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(capture.events), as: UTF8.self).contains("PRIVATE_MODEL"))
     }
 
+    func testMalformedUsageCandidatesReportOnceWithoutDiscardingValidEntries() {
+        let capture = ClaudeParsingDiagnosticCapture()
+        let observer = AppDiagnostics.observe { event, _ in capture.append(event) }
+        defer { AppDiagnostics.removeObserver(observer) }
+        let valid = ClaudeLogFixture.usageLine(timestamp: "2026-09-17T03:00:00Z", input: 10, output: 5, costUSD: 0.25)
+        let expected = ClaudeLogUsageScanner.parseFile(Data(valid.utf8))
+
+        for invalid in [#"{"message":{"usage": "#, #"[{"usage":{}}]"#] {
+            let lines = [valid, invalid, invalid].joined(separator: "\n")
+            XCTAssertEqual(ClaudeLogUsageScanner.parseFile(Data(lines.utf8)), expected)
+        }
+
+        XCTAssertEqual(capture.events, Array(repeating:
+            DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "claude"), count: 2))
+    }
+
+    func testValidNonUsageObjectsDoNotEmitDecodingDiagnostics() {
+        let capture = ClaudeParsingDiagnosticCapture()
+        let observer = AppDiagnostics.observe { event, _ in capture.append(event) }
+        defer { AppDiagnostics.removeObserver(observer) }
+        let lines = [#"{"message":{"content":"usage"}}"#, #"{"usage":{}}"#, #"{"message":{}}"#]
+
+        XCTAssertTrue(ClaudeLogUsageScanner.parseFile(Data(lines.joined(separator: "\n").utf8)).isEmpty)
+        XCTAssertTrue(capture.events.isEmpty)
+    }
+
     func testNewCacheVersionReparsesAnUnchangedPreviouslySkippedFile() async throws {
         let line = ClaudeLogFixture.usageLine(timestamp: "2026-09-17T03:00:00Z", input: 10, output: 5, costUSD: 0.25)
             .replacingOccurrences(of: "\":", with: "\" : ")

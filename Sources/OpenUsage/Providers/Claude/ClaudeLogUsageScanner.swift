@@ -233,9 +233,12 @@ actor ClaudeLogUsageScanner {
         var entries: [Entry] = []
         var rejected = false
         for line in data.split(separator: UInt8(ascii: "\n")) {
-            guard line.range(of: marker) != nil,
-                  let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
-                  let message = object["message"] as? [String: Any],
+            guard line.range(of: marker) != nil else { continue }
+            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else {
+                rejected = true
+                continue
+            }
+            guard let message = object["message"] as? [String: Any],
                   message["usage"] is [String: Any] else { continue }
             let parsed = hasUnsupportedNullValue(object) ? [] : parseEntries(object)
             if parsed.isEmpty { rejected = true }
