@@ -103,6 +103,34 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(try keychain.read(service: "Shared Service", account: "Second"), "second")
     }
 
+    func testNativeWriterUpdatesLegacyCLIItemWithoutUserInteraction() throws {
+        let keychain = try TemporaryKeychain()
+        let runner = SystemProcessRunner()
+        let created = try runner.run(
+            executable: "/usr/bin/security",
+            arguments: ["add-generic-password", "-U", "-s", "Legacy Service", "-a", "Legacy Account",
+                        "-w", "fixture-old", keychain.path],
+            environment: [:], timeout: 5
+        )
+        XCTAssertTrue(created.succeeded)
+        var interactionAllowed: DarwinBoolean = false
+        XCTAssertEqual(SecKeychainGetUserInteractionAllowed(&interactionAllowed), errSecSuccess)
+        XCTAssertEqual(SecKeychainSetUserInteractionAllowed(false), errSecSuccess)
+        defer { XCTAssertEqual(SecKeychainSetUserInteractionAllowed(interactionAllowed.boolValue), errSecSuccess) }
+
+        try SecurityFrameworkGenericPasswordWriter(keychainPath: keychain.path).write(
+            service: "Legacy Service", account: nil, value: Data("fixture-new".utf8)
+        )
+
+        let updated = try runner.run(
+            executable: "/usr/bin/security",
+            arguments: ["find-generic-password", "-s", "Legacy Service", "-a", "Legacy Account", "-w", keychain.path],
+            environment: [:], timeout: 5
+        )
+        XCTAssertTrue(updated.succeeded)
+        XCTAssertEqual(updated.stdout.trimmingCharacters(in: .whitespacesAndNewlines), "fixture-new")
+    }
+
     /// 큐에 담긴 결과를 순서대로 반환 — repeat-until-not-found delete loop 구동용
     private final class SequenceRunner: ProcessRunning, @unchecked Sendable {
         private var results: [ProcessResult]
@@ -220,7 +248,7 @@ private final class TemporaryKeychain {
     }
 
     deinit {
-        SecKeychainDelete(reference)
+        XCTAssertEqual(SecKeychainDelete(reference), errSecSuccess, "Temporary Keychain cleanup failed")
     }
 
     func add(service: String, account: String, value: String) throws {
