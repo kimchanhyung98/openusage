@@ -330,11 +330,11 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     init(
         processRunner: ProcessRunning = SystemProcessRunner(),
         passwordWriter: any GenericPasswordWriting = SecurityFrameworkGenericPasswordWriter(),
-        sharedPasswordWriter: any GenericPasswordWriting = SecurityToolGenericPasswordWriter()
+        sharedPasswordWriter: (any GenericPasswordWriting)? = nil
     ) {
         self.processRunner = processRunner
         self.passwordWriter = passwordWriter
-        self.sharedPasswordWriter = sharedPasswordWriter
+        self.sharedPasswordWriter = sharedPasswordWriter ?? SecurityToolGenericPasswordWriter(processRunner: processRunner)
     }
 
     // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.

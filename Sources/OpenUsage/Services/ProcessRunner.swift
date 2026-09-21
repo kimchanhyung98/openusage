@@ -46,11 +46,15 @@ struct SystemProcessRunner: ProcessRunning {
             timeout: timeout, standardInput: nil)
     }
 
+    /// 표준 입력은 최대 4,096바이트. 초과 입력은 프로세스 실행 전 거부.
     func run(
         executable: String, arguments: [String], environment: [String: String],
         timeout: TimeInterval, standardInput: Data
     ) throws -> ProcessResult {
-        try execute(
+        guard standardInput.count <= 4_096 else {
+            throw ProcessRunnerError.standardInputTooLarge
+        }
+        return try execute(
             executable: executable, arguments: arguments, environment: environment,
             timeout: timeout, standardInput: standardInput)
     }
@@ -79,11 +83,17 @@ struct SystemProcessRunner: ProcessRunning {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
         let stdinPipe = standardInput.map { _ in Pipe() }
-        if let stdinPipe {
-            // 자식의 조기 종료 시 SIGPIPE로 앱까지 종료되는 문제 방지.
-            guard fcntl(stdinPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+        if let stdinPipe, let standardInput {
+            let writer = stdinPipe.fileHandleForWriting
+            defer { try? writer.close() }
+            // 실행 전에 짧은 입력과 EOF를 준비. 읽지 않는 자손이 남아도 writer 대기 없음.
+            guard fcntl(writer.fileDescriptor, F_SETFL, O_NONBLOCK) != -1 else {
                 throw ProcessRunnerError.standardInputFailed
             }
+            let written = standardInput.withUnsafeBytes {
+                Darwin.write(writer.fileDescriptor, $0.baseAddress, $0.count)
+            }
+            guard written == standardInput.count else { throw ProcessRunnerError.standardInputFailed }
             process.standardInput = stdinPipe
         }
 
@@ -99,23 +109,7 @@ struct SystemProcessRunner: ProcessRunning {
         process.terminationHandler = { _ in exited.leave() }
 
         try process.run()
-        if let standardInput, let stdinPipe {
-            try? stdinPipe.fileHandleForReading.close()
-            let inputHandle = FileHandleBox(stdinPipe.fileHandleForWriting)
-            drained.enter()
-            // 입력을 읽지 않는 자식도 timeout으로 종료할 수 있도록 비동기 전송.
-            DispatchQueue.global(qos: .utility).async {
-                defer {
-                    try? inputHandle.handle.close()
-                    drained.leave()
-                }
-                do {
-                    try inputHandle.handle.write(contentsOf: standardInput)
-                } catch {
-                    output.setInputFailed()
-                }
-            }
-        }
+        try? stdinPipe?.fileHandleForReading.close()
 
         if exited.wait(timeout: .now() + timeout) == .timedOut {
             terminateProcessTree(rootPID: process.processIdentifier)
@@ -131,7 +125,6 @@ struct SystemProcessRunner: ProcessRunning {
 
         process.waitUntilExit()
         drained.wait()
-        if output.inputFailed { throw ProcessRunnerError.standardInputFailed }
         AppLog.debug(.subprocess, "exit \(process.terminationStatus)")
         return ProcessResult(exitCode: process.terminationStatus, stdout: output.stdoutString, stderr: output.stderrString)
     }
@@ -184,6 +177,7 @@ enum ProcessRunnerError: Error, LocalizedError, Equatable {
     case timedOut(executable: String, timeout: TimeInterval)
     case standardInputUnsupported
     case standardInputFailed
+    case standardInputTooLarge
 
     var errorDescription: String? {
         switch self {
@@ -193,6 +187,8 @@ enum ProcessRunnerError: Error, LocalizedError, Equatable {
             return "This process runner does not support standard input."
         case .standardInputFailed:
             return "Could not send input to the process."
+        case .standardInputTooLarge:
+            return "Process input exceeds 4096 bytes."
         }
     }
 }
@@ -208,20 +204,9 @@ private final class SubprocessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var stdout = Data()
     private var stderr = Data()
-    private var failedInput = false
 
     func setStdout(_ data: Data) { lock.lock(); stdout = data; lock.unlock() }
     func setStderr(_ data: Data) { lock.lock(); stderr = data; lock.unlock() }
-    func setInputFailed() {
-        lock.lock()
-        failedInput = true
-        lock.unlock()
-    }
-    var inputFailed: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return failedInput
-    }
 
     var stdoutString: String { lock.lock(); defer { lock.unlock() }; return String(data: stdout, encoding: .utf8) ?? "" }
     var stderrString: String { lock.lock(); defer { lock.unlock() }; return String(data: stderr, encoding: .utf8) ?? "" }
