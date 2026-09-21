@@ -300,9 +300,9 @@ struct ClaudeAuthStore: Sendable {
         case .file:
             try files.writeText(credentialsPath(), text)
         case .keychainCurrentUser(let service):
-            try keychain.writeGenericPasswordForCurrentUser(service: service, value: text)
+            try keychain.writeCLISharedPassword(service: service, value: text, forCurrentUser: true)
         case .keychainLegacy(let service):
-            try keychain.writeGenericPassword(service: service, value: text)
+            try keychain.writeCLISharedPassword(service: service, value: text, forCurrentUser: false)
         case .accountSnapshot(let profileID):
             try AccountCredentialVault(keychain: keychain).replaceCredential(
                 text,

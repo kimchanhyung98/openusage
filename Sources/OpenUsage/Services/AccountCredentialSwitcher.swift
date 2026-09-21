@@ -291,12 +291,13 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":
-            try keychain.writeGenericPasswordForCurrentUser(
+            try keychain.writeCLISharedPassword(
                 service: ClaudeAuthStore.scopedKeychainServiceName(
                     forConfigDirLiteral: directory.path,
                     environment: environment
                 ),
-                value: entry.credential
+                value: entry.credential,
+                forCurrentUser: true
             )
             try writePrivateFile(entry.credential, to: directory.appendingPathComponent(".credentials.json"))
             if let oauthAccount = entry.claudeOAuthAccount {
@@ -360,16 +361,18 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     }
 
     private func writeClaudeCredential(_ credential: String, home: String) throws {
-        try keychain.writeGenericPasswordForCurrentUser(
+        try keychain.writeCLISharedPassword(
             service: ClaudeAuthStore.scopedKeychainServiceName(
                 forConfigDirLiteral: home,
                 environment: environment
             ),
-            value: credential
+            value: credential,
+            forCurrentUser: true
         )
-        try keychain.writeGenericPasswordForCurrentUser(
+        try keychain.writeCLISharedPassword(
             service: ClaudeAuthStore.baseKeychainServiceName(environment: environment),
-            value: credential
+            value: credential,
+            forCurrentUser: true
         )
         try writePrivateFile(
             credential,
