@@ -11,6 +11,15 @@ final class KeychainAccessorTests: XCTestCase {
         }
     }
 
+    func testExistenceProbeThroughProtocolDoesNotLaunchSecretRead() {
+        let runner = RecordingRunner()
+        let accessor: any KeychainAccessing = SecurityKeychainAccessor(processRunner: runner)
+
+        _ = accessor.genericPasswordExists(service: "OpenUsageTests.Missing.\(UUID().uuidString)")
+
+        XCTAssertTrue(runner.calls.isEmpty, "Existence probes must use the metadata-only implementation")
+    }
+
     func testItemNotFoundExitReturnsNil() throws {
         // exit 44(errSecItemNotFound)는 정상적인 "credential 없음" → nil
         let accessor = SecurityKeychainAccessor(processRunner: StubRunner(
