@@ -15,9 +15,34 @@ final class KeychainAccessorTests: XCTestCase {
         let runner = RecordingRunner()
         let accessor: any KeychainAccessing = SecurityKeychainAccessor(processRunner: runner)
 
-        _ = accessor.genericPasswordExists(service: "OpenUsageTests.Missing.\(UUID().uuidString)")
+        let exists = accessor.genericPasswordExists(service: "OpenUsageTests.Missing.\(UUID().uuidString)")
 
+        XCTAssertNotEqual(exists, true)
         XCTAssertTrue(runner.calls.isEmpty, "Existence probes must use the metadata-only implementation")
+    }
+
+    func testDefaultSharedWriterUsesInjectedProcessRunner() throws {
+        let runner = RecordingRunner()
+        let accessor = SecurityKeychainAccessor(processRunner: runner)
+        var writer = try XCTUnwrap(accessor.sharedPasswordWriter as? SecurityToolGenericPasswordWriter)
+        let keychain = try TemporaryKeychain()
+        writer.keychainPath = keychain.path
+
+        try writer.write(service: "Shared", account: "Fixture", value: Data("fixture".utf8))
+
+        XCTAssertEqual(runner.calls, [.init(executable: "/usr/bin/security", arguments: ["-i", "-q"])])
+        XCTAssertNotNil(runner.standardInput)
+    }
+
+    func testSharedWritesUseExplicitWriterOverride() throws {
+        let runner = RecordingRunner()
+        let writer = RecordingPasswordWriter()
+        let accessor = SecurityKeychainAccessor(processRunner: runner, sharedPasswordWriter: writer)
+
+        try accessor.writeCLISharedPassword(service: "Legacy", value: "fixture", forCurrentUser: false)
+
+        XCTAssertEqual(writer.calls, [.init(service: "Legacy", account: nil, value: Data("fixture".utf8))])
+        XCTAssertTrue(runner.calls.isEmpty)
     }
 
     func testItemNotFoundExitReturnsNil() throws {
@@ -196,6 +221,7 @@ private final class RecordingRunner: ProcessRunning, @unchecked Sendable {
     }
 
     private(set) var calls: [Call] = []
+    private(set) var standardInput: Data?
 
     func run(
         executable: String,
@@ -205,6 +231,14 @@ private final class RecordingRunner: ProcessRunning, @unchecked Sendable {
     ) throws -> ProcessResult {
         calls.append(.init(executable: executable, arguments: arguments))
         return ProcessResult(exitCode: 0, stdout: "", stderr: "")
+    }
+
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        timeout: TimeInterval, standardInput: Data
+    ) throws -> ProcessResult {
+        self.standardInput = standardInput
+        return try run(executable: executable, arguments: arguments, environment: environment, timeout: timeout)
     }
 }
 

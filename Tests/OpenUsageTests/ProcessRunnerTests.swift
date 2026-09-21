@@ -23,8 +23,8 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines), "hello")
     }
 
-    func testLargeStandardInputPreservesBytesAndClosesAtEnd() throws {
-        let input = String(repeating: "입력\0'\"\\\n", count: 20_000)
+    func testStandardInputPreservesBytesAndClosesAtEnd() throws {
+        let input = String(repeating: "입력\0'\"\\\n", count: 250)
         let result = try SystemProcessRunner().run(
             executable: "/bin/cat", arguments: [], environment: [:], timeout: 5,
             standardInput: Data(input.utf8)
@@ -33,15 +33,23 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.stdout, input)
     }
 
-    func testEarlyExitWhileSendingInputReportsFailureWithoutSIGPIPE() {
-        XCTAssertThrowsError(
-            try SystemProcessRunner().run(
-                executable: "/bin/sh", arguments: ["-c", "exec 0<&-; exit 0"], environment: [:], timeout: 5,
-                standardInput: Data(repeating: 65, count: 1_000_000)
+    func testStandardInputSupportsEmptyInputAndFullSecurityCommand() throws {
+        for count in [0, 4_095, 4_096] {
+            let result = try SystemProcessRunner().run(
+                executable: "/bin/cat", arguments: [], environment: [:], timeout: 5,
+                standardInput: Data(repeating: 65, count: count)
             )
-        ) { error in
-            XCTAssertEqual(error as? ProcessRunnerError, .standardInputFailed)
+            XCTAssertTrue(result.succeeded)
+            XCTAssertEqual(result.stdout, String(repeating: "A", count: count))
         }
+    }
+
+    func testEarlyExitWithoutReadingInputPreservesExitCode() throws {
+        let result = try SystemProcessRunner().run(
+            executable: "/bin/sh", arguments: ["-c", "exec 0<&-; exit 7"], environment: [:], timeout: 5,
+            standardInput: Data(repeating: 65, count: 4_096)
+        )
+        XCTAssertEqual(result.exitCode, 7)
     }
 
     func testUnreadStandardInputDoesNotBlockTimeout() {
@@ -49,7 +57,7 @@ final class ProcessRunnerTests: XCTestCase {
         XCTAssertThrowsError(
             try SystemProcessRunner().run(
                 executable: "/bin/sleep", arguments: ["30"], environment: [:], timeout: 0.1,
-                standardInput: Data(repeating: 65, count: 1_000_000)
+                standardInput: Data(repeating: 65, count: 4_096)
             )
         ) { error in
             XCTAssertEqual(error as? ProcessRunnerError, .timedOut(executable: "/bin/sleep", timeout: 0.1))
@@ -73,5 +81,25 @@ final class ProcessRunnerTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? ProcessRunnerError, .standardInputUnsupported)
         }
+    }
+
+    func testOversizedInputIsRejectedBeforeStartingDescendants() {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let started = Date()
+        for count in [4_097, 1_000_000] {
+            XCTAssertThrowsError(
+                try SystemProcessRunner().run(
+                    executable: "/bin/sh",
+                    arguments: ["-c", "exec 3<&0; /bin/sleep 1 <&3 >/dev/null 2>&1 & /usr/bin/touch \"$1\"", "_", marker.path],
+                    environment: [:], timeout: 0.1,
+                    standardInput: Data(repeating: 65, count: count)
+                )
+            ) { error in
+                XCTAssertEqual(error as? ProcessRunnerError, .standardInputTooLarge)
+            }
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5)
     }
 }

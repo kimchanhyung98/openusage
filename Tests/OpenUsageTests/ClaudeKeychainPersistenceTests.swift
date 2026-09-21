@@ -24,9 +24,10 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
             for value in [#"한글 "quote" \slash"#, "first\nsecond"] {
                 try writer.write(service: fixture.service, account: fixture.account, value: Data(value.utf8))
 
-                let output = try fixture.cliValue()
-                let encoded = value.utf8.map { String(format: "%02x", $0) }.joined()
-                XCTAssertTrue(output == value + "\n" || output == encoded + "\n")
+                let output = try fixture.cliPasswordOutput()
+                let encoded = value.utf8.map { String(format: "%02X", $0) }.joined()
+                // -g의 명시적 hex 출력으로 실제 바이트 검증 — 원문 hex 문자열의 잘못된 저장도 구분.
+                XCTAssertEqual(output.split(whereSeparator: \.isWhitespace).prefix(2).joined(separator: " "), "password: 0x" + encoded)
             }
             XCTAssertEqual(runner.arguments, [["-i", "-q"], ["-i", "-q"]])
         }
@@ -35,7 +36,7 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
     func testSharedWriterRejectsOverlongInputBeforeChangingStoredCredential() throws {
         try withoutKeychainUI {
             let fixture = try SharedCredentialFixture(account: "Fixture")
-            let before = try fixture.cliValue()
+            let before = try fixture.cliPasswordOutput()
             let runner = RecordingWriterRunner()
             let writer = SecurityToolGenericPasswordWriter(keychainPath: fixture.path, processRunner: runner)
 
@@ -45,14 +46,14 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
                 ))
 
             XCTAssertTrue(runner.arguments.isEmpty)
-            XCTAssertEqual(try fixture.cliValue(), before)
+            XCTAssertEqual(try fixture.cliPasswordOutput(), before)
         }
     }
 
     func testSharedWriterRejectsAmbiguousLegacyAccountWithoutChangingCredential() throws {
         try withoutKeychainUI {
             let fixture = try SharedCredentialFixture(account: "First")
-            let before = try fixture.cliValue()
+            let before = try fixture.cliPasswordOutput()
             try SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path).write(
                 service: fixture.service, account: "Second", value: Data("fixture-second".utf8)
             )
@@ -67,7 +68,7 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
                 XCTAssertEqual(error as? GenericPasswordWriteError, .ambiguousService)
             }
             XCTAssertTrue(runner.arguments.isEmpty)
-            XCTAssertEqual(try fixture.cliValue(), before)
+            XCTAssertEqual(try fixture.cliPasswordOutput(), before)
         }
     }
 
@@ -195,15 +196,15 @@ private final class SharedCredentialFixture {
         XCTAssertEqual(SecKeychainDelete(reference), errSecSuccess, "Fixture Keychain cleanup failed")
     }
 
-    func cliValue() throws -> String {
+    func cliPasswordOutput() throws -> String {
         guard try partitions().contains("apple-tool:") else { throw FixtureError.approvalSetupFailed }
         let result = try SystemProcessRunner().run(
             executable: "/usr/bin/security",
-            arguments: ["find-generic-password", "-s", service, "-a", account, "-w", path],
+            arguments: ["find-generic-password", "-s", service, "-a", account, "-g", path],
             environment: [:], timeout: 5
         )
         guard result.succeeded else { throw FixtureError.unexpectedCommand }
-        return result.stdout
+        return result.stderr
     }
 
     func partitions() throws -> [String] {
