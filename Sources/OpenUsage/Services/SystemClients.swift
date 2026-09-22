@@ -269,10 +269,13 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 
 protocol KeychainAccessing: Sendable {
     func readGenericPassword(service: String) throws -> String?
+    func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
     func deleteGenericPassword(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
+    /// Claude Code 공유 항목의 CLI 접근 승인을 유지하는 저장.
+    func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws
     /// 명시적 account(`-a`) 스코프의 generic password read — 타 앱이 특정 account 이름으로 저장한 item용.
     func readGenericPassword(service: String, account: String) throws -> String?
     /// secret을 읽지 않고 generic password item의 마지막 수정 시각 조회.
@@ -281,6 +284,14 @@ protocol KeychainAccessing: Sendable {
 }
 
 extension KeychainAccessing {
+    func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws {
+        if forCurrentUser {
+            try writeGenericPasswordForCurrentUser(service: service, value: value)
+        } else {
+            try writeGenericPassword(service: service, value: value)
+        }
+    }
+
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try readGenericPassword(service: service)
     }
@@ -314,13 +325,16 @@ extension KeychainAccessing {
 struct SecurityKeychainAccessor: KeychainAccessing {
     let processRunner: ProcessRunning
     let passwordWriter: any GenericPasswordWriting
+    let sharedPasswordWriter: any GenericPasswordWriting
 
     init(
         processRunner: ProcessRunning = SystemProcessRunner(),
-        passwordWriter: any GenericPasswordWriting = SecurityFrameworkGenericPasswordWriter()
+        passwordWriter: any GenericPasswordWriting = SecurityFrameworkGenericPasswordWriter(),
+        sharedPasswordWriter: (any GenericPasswordWriting)? = nil
     ) {
         self.processRunner = processRunner
         self.passwordWriter = passwordWriter
+        self.sharedPasswordWriter = sharedPasswordWriter ?? SecurityToolGenericPasswordWriter(processRunner: processRunner)
     }
 
     // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.
@@ -407,6 +421,11 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         try writePassword(service: service, account: nil, value: value)
     }
 
+    func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws {
+        try writePassword(service: service, account: forCurrentUser ? currentUserAccount() : nil,
+                          value: value, writer: sharedPasswordWriter)
+    }
+
     func deleteGenericPassword(service: String) throws {
         // `security` 1회 호출은 item 1개만 삭제 — account-scoped와 unscoped item 공존 가능, not-found까지 반복해 전부 제거.
         for _ in 0..<8 {
@@ -430,13 +449,15 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         try writePassword(service: service, account: currentUserAccount(), value: value)
     }
 
-    private func writePassword(service: String, account: String?, value: String) throws {
+    private func writePassword(service: String, account: String?, value: String, writer: (any GenericPasswordWriting)? = nil) throws {
         do {
-            try passwordWriter.write(
+            try (writer ?? passwordWriter).write(
                 service: service,
                 account: account,
                 value: Data(value.utf8)
             )
+        } catch let error as KeychainError {
+            throw error
         } catch let error as GenericPasswordWriteError {
             throw KeychainError.writeFailed(error.localizedDescription)
         } catch {

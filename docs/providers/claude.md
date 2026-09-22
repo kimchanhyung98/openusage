@@ -27,6 +27,11 @@ Claude Code 또는 Claude Desktop에 로그인하면 OpenUsage가 기존 로그�
 
 [**Settings → Accounts**](/docs/settings.md)에 계정이 등록되어 있거나 커스텀 설정 디렉터리에 다른 Claude 로그인이 있으면 Claude Desktop 대체 경로 미사용 — 다른 계정의 로그인일 수 있으므로 인증 실패를 재로그인 안내로 노출.
 
+Claude Code의 자동 토큰 갱신 유지.
+공유 키체인 저장은 기존 CLI 접근 승인을 유지하는 방식으로 수행.
+0.12.1의 갱신으로 승인이 사라진 항목은 최초 접근 시 **Always Allow** 재승인이 필요할 수 있음.
+저장 도구의 입력 한도를 초과하면 기존 토큰을 덮어쓰지 않고 저장 오류 처리.
+
 Claude Desktop 지원은 읽기 전용.
 OpenUsage는 macOS 키체인의 `Claude Safe Storage` 항목으로 현재 유효한 액세스 토큰 복호화.
 Desktop의 계정별 로그인 캐시는 현재 활성 계정과 조직에 맞는 항목만 사용.
@@ -42,7 +47,7 @@ Desktop의 계정별 로그인 캐시는 현재 활성 계정과 조직에 맞�
 Desktop의 갱신 토큰은 읽거나 사용하지 않으며 Desktop의 설정, 쿠키, 키체인 항목도 변경하지 않음.
 이 방식으로 OpenUsage가 Claude Desktop 세션을 무효화하는 문제 방지.
 
-OpenUsage가 해당 키체인 항목에 접근하기 전 macOS의 최초 1회 확인 필요.
+OpenUsage가 Claude Desktop 키체인 항목에 접근하기 전 macOS의 최초 1회 확인 필요.
 백그라운드 새로 고침에서는 암호 대화상자를 열지 않음: 먼저 수동 새로 고침을 요청하며, **Always Allow** 선택 시 이후 새로 고침은 추가 확인 없이 진행.
 Desktop의 단기 토큰이 만료되면 Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
 

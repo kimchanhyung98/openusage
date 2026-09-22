@@ -16,6 +16,22 @@ protocol ProcessRunning: Sendable {
         environment: [String: String],
         timeout: TimeInterval
     ) throws -> ProcessResult
+    func run(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval,
+        standardInput: Data
+    ) throws -> ProcessResult
+}
+
+extension ProcessRunning {
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        timeout: TimeInterval, standardInput: Data
+    ) throws -> ProcessResult {
+        throw ProcessRunnerError.standardInputUnsupported
+    }
 }
 
 struct SystemProcessRunner: ProcessRunning {
@@ -24,6 +40,28 @@ struct SystemProcessRunner: ProcessRunning {
         arguments: [String],
         environment: [String: String],
         timeout: TimeInterval
+    ) throws -> ProcessResult {
+        try execute(
+            executable: executable, arguments: arguments, environment: environment,
+            timeout: timeout, standardInput: nil)
+    }
+
+    /// 표준 입력은 최대 4,096바이트. 초과 입력은 프로세스 실행 전 거부.
+    func run(
+        executable: String, arguments: [String], environment: [String: String],
+        timeout: TimeInterval, standardInput: Data
+    ) throws -> ProcessResult {
+        guard standardInput.count <= 4_096 else {
+            throw ProcessRunnerError.standardInputTooLarge
+        }
+        return try execute(
+            executable: executable, arguments: arguments, environment: environment,
+            timeout: timeout, standardInput: standardInput)
+    }
+
+    private func execute(
+        executable: String, arguments: [String], environment: [String: String],
+        timeout: TimeInterval, standardInput: Data?
     ) throws -> ProcessResult {
         let process = Process()
         if executable.hasPrefix("/") {
@@ -44,6 +82,20 @@ struct SystemProcessRunner: ProcessRunning {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        let stdinPipe = standardInput.map { _ in Pipe() }
+        if let stdinPipe, let standardInput {
+            let writer = stdinPipe.fileHandleForWriting
+            defer { try? writer.close() }
+            // 실행 전에 짧은 입력과 EOF를 준비. 읽지 않는 자손이 남아도 writer 대기 없음.
+            guard fcntl(writer.fileDescriptor, F_SETFL, O_NONBLOCK) != -1 else {
+                throw ProcessRunnerError.standardInputFailed
+            }
+            let written = standardInput.withUnsafeBytes {
+                Darwin.write(writer.fileDescriptor, $0.baseAddress, $0.count)
+            }
+            guard written == standardInput.count else { throw ProcessRunnerError.standardInputFailed }
+            process.standardInput = stdinPipe
+        }
 
         // 두 pipe를 child 실행 전 background queue에서 drain 시작 — OS pipe buffer(~64KB) 초과 출력 child의 write blocking·timeout 오작동 방지, exit 후 read는 deadlock.
         let output = SubprocessOutput()
@@ -57,6 +109,7 @@ struct SystemProcessRunner: ProcessRunning {
         process.terminationHandler = { _ in exited.leave() }
 
         try process.run()
+        try? stdinPipe?.fileHandleForReading.close()
 
         if exited.wait(timeout: .now() + timeout) == .timedOut {
             terminateProcessTree(rootPID: process.processIdentifier)
@@ -122,11 +175,20 @@ struct SystemProcessRunner: ProcessRunning {
 
 enum ProcessRunnerError: Error, LocalizedError, Equatable {
     case timedOut(executable: String, timeout: TimeInterval)
+    case standardInputUnsupported
+    case standardInputFailed
+    case standardInputTooLarge
 
     var errorDescription: String? {
         switch self {
         case .timedOut(let executable, let timeout):
             return "\(executable) timed out after \(Int(timeout))s."
+        case .standardInputUnsupported:
+            return "This process runner does not support standard input."
+        case .standardInputFailed:
+            return "Could not send input to the process."
+        case .standardInputTooLarge:
+            return "Process input exceeds 4096 bytes."
         }
     }
 }
@@ -149,4 +211,3 @@ private final class SubprocessOutput: @unchecked Sendable {
     var stdoutString: String { lock.lock(); defer { lock.unlock() }; return String(data: stdout, encoding: .utf8) ?? "" }
     var stderrString: String { lock.lock(); defer { lock.unlock() }; return String(data: stderr, encoding: .utf8) ?? "" }
 }
-
