@@ -142,6 +142,10 @@ struct AccountsSettingsSection: View {
         .onChange(of: store.authenticationRevision) {
             refreshSignInStates()
         }
+        .onChange(of: container.dataStore.refreshingProviderIDs) { previous, current in
+            let completed = previous.subtracting(current)
+            Task { await retrySignInStates(afterRefreshing: completed) }
+        }
     }
 
     // MARK: - Family card
@@ -234,6 +238,24 @@ struct AccountsSettingsSection: View {
     }
 
     // MARK: - Sign-in probe
+
+    private func retrySignInStates(afterRefreshing providerIDs: Set<String>) async {
+        let profileIDs = Set(providerIDs.compactMap { container.accountProfileID(for: $0) })
+        for id in profileIDs {
+            guard case .readFailed = signInStates[id],
+                  let profile = store.profile(id: id), !profile.isArchived else { continue }
+            let isSelected = store.preferredProfileID(family: profile.family) == id
+            let revision = store.authenticationRevision
+            let state = await loadOffMainActor {
+                AccountSignInProbe().state(for: profile, isSelected: isSelected)
+            }
+            guard store.profile(id: id) == profile,
+                  store.authenticationRevision == revision,
+                  (store.preferredProfileID(family: profile.family) == id) == isSelected,
+                  case .readFailed = signInStates[id] else { continue }
+            signInStates[id] = state
+        }
+    }
 
     private func refreshSignInStates() {
         let probe = AccountSignInProbe()

@@ -12,9 +12,11 @@ enum NativeKeychainAccess {
     static func acquire() throws {
         guard lock.lock(before: Date().addingTimeInterval(5)) else {
             AppLog.error(.keychain, "native keychain access timed out waiting for another operation")
-            throw KeychainError.readFailed("Keychain is busy. Respond to the open Keychain dialog, then try again.")
+            throw KeychainError.accessBusy
         }
     }
+
+    static func tryAcquire() -> Bool { lock.try() }
 
     static func release() { lock.unlock() }
 }
