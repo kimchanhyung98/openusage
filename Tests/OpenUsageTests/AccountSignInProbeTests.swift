@@ -41,10 +41,19 @@ final class AccountSignInProbeTests: XCTestCase {
         XCTAssertEqual(makeProbe(keychain: ServiceKeychain()).state(for: profile), .needsSignIn)
     }
 
-    func testSnapshotReadFailureNeedsSignIn() {
+    func testSnapshotReadFailureDoesNotMeanMissingSignIn() {
         let profile = profile(id: "p-read-failure", family: "claude", identityKey: "acct-a|org-a")
 
-        XCTAssertEqual(makeProbe(keychain: ThrowingProbeKeychain()).state(for: profile), .needsSignIn)
+        XCTAssertNotEqual(makeProbe(keychain: ThrowingProbeKeychain()).state(for: profile), .needsSignIn)
+    }
+
+    func testCorruptSnapshotStillRequiresSignIn() {
+        let profile = profile(id: "corrupt", family: "codex", identityKey: "account")
+        let keychain = ServiceKeychain(currentUserValues: [
+            AccountCredentialVault.service(family: profile.family, profileID: profile.id): "invalid-json"
+        ])
+
+        XCTAssertEqual(makeProbe(keychain: keychain).state(for: profile), .needsSignIn)
     }
 
     func testSnapshotForADifferentAccountNeedsSignIn() throws {

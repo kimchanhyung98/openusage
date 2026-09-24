@@ -217,6 +217,21 @@ final class AccountStatusTests: XCTestCase {
         XCTAssertEqual(store.accountStatus(for: nil, localState: .ready(identityKey: "account", label: nil)), .notChecked)
     }
 
+    func testKeychainApprovalFailureKeepsAccountSwitchAvailable() {
+        let profile = AccountProfile(
+            id: "approval", family: "codex", label: "Saved", identityKey: "saved", createdAt: .distantPast
+        )
+        let local = AccountSignInProbe(
+            environment: FakeEnvironment(), keychain: ApprovalRequiredStatusKeychain()
+        ).state(for: profile)
+        let store = makeStore(AccountStatusRuntime())
+
+        let status = store.accountStatus(for: "codex", localState: local)
+
+        XCTAssertTrue(status.canSwitch)
+        XCTAssertEqual(status, .refreshFailed(ApprovalRequiredStatusKeychain.error.localizedDescription))
+    }
+
     func testSelectedAndInactiveProfilesUseTheirOwnResultsEvenWithTheSameIdentity() async throws {
         let profiles = AccountProfilesStore(defaults: makeDefaults())
         let selected = try profiles.add(family: "codex", label: "selected", identityKey: "same-account")
@@ -343,4 +358,12 @@ private final class AccountStatusRuntime: ProviderRuntime {
         continuation?.resume(returning: snapshot)
         continuation = nil
     }
+}
+
+private struct ApprovalRequiredStatusKeychain: KeychainAccessing {
+    static let error = KeychainError.readFailed("Unlock Keychain and refresh manually to allow access.")
+
+    func readGenericPassword(service: String) throws -> String? { throw Self.error }
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
 }

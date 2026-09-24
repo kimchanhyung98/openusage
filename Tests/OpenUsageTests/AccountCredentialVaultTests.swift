@@ -5,7 +5,7 @@ import XCTest
 
 final class AccountCredentialVaultTests: XCTestCase {
     func testTokenRotationsDoNotRequireSecurityToolApproval() throws {
-        let fixture = try AccountVaultKeychainFixture()
+        let fixture = try makeFixture()
         let runner = RejectingVaultProcessRunner()
         let keychain = SecurityKeychainAccessor(
             processRunner: runner,
@@ -21,7 +21,9 @@ final class AccountCredentialVaultTests: XCTestCase {
         try vault.save(expected, profile: profile)
 
         for rotation in 1...3 {
-            XCTAssertFalse(try fixture.partitions().contains("apple-tool:"))
+            let partitions = try fixture.partitions()
+            XCTAssertFalse(partitions.isEmpty)
+            XCTAssertFalse(partitions.contains("apple-tool:"))
             XCTAssertEqual(try vault.load(profile: profile), expected)
             expected.credential = "rotation-\(rotation)-" + expected.credential
             try vault.replaceCredential(expected.credential, family: profile.family, profileID: profile.id)
@@ -31,7 +33,7 @@ final class AccountCredentialVaultTests: XCTestCase {
     }
 
     func testLegacyServiceOnlySnapshotRemainsReadable() throws {
-        let fixture = try AccountVaultKeychainFixture()
+        let fixture = try makeFixture()
         let expected = AccountCredentialVault.Entry(credential: "legacy", claudeOAuthAccount: nil)
         try SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path).write(
             service: fixture.service, account: "Legacy Account", value: try JSONEncoder().encode(expected)
@@ -49,7 +51,7 @@ final class AccountCredentialVaultTests: XCTestCase {
     func testBackgroundReadOfUnapprovedItemFailsWithoutLaunchingSecurityTool() throws {
         var previousInteraction: DarwinBoolean = false
         try checkVaultStatus(SecKeychainGetUserInteractionAllowed(&previousInteraction))
-        let fixture = try AccountVaultKeychainFixture()
+        let fixture = try makeFixture()
         try fixture.addRestrictedItem(value: Data("synthetic private value".utf8))
         let runner = RejectingVaultProcessRunner()
         let vault = AccountCredentialVault(keychain: SecurityKeychainAccessor(
@@ -71,7 +73,7 @@ final class AccountCredentialVaultTests: XCTestCase {
     }
 
     func testNativeReaderDistinguishesMissingAndInvalidData() throws {
-        let fixture = try AccountVaultKeychainFixture()
+        let fixture = try makeFixture()
         let reader = SecurityFrameworkGenericPasswordReader(keychainPath: fixture.path)
         XCTAssertNil(try reader.read(service: fixture.service, account: nil, allowInteraction: false))
         try SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path).write(
@@ -80,6 +82,59 @@ final class AccountCredentialVaultTests: XCTestCase {
         XCTAssertThrowsError(try reader.read(service: fixture.service, account: nil, allowInteraction: false)) { error in
             XCTAssertTrue(error.localizedDescription.contains(String(errSecDecode)))
         }
+    }
+
+    func testNativeWritesWaitForOtherKeychainOperations() throws {
+        let fixture = try makeFixture()
+        let started = expectation(description: "writer started")
+        let finished = expectation(description: "writer finished")
+        let completed = DispatchSemaphore(value: 0)
+        let fixturePath = fixture.path
+        let service = fixture.service
+        try NativeKeychainAccess.acquire()
+        DispatchQueue.global().async {
+            started.fulfill()
+            do {
+                try SecurityFrameworkGenericPasswordWriter(keychainPath: fixturePath).write(
+                    service: service, account: "Fixture", value: Data("credential".utf8)
+                )
+            } catch { XCTFail("Write failed: \(error)") }
+            completed.signal()
+            finished.fulfill()
+        }
+        wait(for: [started], timeout: 1)
+        XCTAssertEqual(completed.wait(timeout: .now() + 0.2), .timedOut)
+        NativeKeychainAccess.release()
+        wait(for: [finished], timeout: 3)
+        XCTAssertEqual(try SecurityFrameworkGenericPasswordReader(keychainPath: fixturePath).read(
+            service: service, account: "Fixture", allowInteraction: false
+        ), "credential")
+    }
+
+    func testPendingKeychainOperationDoesNotBlockAnotherReadIndefinitely() throws {
+        let fixture = try makeFixture()
+        let finished = expectation(description: "blocked read failed")
+        let fixturePath = fixture.path
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
+        DispatchQueue.global().async {
+            do {
+                _ = try SecurityFrameworkGenericPasswordReader(keychainPath: fixturePath).read(
+                    service: "fixture", account: nil, allowInteraction: false
+                )
+                XCTFail("Expected a bounded wait")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.contains("Keychain is busy"))
+            }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 7)
+    }
+
+    private func makeFixture() throws -> AccountVaultKeychainFixture {
+        let fixture = try AccountVaultKeychainFixture()
+        addTeardownBlock { try fixture.close() }
+        return fixture
     }
 }
 
@@ -94,7 +149,7 @@ private final class RejectingVaultProcessRunner: ProcessRunning, @unchecked Send
     }
 }
 
-private final class AccountVaultKeychainFixture {
+private final class AccountVaultKeychainFixture: @unchecked Sendable {
     let path: String
     let reference: SecKeychain
     let profile = AccountProfile(
@@ -104,6 +159,7 @@ private final class AccountVaultKeychainFixture {
     var service: String { AccountCredentialVault.service(family: profile.family, profileID: profile.id) }
 
     init() throws {
+        // 임시 폴더의 Keychain은 partition ACL이 없어 토큰 갱신 후 승인 회귀를 검증할 수 없음.
         path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Keychains/OpenUsageTests.Vault.\(UUID().uuidString).keychain").path
         let fixturePath = path
@@ -116,8 +172,8 @@ private final class AccountVaultKeychainFixture {
         reference = try XCTUnwrap(created)
     }
 
-    deinit {
-        XCTAssertEqual(SecKeychainDelete(reference), errSecSuccess)
+    func close() throws {
+        try checkVaultStatus(SecKeychainDelete(reference))
     }
 
     func addRestrictedItem(value: Data) throws {

@@ -89,7 +89,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
             keychain: keychain,
             scope: .accountSnapshot(profileID: profile.id)
         )
-        let generation = store.credentialGeneration()
+        let generation = try store.credentialGeneration()
         var state = try XCTUnwrap(store.loadCredentialCandidates().first)
         state.oauth.accessToken = "new-token"
 
@@ -172,6 +172,94 @@ final class AccountSnapshotUsageTests: XCTestCase {
         }
     }
 
+    func testManualRefreshKeepsApprovalThroughTokenRotationAndGenerationChecks() async throws {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "rotation", family: family)
+            let vault = AccountCredentialVault(keychain: keychain)
+            let credential = family == "claude"
+                ? #"{"claudeAiOauth":{"accessToken":"old-token","refreshToken":"old-refresh","expiresAt":1}}"#
+                : #"{"tokens":{"access_token":"old-token","refresh_token":"old-refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
+            try vault.save(.init(credential: credential, claudeOAuthAccount: "metadata"), profile: profile)
+            keychain.requiresInteraction = true
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                #"{"access_token":"new-token","refresh_token":"new-refresh","expires_in":3600,"five_hour":{"utilization":12},"rate_limit":{"primary_window":{"used_percent":12}}}"#.utf8
+            )))
+            let runtime = runtime(family: family, keychain: keychain, http: http, profileID: profile.id)
+
+            _ = await ProviderRefreshContext.$isManual.withValue(true) { await runtime.refresh() }
+
+            XCTAssertTrue(keychain.interactionRequests.allSatisfy { $0 }, family)
+            keychain.requiresInteraction = false
+            let saved = try XCTUnwrap(vault.load(profile: profile))
+            XCTAssertTrue(saved.credential.contains("new-refresh"), family)
+            XCTAssertEqual(saved.claudeOAuthAccount, "metadata", family)
+        }
+    }
+
+    func testReloadReadFailureIsPreservedWithoutUsingStaleCredentials() async throws {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "reload", family: family)
+            let credential = family == "claude"
+                ? #"{"claudeAiOauth":{"accessToken":"token"}}"#
+                : #"{"tokens":{"access_token":"token","refresh_token":"refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
+            try AccountCredentialVault(keychain: keychain).save(
+                .init(credential: credential, claudeOAuthAccount: nil), profile: profile
+            )
+            keychain.failAfterRead = 1
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
+            let runtime = runtime(family: family, keychain: keychain, http: http, profileID: profile.id)
+
+            let snapshot = await ProviderRefreshContext.$isManual.withValue(true) { await runtime.refresh() }
+
+            guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                XCTFail("Expected a read failure for \(family)")
+                continue
+            }
+            XCTAssertEqual(message, SnapshotUsageKeychain.approvalError.localizedDescription, family)
+            if family == "codex" { XCTAssertTrue(http.requests.isEmpty) }
+        }
+    }
+
+    func testCorruptSnapshotReportsActionableError() async {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            keychain.currentUserValues[AccountCredentialVault.service(family: family, profileID: "corrupt")] = "invalid-json"
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data()))
+            let snapshot = await runtime(family: family, keychain: keychain, http: http, profileID: "corrupt").refresh()
+
+            guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                XCTFail("Expected a corrupt snapshot error")
+                continue
+            }
+            XCTAssertTrue(message.contains("Sign in again"), family)
+            XCTAssertFalse(message.contains("AccountCredentialVaultError"), family)
+            XCTAssertTrue(http.requests.isEmpty)
+        }
+    }
+
+    private func runtime(
+        family: String, keychain: SnapshotUsageKeychain, http: FakeHTTPClient, profileID: String
+    ) -> any ProviderRuntime {
+        if family == "claude" {
+            return ClaudeProvider(
+                authStore: ClaudeAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                           scope: .accountSnapshot(profileID: profileID)),
+                usageClient: ClaudeUsageClient(httpClient: http),
+                logUsageScanner: ClaudeLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
+                includePiUsage: false, pricing: { .empty }
+            )
+        }
+        return CodexProvider(
+            authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                      scope: .accountSnapshot(profileID: profileID)),
+            usageClient: CodexUsageClient(http: http),
+            logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
+            includePiUsage: false, pricing: { .empty }
+        )
+    }
+
     private func profile(id: String, family: String) -> AccountProfile {
         AccountProfile(
             id: id,
@@ -184,14 +272,19 @@ final class AccountSnapshotUsageTests: XCTestCase {
 }
 
 private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendable {
+    static let approvalError = KeychainError.readFailed("Saved account requires Keychain access.")
     var values: [String: String] = [:]
     var currentUserValues: [String: String] = [:]
     var readError: KeychainError?
     var interactionRequests: [Bool] = []
+    var requiresInteraction = false
+    var failAfterRead: Int?
 
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
         interactionRequests.append(allowInteraction)
         if let readError { throw readError }
+        if requiresInteraction && !allowInteraction { throw Self.approvalError }
+        if let failAfterRead, interactionRequests.count > failAfterRead { throw Self.approvalError }
         return forCurrentUser ? currentUserValues[service] : values[service]
     }
 
