@@ -91,44 +91,75 @@ final class AccountCredentialVaultTests: XCTestCase {
         let completed = DispatchSemaphore(value: 0)
         let fixturePath = fixture.path
         let service = fixture.service
-        try NativeKeychainAccess.acquire()
-        DispatchQueue.global().async {
-            started.fulfill()
-            do {
-                try SecurityFrameworkGenericPasswordWriter(keychainPath: fixturePath).write(
-                    service: service, account: "Fixture", value: Data("credential".utf8)
-                )
-            } catch { XCTFail("Write failed: \(error)") }
-            completed.signal()
-            finished.fulfill()
+        do {
+            try NativeKeychainAccess.acquire()
+            defer { NativeKeychainAccess.release() }
+            DispatchQueue.global().async {
+                started.fulfill()
+                do {
+                    try SecurityFrameworkGenericPasswordWriter(keychainPath: fixturePath).write(
+                        service: service, account: "Fixture", value: Data("credential".utf8)
+                    )
+                } catch { XCTFail("Write failed: \(error)") }
+                completed.signal()
+                finished.fulfill()
+            }
+            wait(for: [started], timeout: 3)
+            XCTAssertEqual(completed.wait(timeout: .now() + 0.2), .timedOut)
         }
-        wait(for: [started], timeout: 1)
-        XCTAssertEqual(completed.wait(timeout: .now() + 0.2), .timedOut)
-        NativeKeychainAccess.release()
-        wait(for: [finished], timeout: 3)
+        wait(for: [finished], timeout: 5)
         XCTAssertEqual(try SecurityFrameworkGenericPasswordReader(keychainPath: fixturePath).read(
             service: service, account: "Fixture", allowInteraction: false
         ), "credential")
     }
 
-    func testPendingKeychainOperationDoesNotBlockAnotherReadIndefinitely() throws {
-        let fixture = try makeFixture()
-        let finished = expectation(description: "blocked read failed")
-        let fixturePath = fixture.path
+    func testExistenceProbeDoesNotWaitForPendingKeychainOperation() throws {
+        let finished = expectation(description: "existence probe returned unknown")
         try NativeKeychainAccess.acquire()
         defer { NativeKeychainAccess.release() }
         DispatchQueue.global().async {
-            do {
+            XCTAssertNil(SecurityKeychainAccessor().genericPasswordExists(service: "OpenUsageTests.PendingProbe"))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 1)
+    }
+
+    func testPendingKeychainOperationBoundsReadsAndWritesWithAnAccessError() throws {
+        let fixture = try makeFixture()
+        let finished = expectation(description: "blocked operations failed")
+        finished.expectedFulfillmentCount = 2
+        let fixturePath = fixture.path
+        let operations: [@Sendable () throws -> Void] = [
+            {
                 _ = try SecurityFrameworkGenericPasswordReader(keychainPath: fixturePath).read(
                     service: "fixture", account: nil, allowInteraction: false
                 )
-                XCTFail("Expected a bounded wait")
-            } catch {
-                XCTAssertTrue(error.localizedDescription.contains("Keychain is busy"))
+            },
+            {
+                try SecurityKeychainAccessor(
+                    passwordWriter: SecurityFrameworkGenericPasswordWriter(keychainPath: fixturePath)
+                ).writeGenericPassword(service: "fixture", value: "credential")
+            },
+        ]
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
+        for operation in operations {
+            DispatchQueue.global().async {
+                do {
+                    try operation()
+                    XCTFail("Expected a bounded wait")
+                } catch {
+                    guard case KeychainError.accessBusy = error else {
+                        XCTFail("Expected an access error, got \(error)")
+                        finished.fulfill()
+                        return
+                    }
+                    XCTAssertTrue(error.localizedDescription.contains("Keychain is busy"))
+                }
+                finished.fulfill()
             }
-            finished.fulfill()
         }
-        wait(for: [finished], timeout: 7)
+        wait(for: [finished], timeout: 10)
     }
 
     private func makeFixture() throws -> AccountVaultKeychainFixture {

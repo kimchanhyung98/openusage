@@ -44,7 +44,10 @@ final class AccountSignInProbeTests: XCTestCase {
     func testSnapshotReadFailureDoesNotMeanMissingSignIn() {
         let profile = profile(id: "p-read-failure", family: "claude", identityKey: "acct-a|org-a")
 
-        XCTAssertNotEqual(makeProbe(keychain: ThrowingProbeKeychain()).state(for: profile), .needsSignIn)
+        XCTAssertEqual(
+            makeProbe(keychain: ThrowingProbeKeychain()).state(for: profile),
+            .readFailed("Keychain approval required.")
+        )
     }
 
     func testCorruptSnapshotStillRequiresSignIn() {
@@ -228,9 +231,9 @@ final class AccountSignInProbeTests: XCTestCase {
 }
 
 private struct ThrowingProbeKeychain: KeychainAccessing {
-    private struct ReadFailure: Error {}
-
-    func readGenericPassword(service: String) throws -> String? { throw ReadFailure() }
+    func readGenericPassword(service: String) throws -> String? {
+        throw KeychainError.readFailed("Keychain approval required.")
+    }
     func writeGenericPassword(service: String, value: String) throws {}
     func deleteGenericPassword(service: String) throws {}
 }

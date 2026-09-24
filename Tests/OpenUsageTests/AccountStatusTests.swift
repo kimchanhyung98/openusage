@@ -217,6 +217,37 @@ final class AccountStatusTests: XCTestCase {
         XCTAssertEqual(store.accountStatus(for: nil, localState: .ready(identityKey: "account", label: nil)), .notChecked)
     }
 
+    func testUsageSuccessRequiresRecheckingAccountAfterKeychainApproval() async throws {
+        let profile = AccountProfile(
+            id: "approval-recovery", family: "codex", label: "Saved", identityKey: "saved", createdAt: .distantPast
+        )
+        let blocked = AccountSignInProbe(
+            environment: FakeEnvironment(), keychain: ApprovalRequiredStatusKeychain()
+        ).state(for: profile)
+        let runtime = AccountStatusRuntime()
+        let store = makeStore(runtime)
+        await store.refresh(providerID: runtime.provider.id, force: true)
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: blocked),
+                       .refreshFailed(ApprovalRequiredStatusKeychain.error.localizedDescription))
+
+        let keychain = ServiceKeychain()
+        let vault = AccountCredentialVault(keychain: keychain)
+        let probe = AccountSignInProbe(environment: FakeEnvironment(), keychain: keychain)
+        try vault.save(.init(
+            credential: #"{"tokens":{"access_token":"token","account_id":"saved"}}"#,
+            claudeOAuthAccount: nil
+        ), profile: profile)
+        let approved = await loadOffMainActor { probe.state(for: profile) }
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: approved), .ready)
+
+        try vault.replaceCredential(
+            #"{"tokens":{"access_token":"token","account_id":"different"}}"#,
+            family: profile.family, profileID: profile.id
+        )
+        let mismatched = await loadOffMainActor { probe.state(for: profile) }
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: mismatched), .signInNeeded())
+    }
+
     func testKeychainApprovalFailureKeepsAccountSwitchAvailable() {
         let profile = AccountProfile(
             id: "approval", family: "codex", label: "Saved", identityKey: "saved", createdAt: .distantPast
