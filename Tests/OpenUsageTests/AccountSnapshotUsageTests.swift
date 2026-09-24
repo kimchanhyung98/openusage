@@ -3,6 +3,75 @@ import XCTest
 
 @MainActor
 final class AccountSnapshotUsageTests: XCTestCase {
+    func testManualReconciliationCanApproveTheSelectedSnapshot() async throws {
+        let keychain = SnapshotUsageKeychain()
+        let suite = "AccountReconciliationApproval-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = AccountProfilesStore(defaults: defaults)
+        let profile = try store.add(family: "claude", label: "Saved", identityKey: "saved")
+        defer { defaults.removePersistentDomain(forName: suite) }
+        try AccountCredentialVault(keychain: keychain).save(
+            .init(credential: "saved credential", claudeOAuthAccount: nil), profile: profile
+        )
+        keychain.requiresInteraction = true
+        let importer = AccountCredentialImporter(
+            keychain: keychain, environment: FakeEnvironment(),
+            homeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        )
+        do {
+            _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+            XCTFail("Automatic reconciliation must not request approval")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, SnapshotUsageKeychain.approvalError.localizedDescription)
+        }
+        let result = try await ProviderRefreshContext.$isManual.withValue(true) {
+            try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+        }
+        XCTAssertEqual(result, .noUsableAuthentication)
+        XCTAssertEqual(keychain.interactionRequests, [false, true])
+    }
+
+    func testCodexCredentialDetectionReadsSavedSnapshotOffMainThread() async throws {
+        let keychain = SnapshotUsageKeychain()
+        let profile = profile(id: "detection", family: "codex")
+        try AccountCredentialVault(keychain: keychain).save(.init(
+            credential: #"{"tokens":{"access_token":"token","account_id":"personal"}}"#,
+            claudeOAuthAccount: nil
+        ), profile: profile)
+        keychain.assertBackgroundReads = true
+        let runtime = CodexProvider(authStore: CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+            scope: .accountSnapshot(profileID: profile.id)
+        ))
+
+        let detected = await runtime.hasLocalCredentials()
+
+        XCTAssertTrue(detected)
+        XCTAssertEqual(keychain.interactionRequests, [false])
+    }
+
+    func testRegisteredSnapshotsRemainAvailableWhenPresenceIsUnknown() {
+        let profile = profile(id: "presence", family: "claude")
+        for presence in [true, false, nil] as [Bool?] {
+            let keychain = SnapshotPresenceKeychain(presence: presence)
+            XCTAssertEqual(AccountCredentialVault(keychain: keychain).contains(profile: profile), presence != false)
+            XCTAssertEqual(ClaudeAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                scope: .accountSnapshot(profileID: profile.id)
+            ).hasCredentialFootprint(), presence != false)
+        }
+    }
+
+    func testUnknownPresenceDoesNotDetectAnUnregisteredClaudeLogin() {
+        let authStore = ClaudeAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(),
+            keychain: SnapshotPresenceKeychain(presence: nil),
+            scope: .configDir(path: "/unused-claude", keychainLiteral: "/unused-claude")
+        )
+
+        XCTAssertFalse(authStore.hasCredentialFootprint())
+    }
+
     func testClaudeSnapshotScopeReadsOnlyTheSavedProfileCredential() throws {
         let keychain = SnapshotUsageKeychain()
         let profile = self.profile(id: "claude-default-home", family: "claude")
@@ -279,8 +348,10 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
     var interactionRequests: [Bool] = []
     var requiresInteraction = false
     var failAfterRead: Int?
+    var assertBackgroundReads = false
 
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread, "Credential probe blocked the main thread") }
         interactionRequests.append(allowInteraction)
         if let readError { throw readError }
         if requiresInteraction && !allowInteraction { throw Self.approvalError }
@@ -298,4 +369,16 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
         values.removeValue(forKey: service)
         currentUserValues.removeValue(forKey: service)
     }
+}
+
+private struct SnapshotPresenceKeychain: KeychainAccessing {
+    var presence: Bool?
+
+    func genericPasswordExists(service: String) -> Bool? { presence }
+    func readGenericPassword(service: String) throws -> String? {
+        XCTFail("Presence checks must not read secrets")
+        return nil
+    }
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
 }
