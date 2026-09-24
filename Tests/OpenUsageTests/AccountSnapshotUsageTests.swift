@@ -140,6 +140,38 @@ final class AccountSnapshotUsageTests: XCTestCase {
         XCTAssertNil(try vault.load(profile: profile))
     }
 
+    func testAccountRefreshOnlyRequestsApprovalForManualRefreshAndPreservesReadErrors() async {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let failure = KeychainError.readFailed("Saved account requires Keychain access.")
+            keychain.readError = failure
+            let runtime: any ProviderRuntime
+            if family == "claude" {
+                runtime = ClaudeProvider(authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                    scope: .accountSnapshot(profileID: "fixture")
+                ))
+            } else {
+                runtime = CodexProvider(authStore: CodexAuthStore(
+                    environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                    scope: .accountSnapshot(profileID: "fixture")
+                ))
+            }
+
+            for isManual in [false, true, false] {
+                let snapshot = await ProviderRefreshContext.$isManual.withValue(isManual) {
+                    await runtime.refresh()
+                }
+                guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                    XCTFail("Expected a Keychain access error for \(family)")
+                    continue
+                }
+                XCTAssertEqual(message, failure.localizedDescription, family)
+            }
+            XCTAssertEqual(keychain.interactionRequests, [false, true, false], family)
+        }
+    }
+
     private func profile(id: String, family: String) -> AccountProfile {
         AccountProfile(
             id: id,
@@ -154,6 +186,14 @@ final class AccountSnapshotUsageTests: XCTestCase {
 private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendable {
     var values: [String: String] = [:]
     var currentUserValues: [String: String] = [:]
+    var readError: KeychainError?
+    var interactionRequests: [Bool] = []
+
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        interactionRequests.append(allowInteraction)
+        if let readError { throw readError }
+        return forCurrentUser ? currentUserValues[service] : values[service]
+    }
 
     func readGenericPassword(service: String) throws -> String? { values[service] }
     func writeGenericPassword(service: String, value: String) throws { values[service] = value }
