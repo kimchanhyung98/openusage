@@ -85,7 +85,15 @@ final class CodexProvider: ProviderRuntime {
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
-        let fileCandidates = authStore.loadAuthCandidates()
+        let fileCandidates: [CodexAuthState]
+        let allowInteraction = ProviderRefreshContext.isManual
+        do {
+            fileCandidates = try await loadOffMainActor { [authStore] in
+                try authStore.loadAuthCandidates(allowInteraction: allowInteraction)
+            }
+        } catch {
+            return ProviderSnapshot.error(provider: provider, error: error)
+        }
         var lastFallbackError: Error?
 
         for candidate in fileCandidates {
@@ -249,7 +257,7 @@ final class CodexProvider: ProviderRuntime {
         case .keychain:
             return authStore.loadKeychainAuth()
         case .accountSnapshot(let profileID):
-            return authStore.loadAccountSnapshot(profileID: profileID)
+            return try? authStore.loadAccountSnapshot(profileID: profileID)
         }
     }
 

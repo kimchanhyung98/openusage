@@ -18,16 +18,19 @@ struct AccountCredentialVault {
         keychain.genericPasswordExists(service: service(for: profile)) == true
     }
 
-    func load(profile: AccountProfile) throws -> Entry? {
-        try load(family: profile.family, profileID: profile.id)
+    func load(profile: AccountProfile, allowInteraction: Bool = false) throws -> Entry? {
+        try load(family: profile.family, profileID: profile.id, allowInteraction: allowInteraction)
     }
 
-    func load(family: String, profileID: String) throws -> Entry? {
+    func load(family: String, profileID: String, allowInteraction: Bool = false) throws -> Entry? {
         let service = Self.service(family: family, profileID: profileID)
-        let value = try keychain.readGenericPasswordForCurrentUser(service: service)
-            ?? keychain.readGenericPassword(service: service)
+        let value = try keychain.readAppOwnedPassword(
+            service: service, forCurrentUser: true, allowInteraction: allowInteraction
+        ) ?? keychain.readAppOwnedPassword(
+            service: service, forCurrentUser: false, allowInteraction: allowInteraction
+        )
         guard let value else { return nil }
-        // `security find-generic-password -w`는 non-ASCII payload를 hex로 출력 — provider auth store와 동일한 fallback 필요.
+        // 과거 CLI 경로로 저장된 hex 인코딩 snapshot도 호환.
         guard let entry = ProviderParse.decodeJSONWithHexFallback(value, as: Entry.self) else {
             throw AccountCredentialVaultError.missingEntry
         }

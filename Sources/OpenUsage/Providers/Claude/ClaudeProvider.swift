@@ -109,10 +109,14 @@ final class ClaudeProvider: ProviderRuntime {
         let credentialLoad = await loadOffMainActor { [authStore] in
             authStore.loadCredentialSet(
                 allowDesktopInteraction: allowDesktopInteraction,
-                forceDesktopFallback: forceDesktopFallback
+                forceDesktopFallback: forceDesktopFallback,
+                allowAccountInteraction: allowDesktopInteraction
             )
         }
         let storedCandidates = credentialLoad.candidates
+        if let error = credentialLoad.credentialError {
+            return ProviderSnapshot.error(provider: provider, error: error)
+        }
         let candidates = storedCandidates.filter {
             $0.hasUsableAccessToken && (!forceDesktopFallback || $0.source == .desktop)
         }

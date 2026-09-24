@@ -118,8 +118,12 @@ struct CodexAuthStore: Sendable {
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
+        (try? loadAuthCandidates(allowInteraction: false)) ?? []
+    }
+
+    func loadAuthCandidates(allowInteraction: Bool) throws -> [CodexAuthState] {
         if case .accountSnapshot(let profileID) = scope {
-            return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
+            return [try loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)].compactMap { $0 }
         }
         return authPaths().compactMap { loadAuth(at: $0) }
     }
@@ -208,10 +212,11 @@ struct CodexAuthStore: Sendable {
         return Self.defaultAuthHomes.map { joinPath($0, Self.authFile) }
     }
 
-    func loadAccountSnapshot(profileID: String) -> CodexAuthState? {
-        guard let entry = try? AccountCredentialVault(keychain: keychain).load(
+    func loadAccountSnapshot(profileID: String, allowInteraction: Bool = false) throws -> CodexAuthState? {
+        guard let entry = try AccountCredentialVault(keychain: keychain).load(
             family: "codex",
-            profileID: profileID
+            profileID: profileID,
+            allowInteraction: allowInteraction
         ),
         let auth = Self.parseAuth(entry.credential),
         Self.hasTokenLikeAuth(auth)

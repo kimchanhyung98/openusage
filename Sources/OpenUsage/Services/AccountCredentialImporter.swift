@@ -303,7 +303,7 @@ struct AccountCredentialImporter {
             throw ImportError.noSignIn(family: profile.family)
         }
 
-        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: true)
         let previousShared = isActive ? try switcher.readSharedAuthentication(family: profile.family) : nil
         let transaction = try store.beginIdentityReplacement(
             profileID: profile.id,

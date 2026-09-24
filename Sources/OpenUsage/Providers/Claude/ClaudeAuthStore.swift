@@ -94,6 +94,7 @@ struct ClaudeCredentialGeneration: Equatable, Sendable {
 struct ClaudeCredentialLoad: Sendable {
     var candidates: [ClaudeCredentialState]
     var desktopStatus: ClaudeDesktopCredentialStatus
+    var credentialError: Error? = nil
 }
 
 enum ClaudeAuthError: Error, LocalizedError, Equatable {
@@ -203,8 +204,20 @@ struct ClaudeAuthStore: Sendable {
     /// 매 refresh마다 재조회, 메모리 캐시 없음.
     func loadCredentialSet(
         allowDesktopInteraction: Bool = false,
-        forceDesktopFallback: Bool = false
+        forceDesktopFallback: Bool = false,
+        allowAccountInteraction: Bool = false
     ) -> ClaudeCredentialLoad {
+        if case .accountSnapshot(let profileID) = scope {
+            let desktopStatus: ClaudeDesktopCredentialStatus = forceDesktopFallback ? .notFound : .notChecked
+            do {
+                let candidate = try loadAccountSnapshot(
+                    profileID: profileID, allowInteraction: allowAccountInteraction
+                )
+                return ClaudeCredentialLoad(candidates: [candidate].compactMap { $0 }, desktopStatus: desktopStatus)
+            } catch {
+                return ClaudeCredentialLoad(candidates: [], desktopStatus: desktopStatus, credentialError: error)
+            }
+        }
         var stored = orderedStoredCandidates()
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
         // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
@@ -439,9 +452,6 @@ struct ClaudeAuthStore: Sendable {
     /// keychain-우선 고정 순서의 credential 후보. keychain이 macOS의 source of truth — stale 파일이
     /// 늦은 만료 시각만으로 keychain을 앞서면 안 됨(#738); 파일 폴백은 refresh 루프 담당(#687).
     private func orderedStoredCandidates() -> [ClaudeCredentialState] {
-        if case .accountSnapshot(let profileID) = scope {
-            return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
-        }
         var candidates: [ClaudeCredentialState] = []
         if let keychain = loadKeychainCredentials() { candidates.append(keychain) }
         if let file = loadFileCredentials() { candidates.append(file) }
@@ -488,10 +498,11 @@ struct ClaudeAuthStore: Sendable {
         return nil
     }
 
-    private func loadAccountSnapshot(profileID: String) -> ClaudeCredentialState? {
-        guard let entry = try? AccountCredentialVault(keychain: keychain).load(
+    private func loadAccountSnapshot(profileID: String, allowInteraction: Bool = false) throws -> ClaudeCredentialState? {
+        guard let entry = try AccountCredentialVault(keychain: keychain).load(
             family: "claude",
-            profileID: profileID
+            profileID: profileID,
+            allowInteraction: allowInteraction
         ),
         let parsed = Self.parseCredentials(entry.credential),
         let oauth = parsed.claudeAiOauth,
