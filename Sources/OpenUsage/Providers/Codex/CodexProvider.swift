@@ -73,7 +73,7 @@ final class CodexProvider: ProviderRuntime {
 
     func hasLocalCredentials() async -> Bool {
         // `refresh()`와 동일한 source 순서(auth.json 후보 → keychain), usable access token만 인정 — API-key-only auth.json은 usage API 사용 불가.
-        let fileCandidates = authStore.loadAuthCandidates()
+        let fileCandidates = await loadOffMainActor { [authStore] in authStore.loadAuthCandidates() }
         if fileCandidates.contains(where: \.hasUsableAccessToken) {
             return true
         }

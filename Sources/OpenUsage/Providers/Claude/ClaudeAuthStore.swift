@@ -262,9 +262,10 @@ struct ClaudeAuthStore: Sendable {
                 keychain.genericPasswordExists(service: $0) == true
             }
         case .accountSnapshot(let profileID):
+            // 이미 등록된 계정은 일시적인 확인 실패로 활성화 대상에서 제외하지 않음.
             return keychain.genericPasswordExists(
                 service: AccountCredentialVault.service(family: "claude", profileID: profileID)
-            ) == true
+            ) != false
         }
     }
 

@@ -15,6 +15,7 @@ struct AccountsSettingsSection: View {
     @State private var addFamily = "claude"
     @State private var editingProfile: AccountProfile?
     @State private var signInStates: [String: AccountSignInProbe.State] = [:]
+    @State private var signInProbeTask: Task<Void, Never>?
     @State private var pendingSelection: AccountProfile?
     @State private var isSwitchConfirmationPresented = false
     @State private var switchError: String?
@@ -142,9 +143,22 @@ struct AccountsSettingsSection: View {
         .onChange(of: store.authenticationRevision) {
             refreshSignInStates()
         }
+        .onChange(of: Self.families.map { store.preferredProfileID(family: $0.id) }) {
+            refreshSignInStates()
+        }
         .onChange(of: container.dataStore.refreshingProviderIDs) { previous, current in
-            let completed = previous.subtracting(current)
-            Task { await retrySignInStates(afterRefreshing: completed) }
+            let profileIDs = previous.subtracting(current).compactMap { container.accountProfileID(for: $0) }
+            guard !profileIDs.isEmpty else { return }
+            if signInProbeTask != nil || profileIDs.contains(where: {
+                if case .readFailed = signInStates[$0] { return true }
+                return false
+            }) {
+                refreshSignInStates()
+            }
+        }
+        .onDisappear {
+            signInProbeTask?.cancel()
+            signInProbeTask = nil
         }
     }
 
@@ -239,34 +253,29 @@ struct AccountsSettingsSection: View {
 
     // MARK: - Sign-in probe
 
-    private func retrySignInStates(afterRefreshing providerIDs: Set<String>) async {
-        let profileIDs = Set(providerIDs.compactMap { container.accountProfileID(for: $0) })
-        for id in profileIDs {
-            guard case .readFailed = signInStates[id],
-                  let profile = store.profile(id: id), !profile.isArchived else { continue }
-            let isSelected = store.preferredProfileID(family: profile.family) == id
-            let revision = store.authenticationRevision
-            let state = await loadOffMainActor {
-                AccountSignInProbe().state(for: profile, isSelected: isSelected)
-            }
-            guard store.profile(id: id) == profile,
-                  store.authenticationRevision == revision,
-                  (store.preferredProfileID(family: profile.family) == id) == isSelected,
-                  case .readFailed = signInStates[id] else { continue }
-            signInStates[id] = state
-        }
-    }
-
     private func refreshSignInStates() {
-        let probe = AccountSignInProbe()
-        var states: [String: AccountSignInProbe.State] = [:]
-        for profile in store.profiles where !profile.isArchived {
-            states[profile.id] = probe.state(
-                for: profile,
-                isSelected: store.preferredProfileID(family: profile.family) == profile.id
-            )
+        let profiles = store.profiles.filter { !$0.isArchived }
+        let selectedIDs = Set(profiles.filter {
+            store.preferredProfileID(family: $0.family) == $0.id
+        }.map(\.id))
+        let revision = store.authenticationRevision
+        signInProbeTask?.cancel()
+        signInProbeTask = Task {
+            let states = await loadOffMainActor {
+                let probe = AccountSignInProbe()
+                return Dictionary(uniqueKeysWithValues: profiles.map {
+                    ($0.id, probe.state(for: $0, isSelected: selectedIDs.contains($0.id)))
+                })
+            }
+            guard !Task.isCancelled else { return }
+            signInProbeTask = nil
+            guard store.profiles.filter({ !$0.isArchived }) == profiles,
+                  store.authenticationRevision == revision,
+                  Set(profiles.filter {
+                      store.preferredProfileID(family: $0.family) == $0.id
+                  }.map(\.id)) == selectedIDs else { return }
+            signInStates = states
         }
-        signInStates = states
     }
 }
 

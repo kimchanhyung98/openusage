@@ -14,8 +14,9 @@ struct AccountCredentialVault {
         self.keychain = keychain
     }
 
+    /// 등록 계정의 snapshot은 존재 확인 실패만으로 제외하지 않음.
     func contains(profile: AccountProfile) -> Bool {
-        keychain.genericPasswordExists(service: service(for: profile)) == true
+        keychain.genericPasswordExists(service: service(for: profile)) != false
     }
 
     func load(profile: AccountProfile, allowInteraction: Bool = false) throws -> Entry? {

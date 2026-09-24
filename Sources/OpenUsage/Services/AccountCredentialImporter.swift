@@ -199,15 +199,16 @@ struct AccountCredentialImporter {
         return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
     }
 
-    /// 런치 후 자동 reconciliation — Keychain secret 관찰은 main actor 밖에서 실행.
+    /// 런치 후 reconciliation — Keychain 관찰은 main actor 밖에서 실행, 수동 갱신에서만 snapshot 승인 허용.
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
         _ = try recoverInterruptedIdentityReplacement(in: store)
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         let authenticationRevision = store.authenticationRevision
+        let allowInteraction = ProviderRefreshContext.isManual
         let observation = try await Task.detached(priority: .utility) {
-            try observeExternalClaudeAuthentication(for: profile)
+            try observeExternalClaudeAuthentication(for: profile, allowInteraction: allowInteraction)
         }.value
         guard let observation else { return .noUsableAuthentication }
         guard store.preferredProfileID(family: "claude") == profile.id,
@@ -220,9 +221,9 @@ struct AccountCredentialImporter {
     }
 
     nonisolated private func observeExternalClaudeAuthentication(
-        for profile: AccountProfile
+        for profile: AccountProfile, allowInteraction: Bool = false
     ) throws -> ExternalClaudeObservation? {
-        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         guard let shared = try switcher.readSharedClaudeExternalAuthentication(
             comparedTo: previousSnapshot
         ),
