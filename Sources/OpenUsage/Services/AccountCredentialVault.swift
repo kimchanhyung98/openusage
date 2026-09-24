@@ -45,8 +45,10 @@ struct AccountCredentialVault {
         )
     }
 
-    func replaceCredential(_ credential: String, family: String, profileID: String) throws {
-        guard var entry = try load(family: family, profileID: profileID) else {
+    func replaceCredential(
+        _ credential: String, family: String, profileID: String, allowInteraction: Bool = false
+    ) throws {
+        guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
             throw AccountCredentialVaultError.missingEntry
         }
         entry.credential = credential
@@ -86,6 +88,10 @@ public struct AccountCredentialSnapshotRemover: Sendable {
     }
 }
 
-enum AccountCredentialVaultError: Error {
+enum AccountCredentialVaultError: Error, LocalizedError {
     case missingEntry
+
+    var errorDescription: String? {
+        "The saved sign-in is missing or invalid. Sign in again and retry."
+    }
 }

@@ -296,14 +296,23 @@ struct ClaudeAuthStore: Sendable {
         return expiresAt - now().timeIntervalSince1970 * 1000 <= 5 * 60 * 1000
     }
 
-    func credentialGeneration(forceDesktopFallback: Bool = false) -> ClaudeCredentialGeneration {
-        ClaudeCredentialGeneration(loadCredentialSet(forceDesktopFallback: forceDesktopFallback).candidates)
+    func credentialGeneration(
+        forceDesktopFallback: Bool = false, allowAccountInteraction: Bool = false
+    ) throws -> ClaudeCredentialGeneration {
+        let load = loadCredentialSet(
+            forceDesktopFallback: forceDesktopFallback, allowAccountInteraction: allowAccountInteraction
+        )
+        if let error = load.credentialError { throw error }
+        return ClaudeCredentialGeneration(load.candidates)
     }
 
     /// 유효 후보 집합이 그대로일 때만 OAuth rotation 저장 — generation 전체 비교로 상위 source 추가까지 감지.
     /// 저장소에 원자적 compare-and-swap이 없어 best-effort.
-    func save(_ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration) throws -> Bool {
-        guard credentialGeneration() == expected else { return false }
+    func save(
+        _ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration,
+        allowAccountInteraction: Bool = false
+    ) throws -> Bool {
+        guard try credentialGeneration(allowAccountInteraction: allowAccountInteraction) == expected else { return false }
         var fullData = state.fullData ?? ClaudeCredentialsFile()
         fullData.claudeAiOauth = state.oauth
         let data = try JSONEncoder().encode(fullData)
@@ -320,7 +329,8 @@ struct ClaudeAuthStore: Sendable {
             try AccountCredentialVault(keychain: keychain).replaceCredential(
                 text,
                 family: "claude",
-                profileID: profileID
+                profileID: profileID,
+                allowInteraction: allowAccountInteraction
             )
         case .desktop:
             return false

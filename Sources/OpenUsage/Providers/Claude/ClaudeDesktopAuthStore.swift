@@ -27,6 +27,8 @@ struct ClaudeDesktopSafeStorageKeyReader: ClaudeDesktopSafeStorageKeyReading {
     private static let account = "Claude Key"
 
     func readPassword(allowInteraction: Bool) throws -> String? {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.service,

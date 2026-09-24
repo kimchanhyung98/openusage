@@ -153,7 +153,7 @@ struct CodexAuthStore: Sendable {
         return CodexAuthState(auth: auth, source: .keychain)
     }
 
-    func save(_ state: CodexAuthState) throws {
+    func save(_ state: CodexAuthState, allowInteraction: Bool = false) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = state.source.isFile ? [.prettyPrinted, .sortedKeys] : []
         let data = try encoder.encode(state.auth)
@@ -170,7 +170,8 @@ struct CodexAuthStore: Sendable {
             try AccountCredentialVault(keychain: keychain).replaceCredential(
                 text,
                 family: "codex",
-                profileID: profileID
+                profileID: profileID,
+                allowInteraction: allowInteraction
             )
         }
     }

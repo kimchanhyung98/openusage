@@ -61,7 +61,13 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         // 활성 profile 재선택 시 쓰기 1건도 발생 금지.
         guard current?.id != selected.id else { return }
 
-        guard let target = try loadSnapshot(for: selected, allowInteraction: true) else {
+        let target: AccountCredentialVault.Entry
+        do {
+            guard let snapshot = try loadSnapshot(for: selected, allowInteraction: true) else {
+                throw Error.missingSnapshot(selected.label)
+            }
+            target = snapshot
+        } catch AccountCredentialVaultError.missingEntry {
             throw Error.missingSnapshot(selected.label)
         }
         guard identity(of: target, family: selected.family)?.identityKey == selected.identityKey else {

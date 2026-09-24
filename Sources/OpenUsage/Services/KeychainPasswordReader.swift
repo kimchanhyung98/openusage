@@ -5,15 +5,28 @@ protocol GenericPasswordReading: Sendable {
     func read(service: String, account: String?, allowInteraction: Bool) throws -> String?
 }
 
+/// 프로세스 전체 승인 설정을 쓰는 동안 모든 native Keychain 접근 직렬화.
+enum NativeKeychainAccess {
+    private static let lock = NSLock()
+
+    static func acquire() throws {
+        guard lock.lock(before: Date().addingTimeInterval(5)) else {
+            AppLog.error(.keychain, "native keychain access timed out waiting for another operation")
+            throw KeychainError.readFailed("Keychain is busy. Respond to the open Keychain dialog, then try again.")
+        }
+    }
+
+    static func release() { lock.unlock() }
+}
+
 /// 앱이 저장한 항목을 같은 서명 신원으로 읽고, 명시적으로 요청한 경우에만 승인 UI 허용.
 struct SecurityFrameworkGenericPasswordReader: GenericPasswordReading {
-    private static let interactionLock = NSLock()
     var keychainPath: String?
 
     func read(service: String, account: String?, allowInteraction: Bool) throws -> String? {
         // login Keychain은 쿼리의 UI 금지 옵션을 무시할 수 있어 상호작용 설정도 직렬화해 복원.
-        Self.interactionLock.lock()
-        defer { Self.interactionLock.unlock() }
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var interactionAllowed: DarwinBoolean = false
         let previousStatus = SecKeychainGetUserInteractionAllowed(&interactionAllowed)
         guard previousStatus == errSecSuccess else { throw readError(previousStatus) }

@@ -10,6 +10,8 @@ struct AccountSignInProbe: Sendable {
         case ready(identityKey: String, label: String?)
         /// 증명 가능한 sign-in snapshot 부재 — "wrong account"가 아니라 단순 미준비.
         case needsSignIn
+        /// 승인·잠금 등으로 snapshot 확인 불가 — 전환 시 대화형 조회로 재확인 가능.
+        case readFailed(String)
 
         var isReady: Bool {
             if case .ready = self { return true }
@@ -40,9 +42,11 @@ struct AccountSignInProbe: Sendable {
         let snapshot: AccountCredentialVault.Entry?
         do {
             snapshot = try switcher.loadSnapshot(for: profile)
+        } catch AccountCredentialVaultError.missingEntry {
+            return .needsSignIn
         } catch {
             AppLog.error(.auth, "account snapshot read failed during readiness probe: \(error.localizedDescription)")
-            return .needsSignIn
+            return .readFailed(error.localizedDescription)
         }
         guard let snapshot,
               let (identityKey, label) = switcher.identity(of: snapshot, family: profile.family),

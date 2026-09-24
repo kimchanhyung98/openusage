@@ -358,8 +358,11 @@ final class ClaudeProvider: ProviderRuntime {
 
         let quotaObservedAt = now()
         let forceDesktopGeneration = working.source == .desktop
-        let currentGeneration = await loadOffMainActor { [authStore] in
-            authStore.credentialGeneration(forceDesktopFallback: forceDesktopGeneration)
+        let allowAccountInteraction = ProviderRefreshContext.isManual
+        let currentGeneration = try await loadOffMainActor { [authStore] in
+            try authStore.credentialGeneration(
+                forceDesktopFallback: forceDesktopGeneration, allowAccountInteraction: allowAccountInteraction
+            )
         }
         guard currentGeneration == expectedGeneration else { throw ClaudeAuthError.credentialsChanged }
 
@@ -452,9 +455,12 @@ final class ClaudeProvider: ProviderRuntime {
         // loudly 실패: save 누락 시 구 refresh token이 디스크에 남아 다음 launch가 무효 토큰으로
         // "session expired" 오인; refresh된 토큰은 이번 세션에 유효하므로 로그 후 계속.
         let persisted: Bool
+        let allowAccountInteraction = ProviderRefreshContext.isManual
         do {
             guard try await Task.detached(priority: .utility, operation: { [authStore, state] in
-                try authStore.save(state, ifUnchanged: expectedGeneration)
+                try authStore.save(
+                    state, ifUnchanged: expectedGeneration, allowAccountInteraction: allowAccountInteraction
+                )
             }).value else {
                 throw ClaudeAuthError.credentialsChanged
             }

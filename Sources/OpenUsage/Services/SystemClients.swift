@@ -358,6 +358,8 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.
     /// probe 실패(잠김·거부)는 `nil`("unknown")로만 보고 — 확정 답 금지.
     func genericPasswordExists(service: String) -> Bool? {
+        do { try NativeKeychainAccess.acquire() } catch { return nil }
+        defer { NativeKeychainAccess.release() }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -388,6 +390,8 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     private func modificationDate(service: String, account: String?) throws -> Date? {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
