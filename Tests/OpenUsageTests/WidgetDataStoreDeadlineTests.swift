@@ -47,7 +47,17 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         XCTAssertEqual(recovered, .refreshed)
         XCTAssertNil(store.refreshResults["codex"]?.failure)
         XCTAssertEqual(recorder.freshSnapshots, 1)
-        XCTAssertEqual(runtime.manualContexts, [true, true, true])
+        XCTAssertEqual(runtime.manualContexts, [false, true, false])
+    }
+
+    func testOnlyManualTriggerAllowsKeychainInteractionEvenWhenCacheIsBypassed() async {
+        let runtime = Runtime()
+        let fixture = makeStore([runtime])
+        for trigger in RefreshTrigger.allCases {
+            let outcome = await fixture.store.refresh(providerID: "codex", force: true, trigger: trigger)
+            XCTAssertEqual(outcome, .refreshed)
+        }
+        XCTAssertEqual(runtime.manualContexts, RefreshTrigger.allCases.map { $0 == .manual })
     }
 
     func testTimeoutUsesFailureBackoffAndScheduledRefreshRecoversAfterExpiry() async {
