@@ -268,6 +268,7 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 }
 
 protocol KeychainAccessing: Sendable {
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String?
     func readGenericPassword(service: String) throws -> String?
     func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
@@ -284,6 +285,12 @@ protocol KeychainAccessing: Sendable {
 }
 
 extension KeychainAccessing {
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        try forCurrentUser
+            ? readGenericPasswordForCurrentUser(service: service)
+            : readGenericPassword(service: service)
+    }
+
     func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws {
         if forCurrentUser {
             try writeGenericPasswordForCurrentUser(service: service, value: value)
@@ -324,21 +331,28 @@ extension KeychainAccessing {
 
 struct SecurityKeychainAccessor: KeychainAccessing {
     let processRunner: ProcessRunning
+    let appPasswordReader: any GenericPasswordReading
     let passwordWriter: any GenericPasswordWriting
     let sharedPasswordWriter: any GenericPasswordWriting
 
     init(
         processRunner: ProcessRunning = SystemProcessRunner(),
         passwordWriter: any GenericPasswordWriting = SecurityFrameworkGenericPasswordWriter(),
-        sharedPasswordWriter: (any GenericPasswordWriting)? = nil
+        sharedPasswordWriter: (any GenericPasswordWriting)? = nil,
+        appPasswordReader: any GenericPasswordReading = SecurityFrameworkGenericPasswordReader()
     ) {
         self.processRunner = processRunner
+        self.appPasswordReader = appPasswordReader
         self.passwordWriter = passwordWriter
         self.sharedPasswordWriter = sharedPasswordWriter ?? SecurityToolGenericPasswordWriter(processRunner: processRunner)
     }
 
     // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.
     private static let itemNotFoundExitCode: Int32 = 44
+
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String? {
+        try appPasswordReader.read(service: service, account: forCurrentUser ? currentUserAccount() : nil)
+    }
 
     func readGenericPassword(service: String) throws -> String? {
         try readPassword(["find-generic-password", "-s", service, "-w"], service: service)
