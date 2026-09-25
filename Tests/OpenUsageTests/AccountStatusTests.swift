@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class AccountStatusTests: XCTestCase {
+    func testUnfinishedLocalProbeIsCheckingAndDoesNotRequireSignIn() {
+        let store = makeStore(AccountStatusRuntime())
+
+        let status = store.accountStatus(for: "codex", localState: nil)
+
+        XCTAssertEqual(status, .checking)
+        XCTAssertTrue(status.canSwitch)
+        XCTAssertNil(status.message)
+    }
+
     func testExpiredCodexRefreshOverridesLocallyReadySnapshot() async throws {
         let profile = AccountProfile(
             id: "expired", family: "codex", label: "ch", identityKey: "account-ch", createdAt: .distantPast

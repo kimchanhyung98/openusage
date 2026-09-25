@@ -4,31 +4,59 @@ import XCTest
 @MainActor
 final class AccountSnapshotUsageTests: XCTestCase {
     func testManualReconciliationCanApproveTheSelectedSnapshot() async throws {
-        let keychain = SnapshotUsageKeychain()
-        let suite = "AccountReconciliationApproval-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        let store = AccountProfilesStore(defaults: defaults)
-        let profile = try store.add(family: "claude", label: "Saved", identityKey: "saved")
-        defer { defaults.removePersistentDomain(forName: suite) }
-        try AccountCredentialVault(keychain: keychain).save(
-            .init(credential: "saved credential", claudeOAuthAccount: nil), profile: profile
-        )
-        keychain.requiresInteraction = true
-        let importer = AccountCredentialImporter(
-            keychain: keychain, environment: FakeEnvironment(),
-            homeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        )
-        do {
-            _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
-            XCTFail("Automatic reconciliation must not request approval")
-        } catch {
-            XCTAssertEqual(error.localizedDescription, SnapshotUsageKeychain.approvalError.localizedDescription)
+        for hasInterruptedReplacement in [false, true] {
+            let keychain = SnapshotUsageKeychain()
+            let suite = "AccountReconciliationApproval-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            let home = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            defer {
+                defaults.removePersistentDomain(forName: suite)
+                try? FileManager.default.removeItem(at: home)
+            }
+            let store = AccountProfilesStore(defaults: defaults)
+            let profile = try store.add(family: "claude", label: "Saved", identityKey: "previous|org")
+            if hasInterruptedReplacement {
+                _ = try store.beginIdentityReplacement(
+                    profileID: profile.id, with: "saved|org", replacesSharedAuthentication: false
+                )
+            }
+            try AccountCredentialVault(keychain: keychain).save(.init(
+                credential: #"{"claudeAiOauth":{"accessToken":"token"}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"saved","organizationUuid":"org"}"#
+            ), profile: profile)
+            keychain.requiresInteraction = true
+            let importer = AccountCredentialImporter(
+                keychain: keychain, environment: FakeEnvironment(), homeDirectory: home,
+                workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+            )
+            do {
+                _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+                XCTFail("Automatic reconciliation must not request approval")
+            } catch {
+                XCTAssertEqual(error.localizedDescription, SnapshotUsageKeychain.approvalError.localizedDescription)
+            }
+            XCTAssertEqual(try store.pendingIdentityReplacement() != nil, hasInterruptedReplacement)
+            let result = try await ProviderRefreshContext.$isManual.withValue(true) {
+                try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+            }
+            XCTAssertEqual(result, .noUsableAuthentication)
+            XCTAssertEqual(keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
+            XCTAssertNil(try store.pendingIdentityReplacement())
+            XCTAssertEqual(store.profile(id: profile.id)?.identityKey,
+                           hasInterruptedReplacement ? "saved|org" : "previous|org")
+            if hasInterruptedReplacement {
+                _ = try store.beginIdentityReplacement(
+                    profileID: profile.id, with: "saved|org", replacesSharedAuthentication: false
+                )
+                keychain.interactionRequests = []
+                let reauthenticated = try importer.completeReSignIn(profileID: profile.id, in: store, isActive: false)
+                XCTAssertEqual(reauthenticated.identityKey, "saved|org")
+                XCTAssertFalse(keychain.interactionRequests.isEmpty)
+                XCTAssertTrue(keychain.interactionRequests.allSatisfy { $0 })
+                XCTAssertNil(try store.pendingIdentityReplacement())
+            }
         }
-        let result = try await ProviderRefreshContext.$isManual.withValue(true) {
-            try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
-        }
-        XCTAssertEqual(result, .noUsableAuthentication)
-        XCTAssertEqual(keychain.interactionRequests, [false, true])
     }
 
     func testCodexCredentialDetectionReadsSavedSnapshotOffMainThread() async throws {
