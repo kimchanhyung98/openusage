@@ -1,7 +1,8 @@
 import Foundation
 
 extension WidgetDataStore {
-    func accountStatus(for providerID: String?, localState: AccountSignInProbe.State) -> AccountStatus {
+    func accountStatus(for providerID: String?, localState: AccountSignInProbe.State?) -> AccountStatus {
+        guard let localState else { return .checking }
         switch localState {
         case .needsSignIn: return .signInNeeded()
         case .readFailed(let message): return .refreshFailed(message)

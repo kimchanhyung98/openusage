@@ -15,7 +15,7 @@ struct AccountsSettingsSection: View {
     @State private var addFamily = "claude"
     @State private var editingProfile: AccountProfile?
     @State private var signInStates: [String: AccountSignInProbe.State] = [:]
-    @State private var signInProbeTask: Task<Void, Never>?
+    @State private var signInRefreshID = 0
     @State private var pendingSelection: AccountProfile?
     @State private var isSwitchConfirmationPresented = false
     @State private var switchError: String?
@@ -32,7 +32,24 @@ struct AccountsSettingsSection: View {
         FamilyInfo(id: "codex", title: "Codex"),
     ]
 
+    private struct SignInProbeRequest: Equatable {
+        var profiles: [AccountProfile]
+        var selectedIDs: Set<String>
+        var authenticationRevision: Int
+        var refreshID: Int
+    }
+
+    private var signInProbeRequest: SignInProbeRequest {
+        SignInProbeRequest(
+            profiles: store.profiles.filter { !$0.isArchived },
+            selectedIDs: Set(Self.families.compactMap { store.preferredProfileID(family: $0.id) }),
+            authenticationRevision: store.authenticationRevision,
+            refreshID: signInRefreshID
+        )
+    }
+
     var body: some View {
+        let probeRequest = signInProbeRequest
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 5) {
                 Text("Accounts")
@@ -98,16 +115,16 @@ struct AccountsSettingsSection: View {
         .sheet(isPresented: $isAddSheetPresented) {
             AccountAddSheet(initialFamily: addFamily) {
                 container.refreshAccountCatalog()
-                refreshSignInStates()
+                signInRefreshID &+= 1
             }
         }
         .sheet(item: $editingProfile) { profile in
             AccountProfileManagementSheet(
                 profile: profile,
-                signInState: signInStates[profile.id] ?? .needsSignIn
+                signInState: signInStates[profile.id]
             ) {
                 container.refreshAccountCatalog()
-                refreshSignInStates()
+                signInRefreshID &+= 1
             }
         }
         .confirmationDialog(
@@ -131,34 +148,25 @@ struct AccountsSettingsSection: View {
             // 다른 창이 같은 defaults domain을 갱신한 뒤 재오픈될 수 있어 reload.
             store.reloadFromDefaults()
             container.refreshAccountCatalog()
-            refreshSignInStates()
-            Task {
-                _ = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
-                refreshSignInStates()
-            }
         }
-        .onChange(of: store.profiles) {
-            refreshSignInStates()
+        .task {
+            _ = await container.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            guard !Task.isCancelled else { return }
+            signInRefreshID &+= 1
         }
-        .onChange(of: store.authenticationRevision) {
-            refreshSignInStates()
-        }
-        .onChange(of: Self.families.map { store.preferredProfileID(family: $0.id) }) {
-            refreshSignInStates()
+        .task(id: probeRequest) {
+            await refreshSignInStates(probeRequest)
         }
         .onChange(of: container.dataStore.refreshingProviderIDs) { previous, current in
             let profileIDs = previous.subtracting(current).compactMap { container.accountProfileID(for: $0) }
-            guard !profileIDs.isEmpty else { return }
-            if signInProbeTask != nil || profileIDs.contains(where: {
-                if case .readFailed = signInStates[$0] { return true }
-                return false
+            if profileIDs.contains(where: {
+                switch signInStates[$0] {
+                case nil, .readFailed: true
+                default: false
+                }
             }) {
-                refreshSignInStates()
+                signInRefreshID &+= 1
             }
-        }
-        .onDisappear {
-            signInProbeTask?.cancel()
-            signInProbeTask = nil
         }
     }
 
@@ -220,7 +228,7 @@ struct AccountsSettingsSection: View {
     }
 
     private func switchTo(_ profile: AccountProfile) {
-        let status = container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn)
+        let status = container.accountStatus(for: profile, localState: signInStates[profile.id])
         guard status.canSwitch else {
             switchError = status.message ?? "Sign in again before switching to this account."
             let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
@@ -253,29 +261,17 @@ struct AccountsSettingsSection: View {
 
     // MARK: - Sign-in probe
 
-    private func refreshSignInStates() {
-        let profiles = store.profiles.filter { !$0.isArchived }
-        let selectedIDs = Set(profiles.filter {
-            store.preferredProfileID(family: $0.family) == $0.id
-        }.map(\.id))
-        let revision = store.authenticationRevision
-        signInProbeTask?.cancel()
-        signInProbeTask = Task {
-            let states = await loadOffMainActor {
-                let probe = AccountSignInProbe()
-                return Dictionary(uniqueKeysWithValues: profiles.map {
-                    ($0.id, probe.state(for: $0, isSelected: selectedIDs.contains($0.id)))
-                })
-            }
-            guard !Task.isCancelled else { return }
-            signInProbeTask = nil
-            guard store.profiles.filter({ !$0.isArchived }) == profiles,
-                  store.authenticationRevision == revision,
-                  Set(profiles.filter {
-                      store.preferredProfileID(family: $0.family) == $0.id
-                  }.map(\.id)) == selectedIDs else { return }
-            signInStates = states
+    private func refreshSignInStates(_ request: SignInProbeRequest) async {
+        guard !Task.isCancelled else { return }
+        signInStates = [:]
+        let states = await loadOffMainActor {
+            let probe = AccountSignInProbe()
+            return Dictionary(uniqueKeysWithValues: request.profiles.map {
+                ($0.id, probe.state(for: $0, isSelected: request.selectedIDs.contains($0.id)))
+            })
         }
+        guard !Task.isCancelled, request == signInProbeRequest else { return }
+        signInStates = states
     }
 }
 

@@ -164,7 +164,7 @@ struct AccountSettingsFamilyCard: View {
     }
 
     private func profileRow(_ profile: AccountProfile, position: Int, total: Int) -> some View {
-        let state = container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn)
+        let state = container.accountStatus(for: profile, localState: signInStates[profile.id])
         let dragID = AccountSettingsReorder.dragID(family: family, profileID: profile.id)
         let isSelected = store.preferredProfileID(family: family) == profile.id
 
@@ -253,7 +253,7 @@ struct AccountSettingsFamilyCard: View {
                     id: dragID,
                     payload: .settingsAccountRow(
                         label: displayLabel(profile.label),
-                        state: container.accountStatus(for: profile, localState: signInStates[profile.id] ?? .needsSignIn),
+                        state: container.accountStatus(for: profile, localState: signInStates[profile.id]),
                         isSelected: store.preferredProfileID(family: family) == profile.id,
                         showsSelectionToggle: profileCount > 1
                     ),

@@ -1,7 +1,7 @@
 import Foundation
 
 extension AppContainer {
-    func accountStatus(for profile: AccountProfile, localState: AccountSignInProbe.State) -> AccountStatus {
+    func accountStatus(for profile: AccountProfile, localState: AccountSignInProbe.State?) -> AccountStatus {
         let mapping = Dictionary(uniqueKeysWithValues: dataStore.knownProviderIDs.compactMap { cardID in
             accountProfileID(for: cardID).map { (cardID, $0) }
         })

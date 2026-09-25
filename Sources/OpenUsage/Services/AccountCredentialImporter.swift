@@ -203,10 +203,10 @@ struct AccountCredentialImporter {
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
-        _ = try recoverInterruptedIdentityReplacement(in: store)
+        let allowInteraction = ProviderRefreshContext.isManual
+        _ = try recoverInterruptedIdentityReplacement(in: store, allowInteraction: allowInteraction)
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         let authenticationRevision = store.authenticationRevision
-        let allowInteraction = ProviderRefreshContext.isManual
         let observation = try await Task.detached(priority: .utility) {
             try observeExternalClaudeAuthentication(for: profile, allowInteraction: allowInteraction)
         }.value
@@ -296,7 +296,7 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore,
         isActive: Bool
     ) throws -> AccountProfile {
-        _ = try recoverInterruptedIdentityReplacement(in: store)
+        _ = try recoverInterruptedIdentityReplacement(in: store, allowInteraction: true)
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
         }
@@ -339,13 +339,15 @@ struct AccountCredentialImporter {
 
     /// 중단된 identity 교체 journal을 snapshot 기준으로 완결하거나 쓰기 전 상태로 폐기.
     @discardableResult
-    func recoverInterruptedIdentityReplacement(in store: AccountProfilesStore) throws -> Bool {
+    func recoverInterruptedIdentityReplacement(
+        in store: AccountProfilesStore, allowInteraction: Bool = false
+    ) throws -> Bool {
         guard let transaction = try store.pendingIdentityReplacement() else { return false }
         guard let profile = store.profile(id: transaction.profileID) else {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
-        let savedSnapshot = try switcher.loadSnapshot(for: profile)
+        let savedSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         guard let snapshot = savedSnapshot,
               switcher.identity(of: snapshot, family: profile.family)?.identityKey
                 == transaction.replacementIdentityKey
