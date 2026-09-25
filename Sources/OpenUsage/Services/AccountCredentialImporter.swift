@@ -204,7 +204,22 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
         let allowInteraction = ProviderRefreshContext.isManual
-        _ = try recoverInterruptedIdentityReplacement(in: store, allowInteraction: allowInteraction)
+        if let transaction = try store.pendingIdentityReplacement(),
+           let profile = store.profile(id: transaction.profileID) {
+            let revision = store.authenticationRevision
+            let savedSnapshot = try await loadOffMainActor { [switcher] in
+                try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+            }
+            guard !Task.isCancelled,
+                  try store.pendingIdentityReplacement() == transaction,
+                  store.profile(id: profile.id) == profile,
+                  store.authenticationRevision == revision else { return .unchanged }
+            _ = try finishInterruptedIdentityReplacement(
+                transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
+            )
+        } else {
+            _ = try recoverInterruptedIdentityReplacement(in: store)
+        }
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         let authenticationRevision = store.authenticationRevision
         let observation = try await Task.detached(priority: .utility) {
@@ -348,6 +363,15 @@ struct AccountCredentialImporter {
             return false
         }
         let savedSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+        return try finishInterruptedIdentityReplacement(
+            transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
+        )
+    }
+
+    private func finishInterruptedIdentityReplacement(
+        _ transaction: AccountIdentityReplacement, profile: AccountProfile,
+        savedSnapshot: AccountCredentialVault.Entry?, in store: AccountProfilesStore
+    ) throws -> Bool {
         guard let snapshot = savedSnapshot,
               switcher.identity(of: snapshot, family: profile.family)?.identityKey
                 == transaction.replacementIdentityKey

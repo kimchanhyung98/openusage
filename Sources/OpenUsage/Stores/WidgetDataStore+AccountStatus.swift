@@ -2,12 +2,18 @@ import Foundation
 
 extension WidgetDataStore {
     func accountStatus(for providerID: String?, localState: AccountSignInProbe.State?) -> AccountStatus {
-        guard let localState else { return .checking }
         switch localState {
         case .needsSignIn: return .signInNeeded()
         case .readFailed(let message): return .refreshFailed(message)
         case .ready: break
+        case nil:
+            let knownStatus = refreshedAccountStatus(for: providerID)
+            return knownStatus.canSwitch ? .checking : knownStatus
         }
+        return refreshedAccountStatus(for: providerID)
+    }
+
+    private func refreshedAccountStatus(for providerID: String?) -> AccountStatus {
         guard let providerID else { return .notChecked }
         switch refreshResults[providerID] {
         case .failed(let failure):
