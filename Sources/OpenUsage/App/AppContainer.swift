@@ -413,7 +413,9 @@ final class AppContainer {
         isRefreshingAll = true
         defer { isRefreshingAll = false }
         let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
-        let reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        let reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+            await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+        }
         let enabledProviderIDs = dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
         async let statusRefresh: Void = providerStatus.refresh(
             providerIDs: enabledProviderIDs,
@@ -431,7 +433,9 @@ final class AppContainer {
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
-            reconciliationError = await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
+                await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
+            }
         }
         let statusProviderIDs = enablement.isEnabled(providerID) ? [providerID] : []
         async let statusRefresh: Void = providerStatus.refresh(

@@ -202,7 +202,7 @@ struct AccountAddSheet: View {
 /// Account Name만 편집 가능 — provider, identity, storage는 내부 유지.
 struct AccountProfileManagementSheet: View {
     let profile: AccountProfile
-    let signInState: AccountSignInProbe.State
+    let signInState: AccountSignInProbe.State?
     let onChanged: () -> Void
 
     @Environment(AppContainer.self) private var container
@@ -217,7 +217,7 @@ struct AccountProfileManagementSheet: View {
 
     init(
         profile: AccountProfile,
-        signInState: AccountSignInProbe.State,
+        signInState: AccountSignInProbe.State?,
         onChanged: @escaping () -> Void
     ) {
         self.profile = profile

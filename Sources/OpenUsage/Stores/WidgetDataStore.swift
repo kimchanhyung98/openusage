@@ -414,7 +414,7 @@ final class WidgetDataStore {
         let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self] in
             self?.pendingProviderRefreshes.insert(runtimeID)
             defer { self?.pendingProviderRefreshes.remove(runtimeID) }
-            return await ProviderRefreshContext.$isManual.withValue(force) {
+            return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
                 await provider.refresh()
             }
         }

@@ -14,18 +14,22 @@ struct AccountCredentialVault {
         self.keychain = keychain
     }
 
+    /// 등록 계정의 snapshot은 존재 확인 실패만으로 제외하지 않음.
     func contains(profile: AccountProfile) -> Bool {
-        keychain.genericPasswordExists(service: service(for: profile)) == true
+        keychain.genericPasswordExists(service: service(for: profile)) != false
     }
 
-    func load(profile: AccountProfile) throws -> Entry? {
-        try load(family: profile.family, profileID: profile.id)
+    func load(profile: AccountProfile, allowInteraction: Bool = false) throws -> Entry? {
+        try load(family: profile.family, profileID: profile.id, allowInteraction: allowInteraction)
     }
 
-    func load(family: String, profileID: String) throws -> Entry? {
+    func load(family: String, profileID: String, allowInteraction: Bool = false) throws -> Entry? {
         let service = Self.service(family: family, profileID: profileID)
-        let value = try keychain.readAppOwnedPassword(service: service, forCurrentUser: true)
-            ?? keychain.readAppOwnedPassword(service: service, forCurrentUser: false)
+        let value = try keychain.readAppOwnedPassword(
+            service: service, forCurrentUser: true, allowInteraction: allowInteraction
+        ) ?? keychain.readAppOwnedPassword(
+            service: service, forCurrentUser: false, allowInteraction: allowInteraction
+        )
         guard let value else { return nil }
         // 기존 hex 인코딩 snapshot도 호환.
         guard let entry = ProviderParse.decodeJSONWithHexFallback(value, as: Entry.self) else {
@@ -42,8 +46,10 @@ struct AccountCredentialVault {
         )
     }
 
-    func replaceCredential(_ credential: String, family: String, profileID: String) throws {
-        guard var entry = try load(family: family, profileID: profileID) else {
+    func replaceCredential(
+        _ credential: String, family: String, profileID: String, allowInteraction: Bool = false
+    ) throws {
+        guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
             throw AccountCredentialVaultError.missingEntry
         }
         entry.credential = credential
@@ -83,6 +89,10 @@ public struct AccountCredentialSnapshotRemover: Sendable {
     }
 }
 
-enum AccountCredentialVaultError: Error {
+enum AccountCredentialVaultError: Error, LocalizedError {
     case missingEntry
+
+    var errorDescription: String? {
+        "The saved sign-in is missing or invalid. Sign in again and retry."
+    }
 }

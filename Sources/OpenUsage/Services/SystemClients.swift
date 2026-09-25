@@ -268,7 +268,7 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 }
 
 protocol KeychainAccessing: Sendable {
-    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String?
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String?
     func readGenericPassword(service: String) throws -> String?
     func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
@@ -285,12 +285,6 @@ protocol KeychainAccessing: Sendable {
 }
 
 extension KeychainAccessing {
-    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String? {
-        try forCurrentUser
-            ? readGenericPasswordForCurrentUser(service: service)
-            : readGenericPassword(service: service)
-    }
-
     func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws {
         if forCurrentUser {
             try writeGenericPasswordForCurrentUser(service: service, value: value)
@@ -350,8 +344,11 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     // exit 44(errSecItemNotFound)만 정당한 "credential 없음" — 그 외 non-zero exit는 실제 실패(잠김·거부·prompt 취소), "not signed in"으로 은폐 금지.
     private static let itemNotFoundExitCode: Int32 = 44
 
-    func readAppOwnedPassword(service: String, forCurrentUser: Bool) throws -> String? {
-        try appPasswordReader.read(service: service, account: forCurrentUser ? currentUserAccount() : nil)
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        try appPasswordReader.read(
+            service: service, account: forCurrentUser ? currentUserAccount() : nil,
+            allowInteraction: allowInteraction
+        )
     }
 
     func readGenericPassword(service: String) throws -> String? {
@@ -361,6 +358,11 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.
     /// probe 실패(잠김·거부)는 `nil`("unknown")로만 보고 — 확정 답 금지.
     func genericPasswordExists(service: String) -> Bool? {
+        guard NativeKeychainAccess.tryAcquire() else {
+            AppLog.debug(.keychain, "keychain existence probe skipped: another operation is in progress")
+            return nil
+        }
+        defer { NativeKeychainAccess.release() }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -391,6 +393,8 @@ struct SecurityKeychainAccessor: KeychainAccessing {
     }
 
     private func modificationDate(service: String, account: String?) throws -> Date? {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -486,12 +490,15 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 }
 
 enum KeychainError: Error, LocalizedError {
+    case accessBusy
     case writeFailed(String)
     case readFailed(String)
     case deleteFailed(String)
 
     var errorDescription: String? {
         switch self {
+        case .accessBusy:
+            return "Keychain is busy. Respond to the open Keychain dialog, then try again."
         case .writeFailed(let message):
             return message.isEmpty ? "Keychain write failed." : message
         case .readFailed(let message):

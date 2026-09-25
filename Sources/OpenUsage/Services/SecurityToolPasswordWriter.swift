@@ -7,6 +7,8 @@ struct SecurityToolGenericPasswordWriter: GenericPasswordWriting {
     var processRunner: any ProcessRunning = SystemProcessRunner()
 
     func write(service: String, account: String?, value: Data) throws {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var keychain: SecKeychain?
         try check(keychainPath.map { SecKeychainOpen($0, &keychain) } ?? SecKeychainCopyDefault(&keychain))
         guard let keychain else { throw GenericPasswordWriteError.securityStatus(errSecInvalidKeychain) }

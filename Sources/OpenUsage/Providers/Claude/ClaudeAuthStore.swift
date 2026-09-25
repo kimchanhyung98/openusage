@@ -94,6 +94,7 @@ struct ClaudeCredentialGeneration: Equatable, Sendable {
 struct ClaudeCredentialLoad: Sendable {
     var candidates: [ClaudeCredentialState]
     var desktopStatus: ClaudeDesktopCredentialStatus
+    var credentialError: Error? = nil
 }
 
 enum ClaudeAuthError: Error, LocalizedError, Equatable {
@@ -203,8 +204,20 @@ struct ClaudeAuthStore: Sendable {
     /// 매 refresh마다 재조회, 메모리 캐시 없음.
     func loadCredentialSet(
         allowDesktopInteraction: Bool = false,
-        forceDesktopFallback: Bool = false
+        forceDesktopFallback: Bool = false,
+        allowAccountInteraction: Bool = false
     ) -> ClaudeCredentialLoad {
+        if case .accountSnapshot(let profileID) = scope {
+            let desktopStatus: ClaudeDesktopCredentialStatus = forceDesktopFallback ? .notFound : .notChecked
+            do {
+                let candidate = try loadAccountSnapshot(
+                    profileID: profileID, allowInteraction: allowAccountInteraction
+                )
+                return ClaudeCredentialLoad(candidates: [candidate].compactMap { $0 }, desktopStatus: desktopStatus)
+            } catch {
+                return ClaudeCredentialLoad(candidates: [], desktopStatus: desktopStatus, credentialError: error)
+            }
+        }
         var stored = orderedStoredCandidates()
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
         // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
@@ -249,9 +262,10 @@ struct ClaudeAuthStore: Sendable {
                 keychain.genericPasswordExists(service: $0) == true
             }
         case .accountSnapshot(let profileID):
+            // 이미 등록된 계정은 일시적인 확인 실패로 활성화 대상에서 제외하지 않음.
             return keychain.genericPasswordExists(
                 service: AccountCredentialVault.service(family: "claude", profileID: profileID)
-            ) == true
+            ) != false
         }
     }
 
@@ -283,14 +297,23 @@ struct ClaudeAuthStore: Sendable {
         return expiresAt - now().timeIntervalSince1970 * 1000 <= 5 * 60 * 1000
     }
 
-    func credentialGeneration(forceDesktopFallback: Bool = false) -> ClaudeCredentialGeneration {
-        ClaudeCredentialGeneration(loadCredentialSet(forceDesktopFallback: forceDesktopFallback).candidates)
+    func credentialGeneration(
+        forceDesktopFallback: Bool = false, allowAccountInteraction: Bool = false
+    ) throws -> ClaudeCredentialGeneration {
+        let load = loadCredentialSet(
+            forceDesktopFallback: forceDesktopFallback, allowAccountInteraction: allowAccountInteraction
+        )
+        if let error = load.credentialError { throw error }
+        return ClaudeCredentialGeneration(load.candidates)
     }
 
     /// 유효 후보 집합이 그대로일 때만 OAuth rotation 저장 — generation 전체 비교로 상위 source 추가까지 감지.
     /// 저장소에 원자적 compare-and-swap이 없어 best-effort.
-    func save(_ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration) throws -> Bool {
-        guard credentialGeneration() == expected else { return false }
+    func save(
+        _ state: ClaudeCredentialState, ifUnchanged expected: ClaudeCredentialGeneration,
+        allowAccountInteraction: Bool = false
+    ) throws -> Bool {
+        guard try credentialGeneration(allowAccountInteraction: allowAccountInteraction) == expected else { return false }
         var fullData = state.fullData ?? ClaudeCredentialsFile()
         fullData.claudeAiOauth = state.oauth
         let data = try JSONEncoder().encode(fullData)
@@ -307,7 +330,8 @@ struct ClaudeAuthStore: Sendable {
             try AccountCredentialVault(keychain: keychain).replaceCredential(
                 text,
                 family: "claude",
-                profileID: profileID
+                profileID: profileID,
+                allowInteraction: allowAccountInteraction
             )
         case .desktop:
             return false
@@ -439,9 +463,6 @@ struct ClaudeAuthStore: Sendable {
     /// keychain-우선 고정 순서의 credential 후보. keychain이 macOS의 source of truth — stale 파일이
     /// 늦은 만료 시각만으로 keychain을 앞서면 안 됨(#738); 파일 폴백은 refresh 루프 담당(#687).
     private func orderedStoredCandidates() -> [ClaudeCredentialState] {
-        if case .accountSnapshot(let profileID) = scope {
-            return [loadAccountSnapshot(profileID: profileID)].compactMap { $0 }
-        }
         var candidates: [ClaudeCredentialState] = []
         if let keychain = loadKeychainCredentials() { candidates.append(keychain) }
         if let file = loadFileCredentials() { candidates.append(file) }
@@ -488,10 +509,11 @@ struct ClaudeAuthStore: Sendable {
         return nil
     }
 
-    private func loadAccountSnapshot(profileID: String) -> ClaudeCredentialState? {
-        guard let entry = try? AccountCredentialVault(keychain: keychain).load(
+    private func loadAccountSnapshot(profileID: String, allowInteraction: Bool = false) throws -> ClaudeCredentialState? {
+        guard let entry = try AccountCredentialVault(keychain: keychain).load(
             family: "claude",
-            profileID: profileID
+            profileID: profileID,
+            allowInteraction: allowInteraction
         ),
         let parsed = Self.parseCredentials(entry.credential),
         let oauth = parsed.claudeAiOauth,
