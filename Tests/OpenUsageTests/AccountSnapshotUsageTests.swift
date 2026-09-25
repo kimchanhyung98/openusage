@@ -26,6 +26,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 claudeOAuthAccount: #"{"accountUuid":"saved","organizationUuid":"org"}"#
             ), profile: profile)
             keychain.requiresInteraction = true
+            keychain.assertBackgroundReads = true
             let importer = AccountCredentialImporter(
                 keychain: keychain, environment: FakeEnvironment(), homeDirectory: home,
                 workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
@@ -46,12 +47,17 @@ final class AccountSnapshotUsageTests: XCTestCase {
             XCTAssertEqual(store.profile(id: profile.id)?.identityKey,
                            hasInterruptedReplacement ? "saved|org" : "previous|org")
             if hasInterruptedReplacement {
+                keychain.assertBackgroundReads = false
+                try AccountCredentialVault(keychain: keychain).save(.init(
+                    credential: #"{"claudeAiOauth":{"accessToken":"re-signed-token"}}"#,
+                    claudeOAuthAccount: #"{"accountUuid":"re-signed","organizationUuid":"org"}"#
+                ), profile: profile)
                 _ = try store.beginIdentityReplacement(
-                    profileID: profile.id, with: "saved|org", replacesSharedAuthentication: false
+                    profileID: profile.id, with: "re-signed|org", replacesSharedAuthentication: false
                 )
                 keychain.interactionRequests = []
                 let reauthenticated = try importer.completeReSignIn(profileID: profile.id, in: store, isActive: false)
-                XCTAssertEqual(reauthenticated.identityKey, "saved|org")
+                XCTAssertEqual(reauthenticated.identityKey, "re-signed|org")
                 XCTAssertFalse(keychain.interactionRequests.isEmpty)
                 XCTAssertTrue(keychain.interactionRequests.allSatisfy { $0 })
                 XCTAssertNil(try store.pendingIdentityReplacement())

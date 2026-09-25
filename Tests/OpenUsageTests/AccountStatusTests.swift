@@ -56,6 +56,7 @@ final class AccountStatusTests: XCTestCase {
         let status = store.accountStatus(for: runtime.provider.id, localState: localState)
         XCTAssertEqual(status.title, "Session Expired")
         XCTAssertFalse(status.canSwitch)
+        XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), status)
     }
 
     func testTokenConflictsAndRevocationsRequireSignInWithoutCallingThemExpired() async {
@@ -68,6 +69,7 @@ final class AccountStatusTests: XCTestCase {
 
             XCTAssertEqual(status(in: store), .signInNeeded(error.localizedDescription))
             XCTAssertFalse(status(in: store).canSwitch)
+            XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), status(in: store))
         }
     }
 
@@ -137,6 +139,7 @@ final class AccountStatusTests: XCTestCase {
         store.invalidateAuthentication(for: runtime.provider.id)
 
         XCTAssertEqual(status(in: store), .notChecked)
+        XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), .checking)
         XCTAssertNil(store.headerNotice(for: runtime.provider.id))
         runtime.snapshot = successful
         let outcome = await store.refresh(providerID: runtime.provider.id)
@@ -158,6 +161,7 @@ final class AccountStatusTests: XCTestCase {
         await store.refresh(providerID: "claude", force: true)
         XCTAssertEqual(store.headerNotice(for: "claude"), ClaudeUsageMapper.missingProfileScopeWarning)
         XCTAssertFalse(status(in: store, providerID: "claude").canSwitch)
+        XCTAssertEqual(store.accountStatus(for: "claude", localState: nil), status(in: store, providerID: "claude"))
 
         store.invalidateAuthentication(for: "claude")
 
