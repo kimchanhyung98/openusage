@@ -37,6 +37,7 @@ OpenCode 디렉터리 읽기 실패 후 데이터베이스를 다시 발견하�
 공통 진단 모듈은 보고된 실패마다 로컬 기록을 한 번 생성: 작업 실패는 Error, 선택 단계가 실패해도 주요 결과를 사용할 수 있으면 Warning.
 고정 작업명·오류 범주와 제공된 로컬 맥락 또는 오류 domain·code를 포함하며, 원문 오류 설명은 제외.
 터미널 helper의 셸 실패는 subprocess, 승인 거부는 permission, 미확인 실패는 other로 분류.
+저장된 계정 인증 데이터 손상은 auth_invalid, 키체인 접근 실패는 credential_access로 구분.
 업데이트 다운로드의 네트워크 실패는 Sparkle 다운로드 오류에 포함되어도 network를 유지하며, 사용할 수 없는 가격 feed JSON 구조는 decoding으로 분류.
 쓸 수 있는 캐시 없이 받은 가격 보충 파일 304 응답도 decoding 실패로 기록하고 다음 조회는 조건 없이 요청.
 다운로드 취소가 Sparkle 다운로드 오류에 포함되어도 취소 상태 유지.
