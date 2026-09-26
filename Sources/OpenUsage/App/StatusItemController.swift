@@ -217,8 +217,11 @@ final class StatusItemController: NSObject {
         if panel.isVisible { hidePanel() }
 
         let menu = NSMenu()
+        menu.addItem(ClosureMenuItem(title: "Customize", systemSymbol: "slider.horizontal.3") { [weak self] in
+            self?.openScreen(.customize)
+        })
         menu.addItem(ClosureMenuItem(title: "Settings", systemSymbol: "gearshape", keyEquivalent: ",") { [weak self] in
-            self?.openSettings()
+            self?.openScreen(.settings)
         })
         menu.addItem(.separator())
         menu.addItem(ClosureMenuItem(title: "Quit OpenUsage", systemSymbol: "power", keyEquivalent: "q") {
@@ -230,9 +233,9 @@ final class StatusItemController: NSObject {
         statusItem.menu = nil
     }
 
-    /// Settings 화면으로 dashboard popover open — Settings는 in-popover 화면. panel 표시 전 screen 설정으로 Settings 크기로 open.
-    private func openSettings() {
-        container.layout.screen = .settings
+    /// panel 표시 전에 목적 화면을 설정하여 해당 화면 크기로 열기.
+    private func openScreen(_ screen: PopoverScreen) {
+        container.layout.screen = screen
         if !panel.isVisible {
             showPanel()
         }
