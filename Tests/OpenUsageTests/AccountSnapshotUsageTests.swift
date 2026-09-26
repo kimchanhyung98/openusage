@@ -65,7 +65,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
         }
     }
 
-    func testCodexCredentialDetectionReadsSavedSnapshotOffMainThread() async throws {
+    func testCodexCredentialDetectionChecksPresenceWithoutReadingSecrets() async throws {
         let keychain = SnapshotUsageKeychain()
         let profile = profile(id: "detection", family: "codex")
         try AccountCredentialVault(keychain: keychain).save(.init(
@@ -73,6 +73,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
             claudeOAuthAccount: nil
         ), profile: profile)
         keychain.assertBackgroundReads = true
+        keychain.requiresInteraction = true
         let runtime = CodexProvider(authStore: CodexAuthStore(
             environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
             scope: .accountSnapshot(profileID: profile.id)
@@ -81,10 +82,10 @@ final class AccountSnapshotUsageTests: XCTestCase {
         let detected = await runtime.hasLocalCredentials()
 
         XCTAssertTrue(detected)
-        XCTAssertEqual(keychain.interactionRequests, [false])
+        XCTAssertTrue(keychain.interactionRequests.isEmpty)
     }
 
-    func testRegisteredSnapshotsRemainAvailableWhenPresenceIsUnknown() {
+    func testRegisteredSnapshotsRemainAvailableWhenPresenceIsUnknown() async {
         let profile = profile(id: "presence", family: "claude")
         for presence in [true, false, nil] as [Bool?] {
             let keychain = SnapshotPresenceKeychain(presence: presence)
@@ -93,6 +94,41 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                 scope: .accountSnapshot(profileID: profile.id)
             ).hasCredentialFootprint(), presence != false)
+            let codex = CodexProvider(authStore: CodexAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                scope: .accountSnapshot(profileID: profile.id)
+            ))
+            let detected = await codex.hasLocalCredentials()
+            XCTAssertEqual(detected, presence != false)
+        }
+    }
+
+    func testResetClaimCanApproveSavedCredentialsOffMainThreadAndStopsOnReadFailure() async throws {
+        for failure in [nil, SnapshotUsageKeychain.approvalError] {
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "claim", family: "codex")
+            try AccountCredentialVault(keychain: keychain).save(.init(
+                credential: #"{"tokens":{"access_token":"token","account_id":"personal"}}"#,
+                claudeOAuthAccount: nil
+            ), profile: profile)
+            keychain.requiresInteraction = true
+            keychain.assertBackgroundReads = true
+            keychain.readError = failure
+            let http = FakeHTTPClient(response: HTTPResponse(
+                statusCode: 200, headers: [:], body: Data(#"{"credits":[]}"#.utf8)
+            ))
+            let service = CodexResetClaimService(
+                authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                         scope: .accountSnapshot(profileID: profile.id)),
+                usageClient: CodexUsageClient(http: http), refreshAfterClaim: {}
+            )
+
+            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture")
+
+            XCTAssertEqual(outcome, failure == nil ? .noCredit : .failed)
+            XCTAssertEqual(keychain.interactionRequests, [true])
+            XCTAssertEqual(http.requests.count, failure == nil ? 1 : 0)
+            XCTAssertTrue(http.requests.allSatisfy { $0.method == "GET" })
         }
     }
 
@@ -270,6 +306,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                     continue
                 }
                 XCTAssertEqual(message, failure.localizedDescription, family)
+                XCTAssertEqual(snapshot.errorCategory, .credentialAccess, family)
             }
             XCTAssertEqual(keychain.interactionRequests, [false, true, false], family)
         }
@@ -383,6 +420,11 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
     var requiresInteraction = false
     var failAfterRead: Int?
     var assertBackgroundReads = false
+
+    func genericPasswordExists(service: String) -> Bool? {
+        if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread) }
+        return currentUserValues[service] != nil || values[service] != nil
+    }
 
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
         if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread, "Credential probe blocked the main thread") }

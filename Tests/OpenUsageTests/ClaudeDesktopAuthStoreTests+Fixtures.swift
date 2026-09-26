@@ -117,6 +117,7 @@ final class FakeClaudeDesktopKeyReader: ClaudeDesktopSafeStorageKeyReading, @unc
     let password: String
     let requiresInteraction: Bool
     var calls: [Bool] = []
+    var error: Error?
 
     init(password: String, requiresInteraction: Bool) {
         self.password = password
@@ -125,6 +126,7 @@ final class FakeClaudeDesktopKeyReader: ClaudeDesktopSafeStorageKeyReading, @unc
 
     func readPassword(allowInteraction: Bool) throws -> String? {
         calls.append(allowInteraction)
+        if let error { throw error }
         if requiresInteraction, !allowInteraction {
             throw ClaudeDesktopCredentialError.permissionRequired
         }
