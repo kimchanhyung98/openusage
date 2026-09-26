@@ -199,15 +199,31 @@ struct AccountCredentialImporter {
         return try applyExternalClaudeAuthentication(observation, to: profile, in: store)
     }
 
-    /// 런치 후 자동 reconciliation — Keychain secret 관찰은 main actor 밖에서 실행.
+    /// 런치 후 reconciliation — Keychain 관찰은 main actor 밖에서 실행, 수동 갱신에서만 snapshot 승인 허용.
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
-        _ = try recoverInterruptedIdentityReplacement(in: store)
+        let allowInteraction = ProviderRefreshContext.isManual
+        if let transaction = try store.pendingIdentityReplacement(),
+           let profile = store.profile(id: transaction.profileID) {
+            let revision = store.authenticationRevision
+            let savedSnapshot = try await loadOffMainActor { [switcher] in
+                try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+            }
+            guard !Task.isCancelled,
+                  try store.pendingIdentityReplacement() == transaction,
+                  store.profile(id: profile.id) == profile,
+                  store.authenticationRevision == revision else { return .unchanged }
+            _ = try finishInterruptedIdentityReplacement(
+                transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
+            )
+        } else {
+            _ = try recoverInterruptedIdentityReplacement(in: store)
+        }
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         let authenticationRevision = store.authenticationRevision
         let observation = try await Task.detached(priority: .utility) {
-            try observeExternalClaudeAuthentication(for: profile)
+            try observeExternalClaudeAuthentication(for: profile, allowInteraction: allowInteraction)
         }.value
         guard let observation else { return .noUsableAuthentication }
         guard store.preferredProfileID(family: "claude") == profile.id,
@@ -220,9 +236,9 @@ struct AccountCredentialImporter {
     }
 
     nonisolated private func observeExternalClaudeAuthentication(
-        for profile: AccountProfile
+        for profile: AccountProfile, allowInteraction: Bool = false
     ) throws -> ExternalClaudeObservation? {
-        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         guard let shared = try switcher.readSharedClaudeExternalAuthentication(
             comparedTo: previousSnapshot
         ),
@@ -295,7 +311,7 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore,
         isActive: Bool
     ) throws -> AccountProfile {
-        _ = try recoverInterruptedIdentityReplacement(in: store)
+        _ = try recoverInterruptedIdentityReplacement(in: store, allowInteraction: true)
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
         }
@@ -303,7 +319,7 @@ struct AccountCredentialImporter {
             throw ImportError.noSignIn(family: profile.family)
         }
 
-        let previousSnapshot = try switcher.loadSnapshot(for: profile)
+        let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: true)
         let previousShared = isActive ? try switcher.readSharedAuthentication(family: profile.family) : nil
         let transaction = try store.beginIdentityReplacement(
             profileID: profile.id,
@@ -338,13 +354,24 @@ struct AccountCredentialImporter {
 
     /// 중단된 identity 교체 journal을 snapshot 기준으로 완결하거나 쓰기 전 상태로 폐기.
     @discardableResult
-    func recoverInterruptedIdentityReplacement(in store: AccountProfilesStore) throws -> Bool {
+    func recoverInterruptedIdentityReplacement(
+        in store: AccountProfilesStore, allowInteraction: Bool = false
+    ) throws -> Bool {
         guard let transaction = try store.pendingIdentityReplacement() else { return false }
         guard let profile = store.profile(id: transaction.profileID) else {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
-        let savedSnapshot = try switcher.loadSnapshot(for: profile)
+        let savedSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
+        return try finishInterruptedIdentityReplacement(
+            transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
+        )
+    }
+
+    private func finishInterruptedIdentityReplacement(
+        _ transaction: AccountIdentityReplacement, profile: AccountProfile,
+        savedSnapshot: AccountCredentialVault.Entry?, in store: AccountProfilesStore
+    ) throws -> Bool {
         guard let snapshot = savedSnapshot,
               switcher.identity(of: snapshot, family: profile.family)?.identityKey
                 == transaction.replacementIdentityKey

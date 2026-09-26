@@ -3,6 +3,160 @@ import XCTest
 
 @MainActor
 final class AccountSnapshotUsageTests: XCTestCase {
+    func testManualReconciliationCanApproveTheSelectedSnapshot() async throws {
+        for hasInterruptedReplacement in [false, true] {
+            let keychain = SnapshotUsageKeychain()
+            let suite = "AccountReconciliationApproval-\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            let home = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            defer {
+                defaults.removePersistentDomain(forName: suite)
+                try? FileManager.default.removeItem(at: home)
+            }
+            let store = AccountProfilesStore(defaults: defaults)
+            let profile = try store.add(family: "claude", label: "Saved", identityKey: "previous|org")
+            if hasInterruptedReplacement {
+                _ = try store.beginIdentityReplacement(
+                    profileID: profile.id, with: "saved|org", replacesSharedAuthentication: false
+                )
+            }
+            try AccountCredentialVault(keychain: keychain).save(.init(
+                credential: #"{"claudeAiOauth":{"accessToken":"token"}}"#,
+                claudeOAuthAccount: #"{"accountUuid":"saved","organizationUuid":"org"}"#
+            ), profile: profile)
+            keychain.requiresInteraction = true
+            keychain.assertBackgroundReads = true
+            let importer = AccountCredentialImporter(
+                keychain: keychain, environment: FakeEnvironment(), homeDirectory: home,
+                workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+            )
+            do {
+                _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+                XCTFail("Automatic reconciliation must not request approval")
+            } catch {
+                XCTAssertEqual(error.localizedDescription, SnapshotUsageKeychain.approvalError.localizedDescription)
+            }
+            XCTAssertEqual(try store.pendingIdentityReplacement() != nil, hasInterruptedReplacement)
+            let result = try await ProviderRefreshContext.$isManual.withValue(true) {
+                try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+            }
+            XCTAssertEqual(result, .noUsableAuthentication)
+            XCTAssertEqual(keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
+            XCTAssertNil(try store.pendingIdentityReplacement())
+            XCTAssertEqual(store.profile(id: profile.id)?.identityKey,
+                           hasInterruptedReplacement ? "saved|org" : "previous|org")
+            if hasInterruptedReplacement {
+                keychain.assertBackgroundReads = false
+                try AccountCredentialVault(keychain: keychain).save(.init(
+                    credential: #"{"claudeAiOauth":{"accessToken":"re-signed-token"}}"#,
+                    claudeOAuthAccount: #"{"accountUuid":"re-signed","organizationUuid":"org"}"#
+                ), profile: profile)
+                _ = try store.beginIdentityReplacement(
+                    profileID: profile.id, with: "re-signed|org", replacesSharedAuthentication: false
+                )
+                keychain.interactionRequests = []
+                let reauthenticated = try importer.completeReSignIn(profileID: profile.id, in: store, isActive: false)
+                XCTAssertEqual(reauthenticated.identityKey, "re-signed|org")
+                XCTAssertFalse(keychain.interactionRequests.isEmpty)
+                XCTAssertTrue(keychain.interactionRequests.allSatisfy { $0 })
+                XCTAssertNil(try store.pendingIdentityReplacement())
+            }
+        }
+    }
+
+    func testCodexCredentialDetectionChecksPresenceWithoutReadingSecrets() async throws {
+        let keychain = SnapshotUsageKeychain()
+        let profile = profile(id: "detection", family: "codex")
+        try AccountCredentialVault(keychain: keychain).save(.init(
+            credential: #"{"tokens":{"access_token":"token","account_id":"personal"}}"#,
+            claudeOAuthAccount: nil
+        ), profile: profile)
+        keychain.assertBackgroundReads = true
+        keychain.requiresInteraction = true
+        let runtime = CodexProvider(authStore: CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+            scope: .accountSnapshot(profileID: profile.id)
+        ))
+
+        let detected = await runtime.hasLocalCredentials()
+
+        XCTAssertTrue(detected)
+        XCTAssertTrue(keychain.interactionRequests.isEmpty)
+    }
+
+    func testRegisteredSnapshotsRemainAvailableWhenPresenceIsUnknown() async {
+        let profile = profile(id: "presence", family: "claude")
+        for presence in [true, false, nil] as [Bool?] {
+            let keychain = SnapshotPresenceKeychain(presence: presence)
+            XCTAssertEqual(AccountCredentialVault(keychain: keychain).contains(profile: profile), presence != false)
+            XCTAssertEqual(ClaudeAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                scope: .accountSnapshot(profileID: profile.id)
+            ).hasCredentialFootprint(), presence != false)
+            let codex = CodexProvider(authStore: CodexAuthStore(
+                environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                scope: .accountSnapshot(profileID: profile.id)
+            ))
+            let detected = await codex.hasLocalCredentials()
+            XCTAssertEqual(detected, presence != false)
+        }
+    }
+
+    func testResetClaimCanApproveSavedCredentialsOffMainThreadAndStopsOnReadFailure() async throws {
+        let validCredential = #"{"tokens":{"access_token":"token","account_id":"personal"}}"#
+        let scenarios: [(KeychainError?, ErrorCategory)] = [
+            (nil, .notAvailable),
+            (SnapshotUsageKeychain.approvalError, .credentialAccess),
+            (nil, .authInvalid),
+        ]
+        for (failure, category) in scenarios {
+            let diagnostics = DiagnosticEventRecorder()
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "claim", family: "codex")
+            try AccountCredentialVault(keychain: keychain).save(.init(
+                credential: validCredential,
+                claudeOAuthAccount: nil
+            ), profile: profile)
+            if category == .authInvalid {
+                keychain.currentUserValues[AccountCredentialVault.service(family: "codex", profileID: profile.id)] = "invalid-json"
+            }
+            keychain.requiresInteraction = true
+            keychain.assertBackgroundReads = true
+            keychain.readError = failure
+            let http = FakeHTTPClient(response: HTTPResponse(
+                statusCode: 200, headers: [:], body: Data(#"{"credits":[]}"#.utf8)
+            ))
+            let service = CodexResetClaimService(
+                authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                         scope: .accountSnapshot(profileID: profile.id)),
+                usageClient: CodexUsageClient(http: http), refreshAfterClaim: {}
+            )
+
+            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture")
+
+            let readSucceeded = category == .notAvailable
+            XCTAssertEqual(outcome, readSucceeded ? .noCredit : .failed)
+            XCTAssertEqual(keychain.interactionRequests, [true])
+            XCTAssertEqual(http.requests.count, readSucceeded ? 1 : 0)
+            XCTAssertTrue(http.requests.allSatisfy { $0.method == "GET" })
+            XCTAssertEqual(diagnostics.events.filter { $0.operation == .resetClaim }, [
+                DiagnosticEvent(.resetClaim, result: readSucceeded ? .success : .failure,
+                                category: category, providerID: "codex")
+            ])
+        }
+    }
+
+    func testUnknownPresenceDoesNotDetectAnUnregisteredClaudeLogin() {
+        let authStore = ClaudeAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(),
+            keychain: SnapshotPresenceKeychain(presence: nil),
+            scope: .configDir(path: "/unused-claude", keychainLiteral: "/unused-claude")
+        )
+
+        XCTAssertFalse(authStore.hasCredentialFootprint())
+    }
+
     func testClaudeSnapshotScopeReadsOnlyTheSavedProfileCredential() throws {
         let keychain = SnapshotUsageKeychain()
         let profile = self.profile(id: "claude-default-home", family: "claude")
@@ -89,7 +243,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
             keychain: keychain,
             scope: .accountSnapshot(profileID: profile.id)
         )
-        let generation = store.credentialGeneration()
+        let generation = try store.credentialGeneration()
         var state = try XCTUnwrap(store.loadCredentialCandidates().first)
         state.oauth.accessToken = "new-token"
 
@@ -140,6 +294,128 @@ final class AccountSnapshotUsageTests: XCTestCase {
         XCTAssertNil(try vault.load(profile: profile))
     }
 
+    func testAccountRefreshOnlyRequestsApprovalForManualRefreshAndPreservesReadErrors() async {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let failure = KeychainError.readFailed("Saved account requires Keychain access.")
+            keychain.readError = failure
+            let runtime: any ProviderRuntime
+            if family == "claude" {
+                runtime = ClaudeProvider(authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                    scope: .accountSnapshot(profileID: "fixture")
+                ))
+            } else {
+                runtime = CodexProvider(authStore: CodexAuthStore(
+                    environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                    scope: .accountSnapshot(profileID: "fixture")
+                ))
+            }
+
+            for isManual in [false, true, false] {
+                let snapshot = await ProviderRefreshContext.$isManual.withValue(isManual) {
+                    await runtime.refresh()
+                }
+                guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                    XCTFail("Expected a Keychain access error for \(family)")
+                    continue
+                }
+                XCTAssertEqual(message, failure.localizedDescription, family)
+                XCTAssertEqual(snapshot.errorCategory, .credentialAccess, family)
+            }
+            XCTAssertEqual(keychain.interactionRequests, [false, true, false], family)
+        }
+    }
+
+    func testManualRefreshKeepsApprovalThroughTokenRotationAndGenerationChecks() async throws {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "rotation", family: family)
+            let vault = AccountCredentialVault(keychain: keychain)
+            let credential = family == "claude"
+                ? #"{"claudeAiOauth":{"accessToken":"old-token","refreshToken":"old-refresh","expiresAt":1}}"#
+                : #"{"tokens":{"access_token":"old-token","refresh_token":"old-refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
+            try vault.save(.init(credential: credential, claudeOAuthAccount: "metadata"), profile: profile)
+            keychain.requiresInteraction = true
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                #"{"access_token":"new-token","refresh_token":"new-refresh","expires_in":3600,"five_hour":{"utilization":12},"rate_limit":{"primary_window":{"used_percent":12}}}"#.utf8
+            )))
+            let runtime = runtime(family: family, keychain: keychain, http: http, profileID: profile.id)
+
+            _ = await ProviderRefreshContext.$isManual.withValue(true) { await runtime.refresh() }
+
+            XCTAssertTrue(keychain.interactionRequests.allSatisfy { $0 }, family)
+            keychain.requiresInteraction = false
+            let saved = try XCTUnwrap(vault.load(profile: profile))
+            XCTAssertTrue(saved.credential.contains("new-refresh"), family)
+            XCTAssertEqual(saved.claudeOAuthAccount, "metadata", family)
+        }
+    }
+
+    func testReloadReadFailureIsPreservedWithoutUsingStaleCredentials() async throws {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            let profile = profile(id: "reload", family: family)
+            let credential = family == "claude"
+                ? #"{"claudeAiOauth":{"accessToken":"token"}}"#
+                : #"{"tokens":{"access_token":"token","refresh_token":"refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
+            try AccountCredentialVault(keychain: keychain).save(
+                .init(credential: credential, claudeOAuthAccount: nil), profile: profile
+            )
+            keychain.failAfterRead = 1
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
+            let runtime = runtime(family: family, keychain: keychain, http: http, profileID: profile.id)
+
+            let snapshot = await ProviderRefreshContext.$isManual.withValue(true) { await runtime.refresh() }
+
+            guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                XCTFail("Expected a read failure for \(family)")
+                continue
+            }
+            XCTAssertEqual(message, SnapshotUsageKeychain.approvalError.localizedDescription, family)
+            if family == "codex" { XCTAssertTrue(http.requests.isEmpty) }
+        }
+    }
+
+    func testCorruptSnapshotReportsActionableError() async {
+        for family in ["claude", "codex"] {
+            let keychain = SnapshotUsageKeychain()
+            keychain.currentUserValues[AccountCredentialVault.service(family: family, profileID: "corrupt")] = "invalid-json"
+            let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data()))
+            let snapshot = await runtime(family: family, keychain: keychain, http: http, profileID: "corrupt").refresh()
+
+            guard case .badge(_, let message, _, _) = snapshot.lines.first else {
+                XCTFail("Expected a corrupt snapshot error")
+                continue
+            }
+            XCTAssertTrue(message.contains("Sign in again"), family)
+            XCTAssertEqual(snapshot.errorCategory, .authInvalid, family)
+            XCTAssertFalse(message.contains("AccountCredentialVaultError"), family)
+            XCTAssertTrue(http.requests.isEmpty)
+        }
+    }
+
+    private func runtime(
+        family: String, keychain: SnapshotUsageKeychain, http: FakeHTTPClient, profileID: String
+    ) -> any ProviderRuntime {
+        if family == "claude" {
+            return ClaudeProvider(
+                authStore: ClaudeAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                           scope: .accountSnapshot(profileID: profileID)),
+                usageClient: ClaudeUsageClient(httpClient: http),
+                logUsageScanner: ClaudeLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
+                includePiUsage: false, pricing: { .empty }
+            )
+        }
+        return CodexProvider(
+            authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                                      scope: .accountSnapshot(profileID: profileID)),
+            usageClient: CodexUsageClient(http: http),
+            logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
+            includePiUsage: false, pricing: { .empty }
+        )
+    }
+
     private func profile(id: String, family: String) -> AccountProfile {
         AccountProfile(
             id: id,
@@ -152,8 +428,28 @@ final class AccountSnapshotUsageTests: XCTestCase {
 }
 
 private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendable {
+    static let approvalError = KeychainError.readFailed("Saved account requires Keychain access.")
     var values: [String: String] = [:]
     var currentUserValues: [String: String] = [:]
+    var readError: KeychainError?
+    var interactionRequests: [Bool] = []
+    var requiresInteraction = false
+    var failAfterRead: Int?
+    var assertBackgroundReads = false
+
+    func genericPasswordExists(service: String) -> Bool? {
+        if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread) }
+        return currentUserValues[service] != nil || values[service] != nil
+    }
+
+    func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
+        if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread, "Credential probe blocked the main thread") }
+        interactionRequests.append(allowInteraction)
+        if let readError { throw readError }
+        if requiresInteraction && !allowInteraction { throw Self.approvalError }
+        if let failAfterRead, interactionRequests.count > failAfterRead { throw Self.approvalError }
+        return forCurrentUser ? currentUserValues[service] : values[service]
+    }
 
     func readGenericPassword(service: String) throws -> String? { values[service] }
     func writeGenericPassword(service: String, value: String) throws { values[service] = value }
@@ -165,4 +461,16 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
         values.removeValue(forKey: service)
         currentUserValues.removeValue(forKey: service)
     }
+}
+
+private struct SnapshotPresenceKeychain: KeychainAccessing {
+    var presence: Bool?
+
+    func genericPasswordExists(service: String) -> Bool? { presence }
+    func readGenericPassword(service: String) throws -> String? {
+        XCTFail("Presence checks must not read secrets")
+        return nil
+    }
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
 }

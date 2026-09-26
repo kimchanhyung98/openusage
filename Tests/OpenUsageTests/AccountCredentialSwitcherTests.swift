@@ -157,6 +157,19 @@ final class AccountCredentialSwitcherTests: XCTestCase {
         )
     }
 
+    func testCorruptSnapshotRequestsSignInWithoutTouchingTheSharedHome() throws {
+        let fixture = try makeFixture()
+        let work = profile(id: "corrupt", family: "codex", label: "Work", identityKey: "work")
+        let service = AccountCredentialVault.service(family: work.family, profileID: work.id)
+        fixture.keychain.currentUserValues[service] = "invalid-json"
+
+        XCTAssertThrowsError(try fixture.switcher.switchAuthentication(to: work, from: nil)) { error in
+            XCTAssertEqual(error as? AccountCredentialSwitcher.Error, .missingSnapshot("Work"))
+        }
+        XCTAssertEqual(fixture.keychain.writeCount, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.home.appendingPathComponent(".codex").path))
+    }
+
     func testSnapshotIdentityMismatchFailsWithoutTouchingTheSharedHome() throws {
         let fixture = try makeFixture()
         let personal = profile(id: "profile-a", family: "claude", label: "Personal", identityKey: "acct-a|org-a")

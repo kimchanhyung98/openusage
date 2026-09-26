@@ -28,6 +28,8 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
     }
 
     func write(service: String, account requestedAccount: String?, value: Data) throws {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         let keychain = try defaultKeychain()
         let existingItem: ExistingItem?
         let account: String

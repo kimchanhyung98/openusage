@@ -72,8 +72,15 @@ final class CodexProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
+        if case .accountSnapshot(let profileID) = authStore.scope {
+            return await loadOffMainActor { [authStore] in
+                authStore.keychain.genericPasswordExists(
+                    service: AccountCredentialVault.service(family: "codex", profileID: profileID)
+                ) != false
+            }
+        }
         // `refresh()`와 동일한 source 순서(auth.json 후보 → keychain), usable access token만 인정 — API-key-only auth.json은 usage API 사용 불가.
-        let fileCandidates = authStore.loadAuthCandidates()
+        let fileCandidates = await loadOffMainActor { [authStore] in authStore.loadAuthCandidates() }
         if fileCandidates.contains(where: \.hasUsableAccessToken) {
             return true
         }
@@ -85,7 +92,15 @@ final class CodexProvider: ProviderRuntime {
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
-        let fileCandidates = authStore.loadAuthCandidates()
+        let fileCandidates: [CodexAuthState]
+        let allowInteraction = ProviderRefreshContext.isManual
+        do {
+            fileCandidates = try await loadOffMainActor { [authStore] in
+                try authStore.loadAuthCandidates(allowInteraction: allowInteraction)
+            }
+        } catch {
+            return ProviderSnapshot.error(provider: provider, error: error)
+        }
         var lastFallbackError: Error?
 
         for candidate in fileCandidates {
@@ -124,7 +139,7 @@ final class CodexProvider: ProviderRuntime {
 
         if authStore.needsRefresh(authState.auth) {
             // `codex` CLI가 디스크의 token을 이미 회전시켰을 수 있음 — live credential을 먼저 재판독해 최신 access token 채택 (stale 사본 refresh 시 `refresh_token_reused`, issue #516).
-            if let live = reloadLiveAuth(source: authState.source),
+            if let live = try await reloadLiveAuth(source: authState.source),
                let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty {
                 authState = live
                 accessToken = liveToken
@@ -242,14 +257,17 @@ final class CodexProvider: ProviderRuntime {
 
     /// 원래 source(같은 파일 또는 keychain entry)에서 credential 재판독 — `codex` CLI가 out-of-band로 회전시킨 token을 자체 refresh 전에 수용.
     /// 그 source 하나만 읽고 후보 경로 재스캔 없음 — `codex`가 `CODEX_HOME`의 단일 `auth.json`만 읽는 방식과 일치.
-    private func reloadLiveAuth(source: CodexAuthState.Source) -> CodexAuthState? {
-        switch source {
-        case .file(let path):
-            return authStore.loadAuth(at: path)
-        case .keychain:
-            return authStore.loadKeychainAuth()
-        case .accountSnapshot(let profileID):
-            return authStore.loadAccountSnapshot(profileID: profileID)
+    private func reloadLiveAuth(source: CodexAuthState.Source) async throws -> CodexAuthState? {
+        let allowInteraction = ProviderRefreshContext.isManual
+        return try await loadOffMainActor { [authStore] in
+            switch source {
+            case .file(let path):
+                return authStore.loadAuth(at: path)
+            case .keychain:
+                return authStore.loadKeychainAuth()
+            case .accountSnapshot(let profileID):
+                return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)
+            }
         }
     }
 
@@ -271,8 +289,11 @@ final class CodexProvider: ProviderRuntime {
         }
         authState.auth.lastRefresh = OpenUsageISO8601.string(from: now())
         // save 실패는 loud log 후 계속 — 삼키면 회전된 token이 디스크에 남아 다음 실행에서 false "token expired" 유발, refreshed token은 이번 세션에서 유효.
+        let allowInteraction = ProviderRefreshContext.isManual
         do {
-            try authStore.save(authState)
+            try await loadOffMainActor { [authStore, authState] in
+                try authStore.save(authState, allowInteraction: allowInteraction)
+            }
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch {
             refreshIsDegraded = true

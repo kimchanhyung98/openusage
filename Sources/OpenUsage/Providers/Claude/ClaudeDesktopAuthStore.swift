@@ -27,6 +27,8 @@ struct ClaudeDesktopSafeStorageKeyReader: ClaudeDesktopSafeStorageKeyReading {
     private static let account = "Claude Key"
 
     func readPassword(allowInteraction: Bool) throws -> String? {
+        try NativeKeychainAccess.acquire()
+        defer { NativeKeychainAccess.release() }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.service,
@@ -151,6 +153,9 @@ struct ClaudeDesktopAuthStore: Sendable {
                 return ClaudeDesktopCredentialResult(oauth: nil, status: .invalid)
             }
         } catch ClaudeDesktopCredentialError.permissionRequired {
+            return ClaudeDesktopCredentialResult(oauth: nil, status: .permissionRequired)
+        } catch KeychainError.accessBusy {
+            AppLog.warn(LogTag.auth("claude"), "Claude Desktop credential read delayed by another Keychain operation")
             return ClaudeDesktopCredentialResult(oauth: nil, status: .permissionRequired)
         } catch {
             AppLog.error(LogTag.auth("claude"), "Claude Desktop credential read failed: \(error.localizedDescription)")

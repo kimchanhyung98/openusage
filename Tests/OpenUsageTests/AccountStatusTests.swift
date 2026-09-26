@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class AccountStatusTests: XCTestCase {
+    func testUnfinishedLocalProbeIsCheckingAndDoesNotRequireSignIn() {
+        let store = makeStore(AccountStatusRuntime())
+
+        let status = store.accountStatus(for: "codex", localState: nil)
+
+        XCTAssertEqual(status, .checking)
+        XCTAssertTrue(status.canSwitch)
+        XCTAssertNil(status.message)
+    }
+
     func testExpiredCodexRefreshOverridesLocallyReadySnapshot() async throws {
         let profile = AccountProfile(
             id: "expired", family: "codex", label: "ch", identityKey: "account-ch", createdAt: .distantPast
@@ -46,6 +56,8 @@ final class AccountStatusTests: XCTestCase {
         let status = store.accountStatus(for: runtime.provider.id, localState: localState)
         XCTAssertEqual(status.title, "Session Expired")
         XCTAssertFalse(status.canSwitch)
+        XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), status)
+        XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: .readFailed("Keychain is locked.")), status)
     }
 
     func testTokenConflictsAndRevocationsRequireSignInWithoutCallingThemExpired() async {
@@ -58,6 +70,7 @@ final class AccountStatusTests: XCTestCase {
 
             XCTAssertEqual(status(in: store), .signInNeeded(error.localizedDescription))
             XCTAssertFalse(status(in: store).canSwitch)
+            XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), status(in: store))
         }
     }
 
@@ -127,6 +140,7 @@ final class AccountStatusTests: XCTestCase {
         store.invalidateAuthentication(for: runtime.provider.id)
 
         XCTAssertEqual(status(in: store), .notChecked)
+        XCTAssertEqual(store.accountStatus(for: runtime.provider.id, localState: nil), .checking)
         XCTAssertNil(store.headerNotice(for: runtime.provider.id))
         runtime.snapshot = successful
         let outcome = await store.refresh(providerID: runtime.provider.id)
@@ -148,6 +162,7 @@ final class AccountStatusTests: XCTestCase {
         await store.refresh(providerID: "claude", force: true)
         XCTAssertEqual(store.headerNotice(for: "claude"), ClaudeUsageMapper.missingProfileScopeWarning)
         XCTAssertFalse(status(in: store, providerID: "claude").canSwitch)
+        XCTAssertEqual(store.accountStatus(for: "claude", localState: nil), status(in: store, providerID: "claude"))
 
         store.invalidateAuthentication(for: "claude")
 
@@ -215,6 +230,52 @@ final class AccountStatusTests: XCTestCase {
 
         XCTAssertEqual(store.accountStatus(for: "codex", localState: .needsSignIn), .signInNeeded())
         XCTAssertEqual(store.accountStatus(for: nil, localState: .ready(identityKey: "account", label: nil)), .notChecked)
+    }
+
+    func testUsageSuccessRequiresRecheckingAccountAfterKeychainApproval() async throws {
+        let profile = AccountProfile(
+            id: "approval-recovery", family: "codex", label: "Saved", identityKey: "saved", createdAt: .distantPast
+        )
+        let blocked = AccountSignInProbe(
+            environment: FakeEnvironment(), keychain: ApprovalRequiredStatusKeychain()
+        ).state(for: profile)
+        let runtime = AccountStatusRuntime()
+        let store = makeStore(runtime)
+        await store.refresh(providerID: runtime.provider.id, force: true)
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: blocked),
+                       .refreshFailed(ApprovalRequiredStatusKeychain.error.localizedDescription))
+
+        let keychain = ServiceKeychain()
+        let vault = AccountCredentialVault(keychain: keychain)
+        let probe = AccountSignInProbe(environment: FakeEnvironment(), keychain: keychain)
+        try vault.save(.init(
+            credential: #"{"tokens":{"access_token":"token","account_id":"saved"}}"#,
+            claudeOAuthAccount: nil
+        ), profile: profile)
+        let approved = await loadOffMainActor { probe.state(for: profile) }
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: approved), .ready)
+
+        try vault.replaceCredential(
+            #"{"tokens":{"access_token":"token","account_id":"different"}}"#,
+            family: profile.family, profileID: profile.id
+        )
+        let mismatched = await loadOffMainActor { probe.state(for: profile) }
+        XCTAssertEqual(store.accountStatus(for: "codex", localState: mismatched), .signInNeeded())
+    }
+
+    func testKeychainApprovalFailureKeepsAccountSwitchAvailable() {
+        let profile = AccountProfile(
+            id: "approval", family: "codex", label: "Saved", identityKey: "saved", createdAt: .distantPast
+        )
+        let local = AccountSignInProbe(
+            environment: FakeEnvironment(), keychain: ApprovalRequiredStatusKeychain()
+        ).state(for: profile)
+        let store = makeStore(AccountStatusRuntime())
+
+        let status = store.accountStatus(for: "codex", localState: local)
+
+        XCTAssertTrue(status.canSwitch)
+        XCTAssertEqual(status, .refreshFailed(ApprovalRequiredStatusKeychain.error.localizedDescription))
     }
 
     func testSelectedAndInactiveProfilesUseTheirOwnResultsEvenWithTheSameIdentity() async throws {
@@ -343,4 +404,12 @@ private final class AccountStatusRuntime: ProviderRuntime {
         continuation?.resume(returning: snapshot)
         continuation = nil
     }
+}
+
+private struct ApprovalRequiredStatusKeychain: KeychainAccessing {
+    static let error = KeychainError.readFailed("Unlock Keychain and refresh manually to allow access.")
+
+    func readGenericPassword(service: String) throws -> String? { throw Self.error }
+    func writeGenericPassword(service: String, value: String) throws {}
+    func deleteGenericPassword(service: String) throws {}
 }

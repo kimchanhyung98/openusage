@@ -55,6 +55,19 @@ protocol CategorizedError: Error {
     var errorCategory: ErrorCategory { get }
 }
 
+extension KeychainError: CategorizedError {
+    var errorCategory: ErrorCategory {
+        switch self {
+        case .accessBusy, .readFailed, .writeFailed, .deleteFailed: .credentialAccess
+        case .invalidData: .authInvalid
+        }
+    }
+}
+
+extension AccountCredentialVaultError: CategorizedError {
+    var errorCategory: ErrorCategory { .authInvalid }
+}
+
 // MARK: - Provider conformances
 // retroactive conformance를 한 파일에 모음 — 새 error case가 `.other`로 조용히 떨어지는 대신 여기서 컴파일 오류 발생 (exhaustive switch).
 
