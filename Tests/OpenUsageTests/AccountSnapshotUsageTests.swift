@@ -104,13 +104,23 @@ final class AccountSnapshotUsageTests: XCTestCase {
     }
 
     func testResetClaimCanApproveSavedCredentialsOffMainThreadAndStopsOnReadFailure() async throws {
-        for failure in [nil, SnapshotUsageKeychain.approvalError] {
+        let validCredential = #"{"tokens":{"access_token":"token","account_id":"personal"}}"#
+        let scenarios: [(KeychainError?, ErrorCategory)] = [
+            (nil, .notAvailable),
+            (SnapshotUsageKeychain.approvalError, .credentialAccess),
+            (nil, .authInvalid),
+        ]
+        for (failure, category) in scenarios {
+            let diagnostics = DiagnosticEventRecorder()
             let keychain = SnapshotUsageKeychain()
             let profile = profile(id: "claim", family: "codex")
             try AccountCredentialVault(keychain: keychain).save(.init(
-                credential: #"{"tokens":{"access_token":"token","account_id":"personal"}}"#,
+                credential: validCredential,
                 claudeOAuthAccount: nil
             ), profile: profile)
+            if category == .authInvalid {
+                keychain.currentUserValues[AccountCredentialVault.service(family: "codex", profileID: profile.id)] = "invalid-json"
+            }
             keychain.requiresInteraction = true
             keychain.assertBackgroundReads = true
             keychain.readError = failure
@@ -125,10 +135,15 @@ final class AccountSnapshotUsageTests: XCTestCase {
 
             let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture")
 
-            XCTAssertEqual(outcome, failure == nil ? .noCredit : .failed)
+            let readSucceeded = category == .notAvailable
+            XCTAssertEqual(outcome, readSucceeded ? .noCredit : .failed)
             XCTAssertEqual(keychain.interactionRequests, [true])
-            XCTAssertEqual(http.requests.count, failure == nil ? 1 : 0)
+            XCTAssertEqual(http.requests.count, readSucceeded ? 1 : 0)
             XCTAssertTrue(http.requests.allSatisfy { $0.method == "GET" })
+            XCTAssertEqual(diagnostics.events.filter { $0.operation == .resetClaim }, [
+                DiagnosticEvent(.resetClaim, result: readSucceeded ? .success : .failure,
+                                category: category, providerID: "codex")
+            ])
         }
     }
 
@@ -374,6 +389,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 continue
             }
             XCTAssertTrue(message.contains("Sign in again"), family)
+            XCTAssertEqual(snapshot.errorCategory, .authInvalid, family)
             XCTAssertFalse(message.contains("AccountCredentialVaultError"), family)
             XCTAssertTrue(http.requests.isEmpty)
         }

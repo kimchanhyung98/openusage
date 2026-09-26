@@ -199,6 +199,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
 
         fixture.keyReader.error = KeychainError.accessBusy
         XCTAssertEqual(fixture.store.load(allowInteraction: false).status, .permissionRequired)
+        XCTAssertEqual(fixture.keyReader.calls, [false])
         fixture.keyReader.error = nil
         fixture.keyReader.calls = []
         XCTAssertEqual(fixture.store.load(allowInteraction: false).status, .permissionRequired)

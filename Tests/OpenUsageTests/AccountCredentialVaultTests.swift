@@ -56,11 +56,14 @@ final class AccountCredentialVaultTests: XCTestCase {
                 service: fixture.service, account: "Fixture", value: Data([0xFF, 0xFE])
             )
             XCTAssertThrowsError(try reader.read(service: fixture.service, account: nil)) { error in
-                XCTAssertFalse(error.localizedDescription.contains("refresh manually"))
+                guard case KeychainError.invalidData = error else {
+                    return XCTFail("Expected invalid data, got \(error)")
+                }
             }
             let keychain = SecurityKeychainAccessor(appPasswordReader: reader)
             XCTAssertThrowsError(try AccountCredentialVault(keychain: keychain).load(profile: fixture.profile)) { error in
                 XCTAssertTrue(error is AccountCredentialVaultError)
+                XCTAssertEqual(ErrorCategory.classify(error), .authInvalid)
                 XCTAssertTrue(error.localizedDescription.contains("Sign in again"))
             }
             XCTAssertEqual(AccountSignInProbe(keychain: keychain).state(for: fixture.profile), .needsSignIn)
