@@ -491,6 +491,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 
 enum KeychainError: Error, LocalizedError {
     case accessBusy
+    case invalidData
     case writeFailed(String)
     case readFailed(String)
     case deleteFailed(String)
@@ -499,6 +500,8 @@ enum KeychainError: Error, LocalizedError {
         switch self {
         case .accessBusy:
             return "Keychain is busy. Respond to the open Keychain dialog, then try again."
+        case .invalidData:
+            return "The saved Keychain data is invalid."
         case .writeFailed(let message):
             return message.isEmpty ? "Keychain write failed." : message
         case .readFailed(let message):

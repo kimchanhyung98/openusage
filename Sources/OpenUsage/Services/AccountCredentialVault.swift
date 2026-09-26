@@ -25,11 +25,16 @@ struct AccountCredentialVault {
 
     func load(family: String, profileID: String, allowInteraction: Bool = false) throws -> Entry? {
         let service = Self.service(family: family, profileID: profileID)
-        let value = try keychain.readAppOwnedPassword(
-            service: service, forCurrentUser: true, allowInteraction: allowInteraction
-        ) ?? keychain.readAppOwnedPassword(
-            service: service, forCurrentUser: false, allowInteraction: allowInteraction
-        )
+        let value: String?
+        do {
+            value = try keychain.readAppOwnedPassword(
+                service: service, forCurrentUser: true, allowInteraction: allowInteraction
+            ) ?? keychain.readAppOwnedPassword(
+                service: service, forCurrentUser: false, allowInteraction: allowInteraction
+            )
+        } catch KeychainError.invalidData {
+            throw AccountCredentialVaultError.missingEntry
+        }
         guard let value else { return nil }
         // 기존 hex 인코딩 snapshot도 호환.
         guard let entry = ProviderParse.decodeJSONWithHexFallback(value, as: Entry.self) else {

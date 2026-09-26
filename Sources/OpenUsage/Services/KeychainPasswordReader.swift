@@ -29,7 +29,8 @@ struct SecurityFrameworkGenericPasswordReader: GenericPasswordReading {
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess else { throw readError(status) }
         guard let data = result as? Data, let value = String(data: data, encoding: .utf8) else {
-            throw readError(errSecDecode)
+            AppLog.error(.keychain, "saved account credential data is not valid UTF-8")
+            throw KeychainError.invalidData
         }
         return value
     }

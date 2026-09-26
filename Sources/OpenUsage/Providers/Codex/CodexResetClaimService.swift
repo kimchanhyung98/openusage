@@ -16,7 +16,7 @@ final class CodexResetClaimService {
     typealias Credentials = (accessToken: String, accountID: String?)
 
     private let usageClient: CodexUsageClient
-    private let credentialCandidates: () async -> [Credentials]
+    private let credentialCandidates: () async throws -> [Credentials]
     private let refreshAfterClaim: () async -> Void
     /// Idempotency key별 매칭된 credit id — retry는 재매칭 없이 같은 (key, credit) 쌍을 replay.
     /// 응답 유실 후 재조회 목록에는 credit이 없어, replay만이 서버의 `already_redeemed`로 성공을 증명. Session-lived, popover의 per-credit UUID가 key.
@@ -25,7 +25,7 @@ final class CodexResetClaimService {
     /// Test seam — credential 후보와 refresh hook 주입, 후보는 인증될 때까지 순서대로 시도 (`claim` 참고).
     init(
         usageClient: CodexUsageClient,
-        credentialCandidates: @escaping () async -> [Credentials],
+        credentialCandidates: @escaping () async throws -> [Credentials],
         refreshAfterClaim: @escaping () async -> Void = {}
     ) {
         self.usageClient = usageClient
@@ -43,7 +43,9 @@ final class CodexResetClaimService {
         self.init(
             usageClient: usageClient,
             credentialCandidates: {
-                var candidates = authStore.loadAuthCandidates()
+                var candidates = try await loadOffMainActor {
+                    try authStore.loadAuthCandidates(allowInteraction: true)
+                }
                 if let keychain = await loadOffMainActor({ authStore.loadKeychainAuth() }) {
                     candidates.append(keychain)
                 }
@@ -60,7 +62,14 @@ final class CodexResetClaimService {
 
     /// `expiry`에 만료되는 credit claim — throw 없음, 모든 실패는 loud log 후 popover용 outcome으로 축약.
     func claim(creditExpiringAt expiry: Date, redeemRequestID: String) async -> ResetClaimOutcome {
-        let candidates = await credentialCandidates()
+        let candidates: [Credentials]
+        do {
+            candidates = try await credentialCandidates()
+        } catch {
+            AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
+                                   localContext: "Reset claim credential read failed")
+            return .failed
+        }
         guard !candidates.isEmpty else {
             AppDiagnostics.record(.resetClaim, result: .failure, category: .notLoggedIn, providerID: "codex")
             return .failed
