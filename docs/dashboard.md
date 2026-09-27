@@ -193,6 +193,7 @@ Codex **Reset Watch**도 **Separate Cards**에서는 활성 공유 홈 계정 �
 **Separate Cards**의 등록 계정 카드에서는 헤더·지표 행 메뉴 맨 위에 **Use {Provider}: {account_name}** 추가 — 예: **Use Codex: yw**.
 Settings에서 이미 선택한 계정의 전환 항목은 비활성.
 확인 후 Settings와 동일하게 저장 로그인을 교체하며, 새 터미널 세션과 메뉴 막대 표시도 해당 계정을 따름.
+전환 실패 시 스크롤 위치와 관계없이 오류 알림창 표시.
 Hide는 분리된 계정 카드를 포함해 프로바이더 전체를 끄고, Customize는 다시 켜거나 해당 프로바이더의 공유 지표 화면으로 이동.
 메뉴 동작은 **Refresh Claude**, **Hide Claude**처럼 프로바이더 이름 유지.
 Refresh는 메뉴를 연 계정 카드를 대상으로 하고, **Share Screenshot**은 해당 카드와 표시 제목을 복사.
