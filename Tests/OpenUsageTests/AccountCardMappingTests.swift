@@ -36,14 +36,24 @@ final class AccountCardMappingTests: XCTestCase {
 
     func testDashboardSwitchKeepsDistinctNamesForProfilesWithTheSameIdentity() throws {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
-        _ = try profiles.add(family: "codex", label: "ch", identityKey: "shared-identity")
+        let selected = try profiles.add(family: "codex", label: "ch", identityKey: "shared-identity")
         let target = try profiles.add(family: "codex", label: "yw", identityKey: "shared-identity")
+        profiles.setPreferred(family: "codex", profileID: selected.id)
         let cardID = AccountUsageCardPlanner.cardID(family: "codex", profileID: target.id)
+        let assembly = ProviderAccountAssembly(
+            identityKeysByCard: ["codex": selected.identityKey, cardID: target.identityKey],
+            profileIDsByCard: [cardID: target.id]
+        )
+        let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
 
-        XCTAssertEqual(AccountCardPresentationPlanner.switchProfile(
-            providerID: cardID, mode: .separateCards,
-            profileID: target.id, profiles: profiles.profiles
-        )?.label, "yw")
+        for (cardID, expected) in [("codex", selected), (cardID, target)] {
+            let actual = try XCTUnwrap(AccountCardPresentationPlanner.switchProfile(
+                providerID: cardID, mode: .separateCards,
+                profileID: mapping[cardID], profiles: profiles.profiles
+            ))
+            XCTAssertEqual(actual.id, expected.id)
+            XCTAssertEqual(actual.label, expected.label)
+        }
     }
 
     func testDashboardSwitchIsUnavailableForSingleUnmanagedOrArchivedCards() throws {
