@@ -25,17 +25,28 @@ struct WidgetGroupedListView: View {
             ForEach(dashboardGroups) { group in
                 section(group)
             }
-            if let accountSwitchError {
-                Text(accountSwitchError)
-                    .font(.caption2)
-                    .foregroundStyle(Theme.notice)
-                    .padding(.horizontal, 8)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
         .accountSwitchConfirmation(selection: $pendingAccountSwitch, error: $accountSwitchError)
+        .alert(
+            "Couldn't Switch Account",
+            isPresented: isAccountSwitchErrorPresented,
+            presenting: accountSwitchError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { error in
+            Text(error)
+        }
+    }
+
+    /// 전환 확인창이 닫힌 뒤 오류 표시 — 스크롤 위치와 무관하게 확인 가능.
+    private var isAccountSwitchErrorPresented: Binding<Bool> {
+        Binding(
+            get: { accountSwitchError != nil && pendingAccountSwitch == nil },
+            set: { if !$0 { accountSwitchError = nil } }
+        )
     }
 
     private var dashboardGroups: [ProviderGroup] {
