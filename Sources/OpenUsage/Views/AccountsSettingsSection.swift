@@ -17,7 +17,6 @@ struct AccountsSettingsSection: View {
     @State private var signInStates: [String: AccountSignInProbe.State] = [:]
     @State private var signInRefreshID = 0
     @State private var pendingSelection: AccountProfile?
-    @State private var isSwitchConfirmationPresented = false
     @State private var switchError: String?
 
     private var store: AccountProfilesStore { container.accountProfiles }
@@ -127,23 +126,11 @@ struct AccountsSettingsSection: View {
                 signInRefreshID &+= 1
             }
         }
-        .confirmationDialog(
-            "Switch Account?",
-            isPresented: $isSwitchConfirmationPresented,
-            titleVisibility: .visible,
-            presenting: pendingSelection
-        ) { profile in
-            Button("Switch Account") {
-                switchTo(profile)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { profile in
-            if let shell = AccountShellInstaller.defaultShell() {
-                Text("New `\(profile.family)` sessions will use \(profile.label). OpenUsage keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the \(shell.title) terminal setup. Open a new terminal window to use it.")
-            } else {
-                Text("OpenUsage couldn't detect your login shell, so terminal setup can't be applied automatically.")
-            }
-        }
+        .accountSwitchConfirmation(
+            selection: $pendingSelection,
+            error: $switchError,
+            localStates: signInStates
+        )
         .onAppear {
             // 다른 창이 같은 defaults domain을 갱신한 뒤 재오픈될 수 있어 reload.
             store.reloadFromDefaults()
@@ -222,41 +209,8 @@ struct AccountsSettingsSection: View {
                     return
                 }
                 pendingSelection = profile
-                isSwitchConfirmationPresented = true
             }
         )
-    }
-
-    private func switchTo(_ profile: AccountProfile) {
-        let status = container.accountStatus(for: profile, localState: signInStates[profile.id])
-        guard status.canSwitch else {
-            switchError = status.message ?? "Sign in again before switching to this account."
-            let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
-            AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
-                                  localContext: "Account switch requires sign-in; account switch not applied")
-            return
-        }
-        guard let shell = AccountShellInstaller.defaultShell() else {
-            switchError = "Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically."
-            AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
-                                  localContext: "Login shell could not be detected; account switch not applied")
-            return
-        }
-        let currentProfile = store.preferredProfile(family: profile.family)
-        do {
-            // wrapper는 계정 무관(shared home만 고정)이므로 먼저 설치 — 실패해도 아무것도 전환되지 않고,
-            // auth transaction commit 이후에는 shared home과 선택 상태 사이에 실패 가능한 단계 없음.
-            try AccountShellInstaller.install(family: profile.family, shell: shell)
-            try AccountCredentialSwitcher().switchAuthentication(to: profile, from: currentProfile)
-            store.setPreferred(family: profile.family, profileID: profile.id)
-            container.refreshAccountCatalog()
-            container.syncDashboardUsageAccount(to: profile)
-            switchError = nil
-            AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
-        } catch {
-            AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
-            switchError = "Couldn't switch to \(profile.label): \(error.localizedDescription)"
-        }
     }
 
     // MARK: - Sign-in probe

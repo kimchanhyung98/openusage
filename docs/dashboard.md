@@ -162,8 +162,8 @@ Claude는 기존 [터미널 재인증 동작](/docs/providers/claude.md) 유지:
 선택기는 보기 전용이며, 로그인이나 로그아웃을 실행하지도, 새 터미널 세션이 사용할 계정을 바꾸지도 않음.
 대시보드에서 선택한 등록 계정은 터미널 로그인 계정이 바뀌어도 유지.
 이전 버전에서 공유 홈 카드만 기억한 경우, 등록 계정을 한 번 다시 선택하면 적용.
-터미널 계정 전환은 Settings에서만 수행.
-Settings에서 전환을 확정하면 대시보드 선택을 같은 계정으로 한 번 이동.
+터미널 계정 전환은 Settings 또는 **Separate Cards**의 카드 제목·지표 행 우클릭 메뉴에서 **Use {Provider}: {account_name}** 선택 후 확인하여 수행.
+전환을 확정하면 대시보드 선택을 같은 계정으로 한 번 이동.
 표시 모드를 바꿔도 선택 계정을 보존하므로 Single Card로 돌아오면 해당 계정이 여전히 표시 가능한 경우 복원.
 모드 변경은 네트워크 새로 고침 없이 대시보드에 즉시 반영.
 Settings에서 계정 추가·이름 변경·재로그인·제거 시에도 대시보드 즉시 갱신.
@@ -190,6 +190,10 @@ Codex **Reset Watch**도 **Separate Cards**에서는 활성 공유 홈 계정 �
 
 모든 행: **Hide · Star for menu bar / Unstar · Refresh \<provider\> · Customize…**(Customize는 해당 프로바이더의 지표 화면으로 바로 이동.)
 프로바이더 헤더: **Hide \<provider\> · Refresh \<provider\> · Customize…** 와 **Share Screenshot**(아래 참조).
+**Separate Cards**의 등록 계정 카드에서는 헤더·지표 행 메뉴 맨 위에 **Use {Provider}: {account_name}** 추가 — 예: **Use Codex: yw**.
+Settings에서 이미 선택한 계정의 전환 항목은 비활성.
+확인 후 Settings와 동일하게 저장 로그인을 교체하며, 새 터미널 세션과 메뉴 막대 표시도 해당 계정을 따름.
+전환 실패 시 스크롤 위치와 관계없이 오류 알림창 표시.
 Hide는 분리된 계정 카드를 포함해 프로바이더 전체를 끄고, Customize는 다시 켜거나 해당 프로바이더의 공유 지표 화면으로 이동.
 메뉴 동작은 **Refresh Claude**, **Hide Claude**처럼 프로바이더 이름 유지.
 Refresh는 메뉴를 연 계정 카드를 대상으로 하고, **Share Screenshot**은 해당 카드와 표시 제목을 복사.

@@ -11,6 +11,72 @@ final class AccountCardMappingTests: XCTestCase {
         return defaults
     }
 
+    func testDashboardSwitchTargetsTheCardProfileInsteadOfThePreferredAccount() throws {
+        for family in AccountProfilesStore.supportedFamilies {
+            let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
+            let selected = try profiles.add(family: family, label: "Personal", identityKey: "identity-1")
+            let observed = try profiles.add(family: family, label: "Work", identityKey: "identity-2")
+            profiles.setPreferred(family: family, profileID: selected.id)
+            let snapshotID = AccountUsageCardPlanner.cardID(family: family, profileID: selected.id)
+            let assembly = ProviderAccountAssembly(
+                identityKeysByCard: [family: observed.identityKey, snapshotID: selected.identityKey],
+                profileIDsByCard: [snapshotID: selected.id]
+            )
+            let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
+
+            for (cardID, expected) in [(family, observed), (snapshotID, selected)] {
+                XCTAssertEqual(AccountCardPresentationPlanner.switchProfile(
+                    providerID: cardID, mode: .separateCards,
+                    profileID: mapping[cardID], profiles: profiles.profiles
+                ), expected)
+            }
+            XCTAssertEqual(profiles.preferredProfileID(family: family), selected.id)
+        }
+    }
+
+    func testDashboardSwitchKeepsDistinctNamesForProfilesWithTheSameIdentity() throws {
+        let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
+        let selected = try profiles.add(family: "codex", label: "ch", identityKey: "shared-identity")
+        let target = try profiles.add(family: "codex", label: "yw", identityKey: "shared-identity")
+        profiles.setPreferred(family: "codex", profileID: selected.id)
+        let cardID = AccountUsageCardPlanner.cardID(family: "codex", profileID: target.id)
+        let assembly = ProviderAccountAssembly(
+            identityKeysByCard: ["codex": selected.identityKey, cardID: target.identityKey],
+            profileIDsByCard: [cardID: target.id]
+        )
+        let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)
+
+        for (cardID, expected) in [("codex", selected), (cardID, target)] {
+            let actual = try XCTUnwrap(AccountCardPresentationPlanner.switchProfile(
+                providerID: cardID, mode: .separateCards,
+                profileID: mapping[cardID], profiles: profiles.profiles
+            ))
+            XCTAssertEqual(actual.id, expected.id)
+            XCTAssertEqual(actual.label, expected.label)
+        }
+    }
+
+    func testDashboardSwitchIsUnavailableForSingleUnmanagedOrArchivedCards() throws {
+        let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
+        let target = try profiles.add(family: "codex", label: "Work", identityKey: "identity")
+        for (cardID, mode, profileID) in [
+            ("codex", AccountCardDisplayMode.singleCard, target.id as String?),
+            ("codex", .separateCards, nil),
+            ("codex", .separateCards, "missing"),
+            ("claude", .separateCards, target.id),
+            ("cursor", .separateCards, target.id),
+        ] {
+            XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
+                providerID: cardID, mode: mode, profileID: profileID, profiles: profiles.profiles
+            ))
+        }
+        var archived = target
+        archived.isArchived = true
+        XCTAssertNil(AccountCardPresentationPlanner.switchProfile(
+            providerID: "codex", mode: .separateCards, profileID: target.id, profiles: [archived]
+        ))
+    }
+
     func testBareFamilyCardMapsToTheSelectedProfileWhenTheObservedIdentityMatches() throws {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
         _ = try profiles.add(family: "claude", label: "Account 1", identityKey: "acct-1")
