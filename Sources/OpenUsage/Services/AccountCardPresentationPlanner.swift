@@ -2,6 +2,19 @@ import Foundation
 
 /// 기존 runtime 결과를 변경하지 않고 화면에 쓸 계정 카드 순서·표시 대상만 계산.
 enum AccountCardPresentationPlanner {
+    static func switchProfile(
+        providerID: String,
+        mode: AccountCardDisplayMode,
+        profileID: String?,
+        profiles: [AccountProfile]
+    ) -> AccountProfile? {
+        let family = ProviderAccountID.family(of: providerID)
+        guard mode == .separateCards, ProviderAccountID.families.contains(family), let profileID else {
+            return nil
+        }
+        return profiles.first { $0.id == profileID && $0.family == family && !$0.isArchived }
+    }
+
     static func cardTitle(
         providerID: String,
         fallback: String,

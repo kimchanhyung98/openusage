@@ -14,6 +14,8 @@ struct WidgetGroupedListView: View {
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var activeProviderID: String?
     @State private var activeMetricID: String?
+    @State private var pendingAccountSwitch: AccountProfile?
+    @State private var accountSwitchError: String?
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @AppStorage(DashboardUsageAccountSelection.claudeKey) private var selectedClaudeUsageAccountID = ""
     @AppStorage(DashboardUsageAccountSelection.codexKey) private var selectedCodexUsageAccountID = ""
@@ -23,10 +25,17 @@ struct WidgetGroupedListView: View {
             ForEach(dashboardGroups) { group in
                 section(group)
             }
+            if let accountSwitchError {
+                Text(accountSwitchError)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.notice)
+                    .padding(.horizontal, 8)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onPreferenceChange(ReorderFramePreferenceKey.self) { rowFrames = $0 }
         .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
+        .accountSwitchConfirmation(selection: $pendingAccountSwitch, error: $accountSwitchError)
     }
 
     private var dashboardGroups: [ProviderGroup] {
@@ -130,6 +139,7 @@ struct WidgetGroupedListView: View {
         .highPriorityGesture(providerDragGesture(for: group), including: isSeparate ? .subviews : .all)
         .contextMenu {
             let name = container.displayName(for: group.provider)
+            accountSwitchMenu(providerID: group.provider.id)
             // provider section 전체 숨김(Customize provider 리스트에서 복구) — per-metric "Hide"의 상위 버전.
             Button("Hide \(name)") {
                 container.setProviderEnabled(false, for: group.provider.id)
@@ -293,9 +303,10 @@ struct WidgetGroupedListView: View {
             .reorderFrame(id: descriptor.id, in: .named(reorderSpaceName))
     }
 
-    /// 단일 metric의 context menu — Hide, star, provider refresh, Customize 진입.
+    /// 단일 metric의 context menu — 계정 전환, Hide, star, provider refresh, Customize 진입.
     @ViewBuilder
     private func rowMenu(_ descriptor: WidgetDescriptor, providerID: String) -> some View {
+        accountSwitchMenu(providerID: providerID)
         Button("Hide") {
             layout.setMetricEnabled(descriptor.id, false)
         }
@@ -318,6 +329,22 @@ struct WidgetGroupedListView: View {
         }
         Button("Customize…") {
             openCustomize(for: providerID)
+        }
+    }
+
+    @ViewBuilder
+    private func accountSwitchMenu(providerID: String) -> some View {
+        if let profile = AccountCardPresentationPlanner.switchProfile(
+            providerID: providerID,
+            mode: container.accountCardDisplayMode(for: ProviderAccountID.family(of: providerID)),
+            profileID: container.accountProfileID(for: providerID),
+            profiles: container.accountProfiles.profiles
+        ) {
+            Button("Use \(profile.family.capitalized): \(profile.label)") {
+                pendingAccountSwitch = profile
+            }
+            .disabled(container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
+            Divider()
         }
     }
 
