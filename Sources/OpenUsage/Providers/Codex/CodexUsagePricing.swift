@@ -94,8 +94,7 @@ enum CodexUsagePricing {
         switch base {
         case "gpt-5.5", "gpt-5.5-pro":
             effective.fastMultiplier = 2.5
-        case "gpt-5.4", "gpt-5.4-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
-            "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol":
+        case "gpt-5.4", "gpt-5.4-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra":
             effective.fastMultiplier = 2
         default:
             effective.fastMultiplier = rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier
