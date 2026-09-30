@@ -70,9 +70,13 @@ final class ModelPricing: Sendable {
 
     /// 말단·날짜 직전 Fast·Ultrafast 구분자만 통일 — 모델 버전의 소수점과 이름 내부 fast 구간 유지.
     static func normalizedFastName(_ name: String) -> String {
-        name.replacingOccurrences(
-            of: #"[.@](ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
-            with: "-$1", options: .regularExpression)
+        guard
+            let range = name.range(
+                of: #"(?i)[-.@](ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
+                options: .regularExpression
+            )
+        else { return name }
+        return name.replacingCharacters(in: range, with: "-" + name[range].dropFirst().lowercased())
     }
 
     static func fastBaseName(_ name: String) -> String? {
@@ -92,7 +96,11 @@ final class ModelPricing: Sendable {
         let multiplier: Double
         if rates.fastMultiplier != 1 {
             multiplier = rates.fastMultiplier
-        } else if let supplementMultiplier = supplement.fastMultiplier(for: key) ?? supplement.fastMultiplier(for: base) {
+        } else if let requestedMultiplier = supplement.exactFastMultiplier(for: base) {
+            multiplier = supplement.exactFastMultiplier(for: key) ?? requestedMultiplier
+        } else if let supplementMultiplier = supplement.legacyFastMultiplier(for: key)
+            ?? supplement.legacyFastMultiplier(for: base)
+        {
             multiplier = supplementMultiplier
         } else {
             return nil

@@ -33,7 +33,7 @@ jobs:
       - name: 가격표 JSON 검증
         run: |
           python3 - << 'PY'
-          import json, re, sys
+          import json, math, re, sys
           from datetime import datetime
           with open("Sources/OpenUsage/Resources/pricing_supplement.json") as f:
               supplement = json.load(f)
@@ -61,7 +61,7 @@ jobs:
                   problems.append(f"alias pattern {rule['pattern']!r} has no canonical")
           for field in ("fast_multipliers", "fast_multipliers_exact"):
               for model, multiplier in (supplement.get(field) or {}).items():
-                  if type(multiplier) not in (int, float) or multiplier <= 0:
+                  if type(multiplier) not in (int, float) or not math.isfinite(multiplier) or multiplier <= 0:
                       problems.append(f"{field}[{model}] must be a positive number")
           if problems:
               sys.exit("Supplement validation failed:\n" + "\n".join(problems))

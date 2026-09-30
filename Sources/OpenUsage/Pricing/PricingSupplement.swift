@@ -44,6 +44,29 @@ struct PricingSupplement: Sendable {
     /// base model의 Fast 배율 — 정확 key 우선, 접두사·날짜가 있으면 가장 구체적인 모델명 우선.
     func fastMultiplier(for model: String) -> Double? {
         if let exact = exactFastMultipliers[model] ?? fastMultipliers[model] { return exact }
+        return exactFastMultiplier(for: model) ?? legacyFastMultiplier(for: model)
+    }
+
+    /// 기존 피드의 넓은 모델명 매칭을 유지하는 Fast 배율.
+    func legacyFastMultiplier(for model: String) -> Double? {
+        if let exact = fastMultipliers[model] { return exact }
+        let normalized = PricingCatalog.normalizedKey(model)
+        let candidates = fastMultipliers.sorted {
+            $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count
+        }
+        for part in normalized.split(whereSeparator: { $0 == "/" || $0 == ":" }) {
+            for (base, multiplier) in candidates {
+                if Self.matchesModelSuffix(part: String(part), base: PricingCatalog.normalizedKey(base)) {
+                    return multiplier
+                }
+            }
+        }
+        return nil
+    }
+
+    /// 등록 모델·별칭·날짜에 한정한 신규 Fast 배율.
+    func exactFastMultiplier(for model: String) -> Double? {
+        if let exact = exactFastMultipliers[model] { return exact }
         let canonical = canonicalName(for: model) ?? model
         let normalizedExact = PricingCatalog.normalizedKey(canonical).lowercased()
         let exactCandidates = exactFastMultipliers.sorted { $0.key.count > $1.key.count }
@@ -55,17 +78,6 @@ struct PricingSupplement: Sendable {
                 if suffix.isEmpty
                     || suffix.range(of: #"^-(?:\d{8}|\d{4}-\d{2}-\d{2})$"#, options: .regularExpression) != nil
                 {
-                    return multiplier
-                }
-            }
-        }
-        let normalized = PricingCatalog.normalizedKey(model)
-        let candidates = fastMultipliers.sorted {
-            $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count
-        }
-        for part in normalized.split(whereSeparator: { $0 == "/" || $0 == ":" }) {
-            for (base, multiplier) in candidates {
-                if Self.matchesModelSuffix(part: String(part), base: PricingCatalog.normalizedKey(base)) {
                     return multiplier
                 }
             }
