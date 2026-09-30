@@ -64,7 +64,7 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
   "providers": {
     "codex": {
       "displayName": "Codex",
-      "plan": "Pro 20x",
+      "plan": "Pro",
       "fetchedAt": "2026-07-13T01:39:30.000Z",
       "expiresAt": "2026-07-13T01:44:30.000Z",
       "stale": false,
