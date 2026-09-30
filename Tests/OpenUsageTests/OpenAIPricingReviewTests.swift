@@ -251,6 +251,62 @@ final class OpenAIPricingReviewTests: XCTestCase {
         }
     }
 
+    func testMixedCaseFastSuffixesUsePublishedRatesWithoutChangingModelNames() throws {
+        for prefix in ["", "openai/"] {
+            for separator in ["-", ".", "@"] {
+                for date in ["", "-20260929", "-2026-09-29"] {
+                    for speed in ["FAST", "Fast"] {
+                        let model = prefix + "gpt-4.1" + separator + speed + date
+                        XCTAssertEqual(
+                            try XCTUnwrap(pricing.estimatedCostDollars(model: model, tokens: .init(input: 1_000))),
+                            0.0035, accuracy: 1e-9, model)
+                        for fast in [false, true] {
+                            XCTAssertEqual(
+                                try XCTUnwrap(
+                                    CodexUsagePricing.estimate(
+                                        model: model, tokens: .init(input: 1_000, isFast: fast), pricing: pricing)),
+                                0.0035, accuracy: 1e-9, model)
+                        }
+                    }
+                }
+            }
+        }
+        for model in ["custom-FAST-non-reasoning", "custom.FAST-preview", "CUSTOM-fastest"] {
+            XCTAssertEqual(ModelPricing.normalizedFastName(model), model)
+        }
+        XCTAssertEqual(ModelPricing.normalizedFastName("Custom.FAST-20260929"), "Custom-fast-20260929")
+    }
+
+    func testUnregisteredFastBasesDoNotInheritNewExactMultipliersThroughFuzzyMatching() {
+        for base in ["gpt-4o-vision-preview", "gpt-4o-minii", "gpt-4.1-custom"] {
+            for prefix in ["", "openai/"] {
+                for date in ["", "-20260929", "-2026-09-29"] {
+                    let model = prefix + base + "-fast" + date
+                    XCTAssertNil(pricing.resolve(model: model), model)
+                }
+            }
+        }
+    }
+
+    func testExactMultiplierRestrictionsPreserveLegacyAndNativeFuzzyRates() throws {
+        let rates = ModelRates(
+            inputPerMillion: 2, outputPerMillion: 10, cacheWritePerMillion: 2, cacheReadPerMillion: 0.2)
+        var nativeRates = rates
+        nativeRates.fastMultiplier = 3
+        let supplement = PricingSupplement(
+            fastMultipliers: ["gpt-5": 2], exactFastMultipliers: ["gpt-5-mini": 1.8])
+
+        for (entry, expected) in [(rates, 0.004), (nativeRates, 0.006)] {
+            let snapshot = ModelPricing(
+                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5-mini": entry]),
+                secondary: PricingCatalog())
+            XCTAssertEqual(
+                try XCTUnwrap(
+                    snapshot.estimatedCostDollars(model: "gpt-5-mini-custom-fast", tokens: .init(input: 1_000))),
+                expected, accuracy: 1e-9)
+        }
+    }
+
     func testMiniStandardAliasesMatchTheQualifiedCaseAndDateFormsOfFastAliases() {
         for prefix in ["", "openai/"] {
             for model in ["gpt-5.4-mini", "GPT-5.4-MINI"] {
