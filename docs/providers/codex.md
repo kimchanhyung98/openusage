@@ -36,7 +36,6 @@ OpenUsage는 사용량 API의 `plan_type`을 다음 이름으로 표시하며 �
 `plan_type: pro`만으로 신규·기존 가입자의 사용량 배수 구분 불가.
 따라서 `Pro 20x` 고정 표시를 제거하고, x10·x20·x25 등의 배수를 가격이나 날짜로 추정하지 않음.
 Session·Weekly 사용률과 리셋 시각은 서버 응답 그대로 사용하며 플랜 가격으로 환산하거나 배율 적용하지 않음.
-확인 당시 [Codex 가격 문서](https://learn.chatgpt.com/docs/pricing)에는 이전 5x·20x 설명 잔존.
 새 x10·x25 배수의 공식 공개 문서 근거와 계정별 적용 여부는 미확인.
 
 ## Reset Watch
