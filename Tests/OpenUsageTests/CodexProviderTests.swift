@@ -231,7 +231,7 @@ final class CodexUsageMapperTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_800_000_000)
         )
 
-        XCTAssertEqual(mapped.plan, "Pro 5x")
+        XCTAssertEqual(mapped.plan, "Pro Lite")
         XCTAssertEqual(progress(mapped.lines, "Session")?.used, 10)
         XCTAssertEqual(progress(mapped.lines, "Weekly")?.used, 20)
         // Credits는 달러 값(4¢/credit) 선두 + 원시 count — 뒤집힌 가짜 cap 없음

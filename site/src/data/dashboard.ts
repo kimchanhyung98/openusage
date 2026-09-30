@@ -75,7 +75,7 @@ export const cards: Card[] = [
     icon: 'codex',
     provider: 'codex',
     title: 'Codex',
-    plan: 'Pro 20x',
+    plan: 'Pro',
     always: [
       { kind: 'bounded', label: 'Session', used: 28, limit: 100, elapsed: 0.31,
         resetAbsolute: 'Resets today at 21:00', resetRelative: 'Resets in 6h 0m' },
