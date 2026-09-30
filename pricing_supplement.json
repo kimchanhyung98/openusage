@@ -1,7 +1,57 @@
 {
   "$comment": "OpenUsage pricing supplement. Prices models that no public catalog carries, supplies fast-variant multipliers the catalogs omit, and maps provider log/CSV model slugs to canonical pricing keys (LiteLLM keys, models.dev ids, or entries in this file). Published to gh-pages by .github/workflows/pricing-supplement.yml on every change, so installed apps pick edits up within about an hour - no release needed. Rates are USD per million tokens. Sources: https://cursor.com/docs/models-and-pricing.md for Cursor-native entries and https://developers.openai.com/api/docs/pricing for OpenAI entries.",
-  "updated_at": "2026-09-14T06:42:39Z",
+  "updated_at": "2026-09-30T09:53:40Z",
   "pricing": {
+    "gpt-6.1-sol": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10
+    },
+    "gpt-6-sol": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 10
+    },
+    "gpt-6-luna": {
+      "input_per_million": 0.1,
+      "cache_write_per_million": 0.125,
+      "cache_read_per_million": 0.01,
+      "output_per_million": 0.5
+    },
+    "gpt-6-astra-ultrafast": {
+      "input_per_million": 60,
+      "cache_write_per_million": 75,
+      "cache_read_per_million": 6,
+      "output_per_million": 300
+    },
+    "gpt-5.5-cyber": {
+      "input_per_million": 12.5,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1.25,
+      "output_per_million": 75
+    },
+    "chat-latest": {
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "$comment": "OpenAI 가격표에 캐시 할인 미공표 — 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 5,
+      "output_per_million": 15
+    },
+    "gpt-4o-2024-05-13": {
+      "$comment": "OpenAI 가격표에 캐시 할인 미공표 — 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 5,
+      "output_per_million": 15
+    },
     "glm-5.3": {
       "$comment": "Z.ai 공식 요율. 캐시 입력 저장은 현재 무료이며 캐시 쓰기에 일반 입력 요율 적용.",
       "input_per_million": 1.4,
@@ -180,6 +230,20 @@
       "output_per_million": 75.0
     }
   },
+  "fast_multipliers_exact": {
+    "gpt-6.1-sol": 2.0,
+    "gpt-6-sol": 2.0,
+    "gpt-6-luna": 2.0,
+    "gpt-5.4-mini": 2.0,
+    "gpt-5.1": 2.0,
+    "gpt-5-mini": 1.8,
+    "gpt-4.1": 1.75,
+    "gpt-4.1-mini": 1.75,
+    "gpt-4.1-nano": 2.0,
+    "gpt-4o": 1.7,
+    "gpt-4o-2024-05-13": 1.75,
+    "gpt-4o-mini": 1.6666666666666667
+  },
   "fast_multipliers": {
     "gpt-6-astra": 2.0,
     "claude-opus-5": 2.0,
@@ -196,6 +260,17 @@
     "gpt-5.6-luna": 2.0
   },
   "alias_rules": [
+    {"pattern": "(?i)^(?:openai/)?gpt-4o-2024-05-13$", "canonical": "gpt-4o-2024-05-13"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.1-sol(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.1-sol(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-sol"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-sol(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-sol(?:-(?:none|low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-sol"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-luna(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-luna-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-luna(?:-(?:none|low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-luna"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-ultrafast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.5-cyber(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.5-cyber"},
+    {"pattern": "(?i)^(?:openai/)?chat-latest$", "canonical": "chat-latest"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.4-mini-fast"},
     {"pattern": "^(?:zai/)?glm-5\\.3$", "canonical": "glm-5.3"},
     {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?-fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-fast"},
     {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra"},
@@ -268,7 +343,7 @@
     { "pattern": "^gpt-5\\.3-spark$", "canonical": "gpt-5.3-codex-spark" },
     { "pattern": "^gpt-5\\.3-codex(?:-(?:low|high|xhigh))?-fast$", "canonical": "gpt-5.3-codex-fast" },
     { "pattern": "^gpt-5\\.3-codex(?:-(?:low|high|xhigh))?$", "canonical": "gpt-5.3-codex" },
-    { "pattern": "^gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?$", "canonical": "gpt-5.4-mini" },
+    { "pattern": "(?i)^(?:openai/)?gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.4-mini" },
     { "pattern": "^gpt-5\\.4-nano(?:-(?:none|low|medium|high|xhigh))?$", "canonical": "gpt-5.4-nano" },
     { "pattern": "^gpt-5\\.4-(?:low|medium|high|xhigh)-fast$", "canonical": "gpt-5.4-fast" },
     { "pattern": "^gpt-5\\.4-(?:low|medium|high|xhigh)$", "canonical": "gpt-5.4" },
