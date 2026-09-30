@@ -189,6 +189,110 @@ final class OpenAIPricingReviewTests: XCTestCase {
         }
     }
 
+    func testMixedCaseSpeedCatalogEntriesCannotSupplyStandardFuzzyRates() {
+        let rates = ModelRates(
+            inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
+
+        for speed in ["FAST", "Fast", "ULTRAFAST", "Ultrafast"] {
+            for separator in ["-", ".", "@"] {
+                let model = "custom" + separator + speed
+                let catalog = PricingCatalog(entries: [model: rates])
+                let snapshot = ModelPricing(
+                    supplement: PricingSupplement(), primary: catalog, secondary: PricingCatalog())
+                XCTAssertNil(catalog.findFuzzy("custom", excludingFastVariants: true), model)
+                XCTAssertNil(snapshot.resolve(model: "custom"), model)
+                XCTAssertEqual(snapshot.resolve(model: model), rates, model)
+            }
+        }
+    }
+
+    func testMixedCaseFastNamedModelsRetainProviderFuzzyRates() {
+        let rates = ModelRates(
+            inputPerMillion: 7, outputPerMillion: 21, cacheWritePerMillion: 7, cacheReadPerMillion: 1)
+
+        for model in [
+            "custom-FAST-non-reasoning", "custom.Fast-non-reasoning", "custom@Fast-non-reasoning",
+            "custom-faster", "custom-ultrafaster",
+        ] {
+            let catalog = PricingCatalog(entries: ["vendor/" + model: rates])
+            XCTAssertEqual(catalog.findFuzzy(model, excludingFastVariants: true)?.rates, rates, model)
+        }
+    }
+
+    func testCodexCombinedUltrafastAndFastSlugsRemainUnpriced() {
+        for prefix in ["", "openai/"] {
+            for separator in ["-", ".", "@"] {
+                for date in ["", "-20260929", "-2026-09-29"] {
+                    let model = prefix + "gpt-6-astra" + separator + "ultrafast-fast" + date
+                    XCTAssertNil(pricing.resolve(model: model), model)
+                    for fast in [false, true] {
+                        XCTAssertNil(
+                            CodexUsagePricing.estimate(
+                                model: model, tokens: .init(input: 1_000, isFast: fast), pricing: pricing), model)
+                    }
+                }
+            }
+        }
+    }
+
+    func testCodexPublishedAstraSpeedTiersKeepTheirRates() throws {
+        for prefix in ["", "openai/"] {
+            for date in ["", "-20260929", "-2026-09-29"] {
+                for fast in [false, true] {
+                    let tokens = TokenBreakdown(input: 1_000, isFast: fast)
+                    for (suffix, expected) in [("", fast ? 0.02 : 0.01), ("-fast", 0.02), ("-ultrafast", 0.06)] {
+                        let model = prefix + "gpt-6-astra" + suffix + date
+                        XCTAssertEqual(
+                            try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: tokens, pricing: pricing)),
+                            expected, accuracy: 1e-9, model)
+                    }
+                }
+            }
+        }
+    }
+
+    func testMiniStandardAliasesMatchTheQualifiedCaseAndDateFormsOfFastAliases() {
+        for prefix in ["", "openai/"] {
+            for model in ["gpt-5.4-mini", "GPT-5.4-MINI"] {
+                for effort in ["", "-high"] {
+                    for date in ["", "-20260929", "-2026-09-29"] {
+                        let standard = prefix + model + effort + date
+                        let fast = prefix + model + effort + "-fast" + date
+                        XCTAssertEqual(pricing.supplement.canonicalName(for: standard), "gpt-5.4-mini", standard)
+                        XCTAssertEqual(pricing.supplement.canonicalName(for: fast), "gpt-5.4-mini-fast", fast)
+                    }
+                }
+            }
+        }
+    }
+
+    func testCursorMiniStandardAliasesShareOneModelBreakdownAndPreserveVariants() throws {
+        let models = [
+            "gpt-5.4-mini", "gpt-5.4-mini-high", "openai/gpt-5.4-mini-high-20260929",
+            "GPT-5.4-MINI", "openai/GPT-5.4-MINI-high-2026-09-29",
+        ]
+        let csv =
+            "Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost\n"
+            + models.map { "2026-09-30T00:00:00Z,\($0),No,0,1000000,0,0,Included" }.joined(separator: "\n")
+        let rows = try CursorUsageCSV.parse(csv: csv, pricing: pricing).rows
+        let now = try XCTUnwrap(rows.first?.date)
+        var lines: [MetricLine] = []
+        _ = CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: pricing, to: &lines)
+
+        XCTAssertEqual(rows.count, models.count)
+        guard case .values(_, _, _, _, let unknownModels, let breakdown) = lines.first(where: { $0.label == "Today" })
+        else {
+            return XCTFail("Expected today's priced Mini usage")
+        }
+        XCTAssertTrue(unknownModels.isEmpty)
+        let entries = try XCTUnwrap(breakdown?.models)
+        XCTAssertEqual(entries.map(\.model), ["gpt-5.4-mini"])
+        let mini = try XCTUnwrap(entries.first { $0.model == "gpt-5.4-mini" })
+        XCTAssertEqual(mini.totalTokens, models.count * 1_000_000)
+        XCTAssertEqual(try XCTUnwrap(mini.costUSD), Double(models.count) * 0.75, accuracy: 1e-9)
+        XCTAssertEqual(Set(mini.variants?.map { $0.model.lowercased() } ?? []), Set(models.map { $0.lowercased() }))
+    }
+
     private func event(model: String) throws -> CodexLogUsageScanner.Event {
         CodexLogUsageScanner.Event(
             timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-30T00:00:00Z")),

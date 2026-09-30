@@ -24,7 +24,9 @@ final class PricingBundledResourceTests: XCTestCase {
 
     func testEveryFastMultiplierBaseResolves() {
         let pricing = Self.pricing
-        for base in Self.pricing.supplement.fastMultipliers.keys {
+        for base in Set(Self.pricing.supplement.fastMultipliers.keys)
+            .union(Self.pricing.supplement.exactFastMultipliers.keys)
+        {
             XCTAssertNotNil(pricing.resolve(model: base), "fast-multiplier base '\(base)' resolves nowhere")
         }
     }
