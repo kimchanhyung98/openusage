@@ -295,9 +295,11 @@ enum CodexUsageMapper {
         }
         switch raw.lowercased() {
         case "prolite":
-            return "Pro 5x"
+            return "Pro Lite"
         case "pro":
-            return "Pro 20x"
+            return "Pro"
+        case "promax":
+            return "Pro Max"
         default:
             return raw.titleCased(separator: { $0 == "_" })
         }
