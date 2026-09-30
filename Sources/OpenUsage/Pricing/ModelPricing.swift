@@ -58,29 +58,49 @@ final class ModelPricing: Sendable {
         if normalized != name {
             return resolveUncached(model: normalized) ?? secondary.findExact(name)?.rates
         }
+        if name.range(of: #"(?i)[-.@]ultrafast(?:$|[^A-Za-z0-9])"#, options: .regularExpression) != nil {
+            return secondary.findExact(name)?.rates
+        }
         if let fast = fastVariant(name) { return fast }
-        if name.hasSuffix("-fast") { return secondary.findExact(name)?.rates }
+        if Self.fastBaseName(name) != nil { return secondary.findExact(name)?.rates }
         if let fuzzy = primary.findFuzzy(name, excludingFastVariants: true) { return fuzzy.rates }
         if let exact = secondary.findExact(name) { return exact.rates }
         return nil
     }
 
-    /// 말단 fast 구분자만 통일 — 모델 버전의 소수점과 이름 내부 fast 구간 유지.
+    /// 말단·날짜 직전 Fast·Ultrafast 구분자만 통일 — 모델 버전의 소수점과 이름 내부 fast 구간 유지.
     static func normalizedFastName(_ name: String) -> String {
-        name.replacingOccurrences(of: #"[.@]fast$"#, with: "-fast", options: .regularExpression)
+        guard
+            let range = name.range(
+                of: #"(?i)[-.@](ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
+                options: .regularExpression
+            )
+        else { return name }
+        return name.replacingCharacters(in: range, with: "-" + name[range].dropFirst().lowercased())
+    }
+
+    static func fastBaseName(_ name: String) -> String? {
+        guard let range = name.range(of: #"-fast(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#, options: .regularExpression) else {
+            return nil
+        }
+        return name.replacingCharacters(in: range, with: "")
     }
 
     /// `<base>-fast` slug를 base entry × fast multiplier로 가격 산정 — multiplier 미상이면 nil.
     /// caller는 models.dev의 정확 fast entry는 수용 가능하나 표준 속도 base rate로의 fuzzy 매칭은 금지.
     private func fastVariant(_ name: String) -> ModelRates? {
-        guard name.hasSuffix("-fast") else { return nil }
-        let base = String(name.dropLast("-fast".count))
-        guard !base.isEmpty else { return nil }
-        guard let (key, rates) = baseEntry(base) else { return nil }
+        guard let base = Self.fastBaseName(name), !base.isEmpty else { return nil }
+        let undatedBase = base.replacingOccurrences(
+            of: #"-\d{4}-?\d{2}-?\d{2}$"#, with: "", options: .regularExpression)
+        guard let (key, rates) = baseEntry(base) ?? baseEntry(undatedBase) else { return nil }
         let multiplier: Double
         if rates.fastMultiplier != 1 {
             multiplier = rates.fastMultiplier
-        } else if let supplementMultiplier = supplement.fastMultiplier(for: key) ?? supplement.fastMultiplier(for: base) {
+        } else if let requestedMultiplier = supplement.exactFastMultiplier(for: base) {
+            multiplier = supplement.exactFastMultiplier(for: key) ?? requestedMultiplier
+        } else if let supplementMultiplier = supplement.legacyFastMultiplier(for: key)
+            ?? supplement.legacyFastMultiplier(for: base)
+        {
             multiplier = supplementMultiplier
         } else {
             return nil
@@ -90,7 +110,9 @@ final class ModelPricing: Sendable {
 
     private func baseEntry(_ base: String) -> (key: String, rates: ModelRates)? {
         if let entry = supplement.pricing[base] { return (base, entry) }
+        let unqualified = String(base.split(separator: "/").last ?? Substring(base))
         return primary.findExact(base)
+            ?? primary.findExact(unqualified)
             ?? primary.findFuzzy(base, excludingFastVariants: true)
             ?? secondary.findExact(base)
     }

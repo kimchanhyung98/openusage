@@ -26,14 +26,22 @@ OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 청구 금액을 직�
 LiteLLM·models.dev 캐시는 유지.
 포크 피드를 읽는 앱으로 처음 전환할 때는 앱 업데이트 필요.
 그 이후 가격표 게시·배포가 완료되면 실행 중인 온라인 앱의 다음 갱신에서 받아가므로 일반 가격 수정에는 별도 앱 업데이트 불필요.
+GPT-6 Sol·Luna와 GPT-6.1 Sol의 요청별 장문 요금, Ultrafast 로그 구분, Fast 배율 선택 보정은 계산 코드 변경이므로 앱 업데이트 필요.
+새 Fast 배율도 앱 업데이트 후 적용 — 구버전은 가격표를 갱신해도 기존 Fast 배율 유지.
 
 ## 모델 이름을 찾아가는 방식
 
 로그와 CSV의 모델 이름이 카탈로그 키와 정확히 일치하는 경우는 드물어서, 다음 순서로 해석을 시도 — 보충 파일의 별칭 규칙, 키 정확 일치, fast 변형 처리(`-fast`·`.fast`·`@fast` 접미사는 기본 모델로 해석한 뒤 그 fast 배율 적용), 그다음 유사 매칭(프로바이더 접두사 `anthropic/`, `xai/` 등, 날짜 접미사 `claude-sonnet-4` ↔ `claude-sonnet-4-20250514`, 구분자 차이 `grok-4-3` ↔ `grok-4.3`).
 명시적 가격이나 모델별 배율이 없는 fast 변형은 표준 속도 요금을 슬쩍 적용하는 대신 가격 미확정 상태로 남김.
-이름에 `-fast` 구간이 없는 모델의 유사 매칭에서 fast 전용 항목 제외 — 날짜·설명이 뒤따라도 이미 배율이 반영된 요금을 기본 요금으로 재사용하지 않음.
+이름에 속도 구간이 없는 모델의 유사 매칭에서 Fast·Ultrafast 전용 항목 제외 — 날짜·설명이 뒤따라도 이미 배율이 반영된 요금을 기본 요금으로 재사용하지 않음.
 `grok-code-fast-1-0825`처럼 모델 이름 자체에 `fast`가 포함된 경우에는 프로바이더 접두사가 있는 해당 가격도 조회.
 `.`·`@` 구분자를 `-`로 정규화한 이름에도 같은 fast 항목 구분 적용.
+Fast·Ultrafast 구분자가 날짜(`-YYYYMMDD`·`-YYYY-MM-DD`) 바로 앞에 있어도 같은 규칙 적용.
+말단·날짜 직전의 `FAST`·`Fast` 등 속도 표기도 같은 요금 적용 — 모델 본체의 대소문자는 유지.
+Ultrafast 뒤에 추가 설명이 있거나 대소문자가 달라도 명시 단가가 없으면 일반 요금으로 유사 매칭하지 않음.
+새 Fast 배율은 등록된 모델·별칭·날짜 변형에만 적용하며, 이름이 비슷한 Audio·Realtime·Search 모델로 상속하지 않음.
+공통 가격 조회에서 기본 모델을 유사 매칭으로 찾았더라도, 요청한 모델이 새 배율의 등록 범위 밖이면 그 배율을 적용하지 않음.
+GPT-5.4 Mini는 일반·Fast 모두 프로바이더 접두사·대소문자·날짜가 다른 등록 별칭을 같은 모델 내역으로 표시.
 
 어떤 출처로도 가격을 매길 수 없는 모델은 지출 수치에서 아예 제외 — 그 토큰은 그날 타일, Usage Trend, 모델별 내역에 포함되지 않으며, 일부를 빠뜨린 달러 금액 옆에 전체 토큰 수를 붙이면 오해를 부르기 때문.
 대신 해당 타일의 경고 삼각형이 가격 미확정 모델을 나열하므로, 수치가 불완전하다는 사실과 그 원인 모델을 파악 가능.
@@ -43,9 +51,15 @@ LiteLLM·models.dev 캐시는 유지.
 
 비용은 사용 이벤트별로 네 가지 토큰 묶음 — 일반 입력, 캐시 쓰기, 캐시 읽기, 출력 — 에 모델의 백만 토큰당 요금을 적용해 계산하며, 1시간 캐시 쓰기 가격, 긴 컨텍스트 구간, fast 변형 배율까지 반영.
 Claude 로그는 기본 모델명을 그대로 두고 요청의 `speed` 필드로 fast 모드를 표시할 수 있으므로, `-fast` 별칭뿐 아니라 기본 항목도 그 배율을 함께 가짐.
-대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra의 Codex 요청은 입력 토큰 272k 초과에서 전환.
+대부분의 카탈로그 구간은 프롬프트 토큰 200k 초과부터 시작하고, GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna, GPT-6.1 Sol의 Codex 요청은 입력 토큰 272k 초과에서 전환.
 Codex 로그와 pi의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
 해당 Codex 장문 구간은 현재 기본 단가의 입력·캐시 2배, 출력 1.5배로 계산하므로 기본 단가 갱신도 함께 반영.
+GPT-6 Astra Ultrafast는 별도 공개 단가 사용 — 일반 요금의 6배이며 Fast 배율 중복 적용 없음.
+Codex의 `ultrafast-fast`처럼 두 속도를 결합한 모델 이름은 가격 미확정 처리.
+Codex 로그의 `thread_settings_applied.service_tier` 또는 그 안의 `thread_settings.service_tier`가 `ultrafast`이면 해당 요금 적용.
+같은 시각·모델·토큰 수라도 Standard·Fast·Ultrafast 이벤트는 구분하여 집계하고, 같은 티어의 동일 사본만 중복 제거.
+모델 이름의 `-ultrafast`·`.ultrafast`·`@ultrafast` 표기도 지원하며, 공개 가격이 없는 Ultrafast 모델은 가격 미확정 처리.
+기존 Codex 스캔 캐시는 새 버전에서 다시 파싱하여 과거 로그의 Ultrafast 구분 복원.
 pi에 양수 메시지 비용이 있으면 그대로 사용하고, 0이거나 없을 때만 추정.
 어느 경우든 높은 요금은 요청 전체에 적용.
 공개된 캐시 할인이 있으면 사용하고, 출처가 할인을 게시하지 않으면 Codex 캐시 입력은 전체 입력 요금으로 폴백.
@@ -53,11 +67,19 @@ Cursor의 내보내기는 여러 요청을 한 행에 합치므로, 그중 하�
 Claude 로그 줄에 `costUSD`가 명시돼 있으면 유효한 비음수 비용만 사용 — 잘못된 비용은 해당 사용량과 함께 제외 및 경고.
 중첩된 Claude advisor 사용량은 전달받은 비용이 없으므로, advisor 모델을 써서 그 토큰으로 따로 가격을 계산.
 결과는 청구서가 아니라 API 요금 기준의 추정 가치 — 구독 요금제는 토큰 단위로 청구하지 않음.
+Batch·Flex 할인과 지역 처리 10% 할증은 현재 수집 로그로 판별하지 않으므로 추정값에 미반영.
 과거 로그도 현재 확보한 가격으로 다시 계산하므로, 가격 갱신이 지난 날짜의 추정값을 바꿀 수 있음.
 
-2026-09-13 확인한 [OpenAI 가격 표](https://developers.openai.com/api/docs/pricing)의 GPT-5.6 Sol·GPT-6 Astra 요율과 [Cursor 모델 가격](https://cursor.com/docs/models-and-pricing.md)의 Grok 4.6·Fable 5.1·Kimi K3·Muse Spark 1.3 요율을 번들에 포함.
+2026-09-30 확인한 [OpenAI 가격 표](https://developers.openai.com/api/docs/pricing)의 GPT-6.1 Sol·GPT-6 Sol·Luna, GPT-6 Astra Ultrafast, GPT-5.5 Cyber, `chat-latest` 요율을 보충 파일에 포함.
+GPT-6.1 Sol은 입력 2달러·캐시 읽기 0.10달러·캐시 쓰기 2.50달러·출력 10달러 / 100만 토큰 — GPT-6 Sol과 일반 입력·출력은 같고 캐시 읽기만 절반.
+공식 모델 목록에서 확인된 GPT-6.1 계열은 Sol만 포함.
+GPT-6 Sol·Luna의 `none` 추론 등급 별칭 지원; GPT-6.1 Sol은 공식 지원 등급인 `low`부터 `max`까지만 별칭 등록.
+GPT-5.4 Mini·GPT-5 Mini·GPT-4.1·GPT-4o 계열의 누락 Fast 배율도 반영 — 모델마다 배율 상이.
+GPT-4o의 2024-05-13 스냅샷은 공개 캐시 할인 요율이 없어 일반 입력 단가 적용.
+GPT-Rosalind Research의 공개 청구 시작일은 2026-10-05이며 이번 가격 추가 대상에서 제외.
+2026-09-13 확인한 [Cursor 모델 가격](https://cursor.com/docs/models-and-pricing.md)의 Grok 4.6·Fable 5.1·Kimi K3·Muse Spark 1.3 요율도 번들에 포함.
 GLM 5.3은 [Z.ai 공식 가격](https://docs.z.ai/guides/overview/pricing)의 입력 1.4달러·캐시 읽기 0.26달러·출력 4.4달러 / 100만 토큰 반영.
-Sol의 현행 할인 요율은 공식 안내상 최소 2026-11-21까지 유지되며 이후 변경 시 갱신 필요.
+GPT-5.6 Sol의 현행 할인 요율은 공식 안내상 최소 2026-11-21까지 유지되며 이후 변경 시 갱신 필요.
 Grok 4.5 Fast의 출력 18달러와 Grok 4.6 Fast의 출력 12달러 / 100만 토큰은 서로 다른 공식 단가.
 Grok 4.6의 일반·Fast 요율은 `xai/` 접두사가 붙은 로그 이름에도 적용.
 
@@ -73,6 +95,7 @@ Grok 4.6의 일반·Fast 요율은 `xai/` 접두사가 붙은 로그 이름에�
 대기는 최대 100개이며 도착 순서가 배포 버전 순서를 보장하지는 않으므로, 게시·후속 Pages 배포의 실패 및 취소 여부 확인 필요.
 
 - **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
+  신규 Fast 배율은 `fast_multipliers_exact`에 등록하고, 구버전의 넓은 이름 매칭을 사용하는 `fast_multipliers`는 유지.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
   `main` 병합 후 가격표 게시와 Pages 배포가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
