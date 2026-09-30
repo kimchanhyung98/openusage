@@ -1,6 +1,6 @@
 {
   "$comment": "OpenUsage pricing supplement. Prices models that no public catalog carries, supplies fast-variant multipliers the catalogs omit, and maps provider log/CSV model slugs to canonical pricing keys (LiteLLM keys, models.dev ids, or entries in this file). Published to gh-pages by .github/workflows/pricing-supplement.yml on every change, so installed apps pick edits up within about an hour - no release needed. Rates are USD per million tokens. Sources: https://cursor.com/docs/models-and-pricing.md for Cursor-native entries and https://developers.openai.com/api/docs/pricing for OpenAI entries.",
-  "updated_at": "2026-09-30T02:12:12Z",
+  "updated_at": "2026-09-30T03:40:50Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -268,7 +268,7 @@
     {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-ultrafast"},
     {"pattern": "(?i)^(?:openai/)?gpt-5\\.5-cyber(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.5-cyber"},
     {"pattern": "(?i)^(?:openai/)?chat-latest$", "canonical": "chat-latest"},
-    {"pattern": "^gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?-fast$", "canonical": "gpt-5.4-mini-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.4-mini-fast"},
     {"pattern": "^(?:zai/)?glm-5\\.3$", "canonical": "glm-5.3"},
     {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?-fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-fast"},
     {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra"},
