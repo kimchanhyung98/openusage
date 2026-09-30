@@ -463,6 +463,8 @@ actor CodexLogUsageScanner {
         var timestamp: Date
         var model: String
         var pricingModel: String?
+        var isFast: Bool
+        var isUltrafast: Bool
         var input: Int
         var cached: Int
         var output: Int
@@ -486,7 +488,8 @@ actor CodexLogUsageScanner {
                 continue
             }
             let key = EventKey(
-                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel, input: event.input,
+                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel,
+                isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
                 cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
             )
             guard seen.insert(key).inserted else { continue }

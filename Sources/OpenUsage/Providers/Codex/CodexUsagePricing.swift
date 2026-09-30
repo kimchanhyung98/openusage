@@ -5,16 +5,16 @@ enum CodexUsagePricing {
     static func estimate(
         model: String, tokens: TokenBreakdown, pricing: ModelPricing, isUltrafast: Bool = false
     ) -> Double? {
-        let normalized = model.replacingOccurrences(
-            of: #"[.@](ultrafast|fast)(?=(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$)"#,
-            with: "-$1", options: .regularExpression
-        )
+        let normalized = ModelPricing.normalizedFastName(model)
         let canonical =
             pricing.supplement.canonicalName(for: normalized)
             ?? pricing.supplement.canonicalName(for: datedBaseModel(normalized)) ?? normalized
-        if isUltrafast || canonical.hasSuffix("-ultrafast") {
+        let isUltrafastAlias =
+            canonical.range(of: #"-ultrafast(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#, options: .regularExpression) != nil
+        if isUltrafast || isUltrafastAlias {
             let base = canonical.replacingOccurrences(
-                of: #"-(?:ultrafast|fast)$"#, with: "", options: .regularExpression)
+                of: #"-(?:ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
+                with: "", options: .regularExpression)
             let qualified = normalized.replacingOccurrences(
                 of: #"-(?:ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
                 with: "", options: .regularExpression
@@ -22,17 +22,19 @@ enum CodexUsagePricing {
                 of: #"^(.+?)(-\d{4}-?\d{2}-?\d{2})?$"#, with: "$1-ultrafast$2", options: .regularExpression
             )
             let aliasRates =
-                canonical.hasSuffix("-ultrafast") ? exactQualifiedRates(model: model, pricing: pricing) : nil
+                isUltrafastAlias ? exactQualifiedRates(model: model, pricing: pricing) : nil
             guard
                 let rates = aliasRates ?? exactQualifiedRates(model: qualified, pricing: pricing)
+                    ?? resolveRates(model: qualified, pricing: pricing)
                     ?? resolveRates(model: base + "-ultrafast", pricing: pricing)
             else { return nil }
             var request = tokens
             request.isFast = false
             return adjusted(rates: rates, model: base).costDollars(for: request)
         }
-        let isFastAlias = canonical.hasSuffix("-fast")
-        let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
+        let fastBase = ModelPricing.fastBaseName(canonical)
+        let isFastAlias = fastBase != nil
+        let rateModel = fastBase ?? canonical
         let prefixedBase: String
         if isFastAlias, let separator = model.lastIndex(of: "/") {
             prefixedBase = String(model[...separator]) + withoutProviderPrefix(rateModel)
