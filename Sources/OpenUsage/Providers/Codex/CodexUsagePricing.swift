@@ -2,12 +2,35 @@ import Foundation
 
 /// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
 enum CodexUsagePricing {
-    static func estimate(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> Double? {
+    static func estimate(
+        model: String, tokens: TokenBreakdown, pricing: ModelPricing, isUltrafast: Bool = false
+    ) -> Double? {
         let normalized = model.replacingOccurrences(
-            of: #"[.@]fast(?=(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$)"#, with: "-fast", options: .regularExpression
+            of: #"[.@](ultrafast|fast)(?=(?:-\d{8}|-\d{4}-\d{2}-\d{2})?$)"#,
+            with: "-$1", options: .regularExpression
         )
-        let canonical = pricing.supplement.canonicalName(for: normalized)
+        let canonical =
+            pricing.supplement.canonicalName(for: normalized)
             ?? pricing.supplement.canonicalName(for: datedBaseModel(normalized)) ?? normalized
+        if isUltrafast || canonical.hasSuffix("-ultrafast") {
+            let base = canonical.replacingOccurrences(
+                of: #"-(?:ultrafast|fast)$"#, with: "", options: .regularExpression)
+            let qualified = normalized.replacingOccurrences(
+                of: #"-(?:ultrafast|fast)(?=(?:-\d{4}-?\d{2}-?\d{2})?$)"#,
+                with: "", options: .regularExpression
+            ).replacingOccurrences(
+                of: #"^(.+?)(-\d{4}-?\d{2}-?\d{2})?$"#, with: "$1-ultrafast$2", options: .regularExpression
+            )
+            let aliasRates =
+                canonical.hasSuffix("-ultrafast") ? exactQualifiedRates(model: model, pricing: pricing) : nil
+            guard
+                let rates = aliasRates ?? exactQualifiedRates(model: qualified, pricing: pricing)
+                    ?? resolveRates(model: base + "-ultrafast", pricing: pricing)
+            else { return nil }
+            var request = tokens
+            request.isFast = false
+            return adjusted(rates: rates, model: base).costDollars(for: request)
+        }
         let isFastAlias = canonical.hasSuffix("-fast")
         let rateModel = isFastAlias ? String(canonical.dropLast("-fast".count)) : canonical
         let prefixedBase: String
@@ -27,7 +50,11 @@ enum CodexUsagePricing {
         // fast-only catalog는 이미 배율 반영된 단가 — base가 있을 때만 Codex 배율 추가.
         var request = tokens
         request.isFast = isFastAlias ? baseRates != nil : tokens.isFast
-        return adjusted(rates: rates, model: rateModel).costDollars(for: request)
+        var effectiveRates = rates
+        if rates.fastMultiplier == 1, let multiplier = pricing.supplement.fastMultiplier(for: rateModel) {
+            effectiveRates.fastMultiplier = multiplier
+        }
+        return adjusted(rates: effectiveRates, model: rateModel).costDollars(for: request)
     }
 
     static func estimatePi(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> PiUsageScanner.CostEstimate {
@@ -43,7 +70,8 @@ enum CodexUsagePricing {
         let base = datedBaseModel(model)
         switch base {
         case "gpt-5.4", "gpt-5.4-pro", "gpt-5.5", "gpt-5.5-pro",
-             "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra":
+            "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
+            "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol":
             effective.inputAbove200kPerMillion = rates.inputPerMillion * 2
             effective.outputAbove200kPerMillion = rates.outputPerMillion * 1.5
             effective.cacheWriteAbove200kPerMillion = rates.cacheWritePerMillion * 2
@@ -59,7 +87,8 @@ enum CodexUsagePricing {
         switch base {
         case "gpt-5.5", "gpt-5.5-pro":
             effective.fastMultiplier = 2.5
-        case "gpt-5.4", "gpt-5.4-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra":
+        case "gpt-5.4", "gpt-5.4-pro", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6-astra",
+            "gpt-6-sol", "gpt-6-luna", "gpt-6.1-sol":
             effective.fastMultiplier = 2
         default:
             effective.fastMultiplier = rates.fastMultiplier == 1 ? 2 : rates.fastMultiplier

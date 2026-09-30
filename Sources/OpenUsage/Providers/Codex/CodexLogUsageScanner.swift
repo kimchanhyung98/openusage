@@ -15,7 +15,7 @@ actor CodexLogUsageScanner {
     private let additionalRoots: [URL]
 
     /// Turn 1개의 token usage — `token_count` line에서 정규화 (delta 적용 완료).
-    /// `isFast`는 turn 실행 시점의 fast/priority service tier 여부 — session 자체 log에서 추적, tier metadata 없으면 standard.
+    /// Fast·Ultrafast는 turn 실행 시점의 service tier — session 자체 log에서 추적, tier metadata 없으면 standard.
     struct Event: Codable, Sendable, Equatable {
         var timestamp: Date
         var model: String
@@ -25,13 +25,14 @@ actor CodexLogUsageScanner {
         var reasoning: Int
         var total: Int
         var isFast: Bool = false
+        var isUltrafast: Bool = false
         /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
         var pricingModel: String? = nil
     }
 
-    /// 손상 행의 모델 보존·재전송의 모델 되감기 방지 규칙 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 10
+    /// Ultrafast tier 보존 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 11
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -154,6 +155,7 @@ actor CodexLogUsageScanner {
         var replayBaselineUnknown = false
         var currentModel: String?
         var currentTierIsFast = false
+        var currentTierIsUltrafast = false
         var sawSessionMeta = false
         // child session의 replay된 parent history 구간 동안 non-nil.
         var replayGate: ChildReplayGate?
@@ -197,6 +199,7 @@ actor CodexLogUsageScanner {
                payload?["type"] as? String == "thread_settings_applied" {
                 if let tier = serviceTier(in: payload) {
                     currentTierIsFast = tier == "fast" || tier == "priority"
+                    currentTierIsUltrafast = tier == "ultrafast"
                 }
                 continue
             }
@@ -266,17 +269,19 @@ actor CodexLogUsageScanner {
                 currentModel: &currentModel
             )
 
-            events.append(Event(
-                timestamp: timestamp,
-                model: model,
-                input: usage.input,
-                cached: min(usage.cached, usage.input),
-                output: usage.output,
-                reasoning: usage.reasoning,
-                total: usage.total,
-                isFast: currentTierIsFast,
-                pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
-            ))
+            events.append(
+                Event(
+                    timestamp: timestamp,
+                    model: model,
+                    input: usage.input,
+                    cached: min(usage.cached, usage.input),
+                    output: usage.output,
+                    reasoning: usage.reasoning,
+                    total: usage.total,
+                    isFast: currentTierIsFast,
+                    isUltrafast: currentTierIsUltrafast,
+                    pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
+                ))
         }
         UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
         return events
@@ -498,9 +503,13 @@ actor CodexLogUsageScanner {
                 output: event.output, isFast: event.isFast
             )
             let pricingModel = event.pricingModel ?? model
-            guard let eventCost = CodexUsagePricing.estimate(model: pricingModel, tokens: tokens, pricing: pricing) else {
+            guard
+                let eventCost = CodexUsagePricing.estimate(
+                    model: pricingModel, tokens: tokens, pricing: pricing, isUltrafast: event.isUltrafast
+                )
+            else {
                 if event.total > 0 {
-                    accumulator.addUnknownModel(day: day, model: model)
+                    accumulator.addUnknownModel(day: day, model: event.isUltrafast ? model + " (Ultrafast)" : model)
                 }
                 continue
             }

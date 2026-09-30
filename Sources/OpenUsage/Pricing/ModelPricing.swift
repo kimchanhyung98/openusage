@@ -59,15 +59,21 @@ final class ModelPricing: Sendable {
             return resolveUncached(model: normalized) ?? secondary.findExact(name)?.rates
         }
         if let fast = fastVariant(name) { return fast }
-        if name.hasSuffix("-fast") { return secondary.findExact(name)?.rates }
+        if name.hasSuffix("-fast")
+            || name.range(
+                of: #"[-.@]ultrafast(?:-\d{4}-?\d{2}-?\d{2})?$"#, options: .regularExpression
+            ) != nil
+        {
+            return secondary.findExact(name)?.rates
+        }
         if let fuzzy = primary.findFuzzy(name, excludingFastVariants: true) { return fuzzy.rates }
         if let exact = secondary.findExact(name) { return exact.rates }
         return nil
     }
 
-    /// 말단 fast 구분자만 통일 — 모델 버전의 소수점과 이름 내부 fast 구간 유지.
+    /// 말단 Fast·Ultrafast 구분자만 통일 — 모델 버전의 소수점과 이름 내부 fast 구간 유지.
     static func normalizedFastName(_ name: String) -> String {
-        name.replacingOccurrences(of: #"[.@]fast$"#, with: "-fast", options: .regularExpression)
+        name.replacingOccurrences(of: #"[.@](ultrafast|fast)$"#, with: "-$1", options: .regularExpression)
     }
 
     /// `<base>-fast` slug를 base entry × fast multiplier로 가격 산정 — multiplier 미상이면 nil.

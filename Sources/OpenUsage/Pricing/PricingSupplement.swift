@@ -37,12 +37,15 @@ struct PricingSupplement: Sendable {
         return nil
     }
 
-    /// resolve된 base model의 fast multiplier — 정확 key 우선, 다음 ccusage식 정규화 suffix 매칭으로 dated key도 base entry 탐색.
+    /// base model의 Fast 배율 — 정확 key 우선, 접두사·날짜가 있으면 가장 구체적인 모델명 우선.
     func fastMultiplier(for model: String) -> Double? {
         if let exact = fastMultipliers[model] { return exact }
         let normalized = PricingCatalog.normalizedKey(model)
+        let candidates = fastMultipliers.sorted {
+            $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count
+        }
         for part in normalized.split(whereSeparator: { $0 == "/" || $0 == ":" }) {
-            for (base, multiplier) in fastMultipliers {
+            for (base, multiplier) in candidates {
                 if Self.matchesModelSuffix(part: String(part), base: PricingCatalog.normalizedKey(base)) {
                     return multiplier
                 }
