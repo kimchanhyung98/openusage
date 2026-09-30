@@ -7,6 +7,8 @@ struct PricingSupplement: Sendable {
     let pricing: [String: ModelRates]
     /// fast variant·request 수준 fast 신호용 base-model multiplier.
     let fastMultipliers: [String: Double]
+    /// 새 배율은 정확 모델·등록 별칭·날짜 변형에만 적용 — 구버전 decoder는 이 필드 무시.
+    let exactFastMultipliers: [String: Double]
     let aliasRules: [AliasRule]
     let updatedAt: String?
 
@@ -19,11 +21,13 @@ struct PricingSupplement: Sendable {
     init(
         pricing: [String: ModelRates] = [:],
         fastMultipliers: [String: Double] = [:],
+        exactFastMultipliers: [String: Double] = [:],
         aliasRules: [AliasRule] = [],
         updatedAt: String? = nil
     ) {
         self.pricing = pricing
         self.fastMultipliers = fastMultipliers
+        self.exactFastMultipliers = exactFastMultipliers
         self.aliasRules = aliasRules
         self.updatedAt = updatedAt
     }
@@ -39,7 +43,22 @@ struct PricingSupplement: Sendable {
 
     /// base model의 Fast 배율 — 정확 key 우선, 접두사·날짜가 있으면 가장 구체적인 모델명 우선.
     func fastMultiplier(for model: String) -> Double? {
-        if let exact = fastMultipliers[model] { return exact }
+        if let exact = exactFastMultipliers[model] ?? fastMultipliers[model] { return exact }
+        let canonical = canonicalName(for: model) ?? model
+        let normalizedExact = PricingCatalog.normalizedKey(canonical).lowercased()
+        let exactCandidates = exactFastMultipliers.sorted { $0.key.count > $1.key.count }
+        for part in normalizedExact.split(whereSeparator: { $0 == "/" || $0 == ":" }) {
+            for (base, multiplier) in exactCandidates {
+                let normalizedBase = PricingCatalog.normalizedKey(base).lowercased()
+                guard part.hasPrefix(normalizedBase) else { continue }
+                let suffix = String(part.dropFirst(normalizedBase.count))
+                if suffix.isEmpty
+                    || suffix.range(of: #"^-(?:\d{8}|\d{4}-\d{2}-\d{2})$"#, options: .regularExpression) != nil
+                {
+                    return multiplier
+                }
+            }
+        }
         let normalized = PricingCatalog.normalizedKey(model)
         let candidates = fastMultipliers.sorted {
             $0.key.count == $1.key.count ? $0.key < $1.key : $0.key.count > $1.key.count
@@ -77,7 +96,7 @@ extension PricingSupplement {
                 cacheReadPerMillion: entry.cacheReadPerMillion ?? entry.inputPerMillion * 0.1,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
                 // Claude `speed` field 같은 request 수준 fast 신호 보존.
-                fastMultiplier: file.fastMultipliers?[model] ?? 1
+                fastMultiplier: file.exactFastMultipliers?[model] ?? file.fastMultipliers?[model] ?? 1
             )
         }
         var rules: [AliasRule] = []
@@ -92,6 +111,7 @@ extension PricingSupplement {
         return PricingSupplement(
             pricing: pricing,
             fastMultipliers: file.fastMultipliers ?? [:],
+            exactFastMultipliers: file.exactFastMultipliers ?? [:],
             aliasRules: rules,
             updatedAt: file.updatedAt
         )
@@ -101,6 +121,7 @@ extension PricingSupplement {
         var updatedAt: String?
         var pricing: [String: Entry]
         var fastMultipliers: [String: Double]?
+        var exactFastMultipliers: [String: Double]?
         var aliasRules: [Rule]
 
         struct Entry: Decodable {
@@ -126,6 +147,7 @@ extension PricingSupplement {
             case updatedAt = "updated_at"
             case pricing
             case fastMultipliers = "fast_multipliers"
+            case exactFastMultipliers = "fast_multipliers_exact"
             case aliasRules = "alias_rules"
         }
     }

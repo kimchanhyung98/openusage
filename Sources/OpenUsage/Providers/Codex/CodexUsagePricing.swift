@@ -33,6 +33,11 @@ enum CodexUsagePricing {
             return adjusted(rates: rates, model: base).costDollars(for: request)
         }
         let fastBase = ModelPricing.fastBaseName(canonical)
+        if let fastBase,
+            fastBase.range(of: #"(?i)[-.@]ultrafast(?:$|[^A-Za-z0-9])"#, options: .regularExpression) != nil
+        {
+            return nil
+        }
         let isFastAlias = fastBase != nil
         let rateModel = fastBase ?? canonical
         let prefixedBase: String

@@ -21,11 +21,13 @@ struct PricingCatalog: Sendable, Equatable {
     func findFuzzy(_ model: String, excludingFastVariants: Bool = false) -> (key: String, rates: ModelRates)? {
         let normalizedModel = Self.normalizedKey(model)
         let fastSegment = #"-(?:ultrafast|fast)($|[^A-Za-z0-9])"#
-        let excludeFast = excludingFastVariants && normalizedModel.range(of: fastSegment, options: .regularExpression) == nil
+        let excludeFast =
+            excludingFastVariants
+            && normalizedModel.lowercased().range(of: fastSegment, options: .regularExpression) == nil
         var best: (key: String, rates: ModelRates)?
         for (key, rates) in entries {
             if excludeFast {
-                let normalizedCandidate = Self.normalizedKey(key)
+                let normalizedCandidate = Self.normalizedKey(key).lowercased()
                 if normalizedCandidate.contains("-fast") || normalizedCandidate.contains("-ultrafast"),
                    normalizedCandidate.range(of: fastSegment, options: .regularExpression) != nil { continue }
             }

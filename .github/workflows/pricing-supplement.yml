@@ -59,9 +59,10 @@ jobs:
                   problems.append(f"alias pattern {rule['pattern']!r}: {error}")
               if not rule.get("canonical"):
                   problems.append(f"alias pattern {rule['pattern']!r} has no canonical")
-          for model, multiplier in (supplement.get("fast_multipliers") or {}).items():
-              if not isinstance(multiplier, (int, float)) or multiplier <= 0:
-                  problems.append(f"fast_multipliers[{model}] must be a positive number")
+          for field in ("fast_multipliers", "fast_multipliers_exact"):
+              for model, multiplier in (supplement.get(field) or {}).items():
+                  if not isinstance(multiplier, (int, float)) or multiplier <= 0:
+                      problems.append(f"{field}[{model}] must be a positive number")
           if problems:
               sys.exit("Supplement validation failed:\n" + "\n".join(problems))
           print(f"Supplement OK: {len(supplement['pricing'])} models, "
