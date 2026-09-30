@@ -27,6 +27,7 @@ LiteLLM·models.dev 캐시는 유지.
 포크 피드를 읽는 앱으로 처음 전환할 때는 앱 업데이트 필요.
 그 이후 가격표 게시·배포가 완료되면 실행 중인 온라인 앱의 다음 갱신에서 받아가므로 일반 가격 수정에는 별도 앱 업데이트 불필요.
 GPT-6 Sol·Luna와 GPT-6.1 Sol의 요청별 장문 요금, Ultrafast 로그 구분, Fast 배율 선택 보정은 계산 코드 변경이므로 앱 업데이트 필요.
+새 Fast 배율도 앱 업데이트 후 적용 — 구버전은 가격표를 갱신해도 기존 Fast 배율 유지.
 
 ## 모델 이름을 찾아가는 방식
 
@@ -37,6 +38,8 @@ GPT-6 Sol·Luna와 GPT-6.1 Sol의 요청별 장문 요금, Ultrafast 로그 구�
 `.`·`@` 구분자를 `-`로 정규화한 이름에도 같은 fast 항목 구분 적용.
 Fast·Ultrafast 구분자가 날짜(`-YYYYMMDD`·`-YYYY-MM-DD`) 바로 앞에 있어도 같은 규칙 적용.
 Ultrafast 뒤에 추가 설명이 있거나 대소문자가 달라도 명시 단가가 없으면 일반 요금으로 유사 매칭하지 않음.
+새 Fast 배율은 등록된 모델·별칭·날짜 변형에만 적용하며, 이름이 비슷한 Audio·Realtime·Search 모델로 상속하지 않음.
+GPT-5.4 Mini는 일반·Fast 모두 프로바이더 접두사·대소문자·날짜가 다른 등록 별칭을 같은 모델 내역으로 표시.
 
 어떤 출처로도 가격을 매길 수 없는 모델은 지출 수치에서 아예 제외 — 그 토큰은 그날 타일, Usage Trend, 모델별 내역에 포함되지 않으며, 일부를 빠뜨린 달러 금액 옆에 전체 토큰 수를 붙이면 오해를 부르기 때문.
 대신 해당 타일의 경고 삼각형이 가격 미확정 모델을 나열하므로, 수치가 불완전하다는 사실과 그 원인 모델을 파악 가능.
@@ -50,6 +53,7 @@ Claude 로그는 기본 모델명을 그대로 두고 요청의 `speed` 필드�
 Codex 로그와 pi의 Codex 추정에는 같은 요청별 규칙을 사용하며, 일반 입력과 캐시 읽기·쓰기를 합친 수로 구간 판정.
 해당 Codex 장문 구간은 현재 기본 단가의 입력·캐시 2배, 출력 1.5배로 계산하므로 기본 단가 갱신도 함께 반영.
 GPT-6 Astra Ultrafast는 별도 공개 단가 사용 — 일반 요금의 6배이며 Fast 배율 중복 적용 없음.
+Codex의 `ultrafast-fast`처럼 두 속도를 결합한 모델 이름은 가격 미확정 처리.
 Codex 로그의 `thread_settings_applied.service_tier` 또는 그 안의 `thread_settings.service_tier`가 `ultrafast`이면 해당 요금 적용.
 같은 시각·모델·토큰 수라도 Standard·Fast·Ultrafast 이벤트는 구분하여 집계하고, 같은 티어의 동일 사본만 중복 제거.
 모델 이름의 `-ultrafast`·`.ultrafast`·`@ultrafast` 표기도 지원하며, 공개 가격이 없는 Ultrafast 모델은 가격 미확정 처리.
@@ -89,6 +93,7 @@ Grok 4.6의 일반·Fast 요율은 `xai/` 접두사가 붙은 로그 이름에�
 대기는 최대 100개이며 도착 순서가 배포 버전 순서를 보장하지는 않으므로, 게시·후속 Pages 배포의 실패 및 취소 여부 확인 필요.
 
 - **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
+  신규 Fast 배율은 `fast_multipliers_exact`에 등록하고, 구버전의 넓은 이름 매칭을 사용하는 `fast_multipliers`는 유지.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
   `main` 병합 후 가격표 게시와 Pages 배포가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
