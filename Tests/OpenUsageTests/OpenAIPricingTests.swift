@@ -149,6 +149,43 @@ final class OpenAIPricingTests: XCTestCase {
         }
     }
 
+    func testNewCodexModelsHonorRefreshedFastMultipliers() throws {
+        let url = try XCTUnwrap(Bundle.openUsageResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var multipliers = try XCTUnwrap(object["fast_multipliers_exact"] as? [String: Double])
+        let models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]
+        for model in models { multipliers[model] = 3 }
+        object["fast_multipliers_exact"] = multipliers
+        let refreshed = ModelPricing(
+            supplement: try PricingSupplement.decode(from: JSONSerialization.data(withJSONObject: object)),
+            primary: pricing.primary, secondary: pricing.secondary)
+
+        for model in models {
+            for (name, fastName) in [
+                (model, model + "-fast"),
+                ("openai/" + model + "-max-20260929", "openai/" + model + "-max-fast-20260929"),
+            ] {
+                let tokens = TokenBreakdown(input: 1_000, cacheRead: 100, output: 100)
+                let standard = try XCTUnwrap(CodexUsagePricing.estimate(model: name, tokens: tokens, pricing: pricing))
+                XCTAssertEqual(
+                    try XCTUnwrap(CodexUsagePricing.estimate(model: name, tokens: tokens, pricing: refreshed)),
+                    standard, accuracy: 1e-9, name)
+                XCTAssertEqual(
+                    try XCTUnwrap(refreshed.estimatedCostDollars(model: fastName, tokens: tokens)),
+                    standard * 3, accuracy: 1e-9, name)
+                var fast = tokens
+                fast.isFast = true
+                for (requestModel, requestTokens) in [(name, fast), (fastName, tokens)] {
+                    XCTAssertEqual(
+                        try XCTUnwrap(
+                            CodexUsagePricing.estimate(
+                                model: requestModel, tokens: requestTokens, pricing: refreshed
+                            )), standard * 3, accuracy: 1e-9, requestModel)
+                }
+            }
+        }
+    }
+
     func testQualifiedFastModelsKeepTheirSpecificMultiplier() throws {
         let cases: [(String, Double, Double)] = [
             ("openai/gpt-5-mini-20260929", 1.8, 0.004095),
