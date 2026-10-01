@@ -18,7 +18,9 @@ npm run preview  # dist/ 미리보기 — CSP·인라인 검사는 여기서만 
 사이트 Node 의존성은 `site/package.json`에서 관리.
 루트 npm 프로젝트는 Git 훅 설정용이며 사이트 의존성과 분리.
 Node 22.18 이상 필요, CI는 Node 24 사용.
-정적 검사에 필요한 Node 타입은 `@types/node` 24 개발 의존성으로 직접 선언.
+정적 검사에 필요한 Node 타입은 `@types/node` 개발 의존성으로 직접 선언.
+`astro check`가 사용하는 compiler API와 호환되는 TypeScript 6.0.3 사용.
+TypeScript 7은 해당 API를 제공하지 않아 설치·정적 검사 실패 — Astro 검사 도구의 지원 전까지 6.x 유지.
 Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `npx astro dev status`·`npx astro dev stop`으로 확인·종료.
 
 ## 페이지 이동
