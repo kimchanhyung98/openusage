@@ -157,6 +157,18 @@ final class StreamingProcessRunnerTests: XCTestCase {
         XCTAssertEqual(result.output.utf8.count, 8)
     }
 
+    func testSeparatelyCapturedStderrNeverReachesStdoutCallback() async throws {
+        let chunks = LockedText()
+        var request = makeRequest(arguments: ["-c", "printf stdout; printf stderr >&2"])
+        request.captureStandardErrorSeparately = true
+
+        let result = try await StreamingProcessRunner().run(request) { chunks.append($0) }
+
+        XCTAssertEqual(result.output, "stdout")
+        XCTAssertEqual(result.standardError, "stderr")
+        XCTAssertEqual(chunks.value, "stdout")
+    }
+
     func testNaturalExitRetainsBufferedOutputWhileCallbackIsBusy() async throws {
         let request = makeRequest(arguments: [
             "-c", "printf begin; /bin/sleep 0.1; /bin/sleep 2 & printf final; exit 0",
