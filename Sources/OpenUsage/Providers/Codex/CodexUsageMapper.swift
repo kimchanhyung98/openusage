@@ -11,6 +11,30 @@ enum CodexUsageMapper {
     /// Codex flex credit 1개당 4¢ — credits line은 dollar 값 선행 (JS plugin의 `CREDIT_USD_RATE` mirror).
     static let creditUSDRate = 0.04
 
+    /// 자동 전송은 기본 버킷의 명시적 7일 윈도와 원본 사용률만 허용. UI 슬롯·헤더 대체값 제외.
+    static func weeklyTimerObservation(
+        response: HTTPResponse,
+        accountKey: String,
+        observedAt: Date
+    ) -> CodexWeeklyTimerObservation? {
+        guard (200..<300).contains(response.statusCode),
+              let body = ProviderParse.jsonObject(response.body),
+              let rateLimit = body["rate_limit"] as? [String: Any]
+        else { return nil }
+        let weeklyWindows = ["primary_window", "secondary_window"].compactMap { rateLimit[$0] as? [String: Any] }
+            .filter { ProviderParse.number($0["limit_window_seconds"]) == 604_800 }
+        guard weeklyWindows.count == 1, let window = weeklyWindows.first,
+              let used = ProviderParse.number(window["used_percent"]), used.isFinite, (0...100).contains(used)
+        else { return nil }
+        return CodexWeeklyTimerObservation(
+            accountKey: accountKey,
+            usedPercent: used,
+            resetsAt: resetDate(window, now: observedAt),
+            observedAt: observedAt,
+            rawResetAt: ProviderParse.number(window["reset_at"]).map { Date(timeIntervalSince1970: $0) }
+        )
+    }
+
     static func mapUsageResponse(
         _ response: HTTPResponse,
         resetCredits: HTTPResponse? = nil,

@@ -80,8 +80,10 @@ final class WidgetDataStore {
     /// 테스트·프리뷰에서는 nil(no-op).
     @ObservationIgnored var onRefreshOutcome: (@MainActor (String, RefreshOutcome, ErrorCategory?, RefreshTrigger, Bool) -> Void)?
     /// GUI 전용 quota 제어 입력 — cache·실패·취소·폐기된 catalog 결과는 전달 금지.
-    @ObservationIgnored var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor]) -> Void)?
+    @ObservationIgnored var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)?
+    @ObservationIgnored var isRefreshSuspended: (@MainActor (String) -> Bool)?
     @ObservationIgnored var onQuotaInvalidated: (@MainActor () -> Void)?
+    private var automationWarnings: [String: String] = [:]
     /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
     @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
     @ObservationIgnored private var peerHistoryDocuments: [UsageHistoryDocument] = []
@@ -207,6 +209,17 @@ final class WidgetDataStore {
                                     maxAttempts: maxAttempts, retryDelay: retryDelay)
     }
 
+    func refreshAfterWeeklyTimer(providerID: String, isCurrent: @escaping @MainActor () -> Bool) async {
+        for _ in 0..<15 {
+            guard !Task.isCancelled, isCurrent() else { return }
+            let outcome = await refresh(providerID: providerID, force: true, trigger: .weeklyTimer)
+            guard outcome == .skipped else { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+        }
+        AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID,
+                              localContext: "Post-timer refresh kept being skipped")
+    }
+
     /// 키 저장·삭제 성공 직후 동기 호출 — Task 시작 전 이전 조회를 무효화하고 다음 실제 조회 보장.
     @discardableResult
     func credentialsDidChange(for providerID: String) -> Int {
@@ -298,6 +311,7 @@ final class WidgetDataStore {
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         localSnapshots = localSnapshots.filter { keepsState($0.key) }
         refreshResults = refreshResults.filter { keepsState($0.key) }
+        automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
@@ -367,6 +381,7 @@ final class WidgetDataStore {
         notifyHistoryChange: Bool = true
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
+        guard isRefreshSuspended?(providerID) != true else { return .skipped }
         // TTL-fresh라도 다른 account 소유가 증명된 entry는 refresh를 short-circuit하면 안 됨 —
         // miss로 취급해 fetch가 덮어쓰도록 처리(persisted freshness의 one-shot CLI에서 특히 위험).
         let staleAccountStamp = cache.hasStaleAccountStamp(
@@ -503,7 +518,7 @@ final class WidgetDataStore {
         if notifyHistoryChange { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "\(providerID) ok (\(durationMs)ms)")
         onRefreshOutcome?(providerID, .refreshed, nil, trigger, degraded)
-        onFreshSnapshot?(snapshot, provider.widgetDescriptors)
+        onFreshSnapshot?(snapshot, provider.widgetDescriptors, trigger)
         return .refreshed
     }
 
@@ -678,7 +693,12 @@ final class WidgetDataStore {
     /// Provider header의 amber-triangle notice — 현재 hard refresh error가 stale soft warning에 우선
     /// (에러가 밀리면 stale warning이 실제 실패를 가림). 에러 없으면 soft warning 표시.
     func headerNotice(for providerID: String) -> String? {
-        errorMessage(for: providerID) ?? warningMessage(for: providerID)
+        errorMessage(for: providerID) ?? automationWarnings[providerID] ?? warningMessage(for: providerID)
+    }
+
+    func setAutomationWarning(_ message: String?, for providerID: String) {
+        guard providersByID[providerID] != nil else { return }
+        automationWarnings[providerID] = message
     }
 
     /// 에러 line만 있는 snapshot은 실패한 refresh — 메시지는 badge에서 추출.
