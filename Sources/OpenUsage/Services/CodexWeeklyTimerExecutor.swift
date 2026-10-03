@@ -10,6 +10,8 @@ struct CodexWeeklyTimerExecutionResult: Sendable {
 
 @MainActor
 protocol CodexWeeklyTimerExecuting {
+    var startupFailureDescription: String? { get }
+
     func execute(
         auth: CodexAuth,
         canLaunch: @escaping @MainActor () async -> Bool
@@ -17,6 +19,8 @@ protocol CodexWeeklyTimerExecuting {
 }
 
 extension CodexWeeklyTimerExecuting {
+    var startupFailureDescription: String? { nil }
+
     func execute(auth: CodexAuth) async -> CodexWeeklyTimerExecutionResult {
         await execute(auth: auth, canLaunch: { true })
     }
@@ -57,6 +61,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
     private let executableResolver: @MainActor () -> URL?
     private let baseDirectory: URL
     private let timeout: TimeInterval
+    private(set) var startupFailureDescription: String?
 
     init(
         processRunner: any StreamingProcessRunning = StreamingProcessRunner(),
@@ -72,7 +77,9 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         do {
             try CodexWeeklyTimerWorkspace.cleanAbandonedWorkspaces(baseDirectory: baseDirectory)
         } catch {
-            AppLog.error(.subprocess, "Codex weekly timer abandoned credential cleanup failed")
+            startupFailureDescription = "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry."
+            AppDiagnostics.failure(.weeklyTimer, error: error, providerID: "codex",
+                                   localContext: "Could not remove abandoned timer credentials")
         }
     }
 
@@ -93,6 +100,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         let workspace: CodexWeeklyTimerWorkspace
         do {
             workspace = try CodexWeeklyTimerWorkspace(baseDirectory: baseDirectory)
+            startupFailureDescription = nil
         } catch {
             return failure("Codex weekly timer credentials could not be prepared.")
         }

@@ -34,6 +34,7 @@ final class CodexWeeklyTimerRouter {
                     failureDescription: "Weekly timer account changed before the message was sent."
                 )
             }
+            let hadStartupFailure = self.executor.startupFailureDescription != nil
             var result = await self.executor.execute(auth: session.authState.auth) { [weak self] in
                 guard self?.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey) == true else {
                     return false
@@ -46,6 +47,11 @@ final class CodexWeeklyTimerRouter {
                     return false
                 }
                 return self?.isCurrent(providerID, bindingID: bindingID, accountKey: session.observation.accountKey) == true
+            }
+            if !self.isShuttingDown, hadStartupFailure, self.executor.startupFailureDescription == nil {
+                for (id, current) in self.bindings where self.isProviderEnabled(id) {
+                    self.report(id, current.accountKey.flatMap { self.warningsByAccount[$0] })
+                }
             }
             if let updatedAuth = result.updatedAuth {
                 do {
@@ -107,18 +113,28 @@ final class CodexWeeklyTimerRouter {
         self.isProviderEnabled = isProviderEnabled
         self.executor = executor
         self.store = store
-        self.report = report
+        self.report = { providerID, message in
+            report(providerID, executor.startupFailureDescription ?? message)
+        }
         self.refresh = refresh
         self.now = now
         self.wait = wait
+        if let warning = executor.startupFailureDescription {
+            for provider in providers where isProviderEnabled(provider.provider.id) {
+                report(provider.provider.id, warning)
+            }
+        }
     }
 
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {
         guard !isShuttingDown, trigger != .cli, trigger != .weeklyTimer,
               var binding = bindings[snapshot.providerID],
-              let observedAt = snapshot.liveQuotaObservedAt,
-              let observation = binding.provider.weeklyTimerObservation,
-              observation.observedAt == observedAt else { return }
+              let observedAt = snapshot.liveQuotaObservedAt else { return }
+        guard let observation = binding.provider.weeklyTimerObservation else {
+            invalidate(providerIDs: [snapshot.providerID])
+            return
+        }
+        guard observation.observedAt == observedAt else { return }
         let accountChanged = binding.accountKey != observation.accountKey
         if let accountKey = binding.accountKey, accountKey != observation.accountKey {
             coordinator.invalidate(providerID: snapshot.providerID)
