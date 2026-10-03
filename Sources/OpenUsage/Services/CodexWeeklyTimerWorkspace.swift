@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// 타이머 실행마다 인증·설정·작업 경로 분리, 종료 후 해당 임시 경로만 삭제.
-struct CodexWeeklyTimerWorkspace {
+final class CodexWeeklyTimerWorkspace {
     enum WorkspaceError: Error {
         case unsafeDirectory
         case invalidAuth
@@ -14,6 +14,7 @@ struct CodexWeeklyTimerWorkspace {
     let workingDirectory: URL
     let temporaryDirectory: URL
     private let fileManager: FileManager
+    private var lockDescriptor: Int32 = -1
 
     init(baseDirectory: URL, fileManager: FileManager = .default) throws {
         self.fileManager = fileManager
@@ -31,10 +32,20 @@ struct CodexWeeklyTimerWorkspace {
                     at: url, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
                 )
             }
+            lockDescriptor = Darwin.open(directory.appendingPathComponent("active.lock").path,
+                                         O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, S_IRUSR | S_IWUSR)
+            guard lockDescriptor >= 0, flock(lockDescriptor, LOCK_EX | LOCK_NB) == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
         } catch {
+            if lockDescriptor >= 0 { Darwin.close(lockDescriptor); lockDescriptor = -1 }
             try? fileManager.removeItem(at: directory)
             throw error
         }
+    }
+
+    deinit {
+        if lockDescriptor >= 0 { Darwin.close(lockDescriptor) }
     }
 
     func writeAuth(_ auth: CodexAuth) throws {
@@ -102,7 +113,7 @@ struct CodexWeeklyTimerWorkspace {
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
     }
 
-    /// 아직 살아 있는 앱의 작업은 보존, 종료된 PID가 남긴 전용 UUID 경로만 제거.
+    /// 실행 중인 작업은 파일 잠금으로 보존 — PID 재사용으로 남은 인증의 정리가 누락되지 않도록 처리.
     private static func removeAbandonedWorkspaces(in root: URL, fileManager: FileManager) throws {
         for url in try fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) {
             let name = url.lastPathComponent
@@ -110,8 +121,19 @@ struct CodexWeeklyTimerWorkspace {
             let suffix = name.dropFirst("session-".count)
             guard let separator = suffix.firstIndex(of: "-"),
                   let pid = Int32(suffix[..<separator]), pid > 0,
-                  UUID(uuidString: String(suffix[suffix.index(after: separator)...])) != nil,
-                  kill(pid, 0) == -1, errno == ESRCH else { continue }
+                  UUID(uuidString: String(suffix[suffix.index(after: separator)...])) != nil else { continue }
+            let descriptor = Darwin.open(url.appendingPathComponent("active.lock").path, O_RDWR | O_CLOEXEC)
+            if descriptor >= 0 {
+                defer { Darwin.close(descriptor) }
+                guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+                    if errno == EWOULDBLOCK { continue }
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                try fileManager.removeItem(at: url)
+                continue
+            }
+            guard errno == ENOENT else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            guard kill(pid, 0) == -1, errno == ESRCH else { continue }
             try fileManager.removeItem(at: url)
         }
     }

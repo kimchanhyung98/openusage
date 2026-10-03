@@ -82,7 +82,7 @@ final class WidgetDataStore {
     /// GUI 전용 quota 제어 입력 — cache·실패·취소·폐기된 catalog 결과는 전달 금지.
     @ObservationIgnored var onFreshSnapshot: (@MainActor (ProviderSnapshot, [WidgetDescriptor], RefreshTrigger) -> Void)?
     @ObservationIgnored var isRefreshSuspended: (@MainActor (String) -> Bool)?
-    @ObservationIgnored var onQuotaInvalidated: (@MainActor () -> Void)?
+    @ObservationIgnored var onQuotaInvalidated: (@MainActor (Set<String>?) -> Void)?
     private var automationWarnings: [String: String] = [:]
     /// `ICloudUsageSyncStore`가 연결 — debounce는 그쪽 담당(동시 provider batch가 파일 하나로 수렴).
     @ObservationIgnored var onLocalHistoryChanged: (@MainActor () -> Void)?
@@ -225,7 +225,7 @@ final class WidgetDataStore {
     func credentialsDidChange(for providerID: String) -> Int {
         let generation = credentialGenerations[providerID, default: 0] + 1
         credentialGenerations[providerID] = generation
-        onQuotaInvalidated?()
+        onQuotaInvalidated?([providerID])
         providersNeedingCredentialRefresh.insert(providerID)
         refreshResults[providerID] = nil
         clearFailureBackoff(for: providerID)
@@ -304,7 +304,7 @@ final class WidgetDataStore {
                     && ProviderAccountID.families.contains(ProviderAccountID.family(of: cardID)))
         }))
         catalogGeneration += 1
-        onQuotaInvalidated?()
+        onQuotaInvalidated?(nil)
         self.registry = registry
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
@@ -332,7 +332,7 @@ final class WidgetDataStore {
             AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
             return
         }
-        onQuotaInvalidated?()
+        onQuotaInvalidated?([providerID])
         refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message))
     }
 
@@ -534,7 +534,7 @@ final class WidgetDataStore {
 
     /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
     func providerEnablementDidChange() {
-        onQuotaInvalidated?()
+        onQuotaInvalidated?(nil)
         rebuildRenderedSnapshots()
     }
 
@@ -672,7 +672,7 @@ final class WidgetDataStore {
     func invalidateAuthentication(for providerID: String) {
         guard providersByID[providerID] != nil else { return }
         authenticationGenerations[providerID, default: 0] &+= 1
-        onQuotaInvalidated?()
+        onQuotaInvalidated?([providerID])
         invalidatedAuthentication.insert(providerID)
         refreshResults[providerID] = nil
         if var snapshot = localSnapshots[providerID], snapshot.authenticationIssue != nil {

@@ -27,6 +27,7 @@ final class CodexWeeklyTimerCoordinator {
     private var awaitingReset: [String: PendingVerification] = [:]
     private var accountByProvider: [String: (accountKey: String, bindingID: UUID)] = [:]
     private var active: Candidate?
+    private var executing: Candidate?
     private var task: Task<Void, Never>?
     private var stopped = false
 
@@ -59,16 +60,9 @@ final class CodexWeeklyTimerCoordinator {
     }
 
     func isRunning(providerID: String) -> Bool {
-        guard let active else { return false }
+        guard let active = executing else { return false }
         return active.providerID == providerID
             || accountByProvider[providerID]?.accountKey == active.observation.accountKey
-    }
-
-    func isRunning(providerID: String, bindingID: UUID) -> Bool {
-        guard let active else { return false }
-        if active.providerID == providerID { return active.bindingID == bindingID }
-        guard let binding = accountByProvider[providerID], binding.bindingID == bindingID else { return false }
-        return binding.accountKey == active.observation.accountKey
     }
 
     func receive(providerID: String, bindingID: UUID, observation: CodexWeeklyTimerObservation) {
@@ -82,12 +76,12 @@ final class CodexWeeklyTimerCoordinator {
             )
             guard change != .stale else { return }
             if change != .incomparable || observation.rawResetAt == nil || observation.usedPercent != 0 {
-                pending.removeAll { $0.providerID == providerID }
+                pending.removeAll { $0.observation.accountKey == observation.accountKey }
             }
             recoverVerification(observation, change: change)
-            guard active?.observation.accountKey != observation.accountKey,
-                  change == .changed, observation.usedPercent == 0,
-                  try store.attempt(for: observation.accountKey).map({ $0.notBefore <= now() }) ?? true
+            guard change == .changed, observation.usedPercent == 0,
+                  let reset = observation.rawResetAt, reset > now(),
+                  try store.canAttempt(accountKey: observation.accountKey, now: now())
             else { return }
         } catch {
             fail(candidate, "Weekly timer automation could not read its saved state. No message was sent.")
@@ -131,13 +125,13 @@ final class CodexWeeklyTimerCoordinator {
         let accountKey = candidate.observation.accountKey
         do {
             guard try store.isLatest(candidate.observation) else { return }
-            if let existing = try store.attempt(for: accountKey), existing.notBefore > now() { return }
+            guard try store.canAttempt(accountKey: accountKey, now: now()) else { return }
         } catch {
             fail(candidate, "Weekly timer automation could not read its saved state. No message was sent.")
             return
         }
 
-        let session: CodexWeeklyTimerSession
+        var session: CodexWeeklyTimerSession
         do {
             guard let prepared = try await prepare(candidate.providerID, accountKey), current(candidate),
                   prepared.observation.accountKey == accountKey
@@ -150,7 +144,8 @@ final class CodexWeeklyTimerCoordinator {
             return
         }
 
-        var attempt: CodexWeeklyTimerAttempt
+        let firstObservation = session.observation
+        let preparationObservedAt: Date
         do {
             guard try store.isLatest(candidate.observation) else { return }
             let change = try store.observe(
@@ -158,10 +153,43 @@ final class CodexWeeklyTimerCoordinator {
                 observedAt: session.observation.observedAt, usedPercent: session.observation.usedPercent
             )
             guard change != .stale, session.observation.usedPercent == 0,
-                  let reset = session.observation.rawResetAt,
-                  !(change == .unchanged && reset > now()),
+                  let reset = session.observation.rawResetAt, reset > now(), change != .unchanged,
                   let observedAt = try store.latestObservationAt(accountKey: accountKey)
             else { return }
+            preparationObservedAt = observedAt
+        } catch {
+            fail(candidate, "Weekly timer automation could not save its state. No message was sent.")
+            return
+        }
+
+        do {
+            // 다른 클라이언트가 이미 시작한 타이머와 단발성 시각 변화를 전송 전에 구분.
+            try await wait(.seconds(CodexWeeklyTimerObservation.verificationInterval))
+            guard current(candidate),
+                  try store.latestObservationAt(accountKey: accountKey) == preparationObservedAt,
+                  let prepared = try await prepare(candidate.providerID, accountKey), current(candidate),
+                  prepared.observation.accountKey == accountKey else { return }
+            session = prepared
+        } catch is CancellationError {
+            return
+        } catch {
+            fail(candidate, "Weekly timer message could not be prepared. Refresh to try again.")
+            return
+        }
+
+        var attempt: CodexWeeklyTimerAttempt
+        do {
+            guard try store.latestObservationAt(accountKey: accountKey) == preparationObservedAt else { return }
+            let change = try store.observe(
+                accountKey: accountKey, rawResetAt: session.observation.rawResetAt,
+                observedAt: session.observation.observedAt, usedPercent: session.observation.usedPercent
+            )
+            guard change == .changed, session.observation.usedPercent == 0,
+                  let reset = session.observation.rawResetAt, reset > now(),
+                  !CodexWeeklyTimerObservation.resetTimesMatch(firstObservation.rawResetAt, reset),
+                  session.observation.observedAt.timeIntervalSince(firstObservation.observedAt)
+                    >= CodexWeeklyTimerObservation.verificationInterval,
+                  let observedAt = try store.latestObservationAt(accountKey: accountKey) else { return }
             guard current(candidate), let reserved = try store.begin(
                 accountKey: accountKey, resetBefore: reset, now: now(), expectedObservedAt: observedAt
             ) else { return }
@@ -173,7 +201,9 @@ final class CodexWeeklyTimerCoordinator {
         }
 
         // await 없는 예약→실행 경계. 프로세스 시작 뒤 불명확한 종료도 예약을 유지.
+        executing = candidate
         let result = await execute(candidate.providerID, candidate.bindingID, session)
+        executing = nil
         attempt.execution = result.completed ? .completed : .failed
         var stateSaveFailed = false
         do { try store.update(accountKey: accountKey, attempt: attempt) }
@@ -191,14 +221,15 @@ final class CodexWeeklyTimerCoordinator {
             candidate, session: session, attempt: &attempt, lastObservation: &lastPostObservation
         )
         guard current(candidate) else { return }
-        if let failure = result.failureDescription {
-            fail(candidate, failure)
-        } else if !result.completed {
-            fail(candidate, "Weekly timer message completion could not be confirmed. Automatic retries wait five minutes.")
-        } else if stateSaveFailed {
+        if let failure = result.failureDescription { AppLog.error(LogTag.plugin(candidate.providerID), failure) }
+        if stateSaveFailed {
             fail(candidate, "Weekly timer automation could not update its saved state.")
+        } else if !result.verificationCanClearFailure {
+            fail(candidate, result.failureDescription ?? "Weekly timer credentials could not be updated.")
         } else if !verified {
-            fail(candidate, "Weekly timer message completed, but the server reset time could not be confirmed.")
+            fail(candidate, result.failureDescription ?? (result.completed
+                ? "Weekly timer message completed, but the server reset time could not be confirmed."
+                : "Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."))
             awaitingReset[accountKey] = PendingVerification(candidate: candidate, lastObservation: lastPostObservation)
         } else {
             report(candidate.providerID, candidate.bindingID, nil)
@@ -212,7 +243,7 @@ final class CodexWeeklyTimerCoordinator {
         let endedAt = now()
         var previousReset: Date?
         var previousObservedAt: Date?
-        let interval = CodexWeeklyTimerObservation.resetTimeTolerance + 5
+        let interval = CodexWeeklyTimerObservation.verificationInterval
         for delay: TimeInterval in [0, interval, interval * 2] {
             guard current(candidate) else { return false }
             let remaining = endedAt.addingTimeInterval(delay).timeIntervalSince(now())
@@ -241,7 +272,7 @@ final class CodexWeeklyTimerCoordinator {
                 lastObservation = observation
                 if CodexWeeklyTimerObservation.resetTimesMatch(previousReset, reset), change == .unchanged,
                    let previousObservedAt,
-                   observation.observedAt.timeIntervalSince(previousObservedAt) > CodexWeeklyTimerObservation.resetTimeTolerance {
+                   observation.observedAt.timeIntervalSince(previousObservedAt) >= CodexWeeklyTimerObservation.verificationInterval {
                     return true
                 }
                 if !CodexWeeklyTimerObservation.resetTimesMatch(previousReset, reset) {
@@ -270,7 +301,7 @@ final class CodexWeeklyTimerCoordinator {
         if change == .unchanged,
            let previous = waiting.lastObservation,
            CodexWeeklyTimerObservation.resetTimesMatch(previous.rawResetAt, reset),
-           observation.observedAt.timeIntervalSince(previous.observedAt) > CodexWeeklyTimerObservation.resetTimeTolerance {
+           observation.observedAt.timeIntervalSince(previous.observedAt) >= CodexWeeklyTimerObservation.verificationInterval {
             awaitingReset[observation.accountKey] = nil
             if current(waiting.candidate) { report(waiting.candidate.providerID, waiting.candidate.bindingID, nil) }
         } else if !CodexWeeklyTimerObservation.resetTimesMatch(waiting.lastObservation?.rawResetAt, reset) {

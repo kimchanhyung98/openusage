@@ -32,6 +32,7 @@ final class CodexWeeklyTimerAttemptStore {
         var stableResetAt: Date?
         var lastObservedAt: Date?
         var usedPercent: Double?
+        var confirmedResetAt: Date?
     }
 
     private struct Document: Codable {
@@ -66,6 +67,15 @@ final class CodexWeeklyTimerAttemptStore {
         try withLock { try read().attempts[Self.key(accountKey)] }
     }
 
+    func canAttempt(accountKey: String, now: Date) throws -> Bool {
+        try withLock {
+            let document = try read()
+            let key = Self.key(accountKey)
+            return (document.attempts[key].map({ $0.notBefore <= now }) ?? true)
+                && (Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true)
+        }
+    }
+
     /// 계정·기본 주간 버킷의 예약과 기존 보류 확인을 같은 파일 잠금 안에서 수행.
     func begin(
         accountKey: String, resetBefore: Date?, now: Date, expectedObservedAt: Date? = nil
@@ -74,6 +84,7 @@ final class CodexWeeklyTimerAttemptStore {
             var document = try read()
             let key = Self.key(accountKey)
             guard document.attempts[key].map({ $0.notBefore <= now }) ?? true else { return nil }
+            guard Self.confirmedReset(in: document.observations[key]).map({ $0 <= now }) ?? true else { return nil }
             if let expectedObservedAt,
                document.observations[key]?.observedAt != expectedObservedAt { return nil }
             let attempt = CodexWeeklyTimerAttempt(
@@ -111,9 +122,16 @@ final class CodexWeeklyTimerAttemptStore {
             let previousReset = previous?.stableResetAt ?? previous?.rawResetAt
             let sameReset = CodexWeeklyTimerObservation.resetTimesMatch(previousReset, rawResetAt)
             let stableSince = sameReset ? (previous?.stableSince ?? previous?.observedAt) : observedAt
+            var confirmedReset = Self.confirmedReset(in: previous).flatMap { $0 > observedAt ? $0 : nil }
+            if confirmedReset == nil, let reset = rawResetAt, reset > observedAt,
+               usedPercent > 0 || (sameReset && observedAt.timeIntervalSince(stableSince ?? observedAt)
+                   >= CodexWeeklyTimerObservation.verificationInterval) {
+                confirmedReset = reset
+            }
             if var previous, sameReset, usedPercent == 0, (previous.usedPercent ?? 0) == 0,
                observedAt.timeIntervalSince(stableSince ?? observedAt) <= CodexWeeklyTimerObservation.resetTimeTolerance {
                 previous.lastObservedAt = observedAt
+                previous.confirmedResetAt = confirmedReset
                 document.observations[key] = previous
                 try write(document)
                 return .incomparable
@@ -121,7 +139,7 @@ final class CodexWeeklyTimerAttemptStore {
             document.observations[key] = FreshObservation(
                 rawResetAt: rawResetAt, observedAt: observedAt, stableSince: rawResetAt == nil ? nil : stableSince,
                 stableResetAt: sameReset ? previousReset : rawResetAt,
-                lastObservedAt: observedAt, usedPercent: usedPercent
+                lastObservedAt: observedAt, usedPercent: usedPercent, confirmedResetAt: confirmedReset
             )
             try write(document)
             guard let previous else { return .baseline }
@@ -141,6 +159,18 @@ final class CodexWeeklyTimerAttemptStore {
 
     func latestObservationAt(accountKey: String) throws -> Date? {
         try withLock { try read().observations[Self.key(accountKey)]?.observedAt }
+    }
+
+    /// 이전 형식의 고정 관찰도 복원 — 확인된 주간 구간은 리셋 시각 흔들림으로 해제 금지.
+    private static func confirmedReset(in observation: FreshObservation?) -> Date? {
+        guard let observation else { return nil }
+        if let confirmed = observation.confirmedResetAt { return confirmed }
+        let observedAt = observation.lastObservedAt ?? observation.observedAt
+        guard let reset = observation.stableResetAt ?? observation.rawResetAt, reset > observedAt,
+              (observation.usedPercent ?? 0) > 0
+                || observedAt.timeIntervalSince(observation.stableSince ?? observedAt)
+                    >= CodexWeeklyTimerObservation.verificationInterval else { return nil }
+        return reset
     }
 
     private static func key(_ accountKey: String) -> String {
@@ -179,8 +209,20 @@ final class CodexWeeklyTimerAttemptStore {
     private func write(_ document: Document) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(document).write(to: fileURL, options: .atomic)
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+        let data = try encoder.encode(document)
+        let temporary = fileURL.appendingPathExtension(UUID().uuidString)
+        let descriptor = Darwin.open(temporary.path, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer {
+            try? handle.close()
+            try? FileManager.default.removeItem(at: temporary)
+        }
+        try handle.write(contentsOf: data)
+        try handle.close()
+        guard Darwin.rename(temporary.path, fileURL.path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
     }
 
     private func withLock<Value>(_ body: () throws -> Value) throws -> Value {

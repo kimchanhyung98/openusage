@@ -3,6 +3,7 @@ import Foundation
 
 struct CodexWeeklyTimerObservation: Equatable, Sendable {
     static let resetTimeTolerance: TimeInterval = 60
+    static let verificationInterval = resetTimeTolerance + 5
 
     var accountKey: String
     var usedPercent: Double
@@ -69,7 +70,7 @@ enum CodexWeeklyTimerIdentity {
             normalized(tokens.accountID),
             DefaultAccountObserver.chatGPTAccountID(inIDTokenPayload: accessPayload),
             DefaultAccountObserver.chatGPTAccountID(inIDTokenPayload: idPayload)
-        ].compactMap { $0 }
+        ].compactMap { normalized($0)?.lowercased() }
         guard Set(subjects).count == 1, let subject = subjects.first,
               Set(accounts).count == 1, let account = accounts.first,
               let encoded = try? JSONEncoder().encode([subject, account])
@@ -94,7 +95,7 @@ final class CodexProviderOperationGate {
             return true
         }
         let id = UUID()
-        return await withTaskCancellationHandler {
+        let acquired = await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled {
                     continuation.resume(returning: false)
@@ -105,6 +106,11 @@ final class CodexProviderOperationGate {
         } onCancel: {
             Task { @MainActor in self.cancel(id) }
         }
+        if acquired && Task.isCancelled {
+            release()
+            return false
+        }
+        return acquired
     }
 
     func release() {

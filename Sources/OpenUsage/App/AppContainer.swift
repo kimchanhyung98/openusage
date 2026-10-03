@@ -197,6 +197,7 @@ final class AppContainer {
         self.softLimitCoordinator = softLimitCoordinator
         let codexWeeklyTimer = CodexWeeklyTimerRouter(
             providers: providers.compactMap { $0 as? CodexProvider },
+            identityKeys: accountAssembly.identityKeysByCard,
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
             report: { [weak dataStore] in dataStore?.setAutomationWarning($1, for: $0) },
             refresh: { [weak dataStore] providerID, isCurrent in
@@ -210,9 +211,9 @@ final class AppContainer {
             if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
-        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak codexWeeklyTimer] in
+        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak codexWeeklyTimer] providerIDs in
             softLimitCoordinator?.settingsDidChange()
-            codexWeeklyTimer?.invalidate()
+            codexWeeklyTimer?.invalidate(providerIDs: providerIDs)
         }
         dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak codexWeeklyTimer] snapshot, descriptors, trigger in
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
@@ -429,7 +430,9 @@ final class AppContainer {
             providers: nextProviders.compactMap { $0 as? CodexProvider },
             identityKeys: assembly.identityKeysByCard
         )
-        codexWeeklyTimer.reconfigure(providers: nextProviders.compactMap { $0 as? CodexProvider })
+        codexWeeklyTimer.reconfigure(
+            providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
+        )
         for providerID in addedIDs where enablement.isEnabled(providerID) {
             Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
         }

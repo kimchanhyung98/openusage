@@ -5,11 +5,12 @@ import Foundation
 final class CodexWeeklyTimerRouter {
     private struct Binding {
         let id = UUID()
-        let provider: CodexProvider
+        var provider: CodexProvider
         var accountKey: String?
     }
 
     private var bindings: [String: Binding]
+    private var identityKeys: [String: String]
     private let isProviderEnabled: (String) -> Bool
     private let executor: any CodexWeeklyTimerExecuting
     private let store: CodexWeeklyTimerAttemptStore
@@ -56,6 +57,7 @@ final class CodexWeeklyTimerRouter {
                     AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: providerID, error: error,
                                           localContext: "Could not persist timer credentials")
                     result.failureDescription = "Weekly timer credentials changed. Refresh this account before trying again."
+                    result.verificationCanClearFailure = false
                 }
             }
             return result
@@ -70,12 +72,12 @@ final class CodexWeeklyTimerRouter {
             AppDiagnostics.record(.weeklyTimer, result: message == nil ? .success : .failure,
                                   providerID: providerID)
         },
-        finished: { [weak self] providerID, bindingID in
-            guard let self, !self.isShuttingDown, self.bindings[providerID]?.id == bindingID else { return }
+        finished: { [weak self] providerID, _ in
+            guard let self, !self.isShuttingDown, let currentBindingID = self.bindings[providerID]?.id else { return }
             Task { [weak self] in
                 guard let self else { return }
                 await self.refresh(providerID) { [weak self] in
-                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == bindingID
+                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
                         && self?.isProviderEnabled(providerID) == true
                 }
             }
@@ -86,6 +88,7 @@ final class CodexWeeklyTimerRouter {
 
     init(
         providers: [CodexProvider],
+        identityKeys: [String: String] = [:],
         isProviderEnabled: @escaping (String) -> Bool,
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
         store: CodexWeeklyTimerAttemptStore = CodexWeeklyTimerAttemptStore(),
@@ -95,6 +98,7 @@ final class CodexWeeklyTimerRouter {
         wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, Binding(provider: $0)) })
+        self.identityKeys = identityKeys
         self.isProviderEnabled = isProviderEnabled
         self.executor = executor
         self.store = store
@@ -113,6 +117,7 @@ final class CodexWeeklyTimerRouter {
         if let accountKey = binding.accountKey, accountKey != observation.accountKey {
             coordinator.invalidate(providerID: snapshot.providerID)
             binding = Binding(provider: binding.provider)
+            report(snapshot.providerID, nil)
         }
         binding.accountKey = observation.accountKey
         bindings[snapshot.providerID] = binding
@@ -120,8 +125,7 @@ final class CodexWeeklyTimerRouter {
     }
 
     func isRunning(providerID: String) -> Bool {
-        guard let binding = bindings[providerID] else { return false }
-        return coordinator.isRunning(providerID: providerID, bindingID: binding.id)
+        coordinator.isRunning(providerID: providerID)
     }
 
     var hasPendingWork: Bool { coordinator.hasPendingWork }
@@ -131,17 +135,32 @@ final class CodexWeeklyTimerRouter {
         await coordinator.shutdown()
     }
 
-    func invalidate() {
-        for (providerID, binding) in bindings {
+    func invalidate(providerIDs: Set<String>? = nil) {
+        let affected = providerIDs ?? Set(bindings.keys.filter { !isProviderEnabled($0) })
+        for providerID in affected {
+            guard let binding = bindings[providerID] else { continue }
             coordinator.invalidate(providerID: providerID)
             bindings[providerID] = Binding(provider: binding.provider)
             report(providerID, nil)
         }
     }
 
-    func reconfigure(providers: [CodexProvider]) {
-        invalidate()
-        bindings = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, Binding(provider: $0)) })
+    func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
+        let removed = Set(bindings.keys).subtracting(providers.map { $0.provider.id })
+        invalidate(providerIDs: removed)
+        for providerID in removed { bindings[providerID] = nil }
+        for provider in providers {
+            let providerID = provider.provider.id
+            if var binding = bindings[providerID],
+               binding.provider === provider || (identityKeys[providerID] != nil && self.identityKeys[providerID] == identityKeys[providerID]) {
+                binding.provider = provider
+                bindings[providerID] = binding
+            } else {
+                invalidate(providerIDs: [providerID])
+                bindings[providerID] = Binding(provider: provider)
+            }
+        }
+        self.identityKeys = identityKeys
     }
 
     private func isCurrent(_ providerID: String, bindingID: UUID, accountKey: String) -> Bool {

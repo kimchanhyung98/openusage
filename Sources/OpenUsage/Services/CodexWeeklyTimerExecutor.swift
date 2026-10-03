@@ -5,6 +5,7 @@ struct CodexWeeklyTimerExecutionResult: Sendable {
     var completed: Bool
     var updatedAuth: CodexAuth?
     var failureDescription: String?
+    var verificationCanClearFailure = true
 }
 
 @MainActor
@@ -110,7 +111,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
                     result.updatedAuth = latestAuth
                 }
             } catch {
-                result.completed = false
+                result.verificationCanClearFailure = false
                 result.failureDescription = "Codex weekly timer credentials could not be read after the message."
             }
         } catch is CancellationError {
@@ -121,7 +122,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         do {
             try workspace.remove()
         } catch {
-            result.completed = false
+            result.verificationCanClearFailure = false
             result.failureDescription = "Codex weekly timer temporary credentials could not be removed."
             AppLog.error(.subprocess, "Codex weekly timer temporary credential cleanup failed")
         }
