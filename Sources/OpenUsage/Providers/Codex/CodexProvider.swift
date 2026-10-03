@@ -89,47 +89,139 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private var refreshIsDegraded = false
+    private let operationGate = CodexProviderOperationGate()
+    private(set) var weeklyTimerObservation: CodexWeeklyTimerObservation?
+    private var weeklyTimerCredentialSelection: CodexWeeklyTimerCredentialSelection?
 
     func refresh() async -> ProviderSnapshot {
+        guard await operationGate.acquire() else {
+            return ProviderSnapshot.error(provider: provider, error: CancellationError())
+        }
+        defer { operationGate.release() }
         refreshIsDegraded = false
-        let fileCandidates: [CodexAuthState]
-        let allowInteraction = ProviderRefreshContext.isManual
+        weeklyTimerObservation = nil
+        weeklyTimerCredentialSelection = nil
         do {
-            fileCandidates = try await loadOffMainActor { [authStore] in
-                try authStore.loadAuthCandidates(allowInteraction: allowInteraction)
-            }
+            return try await withAuthCandidates { try await self.probe(authState: $0) }
         } catch {
             return ProviderSnapshot.error(provider: provider, error: error)
+        }
+    }
+
+    func prepareWeeklyTimerSession(expectedAccountKey: String) async throws -> CodexWeeklyTimerSession {
+        guard await operationGate.acquire() else { throw CancellationError() }
+        defer { operationGate.release() }
+        weeklyTimerObservation = nil
+        do {
+            if let selection = weeklyTimerCredentialSelection {
+                guard selection.accountKey == expectedAccountKey else { throw CodexWeeklyTimerProviderError.accountChanged }
+                try await validatePrecedingSources(selection)
+                guard let state = try await reloadLiveAuth(source: selection.source) else {
+                    throw CodexWeeklyTimerProviderError.credentialsChanged
+                }
+                return try await prepareWeeklyTimerSession(state: state, expectedAccountKey: expectedAccountKey)
+            }
+            return try await withAuthCandidates {
+                try await self.prepareWeeklyTimerSession(state: $0, expectedAccountKey: expectedAccountKey)
+            }
+        } catch {
+            weeklyTimerObservation = nil
+            throw error
+        }
+    }
+
+    func verifyWeeklyTimer(expectedAccountKey: String) async throws -> CodexWeeklyTimerObservation {
+        try await prepareWeeklyTimerSession(expectedAccountKey: expectedAccountKey).observation
+    }
+
+    func validateWeeklyTimerSession(_ session: CodexWeeklyTimerSession) async throws {
+        guard await operationGate.acquire() else { throw CancellationError() }
+        defer { operationGate.release() }
+        if let selection = weeklyTimerCredentialSelection { try await validatePrecedingSources(selection) }
+        guard try await reloadLiveAuth(source: session.authState.source) == session.authState else {
+            throw CodexWeeklyTimerProviderError.credentialsChanged
+        }
+        try validateTimerIdentity(session.authState.auth, expectedAccountKey: session.observation.accountKey)
+        guard let token = session.authState.auth.tokens?.accessToken,
+              let expiresAt = authStore.accessTokenExpiresAt(token),
+              expiresAt.timeIntervalSince(now()) > 60 else { throw CodexAuthError.tokenExpired }
+    }
+
+    func persistUpdatedWeeklyTimerAuth(_ auth: CodexAuth, original: CodexAuthState) async throws {
+        guard await operationGate.acquire() else { throw CancellationError() }
+        defer { operationGate.release() }
+        guard let expected = CodexWeeklyTimerIdentity.accountKey(for: original.auth),
+              CodexWeeklyTimerIdentity.accountKey(for: auth) == expected else {
+            throw CodexWeeklyTimerProviderError.accountChanged
+        }
+        let updated = CodexAuthState(auth: auth, source: original.source)
+        try await saveTimerAuth(updated, replacing: original)
+    }
+
+    private func withAuthCandidates<T>(_ operation: (CodexAuthState) async throws -> T) async throws -> T {
+        let allowInteraction = ProviderRefreshContext.isManual
+        let fileCandidates = try await loadOffMainActor { [authStore] in
+            try authStore.loadAuthCandidates(allowInteraction: allowInteraction)
         }
         var lastFallbackError: Error?
 
         for candidate in fileCandidates {
             do {
-                return try await probe(authState: candidate)
+                let result = try await operation(candidate)
+                rememberWeeklyTimerSelection(source: candidate.source, fileCandidates: fileCandidates)
+                return result
             } catch let error as CodexAuthError where error.allowsAuthFallback {
                 lastFallbackError = error
                 continue
-            } catch {
-                return ProviderSnapshot.error(provider: provider, error: error)
             }
         }
 
         if let keychainCandidate = await loadOffMainActor({ [authStore] in authStore.loadKeychainAuth() }) {
-            do {
-                return try await probe(authState: keychainCandidate)
-            } catch {
-                return ProviderSnapshot.error(provider: provider, error: error)
-            }
+            let result = try await operation(keychainCandidate)
+            rememberWeeklyTimerSelection(source: keychainCandidate.source, fileCandidates: fileCandidates)
+            return result
         }
 
-        if let lastFallbackError {
-            return ProviderSnapshot.error(provider: provider, error: lastFallbackError)
-        }
-        return ProviderSnapshot.error(provider: provider, error: CodexAuthError.notLoggedIn)
+        throw lastFallbackError ?? CodexAuthError.notLoggedIn
     }
 
-    private func probe(authState initialState: CodexAuthState) async throws -> ProviderSnapshot {
+    private func prepareWeeklyTimerSession(state: CodexAuthState, expectedAccountKey: String) async throws -> CodexWeeklyTimerSession {
+        let quota = try await fetchQuota(authState: state, expectedAccountKey: expectedAccountKey)
+        guard let observation = weeklyTimerObservation else { throw CodexWeeklyTimerProviderError.weeklyQuotaUnavailable }
+        guard let token = quota.authState.auth.tokens?.accessToken,
+              let expiresAt = authStore.accessTokenExpiresAt(token),
+              expiresAt.timeIntervalSince(now()) > 60 else { throw CodexAuthError.tokenExpired }
+        return CodexWeeklyTimerSession(observation: observation, authState: quota.authState, authStore: authStore)
+    }
+
+    private func rememberWeeklyTimerSelection(source: CodexAuthState.Source, fileCandidates: [CodexAuthState]) {
+        guard let observation = weeklyTimerObservation else { return }
+        let preceding = authStore.authPaths().map { CodexAuthState.Source.file(path: $0) }.prefix { $0 != source }
+        weeklyTimerCredentialSelection = CodexWeeklyTimerCredentialSelection(
+            accountKey: observation.accountKey,
+            source: source,
+            precedingSources: preceding.map { source in
+                .init(source: source, generation: fileCandidates.first { $0.source == source }
+                    .flatMap { CodexWeeklyTimerIdentity.generationFingerprint(for: $0.auth) })
+            }
+        )
+    }
+
+    private func validatePrecedingSources(_ selection: CodexWeeklyTimerCredentialSelection) async throws {
+        for previous in selection.precedingSources {
+            let current = try await reloadLiveAuth(source: previous.source)
+            guard current.flatMap({ CodexWeeklyTimerIdentity.generationFingerprint(for: $0.auth) }) == previous.generation else {
+                throw CodexWeeklyTimerProviderError.credentialsChanged
+            }
+        }
+    }
+
+    private func fetchQuota(
+        authState initialState: CodexAuthState,
+        expectedAccountKey: String? = nil
+    ) async throws -> (response: HTTPResponse, authState: CodexAuthState, observedAt: Date) {
         var authState = initialState
+        try validateTimerIdentity(authState.auth, expectedAccountKey: expectedAccountKey)
         guard var accessToken = authState.auth.tokens?.accessToken, !accessToken.isEmpty else {
             if authState.auth.apiKey?.isEmpty == false {
                 throw CodexAuthError.usageAPIKey
@@ -141,6 +233,7 @@ final class CodexProvider: ProviderRuntime {
             // `codex` CLI가 디스크의 token을 이미 회전시켰을 수 있음 — live credential을 먼저 재판독해 최신 access token 채택 (stale 사본 refresh 시 `refresh_token_reused`, issue #516).
             if let live = try await reloadLiveAuth(source: authState.source),
                let liveToken = live.auth.tokens?.accessToken, !liveToken.isEmpty {
+                try validateTimerIdentity(live.auth, expectedAccountKey: expectedAccountKey)
                 authState = live
                 accessToken = liveToken
             }
@@ -149,14 +242,35 @@ final class CodexProvider: ProviderRuntime {
         if authStore.needsRefresh(authState.auth),
            let refreshToken = authState.auth.tokens?.refreshToken,
            !refreshToken.isEmpty {
-            let refreshed = try await refreshAccessToken(authState: &authState, refreshToken: refreshToken)
+            let refreshed = try await refreshAccessToken(
+                authState: &authState, refreshToken: refreshToken, expectedAccountKey: expectedAccountKey
+            )
             accessToken = refreshed
         }
 
-        let response = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let response = try await fetchUsageWithRetry(
+            accessToken: accessToken, authState: &authState, expectedAccountKey: expectedAccountKey
+        )
         let quotaObservedAt = now()
+        _ = try CodexUsageMapper.mapUsageResponse(response, now: quotaObservedAt)
+        try validateTimerIdentity(authState.auth, expectedAccountKey: expectedAccountKey)
+        if expectedAccountKey != nil, try await reloadLiveAuth(source: authState.source) != authState {
+            throw CodexWeeklyTimerProviderError.credentialsChanged
+        }
+        if let accountKey = CodexWeeklyTimerIdentity.accountKey(for: authState.auth) {
+            weeklyTimerObservation = CodexUsageMapper.weeklyTimerObservation(
+                response: response, accountKey: accountKey, observedAt: quotaObservedAt
+            )
+        }
+        return (response, authState, quotaObservedAt)
+    }
+
+    private func probe(authState initialState: CodexAuthState) async throws -> ProviderSnapshot {
+        let quota = try await fetchQuota(authState: initialState)
+        let authState = quota.authState
+        let response = quota.response
         // usage fetch의 refresh-and-retry 중 access token 회전 가능 — live token 재판독.
-        let currentToken = authState.auth.tokens?.accessToken ?? accessToken
+        guard let currentToken = authState.auth.tokens?.accessToken else { throw CodexAuthError.notLoggedIn }
         let resetCredits = await fetchResetCreditsBestEffort(
             accessToken: currentToken,
             accountID: authState.auth.tokens?.accountID
@@ -203,7 +317,7 @@ final class CodexProvider: ProviderRuntime {
             usageHistory: usageHistory,
             warning: warning,
             isDegraded: refreshIsDegraded ? true : nil,
-            liveQuotaObservedAt: quotaObservedAt
+            liveQuotaObservedAt: quota.observedAt
         )
     }
 
@@ -232,7 +346,11 @@ final class CodexProvider: ProviderRuntime {
         }
     }
 
-    private func fetchUsageWithRetry(accessToken: String, authState: inout CodexAuthState) async throws -> HTTPResponse {
+    private func fetchUsageWithRetry(
+        accessToken: String,
+        authState: inout CodexAuthState,
+        expectedAccountKey: String? = nil
+    ) async throws -> HTTPResponse {
         var working = authState
         defer { authState = working }
         return try await ProviderAuthRetry.fetch(
@@ -243,7 +361,11 @@ final class CodexProvider: ProviderRuntime {
                     throw CodexAuthError.tokenExpired
                 }
                 do {
-                    return try await self.refreshAccessToken(authState: &working, refreshToken: refreshToken)
+                    return try await self.refreshAccessToken(
+                        authState: &working, refreshToken: refreshToken, expectedAccountKey: expectedAccountKey
+                    )
+                } catch let error as CodexWeeklyTimerProviderError {
+                    throw error
                 } catch let error as CodexAuthError {
                     throw error
                 } catch {
@@ -271,7 +393,12 @@ final class CodexProvider: ProviderRuntime {
         }
     }
 
-    private func refreshAccessToken(authState: inout CodexAuthState, refreshToken: String) async throws -> String {
+    private func refreshAccessToken(
+        authState: inout CodexAuthState,
+        refreshToken: String,
+        expectedAccountKey: String? = nil
+    ) async throws -> String {
+        let original = authState
         let response: CodexRefreshResponse
         do {
             response = try await usageClient.refreshToken(refreshToken)
@@ -288,6 +415,11 @@ final class CodexProvider: ProviderRuntime {
             authState.auth.tokens?.idToken = idToken
         }
         authState.auth.lastRefresh = OpenUsageISO8601.string(from: now())
+        try validateTimerIdentity(authState.auth, expectedAccountKey: expectedAccountKey)
+        if expectedAccountKey != nil {
+            try await saveTimerAuth(authState, replacing: original)
+            return response.accessToken
+        }
         // save 실패는 loud log 후 계속 — 삼키면 회전된 token이 디스크에 남아 다음 실행에서 false "token expired" 유발, refreshed token은 이번 세션에서 유효.
         let allowInteraction = ProviderRefreshContext.isManual
         do {
@@ -301,5 +433,33 @@ final class CodexProvider: ProviderRuntime {
                                   localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
         }
         return response.accessToken
+    }
+
+    private func validateTimerIdentity(_ auth: CodexAuth, expectedAccountKey: String?) throws {
+        if let expectedAccountKey, CodexWeeklyTimerIdentity.accountKey(for: auth) != expectedAccountKey {
+            throw CodexWeeklyTimerProviderError.accountChanged
+        }
+    }
+
+    private func saveTimerAuth(_ updated: CodexAuthState, replacing original: CodexAuthState) async throws {
+        let allowInteraction = ProviderRefreshContext.isManual
+        do {
+            try await loadOffMainActor { [authStore] in
+                let current: CodexAuthState?
+                switch original.source {
+                case .file(let path): current = authStore.loadAuth(at: path)
+                case .keychain: current = authStore.loadKeychainAuth()
+                case .accountSnapshot(let id):
+                    current = try authStore.loadAccountSnapshot(profileID: id, allowInteraction: allowInteraction)
+                }
+                guard current == original else { throw CodexWeeklyTimerProviderError.credentialsChanged }
+                if updated != original { try authStore.save(updated, allowInteraction: allowInteraction) }
+            }
+            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+        } catch {
+            AppDiagnostics.failure(.credentialSave, error: error, providerID: provider.id,
+                                   localContext: "weekly timer credential generation changed or could not be saved")
+            throw error
+        }
     }
 }

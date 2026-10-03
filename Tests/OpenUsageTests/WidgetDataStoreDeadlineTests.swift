@@ -120,7 +120,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
                 lateFinished.fulfill()
             } onCancel: { workCancelled.fulfill() }
         }
-        fixture.store.onFreshSnapshot = { snapshot, _ in
+        fixture.store.onFreshSnapshot = { snapshot, _, _ in
             if snapshot.providerID == "claude" { fastFinished.fulfill() }
             else { XCTFail("Cancelled Codex snapshot must not reach quota observation") }
         }
@@ -243,9 +243,9 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
             store.onRefreshOutcome = { [self] _, outcome, category, trigger, _ in
                 outcomes.append(outcome); categories.append(category); triggers.append(trigger)
             }
-            store.onFreshSnapshot = { [self] _, _ in freshSnapshots += 1 }
+            store.onFreshSnapshot = { [self] _, _, _ in freshSnapshots += 1 }
             store.onLocalHistoryChanged = { [self] in historyChanges += 1 }
-            store.onQuotaInvalidated = { [self] in quotaInvalidations += 1 }
+            store.onQuotaInvalidated = { [self] _ in quotaInvalidations += 1 }
         }
     }
 

@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// Codex 카드마다 `CodexResetClaimService` 하나.
-/// Reset-credit claim은 앱의 유일한 provider-API write이자 비가역 — 카드에서 탭한 claim은 반드시 그 카드 자신의 `authStore`/`usageClient`로만 실행, 다른 계정의 credential 소비 차단.
+/// 비가역 reset-credit claim은 카드 자신의 `authStore`·`usageClient`로만 실행하여 다른 계정의 credential 소비 차단.
 @MainActor
 final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]

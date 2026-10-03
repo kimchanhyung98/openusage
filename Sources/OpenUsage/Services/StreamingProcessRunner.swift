@@ -9,6 +9,7 @@ struct StreamingProcessRequest: Sendable, Equatable {
     var standardInput: Data
     var timeout: TimeInterval
     var outputLimit: Int
+    var captureStandardErrorSeparately: Bool
 
     init(
         executableURL: URL,
@@ -17,7 +18,8 @@ struct StreamingProcessRequest: Sendable, Equatable {
         currentDirectoryURL: URL? = nil,
         standardInput: Data = Data(),
         timeout: TimeInterval,
-        outputLimit: Int
+        outputLimit: Int,
+        captureStandardErrorSeparately: Bool = false
     ) {
         self.executableURL = executableURL
         self.arguments = arguments
@@ -26,12 +28,14 @@ struct StreamingProcessRequest: Sendable, Equatable {
         self.standardInput = standardInput
         self.timeout = timeout
         self.outputLimit = outputLimit
+        self.captureStandardErrorSeparately = captureStandardErrorSeparately
     }
 }
 
 struct StreamingProcessResult: Sendable, Equatable {
     var exitCode: Int32
     var output: String
+    var standardError: String = ""
 }
 
 protocol StreamingProcessRunning: Sendable {
@@ -39,9 +43,25 @@ protocol StreamingProcessRunning: Sendable {
         _ request: StreamingProcessRequest,
         onOutput: @escaping @Sendable (String) -> Void
     ) async throws -> StreamingProcessResult
+
+    func run(
+        _ request: StreamingProcessRequest,
+        onLaunch: @escaping @Sendable () -> Void,
+        onOutput: @escaping @Sendable (String) -> Void
+    ) async throws -> StreamingProcessResult
 }
 
 extension StreamingProcessRunning {
+    /// 시작 시점을 제공하지 않는 runner는 요청 전송 가능성을 보수적으로 보존.
+    func run(
+        _ request: StreamingProcessRequest,
+        onLaunch: @escaping @Sendable () -> Void,
+        onOutput: @escaping @Sendable (String) -> Void
+    ) async throws -> StreamingProcessResult {
+        onLaunch()
+        return try await run(request, onOutput: onOutput)
+    }
+
     func run(_ request: StreamingProcessRequest) async throws -> StreamingProcessResult {
         try await run(request, onOutput: { _ in })
     }
@@ -54,6 +74,14 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         _ request: StreamingProcessRequest,
         onOutput: @escaping @Sendable (String) -> Void
     ) async throws -> StreamingProcessResult {
+        try await run(request, onLaunch: {}, onOutput: onOutput)
+    }
+
+    func run(
+        _ request: StreamingProcessRequest,
+        onLaunch: @escaping @Sendable () -> Void,
+        onOutput: @escaping @Sendable (String) -> Void
+    ) async throws -> StreamingProcessResult {
         try Self.validate(request)
 
         let stdinPipe = try Self.makeStandardInputPipe(request.standardInput)
@@ -63,6 +91,8 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         let stderrRead = StreamingFileHandleBox(stderrPipe.fileHandleForReading)
 
         let output = StreamingProcessOutput(limit: request.outputLimit, onOutput: onOutput)
+        let standardError = request.captureStandardErrorSeparately
+            ? StreamingProcessOutput(limit: request.outputLimit, onOutput: { _ in }) : output
         let drains = DrainCompletion(count: 2)
         let drainStop = DrainStopSignal()
         Self.startDrain(
@@ -75,7 +105,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
         Self.startDrain(
             stderrRead,
             channel: .stderr,
-            output: output,
+            output: standardError,
             completion: drains,
             stop: drainStop
         )
@@ -99,6 +129,7 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                     stderrPipe: stderrPipe
                 )
                 termination.didLaunch(processGroupID: pid)
+                onLaunch()
                 Self.startWait(pid: pid, signal: exit, termination: termination)
             } catch {
                 Self.closeWriteEnds(stdoutPipe: stdoutPipe, stderrPipe: stderrPipe)
@@ -137,7 +168,11 @@ struct StreamingProcessRunner: StreamingProcessRunning {
                 if drainFailed {
                     throw StreamingProcessRunnerError.outputReadFailed
                 }
-                return StreamingProcessResult(exitCode: stopped.exitCode, output: output.value)
+                return StreamingProcessResult(
+                    exitCode: stopped.exitCode,
+                    output: output.value,
+                    standardError: request.captureStandardErrorSeparately ? standardError.value : ""
+                )
             case .timedOut:
                 let stopped = await exit.wait()
                 _ = await drains.wait()

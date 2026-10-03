@@ -262,8 +262,8 @@ final class SoftLimitCoordinatorTests: XCTestCase {
                 cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
                 defaults: defaults
             )
-            store.onFreshSnapshot = { coordinator.receive($0, descriptors: $1) }
-            store.onQuotaInvalidated = { coordinator.settingsDidChange() }
+            store.onFreshSnapshot = { snapshot, descriptors, _ in coordinator.receive(snapshot, descriptors: descriptors) }
+            store.onQuotaInvalidated = { _ in coordinator.settingsDidChange() }
             await store.refresh(providerID: "codex", force: true)
 
             change(store)
@@ -304,7 +304,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
             registry: .from([runtime]), providers: [runtime],
             cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults, providerRefreshTimeout: 0.05
         )
-        store.onFreshSnapshot = { coordinator.receive($0, descriptors: $1) }
+        store.onFreshSnapshot = { snapshot, descriptors, _ in coordinator.receive(snapshot, descriptors: descriptors) }
         store.onRefreshOutcome = { providerID, outcome, _, _, _ in
             if outcome == .failed { coordinator.invalidate(providerID: providerID) }
         }

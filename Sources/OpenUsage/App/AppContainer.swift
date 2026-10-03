@@ -39,9 +39,10 @@ final class AppContainer {
     let privacy: MenuBarPrivacyStore
     /// 1회성 onboarding 상태. 신규 설치에서만 `FirstRunSeeder`가 pending 표시 — 기존 설치는 hint 카드 미노출.
     let onboarding: OnboardingStore
-    /// Codex reset credit claim 라우터 (앱 유일의 provider-API 쓰기). 카드별 자체 auth store·usage client 경유 —
+    /// Codex reset credit claim 라우터. 카드별 자체 auth store·usage client 경유 —
     /// 되돌릴 수 없는 claim이 항상 카드가 표시하는 계정의 credential을 사용하도록 보장.
     let codexResetClaim: CodexResetClaimRouter
+    private let codexWeeklyTimer: CodexWeeklyTimerRouter
     /// 런치 패스가 reconcile한 account registry. 계정 이름은 여기서 render 시점에 해석.
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
@@ -194,15 +195,30 @@ final class AppContainer {
             isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
         )
         self.softLimitCoordinator = softLimitCoordinator
+        let codexWeeklyTimer = CodexWeeklyTimerRouter(
+            providers: providers.compactMap { $0 as? CodexProvider },
+            identityKeys: accountAssembly.identityKeysByCard,
+            isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
+            report: { [weak dataStore] in dataStore?.setAutomationWarning($1, for: $0) },
+            refresh: { [weak dataStore] providerID, isCurrent in
+                await dataStore?.refreshAfterWeeklyTimer(providerID: providerID, isCurrent: isCurrent)
+            }
+        )
+        self.codexWeeklyTimer = codexWeeklyTimer
+        dataStore.isRefreshSuspended = { [weak codexWeeklyTimer] in codexWeeklyTimer?.isRunning(providerID: $0) == true }
         dataStore.onRefreshOutcome = { [weak telemetry, weak softLimitCoordinator] providerID, outcome, category, trigger, degraded in
             telemetry?.record(providerID: providerID, outcome: outcome, category: category, trigger: trigger, degraded: degraded)
             if outcome == .failed { softLimitCoordinator?.invalidate(providerID: providerID) }
         }
         softLimitSettings.onChange = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
-        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator] in softLimitCoordinator?.settingsDidChange() }
-        dataStore.onFreshSnapshot = { [weak softLimitCoordinator] snapshot, descriptors in
+        dataStore.onQuotaInvalidated = { [weak softLimitCoordinator, weak codexWeeklyTimer] providerIDs in
+            softLimitCoordinator?.settingsDidChange()
+            codexWeeklyTimer?.invalidate(providerIDs: providerIDs)
+        }
+        dataStore.onFreshSnapshot = { [weak softLimitCoordinator, weak codexWeeklyTimer] snapshot, descriptors, trigger in
             softLimitCoordinator?.receive(snapshot, descriptors: descriptors)
             Task { [weak softLimitCoordinator] in await softLimitCoordinator?.check(providerID: snapshot.providerID) }
+            codexWeeklyTimer?.receive(snapshot, trigger: trigger)
         }
         self.layout = layout
         self.dataStore = dataStore
@@ -259,6 +275,18 @@ final class AppContainer {
         seedTask?.cancel()
         newProviderTask?.cancel()
         shellEnvironmentSnapshotTask.cancel()
+    }
+
+    var hasRunningBackgroundProcesses: Bool {
+        tokscaleSync.isRunning || codexWeeklyTimer.hasPendingWork
+    }
+
+    func shutdownBackgroundProcesses() async {
+        refreshTask.task?.cancel()
+        softLimitCoordinator.stop()
+        async let timer: Void = codexWeeklyTimer.shutdown()
+        async let tokscale: Void = tokscaleSync.shutdown()
+        _ = await (timer, tokscale)
     }
 
     /// 메뉴 바·프로바이더 동작의 이름 — 계정 카드 표시 모드와 독립.
@@ -401,6 +429,9 @@ final class AppContainer {
         codexResetClaim.reconfigure(
             providers: nextProviders.compactMap { $0 as? CodexProvider },
             identityKeys: assembly.identityKeysByCard
+        )
+        codexWeeklyTimer.reconfigure(
+            providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
         )
         for providerID in addedIDs where enablement.isEnabled(providerID) {
             Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }

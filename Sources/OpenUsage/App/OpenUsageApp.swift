@@ -5,7 +5,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var container: AppContainer?
     private var statusItemController: StatusItemController?
     private var singleInstanceLock: SingleInstanceLock.Token?
-    private var isAwaitingTokscaleShutdown = false
+    private var isAwaitingProcessShutdown = false
     private let updater = UpdaterController()
 
     public override init() {
@@ -57,12 +57,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Runner 소유 process group 정리까지 app 종료 지연.
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !isAwaitingTokscaleShutdown else { return .terminateLater }
-        guard let container, container.tokscaleSync.isRunning else { return .terminateNow }
-        isAwaitingTokscaleShutdown = true
+        guard !isAwaitingProcessShutdown else { return .terminateLater }
+        guard let container, container.hasRunningBackgroundProcesses else { return .terminateNow }
+        isAwaitingProcessShutdown = true
         Task { @MainActor in
-            await container.tokscaleSync.shutdown()
-            self.isAwaitingTokscaleShutdown = false
+            await container.shutdownBackgroundProcesses()
+            self.isAwaitingProcessShutdown = false
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater

@@ -24,6 +24,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
     case resetVoteFetch = "reset_vote_fetch"
     case resetClaim = "reset_claim"
     case postClaimRefresh = "post_claim_refresh"
+    case weeklyTimer = "weekly_timer"
     case notificationAuthorization = "notification_authorization"
     case notificationDelivery = "notification_delivery"
     case pricingLiteLLM = "pricing_litellm"
@@ -50,7 +51,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
         switch self {
         case .providerRefresh, .historyScan, .credentialRefresh, .credentialSave,
              .accountAdd, .accountSwitch, .accountSignIn, .accountRemove, .accountReconcile, .accountBinding,
-             .resetClaim, .postClaimRefresh, .resetCreditFetch,
+             .resetClaim, .postClaimRefresh, .weeklyTimer, .resetCreditFetch,
              .cursorPlan, .cursorCredits, .cursorBalance, .cursorSummary, .cursorFallback,
              .iCloudIdentity, .localAPIRequest:
             false
@@ -73,6 +74,7 @@ enum DiagnosticOperation: String, Codable, CaseIterable, Sendable {
         case .tokscaleCheck, .tokscaleInstall, .tokscaleLogin, .tokscaleSubmit: "tokscale"
         case .resetWatchFetch, .resetVoteFetch: "reset_watch"
         case .resetClaim, .postClaimRefresh: "reset_claim"
+        case .weeklyTimer: "weekly_timer"
         case .notificationAuthorization, .notificationDelivery: "notifications"
         case .pricingLiteLLM, .pricingModelsDev, .pricingSupplement, .pricingCache: "pricing"
         case .providerStatus: "provider_status"
