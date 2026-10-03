@@ -164,6 +164,43 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertNil(result.failureDescription)
     }
 
+    func testStartupWarningItemsDoNotCancelSuccessfulTurn() async throws {
+        let fixture = try Fixture(script: """
+        printf '%s\\n' \
+          '{"type":"item.completed","item":{"type":"error","message":"Under-development features enabled: skip_host_skill_discovery."}}' \
+          '{"type":"item.completed","item":{"type":"error","message":"Code Mode is unavailable because code-mode host is disabled."}}' \
+          '{"type":"turn.started"}' \
+          '{"type":"item.completed","item":{"type":"agent_message","text":"I do not know."}}' \
+          '{"type":"turn.completed","usage":{}}'
+        """)
+        defer { fixture.remove() }
+
+        let result = await fixture.executor().execute(auth: Self.auth)
+
+        XCTAssertTrue(result.launched)
+        XCTAssertTrue(result.completed)
+        XCTAssertNil(result.failureDescription)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+    }
+
+    func testWarningItemsDoNotHideTerminalErrors() async throws {
+        for terminal in ["error", "turn.failed"] {
+            let fixture = try Fixture(script: """
+            printf '%s\\n' \
+              '{"type":"item.completed","item":{"type":"error","message":"Startup warning."}}' \
+              '{"type":"\(terminal)","message":"Request failed."}' \
+              '{"type":"turn.completed","usage":{}}'
+            """)
+            defer { fixture.remove() }
+
+            let result = await fixture.executor().execute(auth: Self.auth)
+
+            XCTAssertTrue(result.launched)
+            XCTAssertFalse(result.completed)
+            XCTAssertEqual(result.failureDescription, "Codex weekly timer message did not complete.")
+        }
+    }
+
     func testTimeoutTerminatesFakeCLIAndCleansAuth() async throws {
         let fixture = try Fixture(script: "/bin/sleep 30")
         defer { fixture.remove() }
@@ -231,7 +268,7 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
     }
 
-    nonisolated private static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools. If you cannot verify it, say you do not know."
+    nonisolated private static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."
     private static let auth = CodexAuth(tokens: CodexTokens(
         accessToken: "original-access", refreshToken: "original-refresh",
         idToken: "original-id", accountID: "account"

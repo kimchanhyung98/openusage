@@ -16,7 +16,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             providers: [first.provider, second.provider, disabled.provider],
             isProviderEnabled: { $0 != "codex@disabled" }, executor: executor, store: fixture.store,
             report: { _, warning in XCTAssertNil(warning) },
-            refresh: { _, isCurrent in XCTAssertTrue(isCurrent()); completed.fulfill() }
+            refresh: { _, isCurrent in XCTAssertTrue(isCurrent()); completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
 
         for account in [first, second, disabled] {
@@ -40,7 +41,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         executor.onLaunch = { unexpected.fulfill() }
         let router = CodexWeeklyTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in }
+            executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
         var snapshot = try await fixture.changedRefresh(account, router: router)
 
@@ -63,7 +65,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         executor.onLaunch = { unexpected.fulfill() }
         let router = CodexWeeklyTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
-            executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in }
+            executor: executor, store: fixture.store, report: { _, _ in }, refresh: { _, _ in },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
 
         router.receive(await account.provider.refresh(), trigger: .scheduled)
@@ -86,7 +89,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
             report: { _, message in warning = message },
-            refresh: { _, _ in completed.fulfill() }
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
 
         router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
@@ -108,7 +112,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
             report: { _, message in warning = message },
-            refresh: { _, _ in completed.fulfill() }
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
 
         let snapshot = try await fixture.changedRefresh(account, router: router)
@@ -138,7 +143,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
             report: { _, _ in XCTFail("Shutdown must not publish an old result") },
-            refresh: { _, _ in XCTFail("Shutdown must not start a refresh") }
+            refresh: { _, _ in XCTFail("Shutdown must not start a refresh") },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
         router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
         await fulfillment(of: [launched], timeout: 3)
@@ -183,6 +189,15 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
 
         init(_ date: Date) { self.date = date }
 
+        func current() -> Date { lock.withLock { date } }
+
+        func advance(_ duration: Duration) {
+            lock.withLock {
+                date = date.addingTimeInterval(Double(duration.components.seconds)
+                    + Double(duration.components.attoseconds) / 1e18)
+            }
+        }
+
         func next() -> Date {
             lock.lock()
             defer { lock.unlock() }
@@ -196,16 +211,18 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let root: URL
         let store: CodexWeeklyTimerAttemptStore
         let now = Date()
+        let clock: ObservationClock
 
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.RouterTests.\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             store = CodexWeeklyTimerAttemptStore(fileURL: root.appendingPathComponent("attempts.json"))
+            clock = ObservationClock(now)
         }
 
         func account(_ id: String, cardID: String) throws -> Account {
             let now = self.now
-            let clock = ObservationClock(now)
+            let clock = self.clock
             let path = "/router-fixture/\(id)/auth.json"
             let original = try authText(id)
             let files = FakeFiles([path: original])

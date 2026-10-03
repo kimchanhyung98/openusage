@@ -2,11 +2,18 @@ import CryptoKit
 import Foundation
 
 struct CodexWeeklyTimerObservation: Equatable, Sendable {
+    static let resetTimeTolerance: TimeInterval = 60
+
     var accountKey: String
     var usedPercent: Double
     var resetsAt: Date?
     var observedAt: Date
     var rawResetAt: Date? = nil
+
+    static func resetTimesMatch(_ first: Date?, _ second: Date?) -> Bool {
+        guard let first, let second else { return false }
+        return abs(first.timeIntervalSince(second)) <= resetTimeTolerance
+    }
 }
 
 struct CodexWeeklyTimerSession: Sendable {

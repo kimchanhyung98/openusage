@@ -212,7 +212,8 @@ final class CodexWeeklyTimerCoordinator {
         let endedAt = now()
         var previousReset: Date?
         var previousObservedAt: Date?
-        for delay: TimeInterval in [0, 5, 15] {
+        let interval = CodexWeeklyTimerObservation.resetTimeTolerance + 5
+        for delay: TimeInterval in [0, interval, interval * 2] {
             guard current(candidate) else { return false }
             let remaining = endedAt.addingTimeInterval(delay).timeIntervalSince(now())
             if remaining > 0 {
@@ -238,11 +239,12 @@ final class CodexWeeklyTimerCoordinator {
                     continue
                 }
                 lastObservation = observation
-                if previousReset == reset, change == .unchanged,
-                   let previousObservedAt, observation.observedAt.timeIntervalSince(previousObservedAt) >= 1 {
+                if CodexWeeklyTimerObservation.resetTimesMatch(previousReset, reset), change == .unchanged,
+                   let previousObservedAt,
+                   observation.observedAt.timeIntervalSince(previousObservedAt) > CodexWeeklyTimerObservation.resetTimeTolerance {
                     return true
                 }
-                if previousReset != reset {
+                if !CodexWeeklyTimerObservation.resetTimesMatch(previousReset, reset) {
                     previousReset = reset
                     previousObservedAt = observation.observedAt
                 }
@@ -266,11 +268,12 @@ final class CodexWeeklyTimerCoordinator {
             return
         }
         if change == .unchanged,
-           let previous = waiting.lastObservation, previous.rawResetAt == reset,
-           observation.observedAt.timeIntervalSince(previous.observedAt) >= 1 {
+           let previous = waiting.lastObservation,
+           CodexWeeklyTimerObservation.resetTimesMatch(previous.rawResetAt, reset),
+           observation.observedAt.timeIntervalSince(previous.observedAt) > CodexWeeklyTimerObservation.resetTimeTolerance {
             awaitingReset[observation.accountKey] = nil
             if current(waiting.candidate) { report(waiting.candidate.providerID, waiting.candidate.bindingID, nil) }
-        } else if waiting.lastObservation?.rawResetAt != reset {
+        } else if !CodexWeeklyTimerObservation.resetTimesMatch(waiting.lastObservation?.rawResetAt, reset) {
             waiting.lastObservation = observation
             awaitingReset[observation.accountKey] = waiting
         }

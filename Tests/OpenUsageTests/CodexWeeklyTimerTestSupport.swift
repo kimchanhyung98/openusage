@@ -59,7 +59,7 @@ final class WeeklyTimerProbe {
             providerID: providerID, bindingID: bindings[providerID]!,
             observation: observation(
                 accountKey: accounts[providerID]!, used: used,
-                reset: reset ?? start.addingTimeInterval(800 + Double(normalReadCounter))
+                reset: reset ?? start.addingTimeInterval(800 + Double(normalReadCounter) * 100)
             )
         )
     }

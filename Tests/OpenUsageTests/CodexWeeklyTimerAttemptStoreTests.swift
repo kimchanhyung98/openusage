@@ -39,7 +39,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(500), observedAt: now.addingTimeInterval(20)), .baseline)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(200), observedAt: now.addingTimeInterval(10)), .stale)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(900), observedAt: now.addingTimeInterval(20)), .stale)
-            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(500), observedAt: now.addingTimeInterval(21)), .unchanged)
+            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(500), observedAt: now.addingTimeInterval(85)), .unchanged)
             XCTAssertEqual(try store.attempt(for: "a")?.notBefore, now.addingTimeInterval(300))
         }
     }
@@ -77,10 +77,10 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let reset = now.addingTimeInterval(900)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now), .baseline)
             let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
-            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(1)), .unchanged)
-            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: nil, observedAt: now.addingTimeInterval(2)), .incomparable)
-            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(3)), .incomparable)
-            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(1), observedAt: now.addingTimeInterval(4)), .changed)
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(65)), .unchanged)
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: nil, observedAt: now.addingTimeInterval(66)), .incomparable)
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(67)), .incomparable)
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61), observedAt: now.addingTimeInterval(68)), .changed)
         }
     }
 
@@ -89,9 +89,9 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let reset = now.addingTimeInterval(900)
             _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
-            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(0.4)), .incomparable)
-            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(0.8)), .incomparable)
-            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(1.2)), .unchanged)
+            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(20)), .incomparable)
+            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(60)), .incomparable)
+            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(61)), .unchanged)
         }
     }
 
@@ -99,9 +99,40 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
         try withStore { store in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             _ = try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(900), observedAt: now)
-            _ = try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(901), observedAt: now.addingTimeInterval(1))
+            _ = try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(961), observedAt: now.addingTimeInterval(1))
             XCTAssertNil(try store.begin(accountKey: "a", resetBefore: nil, now: now, expectedObservedAt: now))
             XCTAssertNotNil(try store.begin(accountKey: "a", resetBefore: nil, now: now, expectedObservedAt: now.addingTimeInterval(1)))
+        }
+    }
+
+    func testOneMinuteResetTolerancePersistsWithoutFollowingCumulativeDrift() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(900)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
+            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(60),
+                                                 observedAt: now.addingTimeInterval(65)), .unchanged)
+            XCTAssertEqual(try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61),
+                                                 observedAt: now.addingTimeInterval(130)), .changed)
+            _ = try store.observe(accountKey: "b", rawResetAt: reset, observedAt: now)
+            XCTAssertEqual(try store.observe(accountKey: "b", rawResetAt: reset.addingTimeInterval(-60),
+                                             observedAt: now.addingTimeInterval(65)), .unchanged)
+        }
+    }
+
+    func testRapidMovingResetsCannotBecomeStableInsideOneMinuteTolerance() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(900)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
+            for offset: TimeInterval in [20, 40, 60] {
+                XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(offset),
+                                                 observedAt: now.addingTimeInterval(offset)), .incomparable)
+            }
+            XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(65),
+                                             observedAt: now.addingTimeInterval(65)), .changed)
         }
     }
 

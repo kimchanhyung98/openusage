@@ -24,7 +24,7 @@ extension CodexWeeklyTimerExecuting {
 /// 계정 인증을 임시 CLI 홈에만 제공, 모델 답변은 저장·로그·타이머 계산에 사용 금지.
 @MainActor
 final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
-    static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools. If you cannot verify it, say you do not know."
+    static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."
     static let configuration = [
         "cli_auth_credentials_store=\"file\"",
         "model_provider=\"openai\"",
@@ -276,10 +276,11 @@ final class CodexWeeklyTimerEvents: @unchecked Sendable {
             rejected = true
             return
         }
+        // CLI 시작 경고도 error 항목으로 전달 — 요청 실패는 최상위 error·turn.failed·종료 코드로 판정.
         if type.hasPrefix("item."),
            let item = event["item"] as? [String: Any],
            let itemType = item["type"] as? String,
-           !["reasoning", "agent_message"].contains(itemType) {
+           !["reasoning", "agent_message", "error"].contains(itemType) {
             failed = true
             rejected = true
         }

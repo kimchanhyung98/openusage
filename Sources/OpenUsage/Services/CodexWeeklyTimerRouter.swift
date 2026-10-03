@@ -16,6 +16,8 @@ final class CodexWeeklyTimerRouter {
     private var isShuttingDown = false
     private let report: (String, String?) -> Void
     private let refresh: @MainActor (String, @escaping @MainActor () -> Bool) async -> Void
+    private let now: @MainActor () -> Date
+    private let wait: @MainActor (Duration) async throws -> Void
     private lazy var coordinator = CodexWeeklyTimerCoordinator(
         store: store,
         isCurrent: { [weak self] in self?.isCurrent($0, bindingID: $1, accountKey: $2) == true },
@@ -77,7 +79,9 @@ final class CodexWeeklyTimerRouter {
                         && self?.isProviderEnabled(providerID) == true
                 }
             }
-        }
+        },
+        now: now,
+        wait: wait
     )
 
     init(
@@ -86,7 +90,9 @@ final class CodexWeeklyTimerRouter {
         executor: any CodexWeeklyTimerExecuting = CodexWeeklyTimerExecutor(),
         store: CodexWeeklyTimerAttemptStore = CodexWeeklyTimerAttemptStore(),
         report: @escaping (String, String?) -> Void,
-        refresh: @escaping @MainActor (String, @escaping @MainActor () -> Bool) async -> Void
+        refresh: @escaping @MainActor (String, @escaping @MainActor () -> Bool) async -> Void,
+        now: @escaping @MainActor () -> Date = Date.init,
+        wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, Binding(provider: $0)) })
         self.isProviderEnabled = isProviderEnabled
@@ -94,6 +100,8 @@ final class CodexWeeklyTimerRouter {
         self.store = store
         self.report = report
         self.refresh = refresh
+        self.now = now
+        self.wait = wait
     }
 
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {

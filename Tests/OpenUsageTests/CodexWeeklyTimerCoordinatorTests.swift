@@ -79,7 +79,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         XCTAssertEqual(probe.executed, ["a", "a"])
     }
 
-    func testVerificationRunsAtZeroFiveAndFifteenSecondsAndStoresServerReset() async throws {
+    func testVerificationRunsAtZeroSixtyFiveAndOneHundredThirtySecondsAndStoresServerReset() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         probe.verification = [nil, probe.observation(reset: probe.start.addingTimeInterval(900)),
@@ -87,8 +87,8 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
-        XCTAssertEqual(probe.verificationTimes.map { $0.timeIntervalSince(probe.start) }, [0, 5, 15])
-        XCTAssertEqual(probe.waits, [.seconds(5), .seconds(10)])
+        XCTAssertEqual(probe.verificationTimes.map { $0.timeIntervalSince(probe.start) }, [0, 65, 130])
+        XCTAssertEqual(probe.waits, [.seconds(65), .seconds(65)])
         let attempt = try XCTUnwrap(probe.store.attempt(for: "a"))
         XCTAssertEqual(attempt.notBefore, probe.start.addingTimeInterval(300))
         XCTAssertEqual(attempt.resetAfter, probe.start.addingTimeInterval(900))
@@ -291,7 +291,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let reset = probe.now.addingTimeInterval(800)
         probe.receive(coordinator, reset: reset)
         XCTAssertEqual(probe.reports.count, 1)
-        probe.now = probe.now.addingTimeInterval(1)
+        probe.now = probe.now.addingTimeInterval(65)
         probe.receive(coordinator, reset: reset)
         XCTAssertEqual(probe.reports.count, 2)
         XCTAssertNil(probe.reports[1])

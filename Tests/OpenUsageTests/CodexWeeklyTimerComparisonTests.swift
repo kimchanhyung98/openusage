@@ -16,7 +16,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         XCTAssertFalse(coordinator.hasPendingWork)
         XCTAssertTrue(probe.executed.isEmpty)
         probe.now = probe.now.addingTimeInterval(1)
-        probe.receive(coordinator, reset: reset.addingTimeInterval(1))
+        probe.receive(coordinator, reset: reset.addingTimeInterval(61))
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.executed, ["a"])
     }
@@ -33,7 +33,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         XCTAssertFalse(coordinator.hasPendingWork)
         probe.receive(coordinator, reset: probe.start.addingTimeInterval(903))
         XCTAssertFalse(coordinator.hasPendingWork)
-        probe.receive(coordinator, reset: probe.start.addingTimeInterval(904))
+        probe.receive(coordinator, reset: probe.start.addingTimeInterval(964))
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.executed, ["a"])
     }
@@ -47,7 +47,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         probe.now = probe.now.addingTimeInterval(1)
         probe.receive(coordinator, used: 0, reset: reset)
         XCTAssertFalse(coordinator.hasPendingWork)
-        probe.receive(coordinator, used: 0, reset: reset.addingTimeInterval(1))
+        probe.receive(coordinator, used: 0, reset: reset.addingTimeInterval(61))
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.executed, ["a"])
     }
@@ -94,7 +94,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
     func testMovingPostResetDoesNotConfirmOrExtendCooldownAndCanRetryAfterFiveMinutes() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
-        probe.verification = [900.0, 905.0, 915.0].map { probe.observation(reset: probe.start.addingTimeInterval($0)) }
+        probe.verification = [900.0, 965.0, 1030.0].map { probe.observation(reset: probe.start.addingTimeInterval($0)) }
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
@@ -105,7 +105,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         }
         XCTAssertEqual(probe.executed.count, 1)
         XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(300))
-        probe.now = probe.start.addingTimeInterval(300)
+        probe.now = probe.start.addingTimeInterval(365)
         probe.receive(coordinator, reset: probe.now.addingTimeInterval(900))
         await settle { probe.finished.count == 2 }
         XCTAssertEqual(probe.executed.count, 2)
@@ -126,7 +126,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         probe.receive(coordinator, reset: reset)
         XCTAssertFalse(coordinator.hasPendingWork)
         XCTAssertEqual(probe.executed.count, 1)
-        probe.receive(coordinator, reset: reset.addingTimeInterval(1))
+        probe.receive(coordinator, reset: reset.addingTimeInterval(61))
         await settle { probe.finished.count == 2 }
         XCTAssertEqual(probe.executed.count, 2)
     }
@@ -172,7 +172,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         defer { probe.cleanup() }
         let reset = probe.start.addingTimeInterval(900)
         probe.preparationReset = reset
-        probe.preparationHook = { probe.now = probe.now.addingTimeInterval(1) }
+        probe.preparationHook = { probe.now = probe.now.addingTimeInterval(65) }
         let coordinator = probe.coordinator()
         probe.receive(coordinator, reset: reset)
         await settle { probe.finished.count == 1 }
@@ -192,14 +192,14 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         XCTAssertEqual(probe.executed, ["a"])
     }
 
-    func testSlowFirstPostReadDoesNotTreatSubsecondFollowingReadsAsStable() async throws {
+    func testSlowFirstPostReadDoesNotTreatRapidFollowingReadsAsStable() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         let reset = probe.start.addingTimeInterval(900)
         probe.preparationReset = reset
         probe.verification = [probe.observation(reset: reset), probe.observation(reset: reset), probe.observation(reset: reset)]
         probe.verificationHook = {
-            if probe.verificationTimes.isEmpty { probe.now = probe.now.addingTimeInterval(16) }
+            if probe.verificationTimes.isEmpty { probe.now = probe.now.addingTimeInterval(131) }
         }
         let coordinator = probe.coordinator()
         probe.receive(coordinator, reset: reset)
@@ -220,7 +220,7 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         XCTAssertEqual(probe.reports.count, 1)
         probe.receive(coordinator, reset: reset)
         XCTAssertEqual(probe.reports.count, 1)
-        probe.now = probe.now.addingTimeInterval(1)
+        probe.now = probe.now.addingTimeInterval(65)
         probe.receive(coordinator, reset: reset)
         XCTAssertEqual(probe.reports.count, 2)
         XCTAssertNil(probe.reports[1])
@@ -236,11 +236,44 @@ final class CodexWeeklyTimerComparisonTests: XCTestCase {
         await settle { probe.finished.count == 1 }
         probe.receive(coordinator, used: 1, reset: reset)
         XCTAssertEqual(probe.reports.count, 1)
-        probe.now = probe.now.addingTimeInterval(1)
+        probe.now = probe.now.addingTimeInterval(65)
         probe.receive(coordinator, used: 2, reset: reset)
         XCTAssertEqual(probe.reports.count, 2)
         XCTAssertNil(probe.reports[1])
         XCTAssertEqual(probe.executed.count, 1)
+    }
+
+    func testPostResetJitterWithinOneMinuteConfirmsOnlyAfterSixtyFiveSeconds() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        let reset = probe.start.addingTimeInterval(900)
+        probe.verification = [probe.observation(reset: reset), probe.observation(reset: reset.addingTimeInterval(60))]
+        let coordinator = probe.coordinator()
+
+        probe.receive(coordinator)
+        await settle { probe.finished.count == 1 }
+
+        XCTAssertEqual(probe.verificationTimes.map { $0.timeIntervalSince(probe.start) }, [0, 65])
+        XCTAssertEqual(probe.reports.count, 1)
+        XCTAssertNil(probe.reports[0])
+        probe.now = probe.start.addingTimeInterval(301)
+        probe.receive(coordinator, reset: reset.addingTimeInterval(-60))
+        XCTAssertFalse(coordinator.hasPendingWork)
+        XCTAssertEqual(probe.executed, ["a"])
+    }
+
+    func testShortPreparationCannotMistakeMovingResetForStableTimer() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        let reset = probe.start.addingTimeInterval(900)
+        probe.preparationReset = reset.addingTimeInterval(1)
+        probe.preparationHook = { probe.now = probe.now.addingTimeInterval(1) }
+        let coordinator = probe.coordinator()
+
+        probe.receive(coordinator, reset: reset)
+        await settle { probe.finished.count == 1 }
+
+        XCTAssertEqual(probe.executed, ["a"])
     }
 
     private func settle(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {

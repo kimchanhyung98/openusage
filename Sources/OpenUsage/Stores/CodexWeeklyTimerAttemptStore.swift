@@ -29,6 +29,7 @@ final class CodexWeeklyTimerAttemptStore {
         var rawResetAt: Date?
         var observedAt: Date
         var stableSince: Date?
+        var stableResetAt: Date?
         var lastObservedAt: Date?
         var usedPercent: Double?
     }
@@ -106,10 +107,12 @@ final class CodexWeeklyTimerAttemptStore {
             let key = Self.key(accountKey)
             let previous = document.observations[key]
             if let previous, observedAt <= (previous.lastObservedAt ?? previous.observedAt) { return .stale }
-            let sameReset = rawResetAt != nil && previous?.rawResetAt == rawResetAt
+            // 허용 범위 안에서는 최초 기준 유지 — 조금씩 이동하는 리셋을 고정으로 오판하지 않음.
+            let previousReset = previous?.stableResetAt ?? previous?.rawResetAt
+            let sameReset = CodexWeeklyTimerObservation.resetTimesMatch(previousReset, rawResetAt)
             let stableSince = sameReset ? (previous?.stableSince ?? previous?.observedAt) : observedAt
             if var previous, sameReset, usedPercent == 0, (previous.usedPercent ?? 0) == 0,
-               observedAt.timeIntervalSince(stableSince ?? observedAt) < 1 {
+               observedAt.timeIntervalSince(stableSince ?? observedAt) <= CodexWeeklyTimerObservation.resetTimeTolerance {
                 previous.lastObservedAt = observedAt
                 document.observations[key] = previous
                 try write(document)
@@ -117,13 +120,15 @@ final class CodexWeeklyTimerAttemptStore {
             }
             document.observations[key] = FreshObservation(
                 rawResetAt: rawResetAt, observedAt: observedAt, stableSince: rawResetAt == nil ? nil : stableSince,
+                stableResetAt: sameReset ? previousReset : rawResetAt,
                 lastObservedAt: observedAt, usedPercent: usedPercent
             )
             try write(document)
             guard let previous else { return .baseline }
-            guard let oldReset = previous.rawResetAt, let rawResetAt else { return .incomparable }
-            guard oldReset == rawResetAt else { return .changed }
-            return observedAt.timeIntervalSince(stableSince ?? observedAt) >= 1 ? .unchanged : .incomparable
+            guard previous.rawResetAt != nil, rawResetAt != nil else { return .incomparable }
+            guard sameReset else { return .changed }
+            return observedAt.timeIntervalSince(stableSince ?? observedAt) > CodexWeeklyTimerObservation.resetTimeTolerance
+                ? .unchanged : .incomparable
         }
     }
 
