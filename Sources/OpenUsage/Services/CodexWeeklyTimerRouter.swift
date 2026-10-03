@@ -11,6 +11,7 @@ final class CodexWeeklyTimerRouter {
 
     private var bindings: [String: Binding]
     private var identityKeys: [String: String]
+    private var warningsByAccount: [String: String] = [:]
     private let isProviderEnabled: (String) -> Bool
     private let executor: any CodexWeeklyTimerExecuting
     private let store: CodexWeeklyTimerAttemptStore
@@ -67,8 +68,12 @@ final class CodexWeeklyTimerRouter {
             return try await provider.verifyWeeklyTimer(expectedAccountKey: session.observation.accountKey)
         },
         report: { [weak self] providerID, bindingID, message in
-            guard let self, self.bindings[providerID]?.id == bindingID else { return }
-            self.report(providerID, message)
+            guard let self, let binding = self.bindings[providerID], binding.id == bindingID,
+                  let accountKey = binding.accountKey else { return }
+            self.warningsByAccount[accountKey] = message
+            for (id, current) in self.bindings where current.accountKey == accountKey && self.isProviderEnabled(id) {
+                self.report(id, message)
+            }
             AppDiagnostics.record(.weeklyTimer, result: message == nil ? .success : .failure,
                                   providerID: providerID)
         },
@@ -114,6 +119,7 @@ final class CodexWeeklyTimerRouter {
               let observedAt = snapshot.liveQuotaObservedAt,
               let observation = binding.provider.weeklyTimerObservation,
               observation.observedAt == observedAt else { return }
+        let accountChanged = binding.accountKey != observation.accountKey
         if let accountKey = binding.accountKey, accountKey != observation.accountKey {
             coordinator.invalidate(providerID: snapshot.providerID)
             binding = Binding(provider: binding.provider)
@@ -121,6 +127,9 @@ final class CodexWeeklyTimerRouter {
         }
         binding.accountKey = observation.accountKey
         bindings[snapshot.providerID] = binding
+        if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warningsByAccount[observation.accountKey] {
+            report(snapshot.providerID, warning)
+        }
         coordinator.receive(providerID: snapshot.providerID, bindingID: binding.id, observation: observation)
     }
 

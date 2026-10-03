@@ -112,7 +112,9 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
                 }
             } catch {
                 result.verificationCanClearFailure = false
-                result.failureDescription = "Codex weekly timer credentials could not be read after the message."
+                result.failureDescription = result.failureDescription
+                    ?? "Codex weekly timer credentials could not be read after the message."
+                AppLog.error(.subprocess, "Codex weekly timer credentials could not be read after the message.")
             }
         } catch is CancellationError {
             result = failure("Codex weekly timer message was cancelled.")
