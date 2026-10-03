@@ -104,6 +104,31 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertEqual(runner.requests.count, 1)
     }
 
+    func testRunFailureIsPreservedWhenReadingRotatedAuthAlsoFails() async throws {
+        for (outcome, expected) in [
+            (0, "Codex weekly timer message timed out."),
+            (1, "Codex weekly timer message was cancelled."),
+            (2, "Codex weekly timer message did not complete."),
+        ] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let runner = RecordingTimerRunner { request, _ in
+                let home = try XCTUnwrap(request.environment["CODEX_HOME"])
+                try Data("invalid-auth".utf8).write(to: URL(fileURLWithPath: home).appendingPathComponent("auth.json"))
+                if outcome == 0 { throw StreamingProcessRunnerError.timedOut(timeout: 60) }
+                if outcome == 1 { throw CancellationError() }
+                return StreamingProcessResult(exitCode: 1, output: "")
+            }
+            let result = await fixture.executor(runner: runner).execute(auth: Self.auth)
+
+            XCTAssertTrue(result.launched)
+            XCTAssertFalse(result.completed)
+            XCTAssertEqual(result.failureDescription, expected)
+            XCTAssertFalse(result.verificationCanClearFailure)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+        }
+    }
+
     func testIncompleteSubscriptionAuthFailsBeforeInvokingCLI() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }

@@ -231,6 +231,56 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertFalse(router.hasPendingWork)
     }
 
+    func testAccountWarningsReachDuplicateCardsAndClearWhenAnotherCardSucceeds() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let first = try fixture.account("first", cardID: "codex")
+        let duplicate = try fixture.account("first", cardID: "codex@duplicate")
+        let late = try fixture.account("first", cardID: "codex@late")
+        let disabled = try fixture.account("first", cardID: "codex@disabled")
+        let other = try fixture.account("other", cardID: "codex@other")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Another card verifies the same account")
+        var warnings: [String: String] = [:]
+        let router = CodexWeeklyTimerRouter(
+            providers: [first, duplicate, late, disabled, other].map(\.provider),
+            isProviderEnabled: { $0 != "codex@disabled" }, executor: executor, store: fixture.store,
+            report: { warnings[$0] = $1 },
+            refresh: { providerID, _ in
+                XCTAssertEqual(providerID, "codex@duplicate")
+                completed.fulfill()
+            },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        for account in [first, duplicate, disabled, other] {
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+        }
+        let saved = try Data(contentsOf: fixture.store.fileURL)
+        try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
+        router.receive(await first.provider.refresh(), trigger: .manual)
+
+        XCTAssertEqual(Set(warnings.keys), ["codex", "codex@duplicate"])
+        XCTAssertEqual(warnings["codex"], warnings["codex@duplicate"])
+        try saved.write(to: fixture.store.fileURL)
+        router.receive(await late.provider.refresh(), trigger: .scheduled)
+        XCTAssertEqual(warnings["codex@late"], warnings["codex"])
+        XCTAssertFalse(router.hasPendingWork)
+
+        first.files.files[first.path] = try fixture.authText("replacement")
+        router.receive(await first.provider.refresh(), trigger: .manual)
+        XCTAssertNil(warnings["codex"])
+        XCTAssertNotNil(warnings["codex@duplicate"])
+        XCTAssertNotNil(warnings["codex@late"])
+
+        fixture.clock.advance(.seconds(300))
+        router.receive(await duplicate.provider.refresh(), trigger: .scheduled)
+        await fulfillment(of: [completed], timeout: 3)
+
+        XCTAssertEqual(executor.auths.count, 1)
+        XCTAssertTrue(warnings.isEmpty)
+        XCTAssertFalse(router.hasPendingWork)
+    }
+
     @MainActor
     private final class Executor: CodexWeeklyTimerExecuting {
         var auths: [CodexAuth] = []
@@ -344,7 +394,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                     "reset_at": now.addingTimeInterval(604_800).timeIntervalSince1970
                 ]]
             ])
-            let http = TimerHTTPClient(response: .init(statusCode: 200, headers: [:], body: quota), clock: clock)
+            let http = clients[id] ?? TimerHTTPClient(response: .init(statusCode: 200, headers: [:], body: quota), clock: clock)
             clients[id] = http
             let provider = CodexProvider(
                 provider: CodexProvider.makeProvider(id: cardID),
