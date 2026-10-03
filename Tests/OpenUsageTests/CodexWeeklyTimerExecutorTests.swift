@@ -72,6 +72,7 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
     }
 
     func testCompletedMessageRemainsCompletedWhenReadingRotatedAuthFails() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let fixture = try Fixture()
         defer { fixture.remove() }
         let runner = RecordingTimerRunner { request, output in
@@ -87,6 +88,9 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertEqual(result.failureDescription, "Codex weekly timer credentials could not be read after the message.")
         XCTAssertFalse(result.verificationCanClearFailure)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.weeklyTimer, result: .failure, category: .decoding, providerID: "codex")
+        ])
     }
 
     func testMissingExecutableAndIncompatibleCLIProveNoMessageLaunch() async throws {
@@ -126,6 +130,37 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
             XCTAssertEqual(result.failureDescription, expected)
             XCTAssertFalse(result.verificationCanClearFailure)
             XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+        }
+    }
+
+    func testIncompleteCLIAuthIsNeverReturnedForWriteback() async throws {
+        let fields: [WritableKeyPath<CodexTokens, String?>] = [\.accessToken, \.refreshToken, \.idToken]
+        for field in fields {
+            for value: String? in [nil, ""] {
+                for outcome in 0..<3 {
+                    let fixture = try Fixture()
+                    defer { fixture.remove() }
+                    var incomplete = Self.auth
+                    incomplete.tokens?[keyPath: field] = value
+                    let data = try JSONEncoder().encode(incomplete)
+                    let runner = RecordingTimerRunner { request, output in
+                        let home = try XCTUnwrap(request.environment["CODEX_HOME"])
+                        try data.write(to: URL(fileURLWithPath: home).appendingPathComponent("auth.json"))
+                        if outcome == 1 { throw StreamingProcessRunnerError.timedOut(timeout: 60) }
+                        if outcome == 2 { throw CancellationError() }
+                        output("{\"type\":\"turn.completed\"}\n")
+                        return StreamingProcessResult(exitCode: 0, output: "")
+                    }
+                    let result = await fixture.executor(runner: runner).execute(auth: Self.auth)
+
+                    XCTAssertTrue(result.launched)
+                    XCTAssertEqual(result.completed, outcome == 0)
+                    XCTAssertNil(result.updatedAuth)
+                    XCTAssertFalse(result.verificationCanClearFailure)
+                    XCTAssertNotNil(result.failureDescription)
+                    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+                }
+            }
         }
     }
 

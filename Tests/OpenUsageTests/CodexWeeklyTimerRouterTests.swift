@@ -281,6 +281,44 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertFalse(router.hasPendingWork)
     }
 
+    func testWarningIsForgottenWhenItsLastAccountBindingDisappears() async throws {
+        for transition in 0..<3 {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let account = try fixture.account("first", cardID: "codex")
+            let executor = fixture.executor()
+            var warning: String?
+            let router = CodexWeeklyTimerRouter(
+                providers: [account.provider], isProviderEnabled: { _ in true },
+                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                refresh: { _, _ in XCTFail("Rebinding must not send a timer message") },
+                now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+            )
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            let saved = try Data(contentsOf: fixture.store.fileURL)
+            try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
+            router.receive(await account.provider.refresh(), trigger: .manual)
+            XCTAssertNotNil(warning)
+            try saved.write(to: fixture.store.fileURL)
+
+            switch transition {
+            case 0: router.invalidate(providerIDs: ["codex"])
+            case 1:
+                router.reconfigure(providers: [])
+                router.reconfigure(providers: [account.provider])
+            default:
+                account.files.files[account.path] = try fixture.authText("replacement")
+                router.receive(await account.provider.refresh(), trigger: .manual)
+                account.files.files[account.path] = account.original
+            }
+            XCTAssertNil(warning)
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            XCTAssertNil(warning)
+            XCTAssertFalse(router.hasPendingWork)
+            XCTAssertTrue(executor.auths.isEmpty)
+        }
+    }
+
     @MainActor
     private final class Executor: CodexWeeklyTimerExecuting {
         var auths: [CodexAuth] = []
