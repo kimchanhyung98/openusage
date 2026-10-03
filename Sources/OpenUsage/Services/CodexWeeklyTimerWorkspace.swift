@@ -69,7 +69,9 @@ final class CodexWeeklyTimerWorkspace {
         }
         let auth = try JSONDecoder().decode(CodexAuth.self, from: Data(contentsOf: url))
         guard auth.apiKey?.isEmpty != false,
-              auth.tokens?.accessToken?.isEmpty == false else {
+              auth.tokens?.accessToken?.isEmpty == false,
+              auth.tokens?.refreshToken?.isEmpty == false,
+              auth.tokens?.idToken?.isEmpty == false else {
             throw WorkspaceError.invalidAuth
         }
         return auth

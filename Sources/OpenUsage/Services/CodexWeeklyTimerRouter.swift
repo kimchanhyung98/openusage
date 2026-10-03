@@ -127,6 +127,7 @@ final class CodexWeeklyTimerRouter {
         }
         binding.accountKey = observation.accountKey
         bindings[snapshot.providerID] = binding
+        if accountChanged { removeUnboundWarnings() }
         if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warningsByAccount[observation.accountKey] {
             report(snapshot.providerID, warning)
         }
@@ -152,6 +153,7 @@ final class CodexWeeklyTimerRouter {
             bindings[providerID] = Binding(provider: binding.provider)
             report(providerID, nil)
         }
+        removeUnboundWarnings()
     }
 
     func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
@@ -170,6 +172,11 @@ final class CodexWeeklyTimerRouter {
             }
         }
         self.identityKeys = identityKeys
+    }
+
+    private func removeUnboundWarnings() {
+        let accountKeys = Set(bindings.filter { isProviderEnabled($0.key) }.compactMap { $0.value.accountKey })
+        warningsByAccount = warningsByAccount.filter { accountKeys.contains($0.key) }
     }
 
     private func isCurrent(_ providerID: String, bindingID: UUID, accountKey: String) -> Bool {
