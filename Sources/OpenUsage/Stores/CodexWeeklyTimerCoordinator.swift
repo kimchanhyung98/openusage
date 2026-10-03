@@ -10,7 +10,6 @@ final class CodexWeeklyTimerCoordinator {
     }
 
     private struct PendingVerification {
-        var candidate: Candidate
         var lastObservation: CodexWeeklyTimerObservation?
     }
 
@@ -78,7 +77,7 @@ final class CodexWeeklyTimerCoordinator {
             if change != .incomparable || observation.rawResetAt == nil || observation.usedPercent != 0 {
                 pending.removeAll { $0.observation.accountKey == observation.accountKey }
             }
-            recoverVerification(observation, change: change)
+            recoverVerification(candidate, change: change)
             guard change == .changed, observation.usedPercent == 0,
                   let reset = observation.rawResetAt, reset > now(),
                   try store.canAttempt(accountKey: observation.accountKey, now: now())
@@ -230,7 +229,7 @@ final class CodexWeeklyTimerCoordinator {
             fail(candidate, result.failureDescription ?? (result.completed
                 ? "Weekly timer message completed, but the server reset time could not be confirmed."
                 : "Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."))
-            awaitingReset[accountKey] = PendingVerification(candidate: candidate, lastObservation: lastPostObservation)
+            awaitingReset[accountKey] = PendingVerification(lastObservation: lastPostObservation)
         } else {
             report(candidate.providerID, candidate.bindingID, nil)
         }
@@ -290,8 +289,9 @@ final class CodexWeeklyTimerCoordinator {
     }
 
     private func recoverVerification(
-        _ observation: CodexWeeklyTimerObservation, change: CodexWeeklyTimerObservationChange
+        _ candidate: Candidate, change: CodexWeeklyTimerObservationChange
     ) {
+        let observation = candidate.observation
         guard var waiting = awaitingReset[observation.accountKey] else { return }
         guard let reset = observation.rawResetAt, reset > now() else {
             waiting.lastObservation = nil
@@ -303,7 +303,7 @@ final class CodexWeeklyTimerCoordinator {
            CodexWeeklyTimerObservation.resetTimesMatch(previous.rawResetAt, reset),
            observation.observedAt.timeIntervalSince(previous.observedAt) >= CodexWeeklyTimerObservation.verificationInterval {
             awaitingReset[observation.accountKey] = nil
-            if current(waiting.candidate) { report(waiting.candidate.providerID, waiting.candidate.bindingID, nil) }
+            if current(candidate) { report(candidate.providerID, candidate.bindingID, nil) }
         } else if !CodexWeeklyTimerObservation.resetTimesMatch(waiting.lastObservation?.rawResetAt, reset) {
             waiting.lastObservation = observation
             awaitingReset[observation.accountKey] = waiting

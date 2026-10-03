@@ -119,11 +119,7 @@ final class CodexWeeklyTimerRouter {
         self.refresh = refresh
         self.now = now
         self.wait = wait
-        if let warning = executor.startupFailureDescription {
-            for provider in providers where isProviderEnabled(provider.provider.id) {
-                report(provider.provider.id, warning)
-            }
-        }
+        reportStartupFailure()
     }
 
     func receive(_ snapshot: ProviderSnapshot, trigger: RefreshTrigger) {
@@ -170,6 +166,7 @@ final class CodexWeeklyTimerRouter {
             report(providerID, nil)
         }
         removeUnboundWarnings()
+        if providerIDs == nil { reportStartupFailure() }
     }
 
     func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
@@ -188,6 +185,14 @@ final class CodexWeeklyTimerRouter {
             }
         }
         self.identityKeys = identityKeys
+        reportStartupFailure()
+    }
+
+    private func reportStartupFailure() {
+        guard !isShuttingDown, let warning = executor.startupFailureDescription else { return }
+        for providerID in bindings.keys where isProviderEnabled(providerID) {
+            report(providerID, warning)
+        }
     }
 
     private func removeUnboundWarnings() {
