@@ -263,7 +263,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
                 defaults: defaults
             )
             store.onFreshSnapshot = { snapshot, descriptors, _ in coordinator.receive(snapshot, descriptors: descriptors) }
-            store.onQuotaInvalidated = { coordinator.settingsDidChange() }
+            store.onQuotaInvalidated = { _ in coordinator.settingsDidChange() }
             await store.refresh(providerID: "codex", force: true)
 
             change(store)

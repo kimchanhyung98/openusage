@@ -12,6 +12,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         await Task.yield()
         XCTAssertTrue(probe.prepared.isEmpty)
 
+        probe.now = probe.start.addingTimeInterval(901)
         probe.preparationUsed = 0.1
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
@@ -52,28 +53,31 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(reserved?.execution, .pending)
-        XCTAssertEqual(reserved?.notBefore, probe.start.addingTimeInterval(300))
+        XCTAssertEqual(reserved?.notBefore, probe.start.addingTimeInterval(365))
 
         let restarted = probe.coordinator()
         probe.receive(restarted, reset: probe.now.addingTimeInterval(200))
         probe.receive(restarted, reset: probe.now.addingTimeInterval(400))
-        await Task.yield()
+        XCTAssertFalse(restarted.hasPendingWork)
         XCTAssertEqual(probe.executed, ["a"])
         let persisted = try CodexWeeklyTimerAttemptStore(fileURL: probe.store.fileURL).attempt(for: "a")
         XCTAssertEqual(persisted?.id, reserved?.id)
-        XCTAssertEqual(persisted?.notBefore, probe.start.addingTimeInterval(300))
+        XCTAssertEqual(persisted?.notBefore, probe.start.addingTimeInterval(365))
     }
 
-    func testExpiredHoldNeedsFreshZeroAndAllowsNextCycle() async throws {
+    func testKnownUsageBlocksResendUntilFollowingWeeklyWindow() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
-        probe.now = probe.start.addingTimeInterval(301)
+        probe.now = probe.start.addingTimeInterval(366)
         probe.receive(coordinator, used: 0.1)
         await Task.yield()
         XCTAssertEqual(probe.executed.count, 1)
+        probe.receive(coordinator)
+        XCTAssertFalse(coordinator.hasPendingWork)
+        probe.now = probe.start.addingTimeInterval(1_400)
         probe.receive(coordinator)
         await settle { probe.finished.count == 2 }
         XCTAssertEqual(probe.executed, ["a", "a"])
@@ -87,16 +91,17 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
-        XCTAssertEqual(probe.verificationTimes.map { $0.timeIntervalSince(probe.start) }, [0, 65, 130])
-        XCTAssertEqual(probe.waits, [.seconds(65), .seconds(65)])
+        let executedAt = try XCTUnwrap(probe.executionTimes.first)
+        XCTAssertEqual(probe.verificationTimes.map { $0.timeIntervalSince(executedAt) }, [0, 65, 130])
+        XCTAssertEqual(probe.waits, [.seconds(65), .seconds(65), .seconds(65)])
         let attempt = try XCTUnwrap(probe.store.attempt(for: "a"))
-        XCTAssertEqual(attempt.notBefore, probe.start.addingTimeInterval(300))
+        XCTAssertEqual(attempt.notBefore, executedAt.addingTimeInterval(300))
         XCTAssertEqual(attempt.resetAfter, probe.start.addingTimeInterval(900))
         XCTAssertEqual(probe.reports.count, 1)
         XCTAssertNil(probe.reports[0])
     }
 
-    func testStablePostResetRetainsExecutionFailure() async throws {
+    func testStablePostResetRecoversUncertainExecutionWithoutAnotherSend() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         probe.result = .init(launched: true, completed: false, updatedAuth: nil, failureDescription: "Message failed.")
@@ -106,7 +111,8 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 2)
-        XCTAssertEqual(probe.reports, ["Message failed."])
+        XCTAssertEqual(probe.reports.count, 1)
+        XCTAssertNil(probe.reports[0])
         XCTAssertEqual(try probe.store.attempt(for: "a")?.execution, .failed)
         probe.receive(coordinator)
         await Task.yield()
@@ -122,7 +128,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
-        XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(300))
+        XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(365))
         XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."])
     }
 
@@ -141,7 +147,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         XCTAssertTrue(probe.verificationTimes.isEmpty)
         probe.receive(coordinator)
         XCTAssertEqual(probe.executed, ["a", "b"])
-        probe.now = probe.start.addingTimeInterval(301)
+        probe.now = probe.start.addingTimeInterval(366)
         probe.receive(coordinator)
         await settle { probe.finished.count == 3 }
         XCTAssertEqual(probe.executed, ["a", "b", "a"])
@@ -263,11 +269,11 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
-        XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(300))
+        XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(365))
         XCTAssertNil(try probe.store.attempt(for: "a")?.resetAfter)
     }
 
-    func testChangedBindingDoesNotSuspendReplacementRefresh() async throws {
+    func testChangedBindingKeepsRefreshSuspendedUntilExecutionCleanup() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
         var release: CheckedContinuation<Void, Never>?
@@ -275,10 +281,47 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         let coordinator = probe.coordinator()
         probe.receive(coordinator)
         await settle { release != nil }
-        XCTAssertTrue(coordinator.isRunning(providerID: "codex", bindingID: probe.bindings["codex"]!))
-        XCTAssertFalse(coordinator.isRunning(providerID: "codex", bindingID: UUID()))
+        probe.bindings["codex"] = UUID()
+        coordinator.invalidate(providerID: "codex")
+        XCTAssertTrue(coordinator.isRunning(providerID: "codex"))
         release?.resume()
         await settle { probe.finished.count == 1 }
+        XCTAssertFalse(coordinator.isRunning(providerID: "codex"))
+    }
+
+    func testPostMessageVerificationDoesNotSuspendOrdinaryRefreshes() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        var release: CheckedContinuation<Void, Never>?
+        probe.verificationHook = { await withCheckedContinuation { release = $0 } }
+        let coordinator = probe.coordinator()
+        probe.receive(coordinator)
+        await settle { release != nil }
+
+        XCTAssertTrue(coordinator.hasPendingWork)
+        XCTAssertFalse(coordinator.isRunning(providerID: "codex"))
+
+        probe.verificationHook = nil
+        release?.resume()
+        await settle { !coordinator.hasPendingWork }
+    }
+
+    func testVerifiedTimerDoesNotHideCredentialPersistenceFailure() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        probe.result.failureDescription = "Credentials could not be saved."
+        probe.result.verificationCanClearFailure = false
+        let reset = probe.start.addingTimeInterval(900)
+        probe.verification = [probe.observation(reset: reset), probe.observation(reset: reset)]
+        let coordinator = probe.coordinator()
+        probe.receive(coordinator)
+        await settle { !coordinator.hasPendingWork }
+
+        XCTAssertEqual(probe.reports, ["Credentials could not be saved."])
+        probe.now = probe.start.addingTimeInterval(400)
+        probe.receive(coordinator, reset: reset.addingTimeInterval(61))
+        XCTAssertFalse(coordinator.hasPendingWork)
+        XCTAssertEqual(probe.executed, ["a"])
     }
 
     func testLaterLiveResetClearsOnlyVerificationFailureWithoutResending() async throws {

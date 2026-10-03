@@ -245,7 +245,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
             }
             store.onFreshSnapshot = { [self] _, _, _ in freshSnapshots += 1 }
             store.onLocalHistoryChanged = { [self] in historyChanges += 1 }
-            store.onQuotaInvalidated = { [self] in quotaInvalidations += 1 }
+            store.onQuotaInvalidated = { [self] _ in quotaInvalidations += 1 }
         }
     }
 

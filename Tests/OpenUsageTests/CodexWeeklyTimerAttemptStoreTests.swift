@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
-    func testAtomicReservationAcrossStoreInstancesAndPrivateHashedRecord() throws {
+    func testStoreInstancesShareReservationAndPrivateHashedRecord() throws {
         try withStore { store in
             let now = Date(timeIntervalSince1970: 1_800_000_000)
             let first = try XCTUnwrap(store.begin(accountKey: "private@example.com:workspace", resetBefore: nil, now: now))
@@ -56,7 +56,11 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
 
     func testCorruptVersionAndInvalidKeysFailClosed() throws {
         try withStore { store in
-            for invalid in ["{\"version\":3,\"attempts\":{}}", "broken"] {
+            for invalid in [
+                "{\"version\":3,\"attempts\":{}}", "broken",
+                #"{"version":2,"attempts":{"invalid-key":{"id":"00000000-0000-0000-0000-000000000000","attemptedAt":0,"execution":"pending","notBefore":300}}}"#,
+                #"{"version":2,"attempts":{},"observations":{"invalid-key":{"observedAt":0}}}"#,
+            ] {
                 try Data(invalid.utf8).write(to: store.fileURL)
                 XCTAssertThrowsError(try store.begin(accountKey: "a", resetBefore: nil, now: Date()))
                 XCTAssertEqual(try String(contentsOf: store.fileURL, encoding: .utf8), invalid)
@@ -92,6 +96,52 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(20)), .incomparable)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(60)), .incomparable)
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(61)), .unchanged)
+        }
+    }
+
+    func testConfirmedWeeklyWindowSurvivesRestartDriftAndMissingResetUntilItEnds() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(900)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(65))
+            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            _ = try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61), observedAt: now.addingTimeInterval(366))
+            XCTAssertNil(try restarted.begin(accountKey: "a", resetBefore: reset, now: now.addingTimeInterval(366)))
+            _ = try restarted.observe(accountKey: "a", rawResetAt: nil, observedAt: now.addingTimeInterval(500))
+            XCTAssertFalse(try restarted.canAttempt(accountKey: "a", now: now.addingTimeInterval(500)))
+            XCTAssertNotNil(try restarted.begin(accountKey: "a", resetBefore: reset.addingTimeInterval(604_800), now: reset))
+        }
+    }
+
+    func testPreexistingStableObservationsKeepTheirWindowWithoutNewConfirmationField() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(900)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now.addingTimeInterval(65))
+            var document = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.fileURL)) as? [String: Any])
+            var observations = try XCTUnwrap(document["observations"] as? [String: [String: Any]])
+            for key in observations.keys { observations[key]?["confirmedResetAt"] = nil }
+            document["observations"] = observations
+            try JSONSerialization.data(withJSONObject: document).write(to: store.fileURL)
+
+            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+            _ = try restarted.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(61), observedAt: now.addingTimeInterval(366))
+
+            XCTAssertFalse(try restarted.canAttempt(accountKey: "a", now: now.addingTimeInterval(366)))
+        }
+    }
+
+    func testSubsecondFetchTimingDoesNotConfirmAResetMovingByOneMinute() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(900)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now)
+            _ = try store.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(60), observedAt: now.addingTimeInterval(60.01))
+            _ = try store.observe(accountKey: "a", rawResetAt: reset.addingTimeInterval(120), observedAt: now.addingTimeInterval(120))
+
+            XCTAssertTrue(try store.canAttempt(accountKey: "a", now: now.addingTimeInterval(120)))
         }
     }
 

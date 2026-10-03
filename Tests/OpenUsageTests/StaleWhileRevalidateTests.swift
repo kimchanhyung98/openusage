@@ -413,7 +413,7 @@ final class StaleWhileRevalidateTests: XCTestCase {
         var freshCount = 0
         var invalidationCount = 0
         store.onFreshSnapshot = { _, _, _ in freshCount += 1 }
-        store.onQuotaInvalidated = { invalidationCount += 1 }
+        store.onQuotaInvalidated = { _ in invalidationCount += 1 }
         let inFlight = Task { await store.refresh(providerID: provider.id, force: true) }
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
         while !oldRuntime.isWaiting, ContinuousClock.now < deadline {

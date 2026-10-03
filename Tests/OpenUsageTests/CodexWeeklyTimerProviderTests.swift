@@ -6,6 +6,28 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
     private nonisolated static let instant = Date(timeIntervalSince1970: 1_800_000_000)
     private nonisolated static let path = "/timer-test/auth.json"
 
+    func testCancelledWaiterReturnsTransferredPermitWithoutStartingOperation() async {
+        let gate = CodexProviderOperationGate()
+        let first = await gate.acquire()
+        XCTAssertTrue(first)
+        var entered = false
+        let waiter = Task {
+            entered = true
+            return await gate.acquire()
+        }
+        while !entered { await Task.yield() }
+
+        waiter.cancel()
+        gate.release()
+
+        let acquired = await waiter.value
+        XCTAssertFalse(acquired)
+        if acquired { gate.release() }
+        let next = await gate.acquire()
+        XCTAssertTrue(next)
+        gate.release()
+    }
+
     func testRefreshPublishesOnlyFreshQuotaAndClearsItAfterFailure() async throws {
         let fixture = try fixture()
         let snapshot = await fixture.provider.refresh()

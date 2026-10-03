@@ -36,8 +36,16 @@ final class WidgetDataStoreAutomationTests: XCTestCase {
 
     func testPostTimerRefreshStopsWhenBindingChanges() async {
         let fixture = Fixture()
-        await fixture.store.refreshAfterWeeklyTimer(providerID: "codex", isCurrent: { false })
+        var current = true
+        var skipped = 0
+        fixture.store.isRefreshSuspended = { _ in
+            skipped += 1
+            current = false
+            return true
+        }
+        await fixture.store.refreshAfterWeeklyTimer(providerID: "codex", isCurrent: { current })
         XCTAssertEqual(fixture.runtime.refreshCount, 0)
+        XCTAssertEqual(skipped, 1)
     }
 
     func testAutomationWarningUsesExistingHeaderWithoutChangingQuotaOrCache() async {

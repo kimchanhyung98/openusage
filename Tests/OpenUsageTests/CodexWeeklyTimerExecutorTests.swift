@@ -71,6 +71,24 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         }
     }
 
+    func testCompletedMessageRemainsCompletedWhenReadingRotatedAuthFails() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let runner = RecordingTimerRunner { request, output in
+            let home = try XCTUnwrap(request.environment["CODEX_HOME"])
+            try Data("invalid-auth".utf8).write(to: URL(fileURLWithPath: home).appendingPathComponent("auth.json"))
+            output("{\"type\":\"turn.completed\"}\n")
+            return StreamingProcessResult(exitCode: 0, output: "")
+        }
+
+        let result = await fixture.executor(runner: runner).execute(auth: Self.auth)
+
+        XCTAssertTrue(result.completed)
+        XCTAssertEqual(result.failureDescription, "Codex weekly timer credentials could not be read after the message.")
+        XCTAssertFalse(result.verificationCanClearFailure)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
+    }
+
     func testMissingExecutableAndIncompatibleCLIProveNoMessageLaunch() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -266,6 +284,22 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: dead.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: active.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
+    }
+
+    func testAbandonedWorkspaceDoesNotSurviveBecauseItsPIDIsStillAlive() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        var abandoned: CodexWeeklyTimerWorkspace? = try CodexWeeklyTimerWorkspace(baseDirectory: fixture.workspaceRoot)
+        let abandonedDirectory = try XCTUnwrap(abandoned?.directory)
+        try abandoned?.writeAuth(Self.auth)
+        abandoned = nil
+        let active = try CodexWeeklyTimerWorkspace(baseDirectory: fixture.workspaceRoot)
+        defer { try? active.remove() }
+
+        try CodexWeeklyTimerWorkspace.cleanAbandonedWorkspaces(baseDirectory: fixture.workspaceRoot)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: abandonedDirectory.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: active.directory.path))
     }
 
     nonisolated private static let prompt = "When does my weekly Codex usage limit reset? Answer briefly without using tools."

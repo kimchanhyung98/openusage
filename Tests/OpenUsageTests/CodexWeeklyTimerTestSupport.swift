@@ -11,7 +11,8 @@ final class WeeklyTimerProbe {
     var accounts: [String: String] = ["codex": "a"]
     var enabled = true
     var preparationUsed = 0.0
-    var preparationReset: Date? = Date(timeIntervalSince1970: 1_800_000_850)
+    var preparationReset: Date? = Date(timeIntervalSince1970: 1_800_001_000)
+    var preparationResetMoves = true
     var preparationHook: (() async -> Void)?
     var executionHook: ((String) async -> Void)?
     var verificationHook: (() async -> Void)?
@@ -20,6 +21,7 @@ final class WeeklyTimerProbe {
     var stampVerification = true
     var prepared: [String] = []
     var executed: [String] = []
+    var executionTimes: [Date] = []
     var verificationTimes: [Date] = []
     var waits: [Duration] = []
     var reports: [String?] = []
@@ -59,7 +61,7 @@ final class WeeklyTimerProbe {
             providerID: providerID, bindingID: bindings[providerID]!,
             observation: observation(
                 accountKey: accounts[providerID]!, used: used,
-                reset: reset ?? start.addingTimeInterval(800 + Double(normalReadCounter) * 100)
+                reset: reset ?? now.addingTimeInterval(800 + Double(normalReadCounter) * 100)
             )
         )
     }
@@ -72,13 +74,17 @@ final class WeeklyTimerProbe {
                 self.prepared.append(key)
                 await self.preparationHook?()
                 return .init(
-                    observation: self.observation(accountKey: key, used: self.preparationUsed, reset: self.preparationReset),
+                    observation: self.observation(
+                        accountKey: key, used: self.preparationUsed,
+                        reset: self.preparationReset?.addingTimeInterval(self.preparationResetMoves ? self.now.timeIntervalSince(self.start) : 0)
+                    ),
                     authState: .init(auth: .init(tokens: .init(accessToken: "test")), source: .file(path: "/unused")),
                     authStore: CodexAuthStore()
                 )
             },
             execute: { _, _, session in
                 self.executed.append(session.observation.accountKey)
+                self.executionTimes.append(self.now)
                 await self.executionHook?(session.observation.accountKey)
                 return self.result
             },

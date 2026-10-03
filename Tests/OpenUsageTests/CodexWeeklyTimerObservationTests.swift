@@ -167,6 +167,16 @@ final class CodexWeeklyTimerObservationTests: XCTestCase {
         XCTAssertEqual(Set(keys).count, 3)
     }
 
+    func testWorkspaceCasingUsesTheCanonicalAccountIdentity() throws {
+        let original = try auth(subject: "user-one", account: "workspace-one")
+        var differentlyCased = original
+        differentlyCased.tokens?.accountID = " WORKSPACE-ONE "
+        differentlyCased.tokens?.idToken = try token(subject: "user-one", account: "Workspace-One")
+
+        XCTAssertEqual(CodexWeeklyTimerIdentity.accountKey(for: differentlyCased),
+                       try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: original)))
+    }
+
     func testConflictingAccessAndIDTokenSubjectsRejectIdentity() throws {
         var auth = try auth(subject: "user-one", account: "workspace-one")
         auth.tokens?.idToken = try token(subject: "user-two", account: "workspace-one")

@@ -11,7 +11,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let disabled = try fixture.account("disabled", cardID: "codex@disabled")
         let completed = expectation(description: "Both enabled accounts finished")
         completed.expectedFulfillmentCount = 2
-        let executor = Executor()
+        let executor = fixture.executor()
         let router = CodexWeeklyTimerRouter(
             providers: [first.provider, second.provider, disabled.provider],
             isProviderEnabled: { $0 != "codex@disabled" }, executor: executor, store: fixture.store,
@@ -35,7 +35,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let account = try fixture.account("first", cardID: "codex")
-        let executor = Executor()
+        let executor = fixture.executor()
         let unexpected = expectation(description: "Read-only paths must not execute")
         unexpected.isInverted = true
         executor.onLaunch = { unexpected.fulfill() }
@@ -59,7 +59,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let account = try fixture.account("first", cardID: "codex")
-        let executor = Executor()
+        let executor = fixture.executor()
         let unexpected = expectation(description: "A fixed timer must not trigger a message")
         unexpected.isInverted = true
         executor.onLaunch = { unexpected.fulfill() }
@@ -81,7 +81,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         defer { fixture.remove() }
         let account = try fixture.account("first", cardID: "codex")
         let replacement = try fixture.authText("replacement")
-        let executor = Executor()
+        let executor = fixture.executor()
         executor.beforeLaunch = { account.files.files[account.path] = replacement }
         let completed = expectation(description: "Changed authentication handled")
         var warning: String?
@@ -106,7 +106,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         defer { fixture.remove() }
         let account = try fixture.account("first", cardID: "codex")
         let completed = expectation(description: "Preparation failure reported")
-        let executor = Executor()
+        let executor = fixture.executor()
         var warning: String?
         let router = CodexWeeklyTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
@@ -132,7 +132,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let account = try fixture.account("first", cardID: "codex")
         var rotated = try JSONDecoder().decode(CodexAuth.self, from: Data(account.original.utf8))
         rotated.tokens?.refreshToken = "rotated-on-cancellation"
-        let executor = Executor()
+        let executor = fixture.executor()
         let launched = expectation(description: "Timer message launched")
         executor.onLaunch = { launched.fulfill() }
         executor.afterLaunch = {
@@ -156,9 +156,85 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(CodexAuth.self, from: saved).tokens?.refreshToken, "rotated-on-cancellation")
     }
 
+    func testUnrelatedSettingsChangeDoesNotInvalidatePreparingCodexMessage() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Timer survives unrelated settings event")
+        var reports: [String?] = []
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, message in reports.append(message) },
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        executor.beforeLaunch = {
+            router.invalidate(providerIDs: ["claude"])
+            router.invalidate()
+        }
+
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        await fulfillment(of: [completed], timeout: 1)
+
+        XCTAssertEqual(executor.auths.count, 1)
+        XCTAssertEqual(reports.count, 1)
+        XCTAssertNil(reports.last!)
+    }
+
+    func testChangedAccountClearsThePreviousAccountsAutomationWarning() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let completed = expectation(description: "Preparation failure handled")
+        var warning: String?
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: fixture.executor(), store: fixture.store,
+            report: { _, message in warning = message }, refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        let snapshot = try await fixture.changedRefresh(account, router: router)
+        let response = account.http.response
+        account.http.response = .init(statusCode: 503, headers: [:], body: Data())
+        router.receive(snapshot, trigger: .scheduled)
+        await fulfillment(of: [completed], timeout: 1)
+        XCTAssertNotNil(warning)
+
+        account.http.response = response
+        account.files.files[account.path] = try fixture.authText("replacement")
+        router.receive(await account.provider.refresh(), trigger: .manual)
+
+        XCTAssertNil(warning)
+    }
+
+    func testUnchangedCatalogIdentityPreservesRunAcrossProviderReplacement() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let original = try fixture.account("first", cardID: "codex")
+        let replacement = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Unchanged account finishes across catalog rebuild")
+        let identityKeys = ["codex": "workspace-first"]
+        let router = CodexWeeklyTimerRouter(
+            providers: [original.provider], identityKeys: identityKeys, isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, warning in XCTAssertNil(warning) },
+            refresh: { _, isCurrent in XCTAssertTrue(isCurrent()); completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        executor.beforeLaunch = { router.reconfigure(providers: [replacement.provider], identityKeys: identityKeys) }
+
+        router.receive(try await fixture.changedRefresh(original, router: router), trigger: .scheduled)
+        await fulfillment(of: [completed], timeout: 1)
+
+        XCTAssertEqual(executor.auths.count, 1)
+        XCTAssertFalse(router.hasPendingWork)
+    }
+
     @MainActor
     private final class Executor: CodexWeeklyTimerExecuting {
         var auths: [CodexAuth] = []
+        var didAuthenticate: ((CodexAuth) -> Void)?
         var beforeLaunch: (() -> Void)?
         var onLaunch: (() -> Void)?
         var afterLaunch: (@MainActor () async -> CodexWeeklyTimerExecutionResult)?
@@ -169,6 +245,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                 return .init(launched: false, completed: false, updatedAuth: nil, failureDescription: "Authentication changed.")
             }
             auths.append(auth)
+            didAuthenticate?(auth)
             onLaunch?()
             if let afterLaunch { return await afterLaunch() }
             return .init(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
@@ -178,9 +255,43 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
     private struct Account {
         let provider: CodexProvider
         let files: FakeFiles
-        let http: FakeHTTPClient
+        let http: TimerHTTPClient
         let path: String
         let original: String
+    }
+
+    private final class TimerHTTPClient: HTTPClient, @unchecked Sendable {
+        var response: HTTPResponse {
+            didSet { updatedAt = clock.current() }
+        }
+        private let clock: ObservationClock
+        private var updatedAt: Date
+        private var running = false
+
+        init(response: HTTPResponse, clock: ObservationClock) {
+            self.response = response
+            self.clock = clock
+            updatedAt = clock.current()
+        }
+
+        func startTimer() {
+            response = currentResponse()
+            running = true
+        }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse { currentResponse() }
+
+        private func currentResponse() -> HTTPResponse {
+            guard !running, response.statusCode == 200,
+                  var body = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
+                  var limit = body["rate_limit"] as? [String: Any],
+                  var window = limit["secondary_window"] as? [String: Any],
+                  let reset = window["reset_at"] as? Double else { return response }
+            window["reset_at"] = reset + clock.current().timeIntervalSince(updatedAt)
+            limit["secondary_window"] = window
+            body["rate_limit"] = limit
+            return .init(statusCode: 200, headers: [:], body: try! JSONSerialization.data(withJSONObject: body))
+        }
     }
 
     private final class ObservationClock: @unchecked Sendable {
@@ -207,11 +318,12 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
     }
 
     @MainActor
-    private struct Fixture {
+    private final class Fixture {
         let root: URL
         let store: CodexWeeklyTimerAttemptStore
         let now = Date()
         let clock: ObservationClock
+        private var clients: [String: TimerHTTPClient] = [:]
 
         init() throws {
             root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.RouterTests.\(UUID().uuidString)")
@@ -232,7 +344,8 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                     "reset_at": now.addingTimeInterval(604_800).timeIntervalSince1970
                 ]]
             ])
-            let http = FakeHTTPClient(response: .init(statusCode: 200, headers: [:], body: quota))
+            let http = TimerHTTPClient(response: .init(statusCode: 200, headers: [:], body: quota), clock: clock)
+            clients[id] = http
             let provider = CodexProvider(
                 provider: CodexProvider.makeProvider(id: cardID),
                 authStore: CodexAuthStore(
@@ -276,6 +389,14 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                 .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
             let auth = CodexAuth(tokens: .init(accessToken: "e30.\(payload).signature", refreshToken: "refresh-\(id)", accountID: id))
             return String(decoding: try JSONEncoder().encode(auth), as: UTF8.self)
+        }
+
+        func executor() -> Executor {
+            let executor = Executor()
+            executor.didAuthenticate = { [self] auth in
+                if let account = auth.tokens?.accountID { clients[account]?.startTimer() }
+            }
+            return executor
         }
 
         func remove() { try? FileManager.default.removeItem(at: root) }
