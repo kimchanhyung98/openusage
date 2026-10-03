@@ -133,6 +133,9 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         var rotated = try JSONDecoder().decode(CodexAuth.self, from: Data(account.original.utf8))
         rotated.tokens?.refreshToken = "rotated-on-cancellation"
         let executor = fixture.executor()
+        executor.startupFailureDescription = "Temporary credentials could not be removed."
+        executor.beforeLaunch = { [weak executor] in executor?.startupFailureDescription = nil }
+        var reports: [String?] = []
         let launched = expectation(description: "Timer message launched")
         executor.onLaunch = { launched.fulfill() }
         executor.afterLaunch = {
@@ -142,15 +145,17 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let router = CodexWeeklyTimerRouter(
             providers: [account.provider], isProviderEnabled: { _ in true },
             executor: executor, store: fixture.store,
-            report: { _, _ in XCTFail("Shutdown must not publish an old result") },
+            report: { _, message in reports.append(message) },
             refresh: { _, _ in XCTFail("Shutdown must not start a refresh") },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
         router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
         await fulfillment(of: [launched], timeout: 3)
 
+        reports.removeAll()
         await router.shutdown()
 
+        XCTAssertTrue(reports.isEmpty)
         XCTAssertFalse(router.hasPendingWork)
         let saved = try XCTUnwrap(account.files.files[account.path]).data(using: .utf8)!
         XCTAssertEqual(try JSONDecoder().decode(CodexAuth.self, from: saved).tokens?.refreshToken, "rotated-on-cancellation")
@@ -282,7 +287,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
     }
 
     func testWarningIsForgottenWhenItsLastAccountBindingDisappears() async throws {
-        for transition in 0..<3 {
+        for transition in 0..<4 {
             let fixture = try Fixture()
             defer { fixture.remove() }
             let account = try fixture.account("first", cardID: "codex")
@@ -294,21 +299,41 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                 refresh: { _, _ in XCTFail("Rebinding must not send a timer message") },
                 now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
             )
-            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            let initial = await account.provider.refresh()
+            router.receive(initial, trigger: .scheduled)
             let saved = try Data(contentsOf: fixture.store.fileURL)
             try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
             router.receive(await account.provider.refresh(), trigger: .manual)
             XCTAssertNotNil(warning)
             try saved.write(to: fixture.store.fileURL)
+            router.receive(initial, trigger: .manual)
+            router.receive(.error(provider: account.provider.provider, message: "Unavailable"), trigger: .manual)
+            XCTAssertNotNil(warning)
 
             switch transition {
             case 0: router.invalidate(providerIDs: ["codex"])
             case 1:
                 router.reconfigure(providers: [])
                 router.reconfigure(providers: [account.provider])
-            default:
+            case 2:
                 account.files.files[account.path] = try fixture.authText("replacement")
                 router.receive(await account.provider.refresh(), trigger: .manual)
+                account.files.files[account.path] = account.original
+            default:
+                let response = account.http.response
+                account.files.files[account.path] = try fixture.authText("replacement")
+                account.http.response = .init(statusCode: 200, headers: [:], body: Data("{}".utf8))
+                let snapshot = await account.provider.refresh()
+                XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+                XCTAssertNil(account.provider.weeklyTimerObservation)
+                var cached = snapshot
+                cached.liveQuotaObservedAt = nil
+                router.receive(cached, trigger: .manual)
+                router.receive(snapshot, trigger: .cli)
+                router.receive(snapshot, trigger: .weeklyTimer)
+                XCTAssertNotNil(warning)
+                router.receive(snapshot, trigger: .manual)
+                account.http.response = response
                 account.files.files[account.path] = account.original
             }
             XCTAssertNil(warning)
@@ -319,174 +344,62 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         }
     }
 
-    @MainActor
-    private final class Executor: CodexWeeklyTimerExecuting {
-        var auths: [CodexAuth] = []
-        var didAuthenticate: ((CodexAuth) -> Void)?
-        var beforeLaunch: (() -> Void)?
-        var onLaunch: (() -> Void)?
-        var afterLaunch: (@MainActor () async -> CodexWeeklyTimerExecutionResult)?
+    func testSuccessfulCleanupClearsStartupWarningsFromOtherCards() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let first = try fixture.account("first", cardID: "codex")
+        let second = try fixture.account("second", cardID: "codex@second")
+        let executor = fixture.executor()
+        executor.startupFailureDescription = "Temporary credentials could not be removed."
+        executor.beforeLaunch = { [weak executor] in executor?.startupFailureDescription = nil }
+        let completed = expectation(description: "Cleanup and message finish")
+        var warnings: [String: String] = [:]
+        let router = CodexWeeklyTimerRouter(
+            providers: [first.provider, second.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
+        router.receive(try await fixture.changedRefresh(first, router: router), trigger: .scheduled)
+        await fulfillment(of: [completed], timeout: 3)
 
-        func execute(auth: CodexAuth, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
-            beforeLaunch?()
-            guard await canLaunch() else {
-                return .init(launched: false, completed: false, updatedAuth: nil, failureDescription: "Authentication changed.")
+        XCTAssertEqual(executor.auths.count, 1)
+        XCTAssertTrue(warnings.isEmpty)
+    }
+
+    func testFreshQuotaWithoutWeeklyDataInvalidatesPreparingAccount() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let preparing = expectation(description: "Timer waits before rechecking")
+        let finished = expectation(description: "Obsolete candidate finishes")
+        var resume: CheckedContinuation<Void, Never>?
+        var warning: String?
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, message in warning = message },
+            refresh: { _, _ in finished.fulfill() }, now: { fixture.clock.current() },
+            wait: { _ in
+                preparing.fulfill()
+                await withCheckedContinuation { resume = $0 }
             }
-            auths.append(auth)
-            didAuthenticate?(auth)
-            onLaunch?()
-            if let afterLaunch { return await afterLaunch() }
-            return .init(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
-        }
+        )
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        await fulfillment(of: [preparing], timeout: 3)
+        account.files.files[account.path] = try fixture.authText("replacement")
+        account.http.response = .init(statusCode: 200, headers: [:], body: Data("{}".utf8))
+        let snapshot = await account.provider.refresh()
+        XCTAssertNotNil(snapshot.liveQuotaObservedAt)
+        XCTAssertNil(account.provider.weeklyTimerObservation)
+        router.receive(snapshot, trigger: .manual)
+        resume?.resume()
+        await fulfillment(of: [finished], timeout: 3)
+
+        XCTAssertNil(warning)
+        XCTAssertFalse(router.hasPendingWork)
+        XCTAssertTrue(executor.auths.isEmpty)
     }
 
-    private struct Account {
-        let provider: CodexProvider
-        let files: FakeFiles
-        let http: TimerHTTPClient
-        let path: String
-        let original: String
-    }
-
-    private final class TimerHTTPClient: HTTPClient, @unchecked Sendable {
-        var response: HTTPResponse {
-            didSet { updatedAt = clock.current() }
-        }
-        private let clock: ObservationClock
-        private var updatedAt: Date
-        private var running = false
-
-        init(response: HTTPResponse, clock: ObservationClock) {
-            self.response = response
-            self.clock = clock
-            updatedAt = clock.current()
-        }
-
-        func startTimer() {
-            response = currentResponse()
-            running = true
-        }
-
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse { currentResponse() }
-
-        private func currentResponse() -> HTTPResponse {
-            guard !running, response.statusCode == 200,
-                  var body = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
-                  var limit = body["rate_limit"] as? [String: Any],
-                  var window = limit["secondary_window"] as? [String: Any],
-                  let reset = window["reset_at"] as? Double else { return response }
-            window["reset_at"] = reset + clock.current().timeIntervalSince(updatedAt)
-            limit["secondary_window"] = window
-            body["rate_limit"] = limit
-            return .init(statusCode: 200, headers: [:], body: try! JSONSerialization.data(withJSONObject: body))
-        }
-    }
-
-    private final class ObservationClock: @unchecked Sendable {
-        private let lock = NSLock()
-        private var date: Date
-
-        init(_ date: Date) { self.date = date }
-
-        func current() -> Date { lock.withLock { date } }
-
-        func advance(_ duration: Duration) {
-            lock.withLock {
-                date = date.addingTimeInterval(Double(duration.components.seconds)
-                    + Double(duration.components.attoseconds) / 1e18)
-            }
-        }
-
-        func next() -> Date {
-            lock.lock()
-            defer { lock.unlock() }
-            date = date.addingTimeInterval(1)
-            return date
-        }
-    }
-
-    @MainActor
-    private final class Fixture {
-        let root: URL
-        let store: CodexWeeklyTimerAttemptStore
-        let now = Date()
-        let clock: ObservationClock
-        private var clients: [String: TimerHTTPClient] = [:]
-
-        init() throws {
-            root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.RouterTests.\(UUID().uuidString)")
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            store = CodexWeeklyTimerAttemptStore(fileURL: root.appendingPathComponent("attempts.json"))
-            clock = ObservationClock(now)
-        }
-
-        func account(_ id: String, cardID: String) throws -> Account {
-            let now = self.now
-            let clock = self.clock
-            let path = "/router-fixture/\(id)/auth.json"
-            let original = try authText(id)
-            let files = FakeFiles([path: original])
-            let quota = try JSONSerialization.data(withJSONObject: [
-                "rate_limit": ["secondary_window": [
-                    "used_percent": 0, "limit_window_seconds": 604_800,
-                    "reset_at": now.addingTimeInterval(604_800).timeIntervalSince1970
-                ]]
-            ])
-            let http = clients[id] ?? TimerHTTPClient(response: .init(statusCode: 200, headers: [:], body: quota), clock: clock)
-            clients[id] = http
-            let provider = CodexProvider(
-                provider: CodexProvider.makeProvider(id: cardID),
-                authStore: CodexAuthStore(
-                    environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
-                    scope: .home(path: "/router-fixture/\(id)"), now: { now }
-                ),
-                usageClient: CodexUsageClient(http: http),
-                logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "timer-router-\(id)", rootsOverride: []),
-                includePiUsage: false, now: { clock.next() }, pricing: { .empty }
-            )
-            return Account(provider: provider, files: files, http: http, path: path, original: original)
-        }
-
-        func changedRefresh(_ account: Account, router: CodexWeeklyTimerRouter) async throws -> ProviderSnapshot {
-            let current = account.http.response
-            let previous = try JSONSerialization.data(withJSONObject: [
-                "rate_limit": ["secondary_window": [
-                    "used_percent": 0, "limit_window_seconds": 604_800,
-                    "reset_at": now.addingTimeInterval(604_500).timeIntervalSince1970
-                ]]
-            ])
-            account.http.response = .init(statusCode: 200, headers: [:], body: previous)
-            router.receive(await account.provider.refresh(), trigger: .scheduled)
-            account.http.response = current
-            let snapshot = await account.provider.refresh()
-            let preparation = try JSONSerialization.data(withJSONObject: [
-                "rate_limit": ["secondary_window": [
-                    "used_percent": 0, "limit_window_seconds": 604_800,
-                    "reset_at": now.addingTimeInterval(605_100).timeIntervalSince1970
-                ]]
-            ])
-            account.http.response = .init(statusCode: 200, headers: [:], body: preparation)
-            return snapshot
-        }
-
-        func authText(_ id: String) throws -> String {
-            let payload = try JSONSerialization.data(withJSONObject: [
-                "sub": "subject-\(id)", "exp": now.addingTimeInterval(3_600).timeIntervalSince1970,
-                "https://api.openai.com/auth": ["chatgpt_account_id": id]
-            ]).base64EncodedString().replacingOccurrences(of: "+", with: "-")
-                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-            let auth = CodexAuth(tokens: .init(accessToken: "e30.\(payload).signature", refreshToken: "refresh-\(id)", accountID: id))
-            return String(decoding: try JSONEncoder().encode(auth), as: UTF8.self)
-        }
-
-        func executor() -> Executor {
-            let executor = Executor()
-            executor.didAuthenticate = { [self] auth in
-                if let account = auth.tokens?.accountID { clients[account]?.startTimer() }
-            }
-            return executor
-        }
-
-        func remove() { try? FileManager.default.removeItem(at: root) }
-    }
 }

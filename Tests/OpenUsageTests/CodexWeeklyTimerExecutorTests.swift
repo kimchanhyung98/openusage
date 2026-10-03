@@ -319,6 +319,43 @@ final class CodexWeeklyTimerExecutorTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: fixture.workspaceRoot.path), [])
     }
 
+    func testStartupCleanupFailureReachesEnabledCardsWithoutSendingMessage() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        try Data("not-a-directory".utf8).write(to: fixture.workspaceRoot)
+        let runner = RecordingTimerRunner { _, _ in
+            XCTFail("Startup cleanup must not send a message")
+            return StreamingProcessResult(exitCode: 0, output: "")
+        }
+        let executor = fixture.executor(runner: runner)
+        let providers = ["codex", "codex@second", "codex@disabled"].map {
+            CodexProvider(provider: CodexProvider.makeProvider(id: $0))
+        }
+        var warnings: [String: String] = [:]
+        let router = CodexWeeklyTimerRouter(
+            providers: providers, isProviderEnabled: { $0 != "codex@disabled" }, executor: executor,
+            store: CodexWeeklyTimerAttemptStore(fileURL: fixture.root.appendingPathComponent("attempts.json")),
+            report: { warnings[$0] = $1 }, refresh: { _, _ in XCTFail("Cleanup must not refresh usage") }
+        )
+
+        XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
+        XCTAssertEqual(warnings["codex"], warnings["codex@second"])
+        XCTAssertTrue(warnings["codex"]?.contains("temporary credentials") == true)
+        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.weeklyTimer, result: .failure, category: .other, providerID: "codex")])
+        XCTAssertFalse(router.hasPendingWork)
+        XCTAssertTrue(runner.requests.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: fixture.workspaceRoot), Data("not-a-directory".utf8))
+        router.invalidate(providerIDs: ["codex", "codex@second"])
+        XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
+
+        try FileManager.default.removeItem(at: fixture.workspaceRoot)
+        let result = await executor.execute(auth: Self.auth, canLaunch: { false })
+        XCTAssertFalse(result.launched)
+        router.invalidate(providerIDs: ["codex", "codex@second"])
+        XCTAssertTrue(warnings.isEmpty)
+    }
+
     func testWorkspaceRejectsSymlinkRootAndPreservesUnrelatedPaths() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
