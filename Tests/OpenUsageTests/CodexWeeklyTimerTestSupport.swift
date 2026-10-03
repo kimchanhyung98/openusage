@@ -271,7 +271,10 @@ extension CodexWeeklyTimerRouterTests {
                 "https://api.openai.com/auth": ["chatgpt_account_id": id]
             ]).base64EncodedString().replacingOccurrences(of: "+", with: "-")
                 .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
-            let auth = CodexAuth(tokens: .init(accessToken: "e30.\(payload).signature", refreshToken: "refresh-\(id)", accountID: id))
+            let auth = CodexAuth(tokens: .init(
+                accessToken: "e30.\(payload).signature", refreshToken: "refresh-\(id)",
+                idToken: "e30.\(payload).signature", accountID: id
+            ))
             return String(decoding: try JSONEncoder().encode(auth), as: UTF8.self)
         }
 

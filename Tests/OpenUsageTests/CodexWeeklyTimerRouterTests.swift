@@ -27,6 +27,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
 
         XCTAssertEqual(Set(executor.auths.compactMap { $0.tokens?.accountID }), ["first", "second"])
         XCTAssertEqual(executor.auths.count, 2)
+        XCTAssertTrue(executor.auths.allSatisfy { $0.tokens?.idToken?.isEmpty == false })
         XCTAssertEqual(first.files.files[first.path], first.original)
         XCTAssertEqual(second.files.files[second.path], second.original)
     }
@@ -401,5 +402,79 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertFalse(router.hasPendingWork)
         XCTAssertTrue(executor.auths.isEmpty)
     }
+    func testStartupWarningReachesNewlyEnabledAndAddedCards() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let first = try fixture.account("first", cardID: "codex")
+        let added = try fixture.account("second", cardID: "codex@second")
+        let executor = fixture.executor()
+        executor.startupFailureDescription = "Temporary credentials could not be removed."
+        var enabled: Set<String> = []
+        var warnings: [String: String] = [:]
+        let router = CodexWeeklyTimerRouter(
+            providers: [first.provider], isProviderEnabled: { enabled.contains($0) },
+            executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+            refresh: { _, _ in XCTFail("Publishing cleanup warnings must not refresh usage") }
+        )
+        XCTAssertTrue(warnings.isEmpty)
+        enabled.insert("codex")
+        router.invalidate()
+        XCTAssertEqual(warnings["codex"], executor.startupFailureDescription)
+        enabled.insert("codex@second")
+        router.reconfigure(providers: [first.provider, added.provider])
+        XCTAssertEqual(warnings["codex@second"], executor.startupFailureDescription)
+        XCTAssertTrue(executor.auths.isEmpty)
+        XCTAssertFalse(router.hasPendingWork)
+    }
+
+    func testRecoveryThroughDuplicateCardClearsWarningAfterOriginalBindingChanges() async throws {
+        for transition in 0..<3 {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let first = try fixture.account("first", cardID: "codex")
+            let duplicate = try fixture.account("first", cardID: "codex@duplicate")
+            let executor = fixture.executor()
+            let completed = expectation(description: "Initial verification fails")
+            var enabled: Set<String> = ["codex", "codex@duplicate"]
+            var warnings: [String: String] = [:]
+            var quota = first.http.response
+            executor.afterLaunch = {
+                quota = first.http.response
+                first.http.response = .init(statusCode: 503, headers: [:], body: Data())
+                return .init(launched: true, completed: false, updatedAuth: nil, failureDescription: "Message timed out.")
+            }
+            let router = CodexWeeklyTimerRouter(
+                providers: [first.provider, duplicate.provider], isProviderEnabled: { enabled.contains($0) },
+                executor: executor, store: fixture.store, report: { warnings[$0] = $1 },
+                refresh: { _, _ in completed.fulfill() },
+                now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+            )
+            router.receive(await first.provider.refresh(), trigger: .scheduled)
+            router.receive(await duplicate.provider.refresh(), trigger: .scheduled)
+            fixture.clock.advance(.seconds(70))
+            router.receive(await first.provider.refresh(), trigger: .scheduled)
+            await fulfillment(of: [completed], timeout: 3)
+            XCTAssertNotNil(warnings["codex@duplicate"])
+            first.http.response = quota
+            switch transition {
+            case 0:
+                enabled.remove("codex")
+                router.invalidate()
+            case 1: router.reconfigure(providers: [duplicate.provider])
+            default:
+                first.files.files[first.path] = try fixture.authText("replacement")
+                router.receive(await first.provider.refresh(), trigger: .manual)
+            }
+            XCTAssertNotNil(warnings["codex@duplicate"])
+            for _ in 0..<2 {
+                fixture.clock.advance(.seconds(65))
+                router.receive(await duplicate.provider.refresh(), trigger: .scheduled)
+            }
+            XCTAssertNil(warnings["codex@duplicate"])
+            XCTAssertEqual(executor.auths.count, 1)
+            XCTAssertFalse(router.hasPendingWork)
+        }
+    }
+
 
 }
