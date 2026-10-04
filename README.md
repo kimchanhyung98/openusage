@@ -10,15 +10,9 @@ OpenUsage shows how much of your AI coding plans you've used: session and weekly
 
 ## Installation
 
-**Homebrew:**
+Download the latest universal DMG from the [GitHub releases page](https://github.com/kimchanhyung98/openusage/releases/latest), open it, and drag OpenUsage to your Applications folder.
 
-```sh
-brew install --cask openusage
-```
-
-**Direct download:** grab the latest universal DMG from the [releases page](https://github.com/robinebers/openusage/releases/latest), open it, and drag OpenUsage to your Applications folder.
-
-Either way, the app updates itself in place via signed, notarized [Sparkle](docs/updates.md) updates. Requires macOS 15 (Sequoia) or later.
+The app updates itself in place via signed, notarized [Sparkle](docs/updates.md) updates. Requires macOS 15 (Sequoia) or later.
 
 ## Supported Providers
 
