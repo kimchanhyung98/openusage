@@ -10,6 +10,10 @@ AGENTS.md is the source of truth for agent instructions in this repository. CLAU
 
 > **Repository note:** This is the native Swift edition of OpenUsage. Active development happens on the `main` branch. (NOT the legacy Tauri version which now sits in the `tauri-legacy` branch)
 
+### Jev MCP
+
+Inspect the available Jev MCP tools and their descriptions, then choose and use the tools appropriate for the task. Cross-check the results against the actual code, evidence, and tests.
+
 ## Releases
 
 `main` is the active development line; it ships via `.github/workflows/release.yml` (Sparkle appcast on `gh-pages`). Cut releases with the release-swift skill.
