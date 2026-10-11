@@ -107,7 +107,15 @@ final class CodexWeeklyTimerCoordinator {
 
     func invalidate(providerID: String) {
         pending.removeAll { $0.providerID == providerID }
-        accountByProvider[providerID] = nil
+        if let binding = accountByProvider.removeValue(forKey: providerID),
+           !accountByProvider.values.contains(where: { $0.accountKey == binding.accountKey }) {
+            clearReportedSendLimit(for: binding.accountKey)
+        }
+    }
+
+    /// 전송 상한은 보존하고, 사라진 보류 안내의 중복 보고 기록만 초기화.
+    func clearReportedSendLimit(for accountKey: String) {
+        reportedSendLimits[accountKey] = nil
     }
 
     func invalidateObservations() {
@@ -225,10 +233,20 @@ final class CodexWeeklyTimerCoordinator {
             return
         }
 
-        // await 없는 예약→실행 경계. 프로세스 시작 뒤 불명확한 종료도 예약을 유지.
+        // 실행 준비 중 비교 기준이 바뀌면 시작 직전에 차단하되 예약은 유지.
+        let launchObservation = session.observation
+        var launchObservationInvalidated = false
         executing = candidate
         let result = await execute(candidate.providerID, candidate.bindingID, session) { [weak self] in
-            self?.current(candidate) == true
+            guard let self, self.current(candidate) else { return false }
+            do {
+                launchObservationInvalidated = try !self.store.isLatest(launchObservation)
+                return !launchObservationInvalidated
+            } catch {
+                launchObservationInvalidated = true
+                self.fail(candidate, "Weekly timer automation could not read its saved state. No message was sent.")
+                return false
+            }
         }
         executing = nil
         attempt.execution = result.completed ? .completed : .failed
@@ -238,7 +256,7 @@ final class CodexWeeklyTimerCoordinator {
             stateSaveFailed = true
             fail(candidate, "Weekly timer automation could not update its saved state.")
         }
-        guard current(candidate) else { return }
+        guard current(candidate), !launchObservationInvalidated else { return }
         guard result.launched else {
             fail(candidate, result.failureDescription ?? "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours.")
             return
@@ -369,6 +387,7 @@ final class CodexWeeklyTimerCoordinator {
 
     private func fail(_ candidate: Candidate, _ message: String) {
         awaitingReset[candidate.observation.accountKey] = nil
+        clearReportedSendLimit(for: candidate.observation.accountKey)
         AppLog.error(LogTag.plugin(candidate.providerID), message)
         guard current(candidate) else { return }
         report(candidate.providerID, candidate.bindingID, message)

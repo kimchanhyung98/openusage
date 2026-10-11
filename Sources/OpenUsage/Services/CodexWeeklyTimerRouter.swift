@@ -176,6 +176,7 @@ final class CodexWeeklyTimerRouter {
         } catch {
             AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: snapshot.providerID, error: error,
                                   localContext: "Could not check timer observation state")
+            coordinator.clearReportedSendLimit(for: observation.accountKey)
             let message = Self.stateReadWarning
             warningsByAccount[observation.accountKey] = message
             for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
