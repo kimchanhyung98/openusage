@@ -17,7 +17,7 @@ final class CodexWeeklyTimerCoordinator {
     private let store: CodexWeeklyTimerAttemptStore
     private let isCurrent: @MainActor (String, UUID, String) -> Bool
     private let prepare: @MainActor (String, String) async throws -> CodexWeeklyTimerSession?
-    private let execute: @MainActor (String, UUID, CodexWeeklyTimerSession) async -> CodexWeeklyTimerExecutionResult
+    private let execute: @MainActor (String, UUID, CodexWeeklyTimerSession, @escaping @MainActor () -> Bool) async -> CodexWeeklyTimerExecutionResult
     private let verify: @MainActor (String, CodexWeeklyTimerSession) async throws -> CodexWeeklyTimerObservation?
     private let report: @MainActor (String, UUID, String?) -> Void
     private let finished: @MainActor (String, UUID) -> Void
@@ -38,7 +38,7 @@ final class CodexWeeklyTimerCoordinator {
         store: CodexWeeklyTimerAttemptStore = CodexWeeklyTimerAttemptStore(),
         isCurrent: @escaping @MainActor (String, UUID, String) -> Bool,
         prepare: @escaping @MainActor (String, String) async throws -> CodexWeeklyTimerSession?,
-        execute: @escaping @MainActor (String, UUID, CodexWeeklyTimerSession) async -> CodexWeeklyTimerExecutionResult,
+        execute: @escaping @MainActor (String, UUID, CodexWeeklyTimerSession, @escaping @MainActor () -> Bool) async -> CodexWeeklyTimerExecutionResult,
         verify: @escaping @MainActor (String, CodexWeeklyTimerSession) async throws -> CodexWeeklyTimerObservation?,
         report: @escaping @MainActor (String, UUID, String?) -> Void,
         finished: @escaping @MainActor (String, UUID) -> Void = { _, _ in },
@@ -227,7 +227,9 @@ final class CodexWeeklyTimerCoordinator {
 
         // await 없는 예약→실행 경계. 프로세스 시작 뒤 불명확한 종료도 예약을 유지.
         executing = candidate
-        let result = await execute(candidate.providerID, candidate.bindingID, session)
+        let result = await execute(candidate.providerID, candidate.bindingID, session) { [weak self] in
+            self?.current(candidate) == true
+        }
         executing = nil
         attempt.execution = result.completed ? .completed : .failed
         var stateSaveFailed = false
