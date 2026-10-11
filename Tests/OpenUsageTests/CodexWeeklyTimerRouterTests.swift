@@ -237,7 +237,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertFalse(router.hasPendingWork)
     }
 
-    func testAccountWarningsReachDuplicateCardsAndClearWhenAnotherCardSucceeds() async throws {
+    func testAccountWarningsReachDuplicateCardsAndClearWhenAnotherCardRecoversState() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let first = try fixture.account("first", cardID: "codex")
@@ -269,14 +269,14 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertEqual(warnings["codex"], warnings["codex@duplicate"])
         try saved.write(to: fixture.store.fileURL)
         router.receive(await late.provider.refresh(), trigger: .scheduled)
-        XCTAssertEqual(warnings["codex@late"], warnings["codex"])
+        XCTAssertTrue(warnings.isEmpty)
         XCTAssertFalse(router.hasPendingWork)
 
         first.files.files[first.path] = try fixture.authText("replacement")
         router.receive(await first.provider.refresh(), trigger: .manual)
         XCTAssertNil(warnings["codex"])
-        XCTAssertNotNil(warnings["codex@duplicate"])
-        XCTAssertNotNil(warnings["codex@late"])
+        XCTAssertNil(warnings["codex@duplicate"])
+        XCTAssertNil(warnings["codex@late"])
 
         fixture.clock.advance(.seconds(300))
         router.receive(await duplicate.provider.refresh(), trigger: .weeklyTimerCheck)

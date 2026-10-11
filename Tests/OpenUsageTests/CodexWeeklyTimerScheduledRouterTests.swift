@@ -254,4 +254,102 @@ extension CodexWeeklyTimerRouterTests {
         XCTAssertEqual(executor.auths.count, 1)
         await router.shutdown()
     }
+
+    func testSuccessfulStateReadClearsWarningForFixedAndNonzeroUsage() async throws {
+        for usedPercent in [0, 15] {
+            let fixture = try Fixture()
+            defer { fixture.remove() }
+            let account = try fixture.account("first", cardID: "codex")
+            let executor = fixture.executor()
+            let quota = try JSONSerialization.data(withJSONObject: [
+                "rate_limit": ["secondary_window": [
+                    "used_percent": usedPercent, "limit_window_seconds": 604_800,
+                    "reset_at": fixture.now.addingTimeInterval(604_800).timeIntervalSince1970
+                ]]
+            ])
+            account.http.response = .init(statusCode: 200, headers: [:], body: quota)
+            account.http.startTimer()
+            var warning: String?
+            let router = CodexWeeklyTimerRouter(
+                providers: [account.provider], isProviderEnabled: { _ in true },
+                executor: executor, store: fixture.store, report: { _, message in warning = message },
+                refresh: { _, _ in XCTFail("A recovered fixed timer must not send") },
+                now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+            )
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            fixture.clock.advance(.seconds(65))
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+            let saved = try Data(contentsOf: fixture.store.fileURL)
+            try Data("invalid-state".utf8).write(to: fixture.store.fileURL)
+            router.receive(await account.provider.refresh(), trigger: .manual)
+            XCTAssertTrue(warning?.contains("could not read its saved state") == true)
+
+            try saved.write(to: fixture.store.fileURL)
+            router.receive(await account.provider.refresh(), trigger: .scheduled)
+
+            XCTAssertNil(warning, "Recovered state must clear at \(usedPercent)% usage")
+            XCTAssertFalse(router.hasPendingWork)
+            XCTAssertTrue(executor.auths.isEmpty)
+            await router.shutdown()
+        }
+    }
+
+    func testClockNotificationInvalidatesPreSendVerificationWithoutAnotherSnapshot() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Interrupted verification finishes")
+        var waitCount = 0
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, _ in },
+            refresh: { _, _ in completed.fulfill() }, now: { fixture.clock.current() },
+            wait: { duration in
+                waitCount += 1
+                if waitCount == 1 {
+                    fixture.clock.advance(.seconds(90))
+                    fixture.clock.advance(.seconds(-1))
+                    NotificationCenter.default.post(name: .NSSystemClockDidChange, object: nil)
+                } else {
+                    fixture.clock.advance(duration)
+                }
+            }
+        )
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
+        let accountKey = try XCTUnwrap(account.provider.weeklyTimerObservation?.accountKey)
+        await fulfillment(of: [completed], timeout: 1)
+
+        XCTAssertTrue(executor.auths.isEmpty)
+        XCTAssertNil(try fixture.store.attempt(for: accountKey))
+        XCTAssertEqual(waitCount, 1)
+        await router.shutdown()
+    }
+
+    func testClockRecoveryDuringExecutorPreparationPreventsLaunch() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Invalidated launch finishes")
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, _ in },
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        executor.beforeLaunch = {
+            fixture.clock.advance(.seconds(-7_200))
+            router.receive(await account.provider.refresh(), trigger: .manual)
+        }
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
+        let accountKey = try XCTUnwrap(account.provider.weeklyTimerObservation?.accountKey)
+        await fulfillment(of: [completed], timeout: 1)
+
+        XCTAssertTrue(executor.auths.isEmpty)
+        XCTAssertEqual(try fixture.store.attempt(for: accountKey)?.execution, .failed)
+        XCTAssertFalse(try fixture.store.canAttempt(accountKey: accountKey, now: fixture.clock.current()))
+        executor.beforeLaunch = nil
+        await router.shutdown()
+    }
 }

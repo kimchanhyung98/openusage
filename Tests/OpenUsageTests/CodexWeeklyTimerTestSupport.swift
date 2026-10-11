@@ -82,7 +82,7 @@ final class WeeklyTimerProbe {
                     authStore: CodexAuthStore()
                 )
             },
-            execute: { _, _, session in
+            execute: { _, _, session, _ in
                 self.executed.append(session.observation.accountKey)
                 self.executionTimes.append(self.now)
                 await self.executionHook?(session.observation.accountKey)
@@ -119,12 +119,12 @@ extension CodexWeeklyTimerRouterTests {
         var startupFailureDescription: String?
         var auths: [CodexAuth] = []
         var didAuthenticate: ((CodexAuth) -> Void)?
-        var beforeLaunch: (() -> Void)?
+        var beforeLaunch: (() async -> Void)?
         var onLaunch: (() -> Void)?
         var afterLaunch: (@MainActor () async -> CodexWeeklyTimerExecutionResult)?
 
         func execute(auth: CodexAuth, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
-            beforeLaunch?()
+            await beforeLaunch?()
             guard await canLaunch() else {
                 return .init(launched: false, completed: false, updatedAuth: nil, failureDescription: "Authentication changed.")
             }
