@@ -129,7 +129,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
         XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(365))
-        XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."])
+        XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per 24 hours."])
     }
 
     func testPrelaunchFailureKeepsCooldownAndDoesNotBlockNextAccount() async throws {

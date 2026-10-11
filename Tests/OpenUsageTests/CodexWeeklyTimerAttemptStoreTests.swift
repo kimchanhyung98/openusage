@@ -205,7 +205,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             XCTAssertEqual(restored.notBefore, now.addingTimeInterval(300))
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: nil, observedAt: now), .baseline)
             let current = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.fileURL)) as? [String: Any])
-            XCTAssertEqual(current["version"] as? Int, 2)
+            XCTAssertEqual(current["version"] as? Int, 3)
         }
     }
 
