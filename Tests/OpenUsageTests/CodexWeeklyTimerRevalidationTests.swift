@@ -107,6 +107,27 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
         probe.preparationHook = nil
     }
 
+    func testObservationInvalidatedBeforeLaunchKeepsReservationWithoutExecution() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        let coordinator = probe.coordinator()
+        probe.beforeLaunch = { coordinator.invalidateObservations() }
+
+        probe.receive(coordinator)
+        await settle { !coordinator.hasPendingWork }
+
+        XCTAssertEqual(probe.prepared.count, 2)
+        XCTAssertTrue(probe.executed.isEmpty)
+        XCTAssertTrue(probe.executionTimes.isEmpty)
+        XCTAssertTrue(probe.verificationTimes.isEmpty)
+        let attempt = try XCTUnwrap(probe.store.attempt(for: "a"))
+        XCTAssertEqual(attempt.execution, .failed)
+        XCTAssertEqual(attempt.notBefore, probe.now.addingTimeInterval(300))
+        XCTAssertFalse(try probe.store.canAttempt(accountKey: "a", now: probe.now))
+        probe.beforeLaunch = nil
+        await coordinator.shutdown()
+    }
+
     func testClockRollbackDiscardsVerificationAlreadyInFlight() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }

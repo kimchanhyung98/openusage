@@ -14,6 +14,7 @@ final class WeeklyTimerProbe {
     var preparationReset: Date? = Date(timeIntervalSince1970: 1_800_001_000)
     var preparationResetMoves = true
     var preparationHook: (() async -> Void)?
+    var beforeLaunch: (() async -> Void)?
     var executionHook: ((String) async -> Void)?
     var verificationHook: (() async -> Void)?
     var result = CodexWeeklyTimerExecutionResult(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
@@ -82,7 +83,12 @@ final class WeeklyTimerProbe {
                     authStore: CodexAuthStore()
                 )
             },
-            execute: { _, _, session, _ in
+            execute: { _, _, session, canLaunch in
+                await self.beforeLaunch?()
+                guard canLaunch() else {
+                    return .init(launched: false, completed: false, updatedAuth: nil,
+                                 failureDescription: "Timer observation changed before launch.")
+                }
                 self.executed.append(session.observation.accountKey)
                 self.executionTimes.append(self.now)
                 await self.executionHook?(session.observation.accountKey)

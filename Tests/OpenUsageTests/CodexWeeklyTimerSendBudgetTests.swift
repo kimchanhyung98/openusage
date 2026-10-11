@@ -131,6 +131,37 @@ final class CodexWeeklyTimerSendBudgetTests: XCTestCase {
         await coordinator.shutdown()
     }
 
+    func testStableTimerClearsLimitWarningWithoutReleasingBudget() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        for offset: TimeInterval in [-700, -350] {
+            XCTAssertNotNil(try probe.store.begin(accountKey: "a", resetBefore: nil,
+                                                 now: probe.start.addingTimeInterval(offset)))
+        }
+        let coordinator = probe.coordinator()
+        let reset = probe.start.addingTimeInterval(604_800)
+        let limitExpires = try XCTUnwrap(probe.store.sendLimitResetsAt(accountKey: "a", now: probe.now))
+
+        probe.receive(coordinator, reset: reset)
+        XCTAssertEqual(probe.reports.count, 1)
+        let limitWarning = try XCTUnwrap(probe.reports.first ?? nil)
+        XCTAssertTrue(limitWarning.contains("24 hours"))
+
+        probe.now = probe.now.addingTimeInterval(65)
+        probe.receive(coordinator, reset: reset)
+        XCTAssertEqual(probe.reports, [limitWarning, nil])
+        XCTAssertEqual(try probe.store.sendLimitResetsAt(accountKey: "a", now: probe.now), limitExpires)
+
+        probe.now = probe.now.addingTimeInterval(900)
+        probe.receive(coordinator, reset: reset.addingTimeInterval(900))
+        await settle(coordinator)
+        XCTAssertEqual(probe.reports, [limitWarning, nil, limitWarning])
+        XCTAssertEqual(try probe.store.sendLimitResetsAt(accountKey: "a", now: probe.now), limitExpires)
+        XCTAssertTrue(probe.prepared.isEmpty)
+        XCTAssertTrue(probe.executed.isEmpty)
+        await coordinator.shutdown()
+    }
+
     func testUncertainCompletionWithMovingVerificationCannotKeepSending() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
