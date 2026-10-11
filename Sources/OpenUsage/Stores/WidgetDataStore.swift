@@ -70,6 +70,8 @@ final class WidgetDataStore {
     /// API 키 변경 전 시작한 결과의 게시·캐시 쓰기를 provider 단위로 무효화.
     @ObservationIgnored private var credentialGenerations: [String: Int] = [:]
     @ObservationIgnored private var providersNeedingCredentialRefresh: Set<String> = []
+    /// 타이머 조회로 갱신한 캐시가 다음 5분 사용량 조회를 생략하지 않도록 처리.
+    @ObservationIgnored private var providersNeedingScheduledRefresh: Set<String> = []
     /// 시간 초과·취소 뒤 남은 작업과 같은 runtime의 재실행 차단 — 실제 종료 때만 해제.
     @ObservationIgnored private var pendingProviderRefreshes: Set<ObjectIdentifier> = []
 
@@ -314,6 +316,7 @@ final class WidgetDataStore {
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
+        providersNeedingScheduledRefresh.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
@@ -388,7 +391,8 @@ final class WidgetDataStore {
             providerID: providerID,
             currentIdentityKey: providerIdentityKeys[providerID]
         )
-        if !force, !staleAccountStamp,
+        let scheduledRefreshDue = trigger == .scheduled && providersNeedingScheduledRefresh.contains(providerID)
+        if !force, !scheduledRefreshDue, !staleAccountStamp,
            !invalidatedAuthentication.contains(providerID),
            !unresolvedIdentityCacheRejections.contains(providerID),
            !providersNeedingCredentialRefresh.contains(providerID),
@@ -512,6 +516,11 @@ final class WidgetDataStore {
         localSnapshots[providerID] = snapshot
         // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
         cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
+        if trigger == .weeklyTimerCheck || trigger == .weeklyTimer {
+            providersNeedingScheduledRefresh.insert(providerID)
+        } else if trigger == .scheduled {
+            providersNeedingScheduledRefresh.remove(providerID)
+        }
         unresolvedIdentityCacheRejections.remove(providerID)
         providersNeedingCredentialRefresh.remove(providerID)
         rebuildRenderedSnapshots()

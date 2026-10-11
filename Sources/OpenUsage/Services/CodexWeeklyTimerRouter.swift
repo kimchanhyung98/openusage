@@ -148,7 +148,7 @@ final class CodexWeeklyTimerRouter {
         let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck
         coordinator.receive(
             providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
-            allowNewAttempt: checkTimer, revalidateConfirmedWindow: checkTimer
+            checkUnconfirmedReset: checkTimer
         )
     }
 
