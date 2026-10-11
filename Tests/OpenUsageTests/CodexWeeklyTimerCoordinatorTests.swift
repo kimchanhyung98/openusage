@@ -72,10 +72,11 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         probe.now = probe.start.addingTimeInterval(366)
-        probe.receive(coordinator, used: 0.1)
+        let reset = probe.start.addingTimeInterval(1_400)
+        probe.receive(coordinator, used: 0.1, reset: reset)
         await Task.yield()
         XCTAssertEqual(probe.executed.count, 1)
-        probe.receive(coordinator)
+        probe.receive(coordinator, reset: reset)
         XCTAssertFalse(coordinator.hasPendingWork)
         probe.now = probe.start.addingTimeInterval(1_400)
         probe.receive(coordinator)
@@ -319,7 +320,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(probe.reports, ["Credentials could not be saved."])
         probe.now = probe.start.addingTimeInterval(400)
-        probe.receive(coordinator, reset: reset.addingTimeInterval(61))
+        probe.receive(coordinator, reset: reset.addingTimeInterval(60))
         XCTAssertFalse(coordinator.hasPendingWork)
         XCTAssertEqual(probe.executed, ["a"])
     }

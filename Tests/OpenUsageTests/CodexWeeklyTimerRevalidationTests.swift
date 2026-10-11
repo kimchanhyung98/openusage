@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class CodexWeeklyTimerRevalidationTests: XCTestCase {
-    func testEarlyResetStartsNewWindowAtScheduledCheck() async throws {
+    func testEarlyResetStartsNewWindowFromNormalRefresh() async throws {
         let probe = try WeeklyTimerProbe(seedBaseline: false)
         defer { probe.cleanup() }
         let oldReset = probe.start.addingTimeInterval(3 * 86_400)
@@ -18,9 +18,6 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
 
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                             observation: probe.observation(reset: newReset))
-        XCTAssertFalse(coordinator.hasPendingWork)
-        coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
-                            observation: probe.observation(reset: newReset), revalidateConfirmedWindow: true)
         await settle { !coordinator.hasPendingWork }
 
         XCTAssertEqual(probe.executed, ["a"], "An early reset must not stay blocked by the previous week's confirmation")
@@ -47,10 +44,12 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
         let coordinator = probe.coordinator()
 
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
-                            observation: probe.observation(reset: reset), revalidateConfirmedWindow: true)
+                            observation: probe.observation(reset: reset), checkUnconfirmedReset: true)
         await settle { !coordinator.hasPendingWork }
 
-        XCTAssertEqual(probe.prepared.count, 2)
+        XCTAssertTrue(probe.prepared.isEmpty)
+        XCTAssertTrue(probe.waits.isEmpty)
+        XCTAssertTrue(probe.finished.isEmpty)
         XCTAssertTrue(probe.executed.isEmpty)
         XCTAssertNil(try probe.store.attempt(for: "a"))
         XCTAssertFalse(try probe.store.canAttempt(accountKey: "a", now: probe.now))
@@ -67,7 +66,7 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
         let coordinator = probe.coordinator()
 
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
-                            observation: probe.observation(reset: reset), revalidateConfirmedWindow: true)
+                            observation: probe.observation(reset: reset), checkUnconfirmedReset: true)
         await settle { !coordinator.hasPendingWork }
 
         XCTAssertEqual(probe.prepared.count, 2)
@@ -82,7 +81,7 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
 
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                             observation: probe.observation(used: 0.1, reset: probe.start.addingTimeInterval(604_800)),
-                            revalidateConfirmedWindow: true)
+                            checkUnconfirmedReset: true)
 
         XCTAssertFalse(coordinator.hasPendingWork)
         XCTAssertTrue(probe.prepared.isEmpty)
@@ -99,7 +98,7 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
 
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                             observation: probe.observation(reset: probe.start.addingTimeInterval(900)),
-                            revalidateConfirmedWindow: true)
+                            checkUnconfirmedReset: true)
         await settle { !coordinator.hasPendingWork }
 
         XCTAssertEqual(probe.prepared.count, 2)

@@ -20,7 +20,7 @@ final class CodexWeeklyTimerSendBudgetTests: XCTestCase {
                 }
                 coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                                     observation: probe.observation(reset: probe.now.addingTimeInterval(604_800)),
-                                    revalidateConfirmedWindow: index % 3 == 0)
+                                    checkUnconfirmedReset: index % 3 == 0)
                 await settle(coordinator)
             }
             XCTAssertEqual(probe.executed.count, 2, "restart=\(restart)")
@@ -42,7 +42,7 @@ final class CodexWeeklyTimerSendBudgetTests: XCTestCase {
             probe.now = probe.start.addingTimeInterval(Double(index) * 900)
             coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                                 observation: probe.observation(reset: probe.now.addingTimeInterval(604_800)),
-                                revalidateConfirmedWindow: true)
+                                checkUnconfirmedReset: true)
             await settle(coordinator)
         }
         XCTAssertEqual(probe.executed.count, 2)
@@ -124,7 +124,7 @@ final class CodexWeeklyTimerSendBudgetTests: XCTestCase {
                                     observedAt: probe.start.addingTimeInterval(-100), usedPercent: 10)
         let coordinator = probe.coordinator()
         coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
-                            observation: probe.observation(reset: reset), revalidateConfirmedWindow: true)
+                            observation: probe.observation(reset: reset), checkUnconfirmedReset: true)
         await settle(coordinator)
         XCTAssertTrue(probe.executed.isEmpty)
         XCTAssertTrue(probe.reports.isEmpty)
@@ -144,7 +144,7 @@ final class CodexWeeklyTimerSendBudgetTests: XCTestCase {
             probe.now = probe.start.addingTimeInterval(Double(index) * 900)
             coordinator.receive(providerID: "codex", bindingID: probe.bindings["codex"]!,
                                 observation: probe.observation(reset: probe.now.addingTimeInterval(604_800)),
-                                revalidateConfirmedWindow: true)
+                                checkUnconfirmedReset: true)
             await settle(coordinator)
         }
         XCTAssertEqual(probe.executed.count, 2)

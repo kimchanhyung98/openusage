@@ -145,6 +145,7 @@ extension CodexWeeklyTimerRouterTests {
     }
 
     final class TimerHTTPClient: HTTPClient, @unchecked Sendable {
+        private(set) var usageRequestCount = 0
         var response: HTTPResponse {
             didSet { updatedAt = clock.current() }
         }
@@ -163,7 +164,12 @@ extension CodexWeeklyTimerRouterTests {
             running = true
         }
 
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse { currentResponse() }
+        func resetTimer() { running = false }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            if request.url == CodexUsageClient.usageURL { usageRequestCount += 1 }
+            return currentResponse()
+        }
 
         private func currentResponse() -> HTTPResponse {
             guard !running, response.statusCode == 200,
