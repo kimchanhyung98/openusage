@@ -182,12 +182,76 @@ extension CodexWeeklyTimerRouterTests {
         XCTAssertEqual(router.requestScheduledCheck(), ["codex"])
         router.receive(snapshot, trigger: .cli)
         XCTAssertFalse(router.hasPendingWork)
-        router.receive(snapshot, trigger: .scheduled)
+        router.receive(await account.provider.refresh(), trigger: .scheduled)
         await fulfillment(of: [completed], timeout: 3)
 
         XCTAssertEqual(executor.auths.count, 1)
         XCTAssertEqual(try fixture.store.attempt(for: observation.accountKey)?.execution, .completed)
         await router.shutdown()
         XCTAssertTrue(router.requestScheduledCheck().isEmpty)
+    }
+
+    func testBackwardClockChangeDoesNotDiscardFreshTimerChecksUntilClockCatchesUp() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Timer checked after backward clock change")
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, _ in },
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        let snapshot = await account.provider.refresh()
+        let observation = try XCTUnwrap(account.provider.weeklyTimerObservation)
+        _ = try fixture.store.observe(
+            accountKey: observation.accountKey, rawResetAt: fixture.now.addingTimeInterval(3 * 86_400),
+            observedAt: observation.observedAt, usedPercent: 40
+        )
+        fixture.clock.advance(.seconds(-7_200))
+        XCTAssertEqual(router.requestScheduledCheck(), ["codex"])
+        router.receive(snapshot, trigger: .scheduled)
+        router.receive(await account.provider.refresh(), trigger: .weeklyTimerCheck)
+        await fulfillment(of: [completed], timeout: 1)
+
+        XCTAssertEqual(executor.auths.count, 1)
+        XCTAssertGreaterThan(try XCTUnwrap(fixture.store.latestObservationAt(accountKey: observation.accountKey)),
+                             fixture.now.addingTimeInterval(-7_200))
+        XCTAssertLessThan(try XCTUnwrap(fixture.store.latestObservationAt(accountKey: observation.accountKey)),
+                          observation.observedAt)
+        await router.shutdown()
+    }
+
+    func testResponseStartedBeforeClockRollbackCannotRestoreFutureObservation() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let account = try fixture.account("first", cardID: "codex")
+        let lateAccount = try fixture.account("first", cardID: "codex@late")
+        let executor = fixture.executor()
+        let completed = expectation(description: "Fresh timer check completed")
+        let router = CodexWeeklyTimerRouter(
+            providers: [account.provider, lateAccount.provider], isProviderEnabled: { _ in true },
+            executor: executor, store: fixture.store, report: { _, _ in },
+            refresh: { _, _ in completed.fulfill() },
+            now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
+        )
+        let lateSnapshot = await lateAccount.provider.refresh()
+        let oldObservation = try XCTUnwrap(lateAccount.provider.weeklyTimerObservation)
+        _ = try fixture.store.observe(
+            accountKey: oldObservation.accountKey, rawResetAt: fixture.now.addingTimeInterval(3 * 86_400),
+            observedAt: oldObservation.observedAt, usedPercent: 40
+        )
+        fixture.clock.advance(.seconds(-7_200))
+        router.receive(await account.provider.refresh(), trigger: .manual)
+        await fulfillment(of: [completed], timeout: 1)
+        let latest = try fixture.store.latestObservationAt(accountKey: oldObservation.accountKey)
+
+        router.receive(lateSnapshot, trigger: .scheduled)
+
+        XCTAssertEqual(try fixture.store.latestObservationAt(accountKey: oldObservation.accountKey), latest)
+        XCTAssertFalse(router.hasPendingWork)
+        XCTAssertEqual(executor.auths.count, 1)
+        await router.shutdown()
     }
 }

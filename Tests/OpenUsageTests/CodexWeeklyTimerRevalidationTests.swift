@@ -106,4 +106,28 @@ final class CodexWeeklyTimerRevalidationTests: XCTestCase {
         XCTAssertNil(try probe.store.attempt(for: "a"))
         probe.preparationHook = nil
     }
+
+    func testClockRollbackDiscardsVerificationAlreadyInFlight() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        let coordinator = probe.coordinator()
+        probe.stampVerification = false
+        probe.verificationHook = {
+            probe.verification = [probe.observation(reset: probe.now.addingTimeInterval(604_800))]
+            probe.now = probe.now.addingTimeInterval(-7_200)
+            do {
+                XCTAssertTrue(try probe.store.discardFutureObservations(now: probe.now))
+                coordinator.invalidateObservations()
+            } catch { XCTFail("Clock recovery failed: \(error)") }
+        }
+
+        probe.receive(coordinator)
+        await settle { !coordinator.hasPendingWork }
+
+        XCTAssertEqual(probe.executed, ["a"])
+        XCTAssertEqual(try probe.store.latestObservationAt(accountKey: "a"), .distantPast)
+        XCTAssertNotNil(try probe.store.attempt(for: "a"))
+        probe.verificationHook = nil
+        await coordinator.shutdown()
+    }
 }

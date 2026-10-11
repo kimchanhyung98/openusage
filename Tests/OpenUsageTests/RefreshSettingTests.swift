@@ -96,6 +96,30 @@ final class RefreshSettingTests: XCTestCase {
         }
     }
 
+    func testFreshNonTimerRefreshRestoresScheduledCacheReuse() async {
+        for trigger: RefreshTrigger in [.manual, .accountChange, .credentialChange, .resetClaim, .cli] {
+            let suite = makeDefaults("timer-then-\(trigger.rawValue)")
+            let clock = CodexWeeklyTimerRouterTests.ObservationClock(Date(timeIntervalSince1970: 1_800_000_000))
+            let runtime = TimerRefreshRuntime(now: { clock.current() })
+            let cache = ProviderSnapshotCache(userDefaults: suite, storageKey: "snapshots", now: { clock.current() })
+            let store = WidgetDataStore(
+                registry: WidgetRegistry(providers: [runtime.provider], descriptors: []),
+                providers: [runtime], cache: cache, defaults: suite, now: { clock.current() }
+            )
+            await store.refreshAll()
+            clock.advance(.seconds(120))
+            await store.refresh(providerID: "codex", force: true, trigger: .weeklyTimerCheck)
+            clock.advance(.seconds(60))
+            await store.refresh(providerID: "codex", force: true, trigger: trigger)
+            clock.advance(.seconds(120))
+
+            await store.refreshAll()
+
+            XCTAssertEqual(runtime.refreshCount, 3, trigger.rawValue)
+            XCTAssertEqual(store.snapshots["codex"]?.refreshedAt, clock.current().addingTimeInterval(-120))
+        }
+    }
+
     // MARK: - Helpers
 
     private func storeSnapshot(used: Double, age: TimeInterval, into suite: UserDefaults, now: Date) {

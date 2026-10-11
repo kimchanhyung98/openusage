@@ -63,6 +63,7 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             ] {
                 try Data(invalid.utf8).write(to: store.fileURL)
                 XCTAssertThrowsError(try store.begin(accountKey: "a", resetBefore: nil, now: Date()))
+                XCTAssertThrowsError(try store.discardFutureObservations(now: Date()))
                 XCTAssertEqual(try String(contentsOf: store.fileURL, encoding: .utf8), invalid)
             }
         }
@@ -206,6 +207,40 @@ final class CodexWeeklyTimerAttemptStoreTests: XCTestCase {
             XCTAssertEqual(try store.observe(accountKey: "a", rawResetAt: nil, observedAt: now), .baseline)
             let current = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: store.fileURL)) as? [String: Any])
             XCTAssertEqual(current["version"] as? Int, 3)
+        }
+    }
+
+    func testClockRollbackKeepsConfirmedResetAndSendBudget() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            let reset = now.addingTimeInterval(604_800)
+            _ = try store.begin(accountKey: "a", resetBefore: nil, now: now.addingTimeInterval(-600))
+            let attempt = try XCTUnwrap(store.begin(accountKey: "a", resetBefore: nil, now: now.addingTimeInterval(-300)))
+            _ = try store.observe(accountKey: "a", rawResetAt: reset, observedAt: now, usedPercent: 40)
+            _ = try store.observe(accountKey: "unaffected", rawResetAt: reset, observedAt: now.addingTimeInterval(-7_200))
+            let adjustedNow = now.addingTimeInterval(-3_600)
+
+            XCTAssertTrue(try store.discardFutureObservations(now: adjustedNow))
+            let restarted = CodexWeeklyTimerAttemptStore(fileURL: store.fileURL)
+
+            XCTAssertEqual(try restarted.attempt(for: "a"), attempt)
+            XCTAssertEqual(try restarted.sendLimitResetsAt(accountKey: "a", now: adjustedNow),
+                           now.addingTimeInterval(-600 + 86_400))
+            XCTAssertEqual(try restarted.revalidationState(accountKey: "a", now: now.addingTimeInterval(86_400))?.confirmedReset, reset)
+            XCTAssertEqual(try restarted.latestObservationAt(accountKey: "unaffected"), now.addingTimeInterval(-7_200))
+            XCTAssertNotEqual(try restarted.observe(accountKey: "a", rawResetAt: reset,
+                                                     observedAt: adjustedNow.addingTimeInterval(1)), .stale)
+        }
+    }
+
+    func testClockCheckDoesNotRewriteCurrentObservations() throws {
+        try withStore { store in
+            let now = Date(timeIntervalSince1970: 1_800_000_000)
+            _ = try store.observe(accountKey: "a", rawResetAt: now.addingTimeInterval(900), observedAt: now)
+            let original = try Data(contentsOf: store.fileURL)
+
+            XCTAssertFalse(try store.discardFutureObservations(now: now.addingTimeInterval(300)))
+            XCTAssertEqual(try Data(contentsOf: store.fileURL), original)
         }
     }
 

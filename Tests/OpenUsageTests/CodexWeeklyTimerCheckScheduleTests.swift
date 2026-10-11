@@ -196,6 +196,46 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         return calendar.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: hour, minute: minute))!
     }
 
+    func testSlowAccountDoesNotDelayOtherScheduledAccounts() async {
+        let slowStarted = expectation(description: "Slow account started")
+        let fastFinished = expectation(description: "Fast account finished while slow account waits")
+        let gate = WaitGate()
+        let task = Task {
+            await CodexWeeklyTimerCheckSchedule.refreshAccounts(["slow", "fast"]) { providerID in
+                if providerID == "slow" {
+                    slowStarted.fulfill()
+                    _ = await gate.wait()
+                } else {
+                    fastFinished.fulfill()
+                }
+            }
+        }
+
+        await fulfillment(of: [slowStarted, fastFinished], timeout: 1)
+        gate.finish(.deadline)
+        await task.value
+    }
+
+    func testCancellingScheduledAccountBatchCancelsEveryRefresh() async {
+        let started = expectation(description: "Both accounts started")
+        started.expectedFulfillmentCount = 2
+        var cancelled: Set<String> = []
+        let task = Task {
+            await CodexWeeklyTimerCheckSchedule.refreshAccounts(["first", "second"]) { providerID in
+                started.fulfill()
+                do { try await Task.sleep(for: .seconds(60)) }
+                catch is CancellationError { cancelled.insert(providerID) }
+                catch { XCTFail("Unexpected refresh error: \(error)") }
+            }
+        }
+
+        await fulfillment(of: [started], timeout: 1)
+        task.cancel()
+        await task.value
+
+        XCTAssertEqual(cancelled, ["first", "second"])
+    }
+
     @MainActor
     private final class Timeline {
         struct Step {
