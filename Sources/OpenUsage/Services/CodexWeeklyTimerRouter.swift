@@ -127,6 +127,10 @@ final class CodexWeeklyTimerRouter {
         guard !isShuttingDown, trigger != .cli, trigger != .weeklyTimer,
               var binding = bindings[snapshot.providerID],
               let observedAt = snapshot.liveQuotaObservedAt else { return }
+        guard observedAt <= now() else {
+            AppLog.debug(.refresh, "Ignored Codex quota observation from before a backward clock change")
+            return
+        }
         guard let observation = binding.provider.weeklyTimerObservation else {
             invalidate(providerIDs: [snapshot.providerID])
             return
@@ -143,6 +147,21 @@ final class CodexWeeklyTimerRouter {
         if accountChanged { removeUnboundWarnings() }
         if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warningsByAccount[observation.accountKey] {
             report(snapshot.providerID, warning)
+        }
+        do {
+            if try store.discardFutureObservations(now: now()) {
+                coordinator.invalidateObservations()
+                scheduledCheckRequests.formUnion(bindings.keys.filter { isProviderEnabled($0) })
+            }
+        } catch {
+            AppDiagnostics.record(.weeklyTimer, result: .failure, providerID: snapshot.providerID, error: error,
+                                  localContext: "Could not check timer observation state")
+            let message = "Weekly timer automation could not read its saved state. No message was sent."
+            warningsByAccount[observation.accountKey] = message
+            for (id, current) in bindings where current.accountKey == observation.accountKey && isProviderEnabled(id) {
+                report(id, message)
+            }
+            return
         }
         let scheduledRequested = scheduledCheckRequests.remove(snapshot.providerID) != nil
         let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck

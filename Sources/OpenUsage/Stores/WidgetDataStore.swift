@@ -518,7 +518,7 @@ final class WidgetDataStore {
         cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
         if trigger == .weeklyTimerCheck || trigger == .weeklyTimer {
             providersNeedingScheduledRefresh.insert(providerID)
-        } else if trigger == .scheduled {
+        } else {
             providersNeedingScheduledRefresh.remove(providerID)
         }
         unresolvedIdentityCacheRejections.remove(providerID)

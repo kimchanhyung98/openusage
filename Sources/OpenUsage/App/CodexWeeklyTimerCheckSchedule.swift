@@ -21,6 +21,18 @@ enum CodexWeeklyTimerCheckSchedule {
         }
     }
 
+    static func refreshAccounts(
+        _ providerIDs: [String], using refresh: @escaping @MainActor (String) async -> Void
+    ) async {
+        guard !Task.isCancelled else { return }
+        let tasks = providerIDs.map { providerID in Task { await refresh(providerID) } }
+        await withTaskCancellationHandler {
+            for task in tasks { await task.value }
+        } onCancel: {
+            for task in tasks { task.cancel() }
+        }
+    }
+
     static func run(
         now: @escaping @MainActor () -> Date,
         calendar: @escaping @MainActor () -> Calendar,

@@ -269,8 +269,7 @@ final class AppContainer {
         self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start { [weak codexWeeklyTimer, weak dataStore] in
             guard let codexWeeklyTimer, let dataStore else { return }
             AppLog.info(.refresh, "Checking Codex weekly reset times (every 15 minutes)")
-            for providerID in codexWeeklyTimer.requestScheduledCheck() {
-                guard !Task.isCancelled else { return }
+            await CodexWeeklyTimerCheckSchedule.refreshAccounts(codexWeeklyTimer.requestScheduledCheck()) { providerID in
                 await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
             }
         }

@@ -241,6 +241,24 @@ final class CodexWeeklyTimerAttemptStore {
         try withLock { try read().observations[Self.key(accountKey)]?.observedAt }
     }
 
+    /// 시계 후퇴로 미래가 된 비교값만 초기화 — 확인된 리셋과 전송 기록 보존.
+    func discardFutureObservations(now: Date) throws -> Bool {
+        try withLock {
+            var document = try read()
+            var changed = false
+            for (key, observation) in document.observations
+                where (observation.lastObservedAt ?? observation.observedAt) > now {
+                document.observations[key] = FreshObservation(
+                    rawResetAt: nil, observedAt: .distantPast,
+                    confirmedResetAt: Self.confirmedReset(in: observation)
+                )
+                changed = true
+            }
+            if changed { try write(document) }
+            return changed
+        }
+    }
+
     /// 이전 형식의 고정 관찰도 복원 — 확인된 주간 구간은 리셋 시각 흔들림으로 해제 금지.
     private static func confirmedReset(in observation: FreshObservation?) -> Date? {
         guard let observation else { return nil }

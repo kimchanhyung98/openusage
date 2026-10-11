@@ -7,6 +7,7 @@ final class CodexWeeklyTimerCoordinator {
         var providerID: String
         var bindingID: UUID
         var observation: CodexWeeklyTimerObservation
+        var observationEpoch: UUID
     }
 
     private struct PendingVerification {
@@ -30,6 +31,7 @@ final class CodexWeeklyTimerCoordinator {
     private var active: Candidate?
     private var executing: Candidate?
     private var task: Task<Void, Never>?
+    private var observationEpoch = UUID()
     private var stopped = false
 
     init(
@@ -72,7 +74,8 @@ final class CodexWeeklyTimerCoordinator {
     ) {
         guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return }
         accountByProvider[providerID] = (observation.accountKey, bindingID)
-        let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation)
+        let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation,
+                                  observationEpoch: observationEpoch)
         do {
             let change = try store.observe(
                 accountKey: observation.accountKey, rawResetAt: observation.rawResetAt,
@@ -105,6 +108,12 @@ final class CodexWeeklyTimerCoordinator {
     func invalidate(providerID: String) {
         pending.removeAll { $0.providerID == providerID }
         accountByProvider[providerID] = nil
+    }
+
+    func invalidateObservations() {
+        observationEpoch = UUID()
+        pending.removeAll()
+        awaitingReset = awaitingReset.mapValues { _ in PendingVerification(lastObservation: nil) }
     }
 
     func stop() {
@@ -330,6 +339,7 @@ final class CodexWeeklyTimerCoordinator {
 
     private func current(_ candidate: Candidate) -> Bool {
         !stopped && !Task.isCancelled
+            && candidate.observationEpoch == observationEpoch
             && isCurrent(candidate.providerID, candidate.bindingID, candidate.observation.accountKey)
     }
 
