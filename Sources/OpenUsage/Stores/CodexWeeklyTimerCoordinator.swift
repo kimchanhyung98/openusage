@@ -7,6 +7,7 @@ final class CodexWeeklyTimerCoordinator {
         var providerID: String
         var bindingID: UUID
         var observation: CodexWeeklyTimerObservation
+        var revalidateConfirmedWindow: Bool
     }
 
     private struct PendingVerification {
@@ -24,6 +25,7 @@ final class CodexWeeklyTimerCoordinator {
     private let wait: @MainActor (Duration) async throws -> Void
     private var pending: [Candidate] = []
     private var awaitingReset: [String: PendingVerification] = [:]
+    private var reportedSendLimits: [String: Date] = [:]
     private var accountByProvider: [String: (accountKey: String, bindingID: UUID)] = [:]
     private var active: Candidate?
     private var executing: Candidate?
@@ -64,10 +66,15 @@ final class CodexWeeklyTimerCoordinator {
             || accountByProvider[providerID]?.accountKey == active.observation.accountKey
     }
 
-    func receive(providerID: String, bindingID: UUID, observation: CodexWeeklyTimerObservation) {
+    func receive(
+        providerID: String, bindingID: UUID, observation: CodexWeeklyTimerObservation,
+        allowNewAttempt: Bool = true,
+        revalidateConfirmedWindow: Bool = false
+    ) {
         guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return }
         accountByProvider[providerID] = (observation.accountKey, bindingID)
-        let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation)
+        let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation,
+                                  revalidateConfirmedWindow: revalidateConfirmedWindow)
         do {
             let change = try store.observe(
                 accountKey: observation.accountKey, rawResetAt: observation.rawResetAt,
@@ -78,9 +85,9 @@ final class CodexWeeklyTimerCoordinator {
                 pending.removeAll { $0.observation.accountKey == observation.accountKey }
             }
             recoverVerification(candidate, change: change)
-            guard change == .changed, observation.usedPercent == 0,
+            guard allowNewAttempt, (change == .changed || revalidateConfirmedWindow), observation.usedPercent == 0,
                   let reset = observation.rawResetAt, reset > now(),
-                  try store.canAttempt(accountKey: observation.accountKey, now: now())
+                  try canPrepare(candidate, reportLimit: change == .changed)
             else { return }
         } catch {
             fail(candidate, "Weekly timer automation could not read its saved state. No message was sent.")
@@ -123,8 +130,8 @@ final class CodexWeeklyTimerCoordinator {
     private func process(_ candidate: Candidate) async {
         let accountKey = candidate.observation.accountKey
         do {
-            guard try store.isLatest(candidate.observation) else { return }
-            guard try store.canAttempt(accountKey: accountKey, now: now()) else { return }
+            guard try isLatest(candidate) else { return }
+            guard try canPrepare(candidate) else { return }
         } catch {
             fail(candidate, "Weekly timer automation could not read its saved state. No message was sent.")
             return
@@ -145,17 +152,23 @@ final class CodexWeeklyTimerCoordinator {
 
         let firstObservation = session.observation
         let preparationObservedAt: Date
+        var revalidationState: CodexWeeklyTimerAttemptStore.RevalidationState?
         do {
-            guard try store.isLatest(candidate.observation) else { return }
+            guard try isLatest(candidate) else { return }
             let change = try store.observe(
                 accountKey: accountKey, rawResetAt: session.observation.rawResetAt,
                 observedAt: session.observation.observedAt, usedPercent: session.observation.usedPercent
             )
             guard change != .stale, session.observation.usedPercent == 0,
-                  let reset = session.observation.rawResetAt, reset > now(), change != .unchanged,
+                  let reset = session.observation.rawResetAt, reset > now(),
+                  change != .unchanged || candidate.revalidateConfirmedWindow,
                   let observedAt = try store.latestObservationAt(accountKey: accountKey)
             else { return }
             preparationObservedAt = observedAt
+            if candidate.revalidateConfirmedWindow {
+                revalidationState = try store.revalidationState(accountKey: accountKey, now: now())
+                guard revalidationState != nil else { return }
+            }
         } catch {
             fail(candidate, "Weekly timer automation could not save its state. No message was sent.")
             return
@@ -179,20 +192,33 @@ final class CodexWeeklyTimerCoordinator {
         var attempt: CodexWeeklyTimerAttempt
         do {
             guard try store.latestObservationAt(accountKey: accountKey) == preparationObservedAt else { return }
-            let change = try store.observe(
-                accountKey: accountKey, rawResetAt: session.observation.rawResetAt,
-                observedAt: session.observation.observedAt, usedPercent: session.observation.usedPercent
-            )
-            guard change == .changed, session.observation.usedPercent == 0,
-                  let reset = session.observation.rawResetAt, reset > now(),
-                  !CodexWeeklyTimerObservation.resetTimesMatch(firstObservation.rawResetAt, reset),
-                  session.observation.observedAt.timeIntervalSince(firstObservation.observedAt)
-                    >= CodexWeeklyTimerObservation.verificationInterval,
-                  let observedAt = try store.latestObservationAt(accountKey: accountKey) else { return }
-            guard current(candidate), let reserved = try store.begin(
-                accountKey: accountKey, resetBefore: reset, now: now(), expectedObservedAt: observedAt
-            ) else { return }
-            attempt = reserved
+            if let revalidationState {
+                guard current(candidate) else { return }
+                guard let reserved = try store.beginAfterRevalidation(
+                    first: firstObservation, second: session.observation, expectedState: revalidationState, now: now()
+                ) else {
+                    _ = try store.observe(accountKey: accountKey, rawResetAt: session.observation.rawResetAt,
+                                          observedAt: session.observation.observedAt,
+                                          usedPercent: session.observation.usedPercent)
+                    return
+                }
+                attempt = reserved
+            } else {
+                let change = try store.observe(
+                    accountKey: accountKey, rawResetAt: session.observation.rawResetAt,
+                    observedAt: session.observation.observedAt, usedPercent: session.observation.usedPercent
+                )
+                guard change == .changed, session.observation.usedPercent == 0,
+                      let reset = session.observation.rawResetAt, reset > now(),
+                      !CodexWeeklyTimerObservation.resetTimesMatch(firstObservation.rawResetAt, reset),
+                      session.observation.observedAt.timeIntervalSince(firstObservation.observedAt)
+                        >= CodexWeeklyTimerObservation.verificationInterval,
+                      let observedAt = try store.latestObservationAt(accountKey: accountKey) else { return }
+                guard current(candidate), let reserved = try store.begin(
+                    accountKey: accountKey, resetBefore: reset, now: now(), expectedObservedAt: observedAt
+                ) else { return }
+                attempt = reserved
+            }
             awaitingReset[accountKey] = nil
         } catch {
             fail(candidate, "Weekly timer automation could not save its state. No message was sent.")
@@ -212,7 +238,7 @@ final class CodexWeeklyTimerCoordinator {
         }
         guard current(candidate) else { return }
         guard result.launched else {
-            fail(candidate, result.failureDescription ?? "Weekly timer message could not be started. Automatic retries wait five minutes.")
+            fail(candidate, result.failureDescription ?? "Weekly timer message could not be started. Retries wait at least five minutes and are limited to 2 attempts per 24 hours.")
             return
         }
         var lastPostObservation: CodexWeeklyTimerObservation?
@@ -228,7 +254,7 @@ final class CodexWeeklyTimerCoordinator {
         } else if !verified {
             fail(candidate, result.failureDescription ?? (result.completed
                 ? "Weekly timer message completed, but the server reset time could not be confirmed."
-                : "Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."))
+                : "Weekly timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per 24 hours."))
             awaitingReset[accountKey] = PendingVerification(lastObservation: lastPostObservation)
         } else {
             report(candidate.providerID, candidate.bindingID, nil)
@@ -303,6 +329,7 @@ final class CodexWeeklyTimerCoordinator {
            CodexWeeklyTimerObservation.resetTimesMatch(previous.rawResetAt, reset),
            observation.observedAt.timeIntervalSince(previous.observedAt) >= CodexWeeklyTimerObservation.verificationInterval {
             awaitingReset[observation.accountKey] = nil
+            reportedSendLimits[observation.accountKey] = nil
             if current(candidate) { report(candidate.providerID, candidate.bindingID, nil) }
         } else if !CodexWeeklyTimerObservation.resetTimesMatch(waiting.lastObservation?.rawResetAt, reset) {
             waiting.lastObservation = observation
@@ -313,6 +340,33 @@ final class CodexWeeklyTimerCoordinator {
     private func current(_ candidate: Candidate) -> Bool {
         !stopped && !Task.isCancelled
             && isCurrent(candidate.providerID, candidate.bindingID, candidate.observation.accountKey)
+    }
+
+    private func canPrepare(_ candidate: Candidate, reportLimit: Bool = true) throws -> Bool {
+        let accountKey = candidate.observation.accountKey
+        if let until = try store.sendLimitResetsAt(accountKey: accountKey, now: now()) {
+            if reportLimit, reportedSendLimits[accountKey] != until {
+                fail(candidate, "Weekly timer messages paused: this account reached the limit of 2 attempts in 24 hours. Usage checks will continue.")
+                reportedSendLimits[accountKey] = until
+                awaitingReset[accountKey] = PendingVerification(lastObservation: candidate.observation)
+            }
+            return false
+        }
+        if reportedSendLimits.removeValue(forKey: accountKey) != nil {
+            awaitingReset[accountKey] = nil
+            report(candidate.providerID, candidate.bindingID, nil)
+        }
+        if candidate.revalidateConfirmedWindow {
+            return try store.revalidationState(accountKey: candidate.observation.accountKey, now: now()) != nil
+        }
+        return try store.canAttempt(accountKey: candidate.observation.accountKey, now: now())
+    }
+
+    private func isLatest(_ candidate: Candidate) throws -> Bool {
+        if candidate.revalidateConfirmedWindow {
+            return try store.isLatestReceived(candidate.observation)
+        }
+        return try store.isLatest(candidate.observation)
     }
 
     private func fail(_ candidate: Candidate, _ message: String) {

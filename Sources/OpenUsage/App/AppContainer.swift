@@ -59,6 +59,7 @@ final class AppContainer {
     private let localAPI: LocalUsageServer
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
+    private let weeklyTimerCheckTask = AccountRefreshTaskHolder()
     /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
     private let resetWatchCoordinator: CodexResetWatchCoordinator
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
@@ -265,6 +266,14 @@ final class AppContainer {
                 _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
+        self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start { [weak codexWeeklyTimer, weak dataStore] in
+            guard let codexWeeklyTimer, let dataStore else { return }
+            AppLog.info(.refresh, "Checking Codex weekly reset times (every 15 minutes)")
+            for providerID in codexWeeklyTimer.requestScheduledCheck() {
+                guard !Task.isCancelled else { return }
+                await dataStore.refresh(providerID: providerID, force: true, trigger: .weeklyTimerCheck)
+            }
+        }
         localAPI.start()
         softLimitCoordinator.start()
         // notification-center delegate 등록 — frontmost 상태에서도 배너 표시. 권한 요청은 런치가 아니라 Settings의 트리거 첫 활성화 시.
@@ -283,6 +292,7 @@ final class AppContainer {
 
     func shutdownBackgroundProcesses() async {
         refreshTask.task?.cancel()
+        weeklyTimerCheckTask.task?.cancel()
         softLimitCoordinator.stop()
         async let timer: Void = codexWeeklyTimer.shutdown()
         async let tokscale: Void = tokscaleSync.shutdown()

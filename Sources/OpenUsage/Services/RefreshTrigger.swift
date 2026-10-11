@@ -6,5 +6,6 @@ enum RefreshTrigger: String, Codable, CaseIterable, Sendable {
     case credentialChange = "credential_change"
     case resetClaim = "reset_claim"
     case weeklyTimer = "weekly_timer"
+    case weeklyTimerCheck = "weekly_timer_check"
     case cli
 }

@@ -12,6 +12,7 @@ final class CodexWeeklyTimerRouter {
     private var bindings: [String: Binding]
     private var identityKeys: [String: String]
     private var warningsByAccount: [String: String] = [:]
+    private var scheduledCheckRequests: Set<String> = []
     private let isProviderEnabled: (String) -> Bool
     private let executor: any CodexWeeklyTimerExecuting
     private let store: CodexWeeklyTimerAttemptStore
@@ -143,7 +144,20 @@ final class CodexWeeklyTimerRouter {
         if accountChanged, isProviderEnabled(snapshot.providerID), let warning = warningsByAccount[observation.accountKey] {
             report(snapshot.providerID, warning)
         }
-        coordinator.receive(providerID: snapshot.providerID, bindingID: binding.id, observation: observation)
+        let scheduledRequested = scheduledCheckRequests.remove(snapshot.providerID) != nil
+        let checkTimer = scheduledRequested || trigger == .weeklyTimerCheck
+        coordinator.receive(
+            providerID: snapshot.providerID, bindingID: binding.id, observation: observation,
+            allowNewAttempt: checkTimer, revalidateConfirmedWindow: checkTimer
+        )
+    }
+
+    /// 15분 경계 조회가 진행 중인 요청과 겹치면 다음 정상 응답에서 재검증.
+    func requestScheduledCheck() -> [String] {
+        guard !isShuttingDown else { return [] }
+        let providerIDs = bindings.keys.filter { isProviderEnabled($0) }.sorted()
+        scheduledCheckRequests.formUnion(providerIDs)
+        return providerIDs
     }
 
     func isRunning(providerID: String) -> Bool {
@@ -160,6 +174,7 @@ final class CodexWeeklyTimerRouter {
     func invalidate(providerIDs: Set<String>? = nil) {
         let affected = providerIDs ?? Set(bindings.keys.filter { !isProviderEnabled($0) })
         for providerID in affected {
+            scheduledCheckRequests.remove(providerID)
             guard let binding = bindings[providerID] else { continue }
             coordinator.invalidate(providerID: providerID)
             bindings[providerID] = Binding(provider: binding.provider)
