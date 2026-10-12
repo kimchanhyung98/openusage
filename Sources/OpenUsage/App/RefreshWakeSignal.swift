@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// refresh loop의 패스 사이 대기: interval sleep + enabled-provider 변경 시 조기 wake.
 /// 구독은 `init`에서 동기 설치 — loop 첫 패스 전. `.bufferingNewest(1)` stream이라 대기자 없을 때의 wake도 보존,
@@ -10,6 +10,9 @@ final class RefreshWakeSignal {
     private let center: NotificationCenter
     /// nonisolated `deinit`의 observer 해제용 `nonisolated(unsafe)` — init 후 불변, `NotificationCenter`는 thread-safe 문서화.
     private nonisolated(unsafe) let observer: NSObjectProtocol
+    private nonisolated(unsafe) let scheduleObserver: NSObjectProtocol
+    private nonisolated(unsafe) let wakeObserver: NSObjectProtocol
+    private nonisolated(unsafe) let clockObserver: NSObjectProtocol
 
     init(
         name: Notification.Name = ProviderEnablementStore.didChangeNotification,
@@ -23,10 +26,22 @@ final class RefreshWakeSignal {
         self.observer = center.addObserver(forName: name, object: nil, queue: nil) { _ in
             continuation.yield()
         }
+        self.scheduleObserver = center.addObserver(
+            forName: WidgetDataStore.refreshScheduleDidChange, object: nil, queue: nil
+        ) { _ in continuation.yield() }
+        self.wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
+        ) { _ in continuation.yield() }
+        self.clockObserver = center.addObserver(
+            forName: .NSSystemClockDidChange, object: nil, queue: nil
+        ) { _ in continuation.yield() }
     }
 
     deinit {
         center.removeObserver(observer)
+        center.removeObserver(scheduleObserver)
+        center.removeObserver(clockObserver)
+        NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         continuation.finish()
     }
 

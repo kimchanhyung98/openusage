@@ -71,9 +71,10 @@ public struct UsageReader {
         }
         let cache = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true)
         let allProviderIDs = registry.providers.map(\.id)
-        // 앱이 launch에 적용하는 것과 동일한 계정 guard — 다른 계정 소유가 증명된 entry는 미제공, TTL-fresh여도 refresh 필요로 계산.
+        // 앱과 동일한 계정 guard — 타 계정 캐시와 신원 미확인 Claude 캐시는 TTL 안에서도 재조회.
         let staleAccountStampIDs = Set(allProviderIDs.filter {
-            cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: accountAssembly.identityKeysByCard[$0])
+            (ProviderAccountID.family(of: $0) == "claude" && accountAssembly.identityKeysByCard[$0] == nil)
+                || cache.hasStaleAccountStamp(providerID: $0, currentIdentityKey: accountAssembly.identityKeysByCard[$0])
         })
         let cachedSnapshots = cache.loadSnapshots(providerIDs: allProviderIDs)
             .filter { providerID, _ in !staleAccountStampIDs.contains(providerID) }

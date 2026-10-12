@@ -61,10 +61,10 @@ enum LocalLimitsAPI {
         init(snapshot: ProviderSnapshot, descriptors: [WidgetDescriptor], generatedAt: Date) {
             displayName = snapshot.displayName
             plan = snapshot.plan
-            fetchedAt = OpenUsageISO8601.string(from: snapshot.refreshedAt)
-            let expiry = snapshot.refreshedAt.addingTimeInterval(RefreshSetting.interval)
+            fetchedAt = OpenUsageISO8601.string(from: snapshot.freshnessDate)
+            let expiry = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: snapshot.providerID))
             expiresAt = OpenUsageISO8601.string(from: expiry)
-            stale = generatedAt >= expiry
+            stale = generatedAt >= expiry || (snapshot.usageRetryAfter != nil && snapshot.quotaObservedAt == nil)
 
             var resources: [String: WireResource] = [:]
             for descriptor in descriptors {

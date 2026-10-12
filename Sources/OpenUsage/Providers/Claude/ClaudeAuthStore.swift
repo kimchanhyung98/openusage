@@ -1,6 +1,15 @@
 import CryptoKit
 import Foundation
 
+private struct ClaudeUsageIdentityEnvironment: EnvironmentReading {
+    let base: EnvironmentReading
+    let configDir: String
+
+    func value(for key: String) -> String? {
+        key == "CLAUDE_CONFIG_DIR" ? configDir : base.value(for: key)
+    }
+}
+
 struct ClaudeOAuth: Codable, Hashable, Sendable {
     var accessToken: String?
     var refreshToken: String?
@@ -40,6 +49,7 @@ struct ClaudeCredentialState: Hashable, Sendable {
     var source: Source
     var fullData: ClaudeCredentialsFile?
     var inferenceOnly: Bool
+    var accountIdentityKey: String? = nil
 
     /// 공백 아닌 access token 보유 여부 — `refresh()` 필터와 `hasLocalCredentials()`가 공유하는 단일 "usable" 정의.
     var hasUsableAccessToken: Bool {
@@ -66,10 +76,12 @@ struct ClaudeCredentialGeneration: Equatable, Sendable {
     struct Candidate: Equatable, Sendable {
         let oauth: ClaudeOAuth
         let source: ClaudeCredentialState.Source
+        let accountIdentityKey: String?
 
         init(_ state: ClaudeCredentialState) {
             oauth = state.oauth
             source = state.source
+            accountIdentityKey = state.accountIdentityKey
         }
     }
 
@@ -219,6 +231,8 @@ struct ClaudeAuthStore: Sendable {
             }
         }
         var stored = orderedStoredCandidates()
+        let identity = usageAccountIdentity()
+        for index in stored.indices { stored[index].accountIdentityKey = identity }
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
         // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
         let desktopAllowed = scope == .standard && allowsDesktopFallback
@@ -237,7 +251,8 @@ struct ClaudeAuthStore: Sendable {
                     oauth: oauth,
                     source: .desktop,
                     fullData: nil,
-                    inferenceOnly: false
+                    inferenceOnly: false,
+                    accountIdentityKey: result.accountIdentityKey
                 ), at: 0)
             }
         }
@@ -525,8 +540,21 @@ struct ClaudeAuthStore: Sendable {
             oauth: oauth,
             source: .accountSnapshot(profileID: profileID),
             fullData: parsed,
-            inferenceOnly: false
+            inferenceOnly: false,
+            accountIdentityKey: AccountCredentialSwitcher().identity(of: entry, family: "claude")?.identityKey
         )
+    }
+
+    private func usageAccountIdentity() -> String? {
+        var observer = DefaultAccountObserver(
+            environment: environment, files: files, keychain: keychain, pinsClaudeSharedHome: pinsSharedHome
+        )
+        if case .configDir(let path, _) = scope {
+            observer.environment = ClaudeUsageIdentityEnvironment(base: environment, configDir: path)
+            observer.pinsClaudeSharedHome = false
+        }
+        guard case .resolved(let key, _, _) = observer.observeClaude() else { return nil }
+        return key
     }
 
     /// keychain 히트 1건을 credential state로 파싱 — 부재/손상/토큰 없음이면 `nil`.

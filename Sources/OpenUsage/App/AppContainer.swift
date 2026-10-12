@@ -61,7 +61,8 @@ final class AppContainer {
     private let refreshTask = AccountRefreshTaskHolder()
     private let weeklyTimerCheckTask = AccountRefreshTaskHolder()
     /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
-    private let resetWatchCoordinator: CodexResetWatchCoordinator
+    let resetWatchCoordinator: CodexResetWatchCoordinator
+    private(set) var nextCodexTimerCheckAt: Date?
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
@@ -266,7 +267,9 @@ final class AppContainer {
                 _ = await self?.reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         )
-        self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start { [weak codexWeeklyTimer, weak dataStore] in
+        self.weeklyTimerCheckTask.task = CodexWeeklyTimerCheckSchedule.start(
+            scheduleChanged: { [weak self] in self?.nextCodexTimerCheckAt = $0 }
+        ) { [weak codexWeeklyTimer, weak dataStore] in
             guard let codexWeeklyTimer, let dataStore else { return }
             AppLog.info(.refresh, "Checking Codex weekly reset times (every 15 minutes)")
             await CodexWeeklyTimerCheckSchedule.refreshAccounts(codexWeeklyTimer.requestScheduledCheck()) { providerID in

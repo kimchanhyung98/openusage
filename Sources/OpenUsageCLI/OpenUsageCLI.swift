@@ -66,10 +66,10 @@ struct OpenUsageCLI {
     Usage: openusage [provider] [--force]
            openusage account <command> ...
 
-    Read limits through OpenUsage's shared five-minute cache and exit. Output is always JSON.
+    Read limits through OpenUsage's shared cache (5 minutes; Claude: 15 minutes) and exit. Output is always JSON.
 
     Options:
-      --force      Refresh even when the shared cache is still fresh
+      --force      Skip fresh cache; Claude rate-limit waits still apply
       -v, --version
       -h, --help
 

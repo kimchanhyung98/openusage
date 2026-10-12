@@ -23,6 +23,11 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var isDegraded: Bool?
     /// 실제 quota 응답 시각 — 내부 last-good 재사용 시 제거, nil이면 자동 취소 판정 제외.
     var liveQuotaObservedAt: Date?
+    /// 마지막 정상 한도 조회 시각 — 캐시 재사용 중에도 보존하며 자동 전환용 관측과 구분.
+    var quotaObservedAt: Date?
+    var usageRetryAfter: Date?
+
+    var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
 
     init(
         providerID: String,
@@ -35,7 +40,9 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         errorCategory: ErrorCategory? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil,
-        liveQuotaObservedAt: Date? = nil
+        liveQuotaObservedAt: Date? = nil,
+        quotaObservedAt: Date? = nil,
+        usageRetryAfter: Date? = nil
     ) {
         self.providerID = providerID
         self.displayName = displayName
@@ -48,6 +55,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.authenticationIssue = authenticationIssue
         self.isDegraded = isDegraded
         self.liveQuotaObservedAt = liveQuotaObservedAt
+        self.quotaObservedAt = quotaObservedAt
+        self.usageRetryAfter = usageRetryAfter
     }
 
     func line(label: String) -> MetricLine? {
@@ -65,7 +74,9 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         warning: String? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil,
-        liveQuotaObservedAt: Date? = nil
+        liveQuotaObservedAt: Date? = nil,
+        quotaObservedAt: Date? = nil,
+        usageRetryAfter: Date? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
@@ -77,7 +88,9 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             warning: warning,
             authenticationIssue: authenticationIssue,
             isDegraded: isDegraded,
-            liveQuotaObservedAt: liveQuotaObservedAt
+            liveQuotaObservedAt: liveQuotaObservedAt,
+            quotaObservedAt: quotaObservedAt,
+            usageRetryAfter: usageRetryAfter
         )
     }
 

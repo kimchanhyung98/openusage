@@ -22,7 +22,7 @@ struct ProviderSnapshotCache {
     private let storageKey: String
     /// 세션 내에 쓴 snapshot의 fresh 유지 기간(1 refresh interval) — 이전 세션의 snapshot은 `refreshedAt`과
     /// 무관하게 non-fresh(`sessionWrites` 참고). 테스트는 고정 TTL 주입.
-    private let ttl: TimeInterval
+    private let ttl: TimeInterval?
     /// timestamp-only freshness opt-in — 메뉴바 앱은 launch당 1회 refresh를 강제하지만 one-shot reader에는 세션 개념이 없음.
     private let allowsPersistedFreshness: Bool
     private let now: () -> Date
@@ -34,7 +34,7 @@ struct ProviderSnapshotCache {
         // storage key 버전 bump는 pre-upgrade 캐시를 폐기 — schema 확장 필드를 1회 refetch로 즉시 반영.
         // v9: `producedByIdentityKeys` sidecar 추가 — account swap 후 launch가 이전 account의 캐시를 식별·폐기.
         storageKey: String = "openusage.providerSnapshots.v9",
-        ttl: TimeInterval = RefreshSetting.interval,
+        ttl: TimeInterval? = nil,
         allowsPersistedFreshness: Bool = false,
         now: @escaping () -> Date = Date.init
     ) {
@@ -68,9 +68,11 @@ struct ProviderSnapshotCache {
         // freshness는 이중 조건: 이 세션에 쓰였고 AND TTL 이내 — 이전 세션 blob은 즉시 paint용일 뿐
         // refresh를 gate하지 않아 launch마다 즉시 refetch(#697).
         let writtenThisSession = sessionWrites.withLock { $0.contains(providerID) }
-        let age = now().timeIntervalSince(snapshot.refreshedAt)
+        let age = now().timeIntervalSince(snapshot.freshnessDate)
+        let ttl = ttl ?? RefreshSetting.interval(for: providerID)
         let trusted = allowsPersistedFreshness || writtenThisSession
         let fresh = trusted && age < ttl
+            && !(snapshot.usageRetryAfter != nil && snapshot.quotaObservedAt == nil)
         let reason = !trusted ? "stale (not written this session)"
             : fresh ? "fresh" : "stale"
         AppLog.debug(.cache, "\(providerID) staleness \(Int(age))s vs ttl \(Int(ttl))s -> \(reason)")
