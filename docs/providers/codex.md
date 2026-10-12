@@ -157,7 +157,7 @@ API의 리셋 예정 정보에 시각이 없으면 예측 확률 99%와 **Reset 
 지표 순서는 Rate Limit Resets 바로 앞이며 Customize에서 켜기·이동·별표 가능.
 
 Reset Watch는 Codex 로그인·인증 및 구독 사용량 새로 고침과 독립적으로 작동.
-Codex 프로바이더가 켜져 있고 지표가 대시보드에 표시되거나 메뉴 막대에 별표된 동안, OpenUsage가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량 5분 주기의 3배인 별도 15분 주기로 조회.
+Codex 프로바이더가 켜져 있고 지표가 대시보드에 표시되거나 메뉴 막대에 별표된 동안, OpenUsage가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량과 독립된 15분 주기로 조회.
 리셋 예정 정보가 없고 활성 watch에 인식 가능한 출처 게시물이 있으면 `GET https://codex-resets.com/api/watch/votes`도 조회하며 해당 게시물과 일치하는 집계만 커뮤니티 투표율 계산에 사용.
 커뮤니티 투표율 조회용 엔드포인트는 웹사이트 내부용이며 문서화된 공개 API에 포함되지 않아 호환성 변경 가능.
 OpenUsage는 커뮤니티 투표율 산출용 집계만 조회하며 투표를 제출하지 않음.

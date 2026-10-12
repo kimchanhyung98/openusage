@@ -29,6 +29,8 @@ OpenUsage는 루프백 인터페이스에 읽기 전용 HTTP API를 제공 — �
 
 **활성화된** 모든 프로바이더의 레거시 UI 지향 스냅샷을 저장된 프로바이더 순서대로 반환.
 이 라우트는 폐기 예정이지만 기존 연동은 계속 지원하며, 새 연동은 `/v1/limits` 사용 권장.
+Claude 스냅샷의 `quotaObservedAt`은 마지막 정상 한도 조회 시각, `usageRetryAfter`는 요청 제한 후 재시도 허용 시각.
+두 필드는 해당 값이 있을 때만 제공하며 로컬 집계 완료 시각인 `refreshedAt`과 구분.
 
 두 라우트 모두 렌더링된 같은 프로바이더 스냅샷을 읽음.
 HTTP 조회로 Codex 주간 타이머용 메시지 전송이나 새로 고침을 시작하지 않음.
@@ -96,7 +98,9 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
 상한이 있는 소비량에는 `limit`, `remaining`, 0–1 범위의 `utilization`도 포함.
 초기화·기간·만료 목록·`estimated` 필드는 프로바이더가 해당 개념을 제공할 때만 포함.
 현재 값이 없는 프로바이더나 리소스는 0으로 만들어 내지 않고 생략.
-`expiresAt`은 항상 `fetchedAt`에 앱·CLI와 동일한 5분 신선도 간격을 더한 값이며, `stale`은 해당 시점의 경과 여부를 표시.
+`fetchedAt`은 마지막 정상 한도 조회 시각.
+`expiresAt`은 `fetchedAt`에 일반 사용량 5분·Claude 15분을 더한 값이며, `stale`은 해당 시점의 경과 여부를 표시.
+Claude의 429 대기 중에도 캐시 유효 기간을 늘리지 않으며, 마지막 정상 한도 값이 없으면 `stale`로 표시.
 새로 고침에 실패해도 마지막 정상 프로바이더 스냅샷은 계속 사용할 수 있고, 오류는 `errors`에 `{"providerId":"…","message":"…"}` 형태로 포함.
 상한이 있는 진행률 리소스에서 `unit`은 프로바이더의 현재 지표 형식을 따름.
 예를 들어 Cursor `totalUsage`는 백분율 기반 요금제에서는 `percent`, 요청 기반 Enterprise 요금제에서는 `requests`, Cursor가 달러 풀을 보고할 때는 `usd`.
