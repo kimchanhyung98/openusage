@@ -14,6 +14,7 @@ final class WeeklyTimerProbe {
     var preparationReset: Date? = Date(timeIntervalSince1970: 1_800_001_000)
     var preparationResetMoves = true
     var preparationHook: (() async -> Void)?
+    var beforeLaunch: (() async -> Void)?
     var executionHook: ((String) async -> Void)?
     var verificationHook: (() async -> Void)?
     var result = CodexWeeklyTimerExecutionResult(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
@@ -82,7 +83,12 @@ final class WeeklyTimerProbe {
                     authStore: CodexAuthStore()
                 )
             },
-            execute: { _, _, session in
+            execute: { _, _, session, canLaunch in
+                await self.beforeLaunch?()
+                guard canLaunch() else {
+                    return .init(launched: false, completed: false, updatedAuth: nil,
+                                 failureDescription: "Timer observation changed before launch.")
+                }
                 self.executed.append(session.observation.accountKey)
                 self.executionTimes.append(self.now)
                 await self.executionHook?(session.observation.accountKey)
@@ -119,12 +125,12 @@ extension CodexWeeklyTimerRouterTests {
         var startupFailureDescription: String?
         var auths: [CodexAuth] = []
         var didAuthenticate: ((CodexAuth) -> Void)?
-        var beforeLaunch: (() -> Void)?
+        var beforeLaunch: (() async -> Void)?
         var onLaunch: (() -> Void)?
         var afterLaunch: (@MainActor () async -> CodexWeeklyTimerExecutionResult)?
 
         func execute(auth: CodexAuth, canLaunch: @escaping @MainActor () async -> Bool) async -> CodexWeeklyTimerExecutionResult {
-            beforeLaunch?()
+            await beforeLaunch?()
             guard await canLaunch() else {
                 return .init(launched: false, completed: false, updatedAuth: nil, failureDescription: "Authentication changed.")
             }
@@ -145,6 +151,7 @@ extension CodexWeeklyTimerRouterTests {
     }
 
     final class TimerHTTPClient: HTTPClient, @unchecked Sendable {
+        private(set) var usageRequestCount = 0
         var response: HTTPResponse {
             didSet { updatedAt = clock.current() }
         }
@@ -163,7 +170,12 @@ extension CodexWeeklyTimerRouterTests {
             running = true
         }
 
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse { currentResponse() }
+        func resetTimer() { running = false }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            if request.url == CodexUsageClient.usageURL { usageRequestCount += 1 }
+            return currentResponse()
+        }
 
         private func currentResponse() -> HTTPResponse {
             guard !running, response.statusCode == 200,

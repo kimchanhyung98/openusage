@@ -21,7 +21,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         )
 
         for account in [first, second, disabled] {
-            router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+            router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
         }
         await fulfillment(of: [completed], timeout: 15)
 
@@ -94,7 +94,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
 
-        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 3)
 
         XCTAssertTrue(executor.auths.isEmpty)
@@ -119,7 +119,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
 
         let snapshot = try await fixture.changedRefresh(account, router: router)
         account.http.response = HTTPResponse(statusCode: 503, headers: [:], body: Data())
-        router.receive(snapshot, trigger: .scheduled)
+        router.receive(snapshot, trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 3)
 
         XCTAssertNil(account.provider.weeklyTimerObservation)
@@ -150,7 +150,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             refresh: { _, _ in XCTFail("Shutdown must not start a refresh") },
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
-        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [launched], timeout: 3)
 
         reports.removeAll()
@@ -180,7 +180,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             router.invalidate()
         }
 
-        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 1)
 
         XCTAssertEqual(executor.auths.count, 1)
@@ -203,7 +203,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         let snapshot = try await fixture.changedRefresh(account, router: router)
         let response = account.http.response
         account.http.response = .init(statusCode: 503, headers: [:], body: Data())
-        router.receive(snapshot, trigger: .scheduled)
+        router.receive(snapshot, trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 1)
         XCTAssertNotNil(warning)
 
@@ -230,14 +230,14 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         )
         executor.beforeLaunch = { router.reconfigure(providers: [replacement.provider], identityKeys: identityKeys) }
 
-        router.receive(try await fixture.changedRefresh(original, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(original, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 1)
 
         XCTAssertEqual(executor.auths.count, 1)
         XCTAssertFalse(router.hasPendingWork)
     }
 
-    func testAccountWarningsReachDuplicateCardsAndClearWhenAnotherCardSucceeds() async throws {
+    func testAccountWarningsReachDuplicateCardsAndClearWhenAnotherCardRecoversState() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let first = try fixture.account("first", cardID: "codex")
@@ -269,17 +269,17 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
         XCTAssertEqual(warnings["codex"], warnings["codex@duplicate"])
         try saved.write(to: fixture.store.fileURL)
         router.receive(await late.provider.refresh(), trigger: .scheduled)
-        XCTAssertEqual(warnings["codex@late"], warnings["codex"])
+        XCTAssertTrue(warnings.isEmpty)
         XCTAssertFalse(router.hasPendingWork)
 
         first.files.files[first.path] = try fixture.authText("replacement")
         router.receive(await first.provider.refresh(), trigger: .manual)
         XCTAssertNil(warnings["codex"])
-        XCTAssertNotNil(warnings["codex@duplicate"])
-        XCTAssertNotNil(warnings["codex@late"])
+        XCTAssertNil(warnings["codex@duplicate"])
+        XCTAssertNil(warnings["codex@late"])
 
         fixture.clock.advance(.seconds(300))
-        router.receive(await duplicate.provider.refresh(), trigger: .scheduled)
+        router.receive(await duplicate.provider.refresh(), trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 3)
 
         XCTAssertEqual(executor.auths.count, 1)
@@ -362,7 +362,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             now: { fixture.clock.current() }, wait: { fixture.clock.advance($0) }
         )
         XCTAssertEqual(Set(warnings.keys), ["codex", "codex@second"])
-        router.receive(try await fixture.changedRefresh(first, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(first, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [completed], timeout: 3)
 
         XCTAssertEqual(executor.auths.count, 1)
@@ -387,7 +387,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
                 await withCheckedContinuation { resume = $0 }
             }
         )
-        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .scheduled)
+        router.receive(try await fixture.changedRefresh(account, router: router), trigger: .weeklyTimerCheck)
         await fulfillment(of: [preparing], timeout: 3)
         account.files.files[account.path] = try fixture.authText("replacement")
         account.http.response = .init(statusCode: 200, headers: [:], body: Data("{}".utf8))
@@ -452,7 +452,7 @@ final class CodexWeeklyTimerRouterTests: XCTestCase {
             router.receive(await first.provider.refresh(), trigger: .scheduled)
             router.receive(await duplicate.provider.refresh(), trigger: .scheduled)
             fixture.clock.advance(.seconds(70))
-            router.receive(await first.provider.refresh(), trigger: .scheduled)
+            router.receive(await first.provider.refresh(), trigger: .weeklyTimerCheck)
             await fulfillment(of: [completed], timeout: 3)
             XCTAssertNotNil(warnings["codex@duplicate"])
             first.http.response = quota

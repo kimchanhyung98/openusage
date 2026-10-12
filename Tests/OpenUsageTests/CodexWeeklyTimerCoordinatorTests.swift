@@ -72,10 +72,11 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         probe.receive(coordinator)
         await settle { probe.finished.count == 1 }
         probe.now = probe.start.addingTimeInterval(366)
-        probe.receive(coordinator, used: 0.1)
+        let reset = probe.start.addingTimeInterval(1_400)
+        probe.receive(coordinator, used: 0.1, reset: reset)
         await Task.yield()
         XCTAssertEqual(probe.executed.count, 1)
-        probe.receive(coordinator)
+        probe.receive(coordinator, reset: reset)
         XCTAssertFalse(coordinator.hasPendingWork)
         probe.now = probe.start.addingTimeInterval(1_400)
         probe.receive(coordinator)
@@ -129,7 +130,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         await settle { probe.finished.count == 1 }
         XCTAssertEqual(probe.verificationTimes.count, 3)
         XCTAssertEqual(try probe.store.attempt(for: "a")?.notBefore, probe.start.addingTimeInterval(365))
-        XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Automatic retries wait five minutes."])
+        XCTAssertEqual(probe.reports, ["Weekly timer message completion could not be confirmed. Retries wait at least five minutes and are limited to 2 attempts per 24 hours."])
     }
 
     func testPrelaunchFailureKeepsCooldownAndDoesNotBlockNextAccount() async throws {
@@ -319,7 +320,7 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(probe.reports, ["Credentials could not be saved."])
         probe.now = probe.start.addingTimeInterval(400)
-        probe.receive(coordinator, reset: reset.addingTimeInterval(61))
+        probe.receive(coordinator, reset: reset.addingTimeInterval(60))
         XCTAssertFalse(coordinator.hasPendingWork)
         XCTAssertEqual(probe.executed, ["a"])
     }
