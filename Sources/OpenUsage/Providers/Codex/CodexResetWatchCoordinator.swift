@@ -44,9 +44,9 @@ final class CodexResetWatchCoordinator {
     /// 수동 새로 고침은 활성 상태에서만 캐시 재검증 — 비활성화 전 요청의 늦은 결과 미게시.
     func refreshNow() async {
         guard isActive else { return }
-        refreshCount += 1
-        defer { refreshCount -= 1 }
         let activationID = self.activationID
+        refreshCount += 1
+        defer { if self.activationID == activationID { refreshCount -= 1 } }
         let watch = await load(true)
         guard isActive, self.activationID == activationID, !Task.isCancelled else { return }
         publish(watch)
@@ -67,6 +67,7 @@ final class CodexResetWatchCoordinator {
         guard active != isActive else { return }
         isActive = active
         activationID = UUID()
+        refreshCount = 0
         task?.cancel()
         task = nil
 
@@ -80,11 +81,12 @@ final class CodexResetWatchCoordinator {
         let publish = self.publish
         let interval = self.interval
         let wait = self.wait
+        let activationID = self.activationID
         task = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refreshCount += 1
                 let watch = await load(false)
-                self?.refreshCount -= 1
+                if self?.activationID == activationID { self?.refreshCount -= 1 }
                 guard !Task.isCancelled else { return }
                 publish(watch)
                 self?.nextRefreshAt = Date().addingTimeInterval(

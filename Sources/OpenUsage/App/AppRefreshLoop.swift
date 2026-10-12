@@ -25,12 +25,19 @@ enum AppRefreshLoop {
             defer { heartbeat.cancel(); claudeTask.task?.cancel() }
             await withTaskCancellationHandler {
                 while !Task.isCancelled {
+                    if wakeSignal.consumeClockChange() {
+                        nextGeneralPassAt = now()
+                        dataStore.rebaseRefreshSchedule(for: .regular, at: now())
+                    }
                     telemetry.tick()
                     await reconcileAccounts()
                     guard !Task.isCancelled else { return }
                     if claudeTask.task == nil {
                         claudeTask.task = Task {
                             while !Task.isCancelled {
+                                if claudeWakeSignal.consumeClockChange() {
+                                    dataStore.rebaseRefreshSchedule(for: .claude, at: now())
+                                }
                                 await dataStore.refreshAll(cadence: .claude)
                                 guard !Task.isCancelled else { return }
                                 await dataStore.evaluateNotifications()

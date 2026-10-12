@@ -231,6 +231,17 @@ final class WidgetDataStore {
         }.map { scheduledRefreshDate(for: $0) ?? date }.min()
     }
 
+    /// 시계 변경 후 로컬 주기는 재평가하되 계정별로 저장한 429 대기 시각은 유지.
+    func rebaseRefreshSchedule(for cadence: RefreshSetting.Cadence, at date: Date) {
+        for id in registry.providers.map(\.id) where RefreshSetting.cadence(for: id) == cadence {
+            scheduledRefreshDates[id] = date
+            providersNeedingScheduledRefresh.insert(id)
+            if let retryAfter = failureRetryAfter[id] {
+                failureRetryAfter[id] = min(retryAfter, date.addingTimeInterval(Self.failureRetryBackoff))
+            }
+        }
+    }
+
     /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
     /// 사용자 요청 fetch를 실행, 다음 cadence까지 strip이 stale하게 남는 것을 방지.
     func refreshAfterAccountSelection(
@@ -473,7 +484,13 @@ final class WidgetDataStore {
             return .skipped
         }
         refreshingProviderIDs.insert(providerID)
-        defer { refreshingProviderIDs.remove(providerID) }
+        var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
+        defer {
+            refreshingProviderIDs.remove(providerID)
+            if needsScheduleWake, !pendingProviderRefreshes.contains(runtimeID) {
+                NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
+            }
+        }
         let boundGeneration = catalogGeneration
         let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
@@ -492,6 +509,7 @@ final class WidgetDataStore {
         }
         // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
         guard !Task.isCancelled else {
+            needsScheduleWake = true
             AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
             return .skipped
         }
@@ -499,11 +517,13 @@ final class WidgetDataStore {
         // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
         guard isProviderEnabled(providerID), catalogGeneration == boundGeneration,
               authenticationGenerations[providerID, default: 0] == authenticationGeneration else {
+            needsScheduleWake = true
             AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog or authentication changed mid-fetch")
             AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
             return .skipped
         }
         guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
+            needsScheduleWake = true
             AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
             return .skipped
         }
@@ -518,15 +538,11 @@ final class WidgetDataStore {
                 category: .network
             )
         case .cancelled:
+            needsScheduleWake = true
             return .skipped
         }
         if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
             scheduledRefreshDates[providerID] = now().addingTimeInterval(RefreshSetting.interval(for: providerID))
-        }
-        defer {
-            if trigger != .scheduled, RefreshSetting.cadence(for: providerID) == .claude {
-                NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
-            }
         }
         let durationMs = durationMilliseconds(since: start)
         if TimeInterval(durationMs) >= slowProviderRefreshThreshold * 1000 {

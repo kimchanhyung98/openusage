@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// refresh loop의 패스 사이 대기: interval sleep + enabled-provider 변경 시 조기 wake.
 /// 구독은 `init`에서 동기 설치 — loop 첫 패스 전. `.bufferingNewest(1)` stream이라 대기자 없을 때의 wake도 보존,
@@ -8,6 +9,7 @@ final class RefreshWakeSignal {
     private let stream: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let center: NotificationCenter
+    private let clockChanged = OSAllocatedUnfairLock(initialState: false)
     /// nonisolated `deinit`의 observer 해제용 `nonisolated(unsafe)` — init 후 불변, `NotificationCenter`는 thread-safe 문서화.
     private nonisolated(unsafe) let observer: NSObjectProtocol
     private nonisolated(unsafe) let scheduleObserver: NSObjectProtocol
@@ -32,9 +34,13 @@ final class RefreshWakeSignal {
         self.wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
         ) { _ in continuation.yield() }
+        let clockChanged = self.clockChanged
         self.clockObserver = center.addObserver(
             forName: .NSSystemClockDidChange, object: nil, queue: nil
-        ) { _ in continuation.yield() }
+        ) { _ in
+            clockChanged.withLock { $0 = true }
+            continuation.yield()
+        }
     }
 
     deinit {
@@ -43,6 +49,14 @@ final class RefreshWakeSignal {
         center.removeObserver(clockObserver)
         NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
         continuation.finish()
+    }
+
+    /// 일반 wake와 병합되어도 시계 변경 사실은 다음 순회까지 보존.
+    func consumeClockChange() -> Bool {
+        clockChanged.withLock { changed in
+            defer { changed = false }
+            return changed
+        }
     }
 
     /// wake(버퍼된 것 포함) 또는 `timeout` 중 먼저 오는 쪽에 반환; task cancel 시에도 즉시 반환.

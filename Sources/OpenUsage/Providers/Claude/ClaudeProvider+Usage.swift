@@ -21,7 +21,7 @@ extension ClaudeProvider {
             return rateLimitedUsage(record, credentials: state.oauth)
         }
         // 잠금을 기다린 앱·CLI는 방금 끝난 같은 계정의 결과를 공유하며 수동 요청도 중복 전송하지 않음.
-        if let completedAt = record.completedAt,
+        if let completedAt = record.completedAt, completedAt <= now(),
            (completedAt > requestedAt || (lease.waited && completedAt == requestedAt)) {
             if let failure = record.lastFailure { throw failure }
             if var cached = record.lastGood, record.retryAfter == nil {
@@ -94,6 +94,7 @@ extension ClaudeProvider {
                 record.failed(failure, at: now())
                 let saved = record
                 try await loadOffMainActor { try lease.save(saved) }
+                throw failure
             }
             throw error
         }
