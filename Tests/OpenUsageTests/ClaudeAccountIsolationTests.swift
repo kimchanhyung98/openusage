@@ -23,6 +23,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         XCTAssertEqual(sessionUsage(initial), 25)
         XCTAssertEqual(sessionUsage(limited), 25)
 
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
         fixture.files.files[path] = credentials(
             access: "account-b", refresh: "refresh-b", plan: "max"
         )
@@ -33,7 +34,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         XCTAssertEqual(usageRequests(fixture.http).count, 3)
     }
 
-    func testRefreshTokenChangeSeparatesCacheWhenAccessTokenIsShared() async {
+    func testAccountIdentityChangeSeparatesCacheWhenAccessTokenIsShared() async {
         let calls = IsolationCallCounter()
         let fixture = makeFixture(
             credentials: credentials(access: "shared", refresh: "refresh-a", plan: "pro")
@@ -48,6 +49,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let initial = await fixture.provider.refresh()
         XCTAssertEqual(sessionUsage(initial), 25)
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
         fixture.files.files[path] = credentials(
             access: "shared", refresh: "refresh-b", plan: "max"
         )
@@ -96,6 +98,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let files = FakeFiles([path: accountA])
         let fixture = makeFixture(files: files) { [path] request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 files.files[path] = accountB
                 return HTTPResponse(
                     statusCode: 200,
@@ -128,6 +131,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let files = FakeFiles([path: accountA])
         let fixture = makeFixture(files: files) { [path] request in
             if request.headers["Authorization"] == "Bearer account-a" {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 files.files[path] = accountB
                 return Self.usageResponse(percent: 25)
             }
@@ -154,6 +158,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let service = store.keychainServiceCandidates().first!
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.headers["Authorization"] == "Bearer account-a" {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 keychain.currentUserValues[service] = accountB
                 return Self.usageResponse(percent: 25)
             }
@@ -182,6 +187,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let service = store.keychainServiceCandidates().first!
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 keychain.currentUserValues[service] = accountB
                 return HTTPResponse(
                     statusCode: 200,
@@ -372,6 +378,9 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         keychain: any KeychainAccessing = FakeKeychain(),
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse
     ) -> Fixture {
+        if files.files["/tmp/claude/.claude.json"] == nil {
+            files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
+        }
         let http = RoutingHTTPClient(handler: handler)
         let now = Date(timeIntervalSince1970: 1_771_603_200)
         return Fixture(
@@ -383,6 +392,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
                     now: { now }
                 ),
                 usageClient: ClaudeUsageClient(httpClient: http),
+                usageStateStore: isolatedClaudeUsageStore(),
                 logUsageScanner: ClaudeLogFixture.scanner(home: nil),
                 now: { now },
                 pricing: { TestPricing.bundled }

@@ -54,6 +54,23 @@ final class UsageReaderTests: XCTestCase {
         XCTAssertTrue(result.warnings.isEmpty)
     }
 
+    func testUnresolvedClaudeIdentityRejectsFreshPersistedCacheBeforeReturning() async throws {
+        let defaults = defaults()
+        let provider = StubProvider(id: "claude")
+        ProviderSnapshotCache(userDefaults: defaults).store(
+            await provider.refresh(), producedByIdentityKey: "previous-account"
+        )
+        provider.refreshCount = 0
+        provider.refreshError = "Claude account identity could not be verified."
+
+        let result = try await UsageReader(userDefaults: defaults, providers: [provider]).read(providerID: "claude")
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: result.data) as? [String: Any])
+
+        XCTAssertEqual(provider.refreshCount, 1)
+        XCTAssertTrue(try XCTUnwrap(root["providers"] as? [String: Any]).isEmpty)
+        XCTAssertEqual(result.warnings, ["claude: Claude account identity could not be verified."])
+    }
+
     func testForceUsesSharedProviderAndStoresResult() async throws {
         let defaults = defaults()
         let provider = StubProvider()

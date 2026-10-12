@@ -5,6 +5,18 @@ import XCTest
 final class StalenessLabelTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
+    func testClaudeOutdatedUsesThirtyMinutesSinceLastQuotaObservation() {
+        let store = makeStore()
+        var value = ProviderSnapshot(providerID: "claude@work", displayName: "Claude", lines: [], refreshedAt: now)
+        value.quotaObservedAt = now.addingTimeInterval(-1799)
+        value.usageRetryAfter = now.addingTimeInterval(3600)
+        store.snapshots["claude@work"] = value
+        XCTAssertNil(store.stalenessHint(for: "claude@work"))
+        value.quotaObservedAt = now.addingTimeInterval(-1800)
+        store.snapshots["claude@work"] = value
+        XCTAssertNotNil(store.stalenessHint(for: "claude@work"))
+    }
+
     func testFreshSnapshotHasNoStalenessLabel() {
         let store = makeStore()
         store.snapshots["devin"] = snapshot(refreshedAt: now)
