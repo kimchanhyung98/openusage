@@ -73,6 +73,22 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         XCTAssertNil(shared.warning)
     }
 
+    func testBackwardClockChangeDoesNotReuseAnEarlierCompletedRequest() async {
+        let store = isolatedClaudeUsageStore()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = OSAllocatedUnfairLock(initialState: start)
+        let files = credentials()
+        let http = FakeHTTPClient(response: HTTPResponse(
+            statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":25}}"#.utf8)
+        ))
+        let first = await provider(files: files, http: http, store: store, now: { clock.withLock { $0 } }).refresh()
+        XCTAssertEqual(first.quotaObservedAt, start)
+        clock.withLock { $0 = start.addingTimeInterval(-3600) }
+        let second = await provider(files: files, http: http, store: store, now: { clock.withLock { $0 } }).refresh()
+        XCTAssertEqual(http.requests.count, 2)
+        XCTAssertEqual(second.liveQuotaObservedAt, start.addingTimeInterval(-3600))
+    }
+
     func testConcurrentTokenRotationStillSharesOneUsageRequest() async throws {
         let contended = expectation(description: "Second provider waits during token rotation")
         let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
@@ -160,19 +176,50 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         }
     }
 
+    func testConcurrentTokenRefreshFailuresHaveTheSameError() async throws {
+        for disconnected in [false, true] {
+            let started = expectation(description: "Token refresh started")
+            let contended = expectation(description: "Second provider waits for token refresh")
+            let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
+            let gate = UsageGate()
+            let files = credentials()
+            files.files["/tmp/claude/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"old","refreshToken":"refresh","expiresAt":1,"scopes":["user:profile"]}}"#
+            let http = RoutingHTTPClient { _ in
+                started.fulfill()
+                await gate.wait()
+                if disconnected { throw URLError(.notConnectedToInternet) }
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data("invalid".utf8))
+            }
+            let first = provider(files: files, http: http, store: store)
+            let second = provider(files: files, http: http, store: store)
+            let original = Task { await first.refresh() }
+            await fulfillment(of: [started], timeout: 2)
+            let waiting = Task { await second.refresh() }
+            await fulfillment(of: [contended], timeout: 2)
+            await gate.open()
+            let firstResult = await original.value
+            let shared = await waiting.value
+            XCTAssertEqual(http.requests.count, 1)
+            XCTAssertFalse(firstResult.lines.isEmpty)
+            XCTAssertTrue(firstResult.lines.allSatisfy(\.isError))
+            XCTAssertEqual(firstResult.lines, shared.lines)
+            XCTAssertEqual(firstResult.errorCategory, shared.errorCategory)
+        }
+    }
+
     private actor UsageGate {
-        private var continuation: CheckedContinuation<Void, Never>?
+        private var continuations: [CheckedContinuation<Void, Never>] = []
         private var opened = false
 
         func wait() async {
             guard !opened else { return }
-            await withCheckedContinuation { continuation = $0 }
+            await withCheckedContinuation { continuations.append($0) }
         }
 
         func open() {
             opened = true
-            continuation?.resume()
-            continuation = nil
+            for continuation in continuations { continuation.resume() }
+            continuations.removeAll()
         }
     }
 

@@ -133,10 +133,12 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         coordinator.setActive(true)
         let newerStarted = await eventually { await loader.count() == 2 }
         XCTAssertTrue(newerStarted)
+        XCTAssertTrue(coordinator.isRefreshing)
 
         await loader.resume(at: 1, returning: newer)
         let newerPublished = await eventually { published == [nil, newer] }
         XCTAssertTrue(newerPublished)
+        XCTAssertFalse(coordinator.isRefreshing, "an older activation must not keep the new activation busy")
 
         await loader.resume(at: 0, returning: older)
         try? await Task.sleep(for: .milliseconds(10))
@@ -223,6 +225,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
                 coordinator.setActive(true)
                 let reactivated = await eventually { published == [initial, nil, initial] }
                 XCTAssertTrue(reactivated)
+                XCTAssertFalse(coordinator.isRefreshing, "the old manual load belongs to the previous activation")
             }
             await loader.resumeNext(returning: late)
             await manual.value
