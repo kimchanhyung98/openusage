@@ -22,64 +22,81 @@ extension ClaudeProvider {
         }
         // 잠금을 기다린 앱·CLI는 방금 끝난 같은 계정의 결과를 공유하며 수동 요청도 중복 전송하지 않음.
         if let completedAt = record.completedAt,
-           (completedAt > requestedAt || (lease.waited && completedAt == requestedAt)),
-           var cached = record.lastGood, record.retryAfter == nil {
-            cached.liveQuotaObservedAt = nil
-            return cached
+           (completedAt > requestedAt || (lease.waited && completedAt == requestedAt)) {
+            if let failure = record.lastFailure { throw failure }
+            if var cached = record.lastGood, record.retryAfter == nil {
+                cached.liveQuotaObservedAt = nil
+                return cached
+            }
         }
 
-        var expectedGeneration = credentialGeneration
-        defer { credentialGeneration = expectedGeneration }
-        if authStore.needsRefresh(state.oauth),
-           let refreshToken = state.oauth.refreshToken, !refreshToken.isEmpty {
-            let refreshed = try await refreshAccessToken(
-                state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration
-            )
-            state.oauth.accessToken = refreshed.accessToken
-            if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(state) }
-        }
-
-        var working = state
-        defer { state = working }
-        let response = try await ProviderAuthRetry.fetch(
-            token: working.oauth.accessToken ?? "",
-            attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: self.authStore.oauthConfig()) },
-            refreshAccessToken: {
-                if working.source == .desktop { throw ClaudeAuthError.desktopTokenExpired }
-                guard let refreshToken = working.oauth.refreshToken, !refreshToken.isEmpty else {
-                    throw ClaudeAuthError.tokenExpired
-                }
-                let refreshed = try await self.refreshAccessToken(
-                    state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration
+        do {
+            var expectedGeneration = credentialGeneration
+            defer { credentialGeneration = expectedGeneration }
+            if authStore.needsRefresh(state.oauth),
+               let refreshToken = state.oauth.refreshToken, !refreshToken.isEmpty {
+                let refreshed = try await refreshAccessToken(
+                    state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration
                 )
-                if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
-                return refreshed.accessToken
-            },
-            connectionFailed: ClaudeUsageError.connectionFailed,
-            authExpired: ClaudeAuthError.tokenExpired
-        )
-        let observedAt = now()
-        if response.statusCode == 429 {
-            record.rateLimited(
-                now: observedAt,
-                retryAfterSeconds: ClaudeUsageMapper.parseRetryAfterSeconds(response, now: observedAt)
+                state.oauth.accessToken = refreshed.accessToken
+                if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(state) }
+            }
+
+            var working = state
+            defer { state = working }
+            let response = try await ProviderAuthRetry.fetch(
+                token: working.oauth.accessToken ?? "",
+                attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: self.authStore.oauthConfig()) },
+                refreshAccessToken: {
+                    if working.source == .desktop { throw ClaudeAuthError.desktopTokenExpired }
+                    guard let refreshToken = working.oauth.refreshToken, !refreshToken.isEmpty else {
+                        throw ClaudeAuthError.tokenExpired
+                    }
+                    let refreshed = try await self.refreshAccessToken(
+                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration
+                    )
+                    if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
+                    return refreshed.accessToken
+                },
+                connectionFailed: ClaudeUsageError.connectionFailed,
+                authExpired: ClaudeAuthError.tokenExpired
             )
+            let observedAt = now()
+            if response.statusCode == 429 {
+                record.rateLimited(
+                    now: observedAt,
+                    retryAfterSeconds: ClaudeUsageMapper.parseRetryAfterSeconds(response, now: observedAt)
+                )
+                let saved = record
+                try await loadOffMainActor { try lease.save(saved) }
+                AppLog.warn(LogTag.plugin("claude"), "usage rate limited; account cooldown saved")
+                try await validateUsageCredentials(working, expected: expectedGeneration)
+                return rateLimitedUsage(record, credentials: working.oauth)
+            }
+
+            try await validateUsageCredentials(working, expected: expectedGeneration)
+            try Task.checkCancellation()
+            var mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: observedAt)
+            mapped.liveQuotaObservedAt = observedAt
+            mapped.quotaObservedAt = observedAt
+            record.succeeded(mapped, at: observedAt)
             let saved = record
             try await loadOffMainActor { try lease.save(saved) }
-            AppLog.warn(LogTag.plugin("claude"), "usage rate limited; account cooldown saved")
-            try await validateUsageCredentials(working, expected: expectedGeneration)
-            return rateLimitedUsage(record, credentials: working.oauth)
+            return mapped
+        } catch {
+            let failure: ClaudeUsageError? = switch error {
+            case let error as ClaudeUsageError: error
+            case is DecodingError: .invalidResponse
+            case let error as URLError where error.code != .cancelled: .connectionFailed
+            default: nil
+            }
+            if let failure, !Task.isCancelled {
+                record.failed(failure, at: now())
+                let saved = record
+                try await loadOffMainActor { try lease.save(saved) }
+            }
+            throw error
         }
-
-        try await validateUsageCredentials(working, expected: expectedGeneration)
-        try Task.checkCancellation()
-        var mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: observedAt)
-        mapped.liveQuotaObservedAt = observedAt
-        mapped.quotaObservedAt = observedAt
-        record.succeeded(mapped, at: observedAt)
-        let saved = record
-        try await loadOffMainActor { try lease.save(saved) }
-        return mapped
     }
 
     private func validateUsageCredentials(

@@ -81,7 +81,7 @@ final class WidgetDataStore {
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
     @ObservationIgnored private var isEvaluatingNotifications = false
-    @ObservationIgnored private var needsNotificationEvaluation = false
+    @ObservationIgnored private var pendingNotificationEvaluationAt: Date?
 
     /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
     /// 테스트·프리뷰에서는 nil(no-op).
@@ -379,16 +379,14 @@ final class WidgetDataStore {
     /// 주기 loop에서 구동해 시간 경과만으로 악화된 pace도 포착. 이번 pass에 방문하지 않은 metric의
     /// 상태는 prune — 재활성화·재추가 시 stale "already fired" flag 없이 fresh 시작.
     func evaluateNotifications(now: Date = Date()) async {
-        if isEvaluatingNotifications {
-            needsNotificationEvaluation = true
-            return
-        }
+        pendingNotificationEvaluationAt = now
+        guard !isEvaluatingNotifications else { return }
         isEvaluatingNotifications = true
         defer { isEvaluatingNotifications = false }
-        repeat {
-            needsNotificationEvaluation = false
-            await evaluateNotificationPass(now: now)
-        } while needsNotificationEvaluation && !Task.isCancelled
+        while let requestedAt = pendingNotificationEvaluationAt, !Task.isCancelled {
+            pendingNotificationEvaluationAt = nil
+            await evaluateNotificationPass(now: requestedAt)
+        }
     }
 
     private func evaluateNotificationPass(now: Date) async {

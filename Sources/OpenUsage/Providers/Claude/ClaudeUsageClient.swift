@@ -12,7 +12,7 @@ struct ClaudeRefreshResponse: Decodable, Hashable, Sendable {
     }
 }
 
-enum ClaudeUsageError: Error, LocalizedError, Equatable {
+enum ClaudeUsageError: Error, LocalizedError, Equatable, Codable {
     case connectionFailed
     case invalidResponse
     case requestFailed(Int)

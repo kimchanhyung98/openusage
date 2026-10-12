@@ -112,13 +112,13 @@ struct PopoverFooter: View {
         let waiting = claudeIDs.filter { (dataStore.snapshots[$0]?.usageRetryAfter ?? .distantPast) > now }
         let regularClaude = claudeIDs.filter { !waiting.contains($0) }
         return RefreshSchedulePresentation.rows(
-            general: enabled.isEmpty ? nil : dataStore.nextGeneralRefreshAt ?? now,
-            claude: regularClaude.map { dataStore.scheduledRefreshDate(for: $0) ?? now }.min(),
+            general: enabled.isEmpty ? nil : dataStore.nextGeneralRefreshAt,
+            claude: regularClaude.compactMap { dataStore.scheduledRefreshDate(for: $0) }.min(),
             claudeRetry: waiting.compactMap { dataStore.scheduledRefreshDate(for: $0) }.min(),
             resetWatch: container.resetWatchCoordinator.isActive
-                ? container.resetWatchCoordinator.nextRefreshAt ?? now : nil,
+                ? container.resetWatchCoordinator.nextRefreshAt : nil,
             codexTimer: enabled.contains { ProviderAccountID.family(of: $0) == "codex" }
-                ? container.nextCodexTimerCheckAt ?? now : nil
+                ? container.nextCodexTimerCheckAt : nil
         )
     }
 }

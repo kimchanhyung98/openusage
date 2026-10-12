@@ -9,19 +9,27 @@ struct ClaudeUsageStateStore: Sendable {
         var consecutiveRateLimits = 0
         var retryAfter: Date?
         var lastGood: ClaudeMappedUsage?
+        var lastFailure: ClaudeUsageError?
         var completedAt: Date?
 
         mutating func rateLimited(now: Date, retryAfterSeconds: Int?) {
             consecutiveRateLimits = min(consecutiveRateLimits + 1, 3)
             let minimum = RefreshSetting.slowInterval * pow(2, Double(consecutiveRateLimits - 1))
             retryAfter = now.addingTimeInterval(max(minimum, Double(retryAfterSeconds ?? 0)))
+            lastFailure = nil
             completedAt = now
         }
 
         mutating func succeeded(_ usage: ClaudeMappedUsage, at date: Date) {
             lastGood = usage
+            lastFailure = nil
             consecutiveRateLimits = 0
             retryAfter = nil
+            completedAt = date
+        }
+
+        mutating func failed(_ error: ClaudeUsageError, at date: Date) {
+            lastFailure = error
             completedAt = date
         }
     }
@@ -67,6 +75,7 @@ struct ClaudeUsageStateStore: Sendable {
                       (record.retryAfter == nil) == (record.consecutiveRateLimits == 0),
                       record.retryAfter.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
                       record.completedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
+                      record.lastFailure == nil || record.completedAt != nil,
                       record.lastGood.map({ $0.quotaObservedAt != nil && $0.retryAfter == nil }) ?? true
                 else { throw StoreError.invalidRecord }
                 return record
@@ -99,10 +108,15 @@ struct ClaudeUsageStateStore: Sendable {
     }
 
     let directory: URL
+    private let onContention: @Sendable () -> Void
 
-    init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("OpenUsage/claude-usage-state")) {
+    init(
+        directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("OpenUsage/claude-usage-state"),
+        onContention: @escaping @Sendable () -> Void = {}
+    ) {
         self.directory = directory
+        self.onContention = onContention
     }
 
     func acquire(accountKey: String) async throws -> Lease {
@@ -140,6 +154,7 @@ struct ClaudeUsageStateStore: Sendable {
                     throw StoreError.storageUnavailable
                 }
                 guard clock.now < deadline else { throw StoreError.busy }
+                if !waited { onContention() }
                 waited = true
                 try await Task.sleep(for: .milliseconds(50))
             }

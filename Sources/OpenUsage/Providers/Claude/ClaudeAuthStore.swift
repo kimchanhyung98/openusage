@@ -3,7 +3,7 @@ import Foundation
 
 private struct ClaudeUsageIdentityEnvironment: EnvironmentReading {
     let base: EnvironmentReading
-    let configDir: String
+    let configDir: String?
 
     func value(for key: String) -> String? {
         key == "CLAUDE_CONFIG_DIR" ? configDir : base.value(for: key)
@@ -232,7 +232,10 @@ struct ClaudeAuthStore: Sendable {
         }
         var stored = orderedStoredCandidates()
         let identity = usageAccountIdentity()
-        for index in stored.indices { stored[index].accountIdentityKey = identity }
+        // 홈 메타데이터는 우선 사용되는 로그인만 식별. 별도 파일의 폴백 토큰까지 같은 계정으로 추정 금지.
+        if let index = stored.firstIndex(where: { $0.hasUsableAccessToken && liveUsageAvailability($0) == .available }) {
+            stored[index].accountIdentityKey = identity
+        }
         var desktopStatus: ClaudeDesktopCredentialStatus = .notChecked
         // CLI 로그인이 source of truth, Desktop은 폴백 전용 — `.configDir` 카드는 Desktop 미조회(다른 카드의 로그인).
         let desktopAllowed = scope == .standard && allowsDesktopFallback
@@ -507,6 +510,11 @@ struct ClaudeAuthStore: Sendable {
     private func loadKeychainCredentials() -> ClaudeCredentialState? {
         // service 이름은 로그 가능; 반환된 credential blob·OAuth 토큰 로깅 금지.
         for service in keychainServiceCandidates() {
+            if scope == .standard, claudeHomeOverride() != nil,
+               service == Self.baseKeychainServiceName(environment: environment) {
+                guard let identity = usageAccountIdentity(),
+                      usageAccountIdentity(useDefaultHome: true) == identity else { continue }
+            }
             if let state = credentialState(
                 from: try? keychain.readGenericPasswordForCurrentUser(service: service),
                 service: service, source: .keychainCurrentUser(service: service)
@@ -545,11 +553,14 @@ struct ClaudeAuthStore: Sendable {
         )
     }
 
-    private func usageAccountIdentity() -> String? {
+    private func usageAccountIdentity(useDefaultHome: Bool = false) -> String? {
         var observer = DefaultAccountObserver(
             environment: environment, files: files, keychain: keychain, pinsClaudeSharedHome: pinsSharedHome
         )
-        if case .configDir(let path, _) = scope {
+        if useDefaultHome {
+            observer.environment = ClaudeUsageIdentityEnvironment(base: environment, configDir: nil)
+            observer.pinsClaudeSharedHome = false
+        } else if case .configDir(let path, _) = scope {
             observer.environment = ClaudeUsageIdentityEnvironment(base: environment, configDir: path)
             observer.pinsClaudeSharedHome = false
         }

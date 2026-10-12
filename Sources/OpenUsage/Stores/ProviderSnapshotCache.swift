@@ -32,8 +32,8 @@ struct ProviderSnapshotCache {
     init(
         userDefaults: UserDefaults = .standard,
         // storage key 버전 bump는 pre-upgrade 캐시를 폐기 — schema 확장 필드를 1회 refetch로 즉시 반영.
-        // v9: `producedByIdentityKeys` sidecar 추가 — account swap 후 launch가 이전 account의 캐시를 식별·폐기.
-        storageKey: String = "openusage.providerSnapshots.v9",
+        // v10: 마지막 정상 한도 시각 도입 — 이전 캐시의 로컬 갱신 시각을 한도 조회 시각으로 재사용 금지.
+        storageKey: String = "openusage.providerSnapshots.v10",
         ttl: TimeInterval? = nil,
         allowsPersistedFreshness: Bool = false,
         now: @escaping () -> Date = Date.init
