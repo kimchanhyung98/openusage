@@ -248,6 +248,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         var calendar: Calendar
         var checks: [Date] = []
         var deadlines: [Date] = []
+        var scheduledDates: [Date] = []
         var onCheck: (@MainActor (Timeline) async -> Void)?
         private var steps: [Step]
 
@@ -263,6 +264,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
                 now: { self.now },
                 calendar: { self.calendar },
                 wait: { deadline in
+                    XCTAssertEqual(self.scheduledDates.last, deadline)
                     self.deadlines.append(deadline)
                     guard !self.steps.isEmpty else { return nil }
                     let step = self.steps.removeFirst()
@@ -270,6 +272,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
                     if let timeZone = step.timeZone { self.calendar.timeZone = timeZone }
                     return step.event
                 },
+                scheduleChanged: { self.scheduledDates.append($0) },
                 check: {
                     self.checks.append(self.now)
                     await self.onCheck?(self)

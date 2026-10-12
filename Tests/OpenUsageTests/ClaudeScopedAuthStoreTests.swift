@@ -108,4 +108,39 @@ final class ClaudeScopedAuthStoreTests: XCTestCase {
         XCTAssertEqual(load.desktopStatus, .notFound)
         XCTAssertTrue(load.candidates.isEmpty)
     }
+
+    func testDefaultKeychainCannotBorrowAnOverrideHomesIdentity() {
+        let environment = FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude-work"])
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+        let files = FakeFiles([
+            "/tmp/claude-work/.claude.json": claudeUsageTestIdentity("work-account"),
+            "/tmp/claude-work/.credentials.json": #"{"claudeAiOauth":{"accessToken":"work-token"}}"#,
+            FileManager.default.homeDirectoryForCurrentUser.path + "/.claude.json": claudeUsageTestIdentity("personal-account")
+        ])
+        let keychain = ServiceKeychain(values: [baseService: #"{"claudeAiOauth":{"accessToken":"personal-token"}}"#])
+        let store = ClaudeAuthStore(environment: environment, files: files, keychain: keychain)
+
+        let candidates = store.loadCredentialSet().candidates
+
+        XCTAssertEqual(candidates.map(\.oauth.accessToken), ["work-token"])
+        XCTAssertEqual(candidates.first?.accountIdentityKey, "work-account|test-org")
+    }
+
+    func testHomeIdentityIsNotCopiedToAnUnverifiedFallbackCredential() {
+        let environment = FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude-work"])
+        let service = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: "/tmp/claude-work", environment: environment
+        )
+        let files = FakeFiles([
+            "/tmp/claude-work/.claude.json": claudeUsageTestIdentity("primary-account"),
+            "/tmp/claude-work/.credentials.json": #"{"claudeAiOauth":{"accessToken":"other-token"}}"#
+        ])
+        let keychain = ServiceKeychain(values: [service: #"{"claudeAiOauth":{"accessToken":"primary-token"}}"#])
+        let candidates = ClaudeAuthStore(environment: environment, files: files, keychain: keychain)
+            .loadCredentialSet().candidates
+
+        XCTAssertEqual(candidates.map(\.oauth.accessToken), ["primary-token", "other-token"])
+        XCTAssertEqual(candidates.first?.accountIdentityKey, "primary-account|test-org")
+        XCTAssertNil(candidates.last?.accountIdentityKey)
+    }
 }

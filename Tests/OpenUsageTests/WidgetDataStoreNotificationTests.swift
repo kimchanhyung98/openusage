@@ -188,6 +188,45 @@ final class WidgetDataStoreNotificationTests: XCTestCase {
         XCTAssertTrue(recorder.posts.isEmpty, "a delivery waiting on the previous account must not be submitted")
     }
 
+    func testCoalescedNotificationPassUsesTheLatestRequestedTime() async {
+        let defaults = makeUserDefaults("coalesced-time")
+        let settings = NotificationSettingsStore(defaults: defaults)
+        allOn(settings)
+        let descriptor = Self.descriptor()
+        let runtime = MutableRuntime(provider: Self.provider, descriptors: [descriptor], snapshot: snapshot(used: 80))
+        let gate = DeliveryGate()
+        let deliveryStarted = expectation(description: "first notification awaiting delivery")
+        var posts: [String] = []
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [Self.provider], descriptors: [descriptor]),
+            providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults, notificationSettings: { settings },
+            postNotification: { id, _, _, _, _ in
+                posts.append(id)
+                if posts.count == 1 {
+                    deliveryStarted.fulfill()
+                    await gate.wait()
+                }
+                return true
+            }
+        )
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base)
+        runtime.snapshot = snapshot(used: 87)
+        await store.refreshAll(force: true)
+        let first = Task { await store.evaluateNotifications(now: base) }
+        await fulfillment(of: [deliveryStarted], timeout: 2)
+
+        runtime.snapshot = snapshot(used: 95, resetsAt: resetsAt.addingTimeInterval(week))
+        await store.refreshAll(force: true)
+        await store.evaluateNotifications(now: base.addingTimeInterval(week))
+        await gate.open()
+        await first.value
+
+        XCTAssertEqual(posts.filter { $0 == "test.healthyToClose" }.count, 1)
+        XCTAssertEqual(posts.filter { $0 == "test.closeToRunningOut" }.count, 1)
+    }
+
     func testCatalogReplacementInvalidatesOnlyUnresolvedAccountFamilyDeliveries() async {
         let cases: [(id: String, identity: String?, remainsCurrent: Bool)] = [
             ("claude", nil, false), ("codex", nil, false),

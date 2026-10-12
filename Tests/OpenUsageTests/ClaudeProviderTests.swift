@@ -513,8 +513,7 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertTrue(saved.contains("refresh-2"))
     }
 
-    func testFallsBackToFileWhenKeychainTokenIsLockedOut() async {
-        // #687: keychain의 revoked token 대신 파일의 fresh token으로 fall through해 복구
+    func testRejectsUnverifiedFileAfterKeychainAuthenticationFailure() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
@@ -557,14 +556,12 @@ final class ClaudeProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        // file source에서 복구: plan·usage가 fresh token 반영, error badge 없음
-        XCTAssertEqual(snapshot.plan, "Pro")
-        XCTAssertEqual(Self.progress(snapshot.lines, "Session")?.used, 42)
-        XCTAssertNil(badge(snapshot.lines, "Error"))
+        XCTAssertNil(Self.progress(snapshot.lines, "Session"))
+        XCTAssertEqual(badge(snapshot.lines, "Error"), ClaudeUsageStateStore.StoreError.identityUnavailable.localizedDescription)
+        XCTAssertFalse(httpClient.requests.contains { $0.headers["Authorization"] == "Bearer fresh-access" })
     }
 
-    func testSurfacesAuthErrorWhenAllCredentialSourcesAreExpired() async {
-        // keychain·file 모두 revoked인 상태는 조용한 복구 대신 auth error를 명확히 노출
+    func testSurfacesAuthErrorWhenTheIdentifiedCredentialIsExpired() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
@@ -577,10 +574,6 @@ final class ClaudeProviderTests: XCTestCase {
             keychain: keychain,
             now: { now }
         )
-        let hashedService = authStore.keychainServiceCandidates().first!
-        keychain.currentUserValues[hashedService] = #"{"claudeAiOauth":{"accessToken":"keychain-stale","refreshToken":"keychain-refresh","expiresAt":4102444800000,"subscriptionType":"max","scopes":["user:profile"]}}"#
-
-        // 모든 usage 호출 401 + 모든 refresh revoked → 두 source 모두 사용 불가
         let httpClient = RoutingHTTPClient { request in
             if request.url.absoluteString.hasSuffix("/api/oauth/usage") {
                 return HTTPResponse(statusCode: 401, headers: [:], body: Data())

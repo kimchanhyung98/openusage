@@ -2,7 +2,7 @@ import XCTest
 @testable import OpenUsage
 
 final class RefreshSchedulePresentationTests: XCTestCase {
-    func testInactiveGroupsAreOmittedAndClaudeRetryDoesNotHideOtherClaudeSchedule() {
+    func testRowsOmitNilGroupsAndKeepClaudeRetryAsSeparateRow() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let rows = RefreshSchedulePresentation.rows(
             general: now.addingTimeInterval(300), claude: now.addingTimeInterval(900),

@@ -208,7 +208,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         })
     }
 
-    func testEarlierCandidateRotationStillAllowsFallbackToNextSource() async {
+    func testEarlierCandidateRotationDoesNotAuthorizeUnverifiedFileFallback() async {
         let fileAccount = credentials(access: "file-b", refresh: "file-refresh", plan: "pro")
         let keychainAccount = credentials(
             access: "keychain-a", refresh: "keychain-refresh", plan: "max"
@@ -238,14 +238,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(
             usageRequests(fixture.http).compactMap { $0.headers["Authorization"] },
-            ["Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b"]
+            ["Bearer keychain-a", "Bearer keychain-a2"]
         )
     }
 
-    func testFailedRotationThenOtherCredentialUsageDoesNotReportRefreshSuccess() async {
+    func testFailedRotationDoesNotQueryUnverifiedFallbackOrReportRefreshSuccess() async {
         let diagnostics = DiagnosticEventRecorder()
         let fileAccount = credentials(access: "file-b", refresh: "file-refresh", plan: "pro")
         let files = FakeFiles([path: fileAccount])
@@ -270,14 +272,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(files.files[path], fileAccount)
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
             DiagnosticEvent(.credentialRefresh, result: .failure, category: .authExpired, providerID: "claude")
         ])
         XCTAssertFalse(diagnostics.events.contains { $0.operation == .credentialSave })
         XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
-            "Bearer keychain-a", "Bearer file-b"
+            "Bearer keychain-a"
         ])
     }
 
@@ -318,13 +322,14 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         ])
     }
 
-    func testPersistenceFailureRemainsDegradedAfterSameGenerationFallbackSavesSuccessfully() async {
+    func testPersistenceFailureDoesNotAuthorizeOrOverwriteUnverifiedFallback() async {
         let diagnostics = DiagnosticEventRecorder()
         let keychainAccount = credentials(access: "keychain-a", refresh: "keychain-refresh", plan: "max")
         let keychain = IsolationFailingKeychain(value: keychainAccount)
-        let files = FakeFiles([path: credentials(
+        let fileAccount = credentials(
             access: "file-b", refresh: "file-refresh", plan: "pro", expiresAt: 1
-        )])
+        )
+        let files = FakeFiles([path: fileAccount])
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
                 let parameters = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(request.body))
@@ -346,17 +351,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(snapshot.plan, "Pro")
-        XCTAssertEqual(sessionUsage(snapshot), 75)
-        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(keychain.value, keychainAccount)
-        XCTAssertTrue(files.files[path]?.contains("file-refresh-2") == true)
+        XCTAssertEqual(files.files[path], fileAccount)
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
-            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude"),
-            DiagnosticEvent(.credentialSave, result: .success, providerID: "claude")
+            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude")
         ])
         XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
-            "Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b2"
+            "Bearer keychain-a", "Bearer keychain-a2"
         ])
     }
 

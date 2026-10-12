@@ -83,7 +83,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertNil(store.snapshots["codex"])
     }
 
-    func testUnresolvedClaudeIdentityDoesNotReuseAnotherAccountsEntry() {
+    func testUnresolvedClaudeIdentityRejectsCachedEntry() {
         let defaults = makeUserDefaults("no-identity")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })
         cache.store(snapshot("claude", used: 40), producedByIdentityKey: "acct-A")

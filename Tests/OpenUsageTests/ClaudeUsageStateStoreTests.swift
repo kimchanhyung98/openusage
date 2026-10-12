@@ -1,6 +1,7 @@
 import XCTest
 @testable import OpenUsage
 
+@MainActor
 final class ClaudeUsageStateStoreTests: XCTestCase {
     func testRetryAfterAcceptsSecondsAndHTTPDateAndRejectsInvalidValues() {
         let now = OpenUsageISO8601.date(from: "2026-10-12T00:00:00.000Z")!
@@ -23,14 +24,18 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
         }
         record.rateLimited(now: now, retryAfterSeconds: 7200)
         XCTAssertEqual(record.retryAfter, now.addingTimeInterval(7200))
+        record.failed(.requestFailed(503), at: now.addingTimeInterval(7201))
+        XCTAssertEqual(record.consecutiveRateLimits, 3)
+        XCTAssertEqual(record.lastFailure, .requestFailed(503))
         record.succeeded(ClaudeMappedUsage(lines: [], quotaObservedAt: now), at: now)
         XCTAssertNil(record.retryAfter)
+        XCTAssertNil(record.lastFailure)
         XCTAssertEqual(record.consecutiveRateLimits, 0)
         record.rateLimited(now: now, retryAfterSeconds: nil)
         XCTAssertEqual(record.retryAfter, now.addingTimeInterval(900))
     }
 
-    func testPersistedAccountsAreIsolatedAndFilesContainNoIdentityOrToken() async throws {
+    func testPersistedAccountsAreIsolatedAndFilesContainNoRawIdentity() async throws {
         let store = isolatedClaudeUsageStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let now = Date()
@@ -57,16 +62,19 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
     }
 
     func testContendingStoreWaitsForTheSavedResultAndCancellationReleasesDescriptor() async throws {
-        let store = isolatedClaudeUsageStore()
+        let cancelledWaitStarted = expectation(description: "Cancelled waiter reached the lock")
+        let successfulWaitStarted = expectation(description: "Successful waiter reached the lock")
+        let store = isolatedClaudeUsageStore(onContention: { cancelledWaitStarted.fulfill() })
         defer { try? FileManager.default.removeItem(at: store.directory) }
         var first: ClaudeUsageStateStore.Lease? = try await store.acquire(accountKey: "account")
         let waiting = Task { try await store.acquire(accountKey: "account") }
-        try await Task.sleep(for: .milliseconds(70))
+        await fulfillment(of: [cancelledWaitStarted], timeout: 2)
         waiting.cancel()
         do { _ = try await waiting.value; XCTFail("Expected cancellation") }
         catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
-        let second = Task { try await store.acquire(accountKey: "account") }
-        try await Task.sleep(for: .milliseconds(70))
+        let contendingStore = ClaudeUsageStateStore(directory: store.directory, onContention: { successfulWaitStarted.fulfill() })
+        let second = Task { try await contendingStore.acquire(accountKey: "account") }
+        await fulfillment(of: [successfulWaitStarted], timeout: 2)
         var record = ClaudeUsageStateStore.Record()
         record.rateLimited(now: Date(), retryAfterSeconds: nil)
         try first?.save(record)

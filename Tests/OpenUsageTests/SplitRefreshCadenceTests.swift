@@ -30,6 +30,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
             claudeWakeSignal: RefreshWakeSignal(center: center), now: { fixture.time }
         )
         await fulfillment(of: [claudeStarted, firstGeneral], timeout: 2)
+        XCTAssertNil(fixture.store.nextScheduledRefresh(for: .claude, at: fixture.time))
         fixture.time = fixture.start.addingTimeInterval(300)
         center.post(name: ProviderEnablementStore.didChangeNotification, object: nil)
         await fulfillment(of: [secondGeneral], timeout: 2)
@@ -71,7 +72,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), fixture.time.addingTimeInterval(900))
     }
 
-    func testDisabledLateResultIsDiscardedAndEnablementFetchesImmediately() async throws {
+    func testDisabledLateResultIsDiscardedAndRefetchesAfterReenable() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         let started = expectation(description: "Claude started")
@@ -106,7 +107,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         XCTAssertEqual(fixture.claude.refreshCount, 1)
     }
 
-    func testSuspendedAndPendingWorkDoNotProducePastDeadlines() async throws {
+    func testSuspendedWorkDoesNotProducePastDeadlines() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         fixture.store.isRefreshSuspended = { _ in true }
