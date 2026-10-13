@@ -67,6 +67,48 @@ final class GrokRefreshSafetyTests: XCTestCase {
         }
     }
 
+    func testUnreadableCredentialsAfterRefreshStopUsageWithoutClaimingSignInChanged() async {
+        for code in [CocoaError.Code.fileReadNoPermission, .fileReadUnknown] {
+            for expiryYear in ["2020", "2099"] {
+                let original = Self.original.replacingOccurrences(of: "2020", with: expiryYear)
+                let files = GrokReadFailingFiles([GrokAuthStore.authPath: original])
+                let http = GrokSafetyHTTP { request in
+                    if request.url == GrokUsageClient.refreshURL {
+                        files.readError = CocoaError(code)
+                        return Self.rotationResponse
+                    }
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                }
+
+                let snapshot = await makeProvider(files: files, http: http).refresh()
+
+                XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+                XCTAssertNil(snapshot.authenticationIssue)
+                XCTAssertEqual(files.backing.files[GrokAuthStore.authPath], original)
+                XCTAssertEqual(files.writeAttempts, 0)
+                XCTAssertEqual(http.requests.map(\.url), expiryYear == "2020"
+                    ? [GrokUsageClient.refreshURL] : [GrokUsageClient.creditsConfigURL, GrokUsageClient.refreshURL])
+            }
+        }
+    }
+
+    func testSaveReportsCredentialAccessFailureSeparatelyFromChangedCredentials() throws {
+        let files = GrokReadFailingFiles([GrokAuthStore.authPath: Self.original])
+        let store = GrokAuthStore(files: files)
+        var state = try XCTUnwrap(store.loadAuthCandidates().first)
+        state.entry.key = "rotated-A"
+        files.readError = CocoaError(.fileReadNoPermission)
+
+        XCTAssertThrowsError(try store.save(state)) { error in
+            XCTAssertEqual(error as? GrokAuthError, .credentialReadFailed)
+            XCTAssertEqual(ErrorCategory.classify(error), .credentialAccess)
+            XCTAssertFalse(error.localizedDescription.contains("sign-in changed"))
+        }
+
+        XCTAssertEqual(files.writeAttempts, 0)
+        XCTAssertEqual(files.backing.files[GrokAuthStore.authPath], Self.original)
+    }
+
     func testConcurrentSiblingChangesAreKeptWhenTheSelectedEntryIsUnchanged() async throws {
         let files = FakeFiles([GrokAuthStore.authPath: Self.original])
         let http = GrokSafetyHTTP { request in
@@ -162,5 +204,24 @@ private final class GrokWriteFailingFiles: TextFileAccessing, @unchecked Sendabl
     func writeText(_ path: String, _ text: String) throws {
         writeAttempts += 1
         throw CocoaError(.fileWriteNoPermission)
+    }
+}
+
+private final class GrokReadFailingFiles: TextFileAccessing, @unchecked Sendable {
+    let backing: FakeFiles
+    var readError: CocoaError?
+    private(set) var writeAttempts = 0
+
+    init(_ files: [String: String]) { backing = FakeFiles(files) }
+
+    func exists(_ path: String) -> Bool { backing.exists(path) }
+    func readText(_ path: String) throws -> String {
+        if let readError { throw readError }
+        return try backing.readText(path)
+    }
+    func remove(_ path: String) throws { try backing.remove(path) }
+    func writeText(_ path: String, _ text: String) throws {
+        writeAttempts += 1
+        try backing.writeText(path, text)
     }
 }
