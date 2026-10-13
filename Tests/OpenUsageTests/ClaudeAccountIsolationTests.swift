@@ -322,7 +322,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         ])
     }
 
-    func testPersistenceFailureDoesNotAuthorizeOrOverwriteUnverifiedFallback() async {
+    func testPersistenceFailureStillVerifiesRotatedFileFallbackWithoutOverwritingKeychain() async {
         let diagnostics = DiagnosticEventRecorder()
         let keychainAccount = credentials(access: "keychain-a", refresh: "keychain-refresh", plan: "max")
         let keychain = IsolationFailingKeychain(value: keychainAccount)
@@ -344,7 +344,9 @@ final class ClaudeAccountIsolationTests: XCTestCase {
                 ))
             }
             if request.headers["Authorization"] == "Bearer file-b2" {
-                return Self.usageResponse(percent: 75)
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"account":{"uuid":"account-b"},"organization":{"uuid":"test-org"}}"#.utf8
+                ))
             }
             return HTTPResponse(statusCode: 401, headers: [:], body: Data())
         }
@@ -355,9 +357,12 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         XCTAssertFalse(snapshot.lines.isEmpty)
         XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(keychain.value, keychainAccount)
-        XCTAssertEqual(files.files[path], fileAccount)
+        let saved = ClaudeAuthStore.parseCredentials(files.files[path] ?? "")?.claudeAiOauth
+        XCTAssertEqual(saved?.accessToken, "file-b2")
+        XCTAssertEqual(saved?.refreshToken, "file-refresh-2")
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
-            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude")
+            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude"),
+            DiagnosticEvent(.credentialSave, result: .success, providerID: "claude")
         ])
         XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
             "Bearer keychain-a", "Bearer keychain-a2"

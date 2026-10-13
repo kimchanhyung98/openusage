@@ -301,7 +301,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         let failed = await store.refresh(providerID: "claude", force: true)
         XCTAssertEqual(failed, .failed)
         XCTAssertNil(store.snapshots["claude"], "a failed replacement must not restore the previous account's usage")
-        XCTAssertEqual(http.requests.count, 1)
+        XCTAssertEqual(http.requests.map(\.url.path), ["/api/oauth/usage", "/api/oauth/profile"])
     }
 
     func testHasStaleAccountStampSemantics() {

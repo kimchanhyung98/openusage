@@ -513,7 +513,7 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertTrue(saved.contains("refresh-2"))
     }
 
-    func testRejectsUnverifiedFileAfterKeychainAuthenticationFailure() async {
+    func testFallsBackToVerifiedFileAfterKeychainAuthenticationFailure() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
@@ -542,6 +542,11 @@ final class ClaudeProviderTests: XCTestCase {
                     body: Data(#"{"five_hour":{"utilization":42,"resets_at":"2099-01-01T00:00:00.000Z"}}"#.utf8)
                 )
             }
+            if request.url.path.hasSuffix("/profile") {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"account":{"uuid":"account-a"},"organization":{"uuid":"test-org"}}"#.utf8
+                ))
+            }
             // refresh endpoint: stale 후보만 도달, 해당 refresh token은 revoked
             return HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
         }
@@ -556,9 +561,11 @@ final class ClaudeProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        XCTAssertNil(Self.progress(snapshot.lines, "Session"))
-        XCTAssertEqual(badge(snapshot.lines, "Error"), ClaudeUsageStateStore.StoreError.identityUnavailable.localizedDescription)
-        XCTAssertFalse(httpClient.requests.contains { $0.headers["Authorization"] == "Bearer fresh-access" })
+        XCTAssertEqual(Self.progress(snapshot.lines, "Session")?.used, 42)
+        XCTAssertNil(badge(snapshot.lines, "Error"))
+        XCTAssertEqual(httpClient.requests.map(\.url.path), [
+            "/api/oauth/usage", "/v1/oauth/token", "/api/oauth/profile", "/api/oauth/usage"
+        ])
     }
 
     func testSurfacesAuthErrorWhenTheIdentifiedCredentialIsExpired() async {

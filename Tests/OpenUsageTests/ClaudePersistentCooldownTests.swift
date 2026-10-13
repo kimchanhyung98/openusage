@@ -122,7 +122,7 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         XCTAssertNil(shared.liveQuotaObservedAt)
     }
 
-    func testMissingAccountIdentityDoesNotSendUsageRequest() async {
+    func testInvalidProfileDoesNotSendUsageRequest() async {
         let store = isolatedClaudeUsageStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let files = credentials()
@@ -131,7 +131,7 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         let result = await provider(files: files, http: http, store: store).refresh()
         XCTAssertFalse(result.lines.isEmpty)
         XCTAssertTrue(result.lines.allSatisfy(\.isError))
-        XCTAssertTrue(http.requests.isEmpty)
+        XCTAssertEqual(http.requests.map(\.url.path), ["/api/oauth/profile"])
     }
 
     func testConcurrentFailuresAreSharedWithoutBlockingLaterRetry() async throws {
