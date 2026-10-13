@@ -430,7 +430,7 @@ final class CodexProvider: ProviderRuntime {
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
         } catch CodexAuthError.credentialsChanged {
             AppDiagnostics.failure(.credentialSave, error: CodexAuthError.credentialsChanged, providerID: provider.id,
-                                   localContext: "sign-in changed during token refresh; discarding refreshed credentials")
+                                   localContext: "sign-in changed during token refresh; stopping shared-source writeback")
             throw CodexAuthError.credentialsChanged
         } catch {
             refreshIsDegraded = true

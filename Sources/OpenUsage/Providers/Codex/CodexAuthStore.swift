@@ -116,19 +116,22 @@ struct CodexAuthStore: Sendable {
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
     let scope: CodexCredentialScope
+    let managedSnapshotProfileID: String?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         scope: CodexCredentialScope = .standard,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        managedSnapshotProfileID: String? = nil
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
         self.scope = scope
         self.now = now
+        self.managedSnapshotProfileID = managedSnapshotProfileID
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
@@ -181,6 +184,7 @@ struct CodexAuthStore: Sendable {
             throw CodexAuthError.credentialsChanged
         }
         guard let current, current.utf8.elementsEqual(original.utf8) else {
+            preserveRotatedManagedSnapshot(state, original: original, allowInteraction: allowInteraction)
             throw CodexAuthError.credentialsChanged
         }
         if Self.parseAuth(original) == state.auth { return state }
@@ -201,6 +205,26 @@ struct CodexAuthStore: Sendable {
         }
         guard let auth = Self.parseAuth(text) else { throw CodexAuthError.invalidAuthPayload }
         return CodexAuthState(auth: auth, source: state.source, sourceText: text)
+    }
+
+    /// 공유 홈이 전환되어도 요청 시작 시점과 같은 관리 계정 snapshot에는 회전된 토큰 보존.
+    private func preserveRotatedManagedSnapshot(
+        _ state: CodexAuthState, original: String, allowInteraction: Bool
+    ) {
+        guard let profileID = managedSnapshotProfileID,
+              case .home(let home) = scope,
+              case .file(let path) = state.source,
+              path == joinPath(home, Self.authFile) else { return }
+        do {
+            guard var snapshot = try loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction),
+                  let snapshotText = snapshot.sourceText,
+                  snapshotText.utf8.elementsEqual(original.utf8) else { return }
+            snapshot.auth = state.auth
+            try save(snapshot, allowInteraction: allowInteraction)
+            AppLog.info(.auth, "Codex rotated credentials preserved in the departed account snapshot")
+        } catch {
+            AppLog.error(.auth, "Codex rotated snapshot credentials could not be saved: \(error.localizedDescription)")
+        }
     }
 
     private func sourceText(_ source: CodexAuthState.Source, allowInteraction: Bool) throws -> String? {
