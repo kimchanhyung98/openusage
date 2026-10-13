@@ -137,6 +137,46 @@ final class ClaudeUnresolvedHistoryTests: XCTestCase {
         XCTAssertEqual(document.providers["codex"], history(tokens: 300, cost: 3))
     }
 
+    func testCancelledBatchPublishesAlreadyRemovedHistoryOnce() async {
+        let claude = makeRuntime()
+        let codex = makeRuntime(id: "codex")
+        let store = makeStore([claude, codex], identities: ["codex": "codex-account"])
+        await store.refreshAll(force: true)
+        let removed = expectation(description: "Claude history removed")
+        let started = expectation(description: "Codex refresh started")
+        let released = expectation(description: "Codex refresh released")
+        var continuation: CheckedContinuation<Void, Never>?
+        codex.beforeRefresh = {
+            await withCheckedContinuation { continuation = $0; started.fulfill() }
+            released.fulfill()
+        }
+        claude.fail()
+        store.onRefreshOutcome = { providerID, outcome, _, _, _ in
+            if providerID == "claude", outcome == .failed { removed.fulfill() }
+        }
+        var notifications = 0
+        store.onLocalHistoryChanged = { [weak store] in
+            notifications += 1
+            XCTAssertNil(store?.localHistoryDocument(deviceID: "local", deviceName: "Local").providers["claude"])
+        }
+        let batch = Task { await store.refreshAll(force: true) }
+        await fulfillment(of: [removed, started], timeout: 2)
+        XCTAssertNil(store.localSnapshots["claude"])
+        XCTAssertEqual(notifications, 0)
+
+        batch.cancel()
+        await batch.value
+
+        XCTAssertEqual(notifications, 1)
+        XCTAssertEqual(
+            store.localHistoryDocument(deviceID: "local", deviceName: "Local").providers["codex"],
+            history(tokens: 100, cost: 1)
+        )
+        continuation?.resume()
+        await fulfillment(of: [released], timeout: 2)
+        XCTAssertEqual(notifications, 1)
+    }
+
     private func makeStore(_ runtimes: [Runtime], identities: [String: String] = [:]) -> WidgetDataStore {
         let suite = "ClaudeUnresolvedHistoryTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -189,6 +229,7 @@ final class ClaudeUnresolvedHistoryTests: XCTestCase {
         let provider: Provider
         let widgetDescriptors: [WidgetDescriptor]
         var snapshot: ProviderSnapshot
+        var beforeRefresh: (() async -> Void)?
 
         init(provider: Provider, snapshot: ProviderSnapshot) {
             self.provider = provider
@@ -199,7 +240,10 @@ final class ClaudeUnresolvedHistoryTests: XCTestCase {
             ]
         }
 
-        func refresh() async -> ProviderSnapshot { snapshot }
+        func refresh() async -> ProviderSnapshot {
+            await beforeRefresh?()
+            return snapshot
+        }
         func hasLocalCredentials() async -> Bool { true }
 
         func fail() {
