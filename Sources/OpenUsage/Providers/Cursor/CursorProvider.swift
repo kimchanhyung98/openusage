@@ -83,11 +83,13 @@ final class CursorProvider: ProviderRuntime {
         if authStore.needsRefresh(accessToken) {
             do {
                 if let refreshed = try await refreshAccessToken(authState: authState) {
-                    authState.accessToken = refreshed
-                    accessToken = refreshed
+                    if refreshed.persisted { authState.accessToken = refreshed.accessToken }
+                    accessToken = refreshed.accessToken
                 } else if accessToken == nil {
                     throw CursorAuthError.notLoggedIn
                 }
+            } catch CursorAuthError.credentialsChanged {
+                throw CursorAuthError.credentialsChanged
             } catch {
                 if accessToken == nil {
                     throw error
@@ -99,7 +101,8 @@ final class CursorProvider: ProviderRuntime {
             throw CursorAuthError.notLoggedIn
         }
 
-        let usageResponse = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let fetchedUsage = try await fetchUsageWithRetry(accessToken: accessToken, authState: &authState)
+        let usageResponse = fetchedUsage.response
         try ProviderAuthRetry.requireSuccess(
             usageResponse,
             authExpired: CursorAuthError.tokenExpired,
@@ -108,8 +111,8 @@ final class CursorProvider: ProviderRuntime {
         guard let usage = ProviderParse.jsonObject(usageResponse.body) else {
             throw CursorUsageError.invalidResponse
         }
-        // usage fetch의 refresh-and-retry 중 access token이 rotate됐을 수 있음 — live 값 읽기.
-        let currentToken = authState.accessToken ?? accessToken
+        // 저장 실패 시 원본 비교용 state와 이번 요청의 live token을 분리.
+        let currentToken = fetchedUsage.accessToken
 
         let (planName, planInfoUnavailable) = await fetchPlanName(accessToken: currentToken)
         let fallback = CursorUsageMapper.shouldUseRequestBasedFallback(
@@ -200,26 +203,31 @@ final class CursorProvider: ProviderRuntime {
         return nil
     }
 
-    private func fetchUsageWithRetry(accessToken: String, authState: inout CursorAuthState) async throws -> HTTPResponse {
+    private func fetchUsageWithRetry(
+        accessToken: String, authState: inout CursorAuthState
+    ) async throws -> (response: HTTPResponse, accessToken: String) {
         var working = authState
+        var currentToken = accessToken
         defer { authState = working }
-        return try await ProviderAuthRetry.fetch(
+        let response = try await ProviderAuthRetry.fetch(
             token: accessToken,
             attempt: { try await self.usageClient.fetchUsage(accessToken: $0) },
             refreshAccessToken: {
                 guard let refreshed = try await self.refreshAccessToken(authState: working) else {
                     throw CursorAuthError.tokenExpired
                 }
-                working.accessToken = refreshed
-                return refreshed
+                if refreshed.persisted { working.accessToken = refreshed.accessToken }
+                currentToken = refreshed.accessToken
+                return refreshed.accessToken
             },
             connectionFailed: CursorUsageError.connectionFailed,
             retriedConnectionFailed: CursorUsageError.usageAfterRefreshFailed,
             authExpired: CursorAuthError.tokenExpired
         )
+        return (response, currentToken)
     }
 
-    private func refreshAccessToken(authState: CursorAuthState) async throws -> String? {
+    private func refreshAccessToken(authState: CursorAuthState) async throws -> (accessToken: String, persisted: Bool)? {
         guard let refreshToken = authState.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
             return nil
         }
@@ -264,15 +272,23 @@ final class CursorProvider: ProviderRuntime {
             throw error
         }
         AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
-        // 선택된 credential source에 저장. SQLite write는 bound parameter 사용; 실패 시 token 없는 일반 오류만 기록.
+        // 원본 source의 token 쌍이 유지된 경우만 저장 — 충돌은 중단, 실제 쓰기 실패만 일시 사용.
+        var persisted = false
         do {
-            try authStore.saveAccessToken(accessToken, source: authState.source)
+            try await loadOffMainActor { [authStore] in
+                try authStore.saveAccessToken(accessToken, replacing: authState)
+            }
+            persisted = true
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+        } catch CursorAuthError.credentialsChanged {
+            AppDiagnostics.failure(.credentialSave, error: CursorAuthError.credentialsChanged, providerID: provider.id,
+                                   localContext: "sign-in changed during token refresh; discarding refreshed credentials")
+            throw CursorAuthError.credentialsChanged
         } catch {
             noteDegraded(.credentialSave, error: error,
                          localContext: "failed to persist rotated access token to the selected Cursor credential store; using it for this session only")
         }
-        return accessToken
+        return (accessToken, persisted)
     }
 
     private func fetchPlanName(accessToken: String) async -> (String?, Bool) {

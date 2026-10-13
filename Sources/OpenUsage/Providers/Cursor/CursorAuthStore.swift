@@ -15,6 +15,7 @@ enum CursorAuthError: Error, LocalizedError, Equatable {
     case notLoggedIn
     case sessionExpired
     case tokenExpired
+    case credentialsChanged
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +25,8 @@ enum CursorAuthError: Error, LocalizedError, Equatable {
             return "Session expired. Sign in via Cursor app or run `agent login`."
         case .tokenExpired:
             return "Token expired. Sign in via Cursor app or run `agent login`."
+        case .credentialsChanged:
+            return "Cursor sign-in changed while refreshing. Refresh again to use the current account."
         }
     }
 }
@@ -36,6 +39,21 @@ struct CursorAuthStore: Sendable {
     static let keychainAccessTokenService = "cursor-access-token"
     static let keychainRefreshTokenService = "cursor-refresh-token"
     static let refreshBufferSeconds: TimeInterval = 5 * 60
+    private static let keychainMutationLock = NSLock()
+    // SQLite 비교도 로더와 같은 Foundation 공백 집합으로 정규화.
+    private static let sqliteTrimCharacters: String = {
+        let whitespace = CharacterSet.whitespacesAndNewlines
+        var scalars = String.UnicodeScalarView()
+        for plane in UInt8(0)...16 where whitespace.hasMember(inPlane: plane) {
+            let start = UInt32(plane) << 16
+            for codePoint in start..<(start + 0x10000) {
+                if let scalar = UnicodeScalar(codePoint), whitespace.contains(scalar) {
+                    scalars.append(scalar)
+                }
+            }
+        }
+        return String(scalars)
+    }()
 
     var sqlite: SQLiteAccessing
     var keychain: KeychainAccessing
@@ -103,28 +121,68 @@ struct CursorAuthStore: Sendable {
         return expiresAt.timeIntervalSince(now()) <= Self.refreshBufferSeconds
     }
 
-    func saveAccessToken(_ accessToken: String, source: CursorAuthState.Source) throws {
-        switch source {
+    func saveAccessToken(_ accessToken: String, replacing original: CursorAuthState) throws {
+        guard original.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil else {
+            throw CursorAuthError.credentialsChanged
+        }
+        switch original.source {
         case .sqlite:
-            try writeStateValue(Self.accessTokenKey, accessToken)
+            let changed: Int
+            do {
+                changed = try sqlite.executeChanges(
+                    path: Self.stateDBPath,
+                    sql: """
+                    INSERT INTO ItemTable (key, value)
+                    SELECT ?, ?
+                    WHERE NULLIF(TRIM((SELECT value FROM ItemTable WHERE key = ? LIMIT 1), ?), '') IS ?
+                      AND NULLIF(TRIM((SELECT value FROM ItemTable WHERE key = ? LIMIT 1), ?), '') IS ?
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+                    """,
+                    bindings: [Self.accessTokenKey, accessToken,
+                               Self.accessTokenKey, Self.sqliteTrimCharacters, original.accessToken,
+                               Self.refreshTokenKey, Self.sqliteTrimCharacters, original.refreshToken]
+                )
+            } catch {
+                guard (try? matchesSQLiteSource(original)) == true else { throw CursorAuthError.credentialsChanged }
+                throw error
+            }
+            guard changed == 1 else { throw CursorAuthError.credentialsChanged }
         case .keychain:
+            // 앱 내부 writer의 비교·쓰기를 직렬화 — 외부 Cursor의 Keychain 변경까지 원자화하지 않음.
+            Self.keychainMutationLock.lock()
+            defer { Self.keychainMutationLock.unlock() }
+            let currentAccess: String?
+            let currentRefresh: String?
+            do {
+                currentAccess = try keychain.readGenericPassword(service: Self.keychainAccessTokenService)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                currentRefresh = try keychain.readGenericPassword(service: Self.keychainRefreshTokenService)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            } catch {
+                AppLog.error(LogTag.auth("cursor"), "credential verification before saving failed: \(error.localizedDescription)")
+                throw CursorAuthError.credentialsChanged
+            }
+            guard currentAccess == original.accessToken, currentRefresh == original.refreshToken else {
+                throw CursorAuthError.credentialsChanged
+            }
             try keychain.writeGenericPassword(service: Self.keychainAccessTokenService, value: accessToken)
         }
     }
 
     private func readStateValue(_ key: String) -> String? {
-        let sql = "SELECT value FROM ItemTable WHERE key = '\(Self.sqlEscaped(key))' LIMIT 1;"
-        guard let value = try? sqlite.queryValue(path: Self.stateDBPath, sql: sql) else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        try? stateValue(key)
     }
 
-    private func writeStateValue(_ key: String, _ value: String) throws {
-        try sqlite.execute(
-            path: Self.stateDBPath,
-            sql: "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?, ?);",
-            bindings: [key, value]
-        )
+    private func matchesSQLiteSource(_ state: CursorAuthState) throws -> Bool {
+        try stateValue(Self.accessTokenKey) == state.accessToken
+            && stateValue(Self.refreshTokenKey) == state.refreshToken
+    }
+
+    private func stateValue(_ key: String) throws -> String? {
+        let sql = "SELECT value FROM ItemTable WHERE key = '\(Self.sqlEscaped(key))' LIMIT 1;"
+        guard let value = try sqlite.queryValue(path: Self.stateDBPath, sql: sql) else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func readKeychainValue(_ service: String) -> String? {

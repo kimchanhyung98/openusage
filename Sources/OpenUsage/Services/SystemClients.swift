@@ -149,12 +149,18 @@ protocol SQLiteAccessing: Sendable {
     func execute(path: String, sql: String) throws
     /// 값은 SQL 텍스트가 아닌 바인딩으로 전달 — secret의 child process argv 유입 차단.
     func execute(path: String, sql: String, bindings: [String]) throws
+    /// 조건부 쓰기의 변경 행 수 반환 — DB 부재는 0, NULL 바인딩 지원.
+    func executeChanges(path: String, sql: String, bindings: [String?]) throws -> Int
 }
 
 extension SQLiteAccessing {
     func execute(path: String, sql: String, bindings: [String]) throws {
         guard bindings.isEmpty else { throw SQLiteError.boundParametersUnsupported }
         try execute(path: path, sql: sql)
+    }
+
+    func executeChanges(path: String, sql: String, bindings: [String?]) throws -> Int {
+        throw SQLiteError.boundParametersUnsupported
     }
 }
 
@@ -185,14 +191,28 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
 
     func execute(path: String, sql: String, bindings: [String]) throws {
         guard !bindings.isEmpty else { return try execute(path: path, sql: sql) }
+        _ = try executePrepared(
+            path: path, sql: sql, bindings: bindings.map { Optional($0) },
+            returnsZeroForMissingDatabase: false
+        )
+    }
+
+    func executeChanges(path: String, sql: String, bindings: [String?]) throws -> Int {
+        try executePrepared(path: path, sql: sql, bindings: bindings, returnsZeroForMissingDatabase: true)
+    }
+
+    private func executePrepared(
+        path: String, sql: String, bindings: [String?], returnsZeroForMissingDatabase: Bool
+    ) throws -> Int {
         var handle: OpaquePointer?
         let expanded = expandHome(path)
-        // Credential DB 갱신 전용 — 부재 시 schema 없는 빈 DB 생성 대신 실패.
+        // Credential DB 갱신 전용 — 부재 시 schema 없는 빈 DB 생성 금지.
         let openResult = sqlite3_open_v2(expanded, &handle, SQLITE_OPEN_READWRITE, nil)
         guard openResult == SQLITE_OK, let handle else {
             let message = handle.map { lastErrorMessage($0) }
                 ?? String(cString: sqlite3_errstr(openResult))
             sqlite3_close_v2(handle)
+            if returnsZeroForMissingDatabase, try databaseExists(path) == false { return 0 }
             throw SQLiteError.queryFailed(message)
         }
         defer { sqlite3_close_v2(handle) }
@@ -211,14 +231,22 @@ struct SQLiteCLIAccessor: SQLiteAccessing {
             )
         }
         for (index, binding) in bindings.enumerated() {
-            guard sqlite3_bind_text(statement, Int32(index + 1), binding, -1, Self.transientDestructor) == SQLITE_OK else {
+            let result: Int32
+            if let binding {
+                result = sqlite3_bind_text(statement, Int32(index + 1), binding, -1, Self.transientDestructor)
+            } else {
+                result = sqlite3_bind_null(statement, Int32(index + 1))
+            }
+            guard result == SQLITE_OK else {
                 throw SQLiteError.queryFailed(lastErrorMessage(handle))
             }
         }
-        let step = sqlite3_step(statement)
-        guard step == SQLITE_DONE || step == SQLITE_ROW else {
+        var step = sqlite3_step(statement)
+        while step == SQLITE_ROW { step = sqlite3_step(statement) }
+        guard step == SQLITE_DONE else {
             throw SQLiteError.queryFailed(lastErrorMessage(handle))
         }
+        return Int(sqlite3_changes(handle))
     }
 
     private static let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
