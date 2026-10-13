@@ -67,6 +67,7 @@ final class ProviderSectionHeaderTests: XCTestCase {
 
         XCTAssertEqual(
             ProviderSectionHeader.issueIndicatorKinds(
+                providerID: "claude",
                 hasWarning: false,
                 serviceStatus: .unknown,
                 refreshing: false
@@ -75,6 +76,7 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
         XCTAssertEqual(
             ProviderSectionHeader.issueIndicatorKinds(
+                providerID: "claude",
                 hasWarning: true,
                 serviceStatus: .operational,
                 refreshing: false
@@ -83,6 +85,7 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
         XCTAssertEqual(
             ProviderSectionHeader.issueIndicatorKinds(
+                providerID: "claude",
                 hasWarning: false,
                 serviceStatus: .disrupted(issue),
                 refreshing: false
@@ -91,6 +94,7 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
         XCTAssertEqual(
             ProviderSectionHeader.issueIndicatorKinds(
+                providerID: "claude",
                 hasWarning: true,
                 serviceStatus: .disrupted(issue),
                 refreshing: false
@@ -99,12 +103,29 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
         XCTAssertEqual(
             ProviderSectionHeader.issueIndicatorKinds(
+                providerID: "claude",
                 hasWarning: true,
                 serviceStatus: .disrupted(issue),
                 refreshing: true
             ),
             [.service]
         )
+    }
+
+    func testServiceIssuesAppearOnlyOnLiveCardsWithoutHidingUsageWarnings() {
+        let issue = ProviderServiceIssue(severity: .degraded, componentName: "CLI", checkedAt: .distantPast)
+        for (providerID, isLive) in [
+            ("claude", true), ("codex", true), ("cursor", true), ("copilot", true),
+            ("claude@profile-work", false), ("codex@abc12345", false),
+        ] {
+            XCTAssertEqual(
+                ProviderSectionHeader.issueIndicatorKinds(
+                    providerID: providerID, hasWarning: true, serviceStatus: .disrupted(issue), refreshing: false
+                ),
+                isLive ? [.usage, .service] : [.usage],
+                providerID
+            )
+        }
     }
 
     func testServerIssueIconPathHasVisibleBounds() {
