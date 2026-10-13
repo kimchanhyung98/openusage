@@ -66,7 +66,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
             return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"already_redeemed"}"#.utf8))
         }
         let router = CodexResetClaimRouter(
-            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _, _ in }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let binding = try binding()
@@ -93,7 +93,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
             throw URLError(.networkConnectionLost)
         }
         let router = CodexResetClaimRouter(
-            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _, _ in }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let first = await original.claim(
@@ -120,7 +120,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
                 : HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
         }
         let router = CodexResetClaimRouter(
-            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _, _ in }
         )
         let confirmed = try XCTUnwrap(router.claimAction(for: "codex", binding: binding()))
         router.reconfigure(providers: [provider(http: http)], identityKeys: ["codex": "account-A"])
@@ -138,7 +138,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
                 return HTTPResponse(statusCode: 500, headers: [:], body: Data())
             }
             let router = CodexResetClaimRouter(
-                providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+                providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _, _ in }
             )
             let confirmed = try XCTUnwrap(router.claimAction(for: "codex", binding: binding()))
             router.reconfigure(
@@ -166,7 +166,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
             return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
         }
         let router = CodexResetClaimRouter(
-            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _, _ in }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let binding = try binding()
@@ -206,7 +206,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
             var refreshes = 0
             let service = CodexResetClaimService(
                 usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in current },
-                refreshAfterClaim: { refreshes += 1 }
+                refreshAfterClaim: { _ in refreshes += 1 }
             )
             let binding = try binding()
             let claim = Task {

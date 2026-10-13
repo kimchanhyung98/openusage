@@ -40,7 +40,7 @@ final class CodexResetClaimApprovalTests: XCTestCase {
                 environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                 scope: .accountSnapshot(profileID: Self.profileID)
             ),
-            usageClient: CodexUsageClient(http: http), refreshAfterClaim: refreshAfterClaim
+            usageClient: CodexUsageClient(http: http), refreshAfterClaim: { _ in await refreshAfterClaim() }
         ), http)
     }
 

@@ -91,7 +91,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
                 makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
                 makeCardProvider(cardID: "codex@ab12cd34", home: "/tmp/codex-work", token: "token-work", http: http),
             ],
-            refreshAfterClaim: { cardID in refreshes.values.append(cardID) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
 
         let defaultService = try XCTUnwrap(router.service(for: "codex"))
@@ -127,7 +127,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/codex-old", token: "token-old", http: http)],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         router.reconfigure(providers: [
@@ -163,7 +163,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
             identityKeys: ["codex": "account-A"],
-            refreshAfterClaim: { refreshes.values.append($0) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
@@ -209,7 +209,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
             identityKeys: ["codex": "account-A"],
-            refreshAfterClaim: { refreshes.values.append($0) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
@@ -233,7 +233,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
                 makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
                 makeCardProvider(cardID: "codex@ab12cd34", home: "/tmp/codex-work", token: "token-work", http: http),
             ],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         router.reconfigure(providers: [
@@ -249,7 +249,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http)],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         XCTAssertNil(router.service(for: "codex@ffffffff"))
@@ -260,7 +260,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         router.reconfigure(providers: [
@@ -292,7 +292,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
             identityKeys: ["codex": "account-A"],
-            refreshAfterClaim: { refreshes.values.append($0) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
         let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
@@ -330,7 +330,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http)
         )
-        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _ in })
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
         let service = try XCTUnwrap(router.service(for: "codex"))
 
         let outcome = await service.claim(
@@ -356,7 +356,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http)
         )
-        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _ in })
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
         let service = try XCTUnwrap(router.service(for: "codex"))
 
         let outcome = await service.claim(
@@ -397,7 +397,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
                 ),
                 usageClient: CodexUsageClient(http: http)
             )
-            let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _ in })
+            let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
             let service = try XCTUnwrap(router.service(for: "codex"))
 
             let outcome = await service.claim(
@@ -428,7 +428,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http)
         )
-        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _ in })
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
 
         let service = try XCTUnwrap(router.service(for: "codex@ab12cd34"))
         let outcome = await service.claim(

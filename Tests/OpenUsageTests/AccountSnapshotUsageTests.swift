@@ -130,7 +130,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
             let service = CodexResetClaimService(
                 authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                                          scope: .accountSnapshot(profileID: profile.id)),
-                usageClient: CodexUsageClient(http: http), refreshAfterClaim: {}
+                usageClient: CodexUsageClient(http: http), refreshAfterClaim: { _ in}
             )
 
             let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(

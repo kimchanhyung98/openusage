@@ -301,7 +301,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
             credentialLoader: { _, _ in credential },
-            refreshAfterClaim: { XCTFail("A failed claim must not refresh an account") }
+            refreshAfterClaim: { _ in XCTFail("A failed claim must not refresh an account") }
         )
 
         let outcome = await service.claim(creditExpiringAt: expiry, redeemRequestID: "PRIVATE_REQUEST_ID", binding: binding)
@@ -341,7 +341,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             let service = CodexResetClaimService(
                 usageClient: CodexUsageClient(http: http),
                 credentialLoader: { _, _ in credential },
-                refreshAfterClaim: { XCTFail("Malformed responses must not refresh an account") }
+                refreshAfterClaim: { _ in XCTFail("Malformed responses must not refresh an account") }
             )
 
             let result = await service.claim(

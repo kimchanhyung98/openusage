@@ -60,7 +60,7 @@ final class CodexResetClaimTests: XCTestCase {
                 XCTAssertEqual(source, Self.binding.source)
                 return Self.state()
             },
-            refreshAfterClaim: { refreshes.count += 1 }
+            refreshAfterClaim: { _ in refreshes.count += 1 }
         )
         return (service, http)
     }
@@ -198,7 +198,7 @@ final class CodexResetClaimTests: XCTestCase {
                 return HTTPResponse(statusCode: 500, headers: [:], body: Data())
             }),
             credentialLoader: { _, _ in nil },
-            refreshAfterClaim: { refreshes.count += 1 }
+            refreshAfterClaim: { _ in refreshes.count += 1 }
         )
         let credentialOutcome = await noCredentials.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1", binding: Self.binding)
         XCTAssertEqual(credentialOutcome, .failed)
