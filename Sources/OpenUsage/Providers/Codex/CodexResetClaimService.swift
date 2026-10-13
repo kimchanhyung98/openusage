@@ -27,7 +27,7 @@ final class CodexResetClaimService {
     private let usageClient: CodexUsageClient
     private let credentialLoader: (CodexAuthState.Source, Bool) async throws -> CodexAuthState?
     private let isCurrent: () -> Bool
-    private let refreshAfterClaim: () async -> Void
+    private let refreshAfterClaim: (CodexResetClaimBinding) async -> Void
     let requestState: RequestState
 
     init(
@@ -35,7 +35,7 @@ final class CodexResetClaimService {
         credentialLoader: @escaping (CodexAuthState.Source, Bool) async throws -> CodexAuthState?,
         requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
-        refreshAfterClaim: @escaping () async -> Void = {}
+        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void = { _ in }
     ) {
         self.usageClient = usageClient
         self.credentialLoader = credentialLoader
@@ -49,7 +49,7 @@ final class CodexResetClaimService {
         usageClient: CodexUsageClient,
         requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
-        refreshAfterClaim: @escaping () async -> Void
+        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void
     ) {
         self.init(
             usageClient: usageClient,
@@ -60,7 +60,7 @@ final class CodexResetClaimService {
                         guard authStore.authPaths().contains(path) else { return nil }
                         return authStore.loadAuth(at: path)
                     case .keychain:
-                        return authStore.loadKeychainAuth()
+                        return try authStore.loadKeychainAuth(allowInteraction: allowInteraction)
                     case .accountSnapshot(let profileID):
                         guard authStore.scope == .accountSnapshot(profileID: profileID) else { return nil }
                         return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)
@@ -147,7 +147,7 @@ final class CodexResetClaimService {
                 AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
                 return
             }
-            await refreshAfterClaim()
+            await refreshAfterClaim(binding)
         } catch {
             AppDiagnostics.failure(.postClaimRefresh, error: error, providerID: "codex",
                                    localContext: "Post-claim credential verification failed")

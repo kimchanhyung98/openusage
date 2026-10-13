@@ -9,6 +9,7 @@ extension WidgetDataStore {
     /// claim 완료 시점의 binding을 유지하며 pre-claim fetch가 끝나기를 대기.
     func refreshAfterClaim(
         providerID: String,
+        codexBinding: CodexResetClaimBinding? = nil,
         maxAttempts: Int = 45,
         retryDelay: Duration = .seconds(1)
     ) async {
@@ -21,7 +22,7 @@ extension WidgetDataStore {
                 AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: providerID)
                 return
             }
-            switch await refresh(providerID: providerID, force: true, trigger: .resetClaim) {
+            switch await refresh(providerID: providerID, force: true, trigger: .resetClaim, codexBinding: codexBinding) {
             case .refreshed, .cacheHit, .backedOff:
                 AppDiagnostics.record(.postClaimRefresh, result: .success, providerID: providerID)
                 return

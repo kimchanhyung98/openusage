@@ -49,6 +49,10 @@ extension GenericPasswordReading {
 }
 
 extension KeychainAccessing {
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try readGenericPassword(service: service)
+    }
+
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String? {
         try forCurrentUser
             ? readGenericPasswordForCurrentUser(service: service)

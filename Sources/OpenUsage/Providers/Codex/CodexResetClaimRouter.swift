@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]
-    private let refreshAfterClaim: (String) async -> Void
+    private let refreshAfterClaim: (String, CodexResetClaimBinding) async -> Void
     private var generation = 0
     private var identityKeysByCard: [String: String] = [:]
 
@@ -14,7 +14,7 @@ final class CodexResetClaimRouter {
     init(
         providers: [CodexProvider],
         identityKeys: [String: String] = [:],
-        refreshAfterClaim: @escaping (String) async -> Void
+        refreshAfterClaim: @escaping (String, CodexResetClaimBinding) async -> Void
     ) {
         self.servicesByCard = [:]
         self.refreshAfterClaim = refreshAfterClaim
@@ -57,7 +57,7 @@ final class CodexResetClaimRouter {
                 isCurrent: { [weak self] in
                     self?.generation == boundGeneration
                 },
-                refreshAfterClaim: { [weak self] in
+                refreshAfterClaim: { [weak self] binding in
                     // 다른 카드 변경은 허용하되, identity 미해석 카드는 같은 catalog에서만 후속 조회.
                     guard let self,
                           self.servicesByCard[cardID] != nil,
@@ -68,7 +68,7 @@ final class CodexResetClaimRouter {
                         AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
                         return
                     }
-                    await refreshAfterClaim(cardID)
+                    await refreshAfterClaim(cardID, binding)
                 }
             ))
         })

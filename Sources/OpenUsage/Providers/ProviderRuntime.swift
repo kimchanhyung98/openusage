@@ -2,6 +2,7 @@ import Foundation
 
 enum ProviderRefreshContext {
     @TaskLocal static var isManual = false
+    @TaskLocal static var isResetClaim = false
 }
 
 /// 기기의 기존 credential을 읽고 provider API 응답을 UI용 `ProviderSnapshot`으로 정규화.

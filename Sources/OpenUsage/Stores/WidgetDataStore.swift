@@ -445,7 +445,8 @@ final class WidgetDataStore {
         providerID: String,
         force: Bool = false,
         trigger: RefreshTrigger = .scheduled,
-        notifyHistoryChange: Bool = true
+        notifyHistoryChange: Bool = true,
+        codexBinding: CodexResetClaimBinding? = nil
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
@@ -513,7 +514,9 @@ final class WidgetDataStore {
                 }
             }
             return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
-                await provider.refresh()
+                await ProviderRefreshContext.$isResetClaim.withValue(trigger == .resetClaim) {
+                    await provider.refresh()
+                }
             }
         }
         // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
@@ -549,6 +552,14 @@ final class WidgetDataStore {
         case .cancelled:
             needsScheduleWake = true
             return .skipped
+        }
+        if let codexBinding, Self.errorMessage(in: snapshot) == nil,
+           snapshot.codexResetClaimBinding != codexBinding {
+            snapshot = .error(
+                provider: provider.provider,
+                message: "The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.",
+                category: .authInvalid
+            )
         }
         if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
             scheduledRefreshUpdatedAt[providerID] = monotonicNow()

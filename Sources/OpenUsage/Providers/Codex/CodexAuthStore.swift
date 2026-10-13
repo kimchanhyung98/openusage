@@ -153,6 +153,13 @@ struct CodexAuthStore: Sendable {
         return CodexAuthState(auth: auth, source: .keychain)
     }
 
+    func loadKeychainAuth(allowInteraction: Bool) throws -> CodexAuthState? {
+        guard case .standard = scope else { return nil }
+        guard let value = try keychain.readGenericPassword(service: Self.keychainService, allowInteraction: allowInteraction),
+              let auth = Self.parseAuth(value), Self.hasTokenLikeAuth(auth) else { return nil }
+        return CodexAuthState(auth: auth, source: .keychain)
+    }
+
     func save(_ state: CodexAuthState, allowInteraction: Bool = false) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = state.source.isFile ? [.prettyPrinted, .sortedKeys] : []
