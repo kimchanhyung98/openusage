@@ -38,6 +38,7 @@ final class CodexResetClaimRouter {
             return (cardID, CodexResetClaimService(
                 authStore: provider.authStore,
                 usageClient: provider.usageClient,
+                requestState: servicesByCard[cardID]?.requestState ?? CodexResetClaimService.RequestState(),
                 isCurrent: { [weak self] in
                     self?.generation == boundGeneration
                 },

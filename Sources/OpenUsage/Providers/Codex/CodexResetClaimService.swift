@@ -11,27 +11,35 @@ enum ResetClaimOutcome: Equatable, Sendable {
 /// 표시한 사용량의 인증 출처·주체로만 크레딧 소비. 재시도도 같은 확인·크레딧에 결합.
 @MainActor
 final class CodexResetClaimService {
-    private struct MatchedCredit {
+    fileprivate struct MatchedCredit {
         let binding: CodexResetClaimBinding
         let expiry: Date
         let creditID: String
+    }
+
+    /// 카드 서비스 교체 후에도 같은 확인 요청의 크레딧·진행 상태 유지.
+    @MainActor
+    final class RequestState {
+        fileprivate var matchedCredits: [String: MatchedCredit] = [:]
+        fileprivate var activeRequestIDs: Set<String> = []
     }
 
     private let usageClient: CodexUsageClient
     private let credentialLoader: (CodexAuthState.Source) async throws -> CodexAuthState?
     private let isCurrent: () -> Bool
     private let refreshAfterClaim: () async -> Void
-    private var matchedCredits: [String: MatchedCredit] = [:]
-    private var activeRequestIDs: Set<String> = []
+    let requestState: RequestState
 
     init(
         usageClient: CodexUsageClient,
         credentialLoader: @escaping (CodexAuthState.Source) async throws -> CodexAuthState?,
+        requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
         refreshAfterClaim: @escaping () async -> Void = {}
     ) {
         self.usageClient = usageClient
         self.credentialLoader = credentialLoader
+        self.requestState = requestState
         self.isCurrent = isCurrent
         self.refreshAfterClaim = refreshAfterClaim
     }
@@ -39,6 +47,7 @@ final class CodexResetClaimService {
     convenience init(
         authStore: CodexAuthStore,
         usageClient: CodexUsageClient,
+        requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
         refreshAfterClaim: @escaping () async -> Void
     ) {
@@ -58,6 +67,7 @@ final class CodexResetClaimService {
                     }
                 }
             },
+            requestState: requestState,
             isCurrent: isCurrent,
             refreshAfterClaim: refreshAfterClaim
         )
@@ -68,18 +78,18 @@ final class CodexResetClaimService {
         redeemRequestID: String,
         binding: CodexResetClaimBinding
     ) async -> ResetClaimOutcome {
-        guard !Task.isCancelled, isCurrent(), activeRequestIDs.insert(redeemRequestID).inserted else {
+        guard !Task.isCancelled, isCurrent(), requestState.activeRequestIDs.insert(redeemRequestID).inserted else {
             return bindingFailure()
         }
-        defer { activeRequestIDs.remove(redeemRequestID) }
-        if let previous = matchedCredits[redeemRequestID],
+        defer { requestState.activeRequestIDs.remove(redeemRequestID) }
+        if let previous = requestState.matchedCredits[redeemRequestID],
            previous.binding != binding || previous.expiry != expiry {
             return bindingFailure()
         }
         guard let initial = await loadCredential(for: binding) else { return .failed }
 
         let creditID: String
-        if let previous = matchedCredits[redeemRequestID] {
+        if let previous = requestState.matchedCredits[redeemRequestID] {
             creditID = previous.creditID
         } else {
             let list: HTTPResponse
@@ -103,7 +113,7 @@ final class CodexResetClaimService {
                 return .noCredit
             }
             creditID = matched
-            matchedCredits[redeemRequestID] = MatchedCredit(binding: binding, expiry: expiry, creditID: matched)
+            requestState.matchedCredits[redeemRequestID] = MatchedCredit(binding: binding, expiry: expiry, creditID: matched)
         }
 
         // GET 대기 중의 재로그인·로그아웃 확인. 같은 출처·주체의 정상 토큰 회전만 허용.

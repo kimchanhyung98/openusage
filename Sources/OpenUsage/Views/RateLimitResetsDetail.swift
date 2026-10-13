@@ -20,6 +20,7 @@ struct RateLimitResetsDetail: View {
     @State private var confirmation: Confirmation?
     @State private var claimingExpiry: Date?
     @State private var activeClaimID: UUID?
+    @State private var claimTask: Task<Void, Never>?
     @State private var hoveredExpiry: Date?
     /// credit별 idempotency key — confirm 최초 진입 시 발급, 해당 credit의 모든 retry에 재사용(CLI의 double-spend 보호와 동일).
     @State private var redeemRequestIDs: [Date: String] = [:]
@@ -322,11 +323,12 @@ struct RateLimitResetsDetail: View {
             claimingExpiry = date
             activeClaimID = claimID
         }
-        Task {
+        claimTask = Task {
             guard activeClaimID == claimID else { return }
             let outcome = await confirmation.claim(date, confirmation.redeemRequestID)
             // 계정 변경이나 popover 종료 뒤 도착한 이전 claim 결과는 새 화면에 반영하지 않음.
             guard activeClaimID == claimID else { return }
+            claimTask = nil
             withAnimation(Self.flowAnimation) {
                 claimingExpiry = nil
                 activeClaimID = nil
@@ -337,6 +339,8 @@ struct RateLimitResetsDetail: View {
     }
 
     private func resetClaimState() {
+        claimTask?.cancel()
+        claimTask = nil
         confirmation = nil
         claimingExpiry = nil
         activeClaimID = nil
