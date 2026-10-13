@@ -28,6 +28,14 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var usageRetryAfter: Date?
 
     var freshnessDate: Date { quotaObservedAt ?? refreshedAt }
+    /// 실제 성공 응답의 인증 연결. 디스크 캐시·공유 출력에서 제외하여 재실행 후 fresh 조회 전 소비 금지.
+    var codexResetClaimBinding: CodexResetClaimBinding?
+
+    private enum CodingKeys: String, CodingKey {
+        case providerID, displayName, plan, lines, refreshedAt, usageHistory, warning
+        case errorCategory, authenticationIssue, isDegraded, liveQuotaObservedAt
+        case quotaObservedAt, usageRetryAfter
+    }
 
     init(
         providerID: String,
@@ -42,7 +50,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         isDegraded: Bool? = nil,
         liveQuotaObservedAt: Date? = nil,
         quotaObservedAt: Date? = nil,
-        usageRetryAfter: Date? = nil
+        usageRetryAfter: Date? = nil,
+        codexResetClaimBinding: CodexResetClaimBinding? = nil
     ) {
         self.providerID = providerID
         self.displayName = displayName
@@ -57,6 +66,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.liveQuotaObservedAt = liveQuotaObservedAt
         self.quotaObservedAt = quotaObservedAt
         self.usageRetryAfter = usageRetryAfter
+        self.codexResetClaimBinding = codexResetClaimBinding
     }
 
     func line(label: String) -> MetricLine? {
@@ -76,7 +86,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         isDegraded: Bool? = nil,
         liveQuotaObservedAt: Date? = nil,
         quotaObservedAt: Date? = nil,
-        usageRetryAfter: Date? = nil
+        usageRetryAfter: Date? = nil,
+        codexResetClaimBinding: CodexResetClaimBinding? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
@@ -90,7 +101,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             isDegraded: isDegraded,
             liveQuotaObservedAt: liveQuotaObservedAt,
             quotaObservedAt: quotaObservedAt,
-            usageRetryAfter: usageRetryAfter
+            usageRetryAfter: usageRetryAfter,
+            codexResetClaimBinding: codexResetClaimBinding
         )
     }
 

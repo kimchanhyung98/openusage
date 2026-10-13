@@ -317,7 +317,8 @@ final class CodexProvider: ProviderRuntime {
             usageHistory: usageHistory,
             warning: warning,
             isDegraded: refreshIsDegraded ? true : nil,
-            liveQuotaObservedAt: quota.observedAt
+            liveQuotaObservedAt: quota.observedAt,
+            codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
         )
     }
 

@@ -842,6 +842,7 @@ final class WidgetDataStore {
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {
             result = data
+            result.codexResetClaimBinding = snapshot.codexResetClaimBinding
         } else {
             // 배치된 tile을 뒷받침하는 실제 metric line 부재 — sample 숫자는 placeholder이므로 no-data 처리.
             result = descriptor.sample

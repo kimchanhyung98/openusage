@@ -38,6 +38,9 @@ final class CodexResetClaimRouter {
             return (cardID, CodexResetClaimService(
                 authStore: provider.authStore,
                 usageClient: provider.usageClient,
+                isCurrent: { [weak self] in
+                    self?.generation == boundGeneration
+                },
                 refreshAfterClaim: { [weak self] in
                     // 다른 카드 변경은 허용하되, identity 미해석 카드는 같은 catalog에서만 후속 조회.
                     guard let self,

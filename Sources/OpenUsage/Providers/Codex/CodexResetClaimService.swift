@@ -1,7 +1,6 @@
 import Foundation
 
-/// Reset-credit claim의 결과 — consume endpoint의 `code` 4종을 popover 표시용으로 축약.
-/// `reset`·`already_redeemed`는 둘 다 성공 (후자는 retry에서 idempotency key가 동작한 것), transport/HTTP 오류는 `.failed`.
+/// Reset-credit 소비 결과. 실패한 요청은 사용자 확인 대상을 바꾸지 않고 같은 요청으로만 재시도.
 enum ResetClaimOutcome: Equatable, Sendable {
     case success
     case nothingToReset
@@ -9,181 +8,157 @@ enum ResetClaimOutcome: Equatable, Sendable {
     case failed
 }
 
-/// Codex rate-limit reset credit claim — 앱의 유일한 provider-API write, 의도적으로 좁은 범위 (호출당 credit 1개, 명시적 credit id, caller의 idempotency key 보호).
-/// Claim 시점에 credit 목록(안전한 GET)을 재조회해 expiry로 매칭 — 그사이 CLI/web에서 사라진 credit은 `.noCredit`. 성공 시 강제 Codex refresh 완료 후 반환.
+/// 표시한 사용량의 인증 출처·주체로만 크레딧 소비. 재시도도 같은 확인·크레딧에 결합.
 @MainActor
 final class CodexResetClaimService {
-    typealias Credentials = (accessToken: String, accountID: String?)
+    private struct MatchedCredit {
+        let binding: CodexResetClaimBinding
+        let expiry: Date
+        let creditID: String
+    }
 
     private let usageClient: CodexUsageClient
-    private let credentialCandidates: () async throws -> [Credentials]
+    private let credentialLoader: (CodexAuthState.Source) async throws -> CodexAuthState?
+    private let isCurrent: () -> Bool
     private let refreshAfterClaim: () async -> Void
-    /// Idempotency key별 매칭된 credit id — retry는 재매칭 없이 같은 (key, credit) 쌍을 replay.
-    /// 응답 유실 후 재조회 목록에는 credit이 없어, replay만이 서버의 `already_redeemed`로 성공을 증명. Session-lived, popover의 per-credit UUID가 key.
-    private var matchedCreditIDs: [String: String] = [:]
+    private var matchedCredits: [String: MatchedCredit] = [:]
+    private var activeRequestIDs: Set<String> = []
 
-    /// Test seam — credential 후보와 refresh hook 주입, 후보는 인증될 때까지 순서대로 시도 (`claim` 참고).
     init(
         usageClient: CodexUsageClient,
-        credentialCandidates: @escaping () async throws -> [Credentials],
+        credentialLoader: @escaping (CodexAuthState.Source) async throws -> CodexAuthState?,
+        isCurrent: @escaping () -> Bool = { true },
         refreshAfterClaim: @escaping () async -> Void = {}
     ) {
         self.usageClient = usageClient
-        self.credentialCandidates = credentialCandidates
+        self.credentialLoader = credentialLoader
+        self.isCurrent = isCurrent
         self.refreshAfterClaim = refreshAfterClaim
     }
 
-    /// Production 연결 — provider의 auth store·usage client 공유로 credential 선택이 `refresh()`와 drift 불가 (파일 우선, keychain fallback, auth 거부 시 다음 후보).
-    /// Token refresh 없음 — claim은 성공한 usage fetch 직후 실행이라 여전히 auth에 실패하는 후보는 dead, 다음 후보가 정답.
     convenience init(
         authStore: CodexAuthStore,
         usageClient: CodexUsageClient,
+        isCurrent: @escaping () -> Bool = { true },
         refreshAfterClaim: @escaping () async -> Void
     ) {
         self.init(
             usageClient: usageClient,
-            credentialCandidates: {
-                var candidates = try await loadOffMainActor {
-                    try authStore.loadAuthCandidates(allowInteraction: true)
-                }
-                if let keychain = await loadOffMainActor({ authStore.loadKeychainAuth() }) {
-                    candidates.append(keychain)
-                }
-                return candidates.compactMap { candidate in
-                    guard candidate.hasUsableAccessToken, let token = candidate.auth.tokens?.accessToken else {
-                        return nil
+            credentialLoader: { source in
+                try await loadOffMainActor {
+                    switch source {
+                    case .file(let path):
+                        guard authStore.authPaths().contains(path) else { return nil }
+                        return authStore.loadAuth(at: path)
+                    case .keychain:
+                        return authStore.loadKeychainAuth()
+                    case .accountSnapshot(let profileID):
+                        guard authStore.scope == .accountSnapshot(profileID: profileID) else { return nil }
+                        return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: true)
                     }
-                    return (token, candidate.auth.tokens?.accountID)
                 }
             },
+            isCurrent: isCurrent,
             refreshAfterClaim: refreshAfterClaim
         )
     }
 
-    /// `expiry`에 만료되는 credit claim — throw 없음, 모든 실패는 loud log 후 popover용 outcome으로 축약.
-    func claim(creditExpiringAt expiry: Date, redeemRequestID: String) async -> ResetClaimOutcome {
-        let candidates: [Credentials]
-        do {
-            candidates = try await credentialCandidates()
-        } catch {
-            AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
-                                   localContext: "Reset claim credential read failed")
-            return .failed
-        }
-        guard !candidates.isEmpty else {
-            AppDiagnostics.record(.resetClaim, result: .failure, category: .notLoggedIn, providerID: "codex")
-            return .failed
-        }
-
-        // 이미 매칭된 idempotency key의 retry는 재매칭 없이 같은 (key, credit) 쌍 replay — 서버의 `already_redeemed`만이 유실된 성공을 증명.
-        let creditID: String
-        var preferredCandidates = candidates
-        if let replayID = matchedCreditIDs[redeemRequestID] {
-            creditID = replayID
-        } else {
-            switch await matchCredit(expiringAt: expiry, candidates: candidates) {
-            case .matched(let id, let authenticated):
-                creditID = id
-                matchedCreditIDs[redeemRequestID] = id
-                // 목록 fetch를 인증한 credential 우선. dedup은 (token, account) 쌍 전체 기준 — ChatGPT-Account-Id가 authorization 대상을 바꾸므로 계정이 다른 동일 token은 별개 fallback.
-                preferredCandidates = [authenticated] + candidates.filter {
-                    $0.accessToken != authenticated.accessToken || $0.accountID != authenticated.accountID
-                }
-            case .noCredit:
-                // 오류 아님 — popover 렌더 이후 CLI/web에서 claim됐거나 만료. refresh가 timeline을 실제 상태와 동기화.
-                AppLog.warn(LogTag.plugin("codex"), "reset claim: no available credit matches the picked expiry")
-                AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
-                await refreshAfterClaim()
-                return .noCredit
-            case .failed:
-                return .failed
-            }
-        }
-
-        let outcome = await consume(
-            creditID: creditID, redeemRequestID: redeemRequestID, candidates: preferredCandidates
-        )
-        if outcome != .failed {
-            AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable, providerID: "codex")
-            // 상태 변경(또는 snapshot과 불일치) 확인 — 결과 banner가 이미 동기화된 meter·credit count 위에 뜨도록 refresh 후 반환.
-            await refreshAfterClaim()
-        }
-        return outcome
-    }
-
-    /// Consume POST — auth 거부(401/403) 시 다음 credential 후보로 fallback.
-    /// 반복 안전 — 모든 시도가 같은 idempotency key를 전송하므로 credit은 최대 1개만 소모.
-    private func consume(
-        creditID: String, redeemRequestID: String, candidates: [Credentials]
+    func claim(
+        creditExpiringAt expiry: Date,
+        redeemRequestID: String,
+        binding: CodexResetClaimBinding
     ) async -> ResetClaimOutcome {
-        var lastRejection: Int?
-        for credentials in candidates {
-            let response: HTTPResponse
-            do {
-                response = try await usageClient.consumeResetCredit(
-                    accessToken: credentials.accessToken,
-                    accountID: credentials.accountID,
-                    creditID: creditID,
-                    redeemRequestID: redeemRequestID
-                )
-            } catch {
-                AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
-                                       localContext: "Reset claim consume request failed")
-                return .failed
-            }
-            if response.statusCode == 401 || response.statusCode == 403 {
-                lastRejection = response.statusCode
-                continue
-            }
-            let outcome = Self.outcome(fromConsume: response)
-            if outcome == .failed {
-                AppDiagnostics.record(.resetClaim, result: .failure,
-                                      category: (200..<300).contains(response.statusCode) ? .decoding : .http(response.statusCode),
-                                      providerID: "codex", localContext: "Reset claim consume failed (HTTP \(response.statusCode))")
-            }
-            return outcome
+        guard !Task.isCancelled, isCurrent(), activeRequestIDs.insert(redeemRequestID).inserted else {
+            return bindingFailure()
         }
-        AppDiagnostics.record(.resetClaim, result: .failure, category: .authExpired, providerID: "codex",
-                              localContext: "Reset claim consume rejected for every credential (last: \(lastRejection.map(String.init) ?? "none"))")
-        return .failed
-    }
+        defer { activeRequestIDs.remove(redeemRequestID) }
+        if let previous = matchedCredits[redeemRequestID],
+           previous.binding != binding || previous.expiry != expiry {
+            return bindingFailure()
+        }
+        guard let initial = await loadCredential(for: binding) else { return .failed }
 
-    private enum MatchResult {
-        case matched(creditID: String, credentials: Credentials)
-        case noCredit
-        case failed
-    }
-
-    /// 새 credit 목록(안전한 GET)에서 사용자가 고른 credit의 id를 expiry로 매칭.
-    /// credential 후보를 순서대로 시도, 401/403은 다음 후보로 — provider probe와 동일한 fallback이라 stale한 첫 auth 파일이 claim을 가로막지 못함.
-    private func matchCredit(expiringAt expiry: Date, candidates: [Credentials]) async -> MatchResult {
-        var lastFailure = "no credential candidate authenticated"
-        for credentials in candidates {
+        let creditID: String
+        if let previous = matchedCredits[redeemRequestID] {
+            creditID = previous.creditID
+        } else {
             let list: HTTPResponse
             do {
                 list = try await usageClient.fetchResetCredits(
-                    accessToken: credentials.accessToken, accountID: credentials.accountID
+                    accessToken: initial.auth.tokens!.accessToken!, accountID: initial.auth.tokens?.accountID
                 )
             } catch {
                 AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
                                        localContext: "Reset claim credit list request failed")
                 return .failed
             }
-            if list.statusCode == 401 || list.statusCode == 403 {
-                lastFailure = "credit list fetch rejected (\(list.statusCode))"
-                continue
+            guard !Task.isCancelled, isCurrent() else { return bindingFailure() }
+            guard (200..<300).contains(list.statusCode),
+                  let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
+                return responseFailure(list, context: "credit list")
             }
-            guard (200..<300).contains(list.statusCode), let body = (try? JSONSerialization.jsonObject(with: list.body)) as? [String: Any] else {
-                AppDiagnostics.record(.resetClaim, result: .failure,
-                                      category: (200..<300).contains(list.statusCode) ? .decoding : .http(list.statusCode),
-                                      providerID: "codex", localContext: "Reset claim credit list failed (HTTP \(list.statusCode))")
-                return .failed
+            guard let matched = Self.creditID(in: body, expiringAt: expiry) else {
+                AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
+                await refreshAfterClaim()
+                return .noCredit
             }
-            guard let matched = Self.creditID(in: body, expiringAt: expiry) else { return .noCredit }
-            return .matched(creditID: matched, credentials: credentials)
+            creditID = matched
+            matchedCredits[redeemRequestID] = MatchedCredit(binding: binding, expiry: expiry, creditID: matched)
         }
-        AppDiagnostics.record(.resetClaim, result: .failure, category: .authExpired, providerID: "codex",
-                              localContext: "Reset claim: \(lastFailure)")
+
+        // GET 대기 중의 재로그인·로그아웃 확인. 같은 출처·주체의 정상 토큰 회전만 허용.
+        guard let current = await loadCredential(for: binding), !Task.isCancelled, isCurrent() else { return .failed }
+        let response: HTTPResponse
+        do {
+            response = try await usageClient.consumeResetCredit(
+                accessToken: current.auth.tokens!.accessToken!, accountID: current.auth.tokens?.accountID,
+                creditID: creditID, redeemRequestID: redeemRequestID
+            )
+        } catch {
+            AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
+                                   localContext: "Reset claim consume request failed")
+            return .failed
+        }
+        let outcome = Self.outcome(fromConsume: response)
+        guard outcome != .failed else { return responseFailure(response, context: "consume") }
+        AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
+                              providerID: "codex")
+        await refreshAfterClaim()
+        return outcome
+    }
+
+    private func loadCredential(for binding: CodexResetClaimBinding) async -> CodexAuthState? {
+        guard !Task.isCancelled, isCurrent() else {
+            _ = bindingFailure()
+            return nil
+        }
+        do {
+            guard let state = try await credentialLoader(binding.source) else {
+                AppDiagnostics.record(.resetClaim, result: .failure, category: .notLoggedIn, providerID: "codex")
+                return nil
+            }
+            guard !Task.isCancelled, isCurrent(), binding.matches(state) else {
+                _ = bindingFailure()
+                return nil
+            }
+            return state
+        } catch {
+            AppDiagnostics.failure(.resetClaim, error: error, providerID: "codex",
+                                   localContext: "Reset claim credential read failed")
+            return nil
+        }
+    }
+
+    private func bindingFailure() -> ResetClaimOutcome {
+        AppDiagnostics.record(.resetClaim, result: .failure, category: .authInvalid, providerID: "codex",
+                              localContext: "Reset claim stopped because its account confirmation changed")
+        return .failed
+    }
+
+    private func responseFailure(_ response: HTTPResponse, context: String) -> ResetClaimOutcome {
+        AppDiagnostics.record(.resetClaim, result: .failure,
+                              category: (200..<300).contains(response.statusCode) ? .decoding : .http(response.statusCode),
+                              providerID: "codex", localContext: "Reset claim \(context) failed (HTTP \(response.statusCode))")
         return .failed
     }
 

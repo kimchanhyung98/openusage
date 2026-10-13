@@ -69,6 +69,7 @@ struct WidgetData: Hashable {
     /// 이 row 데이터의 출처 provider(카드) — `WidgetDataStore.data(for:)`가 stamp, per-card action의 key.
     /// direct fixture(preview, share render)에서는 nil — 해당 action 비활성.
     var providerID: String?
+    var codexResetClaimBinding: CodexResetClaimBinding?
 
     enum SessionStartSignal: Hashable {
         case zeroUsage

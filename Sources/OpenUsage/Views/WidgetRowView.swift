@@ -326,18 +326,21 @@ struct WidgetRowView: View {
                         count: data.resetCreditCount, expiries: data.expiriesAt,
                         onHoverChange: { inside in modelHover.detailHover(inside) },
                         onPinChange: { pinned in modelHover.setPinned(pinned) },
-                        // claim은 이 행의 card service로 실행 — 비가역 claim이 카드가 보여주는 계정의 credential을 소비.
-                        // environment 부재(preview, share render)나 provider id 미지정이면 timeline은 read-only.
-                        claim: codexResetClaim
-                            .flatMap { router in data.providerID.flatMap { router.service(for: $0) } }
-                            .map { service in
-                                { expiry, redeemRequestID in
-                                    await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID)
-                                }
-                            }
+                        claimBinding: data.codexResetClaimBinding,
+                        claim: resetClaimAction
                     )
                 }
             }
+        }
+    }
+
+    private var resetClaimAction: ((Date, String) async -> ResetClaimOutcome)? {
+        guard let binding = data.codexResetClaimBinding,
+              let providerID = data.providerID,
+              let service = codexResetClaim?.service(for: providerID) else { return nil }
+        // snapshot의 계정 binding과 해당 카드 service를 함께 고정 — confirm 뒤 다른 계정으로 재해석 금지.
+        return { expiry, redeemRequestID in
+            await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID, binding: binding)
         }
     }
 

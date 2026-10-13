@@ -10,14 +10,16 @@ struct RateLimitResetsDetail: View {
     var onHoverChange: (Bool) -> Void
     /// confirm/in-flight 동안 popover를 pin — cursor 이탈로 claim 도중 흐름이 무너지지 않게 유지. claim 흐름 없으면 `nil`.
     var onPinChange: ((Bool) -> Void)?
+    var claimBinding: CodexResetClaimBinding?
     /// 지정 만료 시각의 credit을 주어진 idempotency key로 claim — `nil`이면 timeline이 read-only.
     var claim: ((_ expiry: Date, _ redeemRequestID: String) async -> ResetClaimOutcome)?
 
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     @State private var claimedExpiries: Set<Date> = []
-    @State private var confirmingExpiry: Date?
+    @State private var confirmation: Confirmation?
     @State private var claimingExpiry: Date?
+    @State private var activeClaimID: UUID?
     @State private var hoveredExpiry: Date?
     /// credit별 idempotency key — confirm 최초 진입 시 발급, 해당 credit의 모든 retry에 재사용(CLI의 double-spend 보호와 동일).
     @State private var redeemRequestIDs: [Date: String] = [:]
@@ -27,6 +29,8 @@ struct RateLimitResetsDetail: View {
     @State private var nothingToReset = false
 
     private static let width: CGFloat = 250
+
+    private var confirmingExpiry: Date? { confirmation?.expiry }
 
     /// confirm 대기 또는 claim 진행 중 — 다른 node를 얼려 claim이 한 번에 하나만 일어나게 보장.
     private var claimInProgress: Bool { confirmingExpiry != nil || claimingExpiry != nil }
@@ -73,6 +77,8 @@ struct RateLimitResetsDetail: View {
                 cancelConfirm()
             }
         }
+        .onChange(of: claimBinding) { _, _ in resetClaimState() }
+        .onDisappear { resetClaimState() }
     }
 
     private var emptyState: some View {
@@ -203,7 +209,7 @@ struct RateLimitResetsDetail: View {
     @ViewBuilder
     private func trailing(_ entry: Entry) -> some View {
         Group {
-            if claim != nil, hoveredExpiry == entry.date, !claimInProgress {
+            if claim != nil, claimBinding != nil, hoveredExpiry == entry.date, !claimInProgress {
                 Button("Use") { beginConfirm(entry.date) }
                     .controlSize(.small)
                     .disabled(nothingToReset)
@@ -285,40 +291,68 @@ struct RateLimitResetsDetail: View {
     private static let flowAnimation: Animation = .snappy(duration: 0.25)
 
     private func beginConfirm(_ date: Date) {
-        if redeemRequestIDs[date] == nil {
-            redeemRequestIDs[date] = UUID().uuidString
-        }
+        guard let claimBinding, let claim, !claimInProgress, expiries.contains(date) else { return }
+        let redeemRequestID = redeemRequestIDs[date] ?? UUID().uuidString
+        redeemRequestIDs[date] = redeemRequestID
         withAnimation(Self.flowAnimation) {
             banner = nil
             hoveredExpiry = nil
-            confirmingExpiry = date
+            confirmation = Confirmation(
+                expiry: date, binding: claimBinding, redeemRequestID: redeemRequestID, claim: claim
+            )
         }
         onPinChange?(true)
     }
 
     private func cancelConfirm() {
         withAnimation(Self.flowAnimation) {
-            confirmingExpiry = nil
+            confirmation = nil
         }
         onPinChange?(false)
     }
 
     private func runClaim(_ date: Date) {
-        guard let claim else { return }
-        // confirm 시점에 발급한 key 재사용 — 여기서의 발급은 confirm↔클릭 사이 상태 유실 대비 fallback.
-        let redeemRequestID = redeemRequestIDs[date] ?? UUID().uuidString
+        guard let confirmation,
+              confirmation.expiry == date,
+              confirmation.binding == claimBinding,
+              claimingExpiry == nil else { return }
+        let claimID = UUID()
         withAnimation(Self.flowAnimation) {
-            confirmingExpiry = nil
+            self.confirmation = nil
             claimingExpiry = date
+            activeClaimID = claimID
         }
         Task {
-            let outcome = await claim(date, redeemRequestID)
+            guard activeClaimID == claimID else { return }
+            let outcome = await confirmation.claim(date, confirmation.redeemRequestID)
+            // 계정 변경이나 popover 종료 뒤 도착한 이전 claim 결과는 새 화면에 반영하지 않음.
+            guard activeClaimID == claimID else { return }
             withAnimation(Self.flowAnimation) {
                 claimingExpiry = nil
+                activeClaimID = nil
                 apply(outcome, for: date)
             }
             onPinChange?(false)
         }
+    }
+
+    private func resetClaimState() {
+        confirmation = nil
+        claimingExpiry = nil
+        activeClaimID = nil
+        hoveredExpiry = nil
+        claimedExpiries = []
+        redeemRequestIDs = [:]
+        banner = nil
+        nothingToReset = false
+        onPinChange?(false)
+    }
+
+    private struct Confirmation {
+        let expiry: Date
+        let binding: CodexResetClaimBinding
+        let redeemRequestID: String
+        let claim: (Date, String) async -> ResetClaimOutcome
     }
 
     private func apply(_ outcome: ResetClaimOutcome, for date: Date) {
