@@ -230,7 +230,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertEqual(store.localSnapshots["claude"], original)
     }
 
-    func testSuccessfulUnresolvedFetchReplacesRejectedCache() async {
+    func testSuccessfulUnresolvedClaudeFetchDoesNotEnableCacheReuse() async {
         let defaults = makeUserDefaults("unresolved-success")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
         cache.store(snapshot("claude", used: 40), producedByIdentityKey: "acct-a")
@@ -245,10 +245,87 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         let second = await store.refresh(providerID: "claude")
 
         XCTAssertEqual(first, .refreshed)
-        XCTAssertEqual(second, .cacheHit)
-        XCTAssertEqual(runtime.refreshCount, 1)
+        XCTAssertEqual(second, .refreshed)
+        XCTAssertEqual(runtime.refreshCount, 2)
         XCTAssertEqual(store.snapshots["claude"], current)
         XCTAssertNil(cache.producedByIdentityKey(providerID: "claude"))
+    }
+
+    func testUnresolvedClaudeCredentialReplacementCannotPreservePreviousUsageOnFailure() async {
+        for (failingPath, force) in [("/api/oauth/profile", false), ("/api/oauth/usage", true)] {
+            let defaults = makeUserDefaults("unresolved-replacement-\(failingPath)")
+            let path = "/tmp/claude/.credentials.json"
+            func credentials(_ access: String) -> String {
+                #"{"claudeAiOauth":{"accessToken":"\#(access)","expiresAt":4102444800000,"scopes":["user:profile"],"subscriptionType":"max"}}"#
+            }
+            let files = FakeFiles([path: credentials("account-a")])
+            let http = RoutingHTTPClient { request in
+                let replacement = request.headers["Authorization"] == "Bearer account-b"
+                if replacement, request.url.path == failingPath {
+                    return HTTPResponse(statusCode: 503, headers: [:], body: Data())
+                }
+                let body: String
+                if request.url.path.hasSuffix("/profile") {
+                    let account = replacement ? "account-b" : "account-a"
+                    body = #"{"account":{"uuid":"\#(account)"},"organization":{"uuid":"org"}}"#
+                } else {
+                    body = #"{"five_hour":{"utilization":40}}"#
+                }
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }
+            let runtime = ClaudeProvider(
+                authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
+                    files: files, keychain: FakeKeychain(), allowsDesktopFallback: false
+                ),
+                usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                pricing: { TestPricing.bundled }
+            )
+            let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+            let store = WidgetDataStore(
+                registry: .from([runtime]), providers: [runtime], cache: cache, defaults: defaults
+            )
+            let first = await store.refresh(providerID: "claude")
+            XCTAssertEqual(first, .refreshed)
+            XCTAssertEqual(store.snapshots["claude"]?.plan, "Max")
+            XCTAssertNotNil(store.snapshots["claude"]?.line(label: "Session"))
+
+            files.files[path] = credentials("account-b")
+            let second = await store.refresh(providerID: "claude", force: force)
+
+            XCTAssertEqual(second, .failed)
+            XCTAssertNil(store.localSnapshots["claude"])
+            XCTAssertNil(store.snapshots["claude"])
+            XCTAssertNotNil(store.providerErrors["claude"])
+            XCTAssertEqual(http.requests.last?.headers["Authorization"], "Bearer account-b")
+            XCTAssertEqual(http.requests.last?.url.path, failingPath)
+        }
+    }
+
+    func testKnownClaudeAndOtherProvidersPreserveLastGoodAfterFailure() async {
+        for providerID in ["claude", "claude@work", "codex", "cursor"] {
+            let defaults = makeUserDefaults("last-good-\(providerID)")
+            let original = snapshot(providerID, used: 40)
+            let runtime = TogglingProviderRuntime(
+                provider: provider(providerID), descriptors: [], first: original,
+                second: .error(provider: provider(providerID), message: "Service unavailable", category: .network)
+            )
+            let identities = ProviderAccountID.family(of: providerID) == "claude" ? [providerID: "account-a"] : [:]
+            let store = WidgetDataStore(
+                registry: .from([runtime]), providers: [runtime],
+                cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+                defaults: defaults, providerIdentityKeys: identities
+            )
+            let first = await store.refresh(providerID: providerID)
+            let failed = await store.refresh(providerID: providerID, force: true)
+
+            XCTAssertEqual(first, .refreshed)
+            XCTAssertEqual(failed, .failed)
+            XCTAssertEqual(store.localSnapshots[providerID], original)
+            XCTAssertEqual(store.snapshots[providerID], original)
+            XCTAssertEqual(store.providerErrors[providerID], "Service unavailable")
+        }
     }
 
     func testUnresolvedCatalogReplacementDiscardsLiveClaudeSnapshotAfterIdentityConflict() async {

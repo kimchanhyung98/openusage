@@ -543,6 +543,9 @@ final class ClaudeProviderTests: XCTestCase {
                 )
             }
             if request.url.path.hasSuffix("/profile") {
+                guard request.headers["Authorization"] == "Bearer fresh-access" else {
+                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+                }
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(
                     #"{"account":{"uuid":"account-a"},"organization":{"uuid":"test-org"}}"#.utf8
                 ))
