@@ -476,6 +476,8 @@ struct AccountCredentialImporter {
         into store: AccountProfilesStore
     ) throws -> AccountProfile? {
         guard store.profiles(family: family).isEmpty else { return nil }
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         guard let credential = try readDefaultCredential(family: family) else { return nil }
         let profile = try register(credential, family: family, label: label, into: store)
         store.setPreferred(family: family, profileID: profile.id)

@@ -55,13 +55,13 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     /// Settings 토글 트랜잭션 — target snapshot 검증, 떠나는 계정의 rotated credential 보존, target 인증만 적용, 적용 identity 검증, 실패 시 rollback.
     /// 선택 상태 갱신은 caller 몫 — 이 함수 반환 후에만.
     func switchAuthentication(to selected: AccountProfile, from current: AccountProfile?) throws {
-        AccountCredentialMutationLock.acquire(family: selected.family)
-        defer { AccountCredentialMutationLock.release(family: selected.family) }
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
         }
         // 활성 profile 재선택 시 쓰기 1건도 발생 금지.
         guard current?.id != selected.id else { return }
+        AccountCredentialMutationLock.acquire(family: selected.family)
+        defer { AccountCredentialMutationLock.release(family: selected.family) }
 
         let target: AccountCredentialVault.Entry
         do {

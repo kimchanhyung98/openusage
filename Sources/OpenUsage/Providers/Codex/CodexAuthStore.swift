@@ -38,6 +38,15 @@ struct CodexAuthState: Hashable, Sendable {
     /// 저장 전 동일 세대 검증과 미모델 필드 보존용 원본문서 — 메모리에서만 유지.
     var sourceText: String? = nil
 
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.auth == rhs.auth && lhs.source == rhs.source
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(auth)
+        hasher.combine(source)
+    }
+
     /// 비어 있지 않은 OAuth access token 보유 여부 — `refresh()` probe와 `hasLocalCredentials()`가 공유하는 단일 기준 (drift 방지).
     var hasUsableAccessToken: Bool {
         auth.tokens?.accessToken?.isEmpty == false
