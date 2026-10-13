@@ -9,7 +9,7 @@ final class RefreshWakeSignal {
     private let stream: AsyncStream<Void>
     private let continuation: AsyncStream<Void>.Continuation
     private let center: NotificationCenter
-    private let clockChanged = OSAllocatedUnfairLock(initialState: false)
+    private let clockChanged = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
     /// nonisolated `deinit`의 observer 해제용 `nonisolated(unsafe)` — init 후 불변, `NotificationCenter`는 thread-safe 문서화.
     private nonisolated(unsafe) let observer: NSObjectProtocol
     private nonisolated(unsafe) let scheduleObserver: NSObjectProtocol
@@ -38,7 +38,7 @@ final class RefreshWakeSignal {
         self.clockObserver = center.addObserver(
             forName: .NSSystemClockDidChange, object: nil, queue: nil
         ) { _ in
-            clockChanged.withLock { $0 = true }
+            clockChanged.withLock { $0 = ProcessInfo.processInfo.systemUptime }
             continuation.yield()
         }
     }
@@ -51,10 +51,10 @@ final class RefreshWakeSignal {
         continuation.finish()
     }
 
-    /// 일반 wake와 병합되어도 시계 변경 사실은 다음 순회까지 보존.
-    func consumeClockChange() -> Bool {
+    /// 일반 wake와 병합되어도 마지막 시계 변경의 단조 시각은 다음 순회까지 보존.
+    func consumeClockChange() -> TimeInterval? {
         clockChanged.withLock { changed in
-            defer { changed = false }
+            defer { changed = nil }
             return changed
         }
     }

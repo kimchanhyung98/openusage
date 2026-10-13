@@ -56,6 +56,7 @@ final class WidgetDataStore {
     /// 마지막 사용량 배치 종료 시각. 첫 배치 전에는 nil.
     var lastRefreshAt: Date?
     private(set) var scheduledRefreshDates: [String: Date] = [:]
+    @ObservationIgnored private var scheduledRefreshUpdatedAt: [String: TimeInterval] = [:]
     var nextGeneralRefreshAt: Date?
     nonisolated static let refreshScheduleDidChange = Notification.Name("UsageRefreshScheduleDidChange")
     private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
@@ -231,9 +232,10 @@ final class WidgetDataStore {
         }.map { scheduledRefreshDate(for: $0) ?? date }.min()
     }
 
-    /// 시계 변경 후 로컬 주기는 재평가하되 계정별로 저장한 429 대기 시각은 유지.
-    func rebaseRefreshSchedule(for cadence: RefreshSetting.Cadence, at date: Date) {
+    /// 시계 변경 전 일정만 재평가 — 변경 후 완료한 조회의 다음 일정과 계정별 429 대기는 유지.
+    func rebaseRefreshSchedule(for cadence: RefreshSetting.Cadence, at date: Date, clockChangedAt: TimeInterval) {
         for id in registry.providers.map(\.id) where RefreshSetting.cadence(for: id) == cadence {
+            if let updatedAt = scheduledRefreshUpdatedAt[id], updatedAt >= clockChangedAt { continue }
             scheduledRefreshDates[id] = date
             providersNeedingScheduledRefresh.insert(id)
             if let retryAfter = failureRetryAfter[id] {
@@ -337,6 +339,9 @@ final class WidgetDataStore {
         let previousIdentityKeys = providerIdentityKeys
         unresolvedIdentityCacheRejections.formUnion(previousIdentityKeys.keys.filter { identityKeys[$0] == nil })
         unresolvedIdentityCacheRejections.subtract(identityKeys.keys)
+        unresolvedIdentityCacheRejections.formUnion(liveIDs.filter {
+            ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil
+        })
         func keepsState(_ cardID: String) -> Bool {
             guard liveIDs.contains(cardID) else { return false }
             return previousIdentityKeys[cardID] == identityKeys[cardID]
@@ -361,6 +366,7 @@ final class WidgetDataStore {
         providersNeedingScheduledRefresh.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
         scheduledRefreshDates = scheduledRefreshDates.filter { keepsState($0.key) }
+        scheduledRefreshUpdatedAt = scheduledRefreshUpdatedAt.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
             !unresolvedIdentityCacheRejections.contains(cardID)
@@ -542,6 +548,7 @@ final class WidgetDataStore {
             return .skipped
         }
         if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
+            scheduledRefreshUpdatedAt[providerID] = monotonicNow()
             scheduledRefreshDates[providerID] = now().addingTimeInterval(RefreshSetting.interval(for: providerID))
         }
         let durationMs = durationMilliseconds(since: start)
@@ -617,6 +624,7 @@ final class WidgetDataStore {
     func clearFailureBackoff(for providerID: String) {
         failureRetryAfter[providerID] = nil
         scheduledRefreshDates[providerID] = nil
+        scheduledRefreshUpdatedAt[providerID] = nil
     }
 
     /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
@@ -761,6 +769,7 @@ final class WidgetDataStore {
     /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
     func invalidateAuthentication(for providerID: String) {
         scheduledRefreshDates[providerID] = nil
+        scheduledRefreshUpdatedAt[providerID] = nil
         guard providersByID[providerID] != nil else { return }
         authenticationGenerations[providerID, default: 0] &+= 1
         onQuotaInvalidated?([providerID])

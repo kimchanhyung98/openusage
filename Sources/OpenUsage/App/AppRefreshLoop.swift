@@ -25,9 +25,9 @@ enum AppRefreshLoop {
             defer { heartbeat.cancel(); claudeTask.task?.cancel() }
             await withTaskCancellationHandler {
                 while !Task.isCancelled {
-                    if wakeSignal.consumeClockChange() {
+                    if let clockChangedAt = wakeSignal.consumeClockChange() {
                         nextGeneralPassAt = now()
-                        dataStore.rebaseRefreshSchedule(for: .regular, at: now())
+                        dataStore.rebaseRefreshSchedule(for: .regular, at: now(), clockChangedAt: clockChangedAt)
                     }
                     telemetry.tick()
                     await reconcileAccounts()
@@ -35,8 +35,8 @@ enum AppRefreshLoop {
                     if claudeTask.task == nil {
                         claudeTask.task = Task {
                             while !Task.isCancelled {
-                                if claudeWakeSignal.consumeClockChange() {
-                                    dataStore.rebaseRefreshSchedule(for: .claude, at: now())
+                                if let clockChangedAt = claudeWakeSignal.consumeClockChange() {
+                                    dataStore.rebaseRefreshSchedule(for: .claude, at: now(), clockChangedAt: clockChangedAt)
                                 }
                                 await dataStore.refreshAll(cadence: .claude)
                                 guard !Task.isCancelled else { return }
