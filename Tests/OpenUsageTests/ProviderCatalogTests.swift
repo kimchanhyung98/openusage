@@ -57,15 +57,25 @@ final class ProviderCatalogTests: XCTestCase {
     }
 
     func testManagedSwitchingPinsTheDefaultCodexCardToTheSharedAuthFile() throws {
-        let pinned = ProviderCatalog.make(codexSharedAuthHome: "/Users/x/.codex")
+        let pinned = ProviderCatalog.make(
+            codexSharedAuthHome: "/Users/x/.codex",
+            codexSharedSnapshotProfileID: "p1"
+        )
             .compactMap { $0 as? CodexProvider }
             .first { $0.provider.id == "codex" }
         XCTAssertEqual(pinned?.authStore.scope, .home(path: "/Users/x/.codex"))
+        XCTAssertEqual(pinned?.authStore.managedSnapshotProfileID, "p1")
 
         let unmanaged = ProviderCatalog.make()
             .compactMap { $0 as? CodexProvider }
             .first { $0.provider.id == "codex" }
         XCTAssertEqual(unmanaged?.authStore.scope, .standard)
+        XCTAssertNil(unmanaged?.authStore.managedSnapshotProfileID)
+
+        let unbound = ProviderCatalog.make(codexSharedAuthHome: "/Users/x/.codex")
+            .compactMap { $0 as? CodexProvider }
+            .first { $0.provider.id == "codex" }
+        XCTAssertNil(unbound?.authStore.managedSnapshotProfileID)
     }
 
     func testManagedSwitchingPinsTheDefaultClaudeCardToTheSharedHome() {
