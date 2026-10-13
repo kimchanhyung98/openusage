@@ -106,6 +106,8 @@ struct AccountCredentialImporter {
         id: String? = nil,
         into store: AccountProfilesStore
     ) throws -> AccountProfile {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         let staged = AccountProfile(
             id: id ?? UUID().uuidString,
             family: family,
@@ -137,6 +139,8 @@ struct AccountCredentialImporter {
     /// profile sign-in workspace에 staged된 전부 삭제 — provider-scoped 로그인 credential 먼저, 다음 workspace 디렉터리 (삭제 순서 계약).
     /// Shared Runtime Home·legacy 디렉터리는 범위 밖.
     func removeSignInWorkspace(family: String, profileID: String) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         try switcher.removeWorkspaceCredentialArtifacts(family: family, profileID: profileID)
         try workspace.remove(family: family, profileID: profileID)
     }
@@ -144,6 +148,8 @@ struct AccountCredentialImporter {
     /// managed 계정 제거 — switchable snapshot을 잃은 등록 profile 잔존 금지.
     /// workspace 먼저 삭제, 실패 시 snapshot·registry 유지 — registry preflight는 모든 삭제 전 실행.
     func removeAccount(_ profile: AccountProfile, from store: AccountProfilesStore) throws {
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         try store.validateArchive(profileID: profile.id)
         do {
             try removeSignInWorkspace(family: profile.family, profileID: profile.id)
@@ -207,6 +213,7 @@ struct AccountCredentialImporter {
         if let transaction = try store.pendingIdentityReplacement(),
            let profile = store.profile(id: transaction.profileID) {
             let revision = store.authenticationRevision
+            let codexRevision = profile.family == "codex" ? AccountCredentialMutationLock.revision : nil
             let savedSnapshot = try await loadOffMainActor { [switcher] in
                 try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
             }
@@ -214,9 +221,18 @@ struct AccountCredentialImporter {
                   try store.pendingIdentityReplacement() == transaction,
                   store.profile(id: profile.id) == profile,
                   store.authenticationRevision == revision else { return .unchanged }
-            _ = try finishInterruptedIdentityReplacement(
-                transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
-            )
+            let finishRecovery = {
+                _ = try self.finishInterruptedIdentityReplacement(
+                    transaction, profile: profile, savedSnapshot: savedSnapshot, in: store
+                )
+            }
+            if let codexRevision {
+                guard try AccountCredentialMutationLock.withUnchangedRevision(codexRevision, finishRecovery) else {
+                    return .unchanged
+                }
+            } else {
+                try finishRecovery()
+            }
         } else {
             _ = try recoverInterruptedIdentityReplacement(in: store)
         }
@@ -315,6 +331,8 @@ struct AccountCredentialImporter {
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
         }
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         guard let credential = try readWorkspaceCredential(family: profile.family, profileID: profile.id) else {
             throw ImportError.noSignIn(family: profile.family)
         }
@@ -362,6 +380,8 @@ struct AccountCredentialImporter {
             try store.cancelIdentityReplacement(transaction)
             return false
         }
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         let savedSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
         return try finishInterruptedIdentityReplacement(
             transaction, profile: profile, savedSnapshot: savedSnapshot, in: store

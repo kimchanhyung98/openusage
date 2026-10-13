@@ -55,6 +55,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     /// Settings 토글 트랜잭션 — target snapshot 검증, 떠나는 계정의 rotated credential 보존, target 인증만 적용, 적용 identity 검증, 실패 시 rollback.
     /// 선택 상태 갱신은 caller 몫 — 이 함수 반환 후에만.
     func switchAuthentication(to selected: AccountProfile, from current: AccountProfile?) throws {
+        AccountCredentialMutationLock.acquire(family: selected.family)
+        defer { AccountCredentialMutationLock.release(family: selected.family) }
         guard AccountProfilesStore.isSupportedFamily(selected.family) else {
             throw Error.unsupportedFamily(selected.family)
         }
@@ -263,6 +265,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     /// entry의 인증만 Shared Runtime Home에 적용 — 그 외 일체 불변.
     /// Claude: scoped/base Keychain credential + `.credentials.json` + state 파일에 `oauthAccount` 키만 merge(다른 키 보존). Codex: `auth.json` 원자적 교체.
     func applySharedAuthentication(_ entry: AccountCredentialVault.Entry, family: String) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         let home = sharedHomePath(family: family)
         switch family {
         case "claude":
@@ -294,6 +298,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// entry를 profile의 Sign-In Workspace에 미러링 — 이후 공식 re-login이 최신 credential에서 시작. 일반 세션 home 사용 금지.
     func writeWorkspaceAuthentication(_ entry: AccountCredentialVault.Entry, for profile: AccountProfile) throws {
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":

@@ -100,6 +100,7 @@ extension CodexAuthError: CategorizedError {
         case .sessionExpired, .tokenConflict, .tokenRevoked, .tokenExpired: .authExpired
         case .usageAPIKey: .notAvailable
         case .invalidAuthPayload: .authInvalid
+        case .credentialsChanged: .other
         }
     }
 }
