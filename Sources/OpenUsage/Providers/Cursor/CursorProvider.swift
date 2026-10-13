@@ -272,14 +272,17 @@ final class CursorProvider: ProviderRuntime {
             throw error
         }
         AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
-        // 원본 source의 token 쌍이 유지된 경우만 저장 — 충돌은 중단, 실제 쓰기 실패만 일시 사용.
+        // 현재 source·token 쌍의 충돌은 중단. Keychain과 실제 쓰기 실패는 이번 조회에서만 사용.
         var persisted = false
         do {
-            try await loadOffMainActor { [authStore] in
+            persisted = try await loadOffMainActor { [authStore] in
                 try authStore.saveAccessToken(accessToken, replacing: authState)
             }
-            persisted = true
-            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+            if persisted {
+                AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+            } else {
+                AppLog.info(LogTag.auth("cursor"), "refreshed Keychain token kept in memory; conditional persistence unavailable")
+            }
         } catch CursorAuthError.credentialsChanged {
             AppDiagnostics.failure(.credentialSave, error: CursorAuthError.credentialsChanged, providerID: provider.id,
                                    localContext: "sign-in changed during token refresh; discarding refreshed credentials")
