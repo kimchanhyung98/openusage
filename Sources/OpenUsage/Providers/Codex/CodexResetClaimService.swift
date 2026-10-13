@@ -25,14 +25,14 @@ final class CodexResetClaimService {
     }
 
     private let usageClient: CodexUsageClient
-    private let credentialLoader: (CodexAuthState.Source) async throws -> CodexAuthState?
+    private let credentialLoader: (CodexAuthState.Source, Bool) async throws -> CodexAuthState?
     private let isCurrent: () -> Bool
     private let refreshAfterClaim: () async -> Void
     let requestState: RequestState
 
     init(
         usageClient: CodexUsageClient,
-        credentialLoader: @escaping (CodexAuthState.Source) async throws -> CodexAuthState?,
+        credentialLoader: @escaping (CodexAuthState.Source, Bool) async throws -> CodexAuthState?,
         requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
         refreshAfterClaim: @escaping () async -> Void = {}
@@ -53,7 +53,7 @@ final class CodexResetClaimService {
     ) {
         self.init(
             usageClient: usageClient,
-            credentialLoader: { source in
+            credentialLoader: { source, allowInteraction in
                 try await loadOffMainActor {
                     switch source {
                     case .file(let path):
@@ -63,7 +63,7 @@ final class CodexResetClaimService {
                         return authStore.loadKeychainAuth()
                     case .accountSnapshot(let profileID):
                         guard authStore.scope == .accountSnapshot(profileID: profileID) else { return nil }
-                        return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: true)
+                        return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)
                     }
                 }
             },
@@ -86,7 +86,7 @@ final class CodexResetClaimService {
            previous.binding != binding || previous.expiry != expiry {
             return bindingFailure()
         }
-        guard let initial = await loadCredential(for: binding) else { return .failed }
+        guard let initial = await loadCredential(for: binding, allowInteraction: true) else { return .failed }
 
         let creditID: String
         if let previous = requestState.matchedCredits[redeemRequestID] {
@@ -117,7 +117,7 @@ final class CodexResetClaimService {
         }
 
         // GET 대기 중의 재로그인·로그아웃 확인. 같은 출처·주체의 정상 토큰 회전만 허용.
-        guard let current = await loadCredential(for: binding), !Task.isCancelled, isCurrent() else { return .failed }
+        guard let current = await loadCredential(for: binding, allowInteraction: false), !Task.isCancelled, isCurrent() else { return .failed }
         let response: HTTPResponse
         do {
             response = try await usageClient.consumeResetCredit(
@@ -141,7 +141,7 @@ final class CodexResetClaimService {
         // 완료된 요청의 인증만 재확인. 무관한 카탈로그 변경의 후속 조회 허용 여부는 router에서 판단.
         do {
             guard !Task.isCancelled,
-                  let current = try await credentialLoader(binding.source),
+                  let current = try await credentialLoader(binding.source, false),
                   binding.matches(current), !Task.isCancelled else {
                 AppLog.info(LogTag.plugin("codex"), "post-claim refresh skipped: credential binding changed")
                 AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
@@ -154,13 +154,13 @@ final class CodexResetClaimService {
         }
     }
 
-    private func loadCredential(for binding: CodexResetClaimBinding) async -> CodexAuthState? {
+    private func loadCredential(for binding: CodexResetClaimBinding, allowInteraction: Bool) async -> CodexAuthState? {
         guard !Task.isCancelled, isCurrent() else {
             _ = bindingFailure()
             return nil
         }
         do {
-            guard let state = try await credentialLoader(binding.source) else {
+            guard let state = try await credentialLoader(binding.source, allowInteraction) else {
                 AppDiagnostics.record(.resetClaim, result: .failure, category: .notLoggedIn, providerID: "codex")
                 return nil
             }
