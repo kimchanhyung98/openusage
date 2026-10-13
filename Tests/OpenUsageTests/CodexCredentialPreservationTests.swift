@@ -148,6 +148,25 @@ final class CodexCredentialPreservationTests: XCTestCase {
         XCTAssertEqual(files.files[Self.path], Self.replacement)
     }
 
+    func testReformattedCredentialKeepsModelEqualityButRejectsStaleWriteback() throws {
+        let files = FakeFiles([Self.path: Self.original])
+        let store = CodexAuthStore(environment: FakeEnvironment(), files: files, keychain: FakeKeychain())
+        let original = try XCTUnwrap(store.loadAuth(at: Self.path))
+        let reformatted = Self.original + "\n"
+        files.files[Self.path] = reformatted
+        let reloaded = try XCTUnwrap(store.loadAuth(at: Self.path))
+
+        XCTAssertEqual(original, reloaded)
+        XCTAssertEqual(Set([original, reloaded]).count, 1)
+        var rotated = original
+        rotated.auth.tokens?.accessToken = "rotated"
+        XCTAssertNotEqual(original, rotated)
+        XCTAssertThrowsError(try store.save(rotated)) { error in
+            XCTAssertEqual(error as? CodexAuthError, .credentialsChanged)
+        }
+        XCTAssertEqual(files.files[Self.path], reformatted)
+    }
+
     func testUnchangedNullFieldsRemainInTheDocument() throws {
         let raw = #"{"OPENAI_API_KEY":null,"tokens":{"access_token":"old","refresh_token":null,"id_token":null,"account_id":"A","extra":null},"future":{"list":[true,null,{"nested":"keep"}]}}"#
         let files = FakeFiles([Self.path: raw])

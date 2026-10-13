@@ -117,6 +117,17 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         XCTAssertEqual(fixture.http.requests.map(\.url), [CodexUsageClient.usageURL])
     }
 
+    func testFinalValidationAcceptsCredentialFormattingChanges() async throws {
+        let fixture = try fixture()
+        let key = try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: fixture.auth))
+        let session = try await fixture.provider.prepareWeeklyTimerSession(expectedAccountKey: key)
+        fixture.files.files[Self.path] = try Self.text(fixture.auth) + "\n"
+
+        try await fixture.provider.validateWeeklyTimerSession(session)
+
+        XCTAssertEqual(fixture.http.requests.map(\.url), [CodexUsageClient.usageURL])
+    }
+
     func testFinalValidationRejectsTokenThatNoLongerCoversExecutionDeadline() async throws {
         let auth = try Self.auth(expiresIn: 120, refresh: nil)
         let files = FakeFiles([Self.path: try Self.text(auth)])

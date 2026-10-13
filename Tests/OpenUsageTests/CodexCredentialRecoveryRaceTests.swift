@@ -3,6 +3,36 @@ import XCTest
 
 @MainActor
 final class CodexCredentialRecoveryRaceTests: XCTestCase {
+    func testReselectingTheSameAccountDoesNotDeferStartupRecovery() async throws {
+        let suite = "CodexRecoveryReselect-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: home)
+        }
+        let profiles = AccountProfilesStore(defaults: defaults)
+        let profile = try profiles.add(family: "codex", label: "Saved", identityKey: "A", id: "saved")
+        let keychain = RecoveryRaceKeychain()
+        let workspace = AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+        let switcher = AccountCredentialSwitcher(keychain: keychain, environment: FakeEnvironment(),
+                                                 homeDirectory: home, workspace: workspace)
+        let importer = AccountCredentialImporter(keychain: keychain, environment: FakeEnvironment(),
+                                                 homeDirectory: home, workspace: workspace)
+        let replacement = AccountCredentialVault.Entry(
+            credential: #"{"tokens":{"access_token":"replacement-B","account_id":"B"}}"#
+        )
+        try switcher.saveSnapshot(replacement, for: profile)
+        _ = try profiles.beginIdentityReplacement(profileID: profile.id, with: "B", replacesSharedAuthentication: true)
+        keychain.onNextRead = { try switcher.switchAuthentication(to: profile, from: profile) }
+
+        _ = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: profiles)
+
+        XCTAssertNil(try profiles.pendingIdentityReplacement())
+        XCTAssertEqual(profiles.profile(id: profile.id)?.identityKey, "b")
+        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), replacement)
+    }
+
     func testStartupRecoveryDefersWhenTheSnapshotRotatesDuringItsRead() async throws {
         let suite = "CodexRecoveryRace-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
