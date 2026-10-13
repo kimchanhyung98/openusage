@@ -91,6 +91,50 @@ final class CodexResetClaimBindingTests: XCTestCase {
         XCTAssertFalse(binding.matches(changed))
     }
 
+    func testUnchangedIDTokenCannotAuthorizeAccessTokensWithoutTheirOwnSubject() throws {
+        let accessTokens = [
+            ("opaque-A", "opaque-B"),
+            (try Self.token(subject: nil, account: "account-A"),
+             try Self.token(subject: nil, account: "account-A", version: 2)),
+            (try Self.token(subject: nil, account: nil),
+             try Self.token(subject: nil, account: nil, version: 2))
+        ]
+        for accountID in [nil, "account-A"] as [String?] {
+            for (originalAccessToken, replacementAccessToken) in accessTokens {
+                let original = CodexAuthState(
+                    auth: CodexAuth(tokens: CodexTokens(
+                        accessToken: originalAccessToken,
+                        idToken: try Self.token(subject: "user-A", account: "account-A"),
+                        accountID: accountID
+                    )),
+                    source: Self.source
+                )
+                let binding = try XCTUnwrap(CodexResetClaimBinding(authState: original))
+                XCTAssertTrue(binding.matches(original))
+
+                var changed = original
+                changed.auth.tokens?.accessToken = replacementAccessToken
+                XCTAssertFalse(binding.matches(changed))
+            }
+        }
+    }
+
+    func testUnchangedIDTokenCannotSupplyTheOnlyAccountForAccessTokenRotation() throws {
+        let original = CodexAuthState(
+            auth: CodexAuth(tokens: CodexTokens(
+                accessToken: try Self.token(subject: "user-A", account: nil),
+                idToken: try Self.token(subject: "user-A", account: "account-A")
+            )),
+            source: Self.source
+        )
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: original))
+        XCTAssertTrue(binding.matches(original))
+
+        var changed = original
+        changed.auth.tokens?.accessToken = try Self.token(subject: "user-A", account: nil, version: 2)
+        XCTAssertFalse(binding.matches(changed))
+    }
+
     func testConflictingSubjectsCannotCreateABindingOrMatchAnExistingOne() throws {
         let original = try Self.state()
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: original))
@@ -177,5 +221,46 @@ final class CodexResetClaimBindingTests: XCTestCase {
 
         XCTAssertEqual(outcome, .success)
         XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
+    }
+
+    func testOpaqueAccessTokenChangeDuringCreditFetchNeverConsumesWithAnUnchangedIDToken() async throws {
+        for accountID in [nil, "account-A"] as [String?] {
+            let original = CodexAuthState(
+                auth: CodexAuth(tokens: CodexTokens(
+                    accessToken: "opaque-A",
+                    idToken: try Self.token(subject: "user-A", account: "account-A"),
+                    accountID: accountID
+                )),
+                source: Self.source
+            )
+            var changed = original
+            changed.auth.tokens?.accessToken = "opaque-B"
+            let binding = try XCTUnwrap(CodexResetClaimBinding(authState: original))
+            let http = RoutingHTTPClient { request in
+                if request.method == "GET" {
+                    XCTAssertEqual(request.headers["Authorization"], "Bearer opaque-A")
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                        #"{"credits":[{"id":"credit-A","expires_at":1800000000,"status":"available"}]}"#.utf8
+                    ))
+                }
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
+            }
+            var loads = 0
+            let service = CodexResetClaimService(
+                usageClient: CodexUsageClient(http: http), credentialLoader: { source in
+                    XCTAssertEqual(source, original.source)
+                    loads += 1
+                    return loads == 1 ? original : changed
+                }
+            )
+
+            let outcome = await service.claim(
+                creditExpiringAt: Date(timeIntervalSince1970: 1_800_000_000),
+                redeemRequestID: "opaque-change", binding: binding
+            )
+
+            XCTAssertEqual(outcome, .failed)
+            XCTAssertEqual(http.requests.map(\.method), ["GET"])
+        }
     }
 }

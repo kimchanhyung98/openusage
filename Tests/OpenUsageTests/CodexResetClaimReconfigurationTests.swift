@@ -114,6 +114,45 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
         XCTAssertEqual(http.requests.count, requestCount, "the previous confirmation cannot migrate to another account")
     }
 
+    func testConfirmedActionUsesTheCurrentServiceAfterReconfiguration() async throws {
+        let http = RoutingHTTPClient { request in
+            request.method == "GET" ? Self.listResponse()
+                : HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset"}"#.utf8))
+        }
+        let router = CodexResetClaimRouter(
+            providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+        )
+        let confirmed = try XCTUnwrap(router.claimAction(for: "codex", binding: binding()))
+        router.reconfigure(providers: [provider(http: http)], identityKeys: ["codex": "account-A"])
+
+        let outcome = await confirmed(Self.expiry, "confirmed")
+
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
+    }
+
+    func testConfirmedActionCannotMoveToAnotherAccountOrRemovedCard() async throws {
+        for removeCard in [false, true] {
+            let http = RoutingHTTPClient { _ in
+                XCTFail("a stale account confirmation must not send requests")
+                return HTTPResponse(statusCode: 500, headers: [:], body: Data())
+            }
+            let router = CodexResetClaimRouter(
+                providers: [provider(http: http)], identityKeys: ["codex": "account-A"], refreshAfterClaim: { _ in }
+            )
+            let confirmed = try XCTUnwrap(router.claimAction(for: "codex", binding: binding()))
+            router.reconfigure(
+                providers: removeCard ? [] : [provider(accountID: "account-B", http: http)],
+                identityKeys: removeCard ? [:] : ["codex": "account-B"]
+            )
+
+            let outcome = await confirmed(Self.expiry, "confirmed")
+
+            XCTAssertEqual(outcome, .failed)
+            XCTAssertTrue(http.requests.isEmpty)
+        }
+    }
+
     func testReconfigurationDoesNotDuplicateAnInFlightRequest() async throws {
         let reachedConsume = expectation(description: "original consume started")
         let consumes = Counter()
@@ -145,5 +184,44 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
         XCTAssertEqual(duplicate, .failed)
         XCTAssertEqual(outcome, .success)
         XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
+    }
+
+    func testCredentialChangeBeforeCompletionSkipsRefreshAndPreservesTheServerOutcome() async throws {
+        for consume in [false, true] {
+            let reachedResponse = expectation(description: consume ? "consume pending" : "empty list pending")
+            let gate = Gate()
+            let http = RoutingHTTPClient { request in
+                if consume, request.method == "GET" { return Self.listResponse() }
+                reachedResponse.fulfill()
+                await gate.wait()
+                return HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data((consume ? #"{"code":"reset"}"# : #"{"credits":[]}"#).utf8)
+                )
+            }
+            var current = CodexAuthState(
+                auth: CodexAuth(tokens: CodexTokens(accessToken: "fixture-token", accountID: "account-A")),
+                source: .file(path: "/tmp/claim-reconfiguration/auth.json")
+            )
+            var refreshes = 0
+            let service = CodexResetClaimService(
+                usageClient: CodexUsageClient(http: http), credentialLoader: { _ in current },
+                refreshAfterClaim: { refreshes += 1 }
+            )
+            let binding = try binding()
+            let claim = Task {
+                await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "completion", binding: binding)
+            }
+            await fulfillment(of: [reachedResponse], timeout: 2)
+            current.auth.tokens = CodexTokens(accessToken: "other-token", accountID: "account-B")
+            await gate.open()
+
+            let outcome = await claim.value
+
+            XCTAssertEqual(outcome, consume ? .success : .noCredit)
+            XCTAssertEqual(refreshes, 0)
+            XCTAssertEqual(http.requests.map(\.method), consume ? ["GET", "POST"] : ["GET"])
+            XCTAssertEqual(Set(http.requests.compactMap { $0.headers["Authorization"] }), ["Bearer fixture-token"])
+        }
     }
 }
