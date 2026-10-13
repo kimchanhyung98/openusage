@@ -129,7 +129,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
         let session = CodexWeeklyTimerSession(
             observation: CodexWeeklyTimerObservation(accountKey: try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: auth)),
                                                       usedPercent: 0, resetsAt: nil, observedAt: Self.instant),
-            authState: CodexAuthState(auth: auth, source: .file(path: Self.path)), authStore: provider.authStore
+            authState: try XCTUnwrap(provider.authStore.loadAuth(at: Self.path)), authStore: provider.authStore
         )
         do {
             try await provider.validateWeeklyTimerSession(session)
@@ -267,7 +267,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
 
     func testWritebackPreservesSourceAndRejectsChangedAuthOrIdentity() async throws {
         let fixture = try fixture()
-        let original = CodexAuthState(auth: fixture.auth, source: .file(path: Self.path))
+        let original = try XCTUnwrap(fixture.provider.authStore.loadAuth(at: Self.path))
         let rotated = try Self.auth(expiresIn: 7_200, refresh: "new-refresh")
         try await fixture.provider.persistUpdatedWeeklyTimerAuth(rotated, original: original)
         XCTAssertEqual(CodexAuthStore.parseAuth(fixture.files.files[Self.path]!), rotated)
