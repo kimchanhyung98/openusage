@@ -133,7 +133,11 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 usageClient: CodexUsageClient(http: http), refreshAfterClaim: {}
             )
 
-            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture")
+            let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(
+                auth: try XCTUnwrap(CodexAuthStore.parseAuth(validCredential)),
+                source: .accountSnapshot(profileID: profile.id)
+            )))
+            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture", binding: binding)
 
             let readSucceeded = category == .notAvailable
             XCTAssertEqual(outcome, readSucceeded ? .noCredit : .failed)
