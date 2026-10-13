@@ -10,7 +10,8 @@ extension ClaudeProvider {
             AppLog.error(LogTag.plugin("claude"), "usage refresh blocked: account identity unavailable")
             throw ClaudeUsageStateStore.StoreError.identityUnavailable
         }
-        let lease = try await usageStateStore.acquire(accountKey: accountKey)
+        let config = try authStore.oauthConfig()
+        let lease = try await usageStateStore.acquire(accountKey: accountKey, usageURL: config.usageURL)
         defer { withExtendedLifetime(lease) {} }
         var record = try await loadOffMainActor { try lease.read() }
         try await validateUsageCredentials(state, expected: credentialGeneration)
@@ -24,7 +25,8 @@ extension ClaudeProvider {
         if let completedAt = record.completedAt, completedAt <= now(),
            (completedAt > requestedAt || (lease.waited && completedAt == requestedAt)) {
             if let failure = record.lastFailure { throw failure }
-            if var cached = record.lastGood, record.retryAfter == nil {
+            if let failure = record.authenticationFailure?.error(matching: state.oauth, config: config) { throw failure }
+            if var cached = record.lastGood, record.retryAfter == nil, record.authenticationFailure == nil {
                 cached.liveQuotaObservedAt = nil
                 return cached
             }
@@ -36,7 +38,7 @@ extension ClaudeProvider {
             if authStore.needsRefresh(state.oauth),
                let refreshToken = state.oauth.refreshToken, !refreshToken.isEmpty {
                 let refreshed = try await refreshAccessToken(
-                    state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration
+                    state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
                 )
                 state.oauth.accessToken = refreshed.accessToken
                 if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(state) }
@@ -46,14 +48,14 @@ extension ClaudeProvider {
             defer { state = working }
             let response = try await ProviderAuthRetry.fetch(
                 token: working.oauth.accessToken ?? "",
-                attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: self.authStore.oauthConfig()) },
+                attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: config) },
                 refreshAccessToken: {
                     if working.source == .desktop { throw ClaudeAuthError.desktopTokenExpired }
                     guard let refreshToken = working.oauth.refreshToken, !refreshToken.isEmpty else {
                         throw ClaudeAuthError.tokenExpired
                     }
                     let refreshed = try await self.refreshAccessToken(
-                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration
+                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
                     )
                     if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
                     return refreshed.accessToken
@@ -90,12 +92,18 @@ extension ClaudeProvider {
             case let error as URLError where error.code != .cancelled: .connectionFailed
             default: nil
             }
-            if let failure, !Task.isCancelled {
+            let authenticationFailure = ClaudeUsageStateStore.AuthenticationFailure(error, credentials: state.oauth, config: config)
+            guard !Task.isCancelled else { throw error }
+            if let failure {
                 record.failed(failure, at: now())
-                let saved = record
-                try await loadOffMainActor { try lease.save(saved) }
-                throw failure
+            } else if let authenticationFailure {
+                record.failed(authenticationFailure, at: now())
+            } else {
+                throw error
             }
+            let saved = record
+            try await loadOffMainActor { try lease.save(saved) }
+            if let failure { throw failure }
             throw error
         }
     }
@@ -139,12 +147,13 @@ extension ClaudeProvider {
     private func refreshAccessToken(
         state: inout ClaudeCredentialState,
         refreshToken: String,
-        expectedGeneration: ClaudeCredentialGeneration
+        expectedGeneration: ClaudeCredentialGeneration,
+        config: ClaudeOAuthConfig
     ) async throws -> RefreshedAccess {
         AppLog.info(LogTag.auth("claude"), "token refresh attempt")
         let decoded: ClaudeRefreshResponse
         do {
-            let response = try await usageClient.refreshToken(refreshToken, config: authStore.oauthConfig())
+            let response = try await usageClient.refreshToken(refreshToken, config: config)
             if response.statusCode == 400 || response.statusCode == 401 {
                 let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
                 let errorCode = body?["error"] as? String ?? body?["error_description"] as? String

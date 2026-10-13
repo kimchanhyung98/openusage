@@ -2,14 +2,54 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// 계정별 조회 잠금과 429 대기·마지막 정상 사용량을 앱과 CLI 사이에 공유.
+/// 사용량 endpoint·계정별 조회 잠금과 429 대기·마지막 정상 사용량을 앱과 CLI 사이에 공유.
 struct ClaudeUsageStateStore: Sendable {
+    struct AuthenticationFailure: Codable, Sendable {
+        private enum Kind: String, Codable, Sendable {
+            case sessionExpired, tokenExpired, desktopTokenExpired
+
+            var error: ClaudeAuthError {
+                switch self {
+                case .sessionExpired: .sessionExpired
+                case .tokenExpired: .tokenExpired
+                case .desktopTokenExpired: .desktopTokenExpired
+                }
+            }
+        }
+
+        private let kind: Kind
+        private let credentialFingerprint: String
+
+        init?(_ error: Error, credentials: ClaudeOAuth, config: ClaudeOAuthConfig) {
+            switch error {
+            case ClaudeAuthError.sessionExpired: kind = .sessionExpired
+            case ClaudeAuthError.tokenExpired: kind = .tokenExpired
+            case ClaudeAuthError.desktopTokenExpired: kind = .desktopTokenExpired
+            default: return nil
+            }
+            credentialFingerprint = Self.fingerprint(credentials, config: config)
+        }
+
+        func error(matching credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> ClaudeAuthError? {
+            credentialFingerprint == Self.fingerprint(credentials, config: config) ? kind.error : nil
+        }
+
+        // 같은 계정의 다른 로그인·OAuth client까지 만료로 오판하지 않으며 토큰 원문은 저장하지 않음.
+        private static func fingerprint(_ credentials: ClaudeOAuth, config: ClaudeOAuthConfig) -> String {
+            let values = [config.refreshURL.absoluteString, config.clientID,
+                          credentials.accessToken ?? "", credentials.refreshToken ?? ""]
+            let input = values.map { "\($0.utf8.count):\($0)" }.joined()
+            return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+        }
+    }
+
     struct Record: Codable, Sendable {
         var version = 1
         var consecutiveRateLimits = 0
         var retryAfter: Date?
         var lastGood: ClaudeMappedUsage?
         var lastFailure: ClaudeUsageError?
+        var authenticationFailure: AuthenticationFailure?
         var completedAt: Date?
 
         mutating func rateLimited(now: Date, retryAfterSeconds: Int?) {
@@ -17,12 +57,14 @@ struct ClaudeUsageStateStore: Sendable {
             let minimum = RefreshSetting.slowInterval * pow(2, Double(consecutiveRateLimits - 1))
             retryAfter = now.addingTimeInterval(max(minimum, Double(retryAfterSeconds ?? 0)))
             lastFailure = nil
+            authenticationFailure = nil
             completedAt = now
         }
 
         mutating func succeeded(_ usage: ClaudeMappedUsage, at date: Date) {
             lastGood = usage
             lastFailure = nil
+            authenticationFailure = nil
             consecutiveRateLimits = 0
             retryAfter = nil
             completedAt = date
@@ -30,6 +72,13 @@ struct ClaudeUsageStateStore: Sendable {
 
         mutating func failed(_ error: ClaudeUsageError, at date: Date) {
             lastFailure = error
+            authenticationFailure = nil
+            completedAt = date
+        }
+
+        mutating func failed(_ error: AuthenticationFailure, at date: Date) {
+            lastFailure = nil
+            authenticationFailure = error
             completedAt = date
         }
     }
@@ -76,6 +125,7 @@ struct ClaudeUsageStateStore: Sendable {
                       record.retryAfter.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
                       record.completedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
                       record.lastFailure == nil || record.completedAt != nil,
+                      record.authenticationFailure == nil || (record.lastFailure == nil && record.completedAt != nil),
                       record.lastGood.map({ $0.quotaObservedAt != nil && $0.retryAfter == nil }) ?? true
                 else { throw StoreError.invalidRecord }
                 return record
@@ -119,8 +169,8 @@ struct ClaudeUsageStateStore: Sendable {
         self.onContention = onContention
     }
 
-    func acquire(accountKey: String) async throws -> Lease {
-        let key = SHA256.hash(data: Data("claude-oauth-usage\u{0}\(accountKey)".utf8))
+    func acquire(accountKey: String, usageURL: URL) async throws -> Lease {
+        let key = SHA256.hash(data: Data("claude-oauth-usage\u{0}\(usageURL.absoluteString)\u{0}\(accountKey)".utf8))
             .map { String(format: "%02x", $0) }.joined()
         let fileURL = directory.appendingPathComponent(key).appendingPathExtension("json")
         do {

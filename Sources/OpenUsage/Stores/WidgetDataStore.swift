@@ -358,7 +358,10 @@ final class WidgetDataStore {
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
-        localSnapshots = localSnapshots.filter { keepsState($0.key) }
+        localSnapshots = localSnapshots.filter { cardID, _ in
+            keepsState(cardID)
+                && !(ProviderAccountID.family(of: cardID) == "claude" && identityKeys[cardID] == nil)
+        }
         refreshResults = refreshResults.filter { keepsState($0.key) }
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
