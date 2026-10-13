@@ -4,6 +4,60 @@ import XCTest
 
 @MainActor
 final class CursorCredentialPreservationTests: XCTestCase {
+    func testEffectiveSourceChangeDuringRefreshRejectsTheOldAccount() async throws {
+        for startsInSQLite in [true, false] {
+            let database = try CursorPreservationSQLite()
+            defer { database.remove() }
+            let oldAccess = cursorPreservationToken(subject: "account-a", expiresAt: 1)
+            let newAccess = cursorPreservationToken(subject: "account-b", expiresAt: 4_000_000_000)
+            let keychain = CursorPreservationKeychain()
+            keychain.replaceAuth(accessToken: oldAccess, refreshToken: "original-refresh")
+            if startsInSQLite {
+                try database.replaceAuth(accessToken: oldAccess, refreshToken: "original-refresh")
+                try database.setValue("free", for: CursorAuthStore.membershipTypeKey)
+            }
+            let store = CursorAuthStore(sqlite: database, keychain: keychain)
+            XCTAssertEqual(store.loadAuthState()?.source, startsInSQLite ? .sqlite : .keychain)
+            let http = RoutingHTTPClient { request in
+                guard request.url == CursorUsageClient.refreshURL else {
+                    return HTTPResponse(statusCode: 503, headers: [:], body: Data())
+                }
+                if startsInSQLite {
+                    keychain.replaceAuth(accessToken: newAccess, refreshToken: "new-refresh")
+                } else {
+                    try database.replaceAuth(accessToken: newAccess, refreshToken: "new-refresh")
+                }
+                return try cursorPreservationRefreshResponse(accessToken: "late-rotation")
+            }
+            let provider = CursorProvider(authStore: store, usageClient: CursorUsageClient(http: http), pricing: { .empty })
+
+            let snapshot = await provider.refresh()
+
+            XCTAssertEqual(snapshot.errorCategory, .other)
+            XCTAssertEqual(http.requests.map(\.url), [CursorUsageClient.refreshURL])
+            XCTAssertEqual(try database.value(for: CursorAuthStore.accessTokenKey), startsInSQLite ? oldAccess : newAccess)
+            XCTAssertEqual(try database.value(for: CursorAuthStore.refreshTokenKey), startsInSQLite ? "original-refresh" : "new-refresh")
+            XCTAssertEqual(keychain.storedValue(for: CursorAuthStore.keychainAccessTokenService), startsInSQLite ? newAccess : oldAccess)
+            XCTAssertEqual(keychain.storedValue(for: CursorAuthStore.keychainRefreshTokenService), startsInSQLite ? "new-refresh" : "original-refresh")
+            XCTAssertEqual(store.loadAuthState()?.source, startsInSQLite ? .keychain : .sqlite)
+        }
+    }
+
+    func testKeychainLoginImmediatelyAfterVerificationCannotBeOverwritten() throws {
+        let keychain = CursorPreservationKeychain()
+        keychain.replaceAuth(accessToken: "original-access", refreshToken: "original-refresh")
+        let store = CursorAuthStore(sqlite: CursorPreservationEmptySQLite(), keychain: keychain)
+        let original = try XCTUnwrap(store.loadAuthState())
+        keychain.afterNextRefreshRead {
+            keychain.replaceAuth(accessToken: "new-access", refreshToken: "new-refresh")
+        }
+
+        try store.saveAccessToken("late-rotation", replacing: original)
+
+        XCTAssertEqual(keychain.storedValue(for: CursorAuthStore.keychainAccessTokenService), "new-access")
+        XCTAssertEqual(keychain.storedValue(for: CursorAuthStore.keychainRefreshTokenService), "new-refresh")
+    }
+
     func testKeychainReloginDuringRefreshPreservesReplacementPair() async throws {
         let oldAccess = cursorPreservationToken(subject: "account-a", expiresAt: 1)
         let newAccess = cursorPreservationToken(subject: "account-b", expiresAt: 4_000_000_000)
@@ -305,6 +359,13 @@ private final class CursorPreservationKeychain: KeychainAccessing, @unchecked Se
     private let lock = NSLock()
     private var values: [String: String] = [:]
     private var readsFail = false
+    private var afterRefreshRead: (@Sendable () -> Void)?
+
+    func afterNextRefreshRead(_ action: @escaping @Sendable () -> Void) {
+        lock.lock()
+        afterRefreshRead = action
+        lock.unlock()
+    }
 
     func replaceAuth(accessToken: String, refreshToken: String) {
         lock.lock()
@@ -315,9 +376,16 @@ private final class CursorPreservationKeychain: KeychainAccessing, @unchecked Se
 
     func readGenericPassword(service: String) throws -> String? {
         lock.lock()
-        defer { lock.unlock() }
-        if readsFail { throw KeychainError.readFailed("Fixture Keychain read failure") }
-        return values[service]
+        if readsFail {
+            lock.unlock()
+            throw KeychainError.readFailed("Fixture Keychain read failure")
+        }
+        let value = values[service]
+        let action = service == CursorAuthStore.keychainRefreshTokenService ? afterRefreshRead : nil
+        if action != nil { afterRefreshRead = nil }
+        lock.unlock()
+        action?()
+        return value
     }
 
     func storedValue(for service: String) -> String? {

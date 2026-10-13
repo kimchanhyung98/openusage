@@ -132,7 +132,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
         }
     }
 
-    func testCursorRotationUsesSelectedKeychainWithoutWritingOtherAccountSQLite() async {
+    func testCursorRotationUsesLiveTokenWithoutWritingEitherCredentialStore() async {
         let diagnostics = DiagnosticEventRecorder()
         let sqliteValues = [
             CursorAuthStore.accessTokenKey: Self.jwt(1),
@@ -165,14 +165,12 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(sqlite.values, sqliteValues)
-        XCTAssertEqual(keychain.values[CursorAuthStore.keychainAccessTokenService], "rotated-access")
+        XCTAssertEqual(keychain.values[CursorAuthStore.keychainAccessTokenService], Self.jwt(1, subject: "keychain-account"))
         XCTAssertEqual(keychain.values[CursorAuthStore.keychainRefreshTokenService], "selected-keychain-refresh")
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
             DiagnosticEvent(.credentialRefresh, result: .success, providerID: "cursor")
         ])
-        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
-            DiagnosticEvent(.credentialSave, result: .success, providerID: "cursor")
-        ])
+        XCTAssertTrue(diagnostics.events.filter { $0.operation == .credentialSave }.isEmpty)
     }
 
     func testMissingRefreshTokenDoesNotInventAttempt() async {
