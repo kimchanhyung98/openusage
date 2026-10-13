@@ -24,14 +24,21 @@ final class CursorAuthStoreTests: XCTestCase {
     }
 
     func testPersistsSQLiteAccessToken() throws {
-        let sqlite = FakeSQLite()
+        let sqlite = FakeSQLite(values: [
+            CursorAuthStore.accessTokenKey: "original-access",
+            CursorAuthStore.refreshTokenKey: "original-refresh"
+        ])
         let store = CursorAuthStore(sqlite: sqlite, keychain: FakeKeychain())
+        let original = try XCTUnwrap(store.loadAuthState())
 
-        try store.saveAccessToken("fresh-token", source: .sqlite)
+        try store.saveAccessToken("fresh-token", replacing: original)
 
         XCTAssertEqual(sqlite.writtenValues[CursorAuthStore.accessTokenKey], "fresh-token")
+        XCTAssertEqual(sqlite.values[CursorAuthStore.refreshTokenKey], "original-refresh")
         // 토큰이 SQL 텍스트(= argv 후보)에 유입 금지 (회귀)
         XCTAssertFalse(sqlite.executedSQL.contains { $0.contains("fresh-token") })
+        XCTAssertFalse(sqlite.executedSQL.contains { $0.contains("original-access") })
+        XCTAssertFalse(sqlite.executedSQL.contains { $0.contains("original-refresh") })
     }
 
     func testSQLiteFakeRejectsBindingsOutsideCursorWriteContract() {
@@ -309,6 +316,21 @@ private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
         executedSQL.append(sql)
         guard bindings.count == 2 else { throw FakeSQLiteError.invalidBindingCount(bindings.count) }
         writtenValues[bindings[0]] = bindings[1]
+    }
+
+    func executeChanges(path: String, sql: String, bindings: [String?]) throws -> Int {
+        executedSQL.append(sql)
+        guard bindings.count == 8 else { throw FakeSQLiteError.invalidBindingCount(bindings.count) }
+        guard let key = bindings[0], let value = bindings[1],
+              let accessKey = bindings[2], let refreshKey = bindings[5] else {
+            throw SQLiteError.queryFailed("Missing required Cursor credential binding.")
+        }
+        let currentAccess = values[accessKey]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let currentRefresh = values[refreshKey]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard currentAccess == bindings[4], currentRefresh == bindings[7] else { return 0 }
+        values[key] = value
+        writtenValues[key] = value
+        return 1
     }
 
     private func sqlValue(after marker: String, in sql: String) -> String? {

@@ -119,6 +119,7 @@ extension CursorAuthError: CategorizedError {
         switch self {
         case .notLoggedIn: .notLoggedIn
         case .sessionExpired, .tokenExpired: .authExpired
+        case .credentialsChanged: .other
         }
     }
 }
