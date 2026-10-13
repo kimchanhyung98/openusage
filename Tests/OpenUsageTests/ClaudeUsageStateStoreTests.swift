@@ -3,6 +3,8 @@ import XCTest
 
 @MainActor
 final class ClaudeUsageStateStoreTests: XCTestCase {
+    private let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
+
     func testRetryAfterAcceptsSecondsAndHTTPDateAndRejectsInvalidValues() {
         let now = OpenUsageISO8601.date(from: "2026-10-12T00:00:00.000Z")!
         for (value, expected) in [("7200", 7200), ("Mon, 12 Oct 2026 02:00:00 GMT", 7200)] {
@@ -40,17 +42,17 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let now = Date()
         do {
-            let lease = try await store.acquire(accountKey: "private-account|private-org")
+            let lease = try await store.acquire(accountKey: "private-account|private-org", usageURL: usageURL)
             var record = ClaudeUsageStateStore.Record()
             record.succeeded(ClaudeMappedUsage(lines: [], quotaObservedAt: now), at: now)
             record.rateLimited(now: now, retryAfterSeconds: nil)
             try lease.save(record)
         }
         let restarted = ClaudeUsageStateStore(directory: store.directory)
-        let restored = try await restarted.acquire(accountKey: "private-account|private-org")
+        let restored = try await restarted.acquire(accountKey: "private-account|private-org", usageURL: usageURL)
         XCTAssertEqual(try restored.read().retryAfter, now.addingTimeInterval(900))
         XCTAssertEqual(try restored.read().lastGood?.quotaObservedAt, now)
-        let other = try await restarted.acquire(accountKey: "other-account")
+        let other = try await restarted.acquire(accountKey: "other-account", usageURL: usageURL)
         XCTAssertNil(try other.read().retryAfter)
         let files = try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
         for file in files {
@@ -66,14 +68,14 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
         let successfulWaitStarted = expectation(description: "Successful waiter reached the lock")
         let store = isolatedClaudeUsageStore(onContention: { cancelledWaitStarted.fulfill() })
         defer { try? FileManager.default.removeItem(at: store.directory) }
-        var first: ClaudeUsageStateStore.Lease? = try await store.acquire(accountKey: "account")
-        let waiting = Task { try await store.acquire(accountKey: "account") }
+        var first: ClaudeUsageStateStore.Lease? = try await store.acquire(accountKey: "account", usageURL: usageURL)
+        let waiting = Task { try await store.acquire(accountKey: "account", usageURL: usageURL) }
         await fulfillment(of: [cancelledWaitStarted], timeout: 2)
         waiting.cancel()
         do { _ = try await waiting.value; XCTFail("Expected cancellation") }
         catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
         let contendingStore = ClaudeUsageStateStore(directory: store.directory, onContention: { successfulWaitStarted.fulfill() })
-        let second = Task { try await contendingStore.acquire(accountKey: "account") }
+        let second = Task { try await contendingStore.acquire(accountKey: "account", usageURL: usageURL) }
         await fulfillment(of: [successfulWaitStarted], timeout: 2)
         var record = ClaudeUsageStateStore.Record()
         record.rateLimited(now: Date(), retryAfterSeconds: nil)
@@ -87,7 +89,7 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
     func testCorruptRecordAndUnavailableStorageFailLoudly() async throws {
         let store = isolatedClaudeUsageStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
-        let lease = try await store.acquire(accountKey: "account")
+        let lease = try await store.acquire(accountKey: "account", usageURL: usageURL)
         try lease.save(.init())
         let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(
             at: store.directory, includingPropertiesForKeys: nil
@@ -95,7 +97,7 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
         try Data("broken".utf8).write(to: file)
         XCTAssertThrowsError(try lease.read())
         let unavailable = ClaudeUsageStateStore(directory: file)
-        do { _ = try await unavailable.acquire(accountKey: "account"); XCTFail("Expected storage error") }
+        do { _ = try await unavailable.acquire(accountKey: "account", usageURL: usageURL); XCTFail("Expected storage error") }
         catch let error as ClaudeUsageStateStore.StoreError {
             guard case .storageUnavailable = error else { return XCTFail("Unexpected error") }
         }

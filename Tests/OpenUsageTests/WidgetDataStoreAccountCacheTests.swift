@@ -251,6 +251,59 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertNil(cache.producedByIdentityKey(providerID: "claude"))
     }
 
+    func testUnresolvedCatalogReplacementDiscardsLiveClaudeSnapshotAfterIdentityConflict() async {
+        let defaults = makeUserDefaults("unresolved-live-replacement")
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let files = FakeFiles([
+            "~/.claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"account-a","expiresAt":4102444800000,"scopes":["user:profile"]}}"#,
+            home + "/.claude.json": claudeUsageTestIdentity(),
+            home + "/.claude/.claude.json": claudeUsageTestIdentity()
+        ])
+        let observer = DefaultAccountObserver(environment: FakeEnvironment(), files: files,
+                                              keychain: FakeKeychain(), pinsClaudeSharedHome: true)
+        let accounts = ProviderAccountsStore(defaults: defaults)
+        let initial = ProviderAccountAssembly.make(observer: observer, accountsStore: accounts, families: [])
+        let http = FakeHTTPClient(response: HTTPResponse(
+            statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":40}}"#.utf8)
+        ))
+        let usageState = isolatedClaudeUsageStore()
+        func runtime(pinned: Bool) -> ClaudeProvider {
+            ClaudeProvider(
+                authStore: ClaudeAuthStore(environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
+                                           allowsDesktopFallback: false, pinsSharedHome: pinned),
+                usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: usageState,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                pricing: { TestPricing.bundled }
+            )
+        }
+        let firstRuntime = runtime(pinned: false)
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry.from([firstRuntime]), providers: [firstRuntime], cache: cache,
+            defaults: defaults, providerIdentityKeys: initial.identityKeysByCard
+        )
+        let first = await store.refresh(providerID: "claude")
+        XCTAssertEqual(first, .refreshed)
+        XCTAssertNotNil(store.localSnapshots["claude"]?.quotaObservedAt)
+        XCTAssertNil(initial.identityKeysByCard["claude"])
+
+        files.files[home + "/.claude/.claude.json"] = claudeUsageTestIdentity("account-b")
+        let replacement = ProviderAccountAssembly.make(
+            observer: observer, accountsStore: accounts, families: ["claude"], claudeManagedSwitchActive: true
+        )
+        XCTAssertNotEqual(initial, replacement)
+        XCTAssertNil(replacement.identityKeysByCard["claude"])
+        let nextRuntime = runtime(pinned: true)
+        store.replaceProviderCatalog(registry: WidgetRegistry.from([nextRuntime]), providers: [nextRuntime],
+                                     identityKeys: replacement.identityKeysByCard)
+        XCTAssertNil(store.localSnapshots["claude"])
+        XCTAssertNil(store.snapshots["claude"])
+        let failed = await store.refresh(providerID: "claude", force: true)
+        XCTAssertEqual(failed, .failed)
+        XCTAssertNil(store.snapshots["claude"], "a failed replacement must not restore the previous account's usage")
+        XCTAssertEqual(http.requests.count, 1)
+    }
+
     func testHasStaleAccountStampSemantics() {
         let defaults = makeUserDefaults("predicate")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })

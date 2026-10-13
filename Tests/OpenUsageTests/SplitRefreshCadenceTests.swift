@@ -212,6 +212,49 @@ final class SplitRefreshCadenceTests: XCTestCase {
         XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), fixture.time.addingTimeInterval(900))
     }
 
+    func testManualClaudeRefreshOverlappingDeadlineDoesNotRefetchAfterSuccessRateLimitOrFailure() async throws {
+        for outcome in ["success", "rateLimited", "failure"] {
+            let fixture = try Fixture()
+            defer { fixture.cleanUp() }
+            await fixture.store.refreshAll(cadence: .claude)
+            let started = expectation(description: "Manual Claude request started: \(outcome)")
+            var continuation: CheckedContinuation<Void, Never>?
+            fixture.claude.beforeRefresh = {
+                await withCheckedContinuation { continuation = $0; started.fulfill() }
+            }
+            fixture.time = fixture.start.addingTimeInterval(899)
+            let manual = Task {
+                await fixture.store.refresh(providerID: "claude@work", force: true, trigger: .manual)
+            }
+            await fulfillment(of: [started], timeout: 2)
+
+            fixture.time = fixture.start.addingTimeInterval(900)
+            await fixture.store.refreshAll(cadence: .claude)
+            XCTAssertEqual(fixture.claude.refreshCount, 2, outcome)
+            XCTAssertNil(fixture.store.nextScheduledRefresh(for: .claude, at: fixture.time), outcome)
+
+            fixture.time = fixture.start.addingTimeInterval(901)
+            fixture.claude.quotaObservedAt = outcome == "success" ? fixture.time : fixture.start
+            fixture.claude.retryAfter = outcome == "rateLimited" ? fixture.start.addingTimeInterval(1801) : nil
+            fixture.claude.fails = outcome == "failure"
+            fixture.claude.beforeRefresh = {}
+            let resumed = expectation(description: "Manual completion wakes the cadence: \(outcome)")
+            let observer = NotificationCenter.default.addObserver(
+                forName: WidgetDataStore.refreshScheduleDidChange, object: nil, queue: nil
+            ) { _ in resumed.fulfill() }
+            continuation?.resume()
+            let result = await manual.value
+            NotificationCenter.default.removeObserver(observer)
+            await fulfillment(of: [resumed], timeout: 2)
+            XCTAssertEqual(result, outcome == "failure" ? .failed : .refreshed, outcome)
+
+            await fixture.store.refreshAll(cadence: .claude)
+            XCTAssertEqual(fixture.claude.refreshCount, 2, outcome)
+            let expectedDeadline = fixture.start.addingTimeInterval(outcome == "failure" ? 961 : 1801)
+            XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), expectedDeadline, outcome)
+        }
+    }
+
     func testDisabledLateResultIsDiscardedAndRefetchesAfterReenable() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }

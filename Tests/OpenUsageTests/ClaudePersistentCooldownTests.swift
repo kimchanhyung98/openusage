@@ -207,6 +207,151 @@ final class ClaudePersistentCooldownTests: XCTestCase {
         }
     }
 
+    func testConcurrentRevokedRefreshTokensShareAuthenticationFailure() async throws {
+        let started = expectation(description: "Revoked token refresh started")
+        let contended = expectation(description: "Second provider waits for revoked credentials")
+        let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
+        let gate = UsageGate()
+        let files = credentials()
+        files.files["/tmp/claude/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"revoked-access","refreshToken":"revoked-refresh","expiresAt":1,"scopes":["user:profile"]}}"#
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let http = RoutingHTTPClient { _ in
+            if calls.withLock({ $0 += 1; return $0 }) == 1 { started.fulfill() }
+            await gate.wait()
+            return HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
+        }
+        let first = provider(files: files, http: http, store: store)
+        let second = provider(files: files, http: http, store: store)
+        let original = Task { await first.refresh() }
+        await fulfillment(of: [started], timeout: 2)
+        let waiting = Task { await second.refresh() }
+        await fulfillment(of: [contended], timeout: 2)
+        await gate.open()
+
+        let firstResult = await original.value
+        let shared = await waiting.value
+        XCTAssertEqual(http.requests.count, 1)
+        XCTAssertEqual(firstResult.errorCategory, .authExpired)
+        XCTAssertEqual(shared.lines, firstResult.lines)
+        let savedFiles = try FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)
+        for file in savedFiles where file.pathExtension == "json" {
+            let saved = try String(contentsOf: file, encoding: .utf8)
+            XCTAssertFalse(saved.contains("revoked-access"))
+            XCTAssertFalse(saved.contains("revoked-refresh"))
+        }
+        _ = await first.refresh()
+        XCTAssertEqual(http.requests.count, 2, "A later request may retry the same credentials")
+    }
+
+    func testConcurrentUnauthorizedRetrySharesFailureAfterTokenRotation() async throws {
+        let started = expectation(description: "Unauthorized usage request started")
+        let contended = expectation(description: "Second provider waits for unauthorized credentials")
+        let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
+        let gate = UsageGate()
+        let files = credentials()
+        files.files["/tmp/claude/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"old","refreshToken":"refresh","expiresAt":4102444800000,"scopes":["user:profile"]}}"#
+        let http = RoutingHTTPClient { request in
+            if !request.url.absoluteString.hasSuffix("/api/oauth/usage") {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"access_token":"new","refresh_token":"new-refresh","expires_in":3600}"#.utf8
+                ))
+            }
+            if request.headers["Authorization"] == "Bearer old" {
+                started.fulfill()
+                await gate.wait()
+            }
+            return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+        }
+        let first = provider(files: files, http: http, store: store)
+        let second = provider(files: files, http: http, store: store)
+        let original = Task { await first.refresh() }
+        await fulfillment(of: [started], timeout: 2)
+        let waiting = Task { await second.refresh() }
+        await fulfillment(of: [contended], timeout: 2)
+        await gate.open()
+
+        let firstResult = await original.value
+        let shared = await waiting.value
+        XCTAssertEqual(http.requests.count, 3, "The waiter must reuse the failed retry with rotated credentials")
+        XCTAssertEqual(firstResult.errorCategory, .authExpired)
+        XCTAssertEqual(shared.lines, firstResult.lines)
+    }
+
+    func testConcurrentAuthenticationFailureDoesNotRejectAnotherRefreshToken() async throws {
+        let started = expectation(description: "Revoked refresh token request started")
+        let contended = expectation(description: "Valid credentials wait for the same account")
+        let store = isolatedClaudeUsageStore(onContention: { contended.fulfill() })
+        let gate = UsageGate()
+        let revokedFiles = credentials()
+        let validFiles = credentials()
+        revokedFiles.files["/tmp/claude/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"shared-access","refreshToken":"revoked-refresh","expiresAt":1,"scopes":["user:profile"]}}"#
+        validFiles.files["/tmp/claude/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"shared-access","refreshToken":"valid-refresh","expiresAt":1,"scopes":["user:profile"]}}"#
+        let http = RoutingHTTPClient { request in
+            if !request.url.absoluteString.hasSuffix("/api/oauth/usage") {
+                let parameters = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(request.body))
+                if parameters["refresh_token"] == "revoked-refresh" {
+                    started.fulfill()
+                    await gate.wait()
+                    return HTTPResponse(statusCode: 400, headers: [:], body: Data(#"{"error":"invalid_grant"}"#.utf8))
+                }
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                    #"{"access_token":"valid-access","refresh_token":"new-refresh","expires_in":3600}"#.utf8
+                ))
+            }
+            return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":25}}"#.utf8))
+        }
+        let first = provider(files: revokedFiles, http: http, store: store)
+        let second = provider(files: validFiles, http: http, store: store)
+        let original = Task { await first.refresh() }
+        await fulfillment(of: [started], timeout: 2)
+        let waiting = Task { await second.refresh() }
+        await fulfillment(of: [contended], timeout: 2)
+        await gate.open()
+
+        let failed = await original.value
+        let recovered = await waiting.value
+        XCTAssertEqual(failed.errorCategory, .authExpired)
+        XCTAssertNotNil(recovered.liveQuotaObservedAt)
+        XCTAssertEqual(http.requests.count, 3)
+    }
+
+    func testOAuthEndpointsKeepSeparateCooldownsAndLastGoodUsage() async throws {
+        let store = isolatedClaudeUsageStore()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = OSAllocatedUnfairLock(initialState: start)
+        let productionCalls = OSAllocatedUnfairLock(initialState: 0)
+        let http = RoutingHTTPClient { request in
+            if request.url.host == "custom.example" {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":75}}"#.utf8))
+            }
+            let attempt = productionCalls.withLock { $0 += 1; return $0 }
+            return HTTPResponse(statusCode: attempt == 1 ? 200 : 429, headers: [:], body: Data(
+                #"{"five_hour":{"utilization":25}}"#.utf8
+            ))
+        }
+        let files = credentials()
+        let production = provider(files: files, http: http, store: store, now: { clock.withLock { $0 } })
+        _ = await production.refresh()
+        clock.withLock { $0 = start.addingTimeInterval(1) }
+        let limited = await production.refresh()
+        clock.withLock { $0 = start.addingTimeInterval(2) }
+        let custom = await provider(
+            files: files, http: http, store: store, now: { clock.withLock { $0 } },
+            environment: ["CLAUDE_CODE_CUSTOM_OAUTH_URL": "https://custom.example"]
+        ).refresh()
+        clock.withLock { $0 = start.addingTimeInterval(3) }
+        let returned = await production.refresh()
+
+        XCTAssertNil(custom.usageRetryAfter)
+        XCTAssertEqual(custom.liveQuotaObservedAt, start.addingTimeInterval(2))
+        XCTAssertEqual(custom.line(label: "Session"), .progress(label: "Session", used: 75, limit: 100,
+                                                               format: .percent, periodDurationMs: MetricPeriod.sessionMs))
+        XCTAssertEqual(returned.usageRetryAfter, limited.usageRetryAfter)
+        XCTAssertEqual(returned.quotaObservedAt, start)
+        XCTAssertEqual(returned.line(label: "Session"), limited.line(label: "Session"))
+        XCTAssertEqual(http.requests.count, 3)
+    }
+
     private actor UsageGate {
         private var continuations: [CheckedContinuation<Void, Never>] = []
         private var opened = false
@@ -232,10 +377,11 @@ final class ClaudePersistentCooldownTests: XCTestCase {
 
     private func provider(
         files: FakeFiles, http: HTTPClient, store: ClaudeUsageStateStore,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        environment: [String: String] = [:]
     ) -> ClaudeProvider {
         ClaudeProvider(
-            authStore: ClaudeAuthStore(environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
+            authStore: ClaudeAuthStore(environment: FakeEnvironment(environment.merging(["CLAUDE_CONFIG_DIR": "/tmp/claude"]) { _, value in value }),
                                        files: files, keychain: FakeKeychain(), now: now),
             usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: store,
             logUsageScanner: ClaudeLogFixture.scanner(home: nil), now: now, pricing: { TestPricing.bundled }
