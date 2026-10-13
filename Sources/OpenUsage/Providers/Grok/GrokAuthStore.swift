@@ -25,12 +25,15 @@ struct GrokAuthState: Hashable, Sendable {
     var entryKey: String
     var entry: GrokAuthEntry
     var token: String
+    /// 형제 entry 변경과 구분하는 원본 대상 문서 — 미모델 필드까지 포함, 메모리에서만 유지.
+    var entryRevision: Data? = nil
 }
 
 enum GrokAuthError: Error, LocalizedError, Equatable {
     case notLoggedIn
     case invalidAuth
     case expired
+    case credentialsChanged
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +43,8 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
             return "Grok auth invalid. Run `grok login` again."
         case .expired:
             return "Grok auth expired. Run `grok login` again."
+        case .credentialsChanged:
+            return "Grok sign-in changed while refreshing. Refresh again to use the current account."
         }
     }
 }
@@ -48,6 +53,7 @@ struct GrokAuthStore: Sendable {
     static let authPath = "~/.grok/auth.json"
     static let defaultClientID = "b1a00492-073a-47ea-816f-4c329264a828"
     static let refreshBuffer: TimeInterval = 5 * 60
+    private static let mutationLock = NSLock()
 
     var files: TextFileAccessing
     var now: @Sendable () -> Date
@@ -63,14 +69,19 @@ struct GrokAuthStore: Sendable {
     func loadAuthCandidates() throws -> [GrokAuthState] {
         guard files.exists(Self.authPath),
               let text = try? files.readText(Self.authPath),
-              let auth = Self.parseAuth(text)
+              let auth = Self.parseAuth(text),
+              let document = Self.parseJSONObject(text)
         else {
             throw GrokAuthError.notLoggedIn
         }
 
-        let candidates = auth.compactMap { entryKey, entry -> GrokAuthState? in
-            guard let token = trimmed(entry.key) else { return nil }
-            return GrokAuthState(auth: auth, entryKey: entryKey, entry: entry, token: token)
+        let candidates = try auth.compactMap { entryKey, entry -> GrokAuthState? in
+            guard let token = trimmed(entry.key),
+                  let entryObject = document[entryKey] as? [String: Any] else { return nil }
+            return GrokAuthState(
+                auth: auth, entryKey: entryKey, entry: entry, token: token,
+                entryRevision: try Self.revision(of: entryObject)
+            )
         }
 
         guard !candidates.isEmpty else {
@@ -79,21 +90,19 @@ struct GrokAuthStore: Sendable {
         return candidates
     }
 
-    func save(_ state: GrokAuthState) throws {
-        // 존재하지만 손상·비가독인 auth.json을 in-memory state로 재구성해 덮어쓰기 금지 — 다른 계정 entry가 소실됨
-        // 파일이 아예 없는 최초 쓰기만 in-memory state로 seed
-        var authObject: [String: Any]
-        if files.exists(Self.authPath) {
-            guard let existingText = try? files.readText(Self.authPath),
-                  let parsed = Self.parseJSONObject(existingText)
-            else {
-                throw GrokAuthError.invalidAuth
-            }
-            authObject = parsed
-        } else {
-            authObject = try Self.jsonObject(from: state.auth)
+    /// 앱 내부 비교·쓰기 직렬화 — 외부 CLI와의 원자적 조건부 쓰기는 보장하지 않음.
+    @discardableResult
+    func save(_ state: GrokAuthState) throws -> GrokAuthState {
+        Self.mutationLock.lock()
+        defer { Self.mutationLock.unlock() }
+        guard let expected = state.entryRevision,
+              files.exists(Self.authPath),
+              let existingText = try? files.readText(Self.authPath),
+              var authObject = Self.parseJSONObject(existingText),
+              var entryObject = authObject[state.entryKey] as? [String: Any],
+              try Self.revision(of: entryObject) == expected else {
+            throw GrokAuthError.credentialsChanged
         }
-        var entryObject = authObject[state.entryKey] as? [String: Any] ?? [:]
         entryObject["key"] = state.entry.key
         if let refreshToken = state.entry.refreshToken {
             entryObject["refresh_token"] = refreshToken
@@ -114,6 +123,10 @@ struct GrokAuthStore: Sendable {
             throw GrokAuthError.invalidAuth
         }
         try files.writeText(Self.authPath, text)
+        var saved = state
+        saved.auth[state.entryKey] = state.entry
+        saved.entryRevision = try Self.revision(of: entryObject)
+        return saved
     }
 
     func needsRefresh(entry: GrokAuthEntry, token: String) -> Bool {
@@ -176,13 +189,8 @@ struct GrokAuthStore: Sendable {
         expiresAt.timeIntervalSince(now()) <= Self.refreshBuffer
     }
 
-    private static func jsonObject(from auth: [String: GrokAuthEntry]) throws -> [String: Any] {
-        // 실패 시 `[:]` 반환 대신 throw — 빈 base면 save()가 현재 entry만 남긴 파일을 써서 다른 계정 credential이 파괴됨
-        let data = try JSONEncoder().encode(auth)
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw GrokAuthError.invalidAuth
-        }
-        return object
+    private static func revision(of entry: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys])
     }
 
     private func trimmed(_ value: String?) -> String? {

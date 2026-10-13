@@ -68,7 +68,7 @@ final class GrokProvider: ProviderRuntime {
 
         for var state in candidates {
             if authStore.needsRefresh(entry: state.entry, token: state.token) {
-                if let refreshed = await refreshAccessToken(state: &state) {
+                if let refreshed = try await refreshAccessToken(state: &state) {
                     return try await probe(state: &state, accessToken: refreshed)
                 }
                 if authStore.isExpired(entry: state.entry, token: state.token) {
@@ -130,7 +130,7 @@ final class GrokProvider: ProviderRuntime {
             token: accessToken,
             attempt: { try await self.usageClient.fetchCreditsConfig(accessToken: $0) },
             refreshAccessToken: {
-                guard let refreshed = await self.refreshAccessToken(state: &working) else {
+                guard let refreshed = try await self.refreshAccessToken(state: &working) else {
                     throw GrokAuthError.expired
                 }
                 return refreshed
@@ -140,7 +140,7 @@ final class GrokProvider: ProviderRuntime {
         )
     }
 
-    private func refreshAccessToken(state: inout GrokAuthState) async -> String? {
+    private func refreshAccessToken(state: inout GrokAuthState) async throws -> String? {
         guard let refreshToken = authStore.refreshToken(for: state.entry) else {
             return nil
         }
@@ -180,10 +180,12 @@ final class GrokProvider: ProviderRuntime {
 
         let expiresAt = refreshExpiryDate(response: decoded, accessToken: accessToken)
         state.entry.expiresAt = OpenUsageISO8601.string(from: expiresAt)
-        // save 실패를 삼키면 rotate된 token이 디스크에 남지 않아 다음 실행에서 재refresh·거짓 "auth expired" 발생 — 로그로 크게 알림
-        // refresh된 token은 이번 session에 유효하므로 live fetch는 실패시키지 않고 계속 진행
+        // 원본 변경은 중단 — 실제 쓰기 실패만 로그 후 갱신 token을 이번 세션에서 일시 사용.
         do {
-            try authStore.save(state)
+            state = try authStore.save(state)
+        } catch GrokAuthError.credentialsChanged {
+            AppLog.warn(LogTag.auth("grok"), "sign-in changed during token refresh; discarding refreshed credentials")
+            throw GrokAuthError.credentialsChanged
         } catch {
             AppLog.error(LogTag.auth("grok"), "failed to persist rotated credentials; using the refreshed token for this session only: \(error.localizedDescription)")
         }
