@@ -67,6 +67,7 @@ struct ProviderSectionHeader: View {
                     .layoutPriority(3)
                 ForEach(
                     Self.issueIndicatorKinds(
+                        providerID: provider.id,
                         hasWarning: warning != nil,
                         serviceStatus: serviceStatus,
                         refreshing: refreshing
@@ -86,11 +87,15 @@ struct ProviderSectionHeader: View {
                                 .accessibilityValue(warning)
                         }
                     case .service:
-                        if case .disrupted(let issue) = serviceStatus {
-                            ServerIssueIcon(
-                                issue: issue,
-                                providerName: displayName
-                            )
+                        if case .disrupted(let issue) = serviceStatus,
+                           let statusLink = provider.visibleLinks.first(where: { $0.label == "Status" }),
+                           let url = URL(string: statusLink.url) {
+                            Link(destination: url) {
+                                ServerIssueIcon(issue: issue, providerName: displayName)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHint("Opens \(displayName) status page in your browser.")
                             .layoutPriority(4)
                         }
                     }
@@ -150,6 +155,7 @@ extension ProviderSectionHeader {
     }
 
     static func issueIndicatorKinds(
+        providerID: String,
         hasWarning: Bool,
         serviceStatus: ProviderServiceStatus,
         refreshing: Bool
@@ -158,7 +164,8 @@ extension ProviderSectionHeader {
         if hasWarning, !refreshing {
             result.append(.usage)
         }
-        if case .disrupted = serviceStatus {
+        // 공유 홈의 활성 계정만 서비스 상태 표시 — 비활성 snapshot 카드에는 중복 표시 금지.
+        if case .disrupted = serviceStatus, !ProviderAccountID.isAccountCard(providerID) {
             result.append(.service)
         }
         return result
