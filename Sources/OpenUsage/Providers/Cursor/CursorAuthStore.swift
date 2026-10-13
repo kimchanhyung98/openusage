@@ -151,7 +151,7 @@ struct CursorAuthStore: Sendable {
             guard changed == 1 else { throw CursorAuthError.credentialsChanged }
             return true
         case .keychain:
-            // 외부 Cursor의 변경과 조건부 쓰기를 원자화할 수 없어 이번 조회에서만 갱신 토큰 사용.
+            // 외부 Cursor의 변경과 조건부 쓰기를 원자화할 수 없어 호출자가 갱신 토큰을 메모리에서만 사용.
             return false
         }
     }

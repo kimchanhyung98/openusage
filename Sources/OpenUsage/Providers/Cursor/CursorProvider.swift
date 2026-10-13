@@ -62,23 +62,28 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private var refreshIsDegraded = false
+    private var refreshedKeychainToken: (source: CursorAuthState, accessToken: String)?
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
         guard let state = await loadOffMainActor({ [authStore] in authStore.loadAuthState() }) else {
+            refreshedKeychainToken = nil
             return ProviderSnapshot.error(provider: provider, error: CursorAuthError.notLoggedIn)
         }
 
         do {
             return try await probe(authState: state)
         } catch {
+            if error is CursorAuthError { refreshedKeychainToken = nil }
             return ProviderSnapshot.error(provider: provider, error: error)
         }
     }
 
     private func probe(authState initialState: CursorAuthState) async throws -> ProviderSnapshot {
         var authState = initialState
-        var accessToken = authState.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if refreshedKeychainToken?.source != authState { refreshedKeychainToken = nil }
+        var accessToken = refreshedKeychainToken?.accessToken
+            ?? authState.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
 
         if authStore.needsRefresh(accessToken) {
             do {
@@ -228,6 +233,7 @@ final class CursorProvider: ProviderRuntime {
     }
 
     private func refreshAccessToken(authState: CursorAuthState) async throws -> (accessToken: String, persisted: Bool)? {
+        refreshedKeychainToken = nil
         guard let refreshToken = authState.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
             return nil
         }
@@ -272,7 +278,7 @@ final class CursorProvider: ProviderRuntime {
             throw error
         }
         AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
-        // 현재 source·token 쌍의 충돌은 중단. Keychain과 실제 쓰기 실패는 이번 조회에서만 사용.
+        // 원본과 live token 분리 — Keychain만 같은 source·token 쌍의 다음 조회에서도 메모리 재사용.
         var persisted = false
         do {
             persisted = try await loadOffMainActor { [authStore] in
@@ -281,6 +287,7 @@ final class CursorProvider: ProviderRuntime {
             if persisted {
                 AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
             } else {
+                refreshedKeychainToken = (authState, accessToken)
                 AppLog.info(LogTag.auth("cursor"), "refreshed Keychain token kept in memory; conditional persistence unavailable")
             }
         } catch CursorAuthError.credentialsChanged {
