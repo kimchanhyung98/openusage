@@ -40,11 +40,65 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
         XCTAssertEqual(restarted.line(label: "Session"), Self.session)
         XCTAssertNil(restarted.liveQuotaObservedAt)
         XCTAssertEqual(usageCount.withLock { $0 }, 2)
-        XCTAssertEqual(http.requests.count, requestsBeforeRestart)
+        XCTAssertEqual(Array(http.requests.dropFirst(requestsBeforeRestart)).map(\.url.path), [
+            "/api/oauth/usage", "/api/oauth/profile"
+        ])
     }
 
     func testAccountOnlyFileFallbackRejectsAnotherAccount() async {
         await assertRejectedFallback(metadata: accountOnlyMetadata, profile: Self.profile(account: "account-b"))
+    }
+
+    func testAccountOnlyFileFallbackKeepsOrganizationsInSeparateUsageRecords() async {
+        let store = isolatedClaudeUsageStore()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let clock = OSAllocatedUnfairLock(initialState: start)
+        let files = FakeFiles([path: credentials(), metadataPath: accountOnlyMetadata])
+        let keychain = staleKeychain(files: files)
+        let originalUsageCount = OSAllocatedUnfairLock(initialState: 0)
+        let http = RoutingHTTPClient { request in
+            let authorization = request.headers["Authorization"]
+            if authorization == "Bearer stale" {
+                return HTTPResponse(statusCode: 401, headers: [:], body: Data())
+            }
+            let isAnotherOrganization = authorization == "Bearer other-org-token"
+            if request.url.path.hasSuffix("/profile") {
+                return Self.profile(organization: isAnotherOrganization ? "another-org" : "test-org")
+            }
+            if isAnotherOrganization {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"five_hour":{"utilization":77}}"#.utf8))
+            }
+            let count = originalUsageCount.withLock { $0 += 1; return $0 }
+            return count == 1 ? Self.usage() : HTTPResponse(statusCode: 429, headers: [:], body: Data())
+        }
+        func makeProvider() -> ClaudeProvider {
+            provider(files: files, http: http, keychain: keychain, store: store, now: { clock.withLock { $0 } })
+        }
+        let first = await makeProvider().refresh()
+        clock.withLock { $0 = start.addingTimeInterval(1) }
+        let limited = await makeProvider().refresh()
+        files.files[path] = credentials(access: "other-org-token")
+        clock.withLock { $0 = start.addingTimeInterval(2) }
+        let otherOrganization = await makeProvider().refresh()
+        files.files[path] = credentials()
+        clock.withLock { $0 = start.addingTimeInterval(3) }
+        let originalOrganization = await makeProvider().refresh()
+
+        XCTAssertEqual(first.line(label: "Session"), Self.session)
+        XCTAssertNotNil(limited.usageRetryAfter)
+        XCTAssertEqual(otherOrganization.line(label: "Session"), .progress(
+            label: "Session", used: 77, limit: 100, format: .percent, periodDurationMs: MetricPeriod.sessionMs
+        ))
+        XCTAssertNil(otherOrganization.usageRetryAfter)
+        XCTAssertEqual(otherOrganization.quotaObservedAt, start.addingTimeInterval(2))
+        XCTAssertEqual(originalOrganization.line(label: "Session"), Self.session)
+        XCTAssertEqual(originalOrganization.usageRetryAfter, limited.usageRetryAfter)
+        XCTAssertEqual(originalOrganization.quotaObservedAt, start)
+        XCTAssertEqual(originalUsageCount.withLock { $0 }, 2)
+        XCTAssertEqual(http.requests.filter {
+            $0.url.path.hasSuffix("/usage") && $0.headers["Authorization"] == "Bearer other-org-token"
+        }.count, 1)
+        XCTAssertEqual(files.files[metadataPath], accountOnlyMetadata)
     }
 
     func testFileFallbackKeepsKnownOrganizationBoundary() async {
