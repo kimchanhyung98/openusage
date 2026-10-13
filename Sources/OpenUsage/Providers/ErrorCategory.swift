@@ -141,6 +141,8 @@ extension GrokAuthError: CategorizedError {
         case .notLoggedIn: .notLoggedIn
         case .invalidAuth: .authInvalid
         case .expired: .authExpired
+        case .credentialsChanged: .other
+        case .credentialReadFailed: .credentialAccess
         }
     }
 }
