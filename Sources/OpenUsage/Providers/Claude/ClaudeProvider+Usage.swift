@@ -12,6 +12,10 @@ extension ClaudeProvider {
         if let identity = state.accountIdentityKey, !identity.isEmpty {
             accountKey = identity
         } else {
+            if case .accountSnapshot = state.source {
+                AppLog.error(LogTag.plugin("claude"), "saved account usage blocked: account identity unavailable")
+                throw ClaudeUsageStateStore.StoreError.identityUnavailable
+            }
             accountKey = try await recoverUsageIdentity(
                 state: &state, credentialGeneration: &credentialGeneration, config: config
             )
