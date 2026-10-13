@@ -8,6 +8,39 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
     private let metadataPath = "/tmp/claude/.claude.json"
     private let accountOnlyMetadata = #"{"oauthAccount":{"accountUuid":"account-a"}}"#
 
+    func testManagedSnapshotWithoutVerifiedIdentityDoesNotRecoverAnotherAccount() async throws {
+        for metadata in [nil, "invalid-json", "{}", #"{"accountUuid":""}"#] as [String?] {
+            let keychain = ServiceKeychain()
+            let profile = AccountProfile(
+                id: "saved-account", family: "claude", label: "Saved Account",
+                identityKey: "account-a|test-org", createdAt: .distantPast
+            )
+            let vault = AccountCredentialVault(keychain: keychain)
+            let entry = AccountCredentialVault.Entry(credential: credentials(), claudeOAuthAccount: metadata)
+            try vault.save(entry, profile: profile)
+            let http = RoutingHTTPClient { request in
+                request.url.path.hasSuffix("/profile") ? Self.profile(account: "account-b") : Self.usage()
+            }
+            let runtime = ClaudeProvider(
+                provider: ClaudeProvider.makeProvider(id: "claude@profile-saved-account"),
+                authStore: ClaudeAuthStore(
+                    environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
+                    scope: .accountSnapshot(profileID: profile.id)
+                ),
+                usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                pricing: { TestPricing.bundled }
+            )
+
+            let result = await runtime.refresh()
+
+            XCTAssertFalse(result.lines.isEmpty)
+            XCTAssertTrue(result.lines.allSatisfy(\.isError))
+            XCTAssertTrue(http.requests.isEmpty)
+            XCTAssertEqual(try vault.load(profile: profile), entry)
+        }
+    }
+
     func testAccountOnlyFileFallbackPreservesCooldownAndLastGood() async {
         let store = isolatedClaudeUsageStore()
         let start = Date(timeIntervalSince1970: 1_800_000_000)
