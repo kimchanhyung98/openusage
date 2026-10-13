@@ -115,6 +115,28 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
         XCTAssertNotNil(store.snapshots["grok"])
     }
 
+    func testNewUnresolvedClaudeCardRejectsCacheUntilIdentityIsResolved() async {
+        let defaults = makeUserDefaults("new-unresolved-card")
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
+        let cardID = "claude@work"
+        let original = snapshot(cardID, used: 40)
+        cache.store(original, producedByIdentityKey: "acct-a")
+        let store = makeStore(providers: [], cache: cache, defaults: defaults, identityKeys: [:])
+        let registry = WidgetRegistry(providers: [provider(cardID)], descriptors: [])
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: [:])
+
+        XCTAssertNil(store.localSnapshots[cardID])
+        XCTAssertNil(store.snapshots[cardID])
+        let unresolved = await store.refresh(providerID: cardID)
+        XCTAssertEqual(unresolved, .skipped, "unverified cache must not bypass the runtime lookup")
+        XCTAssertNotNil(cache.snapshot(providerID: cardID), "the original persisted cache remains available for its owner")
+
+        store.replaceProviderCatalog(registry: registry, providers: [], identityKeys: [cardID: "acct-a"])
+        XCTAssertEqual(store.snapshots[cardID], original)
+        let resolved = await store.refresh(providerID: cardID)
+        XCTAssertEqual(resolved, .cacheHit)
+    }
+
     func testRefreshNeverCacheHitsAMismatchedStampEntry() async {
         let defaults = makeUserDefaults("refresh-gate")
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600, now: { Date() })

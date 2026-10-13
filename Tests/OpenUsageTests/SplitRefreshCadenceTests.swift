@@ -110,6 +110,82 @@ final class SplitRefreshCadenceTests: XCTestCase {
         XCTAssertNotNil(fixture.store.snapshots["claude@work"])
     }
 
+    func testClockChangeDuringRefreshDoesNotRepeatCompletedRequests() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let started = expectation(description: "Both cadence requests started")
+        started.expectedFulfillmentCount = 2
+        let completed = expectation(description: "Both requests completed")
+        completed.expectedFulfillmentCount = 2
+        let repeated = expectation(description: "No immediate repeat after the clock change")
+        repeated.isInverted = true
+        var reportedRepeat = false
+        var codexContinuation: CheckedContinuation<Void, Never>?
+        var claudeContinuation: CheckedContinuation<Void, Never>?
+        fixture.codex.beforeRefresh = {
+            if fixture.codex.refreshCount == 1 {
+                await withCheckedContinuation { codexContinuation = $0; started.fulfill() }
+            } else if !reportedRepeat { reportedRepeat = true; repeated.fulfill() }
+        }
+        fixture.claude.beforeRefresh = {
+            if fixture.claude.refreshCount == 1 {
+                await withCheckedContinuation { claudeContinuation = $0; started.fulfill() }
+            } else if !reportedRepeat { reportedRepeat = true; repeated.fulfill() }
+        }
+        fixture.store.onFreshSnapshot = { _, _, _ in
+            if fixture.counts.reduce(0, +) <= 2 { completed.fulfill() }
+        }
+        let center = NotificationCenter()
+        let telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: fixture.defaults), snapshot: {
+            TelemetryConfigSnapshot(enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [],
+                                    expandedMetricIDs: [], menuBarStyle: "text")
+        })
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.store,
+            providerStatus: ProviderStatusStore(http: FakeHTTPClient(
+                response: HTTPResponse(statusCode: 503, headers: [:], body: Data())
+            )), telemetry: telemetry, enabledProviderIDs: { [] }, reconcileAccounts: {},
+            wakeSignal: RefreshWakeSignal(center: center),
+            claudeWakeSignal: RefreshWakeSignal(center: center), now: { fixture.time }
+        )
+        await fulfillment(of: [started], timeout: 2)
+        fixture.time = fixture.start.addingTimeInterval(-3600)
+        center.post(name: .NSSystemClockDidChange, object: nil)
+        codexContinuation?.resume()
+        claudeContinuation?.resume()
+        await fulfillment(of: [completed], timeout: 2)
+        await fulfillment(of: [repeated], timeout: 0.2)
+        loop.cancel()
+        await loop.value
+        XCTAssertEqual(fixture.counts, [1, 1])
+        XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "codex"), fixture.time.addingTimeInterval(300))
+        XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), fixture.time.addingTimeInterval(900))
+    }
+
+    func testInvalidatedRegularRequestAlsoWakesCadenceAfterReenable() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let started = expectation(description: "Old regular request started")
+        var continuation: CheckedContinuation<Void, Never>?
+        fixture.codex.beforeRefresh = { await withCheckedContinuation { continuation = $0; started.fulfill() } }
+        let task = Task { await fixture.store.refreshAll(cadence: .regular) }
+        await fulfillment(of: [started], timeout: 2)
+        fixture.disabled.insert("codex")
+        fixture.store.providerEnablementDidChange()
+        fixture.disabled.removeAll()
+        fixture.store.clearFailureBackoff(for: "codex")
+        await fixture.store.refreshAll(cadence: .regular)
+        XCTAssertNil(fixture.store.nextScheduledRefresh(for: .regular, at: fixture.time))
+        let resumed = expectation(forNotification: WidgetDataStore.refreshScheduleDidChange, object: nil)
+        continuation?.resume()
+        await task.value
+        await fulfillment(of: [resumed], timeout: 2)
+        fixture.codex.beforeRefresh = {}
+        await fixture.store.refreshAll(cadence: .regular)
+        XCTAssertEqual(fixture.codex.refreshCount, 2)
+        XCTAssertNotNil(fixture.store.snapshots["codex"])
+    }
+
     func testSeparateCadencesManualRefreshAndWakeDoNotCreateExtraRequests() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
@@ -178,8 +254,9 @@ final class SplitRefreshCadenceTests: XCTestCase {
         fixture.claude.retryAfter = fixture.start.addingTimeInterval(3600)
         await fixture.store.refreshAll()
         fixture.time = fixture.start.addingTimeInterval(-3600)
-        fixture.store.rebaseRefreshSchedule(for: .regular, at: fixture.time)
-        fixture.store.rebaseRefreshSchedule(for: .claude, at: fixture.time)
+        let clockChangedAt = ProcessInfo.processInfo.systemUptime
+        fixture.store.rebaseRefreshSchedule(for: .regular, at: fixture.time, clockChangedAt: clockChangedAt)
+        fixture.store.rebaseRefreshSchedule(for: .claude, at: fixture.time, clockChangedAt: clockChangedAt)
         XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "codex"), fixture.time.addingTimeInterval(60))
         XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), fixture.claude.retryAfter)
         await fixture.store.refreshAll(cadence: .regular)

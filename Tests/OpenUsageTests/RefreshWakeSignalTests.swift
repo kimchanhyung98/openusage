@@ -66,7 +66,7 @@ final class RefreshWakeSignalTests: XCTestCase {
         center.post(name: .NSSystemClockDidChange, object: nil)
         center.post(name: wakeName, object: nil)
         await signal.waitForWake(timeout: 60)
-        XCTAssertTrue(signal.consumeClockChange())
-        XCTAssertFalse(signal.consumeClockChange())
+        XCTAssertNotNil(signal.consumeClockChange())
+        XCTAssertNil(signal.consumeClockChange())
     }
 }
