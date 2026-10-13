@@ -8,12 +8,14 @@ extension ClaudeProvider {
     ) async throws -> ClaudeMappedUsage {
         let config = try authStore.oauthConfig()
         let accountKey: String
+        var verifiedThroughProfile = false
         if let identity = state.accountIdentityKey, !identity.isEmpty {
             accountKey = identity
         } else {
             accountKey = try await recoverUsageIdentity(
                 state: &state, credentialGeneration: &credentialGeneration, config: config
             )
+            verifiedThroughProfile = true
         }
         let lease = try await usageStateStore.acquire(accountKey: accountKey, usageURL: config.usageURL)
         defer { withExtendedLifetime(lease) {} }
@@ -39,7 +41,8 @@ extension ClaudeProvider {
         do {
             var expectedGeneration = credentialGeneration
             defer { credentialGeneration = expectedGeneration }
-            if authStore.needsRefresh(state.oauth),
+            // 프로필에서 확인한 토큰은 바로 사용하고, 만료 시 사용량 요청의 인증 재시도로 갱신.
+            if !verifiedThroughProfile, authStore.needsRefresh(state.oauth),
                let refreshToken = state.oauth.refreshToken, !refreshToken.isEmpty {
                 let refreshed = try await refreshAccessToken(
                     state: &state, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
@@ -152,11 +155,15 @@ extension ClaudeProvider {
                 response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
             )
             let profile = try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
-            let identity = try profile.accountIdentityKey()
+            var identity = try profile.accountIdentityKey()
             if working.source != .desktop,
-               let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first,
-               identity != expectedIdentity {
-                throw ClaudeUsageStateStore.StoreError.identityUnavailable
+               let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first {
+                let verifiedIdentity = expectedIdentity.contains("|") ? identity : String(identity.prefix { $0 != "|" })
+                guard verifiedIdentity == expectedIdentity else {
+                    throw ClaudeUsageStateStore.StoreError.identityUnavailable
+                }
+                // 조직 정보가 없는 기존 키도 유지하여 저장된 계정 대기와 캐시 우회 방지.
+                identity = expectedIdentity
             }
             // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
             return identity

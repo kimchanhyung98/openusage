@@ -561,8 +561,14 @@ final class WidgetDataStore {
                 "\(providerID) slow refresh (\(durationMs)ms, threshold=\(Int(slowProviderRefreshThreshold * 1000))ms)"
             )
         }
+        let unresolvedClaudeIdentity = ProviderAccountID.family(of: providerID) == "claude"
+            && providerIdentityKeys[providerID] == nil
         if let message = Self.errorMessage(in: snapshot) {
-            // 실패 시 에러만 노출하고 last-good snapshot 유지 — 전 행 "No data" 붕괴 방지.
+            // 신원 미확인 Claude는 같은 계정임을 보장할 수 없어 이전 값을 숨기고, 나머지는 last-good 유지.
+            if unresolvedClaudeIdentity {
+                localSnapshots[providerID] = nil
+                rebuildRenderedSnapshots()
+            }
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
                 message: message,
                 category: snapshot.errorCategory ?? .other,
@@ -608,7 +614,16 @@ final class WidgetDataStore {
         } else {
             providersNeedingScheduledRefresh.remove(providerID)
         }
-        unresolvedIdentityCacheRejections.remove(providerID)
+        if unresolvedClaudeIdentity {
+            // 캐시 재사용 없이도 마지막 성공 값의 유효 기간만큼 자동 재조회 대기.
+            let freshnessDeadline = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: providerID))
+            if (scheduledRefreshDates[providerID] ?? .distantPast) < freshnessDeadline {
+                scheduledRefreshDates[providerID] = freshnessDeadline
+                scheduledRefreshUpdatedAt[providerID] = monotonicNow()
+            }
+        } else {
+            unresolvedIdentityCacheRejections.remove(providerID)
+        }
         providersNeedingCredentialRefresh.remove(providerID)
         rebuildRenderedSnapshots()
         if notifyHistoryChange { onLocalHistoryChanged?() }
