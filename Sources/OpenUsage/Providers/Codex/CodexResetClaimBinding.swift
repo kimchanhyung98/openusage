@@ -20,7 +20,10 @@ struct CodexResetClaimBinding: Hashable, Sendable {
         guard Set(subjects).count <= 1, Set(accounts).count <= 1 else { return nil }
         source = authState.source
         accountID = tokens.accountID
-        if let account = CodexWeeklyTimerIdentity.accountKey(for: authState.auth) {
+        // ID 토큰은 충돌 검사에만 사용. 액세스 토큰이 증명하지 못한 주체로 토큰 교체를 허용하지 않음.
+        var accessIdentity = authState.auth
+        accessIdentity.tokens?.idToken = nil
+        if let account = CodexWeeklyTimerIdentity.accountKey(for: accessIdentity) {
             identity = .account(account)
         } else if let fingerprint = CodexWeeklyTimerIdentity.generationFingerprint(for: authState.auth) {
             identity = .credential(fingerprint)

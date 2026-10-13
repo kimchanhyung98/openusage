@@ -336,12 +336,8 @@ struct WidgetRowView: View {
 
     private var resetClaimAction: ((Date, String) async -> ResetClaimOutcome)? {
         guard let binding = data.codexResetClaimBinding,
-              let providerID = data.providerID,
-              let service = codexResetClaim?.service(for: providerID) else { return nil }
-        // snapshot의 계정 binding과 해당 카드 service를 함께 고정 — confirm 뒤 다른 계정으로 재해석 금지.
-        return { expiry, redeemRequestID in
-            await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID, binding: binding)
-        }
+              let providerID = data.providerID else { return nil }
+        return codexResetClaim?.claimAction(for: providerID, binding: binding)
     }
 
     @ViewBuilder

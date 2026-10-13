@@ -26,6 +26,21 @@ final class CodexResetClaimRouter {
         servicesByCard[cardID]
     }
 
+    /// 확인한 인증은 고정하고 실행 시점의 카드 service 사용.
+    func claimAction(
+        for cardID: String, binding: CodexResetClaimBinding
+    ) -> ((Date, String) async -> ResetClaimOutcome)? {
+        guard service(for: cardID) != nil else { return nil }
+        return { [weak self] expiry, redeemRequestID in
+            guard let service = self?.service(for: cardID) else {
+                AppDiagnostics.record(.resetClaim, result: .failure, category: .authInvalid, providerID: "codex",
+                                      localContext: "Reset claim stopped because its card is no longer available")
+                return .failed
+            }
+            return await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID, binding: binding)
+        }
+    }
+
     /// 현재 카탈로그 전체로 라우팅 테이블 재구성 — 같은 id 재등록은 교체, 이탈 카드는 제거 (stale credential로 claim 가능한 상태 방지).
     func reconfigure(providers: [CodexProvider], identityKeys: [String: String] = [:]) {
         generation &+= 1

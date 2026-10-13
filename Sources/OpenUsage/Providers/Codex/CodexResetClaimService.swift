@@ -109,7 +109,7 @@ final class CodexResetClaimService {
             }
             guard let matched = Self.creditID(in: body, expiringAt: expiry) else {
                 AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
-                await refreshAfterClaim()
+                await refreshIfBound(to: binding)
                 return .noCredit
             }
             creditID = matched
@@ -133,8 +133,25 @@ final class CodexResetClaimService {
         guard outcome != .failed else { return responseFailure(response, context: "consume") }
         AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
                               providerID: "codex")
-        await refreshAfterClaim()
+        await refreshIfBound(to: binding)
         return outcome
+    }
+
+    private func refreshIfBound(to binding: CodexResetClaimBinding) async {
+        // 완료된 요청의 인증만 재확인. 무관한 카탈로그 변경의 후속 조회 허용 여부는 router에서 판단.
+        do {
+            guard !Task.isCancelled,
+                  let current = try await credentialLoader(binding.source),
+                  binding.matches(current), !Task.isCancelled else {
+                AppLog.info(LogTag.plugin("codex"), "post-claim refresh skipped: credential binding changed")
+                AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
+                return
+            }
+            await refreshAfterClaim()
+        } catch {
+            AppDiagnostics.failure(.postClaimRefresh, error: error, providerID: "codex",
+                                   localContext: "Post-claim credential verification failed")
+        }
     }
 
     private func loadCredential(for binding: CodexResetClaimBinding) async -> CodexAuthState? {
