@@ -210,7 +210,7 @@ final class CodexResetClaimBindingTests: XCTestCase {
         }
         var loads = 0
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { source in
+            usageClient: CodexUsageClient(http: http), credentialLoader: { source, _ in
                 XCTAssertEqual(source, original.source)
                 loads += 1
                 return loads == 1 ? original : rotated
@@ -247,7 +247,7 @@ final class CodexResetClaimBindingTests: XCTestCase {
             }
             var loads = 0
             let service = CodexResetClaimService(
-                usageClient: CodexUsageClient(http: http), credentialLoader: { source in
+                usageClient: CodexUsageClient(http: http), credentialLoader: { source, _ in
                     XCTAssertEqual(source, original.source)
                     loads += 1
                     return loads == 1 ? original : changed

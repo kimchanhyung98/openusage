@@ -56,7 +56,7 @@ final class CodexResetClaimTests: XCTestCase {
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { source in
+            credentialLoader: { source, _ in
                 XCTAssertEqual(source, Self.binding.source)
                 return Self.state()
             },
@@ -197,7 +197,7 @@ final class CodexResetClaimTests: XCTestCase {
                 XCTFail("no request should be sent without credentials")
                 return HTTPResponse(statusCode: 500, headers: [:], body: Data())
             }),
-            credentialLoader: { _ in nil },
+            credentialLoader: { _, _ in nil },
             refreshAfterClaim: { refreshes.count += 1 }
         )
         let credentialOutcome = await noCredentials.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1", binding: Self.binding)
@@ -243,7 +243,7 @@ final class CodexResetClaimTests: XCTestCase {
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { source in
+            credentialLoader: { source, _ in
                 XCTAssertEqual(source, Self.binding.source)
                 return Self.state()
             }
@@ -267,7 +267,7 @@ final class CodexResetClaimTests: XCTestCase {
         let http = RoutingHTTPClient { _ in HTTPResponse(statusCode: 401, headers: [:], body: Data()) }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { _ in Self.state() }
+            credentialLoader: { _, _ in Self.state() }
         )
 
         let outcome = await service.claim(
@@ -290,7 +290,7 @@ final class CodexResetClaimTests: XCTestCase {
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { source in
+            credentialLoader: { source, _ in
                 XCTAssertEqual(source, original.source)
                 return original
             }
@@ -312,7 +312,7 @@ final class CodexResetClaimTests: XCTestCase {
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { _ in Self.state(token: "token-B", accountID: "acct-B") }
+            credentialLoader: { _, _ in Self.state(token: "token-B", accountID: "acct-B") }
         )
 
         let outcome = await service.claim(
@@ -330,7 +330,7 @@ final class CodexResetClaimTests: XCTestCase {
         var loads = 0
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { _ in
+            credentialLoader: { _, _ in
                 loads += 1
                 return loads == 1 ? Self.state() : Self.state(token: "token-B", accountID: "acct-B")
             }
@@ -352,7 +352,7 @@ final class CodexResetClaimTests: XCTestCase {
         var current = true
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { _ in
+            credentialLoader: { _, _ in
                 current = false
                 return Self.state()
             },
@@ -374,7 +374,7 @@ final class CodexResetClaimTests: XCTestCase {
         }
         var current = Self.state()
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { _ in current }
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in current }
         )
         let first = await service.claim(
             creditExpiringAt: Self.expiry, redeemRequestID: "same-key", binding: Self.binding
@@ -406,7 +406,7 @@ final class CodexResetClaimTests: XCTestCase {
             return HTTPResponse(statusCode: 200, headers: [:], body: Self.consumeBody(code: "already_redeemed"))
         }
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { _ in Self.state() }
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in Self.state() }
         )
         let first = await service.claim(
             creditExpiringAt: Self.expiry, redeemRequestID: "lost-response", binding: Self.binding
@@ -435,7 +435,7 @@ final class CodexResetClaimTests: XCTestCase {
             return HTTPResponse(statusCode: 200, headers: [:], body: Self.listBody())
         }
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { _ in Self.state() }
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in Self.state() }
         )
         let task = Task {
             await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "cancelled", binding: Self.binding)
@@ -465,7 +465,7 @@ final class CodexResetClaimTests: XCTestCase {
                                 ? Self.listBody() : Self.consumeBody(code: "reset"))
         }
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { _ in Self.state() }
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in Self.state() }
         )
         let first = Task { await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "shared", binding: Self.binding) }
         await fulfillment(of: [reachedList], timeout: 2)

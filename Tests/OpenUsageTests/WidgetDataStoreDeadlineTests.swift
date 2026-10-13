@@ -202,7 +202,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         )
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: credential))
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialLoader: { _ in credential },
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in credential },
             refreshAfterClaim: {
                 await fixture.store.refreshAfterClaim(providerID: "codex", retryDelay: .milliseconds(1))
             }

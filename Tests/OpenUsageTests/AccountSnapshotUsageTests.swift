@@ -141,7 +141,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
 
             let readSucceeded = category == .notAvailable
             XCTAssertEqual(outcome, readSucceeded ? .noCredit : .failed)
-            XCTAssertEqual(keychain.interactionRequests, readSucceeded ? [true, true] : [true])
+            XCTAssertEqual(keychain.interactionRequests, readSucceeded ? [true, false] : [true])
             XCTAssertEqual(http.requests.count, readSucceeded ? 1 : 0)
             XCTAssertTrue(http.requests.allSatisfy { $0.method == "GET" })
             XCTAssertEqual(diagnostics.events.filter { $0.operation == .resetClaim }, [

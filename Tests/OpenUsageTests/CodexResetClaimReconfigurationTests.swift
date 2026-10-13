@@ -205,7 +205,7 @@ final class CodexResetClaimReconfigurationTests: XCTestCase {
             )
             var refreshes = 0
             let service = CodexResetClaimService(
-                usageClient: CodexUsageClient(http: http), credentialLoader: { _ in current },
+                usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in current },
                 refreshAfterClaim: { refreshes += 1 }
             )
             let binding = try binding()

@@ -300,7 +300,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialLoader: { _ in credential },
+            credentialLoader: { _, _ in credential },
             refreshAfterClaim: { XCTFail("A failed claim must not refresh an account") }
         )
 
@@ -340,7 +340,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             let binding = try XCTUnwrap(CodexResetClaimBinding(authState: credential))
             let service = CodexResetClaimService(
                 usageClient: CodexUsageClient(http: http),
-                credentialLoader: { _ in credential },
+                credentialLoader: { _, _ in credential },
                 refreshAfterClaim: { XCTFail("Malformed responses must not refresh an account") }
             )
 
