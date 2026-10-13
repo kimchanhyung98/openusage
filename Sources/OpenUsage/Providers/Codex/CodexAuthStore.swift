@@ -35,6 +35,17 @@ struct CodexAuthState: Hashable, Sendable {
 
     var auth: CodexAuth
     var source: Source
+    /// 저장 전 동일 세대 검증과 미모델 필드 보존용 원본문서 — 메모리에서만 유지.
+    var sourceText: String? = nil
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.auth == rhs.auth && lhs.source == rhs.source
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(auth)
+        hasher.combine(source)
+    }
 
     /// 비어 있지 않은 OAuth access token 보유 여부 — `refresh()` probe와 `hasLocalCredentials()`가 공유하는 단일 기준 (drift 방지).
     var hasUsableAccessToken: Bool {
@@ -50,6 +61,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
     case tokenExpired
     case usageAPIKey
     case invalidAuthPayload
+    case credentialsChanged
 
     var errorDescription: String? {
         switch self {
@@ -67,6 +79,8 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
             return "Usage not available for API key."
         case .invalidAuthPayload:
             return "Codex auth data is invalid."
+        case .credentialsChanged:
+            return "Codex sign-in changed while refreshing. Refresh again to use the current account."
         }
     }
 
@@ -74,7 +88,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
         switch self {
         case .sessionExpired, .tokenConflict, .tokenRevoked, .tokenExpired:
             return true
-        case .notLoggedIn, .usageAPIKey, .invalidAuthPayload:
+        case .notLoggedIn, .usageAPIKey, .invalidAuthPayload, .credentialsChanged:
             return false
         }
     }
@@ -102,19 +116,22 @@ struct CodexAuthStore: Sendable {
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
     let scope: CodexCredentialScope
+    let managedSnapshotProfileID: String?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         scope: CodexCredentialScope = .standard,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        managedSnapshotProfileID: String? = nil
     ) {
         self.environment = environment
         self.files = files
         self.keychain = keychain
         self.scope = scope
         self.now = now
+        self.managedSnapshotProfileID = managedSnapshotProfileID
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
@@ -138,7 +155,7 @@ struct CodexAuthStore: Sendable {
         else {
             return nil
         }
-        return CodexAuthState(auth: auth, source: .file(path: path))
+        return CodexAuthState(auth: auth, source: .file(path: path), sourceText: text)
     }
 
     func loadKeychainAuth() -> CodexAuthState? {
@@ -150,16 +167,28 @@ struct CodexAuthStore: Sendable {
         else {
             return nil
         }
-        return CodexAuthState(auth: auth, source: .keychain)
+        return CodexAuthState(auth: auth, source: .keychain, sourceText: value)
     }
 
-    func save(_ state: CodexAuthState, allowInteraction: Bool = false) throws {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = state.source.isFile ? [.prettyPrinted, .sortedKeys] : []
-        let data = try encoder.encode(state.auth)
-        guard let text = String(data: data, encoding: .utf8) else {
-            throw CodexAuthError.invalidAuthPayload
+    /// 앱 내부 writer와 비교·쓰기 직렬화 — 협조하지 않는 외부 CLI의 쓰기까지 원자화하지 않음.
+    @discardableResult
+    func save(_ state: CodexAuthState, allowInteraction: Bool = false) throws -> CodexAuthState {
+        AccountCredentialMutationLock.acquire()
+        defer { AccountCredentialMutationLock.release() }
+        guard let original = state.sourceText else { throw CodexAuthError.credentialsChanged }
+        let current: String?
+        do {
+            current = try sourceText(state.source, allowInteraction: allowInteraction)
+        } catch {
+            AppLog.error(.auth, "Codex credential verification before saving failed: \(error.localizedDescription)")
+            throw CodexAuthError.credentialsChanged
         }
+        guard let current, current.utf8.elementsEqual(original.utf8) else {
+            preserveRotatedManagedSnapshot(state, original: original, allowInteraction: allowInteraction)
+            throw CodexAuthError.credentialsChanged
+        }
+        if Self.parseAuth(original) == state.auth { return state }
+        let text = try refreshedText(state, original: original)
 
         switch state.source {
         case .file(let path):
@@ -174,6 +203,62 @@ struct CodexAuthStore: Sendable {
                 allowInteraction: allowInteraction
             )
         }
+        guard let auth = Self.parseAuth(text) else { throw CodexAuthError.invalidAuthPayload }
+        return CodexAuthState(auth: auth, source: state.source, sourceText: text)
+    }
+
+    /// 공유 홈이 전환되어도 요청 시작 시점과 같은 관리 계정 snapshot에는 회전된 토큰 보존.
+    private func preserveRotatedManagedSnapshot(
+        _ state: CodexAuthState, original: String, allowInteraction: Bool
+    ) {
+        guard let profileID = managedSnapshotProfileID,
+              case .home(let home) = scope,
+              case .file(let path) = state.source,
+              path == joinPath(home, Self.authFile) else { return }
+        do {
+            guard var snapshot = try loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction),
+                  let snapshotText = snapshot.sourceText,
+                  snapshotText.utf8.elementsEqual(original.utf8) else { return }
+            snapshot.auth = state.auth
+            try save(snapshot, allowInteraction: allowInteraction)
+            AppLog.info(.auth, "Codex rotated credentials preserved in the departed account snapshot")
+        } catch {
+            AppLog.error(.auth, "Codex rotated snapshot credentials could not be saved: \(error.localizedDescription)")
+        }
+    }
+
+    private func sourceText(_ source: CodexAuthState.Source, allowInteraction: Bool) throws -> String? {
+        switch source {
+        case .file(let path):
+            return files.exists(path) ? try files.readText(path) : nil
+        case .keychain:
+            return try keychain.readGenericPassword(service: Self.keychainService)
+        case .accountSnapshot(let profileID):
+            return try AccountCredentialVault(keychain: keychain).load(
+                family: "codex", profileID: profileID, allowInteraction: allowInteraction
+            )?.credential
+        }
+    }
+
+    private func refreshedText(_ state: CodexAuthState, original: String) throws -> String {
+        guard var document = ProviderParse.jsonObjectWithHexFallback(original),
+              let previous = Self.parseAuth(original) else { throw CodexAuthError.invalidAuthPayload }
+        var tokens = document["tokens"] as? [String: Any] ?? [:]
+        if state.auth.tokens?.accessToken != previous.tokens?.accessToken {
+            tokens["access_token"] = state.auth.tokens?.accessToken
+        }
+        if state.auth.tokens?.refreshToken != previous.tokens?.refreshToken {
+            tokens["refresh_token"] = state.auth.tokens?.refreshToken
+        }
+        if state.auth.tokens?.idToken != previous.tokens?.idToken {
+            tokens["id_token"] = state.auth.tokens?.idToken
+        }
+        if !tokens.isEmpty { document["tokens"] = tokens }
+        if state.auth.lastRefresh != previous.lastRefresh { document["last_refresh"] = state.auth.lastRefresh }
+        let data = try JSONSerialization.data(
+            withJSONObject: document, options: state.source.isFile ? [.prettyPrinted, .sortedKeys] : []
+        )
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Access token의 선제 refresh 필요 여부 — JWT `exp` 우선, `codex` CLI와 동일 판정.
@@ -224,7 +309,7 @@ struct CodexAuthStore: Sendable {
         else {
             return nil
         }
-        return CodexAuthState(auth: auth, source: .accountSnapshot(profileID: profileID))
+        return CodexAuthState(auth: auth, source: .accountSnapshot(profileID: profileID), sourceText: entry.credential)
     }
 
     func codexHome() -> String? {

@@ -60,6 +60,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         }
         // 활성 profile 재선택 시 쓰기 1건도 발생 금지.
         guard current?.id != selected.id else { return }
+        AccountCredentialMutationLock.acquire(family: selected.family)
+        defer { AccountCredentialMutationLock.release(family: selected.family) }
 
         let target: AccountCredentialVault.Entry
         do {
@@ -263,6 +265,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     /// entry의 인증만 Shared Runtime Home에 적용 — 그 외 일체 불변.
     /// Claude: scoped/base Keychain credential + `.credentials.json` + state 파일에 `oauthAccount` 키만 merge(다른 키 보존). Codex: `auth.json` 원자적 교체.
     func applySharedAuthentication(_ entry: AccountCredentialVault.Entry, family: String) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         let home = sharedHomePath(family: family)
         switch family {
         case "claude":
@@ -294,6 +298,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     /// entry를 profile의 Sign-In Workspace에 미러링 — 이후 공식 re-login이 최신 credential에서 시작. 일반 세션 home 사용 금지.
     func writeWorkspaceAuthentication(_ entry: AccountCredentialVault.Entry, for profile: AccountProfile) throws {
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         let directory = try workspace.prepare(family: profile.family, profileID: profile.id)
         switch profile.family {
         case "claude":

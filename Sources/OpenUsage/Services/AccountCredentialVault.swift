@@ -44,6 +44,8 @@ struct AccountCredentialVault {
     }
 
     func save(_ entry: Entry, profile: AccountProfile) throws {
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         let data = try JSONEncoder().encode(entry)
         try keychain.writeGenericPasswordForCurrentUser(
             service: service(for: profile),
@@ -54,6 +56,8 @@ struct AccountCredentialVault {
     func replaceCredential(
         _ credential: String, family: String, profileID: String, allowInteraction: Bool = false
     ) throws {
+        AccountCredentialMutationLock.acquire(family: family)
+        defer { AccountCredentialMutationLock.release(family: family) }
         guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
             throw AccountCredentialVaultError.missingEntry
         }
@@ -66,6 +70,8 @@ struct AccountCredentialVault {
     }
 
     func delete(profile: AccountProfile) throws {
+        AccountCredentialMutationLock.acquire(family: profile.family)
+        defer { AccountCredentialMutationLock.release(family: profile.family) }
         try keychain.deleteGenericPassword(service: service(for: profile))
     }
 
@@ -75,6 +81,37 @@ struct AccountCredentialVault {
 
     private func service(for profile: AccountProfile) -> String {
         Self.service(family: profile.family, profileID: profile.id)
+    }
+}
+
+/// Codex 인증 비교·쓰기와 계정 전환의 프로세스 내부 직렬화 — 중첩 Vault 호출 허용, 비동기 요청 중 획득 금지.
+enum AccountCredentialMutationLock {
+    private static let lock = NSRecursiveLock()
+    nonisolated(unsafe) private static var generation: UInt64 = 0
+
+    static var revision: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return generation
+    }
+
+    static func acquire(family: String = "codex") {
+        guard family == "codex" else { return }
+        lock.lock()
+        generation &+= 1
+    }
+
+    static func release(family: String = "codex") {
+        if family == "codex" { lock.unlock() }
+    }
+
+    static func withUnchangedRevision(_ expected: UInt64, _ operation: () throws -> Void) rethrows -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == expected else { return false }
+        generation &+= 1
+        try operation()
+        return true
     }
 }
 

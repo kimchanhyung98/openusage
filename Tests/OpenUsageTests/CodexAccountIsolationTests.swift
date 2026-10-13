@@ -139,9 +139,9 @@ final class CodexAccountIsolationTests: XCTestCase {
         let store = scopedStore(home: "/tmp/codex-a", files: files, keychain: keychain)
         let state = try XCTUnwrap(store.loadAuthCandidates().first)
 
-        var rotated = state.auth
-        rotated.tokens?.accessToken = "token-a-rotated"
-        try store.save(CodexAuthState(auth: rotated, source: state.source))
+        var rotated = state
+        rotated.auth.tokens?.accessToken = "token-a-rotated"
+        try store.save(rotated)
 
         XCTAssertEqual(
             CodexAuthStore.parseAuth(files.files["/tmp/codex-a/auth.json"] ?? "")?.tokens?.accessToken,
