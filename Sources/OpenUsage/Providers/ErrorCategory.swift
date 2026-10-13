@@ -142,6 +142,7 @@ extension GrokAuthError: CategorizedError {
         case .invalidAuth: .authInvalid
         case .expired: .authExpired
         case .credentialsChanged: .other
+        case .credentialReadFailed: .credentialAccess
         }
     }
 }

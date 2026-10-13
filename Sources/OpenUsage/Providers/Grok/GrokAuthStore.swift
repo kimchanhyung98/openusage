@@ -34,6 +34,7 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
     case invalidAuth
     case expired
     case credentialsChanged
+    case credentialReadFailed
 
     var errorDescription: String? {
         switch self {
@@ -45,6 +46,8 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
             return "Grok auth expired. Run `grok login` again."
         case .credentialsChanged:
             return "Grok sign-in changed while refreshing. Refresh again to use the current account."
+        case .credentialReadFailed:
+            return "Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again."
         }
     }
 }
@@ -95,9 +98,15 @@ struct GrokAuthStore: Sendable {
     func save(_ state: GrokAuthState) throws -> GrokAuthState {
         Self.mutationLock.lock()
         defer { Self.mutationLock.unlock() }
-        guard let expected = state.entryRevision,
-              files.exists(Self.authPath),
-              let existingText = try? files.readText(Self.authPath),
+        guard let expected = state.entryRevision else { throw GrokAuthError.credentialsChanged }
+        let currentText: String?
+        do {
+            currentText = try files.readTextIfPresent(Self.authPath)
+        } catch {
+            AppLog.error(LogTag.auth("grok"), "credential verification before saving failed: \(error.localizedDescription)")
+            throw GrokAuthError.credentialReadFailed
+        }
+        guard let existingText = currentText,
               var authObject = Self.parseJSONObject(existingText),
               var entryObject = authObject[state.entryKey] as? [String: Any],
               try Self.revision(of: entryObject) == expected else {
