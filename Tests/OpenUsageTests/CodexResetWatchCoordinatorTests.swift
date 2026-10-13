@@ -5,11 +5,11 @@ import XCTest
 
 @MainActor
 final class CodexResetWatchCoordinatorTests: XCTestCase {
-    func testCadenceIsThreeUsageRefreshIntervals() {
+    func testCadenceUsesTheIndependentSlowInterval() {
         XCTAssertEqual(CodexResetWatchCoordinator.refreshInterval, 900)
         XCTAssertEqual(
             CodexResetWatchCoordinator.refreshInterval,
-            RefreshSetting.interval * 3
+            RefreshSetting.slowInterval
         )
     }
 
@@ -54,6 +54,9 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         XCTAssertTrue(firstLoadCompleted)
         XCTAssertEqual(firstDuration, .seconds(900))
         XCTAssertEqual(published, [watch])
+        XCTAssertNotNil(coordinator.nextRefreshAt)
+        XCTAssertFalse(coordinator.isRefreshing)
+        let firstRefreshAt = coordinator.nextRefreshAt
 
         coordinator.setActive(true)
         try? await Task.sleep(for: .milliseconds(10))
@@ -68,8 +71,11 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         }
         XCTAssertTrue(secondLoadCompleted)
         XCTAssertEqual(published, [watch, nil], "a later empty response must clear the overlay")
+        XCTAssertGreaterThanOrEqual(coordinator.nextRefreshAt ?? .distantPast, firstRefreshAt ?? .distantFuture)
 
         coordinator.setActive(false)
+        XCTAssertNil(coordinator.nextRefreshAt)
+        XCTAssertFalse(coordinator.isRefreshing)
         await waiter.resumeAll(returning: false)
         XCTAssertEqual(published.count, 3)
         XCTAssertNil(published.last!)
@@ -91,6 +97,7 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         coordinator.setActive(true)
         let loadStarted = await eventually { await loader.count() == 1 }
         XCTAssertTrue(loadStarted)
+        XCTAssertTrue(coordinator.isRefreshing)
 
         coordinator.setActive(false)
         await loader.resumeNext(returning: watch)
@@ -126,10 +133,12 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
         coordinator.setActive(true)
         let newerStarted = await eventually { await loader.count() == 2 }
         XCTAssertTrue(newerStarted)
+        XCTAssertTrue(coordinator.isRefreshing)
 
         await loader.resume(at: 1, returning: newer)
         let newerPublished = await eventually { published == [nil, newer] }
         XCTAssertTrue(newerPublished)
+        XCTAssertFalse(coordinator.isRefreshing, "an older activation must not keep the new activation busy")
 
         await loader.resume(at: 0, returning: older)
         try? await Task.sleep(for: .milliseconds(10))
@@ -209,11 +218,14 @@ final class CodexResetWatchCoordinatorTests: XCTestCase {
             let manual = Task { await coordinator.refreshNow() }
             let started = await eventually { await loader.count() == 1 }
             XCTAssertTrue(started)
+            XCTAssertTrue(coordinator.isRefreshing)
             coordinator.setActive(false)
+            XCTAssertFalse(coordinator.isRefreshing)
             if reactivate {
                 coordinator.setActive(true)
                 let reactivated = await eventually { published == [initial, nil, initial] }
                 XCTAssertTrue(reactivated)
+                XCTAssertFalse(coordinator.isRefreshing, "the old manual load belongs to the previous activation")
             }
             await loader.resumeNext(returning: late)
             await manual.value

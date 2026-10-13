@@ -142,7 +142,7 @@ final class AppLogTests: XCTestCase {
             providers: [runtime],
             cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
             defaults: defaults,
-            monotonicNow: { ticks.removeFirst() }
+            monotonicNow: { ticks.count > 1 ? ticks.removeFirst() : ticks[0] }
         )
 
         _ = await store.refresh(providerID: provider.id, force: true)

@@ -23,6 +23,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         XCTAssertEqual(sessionUsage(initial), 25)
         XCTAssertEqual(sessionUsage(limited), 25)
 
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
         fixture.files.files[path] = credentials(
             access: "account-b", refresh: "refresh-b", plan: "max"
         )
@@ -33,7 +34,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         XCTAssertEqual(usageRequests(fixture.http).count, 3)
     }
 
-    func testRefreshTokenChangeSeparatesCacheWhenAccessTokenIsShared() async {
+    func testAccountIdentityChangeSeparatesCacheWhenAccessTokenIsShared() async {
         let calls = IsolationCallCounter()
         let fixture = makeFixture(
             credentials: credentials(access: "shared", refresh: "refresh-a", plan: "pro")
@@ -48,6 +49,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let initial = await fixture.provider.refresh()
         XCTAssertEqual(sessionUsage(initial), 25)
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
         fixture.files.files[path] = credentials(
             access: "shared", refresh: "refresh-b", plan: "max"
         )
@@ -96,6 +98,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let files = FakeFiles([path: accountA])
         let fixture = makeFixture(files: files) { [path] request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 files.files[path] = accountB
                 return HTTPResponse(
                     statusCode: 200,
@@ -128,6 +131,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let files = FakeFiles([path: accountA])
         let fixture = makeFixture(files: files) { [path] request in
             if request.headers["Authorization"] == "Bearer account-a" {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 files.files[path] = accountB
                 return Self.usageResponse(percent: 25)
             }
@@ -154,6 +158,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let service = store.keychainServiceCandidates().first!
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.headers["Authorization"] == "Bearer account-a" {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 keychain.currentUserValues[service] = accountB
                 return Self.usageResponse(percent: 25)
             }
@@ -182,6 +187,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         let service = store.keychainServiceCandidates().first!
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
+                files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity("account-b")
                 keychain.currentUserValues[service] = accountB
                 return HTTPResponse(
                     statusCode: 200,
@@ -202,7 +208,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         })
     }
 
-    func testEarlierCandidateRotationStillAllowsFallbackToNextSource() async {
+    func testEarlierCandidateRotationDoesNotAuthorizeUnverifiedFileFallback() async {
         let fileAccount = credentials(access: "file-b", refresh: "file-refresh", plan: "pro")
         let keychainAccount = credentials(
             access: "keychain-a", refresh: "keychain-refresh", plan: "max"
@@ -232,14 +238,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(
             usageRequests(fixture.http).compactMap { $0.headers["Authorization"] },
-            ["Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b"]
+            ["Bearer keychain-a", "Bearer keychain-a2"]
         )
     }
 
-    func testFailedRotationThenOtherCredentialUsageDoesNotReportRefreshSuccess() async {
+    func testFailedRotationDoesNotQueryUnverifiedFallbackOrReportRefreshSuccess() async {
         let diagnostics = DiagnosticEventRecorder()
         let fileAccount = credentials(access: "file-b", refresh: "file-refresh", plan: "pro")
         let files = FakeFiles([path: fileAccount])
@@ -264,14 +272,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(sessionUsage(snapshot), 75)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(files.files[path], fileAccount)
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
             DiagnosticEvent(.credentialRefresh, result: .failure, category: .authExpired, providerID: "claude")
         ])
         XCTAssertFalse(diagnostics.events.contains { $0.operation == .credentialSave })
         XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
-            "Bearer keychain-a", "Bearer file-b"
+            "Bearer keychain-a"
         ])
     }
 
@@ -312,13 +322,14 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         ])
     }
 
-    func testPersistenceFailureRemainsDegradedAfterSameGenerationFallbackSavesSuccessfully() async {
+    func testPersistenceFailureDoesNotAuthorizeOrOverwriteUnverifiedFallback() async {
         let diagnostics = DiagnosticEventRecorder()
         let keychainAccount = credentials(access: "keychain-a", refresh: "keychain-refresh", plan: "max")
         let keychain = IsolationFailingKeychain(value: keychainAccount)
-        let files = FakeFiles([path: credentials(
+        let fileAccount = credentials(
             access: "file-b", refresh: "file-refresh", plan: "pro", expiresAt: 1
-        )])
+        )
+        let files = FakeFiles([path: fileAccount])
         let fixture = makeFixture(files: files, keychain: keychain) { request in
             if request.url.absoluteString.hasSuffix("/v1/oauth/token") {
                 let parameters = try JSONDecoder().decode([String: String].self, from: XCTUnwrap(request.body))
@@ -340,17 +351,16 @@ final class ClaudeAccountIsolationTests: XCTestCase {
 
         let snapshot = await fixture.provider.refresh()
 
-        XCTAssertEqual(snapshot.plan, "Pro")
-        XCTAssertEqual(sessionUsage(snapshot), 75)
-        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(sessionUsage(snapshot))
+        XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertTrue(snapshot.lines.allSatisfy(\.isError))
         XCTAssertEqual(keychain.value, keychainAccount)
-        XCTAssertTrue(files.files[path]?.contains("file-refresh-2") == true)
+        XCTAssertEqual(files.files[path], fileAccount)
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
-            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude"),
-            DiagnosticEvent(.credentialSave, result: .success, providerID: "claude")
+            DiagnosticEvent(.credentialSave, result: .degraded, category: .permission, providerID: "claude")
         ])
         XCTAssertEqual(usageRequests(fixture.http).compactMap { $0.headers["Authorization"] }, [
-            "Bearer keychain-a", "Bearer keychain-a2", "Bearer file-b2"
+            "Bearer keychain-a", "Bearer keychain-a2"
         ])
     }
 
@@ -372,6 +382,9 @@ final class ClaudeAccountIsolationTests: XCTestCase {
         keychain: any KeychainAccessing = FakeKeychain(),
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse
     ) -> Fixture {
+        if files.files["/tmp/claude/.claude.json"] == nil {
+            files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
+        }
         let http = RoutingHTTPClient(handler: handler)
         let now = Date(timeIntervalSince1970: 1_771_603_200)
         return Fixture(
@@ -383,6 +396,7 @@ final class ClaudeAccountIsolationTests: XCTestCase {
                     now: { now }
                 ),
                 usageClient: ClaudeUsageClient(httpClient: http),
+                usageStateStore: isolatedClaudeUsageStore(),
                 logUsageScanner: ClaudeLogFixture.scanner(home: nil),
                 now: { now },
                 pricing: { TestPricing.bundled }

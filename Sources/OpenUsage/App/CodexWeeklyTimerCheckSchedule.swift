@@ -9,13 +9,17 @@ enum CodexWeeklyTimerCheckSchedule {
         case clockChanged
     }
 
-    static func start(check: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+    static func start(
+        scheduleChanged: @escaping @MainActor (Date) -> Void = { _ in },
+        check: @escaping @MainActor () async -> Void
+    ) -> Task<Void, Never> {
         let signal = CodexWeeklyTimerCheckSignal()
         return Task {
             await run(
                 now: Date.init,
                 calendar: { Calendar.current },
                 wait: { await signal.wait(until: $0) },
+                scheduleChanged: scheduleChanged,
                 check: check
             )
         }
@@ -37,10 +41,12 @@ enum CodexWeeklyTimerCheckSchedule {
         now: @escaping @MainActor () -> Date,
         calendar: @escaping @MainActor () -> Calendar,
         wait: @escaping @MainActor (Date) async -> Event?,
+        scheduleChanged: @escaping @MainActor (Date) -> Void = { _ in },
         check: @escaping @MainActor () async -> Void
     ) async {
         guard !Task.isCancelled else { return }
         var nextCheckAt = nextQuarterHour(after: now(), calendar: calendar())
+        scheduleChanged(nextCheckAt)
         await check()
 
         while !Task.isCancelled, let event = await wait(nextCheckAt) {
@@ -49,11 +55,13 @@ enum CodexWeeklyTimerCheckSchedule {
             if current < nextCheckAt {
                 if event == .clockChanged {
                     nextCheckAt = nextQuarterHour(after: current, calendar: calendar())
+                    scheduleChanged(nextCheckAt)
                 }
                 continue
             }
             // 조회 전에 다음 경계를 예약하여 같은 15분 경계의 timeout과 wake 중복 처리 차단.
             nextCheckAt = nextQuarterHour(after: current, calendar: calendar())
+            scheduleChanged(nextCheckAt)
             await check()
         }
     }

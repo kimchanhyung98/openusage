@@ -9,6 +9,30 @@ final class LocalLimitsAPITests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(data)) as? [String: Any])
     }
 
+    func testClaudeExpiryTracksLastQuotaObservationDespiteLocalRefreshAndCooldown() throws {
+        let snapshot = ProviderSnapshot(
+            providerID: "claude@work", displayName: "Claude", lines: [], refreshedAt: generatedAt,
+            quotaObservedAt: fetchedAt, usageRetryAfter: fetchedAt.addingTimeInterval(3600)
+        )
+        var state = LocalUsageAPI.State(
+            enabledOrderedIDs: ["claude@work"], knownIDs: ["claude@work"],
+            snapshots: ["claude@work": snapshot], generatedAt: fetchedAt.addingTimeInterval(899)
+        )
+        func encoded() throws -> [String: Any] {
+            let root = try json(LocalUsageAPI.respond(method: "GET", path: "/v1/limits", state: state).body)
+            return try XCTUnwrap((root["providers"] as? [String: Any])?["claude@work"] as? [String: Any])
+        }
+        let fresh = try encoded()
+        XCTAssertEqual(fresh["fetchedAt"] as? String, OpenUsageISO8601.string(from: fetchedAt))
+        XCTAssertEqual(fresh["expiresAt"] as? String, OpenUsageISO8601.string(from: fetchedAt.addingTimeInterval(900)))
+        XCTAssertEqual(fresh["stale"] as? Bool, false)
+        state.generatedAt = fetchedAt.addingTimeInterval(900)
+        XCTAssertEqual(try encoded()["stale"] as? Bool, true)
+        state.snapshots["claude@work"]?.quotaObservedAt = nil
+        state.generatedAt = generatedAt
+        XCTAssertEqual(try encoded()["stale"] as? Bool, true)
+    }
+
     func testLimitsEnvelopeCarriesRawScalarsAndFreshnessWithoutUIPresentation() throws {
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
         let session = WidgetDescriptor.percent(id: "codex.session", provider: provider, title: "Session")

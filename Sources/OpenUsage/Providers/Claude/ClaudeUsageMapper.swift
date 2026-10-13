@@ -1,11 +1,13 @@
 import Foundation
 
-struct ClaudeMappedUsage: Equatable, Sendable {
+struct ClaudeMappedUsage: Equatable, Sendable, Codable {
     var plan: String?
     var lines: [MetricLine]
     /// usage에 동반되는 provider header notice(amber 삼각형 + tooltip) — clean fetch면 `nil`.
     var warning: String?
     var liveQuotaObservedAt: Date?
+    var quotaObservedAt: Date?
+    var retryAfter: Date?
 }
 
 enum ClaudeUsageMapper {
@@ -53,7 +55,7 @@ enum ClaudeUsageMapper {
     /// rate-limited 상태의 provider header 경고 — badge/note 라인이 레이아웃에 없어도 원인 표시,
     /// 수동 refresh 자제 안내(rate limit 연장 방지).
     static func rateLimitedWarning(retryAfterSeconds: Int?) -> String {
-        let base = "Updates blocked by Anthropic. Be patient — manual refreshes will make it worse."
+        let base = "Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait."
         guard let retryText = retryAfterSeconds.map(formatRateLimitMinutes) else { return base }
         return "\(base) Retrying in ~\(retryText)."
     }

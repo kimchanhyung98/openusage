@@ -271,11 +271,13 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testDesktopPermissionIsNotMaskedByScopedCLIToken() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)],
             requiresInteraction: true
         )
         let now = now
         let httpClient = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data()))
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
@@ -287,6 +289,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -305,6 +308,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
         let keychain = FakeKeychain()
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
         )
         let now = now
@@ -326,6 +330,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testDesktop401NeverAttemptsRefreshTokenExchange() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
         )
         let httpClient = RoutingHTTPClient { request in
@@ -333,6 +338,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
             return HTTPResponse(statusCode: 401, headers: [:], body: Data())
         }
         let now = now
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(),
@@ -342,6 +348,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -359,6 +366,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testRevokedCLILoginFallsBackToDesktop() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
         )
         let now = now
@@ -373,6 +381,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
             }
             return HTTPResponse(statusCode: 401, headers: [:], body: Data())
         }
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
@@ -384,6 +393,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -402,6 +412,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testRevokedCLILoginTriesDesktopBeforeEnvironmentToken() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("desktop-token", expiresIn: 3_600)]
         )
         let now = now
@@ -416,6 +427,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
             }
             return HTTPResponse(statusCode: 401, headers: [:], body: Data())
         }
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment([
@@ -430,6 +442,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -448,12 +461,14 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testStaleDesktopDoesNotMaskRevokedCLIError() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("expired-desktop", expiresIn: -1)]
         )
         let now = now
         let httpClient = RoutingHTTPClient { _ in
             HTTPResponse(statusCode: 401, headers: [:], body: Data())
         }
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
@@ -465,6 +480,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -482,6 +498,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
     func testStaleDesktopDoesNotMaskMissingProfileScopeWarning() async throws {
         let fixture = try makeFixture(
             activeOrganization: organization,
+            activeAccountUUID: "11111111-1111-4111-8111-111111111111",
             v2: [cacheKey(organization: organization): tokenEntry("expired-desktop", expiresIn: -1)]
         )
         let now = now
@@ -489,6 +506,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
             XCTFail("Inference-only credentials must not request live usage")
             return HTTPResponse(statusCode: 500, headers: [:], body: Data())
         }
+        fixture.files.files["/tmp/claude/.claude.json"] = claudeUsageTestIdentity()
         let provider = ClaudeProvider(
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
@@ -500,6 +518,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             includePiUsage: false,
             now: { now },

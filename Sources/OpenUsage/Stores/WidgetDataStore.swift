@@ -53,8 +53,12 @@ final class WidgetDataStore {
     /// Codex 인증·usage snapshot과 분리된 전역 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
     private var codexResetWatch = CodexResetWatchResult()
     var refreshingProviderIDs: Set<String> = []
-    /// 마지막 full refresh pass 종료 시각 — footer의 "Next update in …" 카운트다운 기준. 첫 pass 전에는 nil.
+    /// 마지막 사용량 배치 종료 시각. 첫 배치 전에는 nil.
     var lastRefreshAt: Date?
+    private(set) var scheduledRefreshDates: [String: Date] = [:]
+    @ObservationIgnored private var scheduledRefreshUpdatedAt: [String: TimeInterval] = [:]
+    var nextGeneralRefreshAt: Date?
+    nonisolated static let refreshScheduleDidChange = Notification.Name("UsageRefreshScheduleDidChange")
     private(set) var refreshResults: [String: ProviderRefreshResult] = [:]
     var providerErrors: [String: String] {
         refreshResults.compactMapValues { $0.failure?.message }
@@ -77,6 +81,8 @@ final class WidgetDataStore {
 
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
+    @ObservationIgnored private var isEvaluatingNotifications = false
+    @ObservationIgnored private var pendingNotificationEvaluationAt: Date?
 
     /// Telemetry hook(`AppContainer`가 연결) — 실제 fetch(.refreshed/.failed)당 1회 호출, cache-hit·skip·backoff 제외.
     /// 테스트·프리뷰에서는 nil(no-op).
@@ -146,6 +152,9 @@ final class WidgetDataStore {
                 )
             }
         self.providerIdentityKeys = providerIdentityKeys
+        unresolvedIdentityCacheRejections = Set(registry.providers.map(\.id).filter {
+            ProviderAccountID.family(of: $0) == "claude" && providerIdentityKeys[$0] == nil
+        })
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
         self.resolveDisplayName = resolveDisplayName
         self.meterStyle = defaults.enumValue(forKey: Self.meterStyleKey, default: .used)
@@ -153,9 +162,10 @@ final class WidgetDataStore {
         self.alwaysShowPacing = defaults.bool(forKey: Self.alwaysShowPacingKey, default: true)
         // Stale-while-revalidate: 만료 포함 캐시를 즉시 로드 — launch 직후 "—" 대신 last-known 값 표시.
         // Account swap guard: 현재 identity가 known인 카드는 생산 account가 일치하는 entry만 paint — 같은 home에서
-        // swap 후 이전 account의 limit·plan 노출 차단. identity 미해석 카드는 검증 불가라 종전대로 캐시 유지.
+        // swap 후 이전 account의 limit·plan 노출 차단. Claude는 신원 미확인 캐시도 제외.
         let loaded = cache.loadSnapshots(providerIDs: registry.providers.map(\.id))
             .filter { cardID, _ in
+                guard !unresolvedIdentityCacheRejections.contains(cardID) else { return false }
                 guard cache.hasStaleAccountStamp(providerID: cardID, currentIdentityKey: providerIdentityKeys[cardID]) else {
                     return true
                 }
@@ -168,10 +178,18 @@ final class WidgetDataStore {
 
     /// Enabled provider 전체를 동시 refresh — 느린 provider 하나가 나머지를 지연시키지 않는 구조.
     /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
-    func refreshAll(force: Bool = false, trigger: RefreshTrigger = .scheduled) async {
+    func refreshAll(
+        force: Bool = false, trigger: RefreshTrigger = .scheduled,
+        cadence: RefreshSetting.Cadence? = nil
+    ) async {
         guard !Task.isCancelled else { return }
         // MainActor 격리 유지를 위해 task group 대신 provider별 Task 생성 후 일괄 await.
-        let providerIDs = registry.providers.map(\.id).filter { isProviderEnabled($0) }
+        let providerIDs = registry.providers.map(\.id).filter { id in
+            guard isProviderEnabled(id) else { return false }
+            guard let cadence else { return true }
+            return RefreshSetting.cadence(for: id) == cadence && (scheduledRefreshDate(for: id) ?? now()) <= now()
+        }
+        guard !providerIDs.isEmpty else { return }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
         let tasks = providerIDs.map { providerID in
@@ -188,8 +206,8 @@ final class WidgetDataStore {
             for task in tasks { task.cancel() }
         }
         guard !Task.isCancelled else { return }
-        // pass 종료 시각 stamp — footer 카운트다운이 다음 예정 refresh(이 시각 + 1 interval)를 겨냥.
-        lastRefreshAt = Date()
+        // 각 갱신 그룹의 완료 기록 — 대상별 다음 일정은 별도 보존.
+        lastRefreshAt = now()
         let durationMs = durationMilliseconds(since: start)
         // 이번 batch의 실제 outcome만 집계 — 누적 providerErrors로 세면 cache hit·과거 실패가 오염.
         let refreshed = outcomes.count { $0 == .refreshed }
@@ -198,6 +216,32 @@ final class WidgetDataStore {
         let backedOff = outcomes.count { $0 == .backedOff }
         if refreshed > 0 { onLocalHistoryChanged?() }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
+    }
+
+    func scheduledRefreshDate(for providerID: String) -> Date? {
+        let scheduled = scheduledRefreshDates[providerID]
+        return [scheduled, failureRetryAfter[providerID], localSnapshots[providerID]?.usageRetryAfter]
+            .compactMap { $0 }.max()
+    }
+
+    func nextScheduledRefresh(for cadence: RefreshSetting.Cadence, at date: Date) -> Date? {
+        registry.providers.map(\.id).filter {
+            isProviderEnabled($0) && RefreshSetting.cadence(for: $0) == cadence
+                && isRefreshSuspended?($0) != true && !refreshingProviderIDs.contains($0)
+                && providersByID[$0].map { !pendingProviderRefreshes.contains(ObjectIdentifier($0)) } == true
+        }.map { scheduledRefreshDate(for: $0) ?? date }.min()
+    }
+
+    /// 시계 변경 전 일정만 재평가 — 변경 후 완료한 조회의 다음 일정과 계정별 429 대기는 유지.
+    func rebaseRefreshSchedule(for cadence: RefreshSetting.Cadence, at date: Date, clockChangedAt: TimeInterval) {
+        for id in registry.providers.map(\.id) where RefreshSetting.cadence(for: id) == cadence {
+            if let updatedAt = scheduledRefreshUpdatedAt[id], updatedAt >= clockChangedAt { continue }
+            scheduledRefreshDates[id] = date
+            providersNeedingScheduledRefresh.insert(id)
+            if let retryAfter = failureRetryAfter[id] {
+                failureRetryAfter[id] = min(retryAfter, date.addingTimeInterval(Self.failureRetryBackoff))
+            }
+        }
     }
 
     /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
@@ -295,6 +339,9 @@ final class WidgetDataStore {
         let previousIdentityKeys = providerIdentityKeys
         unresolvedIdentityCacheRejections.formUnion(previousIdentityKeys.keys.filter { identityKeys[$0] == nil })
         unresolvedIdentityCacheRejections.subtract(identityKeys.keys)
+        unresolvedIdentityCacheRejections.formUnion(liveIDs.filter {
+            ProviderAccountID.family(of: $0) == "claude" && identityKeys[$0] == nil
+        })
         func keepsState(_ cardID: String) -> Bool {
             guard liveIDs.contains(cardID) else { return false }
             return previousIdentityKeys[cardID] == identityKeys[cardID]
@@ -311,13 +358,18 @@ final class WidgetDataStore {
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
-        localSnapshots = localSnapshots.filter { keepsState($0.key) }
+        localSnapshots = localSnapshots.filter { cardID, _ in
+            keepsState(cardID)
+                && !(ProviderAccountID.family(of: cardID) == "claude" && identityKeys[cardID] == nil)
+        }
         refreshResults = refreshResults.filter { keepsState($0.key) }
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
         providersNeedingScheduledRefresh.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
+        scheduledRefreshDates = scheduledRefreshDates.filter { keepsState($0.key) }
+        scheduledRefreshUpdatedAt = scheduledRefreshUpdatedAt.filter { keepsState($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
             !unresolvedIdentityCacheRejections.contains(cardID)
@@ -327,6 +379,7 @@ final class WidgetDataStore {
             localSnapshots[cardID] = snapshot
         }
         rebuildRenderedSnapshots()
+        NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
     }
 
     /// provider refresh 밖의 계정 reconciliation 실패를 같은 dashboard 오류 surface에 노출.
@@ -346,6 +399,17 @@ final class WidgetDataStore {
     /// 주기 loop에서 구동해 시간 경과만으로 악화된 pace도 포착. 이번 pass에 방문하지 않은 metric의
     /// 상태는 prune — 재활성화·재추가 시 stale "already fired" flag 없이 fresh 시작.
     func evaluateNotifications(now: Date = Date()) async {
+        pendingNotificationEvaluationAt = now
+        guard !isEvaluatingNotifications else { return }
+        isEvaluatingNotifications = true
+        defer { isEvaluatingNotifications = false }
+        while let requestedAt = pendingNotificationEvaluationAt, !Task.isCancelled {
+            pendingNotificationEvaluationAt = nil
+            await evaluateNotificationPass(now: requestedAt)
+        }
+    }
+
+    private func evaluateNotificationPass(now: Date) async {
         guard let settingsProvider = notificationSettings else { return }
         let toggles = settingsProvider().toggles
         // unbounded 행·chart는 pace 대상이 아니라 제외; 순서는 layout 순서, evaluator가 미방문 상태를 prune.
@@ -403,6 +467,10 @@ final class WidgetDataStore {
                 localSnapshots[providerID] = cached
                 rebuildRenderedSnapshots()
             }
+            if trigger == .scheduled {
+                scheduledRefreshDates[providerID] = cached.freshnessDate
+                    .addingTimeInterval(RefreshSetting.interval(for: providerID))
+            }
             return .cacheHit
         }
         if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
@@ -425,32 +493,46 @@ final class WidgetDataStore {
             return .skipped
         }
         refreshingProviderIDs.insert(providerID)
-        defer { refreshingProviderIDs.remove(providerID) }
+        var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
+        defer {
+            refreshingProviderIDs.remove(providerID)
+            if needsScheduleWake, !pendingProviderRefreshes.contains(runtimeID) {
+                NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
+            }
+        }
         let boundGeneration = catalogGeneration
         let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         let start = monotonicNow()
         let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self] in
             self?.pendingProviderRefreshes.insert(runtimeID)
-            defer { self?.pendingProviderRefreshes.remove(runtimeID) }
+            defer {
+                self?.pendingProviderRefreshes.remove(runtimeID)
+                if self?.refreshingProviderIDs.contains(providerID) == false {
+                    NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
+                }
+            }
             return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
                 await provider.refresh()
             }
         }
         // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
         guard !Task.isCancelled else {
+            needsScheduleWake = true
             AppLog.debug(.refresh, "cancelled \(providerID) refresh; keeping last-good snapshot")
             return .skipped
         }
         // fetch 중 catalog 교체: 카드 id가 다른 account를 가리킬 수 있어 결과 폐기 — publish하면 이전
         // account 데이터가 새 identity stamp로 정당화됨. switch 경로가 선택 카드를 직접 force-refresh.
-        guard catalogGeneration == boundGeneration,
+        guard isProviderEnabled(providerID), catalogGeneration == boundGeneration,
               authenticationGenerations[providerID, default: 0] == authenticationGeneration else {
+            needsScheduleWake = true
             AppLog.info(.refresh, "\(providerID) discarding result: the provider catalog or authentication changed mid-fetch")
             AppDiagnostics.record(.accountBinding, result: .bindingChanged, providerID: providerID)
             return .skipped
         }
         guard credentialGenerations[providerID, default: 0] == boundCredentialGeneration else {
+            needsScheduleWake = true
             AppLog.info(.refresh, "\(providerID) discarding result: credentials changed mid-fetch")
             return .skipped
         }
@@ -465,7 +547,12 @@ final class WidgetDataStore {
                 category: .network
             )
         case .cancelled:
+            needsScheduleWake = true
             return .skipped
+        }
+        if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
+            scheduledRefreshUpdatedAt[providerID] = monotonicNow()
+            scheduledRefreshDates[providerID] = now().addingTimeInterval(RefreshSetting.interval(for: providerID))
         }
         let durationMs = durationMilliseconds(since: start)
         if TimeInterval(durationMs) >= slowProviderRefreshThreshold * 1000 {
@@ -539,10 +626,15 @@ final class WidgetDataStore {
     /// enablement wake의 즉시 fetch가 꺼지기 직전 실패의 stale backoff에 막히지 않도록 보장.
     func clearFailureBackoff(for providerID: String) {
         failureRetryAfter[providerID] = nil
+        scheduledRefreshDates[providerID] = nil
+        scheduledRefreshUpdatedAt[providerID] = nil
     }
 
     /// Provider toggle 직후 in-memory union 재구성 — disabled provider는 peer 기여 수신 중단, local 캐시는 직접 API 읽기에 유지.
     func providerEnablementDidChange() {
+        for id in registry.providers.map(\.id) where !isProviderEnabled(id) {
+            authenticationGenerations[id, default: 0] += 1
+        }
         onQuotaInvalidated?(nil)
         rebuildRenderedSnapshots()
     }
@@ -679,6 +771,8 @@ final class WidgetDataStore {
 
     /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
     func invalidateAuthentication(for providerID: String) {
+        scheduledRefreshDates[providerID] = nil
+        scheduledRefreshUpdatedAt[providerID] = nil
         guard providersByID[providerID] != nil else { return }
         authenticationGenerations[providerID, default: 0] &+= 1
         onQuotaInvalidated?([providerID])
@@ -780,9 +874,9 @@ final class WidgetDataStore {
     /// 실패 loop가 last-good plan/limit을 계속 표시하는 fossilized-cache(#582)의 가시화 장치;
     /// label은 header overflow 방지를 위해 짧게, 정확한 age는 tooltip에. 주입된 clock 사용(테스트 고정).
     func stalenessHint(for providerID: String) -> StalenessHint? {
-        guard let refreshedAt = snapshots[providerID]?.refreshedAt else { return nil }
+        guard let refreshedAt = snapshots[providerID]?.freshnessDate else { return nil }
         let age = now().timeIntervalSince(refreshedAt)
-        guard age >= Self.stalenessThreshold, let duration = Formatters.compactDuration(age) else {
+        guard age >= RefreshSetting.interval(for: providerID) * 2, let duration = Formatters.compactDuration(age) else {
             return nil
         }
         return StalenessHint(label: "Outdated", tooltip: "Last updated \(duration) ago")

@@ -335,7 +335,8 @@ final class AccountSnapshotUsageTests: XCTestCase {
             let credential = family == "claude"
                 ? #"{"claudeAiOauth":{"accessToken":"old-token","refreshToken":"old-refresh","expiresAt":1}}"#
                 : #"{"tokens":{"access_token":"old-token","refresh_token":"old-refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
-            try vault.save(.init(credential: credential, claudeOAuthAccount: "metadata"), profile: profile)
+            let metadata = #"{"accountUuid":"rotation","organizationUuid":"org"}"#
+            try vault.save(.init(credential: credential, claudeOAuthAccount: metadata), profile: profile)
             keychain.requiresInteraction = true
             let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data(
                 #"{"access_token":"new-token","refresh_token":"new-refresh","expires_in":3600,"five_hour":{"utilization":12},"rate_limit":{"primary_window":{"used_percent":12}}}"#.utf8
@@ -348,7 +349,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
             keychain.requiresInteraction = false
             let saved = try XCTUnwrap(vault.load(profile: profile))
             XCTAssertTrue(saved.credential.contains("new-refresh"), family)
-            XCTAssertEqual(saved.claudeOAuthAccount, "metadata", family)
+            XCTAssertEqual(saved.claudeOAuthAccount, metadata, family)
         }
     }
 
@@ -360,7 +361,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 ? #"{"claudeAiOauth":{"accessToken":"token"}}"#
                 : #"{"tokens":{"access_token":"token","refresh_token":"refresh"},"last_refresh":"2000-01-01T00:00:00Z"}"#
             try AccountCredentialVault(keychain: keychain).save(
-                .init(credential: credential, claudeOAuthAccount: nil), profile: profile
+                .init(credential: credential, claudeOAuthAccount: #"{"accountUuid":"reload","organizationUuid":"org"}"#), profile: profile
             )
             keychain.failAfterRead = 1
             let http = FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data("{}".utf8)))
@@ -403,6 +404,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 authStore: ClaudeAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                                            scope: .accountSnapshot(profileID: profileID)),
                 usageClient: ClaudeUsageClient(httpClient: http),
+                usageStateStore: isolatedClaudeUsageStore(),
                 logUsageScanner: ClaudeLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
                 includePiUsage: false, pricing: { .empty }
             )

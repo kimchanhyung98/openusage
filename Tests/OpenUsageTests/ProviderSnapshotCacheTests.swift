@@ -16,6 +16,56 @@ final class ProviderSnapshotCacheTests: XCTestCase {
         )
     }
 
+    func testProviderCadenceAppliesToAppAndPersistedCLICaches() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var now = start
+        let cache = ProviderSnapshotCache(userDefaults: defaults, now: { now })
+        cache.store(snapshot("claude@work", used: 10, now: start))
+        cache.store(snapshot("codex", used: 20, now: start))
+        now = start.addingTimeInterval(300)
+        XCTAssertNil(cache.snapshot(providerID: "codex"))
+        XCTAssertNotNil(cache.snapshot(providerID: "claude@work"))
+        let cliCache = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true, now: { now })
+        XCTAssertNotNil(cliCache.snapshot(providerID: "claude@work"))
+        XCTAssertNil(cliCache.snapshot(providerID: "codex"))
+        now = start.addingTimeInterval(900)
+        XCTAssertNil(cache.snapshot(providerID: "claude@work"))
+        XCTAssertNil(cliCache.snapshot(providerID: "claude@work"))
+    }
+
+    func testCooldownAndLocalRefreshDoNotExtendQuotaFreshness() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let cache = ProviderSnapshotCache(userDefaults: defaults, now: { now })
+        var cached = snapshot("claude", used: 10, now: now)
+        cached.quotaObservedAt = now.addingTimeInterval(-899)
+        cached.usageRetryAfter = now.addingTimeInterval(3600)
+        cache.store(cached)
+        XCTAssertNotNil(cache.snapshot(providerID: "claude"))
+        cached.quotaObservedAt = now.addingTimeInterval(-900)
+        cached.usageRetryAfter = now.addingTimeInterval(3600)
+        cache.store(cached)
+        XCTAssertNil(cache.snapshot(providerID: "claude"))
+        cached.quotaObservedAt = nil
+        cache.store(cached)
+        XCTAssertNil(cache.snapshot(providerID: "claude"))
+    }
+
+    func testPreQuotaTimestampCacheIsNotReusedAfterUpgrade() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date()
+        ProviderSnapshotCache(userDefaults: defaults, storageKey: "openusage.providerSnapshots.v9")
+            .store(snapshot("claude", used: 42, now: now), producedByIdentityKey: "account")
+        let upgraded = ProviderSnapshotCache(userDefaults: defaults, allowsPersistedFreshness: true, now: { now })
+
+        XCTAssertNil(upgraded.snapshot(providerID: "claude"))
+        XCTAssertTrue(upgraded.loadSnapshots(providerIDs: ["claude"]).isEmpty)
+    }
+
     func testStoreAccumulatesAcrossProvidersAndReadsReflectWrites() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

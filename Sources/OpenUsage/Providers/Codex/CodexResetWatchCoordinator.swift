@@ -3,8 +3,9 @@ import Observation
 
 /// Codex usage와 독립된 Reset Watch 활성 상태·15분 조회 주기 소유자.
 @MainActor
+@Observable
 final class CodexResetWatchCoordinator {
-    static let refreshInterval = RefreshSetting.interval * 3
+    static let refreshInterval = RefreshSetting.slowInterval
 
     typealias Waiting = @Sendable (Duration) async -> Bool
 
@@ -12,8 +13,11 @@ final class CodexResetWatchCoordinator {
     private let publish: @MainActor (CodexResetWatchResult) -> Void
     private let interval: Duration
     private let wait: Waiting
-    private var isActive = false
-    private var task: Task<Void, Never>?
+    private(set) var isActive = false
+    private(set) var nextRefreshAt: Date?
+    private var refreshCount = 0
+    var isRefreshing: Bool { isActive && refreshCount > 0 }
+    @ObservationIgnored private var task: Task<Void, Never>?
     private var activationID = UUID()
 
     init(
@@ -41,6 +45,8 @@ final class CodexResetWatchCoordinator {
     func refreshNow() async {
         guard isActive else { return }
         let activationID = self.activationID
+        refreshCount += 1
+        defer { if self.activationID == activationID { refreshCount -= 1 } }
         let watch = await load(true)
         guard isActive, self.activationID == activationID, !Task.isCancelled else { return }
         publish(watch)
@@ -61,10 +67,12 @@ final class CodexResetWatchCoordinator {
         guard active != isActive else { return }
         isActive = active
         activationID = UUID()
+        refreshCount = 0
         task?.cancel()
         task = nil
 
         guard active else {
+            nextRefreshAt = nil
             publish(CodexResetWatchResult())
             return
         }
@@ -73,11 +81,17 @@ final class CodexResetWatchCoordinator {
         let publish = self.publish
         let interval = self.interval
         let wait = self.wait
-        task = Task {
+        let activationID = self.activationID
+        task = Task { [weak self] in
             while !Task.isCancelled {
+                self?.refreshCount += 1
                 let watch = await load(false)
+                if self?.activationID == activationID { self?.refreshCount -= 1 }
                 guard !Task.isCancelled else { return }
                 publish(watch)
+                self?.nextRefreshAt = Date().addingTimeInterval(
+                    Double(interval.components.seconds) + Double(interval.components.attoseconds) / 1e18
+                )
                 guard await wait(interval), !Task.isCancelled else { return }
             }
         }

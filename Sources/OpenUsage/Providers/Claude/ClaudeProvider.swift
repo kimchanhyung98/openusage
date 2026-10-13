@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 @MainActor
@@ -25,17 +24,13 @@ final class ClaudeProvider: ProviderRuntime {
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
-    /// refresh 간 유지되는 마지막 성공 라이브 usage + rate-limit cooldown — 429 시 last-good 바를
-    /// staleness note와 함께 제공하고, cooldown 만료까지 라이브 호출 skip(429 가중 방지).
-    private var cachedCredentialFingerprint: Data?
-    private var lastGoodUsage: ClaudeMappedUsage?
-    private var rateLimitedUntil: Date?
-    private static let rateLimitCooldown: TimeInterval = 5 * 60
+    let usageStateStore: ClaudeUsageStateStore
 
     init(
         provider: Provider = ClaudeProvider.makeProvider(),
         authStore: ClaudeAuthStore = ClaudeAuthStore(),
         usageClient: ClaudeUsageClient = ClaudeUsageClient(),
+        usageStateStore: ClaudeUsageStateStore = ClaudeUsageStateStore(),
         logUsageScanner: ClaudeLogUsageScanner = ClaudeLogUsageScanner(),
         includePiUsage: Bool = true,
         now: @escaping @Sendable () -> Date = Date.init,
@@ -44,6 +39,7 @@ final class ClaudeProvider: ProviderRuntime {
         self.provider = provider
         self.authStore = authStore
         self.usageClient = usageClient
+        self.usageStateStore = usageStateStore
         self.logUsageScanner = logUsageScanner
         self.includePiUsage = includePiUsage
         self.now = now
@@ -88,14 +84,15 @@ final class ClaudeProvider: ProviderRuntime {
         return load.desktopStatus == .permissionRequired || load.desktopStatus == .stale
     }
 
-    private var refreshIsDegraded = false
+    var refreshIsDegraded = false
 
     func refresh() async -> ProviderSnapshot {
         refreshIsDegraded = false
         return await refresh(
             credentialReloadsRemaining: 1,
             forceDesktopFallback: false,
-            previousFallbackError: nil
+            previousFallbackError: nil,
+            requestedAt: now()
         )
     }
 
@@ -103,7 +100,8 @@ final class ClaudeProvider: ProviderRuntime {
     private func refresh(
         credentialReloadsRemaining: Int,
         forceDesktopFallback: Bool,
-        previousFallbackError: ClaudeAuthError?
+        previousFallbackError: ClaudeAuthError?,
+        requestedAt: Date
     ) async -> ProviderSnapshot {
         let allowDesktopInteraction = ProviderRefreshContext.isManual
         let credentialLoad = await loadOffMainActor { [authStore] in
@@ -182,14 +180,16 @@ final class ClaudeProvider: ProviderRuntime {
                 return await refresh(
                     credentialReloadsRemaining: credentialReloadsRemaining,
                     forceDesktopFallback: true,
-                    previousFallbackError: lastFallbackError
+                    previousFallbackError: lastFallbackError,
+                    requestedAt: requestedAt
                 )
             }
             do {
                 let snapshot = try await probe(
                     state: state,
                     credentialGeneration: &credentialGeneration,
-                    fallbackWarning: desktopFallbackWarning
+                    fallbackWarning: desktopFallbackWarning,
+                    requestedAt: requestedAt
                 )
                 AppLog.info(LogTag.plugin("claude"), "refresh end (\(Int(Date().timeIntervalSince(start) * 1000))ms)")
                 return snapshot
@@ -200,7 +200,8 @@ final class ClaudeProvider: ProviderRuntime {
                 return await refresh(
                     credentialReloadsRemaining: credentialReloadsRemaining - 1,
                     forceDesktopFallback: forceDesktopFallback,
-                    previousFallbackError: previousFallbackError
+                    previousFallbackError: previousFallbackError,
+                    requestedAt: requestedAt
                 )
             } catch let error as ClaudeAuthError where error.allowsAuthFallback {
                 AppLog.info(LogTag.auth("claude"), "\(state.source.label) authentication failed; falling back to next source if any")
@@ -218,7 +219,8 @@ final class ClaudeProvider: ProviderRuntime {
             return await refresh(
                 credentialReloadsRemaining: credentialReloadsRemaining,
                 forceDesktopFallback: true,
-                previousFallbackError: lastFallbackError
+                previousFallbackError: lastFallbackError,
+                requestedAt: requestedAt
             )
         }
         return ProviderSnapshot.error(
@@ -230,7 +232,8 @@ final class ClaudeProvider: ProviderRuntime {
     private func probe(
         state initialState: ClaudeCredentialState,
         credentialGeneration: inout ClaudeCredentialGeneration,
-        fallbackWarning: ClaudeAuthError?
+        fallbackWarning: ClaudeAuthError?,
+        requestedAt: Date
     ) async throws -> ProviderSnapshot {
         var state = initialState
         var mapped = ClaudeMappedUsage(
@@ -247,7 +250,8 @@ final class ClaudeProvider: ProviderRuntime {
         case .available:
             mapped = try await fetchLiveUsage(
                 state: &state,
-                credentialGeneration: &credentialGeneration
+                credentialGeneration: &credentialGeneration,
+                requestedAt: requestedAt
             )
             // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
             warning = mapped.warning
@@ -300,186 +304,10 @@ final class ClaudeProvider: ProviderRuntime {
             warning: warning,
             authenticationIssue: authenticationIssue,
             isDegraded: refreshIsDegraded ? true : nil,
-            liveQuotaObservedAt: mapped.liveQuotaObservedAt
+            liveQuotaObservedAt: mapped.liveQuotaObservedAt,
+            quotaObservedAt: mapped.quotaObservedAt,
+            usageRetryAfter: mapped.retryAfter
         )
-    }
-
-    private func fetchLiveUsage(
-        state: inout ClaudeCredentialState,
-        credentialGeneration: inout ClaudeCredentialGeneration
-    ) async throws -> ClaudeMappedUsage {
-        var expectedGeneration = credentialGeneration
-        defer { credentialGeneration = expectedGeneration }
-        activateLiveUsageCache(for: state.oauth)
-
-        // rate-limit cooldown 중에는 라이브 호출 skip, last-good 제공 — dashboard 공백과 429 가중 방지.
-        if let until = rateLimitedUntil, now() < until {
-            AppLog.info(LogTag.plugin("claude"), "rate-limited (cooldown active, serving \(lastGoodUsage == nil ? "badge" : "last-good usage"))")
-            return rateLimitedSnapshot(credentials: state.oauth, retryAfterSeconds: Int(until.timeIntervalSince(now()).rounded(.up)))
-        }
-
-        if authStore.needsRefresh(state.oauth),
-           let refreshToken = state.oauth.refreshToken,
-           !refreshToken.isEmpty {
-            let refreshed = try await refreshAccessToken(
-                state: &state,
-                refreshToken: refreshToken,
-                expectedGeneration: expectedGeneration
-            )
-            state.oauth.accessToken = refreshed.accessToken
-            if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(state) }
-        }
-
-        var working = state
-        defer { state = working }
-        let response = try await ProviderAuthRetry.fetch(
-            token: working.oauth.accessToken ?? "",
-            attempt: { try await self.usageClient.fetchUsage(accessToken: $0, config: self.authStore.oauthConfig()) },
-            refreshAccessToken: {
-                if working.source == .desktop {
-                    throw ClaudeAuthError.desktopTokenExpired
-                }
-                guard let refreshToken = working.oauth.refreshToken, !refreshToken.isEmpty else {
-                    throw ClaudeAuthError.tokenExpired
-                }
-                let refreshed = try await self.refreshAccessToken(
-                    state: &working,
-                    refreshToken: refreshToken,
-                    expectedGeneration: expectedGeneration
-                )
-                if refreshed.persisted {
-                    expectedGeneration = expectedGeneration.replacing(working)
-                }
-                return refreshed.accessToken
-            },
-            connectionFailed: ClaudeUsageError.connectionFailed,
-            authExpired: ClaudeAuthError.tokenExpired
-        )
-
-        let quotaObservedAt = now()
-        let forceDesktopGeneration = working.source == .desktop
-        let allowAccountInteraction = ProviderRefreshContext.isManual
-        let currentGeneration = try await loadOffMainActor { [authStore] in
-            try authStore.credentialGeneration(
-                forceDesktopFallback: forceDesktopGeneration, allowAccountInteraction: allowAccountInteraction
-            )
-        }
-        guard currentGeneration == expectedGeneration else { throw ClaudeAuthError.credentialsChanged }
-
-        // 429는 양쪽 attempt에서 가능 — Retry-After 존중 cooldown 시작, bare badge 대신 last-good 제공.
-        if response.statusCode == 429 {
-            let retryAfterSeconds = ClaudeUsageMapper.parseRetryAfterSeconds(response, now: now())
-            rateLimitedUntil = now().addingTimeInterval(TimeInterval(retryAfterSeconds ?? Int(Self.rateLimitCooldown)))
-            AppLog.info(LogTag.plugin("claude"), "rate-limited (serving \(lastGoodUsage == nil ? "badge" : "last-good usage"))")
-            return rateLimitedSnapshot(credentials: working.oauth, retryAfterSeconds: retryAfterSeconds)
-        }
-
-        var mapped = try ClaudeUsageMapper.mapUsageResponse(response, credentials: working.oauth, now: now())
-        mapped.liveQuotaObservedAt = quotaObservedAt
-        lastGoodUsage = mapped
-        rateLimitedUntil = nil
-        return mapped
-    }
-
-    /// last-good usage + staleness note, 없으면 bare rate-limited badge. `lastGoodUsage`는 항상 clean한
-    /// `mapUsageResponse` 결과만 보유 — note 중복·stale spend 타일 동반 없음.
-    private func rateLimitedSnapshot(credentials: ClaudeOAuth, retryAfterSeconds: Int?) -> ClaudeMappedUsage {
-        guard var mapped = lastGoodUsage else {
-            return ClaudeUsageMapper.rateLimitedUsage(credentials: credentials, retryAfterSeconds: retryAfterSeconds)
-        }
-        mapped.lines.append(ClaudeUsageMapper.rateLimitedNote(retryAfterSeconds: retryAfterSeconds))
-        mapped.warning = ClaudeUsageMapper.rateLimitedWarning(retryAfterSeconds: retryAfterSeconds)
-        mapped.liveQuotaObservedAt = nil
-        return mapped
-    }
-
-    /// 캐시 상태는 access + refresh 쌍 단위 — 로그인 변경 시 access token이 같아도 last-good·cooldown 초기화.
-    private func activateLiveUsageCache(for credentials: ClaudeOAuth) {
-        let fingerprint = Self.credentialFingerprint(credentials)
-        guard cachedCredentialFingerprint != fingerprint else { return }
-        cachedCredentialFingerprint = fingerprint
-        lastGoodUsage = nil
-        rateLimitedUntil = nil
-    }
-
-    private static func credentialFingerprint(_ credentials: ClaudeOAuth) -> Data {
-        let access = Data((credentials.accessToken ?? "").utf8)
-        let refresh = Data((credentials.refreshToken ?? "").utf8)
-        var pair = Data(SHA256.hash(data: access))
-        pair.append(contentsOf: SHA256.hash(data: refresh))
-        return Data(SHA256.hash(data: pair))
-    }
-
-    private struct RefreshedAccess {
-        var accessToken: String
-        var persisted: Bool
-    }
-
-    private func refreshAccessToken(
-        state: inout ClaudeCredentialState,
-        refreshToken: String,
-        expectedGeneration: ClaudeCredentialGeneration
-    ) async throws -> RefreshedAccess {
-        AppLog.info(LogTag.auth("claude"), "token refresh attempt")
-        let decoded: ClaudeRefreshResponse
-        do {
-            let response = try await usageClient.refreshToken(refreshToken, config: authStore.oauthConfig())
-            if response.statusCode == 400 || response.statusCode == 401 {
-                let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
-                let errorCode = body?["error"] as? String ?? body?["error_description"] as? String
-                if errorCode == "invalid_grant" {
-                    throw ClaudeAuthError.sessionExpired
-                }
-                // 인식 못한 OAuth 에러 코드의 400/401은 만료 확정 아님(proxy/WAF/gateway 가능) —
-                // 재로그인 안내 대신 HTTP status 표면화.
-                throw ClaudeUsageError.requestFailed(response.statusCode)
-            }
-            guard (200..<300).contains(response.statusCode) else {
-                throw ClaudeUsageError.requestFailed(response.statusCode)
-            }
-            // decoded.accessToken / refreshToken 로깅 금지 — rotation 발생 사실만 기록.
-            decoded = try JSONDecoder().decode(ClaudeRefreshResponse.self, from: response.body)
-        } catch {
-            AppDiagnostics.failure(.credentialRefresh, error: error, providerID: provider.id, localContext: "token refresh request failed")
-            throw error
-        }
-        AppDiagnostics.record(.credentialRefresh, result: .success, providerID: provider.id)
-        let previousOAuth = state.oauth
-        state.oauth.accessToken = decoded.accessToken
-        if let refreshToken = decoded.refreshToken {
-            state.oauth.refreshToken = refreshToken
-        }
-        if let expiresIn = decoded.expiresIn {
-            state.oauth.expiresAt = now().timeIntervalSince1970 * 1000 + expiresIn * 1000
-        }
-        // loudly 실패: save 누락 시 구 refresh token이 디스크에 남아 다음 launch가 무효 토큰으로
-        // "session expired" 오인; refresh된 토큰은 이번 세션에 유효하므로 로그 후 계속.
-        let persisted: Bool
-        let allowAccountInteraction = ProviderRefreshContext.isManual
-        do {
-            guard try await Task.detached(priority: .utility, operation: { [authStore, state] in
-                try authStore.save(
-                    state, ifUnchanged: expectedGeneration, allowAccountInteraction: allowAccountInteraction
-                )
-            }).value else {
-                throw ClaudeAuthError.credentialsChanged
-            }
-            persisted = true
-            AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
-        } catch let error as ClaudeAuthError where error == .credentialsChanged {
-            AppDiagnostics.record(.credentialSave, result: .bindingChanged, providerID: provider.id)
-            throw error
-        } catch {
-            persisted = false
-            refreshIsDegraded = true
-            AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
-                                  localContext: "failed to persist rotated credentials; using the refreshed token for this session only")
-        }
-        if cachedCredentialFingerprint == Self.credentialFingerprint(previousOAuth) {
-            cachedCredentialFingerprint = Self.credentialFingerprint(state.oauth)
-        }
-        AppLog.info(LogTag.auth("claude"), "token refresh ok (rotated)")
-        return RefreshedAccess(accessToken: decoded.accessToken, persisted: persisted)
     }
 
 }

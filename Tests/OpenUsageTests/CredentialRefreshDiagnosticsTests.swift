@@ -261,6 +261,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
         let writtenToken: () -> String?
         switch kind {
         case .claude:
+            files.values[path + "/.claude.json"] = claudeUsageTestIdentity()
             files.values[path + "/.credentials.json"] = #"{"claudeAiOauth":{"accessToken":"\#(access)","refreshToken":"\#(refreshToken)","expiresAt":\#(expired ? 1 : 9999999999000),"scopes":["user:profile"]}}"#
             let store = ClaudeAuthStore(
                 environment: FakeEnvironment([:]), files: files, keychain: keychain,
@@ -269,6 +270,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
             provider = ClaudeProvider(
                 provider: ClaudeProvider.makeProvider(id: "claude@fixture-account"),
                 authStore: store, usageClient: ClaudeUsageClient(httpClient: http),
+ usageStateStore: isolatedClaudeUsageStore(),
                 logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
                 now: { now }, pricing: { TestPricing.bundled }
             )

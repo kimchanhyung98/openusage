@@ -59,4 +59,14 @@ final class RefreshWakeSignalTests: XCTestCase {
             "a burst of wakes must coalesce into one, not queue up extra refresh passes"
         )
     }
+
+    func testClockChangeSurvivesAnOrdinaryWakeInTheSameBurst() async {
+        let center = NotificationCenter()
+        let signal = RefreshWakeSignal(name: wakeName, center: center)
+        center.post(name: .NSSystemClockDidChange, object: nil)
+        center.post(name: wakeName, object: nil)
+        await signal.waitForWake(timeout: 60)
+        XCTAssertNotNil(signal.consumeClockChange())
+        XCTAssertNil(signal.consumeClockChange())
+    }
 }

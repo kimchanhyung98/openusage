@@ -46,6 +46,7 @@ final class ClaudeAuthStoreTests: XCTestCase {
 
     func testPrefersCurrentUserKeychainCredentialsBeforeFile() {
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"file-token","subscriptionType":"pro"}}"#
         ])
         let keychain = ServiceKeychain()
@@ -67,6 +68,7 @@ final class ClaudeAuthStoreTests: XCTestCase {
     func testPrefersKeychainOverFileEvenWhenFileTokenExpiresLater() {
         // #738 회귀: 파일 expiry가 더 늦어도 live source of truth인 keychain 우선, 파일은 fallback 후보로 유지
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"file-token","expiresAt":4102444800000,"subscriptionType":"pro"}}"#
         ])
         let keychain = ServiceKeychain()
@@ -137,6 +139,7 @@ final class ClaudeAuthStoreTests: XCTestCase {
     func testEnvFallbackBorrowsMetadataFromThePreferredLiveCapableLogin() {
         // env fallback의 표시 metadata는 skip된 keychain login이 아니라 실제 선호된 file login에서 상속
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json":
                 #"{"claudeAiOauth":{"accessToken":"file-token","subscriptionType":"max","scopes":["user:inference","user:profile"]}}"#
         ])
@@ -363,12 +366,14 @@ final class ClaudeProviderTests: XCTestCase {
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
                 files: FakeFiles([
+                    "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
                     "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"token","subscriptionType":"pro","scopes":["user:profile"]}}"#
                 ]),
                 keychain: FakeKeychain(),
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: home),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -401,12 +406,14 @@ final class ClaudeProviderTests: XCTestCase {
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
                 files: FakeFiles([
+                    "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
                     "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"token","subscriptionType":"max","rateLimitTier":"default_claude_max_5x","scopes":["user:inference"]}}"#
                 ]),
                 keychain: FakeKeychain(),
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: home),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -461,6 +468,7 @@ final class ClaudeProviderTests: XCTestCase {
     func testRetriesOnceAfter401AndPersistsRefreshedCredentials() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
         ])
         let httpClient = RoutingHTTPClient { request in
@@ -489,6 +497,7 @@ final class ClaudeProviderTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -504,10 +513,10 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertTrue(saved.contains("refresh-2"))
     }
 
-    func testFallsBackToFileWhenKeychainTokenIsLockedOut() async {
-        // #687: keychain의 revoked token 대신 파일의 fresh token으로 fall through해 복구
+    func testRejectsUnverifiedFileAfterKeychainAuthenticationFailure() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fresh-access","refreshToken":"fresh-refresh","expiresAt":4070908800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
         ])
         let keychain = ServiceKeychain()
@@ -539,6 +548,7 @@ final class ClaudeProviderTests: XCTestCase {
         let provider = ClaudeProvider(
             authStore: authStore,
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -546,16 +556,15 @@ final class ClaudeProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
 
-        // file source에서 복구: plan·usage가 fresh token 반영, error badge 없음
-        XCTAssertEqual(snapshot.plan, "Pro")
-        XCTAssertEqual(Self.progress(snapshot.lines, "Session")?.used, 42)
-        XCTAssertNil(badge(snapshot.lines, "Error"))
+        XCTAssertNil(Self.progress(snapshot.lines, "Session"))
+        XCTAssertEqual(badge(snapshot.lines, "Error"), ClaudeUsageStateStore.StoreError.identityUnavailable.localizedDescription)
+        XCTAssertFalse(httpClient.requests.contains { $0.headers["Authorization"] == "Bearer fresh-access" })
     }
 
-    func testSurfacesAuthErrorWhenAllCredentialSourcesAreExpired() async {
-        // keychain·file 모두 revoked인 상태는 조용한 복구 대신 auth error를 명확히 노출
+    func testSurfacesAuthErrorWhenTheIdentifiedCredentialIsExpired() async {
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"file-stale","refreshToken":"file-refresh","expiresAt":4070908800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
         ])
         let keychain = ServiceKeychain()
@@ -565,10 +574,6 @@ final class ClaudeProviderTests: XCTestCase {
             keychain: keychain,
             now: { now }
         )
-        let hashedService = authStore.keychainServiceCandidates().first!
-        keychain.currentUserValues[hashedService] = #"{"claudeAiOauth":{"accessToken":"keychain-stale","refreshToken":"keychain-refresh","expiresAt":4102444800000,"subscriptionType":"max","scopes":["user:profile"]}}"#
-
-        // 모든 usage 호출 401 + 모든 refresh revoked → 두 source 모두 사용 불가
         let httpClient = RoutingHTTPClient { request in
             if request.url.absoluteString.hasSuffix("/api/oauth/usage") {
                 return HTTPResponse(statusCode: 401, headers: [:], body: Data())
@@ -578,6 +583,7 @@ final class ClaudeProviderTests: XCTestCase {
         let provider = ClaudeProvider(
             authStore: authStore,
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -625,12 +631,14 @@ final class ClaudeProviderTests: XCTestCase {
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
                 files: FakeFiles([
+                    "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
                     "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"token","subscriptionType":"pro","scopes":["user:profile"]}}"#
                 ]),
                 keychain: FakeKeychain(),
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
@@ -643,7 +651,7 @@ final class ClaudeProviderTests: XCTestCase {
         // badge/note 라인은 layout에서 켜져야 렌더 → rate-limit 상태가 provider header warning까지 도달 필요
         XCTAssertEqual(
             snapshot.warning,
-            "Updates blocked by Anthropic. Be patient — manual refreshes will make it worse. Retrying in ~10m."
+            "Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~15m."
         )
     }
 
@@ -669,12 +677,14 @@ final class ClaudeProviderTests: XCTestCase {
             authStore: ClaudeAuthStore(
                 environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": "/tmp/claude"]),
                 files: FakeFiles([
+                    "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
                     "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"token","subscriptionType":"pro","scopes":["user:profile"]}}"#
                 ]),
                 keychain: FakeKeychain(),
                 now: { clock.now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { clock.now },
             pricing: { TestPricing.bundled }
@@ -692,18 +702,18 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertNil(second.liveQuotaObservedAt)
         XCTAssertEqual(text(second.lines, "Note")?.contains("rate limited"), true)
         XCTAssertNil(badge(second.lines, "Status"))
-        XCTAssertEqual(second.warning?.hasPrefix("Updates blocked by Anthropic"), true)
+        XCTAssertEqual(second.warning?.hasPrefix("Usage updates are rate limited by Anthropic"), true)
 
         // 3) cooldown 내에는 live 호출 자체를 skip, 캐시된 바와 warning 유지
         clock.set(t0.addingTimeInterval(60))
         let third = await provider.refresh()
         XCTAssertEqual(Self.progress(third.lines, "Session")?.used, 25)
         XCTAssertNil(third.liveQuotaObservedAt)
-        XCTAssertEqual(third.warning?.hasPrefix("Updates blocked by Anthropic"), true)
+        XCTAssertEqual(third.warning?.hasPrefix("Usage updates are rate limited by Anthropic"), true)
         XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 2)
-        clock.set(t0.addingTimeInterval(601))
+        clock.set(t0.addingTimeInterval(901))
         let recovered = await provider.refresh()
-        XCTAssertEqual(recovered.liveQuotaObservedAt, t0.addingTimeInterval(601))
+        XCTAssertEqual(recovered.liveQuotaObservedAt, t0.addingTimeInterval(901))
         XCTAssertNil(recovered.warning)
         XCTAssertEqual(Self.progress(recovered.lines, "Session")?.used, 25)
         XCTAssertEqual(httpClient.requests.filter { $0.url.absoluteString.hasSuffix("/api/oauth/usage") }.count, 3)
@@ -713,6 +723,7 @@ final class ClaudeProviderTests: XCTestCase {
         // refresh가 non-OAuth 400(HTML proxy/WAF 페이지)을 반환하면 "token expired"가 아닌 request failure로 보고
         let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
+            "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
         ])
         let httpClient = RoutingHTTPClient { request in
@@ -729,6 +740,7 @@ final class ClaudeProviderTests: XCTestCase {
                 now: { now }
             ),
             usageClient: ClaudeUsageClient(httpClient: httpClient),
+            usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
             now: { now },
             pricing: { TestPricing.bundled }
