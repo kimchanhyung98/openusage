@@ -206,7 +206,11 @@ final class WidgetDataStore {
         } onCancel: {
             for task in tasks { task.cancel() }
         }
-        guard !Task.isCancelled else { return }
+        let historyRemoved = historyProviderIDs.contains { localSnapshots[$0]?.usageHistory == nil }
+        guard !Task.isCancelled else {
+            if historyRemoved { onLocalHistoryChanged?() }
+            return
+        }
         // 각 갱신 그룹의 완료 기록 — 대상별 다음 일정은 별도 보존.
         lastRefreshAt = now()
         let durationMs = durationMilliseconds(since: start)
@@ -215,7 +219,7 @@ final class WidgetDataStore {
         let failed = outcomes.count { $0 == .failed }
         let cached = outcomes.count { $0 == .cacheHit }
         let backedOff = outcomes.count { $0 == .backedOff }
-        if refreshed > 0 || historyProviderIDs.contains(where: { localSnapshots[$0]?.usageHistory == nil }) {
+        if refreshed > 0 || historyRemoved {
             onLocalHistoryChanged?()
         }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")

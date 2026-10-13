@@ -160,8 +160,7 @@ extension ClaudeProvider {
             )
             let profile = try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
             let identity = try profile.accountIdentityKey()
-            if working.source != .desktop,
-               let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first {
+            if let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first {
                 let verifiedIdentity = expectedIdentity.contains("|") ? identity : String(identity.prefix { $0 != "|" })
                 guard verifiedIdentity == expectedIdentity else {
                     throw ClaudeUsageStateStore.StoreError.identityUnavailable
