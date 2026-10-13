@@ -155,15 +155,13 @@ extension ClaudeProvider {
                 response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
             )
             let profile = try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
-            var identity = try profile.accountIdentityKey()
+            let identity = try profile.accountIdentityKey()
             if working.source != .desktop,
                let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first {
                 let verifiedIdentity = expectedIdentity.contains("|") ? identity : String(identity.prefix { $0 != "|" })
                 guard verifiedIdentity == expectedIdentity else {
                     throw ClaudeUsageStateStore.StoreError.identityUnavailable
                 }
-                // 조직 정보가 없는 기존 키도 유지하여 저장된 계정 대기와 캐시 우회 방지.
-                identity = expectedIdentity
             }
             // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
             return identity
