@@ -6,11 +6,15 @@ extension ClaudeProvider {
         credentialGeneration: inout ClaudeCredentialGeneration,
         requestedAt: Date
     ) async throws -> ClaudeMappedUsage {
-        guard let accountKey = state.accountIdentityKey, !accountKey.isEmpty else {
-            AppLog.error(LogTag.plugin("claude"), "usage refresh blocked: account identity unavailable")
-            throw ClaudeUsageStateStore.StoreError.identityUnavailable
-        }
         let config = try authStore.oauthConfig()
+        let accountKey: String
+        if let identity = state.accountIdentityKey, !identity.isEmpty {
+            accountKey = identity
+        } else {
+            accountKey = try await recoverUsageIdentity(
+                state: &state, credentialGeneration: &credentialGeneration, config: config
+            )
+        }
         let lease = try await usageStateStore.acquire(accountKey: accountKey, usageURL: config.usageURL)
         defer { withExtendedLifetime(lease) {} }
         var record = try await loadOffMainActor { try lease.read() }
@@ -104,6 +108,61 @@ extension ClaudeProvider {
             let saved = record
             try await loadOffMainActor { try lease.save(saved) }
             if let failure { throw failure }
+            throw error
+        }
+    }
+
+    private func recoverUsageIdentity(
+        state: inout ClaudeCredentialState,
+        credentialGeneration: inout ClaudeCredentialGeneration,
+        config: ClaudeOAuthConfig
+    ) async throws -> String {
+        // 신원 확인 전 토큰 갱신도 앱·CLI 사이에서 직렬화. 계정 잠금은 이 잠금을 해제한 뒤 획득.
+        let lease = try await usageStateStore.acquire(accountKey: "identity-recovery", usageURL: config.usageURL)
+        defer { withExtendedLifetime(lease) {} }
+        try await validateUsageCredentials(state, expected: credentialGeneration)
+        try Task.checkCancellation()
+        var working = state
+        var expectedGeneration = credentialGeneration
+        defer {
+            state = working
+            credentialGeneration = expectedGeneration
+        }
+        do {
+            let response = try await ProviderAuthRetry.fetch(
+                token: working.oauth.accessToken ?? "",
+                attempt: { try await self.usageClient.fetchProfile(accessToken: $0, config: config) },
+                refreshAccessToken: {
+                    if working.source == .desktop { throw ClaudeAuthError.desktopTokenExpired }
+                    guard let refreshToken = working.oauth.refreshToken, !refreshToken.isEmpty else {
+                        throw ClaudeAuthError.tokenExpired
+                    }
+                    let refreshed = try await self.refreshAccessToken(
+                        state: &working, refreshToken: refreshToken, expectedGeneration: expectedGeneration, config: config
+                    )
+                    if refreshed.persisted { expectedGeneration = expectedGeneration.replacing(working) }
+                    return refreshed.accessToken
+                },
+                connectionFailed: ClaudeUsageError.connectionFailed,
+                authExpired: ClaudeAuthError.tokenExpired
+            )
+            try await validateUsageCredentials(working, expected: expectedGeneration)
+            try Task.checkCancellation()
+            try ProviderAuthRetry.requireSuccess(
+                response, authExpired: ClaudeAuthError.tokenExpired, requestFailed: ClaudeUsageError.requestFailed
+            )
+            let profile = try JSONDecoder().decode(ClaudeProfileResponse.self, from: response.body)
+            let identity = try profile.accountIdentityKey()
+            if working.source != .desktop,
+               let expectedIdentity = expectedGeneration.candidates.compactMap(\.accountIdentityKey).first,
+               identity != expectedIdentity {
+                throw ClaudeUsageStateStore.StoreError.identityUnavailable
+            }
+            // 프로필 신원은 사용량 저장 키로만 사용. 로컬 credential 세대와 홈 메타데이터는 변경하지 않음.
+            return identity
+        } catch {
+            AppLog.error(LogTag.plugin("claude"), "usage account verification failed")
+            if error is DecodingError { throw ClaudeUsageError.invalidResponse }
             throw error
         }
     }

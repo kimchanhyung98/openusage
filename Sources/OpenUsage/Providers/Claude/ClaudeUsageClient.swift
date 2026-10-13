@@ -12,6 +12,25 @@ struct ClaudeRefreshResponse: Decodable, Hashable, Sendable {
     }
 }
 
+struct ClaudeProfileResponse: Decodable, Sendable {
+    struct Identity: Decodable, Sendable {
+        let uuid: String
+    }
+
+    let account: Identity
+    let organization: Identity
+
+    func accountIdentityKey() throws -> String {
+        let accountID = account.uuid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let organizationID = organization.uuid.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !accountID.isEmpty, !organizationID.isEmpty,
+              !accountID.contains("|"), !organizationID.contains("|") else {
+            throw ClaudeUsageError.invalidResponse
+        }
+        return "\(accountID)|\(organizationID)"
+    }
+}
+
 enum ClaudeUsageError: Error, LocalizedError, Equatable, Codable {
     case connectionFailed
     case invalidResponse
@@ -67,6 +86,22 @@ struct ClaudeUsageClient: Sendable {
                     "Accept": "application/json",
                     "Content-Type": "application/json",
                     "anthropic-beta": "oauth-2025-04-20",
+                    "User-Agent": "claude-code/2.1.69"
+                ],
+                timeout: 10
+            )
+        )
+    }
+
+    func fetchProfile(accessToken: String, config: ClaudeOAuthConfig) async throws -> HTTPResponse {
+        try await httpClient.send(
+            HTTPRequest(
+                method: "GET",
+                url: config.usageURL.deletingLastPathComponent().appendingPathComponent("profile"),
+                headers: [
+                    "Authorization": "Bearer \(accessToken.trimmingCharacters(in: .whitespacesAndNewlines))",
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-cache",
                     "User-Agent": "claude-code/2.1.69"
                 ],
                 timeout: 10
