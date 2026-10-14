@@ -255,6 +255,24 @@ final class SplitRefreshCadenceTests: XCTestCase {
         }
     }
 
+    func testEarlyManualClaudeSuccessPreservesFreshnessWindowWithoutCacheReuse() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        await fixture.store.refreshAll(cadence: .claude)
+        fixture.time = fixture.start.addingTimeInterval(400)
+        fixture.claude.quotaObservedAt = fixture.time
+        await fixture.store.refresh(providerID: "claude@work", force: true, trigger: .manual)
+
+        fixture.time = fixture.start.addingTimeInterval(900)
+        await fixture.store.refreshAll(cadence: .claude)
+        XCTAssertEqual(fixture.claude.refreshCount, 2)
+        XCTAssertEqual(fixture.store.scheduledRefreshDate(for: "claude@work"), fixture.start.addingTimeInterval(1300))
+
+        fixture.time = fixture.start.addingTimeInterval(1300)
+        await fixture.store.refreshAll(cadence: .claude)
+        XCTAssertEqual(fixture.claude.refreshCount, 3)
+    }
+
     func testDisabledLateResultIsDiscardedAndRefetchesAfterReenable() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }

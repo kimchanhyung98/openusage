@@ -190,6 +190,7 @@ final class WidgetDataStore {
             return RefreshSetting.cadence(for: id) == cadence && (scheduledRefreshDate(for: id) ?? now()) <= now()
         }
         guard !providerIDs.isEmpty else { return }
+        let historyProviderIDs = providerIDs.filter { localSnapshots[$0]?.usageHistory != nil }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
         let tasks = providerIDs.map { providerID in
@@ -205,7 +206,11 @@ final class WidgetDataStore {
         } onCancel: {
             for task in tasks { task.cancel() }
         }
-        guard !Task.isCancelled else { return }
+        let historyRemoved = historyProviderIDs.contains { localSnapshots[$0]?.usageHistory == nil }
+        guard !Task.isCancelled else {
+            if historyRemoved { onLocalHistoryChanged?() }
+            return
+        }
         // 각 갱신 그룹의 완료 기록 — 대상별 다음 일정은 별도 보존.
         lastRefreshAt = now()
         let durationMs = durationMilliseconds(since: start)
@@ -214,7 +219,9 @@ final class WidgetDataStore {
         let failed = outcomes.count { $0 == .failed }
         let cached = outcomes.count { $0 == .cacheHit }
         let backedOff = outcomes.count { $0 == .backedOff }
-        if refreshed > 0 { onLocalHistoryChanged?() }
+        if refreshed > 0 || historyRemoved {
+            onLocalHistoryChanged?()
+        }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
     }
 
@@ -561,13 +568,20 @@ final class WidgetDataStore {
                 "\(providerID) slow refresh (\(durationMs)ms, threshold=\(Int(slowProviderRefreshThreshold * 1000))ms)"
             )
         }
+        let unresolvedClaudeIdentity = ProviderAccountID.family(of: providerID) == "claude"
+            && providerIdentityKeys[providerID] == nil
         if let message = Self.errorMessage(in: snapshot) {
-            // 실패 시 에러만 노출하고 last-good snapshot 유지 — 전 행 "No data" 붕괴 방지.
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
                 message: message,
                 category: snapshot.errorCategory ?? .other,
                 authenticationIssue: snapshot.authenticationIssue
             ))
+            // 신원 미확인 Claude는 같은 계정임을 보장할 수 없어 이전 값을 숨기고, 나머지는 last-good 유지.
+            if unresolvedClaudeIdentity {
+                let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
+                rebuildRenderedSnapshots()
+                if removedHistory, notifyHistoryChange { onLocalHistoryChanged?() }
+            }
             // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
             if snapshot.errorCategory == .notLoggedIn || snapshot.errorCategory == .notAvailable {
@@ -608,7 +622,16 @@ final class WidgetDataStore {
         } else {
             providersNeedingScheduledRefresh.remove(providerID)
         }
-        unresolvedIdentityCacheRejections.remove(providerID)
+        if unresolvedClaudeIdentity {
+            // 캐시 재사용 없이도 마지막 성공 값의 유효 기간만큼 자동 재조회 대기.
+            let freshnessDeadline = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: providerID))
+            if (scheduledRefreshDates[providerID] ?? .distantPast) < freshnessDeadline {
+                scheduledRefreshDates[providerID] = freshnessDeadline
+                scheduledRefreshUpdatedAt[providerID] = monotonicNow()
+            }
+        } else {
+            unresolvedIdentityCacheRejections.remove(providerID)
+        }
         providersNeedingCredentialRefresh.remove(providerID)
         rebuildRenderedSnapshots()
         if notifyHistoryChange { onLocalHistoryChanged?() }
@@ -688,7 +711,12 @@ final class WidgetDataStore {
         let enabledDescriptors = registry.historyDescriptorsByProvider.reduce(
             into: [String: UsageHistoryDescriptor]()
         ) { result, entry in
-            if isProviderEnabled(entry.key) { result[entry.key] = entry.value }
+            guard isProviderEnabled(entry.key) else { return }
+            if ProviderAccountID.family(of: entry.key) == "claude",
+               providerIdentityKeys[entry.key] == nil,
+               localSnapshots[entry.key] == nil,
+               refreshResults[entry.key]?.failure != nil { return }
+            result[entry.key] = entry.value
         }
         // peer 매칭은 card id가 아닌 account identity 기준 — 같은 account가 Mac마다 다른 카드일 수 있음.
         // local 카드와 무매칭이면 아래에서 Total Spend 전용 remote entry로 처리.
