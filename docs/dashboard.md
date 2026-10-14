@@ -215,8 +215,8 @@ Separate Cards 이미지에는 제목에 계정명 포함.
 ## 푸터
 
 팝오버 하단에 고정된 막대.
-왼쪽에는 앱 버전과 일반 갱신·Claude·Reset Watch·Codex 타이머의 다음 갱신 시각 표시.
-활성 대상이 없거나 일정이 아직 정해지지 않은 항목은 생략하고, Claude의 요청 제한 중에는 실제 재시도 가능 시각 표시.
+왼쪽에는 앱 버전과 다음 일반 갱신까지 남은 시간을 **Next update in …** 한 줄로 표시.
+조회 중에는 **Updating…**, 활성 프로바이더가 없거나 일정이 아직 정해지지 않았으면 **Refresh Now** 표시.
 클릭 또는 **⌘R**로 즉시 새로 고침하되 Claude의 요청 제한 대기는 유지.
 오른쪽에는 **Options** 메뉴 버튼.
 여기에 모든 것이 모여 있음 — **Customize**, **Settings**, **Share Screenshot**(표시 중인 카드 하위 메뉴), **Check for Updates…**, **About OpenUsage**, **Quit OpenUsage**.
