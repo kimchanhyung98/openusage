@@ -72,16 +72,9 @@ struct PopoverFooter: View {
         } label: {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 5) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        if isUpdating { Text("Updating…") }
-                        let rows = refreshScheduleRows(now: context.date)
-                        ForEach(rows) { row in
-                            Text(row.text(at: context.date))
-                                .monospacedDigit()
-                                .contentTransition(.numericText())
-                        }
-                        if rows.isEmpty && !isUpdating { Text("Refresh Now") }
-                    }
+                    Text(updateStatusText(now: context.date))
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
                     if isUpdating {
                         ProgressView()
                             .controlSize(.mini)
@@ -106,19 +99,12 @@ struct PopoverFooter: View {
         Task { await container.refreshAll(force: true) }
     }
 
-    private func refreshScheduleRows(now: Date) -> [RefreshSchedulePresentation.Row] {
-        let enabled = dataStore.knownProviderIDs.filter { container.enablement.isEnabled($0) }
-        let claudeIDs = enabled.filter { RefreshSetting.cadence(for: $0) == .claude }
-        let waiting = claudeIDs.filter { (dataStore.snapshots[$0]?.usageRetryAfter ?? .distantPast) > now }
-        let regularClaude = claudeIDs.filter { !waiting.contains($0) }
-        return RefreshSchedulePresentation.rows(
-            general: enabled.isEmpty ? nil : dataStore.nextGeneralRefreshAt,
-            claude: regularClaude.compactMap { dataStore.scheduledRefreshDate(for: $0) }.min(),
-            claudeRetry: waiting.compactMap { dataStore.scheduledRefreshDate(for: $0) }.min(),
-            resetWatch: container.resetWatchCoordinator.isActive
-                ? container.resetWatchCoordinator.nextRefreshAt : nil,
-            codexTimer: enabled.contains { ProviderAccountID.family(of: $0) == "codex" }
-                ? container.nextCodexTimerCheckAt : nil
+    private func updateStatusText(now: Date) -> String {
+        let hasEnabledProvider = dataStore.knownProviderIDs.contains { container.enablement.isEnabled($0) }
+        return RefreshSchedulePresentation.statusText(
+            isUpdating: isUpdating,
+            nextRefreshAt: hasEnabledProvider ? dataStore.nextGeneralRefreshAt : nil,
+            now: now
         )
     }
 }
