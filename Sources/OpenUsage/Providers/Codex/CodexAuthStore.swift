@@ -241,7 +241,7 @@ struct CodexAuthStore: Sendable {
         let vault = AccountCredentialVault(keychain: keychain)
         guard let snapshot = try vault.load(family: "codex", profileID: profileID, allowInteraction: allowInteraction),
               snapshot.credential.utf8.elementsEqual(original.utf8) else { throw CodexAuthError.credentialsChanged }
-        var staleFingerprint = snapshot.codexStaleSharedCredentialFingerprint
+        var staleFingerprints = snapshot.codexStaleSharedCredentialFingerprints
         var synchronizationError: Error?
         var sharedToReplace: String?
         let sharedPath = managedSharedAuthHome.map { joinPath($0, Self.authFile) }
@@ -249,21 +249,22 @@ struct CodexAuthStore: Sendable {
             do {
                 if let shared = try files.readTextIfPresent(sharedPath),
                    shared.utf8.elementsEqual(original.utf8)
-                    || Self.credentialFingerprint(shared) == staleFingerprint {
+                    || staleFingerprints?.contains(Self.credentialFingerprint(shared)) == true {
                     sharedToReplace = shared
-                    staleFingerprint = Self.credentialFingerprint(shared)
+                    staleFingerprints = [Self.credentialFingerprint(shared)]
                 } else {
-                    staleFingerprint = nil
+                    staleFingerprints = nil
                 }
             } catch {
-                staleFingerprint = staleFingerprint ?? Self.credentialFingerprint(original)
+                // 이전 정리 실패로 공유 홈이 이미 갱신됐을 수 있어 직전 snapshot도 후보에 포함.
+                staleFingerprints = (staleFingerprints ?? []).union([Self.credentialFingerprint(original)])
                 synchronizationError = error
             }
         }
         // 공유 홈보다 먼저 회전본과 이전 원문 표시 저장 — 이후 어느 쓰기가 실패해도 이전 토큰의 역덮어쓰기 방지.
         try vault.replaceCredential(
             text, family: "codex", profileID: profileID, allowInteraction: allowInteraction,
-            codexStaleSharedCredentialFingerprint: staleFingerprint
+            codexStaleSharedCredentialFingerprints: staleFingerprints
         )
         if let sharedPath, let sharedToReplace {
             do {
