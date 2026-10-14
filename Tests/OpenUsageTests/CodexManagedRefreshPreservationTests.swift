@@ -18,11 +18,25 @@ final class CodexManagedRefreshPreservationTests: XCTestCase {
         try assertRotatedSnapshot(fixture)
     }
 
+    func testIdentityBoundRefreshPreservesRotatedTokensAfterSwitchingAway() async throws {
+        let fixture = try ManagedRefreshFixture()
+        defer { fixture.remove() }
+        let http = ManagedRefreshHTTP { try fixture.switchToB() }
+        let provider = makeProvider(fixture: fixture, http: http, bindsIdentity: true)
+
+        let result = await provider.refresh()
+
+        XCTAssertNotNil(result.errorCategory)
+        XCTAssertEqual(http.requests.map(\.url), [CodexUsageClient.refreshURL])
+        try assertSharedBUnchanged(fixture)
+        try assertRotatedSnapshot(fixture)
+    }
+
     func testUnauthorizedRetryPreservesRotatedTokensAfterAccountSwitch() async throws {
         let fixture = try ManagedRefreshFixture(freshToken: true)
         defer { fixture.remove() }
         let http = ManagedRefreshHTTP(rejectFirstUsage: true) { try fixture.switchToB() }
-        let provider = makeProvider(fixture: fixture, http: http)
+        let provider = makeProvider(fixture: fixture, http: http, bindsIdentity: true)
 
         let result = await provider.refresh()
 
@@ -96,7 +110,7 @@ final class CodexManagedRefreshPreservationTests: XCTestCase {
         let fixture = try ManagedRefreshFixture()
         defer { fixture.remove() }
         let http = ManagedRefreshHTTP { try fixture.switchToB() }
-        let provider = makeProvider(fixture: fixture, http: http)
+        let provider = makeProvider(fixture: fixture, http: http, bindsIdentity: true)
         let original = try XCTUnwrap(CodexAuthStore.parseAuth(fixture.original))
         let accountKey = try XCTUnwrap(CodexWeeklyTimerIdentity.accountKey(for: original))
 
@@ -113,12 +127,14 @@ final class CodexManagedRefreshPreservationTests: XCTestCase {
     }
 
     private func makeProvider(
-        fixture: ManagedRefreshFixture, http: ManagedRefreshHTTP, bindsSnapshot: Bool = true
+        fixture: ManagedRefreshFixture, http: ManagedRefreshHTTP, bindsSnapshot: Bool = true,
+        bindsIdentity: Bool = false
     ) -> CodexProvider {
         CodexProvider(
             authStore: CodexAuthStore(
                 environment: FakeEnvironment(), files: LocalTextFileAccessor(), keychain: fixture.keychain,
                 scope: .home(path: fixture.codexHome.path),
+                expectedIdentityKey: bindsIdentity ? fixture.profileA.identityKey : nil,
                 managedSnapshotProfileID: bindsSnapshot ? fixture.profileA.id : nil
             ),
             usageClient: CodexUsageClient(http: http),
