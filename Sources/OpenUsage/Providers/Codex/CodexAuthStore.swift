@@ -37,6 +37,8 @@ struct CodexAuthState: Hashable, Sendable {
     var source: Source
     /// 저장 전 동일 세대 검증과 미모델 필드 보존용 원본문서 — 메모리에서만 유지.
     var sourceText: String? = nil
+    /// 원본문서 재검증에도 최초 Keychain 판독 경로 유지.
+    var usesNativeKeychainRead = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.auth == rhs.auth && lhs.source == rhs.source
@@ -170,6 +172,13 @@ struct CodexAuthStore: Sendable {
         return CodexAuthState(auth: auth, source: .keychain, sourceText: value)
     }
 
+    func loadKeychainAuth(allowInteraction: Bool) throws -> CodexAuthState? {
+        guard case .standard = scope else { return nil }
+        guard let value = try keychain.readGenericPassword(service: Self.keychainService, allowInteraction: allowInteraction),
+              let auth = Self.parseAuth(value), Self.hasTokenLikeAuth(auth) else { return nil }
+        return CodexAuthState(auth: auth, source: .keychain, sourceText: value, usesNativeKeychainRead: true)
+    }
+
     /// 앱 내부 writer와 비교·쓰기 직렬화 — 협조하지 않는 외부 CLI의 쓰기까지 원자화하지 않음.
     @discardableResult
     func save(_ state: CodexAuthState, allowInteraction: Bool = false) throws -> CodexAuthState {
@@ -178,7 +187,7 @@ struct CodexAuthStore: Sendable {
         guard let original = state.sourceText else { throw CodexAuthError.credentialsChanged }
         let current: String?
         do {
-            current = try sourceText(state.source, allowInteraction: allowInteraction)
+            current = try sourceText(state, allowInteraction: allowInteraction)
         } catch {
             AppLog.error(.auth, "Codex credential verification before saving failed: \(error.localizedDescription)")
             throw CodexAuthError.credentialsChanged
@@ -204,7 +213,10 @@ struct CodexAuthStore: Sendable {
             )
         }
         guard let auth = Self.parseAuth(text) else { throw CodexAuthError.invalidAuthPayload }
-        return CodexAuthState(auth: auth, source: state.source, sourceText: text)
+        var saved = state
+        saved.auth = auth
+        saved.sourceText = text
+        return saved
     }
 
     /// 공유 홈이 전환되어도 요청 시작 시점과 같은 관리 계정 snapshot에는 회전된 토큰 보존.
@@ -227,11 +239,14 @@ struct CodexAuthStore: Sendable {
         }
     }
 
-    private func sourceText(_ source: CodexAuthState.Source, allowInteraction: Bool) throws -> String? {
-        switch source {
+    private func sourceText(_ state: CodexAuthState, allowInteraction: Bool) throws -> String? {
+        switch state.source {
         case .file(let path):
             return files.exists(path) ? try files.readText(path) : nil
         case .keychain:
+            if state.usesNativeKeychainRead {
+                return try keychain.readGenericPassword(service: Self.keychainService, allowInteraction: allowInteraction)
+            }
             return try keychain.readGenericPassword(service: Self.keychainService)
         case .accountSnapshot(let profileID):
             return try AccountCredentialVault(keychain: keychain).load(

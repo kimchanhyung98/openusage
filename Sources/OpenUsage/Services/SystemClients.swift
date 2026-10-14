@@ -298,6 +298,7 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 protocol KeychainAccessing: Sendable {
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String?
     func readGenericPassword(service: String) throws -> String?
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String?
     func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
     func deleteGenericPassword(service: String) throws
@@ -381,6 +382,10 @@ struct SecurityKeychainAccessor: KeychainAccessing {
 
     func readGenericPassword(service: String) throws -> String? {
         try readPassword(["find-generic-password", "-s", service, "-w"], service: service)
+    }
+
+    func readGenericPassword(service: String, allowInteraction: Bool) throws -> String? {
+        try appPasswordReader.read(service: service, account: nil, allowInteraction: allowInteraction)
     }
 
     /// launch 경로용 attributes-only 존재 probe — in-process Security framework 쿼리, secret 미요청·UI 금지로 unlock prompt·launch 지연 불가.

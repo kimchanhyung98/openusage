@@ -181,7 +181,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         }
     }
 
-    func testSuccessfulResetClaimDoesNotRepeatPOSTWhenRefreshTimesOutThreeTimes() async {
+    func testSuccessfulResetClaimDoesNotRepeatPOSTWhenRefreshTimesOutThreeTimes() async throws {
         let runtime = Runtime()
         runtime.beforeRefresh = { try? await Task.sleep(for: .seconds(60)) }
         let fixture = makeStore([runtime])
@@ -196,13 +196,18 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
             XCTAssertEqual(request.url, CodexUsageClient.consumeResetCreditURL)
             return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"code":"reset","windows_reset":2}"#.utf8))
         }
+        let credential = CodexAuthState(
+            auth: CodexAuth(tokens: CodexTokens(accessToken: "test-token", accountID: "test-account")),
+            source: .file(path: "/fixture/auth.json")
+        )
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: credential))
         let service = CodexResetClaimService(
-            usageClient: CodexUsageClient(http: http), credentialCandidates: { [("test-token", "test-account")] },
-            refreshAfterClaim: {
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in credential },
+            refreshAfterClaim: { _ in
                 await fixture.store.refreshAfterClaim(providerID: "codex", retryDelay: .milliseconds(1))
             }
         )
-        let outcome = await service.claim(creditExpiringAt: expiry, redeemRequestID: "test-request")
+        let outcome = await service.claim(creditExpiringAt: expiry, redeemRequestID: "test-request", binding: binding)
         XCTAssertEqual(outcome, .success)
         XCTAssertEqual(http.requests.filter { $0.method == "POST" }.count, 1)
         XCTAssertEqual(runtime.refreshCount, 3)

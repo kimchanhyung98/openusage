@@ -13,6 +13,13 @@ final class CodexResetClaimRouterTests: XCTestCase {
         #"{"tokens":{"access_token":"\#(token)","account_id":"\#(accountID)"}}"#
     }
 
+    private func binding(
+        token: String, accountID: String = "acct-default", source: CodexAuthState.Source
+    ) throws -> CodexResetClaimBinding {
+        let auth = try XCTUnwrap(CodexAuthStore.parseAuth(Self.auth(token: token, accountID: accountID)))
+        return try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(auth: auth, source: source)))
+    }
+
     private nonisolated static func listBody() -> Data {
         Data("""
         {"credits": [
@@ -84,14 +91,20 @@ final class CodexResetClaimRouterTests: XCTestCase {
                 makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
                 makeCardProvider(cardID: "codex@ab12cd34", home: "/tmp/codex-work", token: "token-work", http: http),
             ],
-            refreshAfterClaim: { cardID in refreshes.values.append(cardID) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
 
         let defaultService = try XCTUnwrap(router.service(for: "codex"))
         let cardService = try XCTUnwrap(router.service(for: "codex@ab12cd34"))
 
-        let defaultOutcome = await defaultService.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-default")
-        let cardOutcome = await cardService.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-card")
+        let defaultOutcome = await defaultService.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "redeem-default",
+            binding: try binding(token: "token-default", source: .file(path: "/tmp/codex-default/auth.json"))
+        )
+        let cardOutcome = await cardService.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "redeem-card",
+            binding: try binding(token: "token-work", accountID: "acct-card", source: .file(path: "/tmp/codex-work/auth.json"))
+        )
 
         XCTAssertEqual(defaultOutcome, .success)
         XCTAssertEqual(cardOutcome, .success)
@@ -114,7 +127,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/codex-old", token: "token-old", http: http)],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         router.reconfigure(providers: [
@@ -122,7 +135,10 @@ final class CodexResetClaimRouterTests: XCTestCase {
         ])
 
         let service = try XCTUnwrap(router.service(for: "codex"))
-        let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1")
+        let outcome = await service.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1",
+            binding: try binding(token: "token-new", accountID: "acct-shared", source: .file(path: "/tmp/codex-shared/auth.json"))
+        )
 
         XCTAssertEqual(outcome, .success)
         XCTAssertEqual(
@@ -147,10 +163,11 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
             identityKeys: ["codex": "account-A"],
-            refreshAfterClaim: { refreshes.values.append($0) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
-        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture") }
+        let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
+        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture", binding: binding) }
         await fulfillment(of: [reachedConsume], timeout: 2)
         router.reconfigure(
             providers: [makeSharedHomeProvider(home: "/tmp/claim-B", token: "token-B", http: http)],
@@ -192,10 +209,11 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
             identityKeys: ["codex": "account-A"],
-            refreshAfterClaim: { refreshes.values.append($0) }
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
         )
         let original = try XCTUnwrap(router.service(for: "codex"))
-        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture") }
+        let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
+        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture", binding: binding) }
         await fulfillment(of: [reachedConsume], timeout: 2)
         router.reconfigure(
             providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
@@ -215,7 +233,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
                 makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http),
                 makeCardProvider(cardID: "codex@ab12cd34", home: "/tmp/codex-work", token: "token-work", http: http),
             ],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         router.reconfigure(providers: [
@@ -231,11 +249,165 @@ final class CodexResetClaimRouterTests: XCTestCase {
         let http = makeHTTP()
         let router = CodexResetClaimRouter(
             providers: [makeDefaultProvider(home: "/tmp/codex-default", token: "token-default", http: http)],
-            refreshAfterClaim: { _ in }
+            refreshAfterClaim: { _, _ in }
         )
 
         XCTAssertNil(router.service(for: "codex@ffffffff"))
         XCTAssertNotNil(router.service(for: "codex"), "the default card's service is always present")
+    }
+
+    func testReplacedServiceCannotStartAClaim() async throws {
+        let http = makeHTTP()
+        let router = CodexResetClaimRouter(
+            providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
+            refreshAfterClaim: { _, _ in }
+        )
+        let original = try XCTUnwrap(router.service(for: "codex"))
+        router.reconfigure(providers: [
+            makeSharedHomeProvider(home: "/tmp/claim-B", token: "token-B", http: http)
+        ])
+
+        let outcome = await original.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "old-confirmation",
+            binding: try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
+        )
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertTrue(http.requests.isEmpty)
+    }
+
+    func testReconfigureDuringCreditLookupStopsBeforeConsume() async throws {
+        let reachedList = expectation(description: "credit lookup started")
+        let gate = ClaimGate()
+        let http = RoutingHTTPClient { request in
+            guard request.url == CodexUsageClient.resetCreditsURL else {
+                XCTFail("a replaced service must not submit a consume request")
+                return HTTPResponse(statusCode: 500, headers: [:], body: Data())
+            }
+            reachedList.fulfill()
+            await gate.wait()
+            return HTTPResponse(statusCode: 200, headers: [:], body: Self.listBody())
+        }
+        let refreshes = Recorder()
+        let router = CodexResetClaimRouter(
+            providers: [makeDefaultProvider(home: "/tmp/claim-A", token: "token-A", http: http)],
+            identityKeys: ["codex": "account-A"],
+            refreshAfterClaim: { cardID, _ in refreshes.values.append(cardID) }
+        )
+        let original = try XCTUnwrap(router.service(for: "codex"))
+        let binding = try binding(token: "token-A", source: .file(path: "/tmp/claim-A/auth.json"))
+        let claim = Task { await original.claim(creditExpiringAt: Self.expiry, redeemRequestID: "fixture", binding: binding) }
+        await fulfillment(of: [reachedList], timeout: 2)
+        router.reconfigure(
+            providers: [makeSharedHomeProvider(home: "/tmp/claim-B", token: "token-B", http: http)],
+            identityKeys: ["codex": "account-B"]
+        )
+        await gate.open()
+
+        let outcome = await claim.value
+
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertEqual(http.requests.map(\.method), ["GET"])
+        XCTAssertTrue(refreshes.values.isEmpty)
+    }
+
+    func testSnapshotClaimReadsOnlyItsBoundProfile() async throws {
+        let keychain = ServiceKeychain(values: [
+            CodexAuthStore.keychainService: Self.auth(token: "shared-token", accountID: "acct-shared")
+        ])
+        let profile = AccountProfile(
+            id: "claim-snapshot", family: "codex", label: "Saved", identityKey: "acct-saved", createdAt: .distantPast
+        )
+        try AccountCredentialVault(keychain: keychain).save(.init(
+            credential: Self.auth(token: "saved-token", accountID: "acct-saved"), claudeOAuthAccount: nil
+        ), profile: profile)
+        let http = makeHTTP()
+        let provider = CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(["CODEX_HOME": "/tmp/shared"]),
+                files: FakeFiles(["/tmp/shared/auth.json": Self.auth(token: "file-token", accountID: "acct-file")]),
+                keychain: keychain, scope: .accountSnapshot(profileID: profile.id)
+            ),
+            usageClient: CodexUsageClient(http: http)
+        )
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
+        let service = try XCTUnwrap(router.service(for: "codex"))
+
+        let outcome = await service.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "snapshot",
+            binding: try binding(token: "saved-token", accountID: "acct-saved", source: .accountSnapshot(profileID: profile.id))
+        )
+
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["Authorization"] }), ["Bearer saved-token"])
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["ChatGPT-Account-Id"] }), ["acct-saved"])
+    }
+
+    func testKeychainClaimDoesNotSelectAnEarlierFileCandidate() async throws {
+        let http = makeHTTP()
+        let provider = CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(["CODEX_HOME": "/tmp/shared"]),
+                files: FakeFiles(["/tmp/shared/auth.json": Self.auth(token: "file-token", accountID: "acct-file")]),
+                keychain: ServiceKeychain(values: [
+                    CodexAuthStore.keychainService: Self.auth(token: "keychain-token", accountID: "acct-keychain")
+                ])
+            ),
+            usageClient: CodexUsageClient(http: http)
+        )
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
+        let service = try XCTUnwrap(router.service(for: "codex"))
+
+        let outcome = await service.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "keychain",
+            binding: try binding(token: "keychain-token", accountID: "acct-keychain", source: .keychain)
+        )
+
+        XCTAssertEqual(outcome, .success)
+        XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["Authorization"] }), ["Bearer keychain-token"])
+        XCTAssertEqual(Set(http.requests.compactMap { $0.headers["ChatGPT-Account-Id"] }), ["acct-keychain"])
+    }
+
+    func testScopedClaimsRejectSourcesOutsideTheirScope() async throws {
+        let credential = Self.auth(token: "same-token", accountID: "acct-same")
+        let keychain = ServiceKeychain(values: [CodexAuthStore.keychainService: credential])
+        for id in ["saved", "other"] {
+            let profile = AccountProfile(
+                id: id, family: "codex", label: id, identityKey: "acct-same", createdAt: .distantPast
+            )
+            try AccountCredentialVault(keychain: keychain).save(.init(
+                credential: credential, claudeOAuthAccount: nil
+            ), profile: profile)
+        }
+        let cases: [(CodexCredentialScope, CodexAuthState.Source)] = [
+            (.home(path: "/tmp/scoped"), .file(path: "/tmp/other/auth.json")),
+            (.home(path: "/tmp/scoped"), .keychain),
+            (.accountSnapshot(profileID: "saved"), .accountSnapshot(profileID: "other")),
+            (.accountSnapshot(profileID: "saved"), .keychain),
+        ]
+        for (scope, source) in cases {
+            let http = makeHTTP()
+            let provider = CodexProvider(
+                authStore: CodexAuthStore(
+                    environment: FakeEnvironment(),
+                    files: FakeFiles(["/tmp/scoped/auth.json": credential, "/tmp/other/auth.json": credential]),
+                    keychain: keychain, scope: scope
+                ),
+                usageClient: CodexUsageClient(http: http)
+            )
+            let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
+            let service = try XCTUnwrap(router.service(for: "codex"))
+
+            let outcome = await service.claim(
+                creditExpiringAt: Self.expiry, redeemRequestID: "outside-scope",
+                binding: try binding(token: "same-token", accountID: "acct-same", source: source)
+            )
+
+            XCTAssertEqual(outcome, .failed, "scope: \(scope), source: \(source)")
+            XCTAssertTrue(http.requests.isEmpty, "scope: \(scope), source: \(source)")
+        }
     }
 
     func testScopedCardClaimNeverFallsBackToTheSharedKeychainItem() async throws {
@@ -256,10 +428,13 @@ final class CodexResetClaimRouterTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http)
         )
-        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _ in })
+        let router = CodexResetClaimRouter(providers: [provider], refreshAfterClaim: { _, _ in })
 
         let service = try XCTUnwrap(router.service(for: "codex@ab12cd34"))
-        let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1")
+        let outcome = await service.claim(
+            creditExpiringAt: Self.expiry, redeemRequestID: "redeem-1",
+            binding: try binding(token: "old-token", accountID: "acct-card", source: .file(path: "/tmp/codex-empty/auth.json"))
+        )
 
         XCTAssertEqual(outcome, .failed)
         XCTAssertTrue(http.requests.isEmpty)

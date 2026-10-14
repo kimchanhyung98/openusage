@@ -130,14 +130,18 @@ final class AccountSnapshotUsageTests: XCTestCase {
             let service = CodexResetClaimService(
                 authStore: CodexAuthStore(environment: FakeEnvironment(), files: FakeFiles(), keychain: keychain,
                                          scope: .accountSnapshot(profileID: profile.id)),
-                usageClient: CodexUsageClient(http: http), refreshAfterClaim: {}
+                usageClient: CodexUsageClient(http: http), refreshAfterClaim: { _ in}
             )
 
-            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture")
+            let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(
+                auth: try XCTUnwrap(CodexAuthStore.parseAuth(validCredential)),
+                source: .accountSnapshot(profileID: profile.id)
+            )))
+            let outcome = await service.claim(creditExpiringAt: Date(), redeemRequestID: "fixture", binding: binding)
 
             let readSucceeded = category == .notAvailable
             XCTAssertEqual(outcome, readSucceeded ? .noCredit : .failed)
-            XCTAssertEqual(keychain.interactionRequests, [true])
+            XCTAssertEqual(keychain.interactionRequests, readSucceeded ? [true, false] : [true])
             XCTAssertEqual(http.requests.count, readSucceeded ? 1 : 0)
             XCTAssertTrue(http.requests.allSatisfy { $0.method == "GET" })
             XCTAssertEqual(diagnostics.events.filter { $0.operation == .resetClaim }, [

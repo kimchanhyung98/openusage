@@ -452,7 +452,8 @@ final class WidgetDataStore {
         providerID: String,
         force: Bool = false,
         trigger: RefreshTrigger = .scheduled,
-        notifyHistoryChange: Bool = true
+        notifyHistoryChange: Bool = true,
+        codexBinding: CodexResetClaimBinding? = nil
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
@@ -520,7 +521,9 @@ final class WidgetDataStore {
                 }
             }
             return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
-                await provider.refresh()
+                await ProviderRefreshContext.$isResetClaim.withValue(trigger == .resetClaim) {
+                    await provider.refresh()
+                }
             }
         }
         // 취소된 refresh도 non-throwing 작업이면 결과 반환 가능 — partial snapshot publish 금지, last-good 유지.
@@ -556,6 +559,14 @@ final class WidgetDataStore {
         case .cancelled:
             needsScheduleWake = true
             return .skipped
+        }
+        if let codexBinding, Self.errorMessage(in: snapshot) == nil,
+           snapshot.codexResetClaimBinding != codexBinding {
+            snapshot = .error(
+                provider: provider.provider,
+                message: "The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.",
+                category: .authInvalid
+            )
         }
         if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
             scheduledRefreshUpdatedAt[providerID] = monotonicNow()
@@ -870,6 +881,7 @@ final class WidgetDataStore {
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {
             result = data
+            result.codexResetClaimBinding = snapshot.codexResetClaimBinding
         } else {
             // 배치된 tile을 뒷받침하는 실제 metric line 부재 — sample 숫자는 placeholder이므로 no-data 처리.
             result = descriptor.sample

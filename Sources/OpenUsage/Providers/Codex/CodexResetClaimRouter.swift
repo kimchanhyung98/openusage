@@ -6,7 +6,7 @@ import SwiftUI
 @MainActor
 final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]
-    private let refreshAfterClaim: (String) async -> Void
+    private let refreshAfterClaim: (String, CodexResetClaimBinding) async -> Void
     private var generation = 0
     private var identityKeysByCard: [String: String] = [:]
 
@@ -14,7 +14,7 @@ final class CodexResetClaimRouter {
     init(
         providers: [CodexProvider],
         identityKeys: [String: String] = [:],
-        refreshAfterClaim: @escaping (String) async -> Void
+        refreshAfterClaim: @escaping (String, CodexResetClaimBinding) async -> Void
     ) {
         self.servicesByCard = [:]
         self.refreshAfterClaim = refreshAfterClaim
@@ -24,6 +24,21 @@ final class CodexResetClaimRouter {
     /// 카드 하나의 claim service — Codex runtime 없는 카드(미등록 id, managed home 미발견)는 `nil`, row는 read-only 렌더링.
     func service(for cardID: String) -> CodexResetClaimService? {
         servicesByCard[cardID]
+    }
+
+    /// 확인한 인증은 고정하고 실행 시점의 카드 service 사용.
+    func claimAction(
+        for cardID: String, binding: CodexResetClaimBinding
+    ) -> ((Date, String) async -> ResetClaimOutcome)? {
+        guard service(for: cardID) != nil else { return nil }
+        return { [weak self] expiry, redeemRequestID in
+            guard let service = self?.service(for: cardID) else {
+                AppDiagnostics.record(.resetClaim, result: .failure, category: .authInvalid, providerID: "codex",
+                                      localContext: "Reset claim stopped because its card is no longer available")
+                return .failed
+            }
+            return await service.claim(creditExpiringAt: expiry, redeemRequestID: redeemRequestID, binding: binding)
+        }
     }
 
     /// 현재 카탈로그 전체로 라우팅 테이블 재구성 — 같은 id 재등록은 교체, 이탈 카드는 제거 (stale credential로 claim 가능한 상태 방지).
@@ -38,7 +53,11 @@ final class CodexResetClaimRouter {
             return (cardID, CodexResetClaimService(
                 authStore: provider.authStore,
                 usageClient: provider.usageClient,
-                refreshAfterClaim: { [weak self] in
+                requestState: servicesByCard[cardID]?.requestState ?? CodexResetClaimService.RequestState(),
+                isCurrent: { [weak self] in
+                    self?.generation == boundGeneration
+                },
+                refreshAfterClaim: { [weak self] binding in
                     // 다른 카드 변경은 허용하되, identity 미해석 카드는 같은 catalog에서만 후속 조회.
                     guard let self,
                           self.servicesByCard[cardID] != nil,
@@ -49,7 +68,7 @@ final class CodexResetClaimRouter {
                         AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
                         return
                     }
-                    await refreshAfterClaim(cardID)
+                    await refreshAfterClaim(cardID, binding)
                 }
             ))
         })

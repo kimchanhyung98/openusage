@@ -177,7 +177,11 @@ final class CodexProvider: ProviderRuntime {
             }
         }
 
-        if let keychainCandidate = await loadOffMainActor({ [authStore] in authStore.loadKeychainAuth() }) {
+        let isResetClaim = ProviderRefreshContext.isResetClaim
+        if let keychainCandidate = try await loadOffMainActor({ [authStore] in
+            if isResetClaim { return try authStore.loadKeychainAuth(allowInteraction: false) }
+            return authStore.loadKeychainAuth()
+        }) {
             let result = try await operation(keychainCandidate)
             rememberWeeklyTimerSelection(source: keychainCandidate.source, fileCandidates: fileCandidates)
             return result
@@ -318,7 +322,8 @@ final class CodexProvider: ProviderRuntime {
             usageHistory: usageHistory,
             warning: warning,
             isDegraded: refreshIsDegraded ? true : nil,
-            liveQuotaObservedAt: quota.observedAt
+            liveQuotaObservedAt: quota.observedAt,
+            codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
         )
     }
 
@@ -382,11 +387,13 @@ final class CodexProvider: ProviderRuntime {
     /// 그 source 하나만 읽고 후보 경로 재스캔 없음 — `codex`가 `CODEX_HOME`의 단일 `auth.json`만 읽는 방식과 일치.
     private func reloadLiveAuth(source: CodexAuthState.Source) async throws -> CodexAuthState? {
         let allowInteraction = ProviderRefreshContext.isManual
+        let isResetClaim = ProviderRefreshContext.isResetClaim
         return try await loadOffMainActor { [authStore] in
             switch source {
             case .file(let path):
                 return authStore.loadAuth(at: path)
             case .keychain:
+                if isResetClaim { return try authStore.loadKeychainAuth(allowInteraction: false) }
                 return authStore.loadKeychainAuth()
             case .accountSnapshot(let profileID):
                 return try authStore.loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)

@@ -281,37 +281,34 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         return persistence
     }
 
-    func testClaimFallbackKeepsAccountCandidatesAndRecordsOnlyFinalFailure() async throws {
+    func testClaimFailureRecordsNoPrivateCredentialOrResponseData() async throws {
         let capture = try Capture()
         defer { capture.cleanUp() }
         let expiry = Date(timeIntervalSince1970: 1_800_000_000)
+        let credential = CodexAuthState(
+            auth: CodexAuth(tokens: CodexTokens(accessToken: "PRIVATE_TOKEN", accountID: "PRIVATE_ACCOUNT")),
+            source: .file(path: "/fixture/auth.json")
+        )
+        let binding = try XCTUnwrap(CodexResetClaimBinding(authState: credential))
         let http = RoutingHTTPClient { request in
-            let account = request.headers["ChatGPT-Account-Id"]
             if request.url == CodexUsageClient.resetCreditsURL {
-                if account == "PRIVATE_ACCOUNT_A" {
-                    return HTTPResponse(statusCode: 401, headers: [:], body: Data())
-                }
                 let body = #"{"credits":[{"id":"PRIVATE_CREDIT","expires_at":1800000000}]}"#
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
             }
             XCTAssertEqual(request.url, CodexUsageClient.consumeResetCreditURL)
-            let status = account == "PRIVATE_ACCOUNT_B" ? 403 : 500
-            return HTTPResponse(statusCode: status, headers: [:], body: Data("PRIVATE_RESPONSE_BODY".utf8))
+            return HTTPResponse(statusCode: 500, headers: [:], body: Data("PRIVATE_RESPONSE_BODY".utf8))
         }
         let service = CodexResetClaimService(
             usageClient: CodexUsageClient(http: http),
-            credentialCandidates: {
-                [("PRIVATE_SHARED_TOKEN", "PRIVATE_ACCOUNT_A"), ("PRIVATE_SHARED_TOKEN", "PRIVATE_ACCOUNT_B")]
-            },
-            refreshAfterClaim: { XCTFail("A failed claim must not refresh an account") }
+            credentialLoader: { _, _ in credential },
+            refreshAfterClaim: { _ in XCTFail("A failed claim must not refresh an account") }
         )
 
-        let outcome = await service.claim(creditExpiringAt: expiry, redeemRequestID: "PRIVATE_REQUEST_ID")
+        let outcome = await service.claim(creditExpiringAt: expiry, redeemRequestID: "PRIVATE_REQUEST_ID", binding: binding)
 
         XCTAssertEqual(outcome, .failed)
-        XCTAssertEqual(http.requests.map { $0.headers["ChatGPT-Account-Id"] },
-                       ["PRIVATE_ACCOUNT_A", "PRIVATE_ACCOUNT_B", "PRIVATE_ACCOUNT_B", "PRIVATE_ACCOUNT_A"])
-        XCTAssertEqual(http.requests.map(\.method), ["GET", "GET", "POST", "POST"])
+        XCTAssertEqual(http.requests.map { $0.headers["ChatGPT-Account-Id"] }, ["PRIVATE_ACCOUNT", "PRIVATE_ACCOUNT"])
+        XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
         let lines = try capture.lines()
         XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
         XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") && $0.contains("consume failed (HTTP 500)") })
@@ -336,15 +333,20 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
                 }
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
             }
+            let credential = CodexAuthState(
+                auth: CodexAuth(tokens: CodexTokens(accessToken: "PRIVATE_TOKEN", accountID: "PRIVATE_ACCOUNT")),
+                source: .file(path: "/fixture/auth.json")
+            )
+            let binding = try XCTUnwrap(CodexResetClaimBinding(authState: credential))
             let service = CodexResetClaimService(
                 usageClient: CodexUsageClient(http: http),
-                credentialCandidates: { [("PRIVATE_TOKEN", "PRIVATE_ACCOUNT")] },
-                refreshAfterClaim: { XCTFail("Malformed responses must not refresh an account") }
+                credentialLoader: { _, _ in credential },
+                refreshAfterClaim: { _ in XCTFail("Malformed responses must not refresh an account") }
             )
 
             let result = await service.claim(
                 creditExpiringAt: Date(timeIntervalSince1970: 1_800_000_000),
-                redeemRequestID: "PRIVATE_REQUEST"
+                redeemRequestID: "PRIVATE_REQUEST", binding: binding
             )
 
             XCTAssertEqual(result, .failed)

@@ -237,8 +237,8 @@ final class AppContainer {
         self.codexResetClaim = CodexResetClaimRouter(
             providers: codexProviders,
             identityKeys: accountAssembly.identityKeysByCard,
-            refreshAfterClaim: { [weak dataStore] providerID in
-                await dataStore?.refreshAfterClaim(providerID: providerID)
+            refreshAfterClaim: { [weak dataStore] providerID, binding in
+                await dataStore?.refreshAfterClaim(providerID: providerID, codexBinding: binding)
             }
         )
 
