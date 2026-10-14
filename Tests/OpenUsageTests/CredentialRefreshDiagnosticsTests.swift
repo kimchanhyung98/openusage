@@ -132,7 +132,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
         }
     }
 
-    func testCursorRotationUsesSelectedKeychainWithoutWritingOtherAccountSQLite() async {
+    func testCursorRotationUsesLiveTokenWithoutWritingEitherCredentialStore() async {
         let diagnostics = DiagnosticEventRecorder()
         let sqliteValues = [
             CursorAuthStore.accessTokenKey: Self.jwt(1),
@@ -165,14 +165,12 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(sqlite.values, sqliteValues)
-        XCTAssertEqual(keychain.values[CursorAuthStore.keychainAccessTokenService], "rotated-access")
+        XCTAssertEqual(keychain.values[CursorAuthStore.keychainAccessTokenService], Self.jwt(1, subject: "keychain-account"))
         XCTAssertEqual(keychain.values[CursorAuthStore.keychainRefreshTokenService], "selected-keychain-refresh")
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialRefresh }, [
             DiagnosticEvent(.credentialRefresh, result: .success, providerID: "cursor")
         ])
-        XCTAssertEqual(diagnostics.events.filter { $0.operation == .credentialSave }, [
-            DiagnosticEvent(.credentialSave, result: .success, providerID: "cursor")
-        ])
+        XCTAssertTrue(diagnostics.events.filter { $0.operation == .credentialSave }.isEmpty)
     }
 
     func testMissingRefreshTokenDoesNotInventAttempt() async {
@@ -365,5 +363,21 @@ private final class RefreshDiagnosticSQLite: SQLiteAccessing, @unchecked Sendabl
         if failingWrite { throw CocoaError(.fileWriteNoPermission) }
         XCTAssertEqual(bindings.count, 2)
         values[bindings[0]] = bindings[1]
+    }
+
+    func executeChanges(path: String, sql: String, bindings: [String?]) throws -> Int {
+        if failingWrite { throw CocoaError(.fileWriteNoPermission) }
+        guard bindings.count == 8 else {
+            throw SQLiteError.queryFailed("Expected eight Cursor credential bindings.")
+        }
+        guard let key = bindings[0], let value = bindings[1],
+              let accessKey = bindings[2], let refreshKey = bindings[5] else {
+            throw SQLiteError.queryFailed("Missing required Cursor credential binding.")
+        }
+        let currentAccess = values[accessKey]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let currentRefresh = values[refreshKey]?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        guard currentAccess == bindings[4], currentRefresh == bindings[7] else { return 0 }
+        values[key] = value
+        return 1
     }
 }

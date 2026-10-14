@@ -210,13 +210,84 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
         }
     }
 
+    func testServiceIssueLinkOpensTheProvidersStatusPage() throws {
+        for (provider, expectedURL) in [
+            (ClaudeProvider.makeProvider(), "https://status.claude.com/"),
+            (CodexProvider.makeProvider(), "https://status.openai.com/"),
+            (CursorProvider().provider, "https://status.cursor.com/"),
+            (CopilotProvider().provider, "https://www.githubstatus.com/"),
+        ] {
+            var openedURLs: [URL] = []
+            let view = ProviderSectionHeader(
+                provider: provider,
+                displayName: provider.displayName,
+                serviceStatus: .disrupted(issue)
+            )
+            .frame(width: PanelHeightController.panelWidth)
+            .highPriorityGesture(reorderDragGesture(
+                id: provider.id,
+                coordinateSpaceName: "status-header",
+                rowFrames: [:],
+                active: .constant(nil),
+                lift: .constant(nil),
+                makeLift: { _ in nil },
+                orderedIDs: { [provider.id] },
+                reorder: { _ in false }
+            ))
+            .coordinateSpace(name: "status-header")
+            .environment(\.openURL, OpenURLAction { url in
+                openedURLs.append(url)
+                return .handled
+            })
+            try withHosting(view) { hosting, window in
+                // 화면 밖 테스트 창을 표시해야 SwiftUI가 합성 마우스 이벤트를 처리.
+                window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+                window.orderFrontRegardless()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                var pixels: [CGPoint] = []
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB),
+                              color.redComponent > 0.65, color.greenComponent < 0.45, color.blueComponent < 0.55
+                        else { continue }
+                        pixels.append(CGPoint(x: x, y: y))
+                    }
+                }
+                XCTAssertFalse(pixels.isEmpty, provider.id)
+                let center = CGPoint(
+                    x: (try XCTUnwrap(pixels.map(\.x).min()) + XCTUnwrap(pixels.map(\.x).max())) / 2,
+                    y: (try XCTUnwrap(pixels.map(\.y).min()) + XCTUnwrap(pixels.map(\.y).max())) / 2
+                )
+                let point = CGPoint(
+                    x: center.x * hosting.bounds.width / CGFloat(bitmap.pixelsWide),
+                    y: center.y * hosting.bounds.height / CGFloat(bitmap.pixelsHigh)
+                )
+                let location = hosting.convert(
+                    CGPoint(x: point.x, y: hosting.isFlipped ? point.y : hosting.bounds.height - point.y), to: nil
+                )
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    let event = try XCTUnwrap(NSEvent.mouseEvent(
+                        with: type, location: location, modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                        context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+                    ))
+                    window.sendEvent(event)
+                }
+                RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+                XCTAssertEqual(openedURLs.map(\.absoluteString), [expectedURL], provider.id)
+            }
+        }
+    }
+
     private func header(
         refreshing: Bool,
         disrupted: Bool,
         mode: AccountCardDisplayMode = .singleCard
     ) -> ProviderSectionHeader {
         ProviderSectionHeader(
-            provider: MockData.claude,
+            provider: ClaudeProvider.makeProvider(),
             displayName: AccountCardPresentationPlanner.cardTitle(
                 providerID: "claude", fallback: "Claude", mode: mode, accountName: accountName
             ),

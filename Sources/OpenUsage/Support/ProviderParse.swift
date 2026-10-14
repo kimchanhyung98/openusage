@@ -57,7 +57,15 @@ enum ProviderParse {
 
     /// JSON 텍스트에서 `T` 디코드, hex 인코딩 JSON blob으로 fallback — 일부 provider는 자격 증명 파일을 hex(`0x` prefix 허용)로 저장.
     static func decodeJSONWithHexFallback<T: Decodable>(_ text: String, as type: T.Type) -> T? {
-        if let decoded = decodeJSON(text, as: type) { return decoded }
+        decodeWithHexFallback(text) { try? JSONDecoder().decode(type, from: $0) }
+    }
+
+    static func jsonObjectWithHexFallback(_ text: String) -> [String: Any]? {
+        decodeWithHexFallback(text) { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+    }
+
+    private static func decodeWithHexFallback<T>(_ text: String, decode: (Data) -> T?) -> T? {
+        if let decoded = decode(Data(text.utf8)) { return decoded }
 
         var hex = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if hex.hasPrefix("0x") || hex.hasPrefix("0X") {
@@ -75,13 +83,8 @@ enum ProviderParse {
             bytes.append(byte)
             index = next
         }
-        guard let decoded = String(bytes: bytes, encoding: .utf8) else { return nil }
-        return decodeJSON(decoded, as: type)
-    }
-
-    private static func decodeJSON<T: Decodable>(_ text: String, as type: T.Type) -> T? {
-        guard let data = text.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        guard String(bytes: bytes, encoding: .utf8) != nil else { return nil }
+        return decode(Data(bytes))
     }
 
     /// JWT payload(가운데 segment)의 JSON object 디코드 — base64url을 표준 base64로 변환·패딩 후 디코드.

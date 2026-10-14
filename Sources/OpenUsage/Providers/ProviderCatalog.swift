@@ -11,6 +11,7 @@ enum ProviderCatalog {
         defaultClaudeExtraLogRoots: [URL] = [],
         snapshotCards: [AccountUsageSnapshotCard] = [],
         codexSharedAuthHome: String? = nil,
+        codexSharedSnapshotProfileID: String? = nil,
         claudeManagedSwitchActive: Bool = false
     ) -> [ProviderRuntime] {
         // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
@@ -32,7 +33,9 @@ enum ProviderCatalog {
             runtimes.append(claudeSnapshotRuntime(card: card))
         }
         runtimes.append(CodexProvider(
-            authStore: codexSharedAuthHome.map { CodexAuthStore(scope: .home(path: $0)) } ?? CodexAuthStore()
+            authStore: codexSharedAuthHome.map {
+                CodexAuthStore(scope: .home(path: $0), managedSnapshotProfileID: codexSharedSnapshotProfileID)
+            } ?? CodexAuthStore()
         ))
         for card in snapshotCards where card.family == "codex" {
             runtimes.append(codexSnapshotRuntime(card: card))

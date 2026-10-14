@@ -71,6 +71,7 @@ final class CodexPostClaimRefreshBindingTests: XCTestCase {
         let cache: ProviderSnapshotCache
         let router: CodexResetClaimRouter
         let http: HTTPFixture
+        let keychain: FakeKeychain
         let confirmedToken: String
         let confirmedSource: CodexAuthState.Source
     }
@@ -132,25 +133,31 @@ final class CodexPostClaimRefreshBindingTests: XCTestCase {
     }
 
     func testSameAccountTokenRotationPublishesThePostClaimUsage() async throws {
-        let fixture = try makeFixture(scenario: .tokenRotation)
-        _ = await fixture.store.refresh(providerID: "codex", force: true)
-        let original = try XCTUnwrap(fixture.store.localSnapshots["codex"])
-        let binding = try XCTUnwrap(original.codexResetClaimBinding)
-        var published: [ProviderSnapshot] = []
-        fixture.store.onFreshSnapshot = { snapshot, _, _ in published.append(snapshot) }
+        for useKeychain in [false, true] {
+            let fixture = try makeFixture(scenario: .tokenRotation, useKeychain: useKeychain)
+            _ = await fixture.store.refresh(providerID: "codex", force: true)
+            let original = try XCTUnwrap(fixture.store.localSnapshots["codex"])
+            let binding = try XCTUnwrap(original.codexResetClaimBinding)
+            var published: [ProviderSnapshot] = []
+            fixture.store.onFreshSnapshot = { snapshot, _, _ in published.append(snapshot) }
 
-        let service = try XCTUnwrap(fixture.router.service(for: "codex"))
-        let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "rotation", binding: binding)
+            let service = try XCTUnwrap(fixture.router.service(for: "codex"))
+            let outcome = await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "rotation", binding: binding)
 
-        XCTAssertEqual(outcome, .success)
-        let refreshed = try XCTUnwrap(fixture.store.localSnapshots["codex"])
-        XCTAssertEqual(refreshed.codexResetClaimBinding, binding)
-        XCTAssertNotEqual(refreshed.lines, original.lines)
-        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: ["codex"])["codex"], refreshed)
-        XCTAssertEqual(published, [refreshed])
-        XCTAssertEqual(fixture.store.refreshResults["codex"], .succeeded)
-        let requests = await fixture.http.requests
-        XCTAssertEqual(requests.filter { $0.url == CodexUsageClient.refreshURL }.count, 1)
+            XCTAssertEqual(outcome, .success)
+            let refreshed = try XCTUnwrap(fixture.store.localSnapshots["codex"])
+            XCTAssertEqual(refreshed.codexResetClaimBinding, binding)
+            XCTAssertNotEqual(refreshed.lines, original.lines)
+            XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: ["codex"])["codex"], refreshed)
+            XCTAssertEqual(published, [refreshed])
+            XCTAssertEqual(fixture.store.refreshResults["codex"], .succeeded)
+            let requests = await fixture.http.requests
+            XCTAssertEqual(requests.filter { $0.url == CodexUsageClient.refreshURL }.count, 1)
+            if useKeychain {
+                let saved = try XCTUnwrap(CodexAuthStore.parseAuth(try XCTUnwrap(fixture.keychain.value)))
+                XCTAssertNotEqual(saved.tokens?.accessToken, fixture.confirmedToken)
+            }
+        }
     }
 
     private func makeFixture(
@@ -202,7 +209,7 @@ final class CodexPostClaimRefreshBindingTests: XCTestCase {
                 await store.refreshAfterClaim(providerID: cardID, codexBinding: binding, maxAttempts: 3, retryDelay: .zero)
             }
         )
-        return Fixture(store: store, cache: cache, router: router, http: http,
+        return Fixture(store: store, cache: cache, router: router, http: http, keychain: keychain,
                        confirmedToken: confirmedToken, confirmedSource: confirmedSource)
     }
 

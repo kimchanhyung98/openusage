@@ -38,7 +38,10 @@ final class CodexResetClaimKeychainTests: XCTestCase {
         return (CodexResetClaimService(
             authStore: CodexAuthStore(
                 environment: FakeEnvironment(), files: FakeFiles(),
-                keychain: SecurityKeychainAccessor(processRunner: runner, appPasswordReader: reader)
+                keychain: SecurityKeychainAccessor(
+                    processRunner: runner, passwordWriter: SharedClaimPasswordWriter(reader: reader),
+                    sharedPasswordWriter: SharedClaimPasswordWriter(reader: reader), appPasswordReader: reader
+                )
             ),
             usageClient: CodexUsageClient(http: http), refreshAfterClaim: refreshAfterClaim
         ), http)
@@ -126,7 +129,10 @@ final class CodexResetClaimKeychainTests: XCTestCase {
         let runner = SharedClaimProcessRunner()
         let authStore = CodexAuthStore(
             environment: FakeEnvironment(), files: FakeFiles(),
-            keychain: SecurityKeychainAccessor(processRunner: runner, appPasswordReader: reader)
+            keychain: SecurityKeychainAccessor(
+                processRunner: runner, passwordWriter: SharedClaimPasswordWriter(reader: reader),
+                sharedPasswordWriter: SharedClaimPasswordWriter(reader: reader), appPasswordReader: reader
+            )
         )
         let binding = try XCTUnwrap(CodexResetClaimBinding(authState: CodexAuthState(
             auth: try XCTUnwrap(CodexAuthStore.parseAuth(credential)), source: .keychain
@@ -179,11 +185,39 @@ final class CodexResetClaimKeychainTests: XCTestCase {
         XCTAssertEqual(store.localSnapshots["codex"]?.codexResetClaimBinding, binding)
         XCTAssertNil(store.refreshResults["codex"]?.failure)
     }
+
+    func testNoninteractiveKeychainRotationKeepsItsReaderAcrossSaves() async throws {
+        let original = "\n" + #"{"future_field":true,"tokens":{"access_token":"old","account_id":"account-A"}}"# + "\n"
+        let reader = try reader(value: original)
+        let runner = SharedClaimProcessRunner()
+        let authStore = CodexAuthStore(
+            environment: FakeEnvironment(), files: FakeFiles(),
+            keychain: SecurityKeychainAccessor(
+                processRunner: runner, passwordWriter: SharedClaimPasswordWriter(reader: reader),
+                sharedPasswordWriter: SharedClaimPasswordWriter(reader: reader), appPasswordReader: reader
+            )
+        )
+
+        let saved = try await loadOffMainActor {
+            var state = try XCTUnwrap(authStore.loadKeychainAuth(allowInteraction: false))
+            state.auth.tokens?.accessToken = "first-rotation"
+            state = try authStore.save(state, allowInteraction: false)
+            state.auth.tokens?.accessToken = "second-rotation"
+            return try authStore.save(state, allowInteraction: false)
+        }
+
+        XCTAssertEqual(saved.auth.tokens?.accessToken, "second-rotation")
+        XCTAssertEqual(CodexAuthStore.parseAuth(reader.currentValue)?.tokens?.accessToken, "second-rotation")
+        let document = try XCTUnwrap(ProviderParse.jsonObjectWithHexFallback(reader.currentValue))
+        XCTAssertEqual(document["future_field"] as? Bool, true)
+        XCTAssertEqual(reader.interactionRequests, [false, false, false])
+        XCTAssertEqual(runner.callCount, 0)
+    }
 }
 
 private final class SharedClaimPasswordReader: GenericPasswordReading, @unchecked Sendable {
     private let lock = NSLock()
-    private let value: String
+    private var value: String
     let initiallyAllowed: Bool
     private let deniedReads: Set<Int>
     private var reads: [Bool] = []
@@ -195,6 +229,9 @@ private final class SharedClaimPasswordReader: GenericPasswordReading, @unchecke
     }
 
     var interactionRequests: [Bool] { lock.withLock { reads } }
+    var currentValue: String { lock.withLock { value } }
+
+    func replace(_ value: String) { lock.withLock { self.value = value } }
 
     func read(service: String, account: String?) throws -> String? {
         XCTAssertFalse(Thread.isMainThread, "Credential reads must not block the main thread")
@@ -209,6 +246,16 @@ private final class SharedClaimPasswordReader: GenericPasswordReading, @unchecke
             }
             return value
         }
+    }
+}
+
+private struct SharedClaimPasswordWriter: GenericPasswordWriting {
+    let reader: SharedClaimPasswordReader
+
+    func write(service: String, account: String?, value: Data) throws {
+        XCTAssertEqual(service, CodexAuthStore.keychainService)
+        XCTAssertNil(account)
+        reader.replace(String(decoding: value, as: UTF8.self))
     }
 }
 

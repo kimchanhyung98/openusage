@@ -100,6 +100,7 @@ extension CodexAuthError: CategorizedError {
         case .sessionExpired, .tokenConflict, .tokenRevoked, .tokenExpired: .authExpired
         case .usageAPIKey: .notAvailable
         case .invalidAuthPayload: .authInvalid
+        case .credentialsChanged: .other
         }
     }
 }
@@ -119,6 +120,7 @@ extension CursorAuthError: CategorizedError {
         switch self {
         case .notLoggedIn: .notLoggedIn
         case .sessionExpired, .tokenExpired: .authExpired
+        case .credentialsChanged: .other
         }
     }
 }
@@ -141,6 +143,8 @@ extension GrokAuthError: CategorizedError {
         case .notLoggedIn: .notLoggedIn
         case .invalidAuth: .authInvalid
         case .expired: .authExpired
+        case .credentialsChanged: .other
+        case .credentialReadFailed: .credentialAccess
         }
     }
 }

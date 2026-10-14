@@ -154,7 +154,8 @@ final class CodexProvider: ProviderRuntime {
               CodexWeeklyTimerIdentity.accountKey(for: auth) == expected else {
             throw CodexWeeklyTimerProviderError.accountChanged
         }
-        let updated = CodexAuthState(auth: auth, source: original.source)
+        var updated = original
+        updated.auth = auth
         try await saveTimerAuth(updated, replacing: original)
     }
 
@@ -424,16 +425,20 @@ final class CodexProvider: ProviderRuntime {
         authState.auth.lastRefresh = OpenUsageISO8601.string(from: now())
         try validateTimerIdentity(authState.auth, expectedAccountKey: expectedAccountKey)
         if expectedAccountKey != nil {
-            try await saveTimerAuth(authState, replacing: original)
+            authState = try await saveTimerAuth(authState, replacing: original)
             return response.accessToken
         }
-        // save 실패는 loud log 후 계속 — 삼키면 회전된 token이 디스크에 남아 다음 실행에서 false "token expired" 유발, refreshed token은 이번 세션에서 유효.
+        // 원본 검증 실패는 중단 — 실제 쓰기 실패만 로그 후 갱신 token을 이번 세션에서 일시 사용.
         let allowInteraction = ProviderRefreshContext.isManual
         do {
-            try await loadOffMainActor { [authStore, authState] in
+            authState = try await loadOffMainActor { [authStore, authState] in
                 try authStore.save(authState, allowInteraction: allowInteraction)
             }
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+        } catch CodexAuthError.credentialsChanged {
+            AppDiagnostics.failure(.credentialSave, error: CodexAuthError.credentialsChanged, providerID: provider.id,
+                                   localContext: "sign-in changed during token refresh; stopping shared-source writeback")
+            throw CodexAuthError.credentialsChanged
         } catch {
             refreshIsDegraded = true
             AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error,
@@ -448,21 +453,21 @@ final class CodexProvider: ProviderRuntime {
         }
     }
 
-    private func saveTimerAuth(_ updated: CodexAuthState, replacing original: CodexAuthState) async throws {
+    @discardableResult
+    private func saveTimerAuth(_ updated: CodexAuthState, replacing original: CodexAuthState) async throws -> CodexAuthState {
         let allowInteraction = ProviderRefreshContext.isManual
         do {
-            try await loadOffMainActor { [authStore] in
-                let current: CodexAuthState?
-                switch original.source {
-                case .file(let path): current = authStore.loadAuth(at: path)
-                case .keychain: current = authStore.loadKeychainAuth()
-                case .accountSnapshot(let id):
-                    current = try authStore.loadAccountSnapshot(profileID: id, allowInteraction: allowInteraction)
+            let saved = try await loadOffMainActor { [authStore] in
+                var state = updated
+                state.sourceText = original.sourceText
+                do {
+                    return try authStore.save(state, allowInteraction: allowInteraction)
+                } catch CodexAuthError.credentialsChanged {
+                    throw CodexWeeklyTimerProviderError.credentialsChanged
                 }
-                guard current == original else { throw CodexWeeklyTimerProviderError.credentialsChanged }
-                if updated != original { try authStore.save(updated, allowInteraction: allowInteraction) }
             }
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+            return saved
         } catch {
             AppDiagnostics.failure(.credentialSave, error: error, providerID: provider.id,
                                    localContext: "weekly timer credential generation changed or could not be saved")

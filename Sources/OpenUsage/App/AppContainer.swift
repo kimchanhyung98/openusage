@@ -92,16 +92,18 @@ final class AppContainer {
         self.accountProfiles = accountProfiles
         self.accountCardPresentation = AccountCardPresentationStore()
         self.accountAssembly = accountAssembly
-        self.accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
+        let initialProfileIDs = Self.accountProfileIDsByCardID(
             assembly: accountAssembly,
             profiles: accountProfiles
         )
+        self.accountProfileIDsByCardID = initialProfileIDs
 
         let providers = ProviderCatalog.make(
             hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
             snapshotCards: accountAssembly.snapshotCards,
             codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
+            codexSharedSnapshotProfileID: initialProfileIDs["codex"],
             claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
         )
         let registry = WidgetRegistry.from(providers)
@@ -406,11 +408,13 @@ final class AppContainer {
         )
         guard assembly != accountAssembly else { return }
         accountAssembly = assembly
+        let nextProfileIDs = Self.accountProfileIDsByCardID(assembly: assembly, profiles: accountProfiles)
         let nextProviders = ProviderCatalog.make(
             hasUnregisteredClaudeLogins: assembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: assembly.defaultClaudeExtraLogRoots,
             snapshotCards: assembly.snapshotCards,
             codexSharedAuthHome: assembly.codexSharedAuthHome,
+            codexSharedSnapshotProfileID: nextProfileIDs["codex"],
             claudeManagedSwitchActive: assembly.claudeManagedSwitchActive
         )
         let nextRegistry = WidgetRegistry.from(nextProviders)
@@ -419,10 +423,7 @@ final class AppContainer {
 
         registry = nextRegistry
         providers = nextProviders
-        accountProfileIDsByCardID = Self.accountProfileIDsByCardID(
-            assembly: assembly,
-            profiles: accountProfiles
-        )
+        accountProfileIDsByCardID = nextProfileIDs
         layout.replaceRegistry(nextRegistry)
         dataStore.replaceProviderCatalog(
             registry: nextRegistry,
