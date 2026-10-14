@@ -16,7 +16,7 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
 
         XCTAssertEqual(try fixture.sharedCredential(), saved.sourceText)
         XCTAssertEqual(try fixture.snapshot()?.credential, saved.sourceText)
-        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint)
+        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints)
     }
 
     func testSharedWriteFailurePreservesRotationAcrossANewSwitcher() throws {
@@ -33,8 +33,8 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
             XCTAssertNotEqual(failure?.savedState.sourceText, state.sourceText)
         }
         XCTAssertEqual(try fixture.sharedCredential(), fixture.originalA)
-        XCTAssertEqual(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint,
-                       CodexAuthStore.credentialFingerprint(fixture.originalA))
+        XCTAssertEqual(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints,
+                       [CodexAuthStore.credentialFingerprint(fixture.originalA)])
 
         try fixture.switcher.switchAuthentication(to: fixture.profileB, from: fixture.profileA)
 
@@ -59,7 +59,7 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
         try fixture.switcher.switchAuthentication(to: fixture.profileB, from: fixture.profileA)
 
         XCTAssertEqual(try fixture.snapshotToken(), "cli-refresh-a")
-        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint)
+        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints)
     }
 
     func testSwitchingBackClearsStaleMarkerBeforeAnotherFailedSynchronization() throws {
@@ -72,14 +72,14 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
         try fixture.switcher.switchAuthentication(to: fixture.profileB, from: fixture.profileA)
         state = try XCTUnwrap(fixture.authStore().loadAccountSnapshot(profileID: fixture.profileA.id))
         try fixture.switcher.switchAuthentication(to: fixture.profileA, from: fixture.profileB)
-        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint)
+        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints)
         let selected = try fixture.sharedCredential()
         state.auth.tokens?.refreshToken = "rotated-2"
 
         XCTAssertThrowsError(try fixture.authStore(files: FailingSharedReadFiles()).save(state))
 
-        XCTAssertEqual(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint,
-                       CodexAuthStore.credentialFingerprint(selected))
+        XCTAssertEqual(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints,
+                       [CodexAuthStore.credentialFingerprint(selected)])
         try fixture.switcher.switchAuthentication(to: fixture.profileB, from: fixture.profileA)
         XCTAssertEqual(try fixture.snapshotToken(), "rotated-2")
     }
@@ -194,7 +194,7 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
         XCTAssertEqual(try fixture.snapshotToken(), "rotated-a")
         try fixture.switcher.switchAuthentication(to: fixture.profileB, from: fixture.profileA)
         XCTAssertEqual(try fixture.snapshotToken(), "rotated-a")
-        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprint)
+        XCTAssertNil(try fixture.snapshot()?.codexStaleSharedCredentialFingerprints)
     }
 
     func testUsage401RetryContinuesFromTheSnapshotSavedDuringSharedFailure() async throws {
