@@ -82,8 +82,15 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
            current.family == selected.family,
            let active,
            identity(of: active, family: current.family)?.identityKey == current.identityKey {
-            try saveSnapshot(active, for: current)
-            try writeWorkspaceAuthentication(active, for: current)
+            var preserved = active
+            if current.family == "codex",
+               let snapshot = try loadSnapshot(for: current, allowInteraction: true),
+               snapshot.codexStaleSharedCredentialFingerprints?.contains(CodexAuthStore.credentialFingerprint(active.credential)) == true,
+               identity(of: snapshot, family: current.family)?.identityKey == current.identityKey {
+                preserved = snapshot
+            }
+            try saveSnapshot(preserved, for: current)
+            try writeWorkspaceAuthentication(preserved, for: current)
         }
 
         do {
@@ -92,6 +99,11 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             guard let applied,
                   identity(of: applied, family: selected.family)?.identityKey == selected.identityKey else {
                 throw Error.switchVerificationFailed(selected.label)
+            }
+            if selected.family == "codex", target.codexStaleSharedCredentialFingerprints != nil {
+                var synchronized = target
+                synchronized.codexStaleSharedCredentialFingerprints = nil
+                try saveSnapshot(synchronized, for: selected)
             }
         } catch {
             if let active {

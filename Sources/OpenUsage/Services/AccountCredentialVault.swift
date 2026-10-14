@@ -6,6 +6,8 @@ struct AccountCredentialVault {
     struct Entry: Codable, Equatable, Sendable {
         var credential: String
         var claudeOAuthAccount: String?
+        /// 연속 동기화 실패로 공유 홈에 남을 수 있는 이전 Codex 인증 후보 — 갱신된 snapshot의 역덮어쓰기 방지.
+        var codexStaleSharedCredentialFingerprints: Set<String>? = nil
     }
 
     private let keychain: KeychainAccessing
@@ -54,7 +56,8 @@ struct AccountCredentialVault {
     }
 
     func replaceCredential(
-        _ credential: String, family: String, profileID: String, allowInteraction: Bool = false
+        _ credential: String, family: String, profileID: String, allowInteraction: Bool = false,
+        codexStaleSharedCredentialFingerprints: Set<String>? = nil
     ) throws {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
@@ -62,6 +65,9 @@ struct AccountCredentialVault {
             throw AccountCredentialVaultError.missingEntry
         }
         entry.credential = credential
+        if family == "codex" {
+            entry.codexStaleSharedCredentialFingerprints = codexStaleSharedCredentialFingerprints
+        }
         let data = try JSONEncoder().encode(entry)
         try keychain.writeGenericPasswordForCurrentUser(
             service: Self.service(family: family, profileID: profileID),

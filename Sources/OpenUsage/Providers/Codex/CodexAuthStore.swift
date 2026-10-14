@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 struct CodexTokens: Codable, Hashable, Sendable {
@@ -52,6 +53,16 @@ struct CodexAuthState: Hashable, Sendable {
     /// 비어 있지 않은 OAuth access token 보유 여부 — `refresh()` probe와 `hasLocalCredentials()`가 공유하는 단일 기준 (drift 방지).
     var hasUsableAccessToken: Bool {
         auth.tokens?.accessToken?.isEmpty == false
+    }
+}
+
+/// snapshot 저장 성공 후 공유 홈 동기화 실패 — 재시도는 저장된 원문에서 계속 진행.
+struct CodexSharedCredentialSynchronizationError: LocalizedError {
+    let savedState: CodexAuthState
+    let underlyingError: Error
+
+    var errorDescription: String? {
+        "Codex sign-in was saved, but shared sign-in synchronization did not finish."
     }
 }
 
@@ -119,6 +130,7 @@ struct CodexAuthStore: Sendable {
     var now: @Sendable () -> Date
     let scope: CodexCredentialScope
     let managedSnapshotProfileID: String?
+    let managedSharedAuthHome: String?
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -126,7 +138,8 @@ struct CodexAuthStore: Sendable {
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         scope: CodexCredentialScope = .standard,
         now: @escaping @Sendable () -> Date = Date.init,
-        managedSnapshotProfileID: String? = nil
+        managedSnapshotProfileID: String? = nil,
+        managedSharedAuthHome: String? = nil
     ) {
         self.environment = environment
         self.files = files
@@ -134,6 +147,7 @@ struct CodexAuthStore: Sendable {
         self.scope = scope
         self.now = now
         self.managedSnapshotProfileID = managedSnapshotProfileID
+        self.managedSharedAuthHome = managedSharedAuthHome
     }
 
     func loadAuthCandidates() -> [CodexAuthState] {
@@ -198,6 +212,7 @@ struct CodexAuthStore: Sendable {
         }
         if Self.parseAuth(original) == state.auth { return state }
         let text = try refreshedText(state, original: original)
+        var synchronizationError: Error?
 
         switch state.source {
         case .file(let path):
@@ -205,18 +220,67 @@ struct CodexAuthStore: Sendable {
         case .keychain:
             try keychain.writeGenericPassword(service: Self.keychainService, value: text)
         case .accountSnapshot(let profileID):
-            try AccountCredentialVault(keychain: keychain).replaceCredential(
-                text,
-                family: "codex",
-                profileID: profileID,
-                allowInteraction: allowInteraction
+            synchronizationError = try saveSnapshotCredential(
+                text, replacing: original, profileID: profileID, allowInteraction: allowInteraction
             )
         }
         guard let auth = Self.parseAuth(text) else { throw CodexAuthError.invalidAuthPayload }
         var saved = state
         saved.auth = auth
         saved.sourceText = text
+        if let synchronizationError {
+            throw CodexSharedCredentialSynchronizationError(savedState: saved, underlyingError: synchronizationError)
+        }
         return saved
+    }
+
+    /// 비활성 조회 도중 선택된 같은 인증만 공유 홈에 동기화. 부분 실패 시 이전 원문 표시와 회전본을 함께 보존.
+    private func saveSnapshotCredential(
+        _ text: String, replacing original: String, profileID: String, allowInteraction: Bool
+    ) throws -> Error? {
+        let vault = AccountCredentialVault(keychain: keychain)
+        guard let snapshot = try vault.load(family: "codex", profileID: profileID, allowInteraction: allowInteraction),
+              snapshot.credential.utf8.elementsEqual(original.utf8) else { throw CodexAuthError.credentialsChanged }
+        var staleFingerprints = snapshot.codexStaleSharedCredentialFingerprints
+        var synchronizationError: Error?
+        var sharedToReplace: String?
+        let sharedPath = managedSharedAuthHome.map { joinPath($0, Self.authFile) }
+        if let sharedPath {
+            do {
+                if let shared = try files.readTextIfPresent(sharedPath),
+                   shared.utf8.elementsEqual(original.utf8)
+                    || staleFingerprints?.contains(Self.credentialFingerprint(shared)) == true {
+                    sharedToReplace = shared
+                    staleFingerprints = [Self.credentialFingerprint(shared)]
+                } else {
+                    staleFingerprints = nil
+                }
+            } catch {
+                // 이전 정리 실패로 공유 홈이 이미 갱신됐을 수 있어 직전 snapshot도 후보에 포함.
+                staleFingerprints = (staleFingerprints ?? []).union([Self.credentialFingerprint(original)])
+                synchronizationError = error
+            }
+        }
+        // 공유 홈보다 먼저 회전본과 이전 원문 표시 저장 — 이후 어느 쓰기가 실패해도 이전 토큰의 역덮어쓰기 방지.
+        try vault.replaceCredential(
+            text, family: "codex", profileID: profileID, allowInteraction: allowInteraction,
+            codexStaleSharedCredentialFingerprints: staleFingerprints
+        )
+        if let sharedPath, let sharedToReplace {
+            do {
+                if let current = try files.readTextIfPresent(sharedPath), current.utf8.elementsEqual(sharedToReplace.utf8) {
+                    try files.writeText(sharedPath, text)
+                }
+                try vault.replaceCredential(text, family: "codex", profileID: profileID, allowInteraction: allowInteraction)
+            } catch {
+                synchronizationError = error
+            }
+        }
+        return synchronizationError
+    }
+
+    static func credentialFingerprint(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     /// 공유 홈이 전환되어도 요청 시작 시점과 같은 관리 계정 snapshot에는 회전된 토큰 보존.

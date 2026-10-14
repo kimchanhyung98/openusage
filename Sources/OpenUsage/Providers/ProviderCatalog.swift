@@ -38,7 +38,11 @@ enum ProviderCatalog {
             } ?? CodexAuthStore()
         ))
         for card in snapshotCards where card.family == "codex" {
-            runtimes.append(codexSnapshotRuntime(card: card))
+            runtimes.append(codexSnapshotRuntime(
+                card: card,
+                sharedAuthHome: codexSharedAuthHome ?? FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".codex").path
+            ))
         }
         runtimes += [
             CursorProvider(),
@@ -67,10 +71,12 @@ enum ProviderCatalog {
         )
     }
 
-    private static func codexSnapshotRuntime(card: AccountUsageSnapshotCard) -> CodexProvider {
+    private static func codexSnapshotRuntime(card: AccountUsageSnapshotCard, sharedAuthHome: String) -> CodexProvider {
         CodexProvider(
             provider: CodexProvider.makeProvider(id: card.id, displayName: "Codex"),
-            authStore: CodexAuthStore(scope: .accountSnapshot(profileID: card.profileID)),
+            authStore: CodexAuthStore(
+                scope: .accountSnapshot(profileID: card.profileID), managedSharedAuthHome: sharedAuthHome
+            ),
             logUsageScanner: CodexLogUsageScanner(
                 cacheIdentityOverride: "codex-snapshot:\(card.profileID)",
                 rootsOverride: []
