@@ -9,10 +9,16 @@ extension ClaudeProvider {
         let config = try authStore.oauthConfig()
         let accountKey: String
         var verifiedThroughProfile = false
-        if let identity = state.accountIdentityKey, !identity.isEmpty {
+        if let identity = state.accountIdentityKey, identity.contains("|") {
+            let components = identity.split(separator: "|", omittingEmptySubsequences: false)
+            guard components.count == 2,
+                  components.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                AppLog.error(LogTag.plugin("claude"), "usage blocked: invalid account identity")
+                throw ClaudeUsageStateStore.StoreError.identityUnavailable
+            }
             accountKey = identity
         } else {
-            if case .accountSnapshot = state.source {
+            if case .accountSnapshot = state.source, state.accountIdentityKey?.nilIfEmpty == nil {
                 AppLog.error(LogTag.plugin("claude"), "saved account usage blocked: account identity unavailable")
                 throw ClaudeUsageStateStore.StoreError.identityUnavailable
             }

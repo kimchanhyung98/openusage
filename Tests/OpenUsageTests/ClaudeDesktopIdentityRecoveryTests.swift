@@ -70,6 +70,7 @@ extension ClaudeDesktopAuthStoreTests {
             (nil, otherAccount, organization, false)
         ]
         for testCase in cases {
+            let primaryRequestPath = testCase.homeOrganization == nil ? "/api/oauth/profile" : "/api/oauth/usage"
             let fixture = try makeFixture(
                 activeOrganization: testCase.profileOrganization,
                 v2: [cacheKey(organization: testCase.profileOrganization): tokenEntry("desktop-token", expiresIn: 3_600)]
@@ -84,7 +85,7 @@ extension ClaudeDesktopAuthStoreTests {
             let keychain = FakeKeychain(credentials)
             let http = RoutingHTTPClient { request in
                 if request.headers["Authorization"] == "Bearer revoked-cli" {
-                    XCTAssertEqual(request.url.path, "/api/oauth/usage")
+                    XCTAssertEqual(request.url.path, primaryRequestPath)
                     return HTTPResponse(statusCode: 401, headers: [:], body: Data())
                 }
                 XCTAssertEqual(request.headers["Authorization"], "Bearer desktop-token")
@@ -110,12 +111,12 @@ extension ClaudeDesktopAuthStoreTests {
                     label: "Session", used: 42, limit: 100, format: .percent, periodDurationMs: MetricPeriod.sessionMs
                 ))
                 XCTAssertEqual(http.requests.map(\.url.path), [
-                    "/api/oauth/usage", "/api/oauth/profile", "/api/oauth/usage"
+                    primaryRequestPath, "/api/oauth/profile", "/api/oauth/usage"
                 ])
             } else {
                 XCTAssertEqual(badge(result.lines, "Error"), ClaudeUsageStateStore.StoreError.identityUnavailable.localizedDescription)
                 XCTAssertNil(result.line(label: "Session"))
-                XCTAssertEqual(http.requests.map(\.url.path), ["/api/oauth/usage", "/api/oauth/profile"])
+                XCTAssertEqual(http.requests.map(\.url.path), [primaryRequestPath, "/api/oauth/profile"])
             }
             XCTAssertEqual(fixture.files.files, originalFiles)
             XCTAssertEqual(keychain.value, credentials)
