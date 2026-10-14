@@ -365,18 +365,20 @@ final class WidgetDataStore {
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.providerIdentityKeys = identityKeys
         self.familyTotalHistoryCardIDs = familyTotalHistoryCardIDs
+        let previousSnapshotIDs = Set(localSnapshots.keys)
         localSnapshots = localSnapshots.filter { cardID, _ in
             keepsState(cardID)
                 && !(ProviderAccountID.family(of: cardID) == "claude" && identityKeys[cardID] == nil)
         }
+        let discardedSnapshotIDs = previousSnapshotIDs.subtracting(localSnapshots.keys)
         refreshResults = refreshResults.filter { keepsState($0.key) }
         automationWarnings = automationWarnings.filter { keepsState($0.key) }
         authenticationGenerations = authenticationGenerations.filter { liveIDs.contains($0.key) }
         invalidatedAuthentication.formIntersection(liveIDs)
         providersNeedingScheduledRefresh.formIntersection(liveIDs)
         failureRetryAfter = failureRetryAfter.filter { keepsState($0.key) }
-        scheduledRefreshDates = scheduledRefreshDates.filter { keepsState($0.key) }
-        scheduledRefreshUpdatedAt = scheduledRefreshUpdatedAt.filter { keepsState($0.key) }
+        scheduledRefreshDates = scheduledRefreshDates.filter { keepsState($0.key) && !discardedSnapshotIDs.contains($0.key) }
+        scheduledRefreshUpdatedAt = scheduledRefreshUpdatedAt.filter { keepsState($0.key) && !discardedSnapshotIDs.contains($0.key) }
 
         let cached = cache.loadSnapshots(providerIDs: Array(liveIDs)).filter { cardID, _ in
             !unresolvedIdentityCacheRejections.contains(cardID)
