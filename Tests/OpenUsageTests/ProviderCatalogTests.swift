@@ -28,6 +28,10 @@ final class ProviderCatalogTests: XCTestCase {
         let accountRuntime = runtimes.compactMap { $0 as? CodexProvider }.first { $0.provider.id == card.id }
         XCTAssertEqual(accountRuntime?.provider.displayName, "Codex")
         XCTAssertEqual(accountRuntime?.includePiUsage, false)
+        XCTAssertEqual(
+            accountRuntime?.authStore.managedSharedAuthHome,
+            FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
+        )
         let descriptorIDs = accountRuntime?.widgetDescriptors.map(\.id) ?? []
         XCTAssertEqual(
             descriptorIDs.count,
@@ -41,6 +45,13 @@ final class ProviderCatalogTests: XCTestCase {
             )
         }
         XCTAssertFalse(descriptorIDs.contains("codex.session"), "metric ids never leak the bare card id")
+    }
+
+    func testCodexSnapshotUsesTheManagedSharedHome() {
+        let card = AccountUsageSnapshotCard(id: "codex@profile-p1", profileID: "p1", family: "codex")
+        let snapshot = ProviderCatalog.make(snapshotCards: [card], codexSharedAuthHome: "/fixture/.codex")
+            .compactMap { $0 as? CodexProvider }.first { $0.provider.id == card.id }
+        XCTAssertEqual(snapshot?.authStore.managedSharedAuthHome, "/fixture/.codex")
     }
 
     func testCodexResetWatchPrecedesRateLimitResets() throws {
