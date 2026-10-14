@@ -24,6 +24,12 @@ struct ProviderAccountAssembly: Equatable {
     /// managed Codex 전환 활성 시 설정되는 shared `~/.codex` home.
     /// 기본 Codex 카드는 이 home의 `auth.json`만 credential 소스로 사용 — stale `Codex Auth` Keychain item의 타 계정 fallback 차단.
     var codexSharedAuthHome: String?
+    var codexDefaultAccountBinding: CodexAccountBinding? {
+        guard let home = defaultHomePathsByFamily["codex"], let identity = identityKeysByCard["codex"] else {
+            return nil
+        }
+        return CodexAccountBinding(home: home, identityKey: identity)
+    }
     /// managed Claude profile 존재 시 true — 기본 카드의 Claude Desktop 로그인 fallback 금지.
     /// auth 실패는 re-login으로 표면화 — 타 계정 usage로 표시 금지.
     var claudeManagedSwitchActive: Bool = false

@@ -125,7 +125,7 @@ struct DefaultAccountObserver: Sendable {
 
     // MARK: - Codex
 
-    /// 기본 Codex home 관찰 — `CodexAuthStore.authPaths()`와 동일 (`CODEX_HOME` export 시 그 경로, 아니면 `~/.config/codex` → `~/.codex`). account를 명시한 첫 home이 승리.
+    /// 기본 Codex home 관찰 — provider가 시도할 첫 인증 파일에서 판정, 뒤 파일의 계정으로 귀속 금지.
     /// identity는 엄격 — `tokens.account_id` 또는 id_token의 ChatGPT account claim만 인정, 경로 기반 fallback 없음.
     func observeCodex() -> Outcome {
         let homes: [String]
@@ -158,9 +158,11 @@ struct DefaultAccountObserver: Sendable {
             }
             guard let text else { continue }
             sawFootprint = true
-            if let (identityKey, label) = Self.codexFileIdentity(authText: text) {
+            guard let auth = CodexAuthStore.parseAuth(text), CodexAuthStore.hasTokenLikeAuth(auth) else { continue }
+            if let (identityKey, label) = Self.codexIdentity(for: auth) {
                 return .resolved(identityKey: identityKey, label: label, anchor: anchor)
             }
+            return .unresolved(reason: "credentials present but no account identity")
         }
         return sawFootprint
             ? .unresolved(reason: "credentials present but no account identity")
@@ -170,8 +172,12 @@ struct DefaultAccountObserver: Sendable {
     /// 엄격한 Codex file identity: `tokens.account_id`, 없으면 id_token의 ChatGPT account claim.
     /// observer·switch transaction·import/migration이 모두 통과하는 단일 규칙 — 한 auth file이 두 가지로 귀속되는 일 방지.
     static func codexFileIdentity(authText: String) -> (identityKey: String, label: String?)? {
-        guard let auth = CodexAuthStore.parseAuth(authText),
-              auth.tokens?.accessToken?.nilIfEmpty != nil else { return nil }
+        guard let auth = CodexAuthStore.parseAuth(authText) else { return nil }
+        return codexIdentity(for: auth)
+    }
+
+    static func codexIdentity(for auth: CodexAuth) -> (identityKey: String, label: String?)? {
+        guard auth.tokens?.accessToken?.nilIfEmpty != nil else { return nil }
         let payload = auth.tokens?.idToken.flatMap { ProviderParse.jwtPayload($0) }
         let email = (payload?["email"] as? String)?.nilIfEmpty
         if let accountID = auth.tokens?.accountID?
