@@ -89,6 +89,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private var refreshIsDegraded = false
+    private var sharedCredentialWarning: String?
     private let operationGate = CodexProviderOperationGate()
     private(set) var weeklyTimerObservation: CodexWeeklyTimerObservation?
     private var weeklyTimerCredentialSelection: CodexWeeklyTimerCredentialSelection?
@@ -99,6 +100,7 @@ final class CodexProvider: ProviderRuntime {
         }
         defer { operationGate.release() }
         refreshIsDegraded = false
+        sharedCredentialWarning = nil
         weeklyTimerObservation = nil
         weeklyTimerCredentialSelection = nil
         do {
@@ -320,7 +322,7 @@ final class CodexProvider: ProviderRuntime {
             lines: mapped.lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
-            warning: warning,
+            warning: [warning, sharedCredentialWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty,
             isDegraded: refreshIsDegraded ? true : nil,
             liveQuotaObservedAt: quota.observedAt,
             codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
@@ -435,6 +437,12 @@ final class CodexProvider: ProviderRuntime {
                 try authStore.save(authState, allowInteraction: allowInteraction)
             }
             AppDiagnostics.record(.credentialSave, result: .success, providerID: provider.id)
+        } catch let error as CodexSharedCredentialSynchronizationError {
+            authState = error.savedState
+            refreshIsDegraded = true
+            sharedCredentialWarning = error.localizedDescription
+            AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error.underlyingError,
+                                  localContext: "rotated snapshot saved but shared sign-in synchronization failed")
         } catch CodexAuthError.credentialsChanged {
             AppDiagnostics.failure(.credentialSave, error: CodexAuthError.credentialsChanged, providerID: provider.id,
                                    localContext: "sign-in changed during token refresh; stopping shared-source writeback")
