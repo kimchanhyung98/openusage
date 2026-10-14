@@ -74,12 +74,15 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
         XCTAssertNil(restarted.liveQuotaObservedAt)
         XCTAssertEqual(usageCount.withLock { $0 }, 2)
         XCTAssertEqual(Array(http.requests.dropFirst(requestsBeforeRestart)).map(\.url.path), [
-            "/api/oauth/usage", "/api/oauth/profile"
+            "/api/oauth/profile", "/api/oauth/profile"
         ])
     }
 
     func testAccountOnlyFileFallbackRejectsAnotherAccount() async {
-        await assertRejectedFallback(metadata: accountOnlyMetadata, profile: Self.profile(account: "account-b"))
+        await assertRejectedFallback(
+            metadata: accountOnlyMetadata, profile: Self.profile(account: "account-b"),
+            primaryRequestPath: "/api/oauth/profile"
+        )
     }
 
     func testAccountOnlyFileFallbackKeepsOrganizationsInSeparateUsageRecords() async {
@@ -193,7 +196,9 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
         ])
     }
 
-    private func assertRejectedFallback(metadata: String, profile: HTTPResponse) async {
+    private func assertRejectedFallback(
+        metadata: String, profile: HTTPResponse, primaryRequestPath: String = "/api/oauth/usage"
+    ) async {
         let files = FakeFiles([path: credentials(), metadataPath: metadata])
         let keychain = staleKeychain(files: files)
         let http = RoutingHTTPClient { request in
@@ -205,7 +210,7 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
         let result = await provider(files: files, http: http, keychain: keychain).refresh()
 
         XCTAssertTrue(result.lines.allSatisfy(\.isError))
-        XCTAssertEqual(http.requests.map(\.url.path), ["/api/oauth/usage", "/api/oauth/profile"])
+        XCTAssertEqual(http.requests.map(\.url.path), [primaryRequestPath, "/api/oauth/profile"])
     }
 
     private func credentials(access: String = "file-token") -> String {
