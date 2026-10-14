@@ -247,7 +247,7 @@ WebKit의 초기 화면 보정과 입력 검사 간 경합 방지.
 런타임 오류와 예상하지 않은 CSP 오류는 실패 처리.
 잘못된 XML 검사에서만 Chromium 자체 `parsererror` 스타일의 두 CSP 차단 메시지를 정확한 해시로 검증.
 `.github/workflows/site.yml`은 GitHub Actions의 Playwright 공식 Docker 이미지에서 같은 검증과 조립 수행. 배포 동작 없음.
-이미지는 `mcr.microsoft.com/playwright:v1.63.0-noble`, Node는 24 사용.
+이미지는 `mcr.microsoft.com/playwright:v1.64.0-noble`, Node는 24 사용.
 브라우저·시스템 라이브러리는 이미지에 포함되어 CI의 별도 `playwright install` 단계 생략. 프로젝트 의존성은 `npm ci`로 설치.
 컨테이너는 GitHub Actions 홈 디렉터리와 같은 UID 1001로 실행하여 Firefox의 root·홈 소유권 충돌 방지.
 사이트 빌드·미리보기 서버·E2E가 같은 컨테이너 안에서 실행되므로 호스트 포트 공개 불필요.
