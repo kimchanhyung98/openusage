@@ -4,6 +4,62 @@ import XCTest
 @testable import OpenUsage
 
 final class AccountCredentialVaultTests: XCTestCase {
+    func testCredentialWriteWaitsForMutationRollbackBeforeReplacingSnapshot() throws {
+        let keychain = FakeKeychain()
+        let profile = AccountProfile(
+            id: UUID().uuidString, family: "codex", label: "Fixture", identityKey: "fixture", createdAt: Date()
+        )
+        let original = AccountCredentialVault.Entry(credential: "original", claudeOAuthAccount: nil)
+        let intermediate = AccountCredentialVault.Entry(credential: "intermediate", claudeOAuthAccount: nil)
+        let replacement = AccountCredentialVault.Entry(credential: "replacement", claudeOAuthAccount: nil)
+        try AccountCredentialVault(keychain: keychain).save(original, profile: profile)
+        let mutationReady = DispatchSemaphore(value: 0)
+        let releaseMutation = DispatchSemaphore(value: 0)
+        let mutationFinished = DispatchSemaphore(value: 0)
+        let writeStarted = DispatchSemaphore(value: 0)
+        let writeFinished = DispatchSemaphore(value: 0)
+        DispatchQueue(label: "OpenUsageTests.Vault.Mutation").async {
+            defer { mutationFinished.signal() }
+            do {
+                try AccountCredentialMutation.withLock {
+                    let vault = AccountCredentialVault(keychain: keychain)
+                    try vault.save(intermediate, profile: profile)
+                    mutationReady.signal()
+                    guard releaseMutation.wait(timeout: .now() + 5) == .success else {
+                        throw AccountVaultFixtureError.mutationTimedOut
+                    }
+                    try vault.save(original, profile: profile)
+                }
+            } catch {
+                XCTFail("Credential mutation fixture failed: \(error)")
+            }
+        }
+        defer { releaseMutation.signal() }
+        XCTAssertEqual(mutationReady.wait(timeout: .now() + 2), .success)
+
+        DispatchQueue(label: "OpenUsageTests.Vault.Write").async {
+            writeStarted.signal()
+            defer { writeFinished.signal() }
+            do {
+                try AccountCredentialVault(keychain: keychain).replaceCredential(
+                    replacement.credential, family: profile.family, profileID: profile.id
+                )
+            } catch {
+                XCTFail("Concurrent snapshot write failed: \(error)")
+            }
+        }
+        XCTAssertEqual(writeStarted.wait(timeout: .now() + 2), .success)
+        let earlyWrite = writeFinished.wait(timeout: .now() + 0.1)
+        XCTAssertEqual(earlyWrite, .timedOut)
+        releaseMutation.signal()
+
+        XCTAssertEqual(mutationFinished.wait(timeout: .now() + 2), .success)
+        if earlyWrite == .timedOut {
+            XCTAssertEqual(writeFinished.wait(timeout: .now() + 2), .success)
+        }
+        XCTAssertEqual(try AccountCredentialVault(keychain: keychain).load(profile: profile), replacement)
+    }
+
     func testTokenRotationsDoNotRequireSecurityToolApproval() throws {
         try withFixture { fixture in
             let runner = RejectingVaultProcessRunner()
@@ -148,6 +204,7 @@ private final class AccountVaultKeychainFixture {
 private enum AccountVaultFixtureError: Error {
     case status(OSStatus)
     case interactiveToolLaunched
+    case mutationTimedOut
 }
 
 private func checkVaultStatus(_ status: OSStatus) throws {

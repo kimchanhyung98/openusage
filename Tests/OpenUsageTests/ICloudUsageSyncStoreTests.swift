@@ -214,7 +214,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         try await waitUntil { !sync.isSyncing }
     }
 
-    func testDeviceIdentitySurvivesPreferencesResetThroughKeychainStore() {
+    func testDeviceIdentitySurvivesPreferencesResetThroughKeychainStore() async throws {
         let expectedID = UUID().uuidString.lowercased()
         let firstDefaults = makeDefaults("identity-first")
         firstDefaults.set(expectedID, forKey: "openusage.icloudSync.deviceID.v1")
@@ -227,6 +227,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
             deviceIDStore: deviceIDStore,
             observesMetadataChanges: false
         )
+        try await waitUntil { first.isIdentityReady }
         let resetDefaults = makeDefaults("identity-after-reset")
         let afterReset = ICloudUsageSyncStore(
             dataStore: makeDataStore(resetDefaults),
@@ -235,6 +236,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
             deviceIDStore: deviceIDStore,
             observesMetadataChanges: false
         )
+        try await waitUntil { afterReset.isIdentityReady }
 
         XCTAssertEqual(first.deviceID, expectedID)
         XCTAssertEqual(afterReset.deviceID, expectedID)
@@ -284,6 +286,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
                     dataStore: makeDataStore(defaults), defaults: defaults, fileStore: RecordingHistoryFileStore(),
                     deviceIDStore: FailingDeviceIDStore(failsOnRead: failsOnRead), observesMetadataChanges: false
                 )
+                try await waitUntil { sync.isIdentityReady }
                 if enabled { try await waitUntil { sink.events.count == 1 } }
 
                 XCTAssertEqual(sync.deviceID, savedID)

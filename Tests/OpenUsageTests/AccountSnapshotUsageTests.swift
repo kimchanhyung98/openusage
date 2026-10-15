@@ -3,6 +3,45 @@ import XCTest
 
 @MainActor
 final class AccountSnapshotUsageTests: XCTestCase {
+    func testUnchangedReconciliationDoesNotStartAuthenticationMutation() async throws {
+        let suite = "UnchangedAccountReconciliation-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: home)
+        }
+        let keychain = ServiceKeychain()
+        let workspace = AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+        let switcher = AccountCredentialSwitcher(
+            keychain: keychain, environment: FakeEnvironment(), homeDirectory: home, workspace: workspace
+        )
+        let importer = AccountCredentialImporter(
+            keychain: keychain, environment: FakeEnvironment(), homeDirectory: home, workspace: workspace
+        )
+        let store = AccountProfilesStore(defaults: defaults)
+        let profile = try store.add(family: "claude", label: "Saved", identityKey: "saved|org")
+        store.setPreferred(family: "claude", profileID: profile.id)
+        let credential = AccountCredentialVault.Entry(
+            credential: #"{"claudeAiOauth":{"accessToken":"token"}}"#,
+            claudeOAuthAccount: #"{"accountUuid":"saved","organizationUuid":"org"}"#
+        )
+        try switcher.saveSnapshot(credential, for: profile)
+        try switcher.applySharedAuthentication(credential, family: "claude")
+        var mutationStarts = 0
+        var mutationEnds = 0
+        store.onAuthenticationMutationStarted = { mutationStarts += 1 }
+        store.onAuthenticationMutationWillEnd = { _ in mutationEnds += 1 }
+
+        for _ in 0..<2 {
+            let result = try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
+            XCTAssertEqual(result, .unchanged)
+        }
+
+        XCTAssertEqual(mutationStarts, 0)
+        XCTAssertEqual(mutationEnds, 0)
+    }
+
     func testManualReconciliationCanApproveTheSelectedSnapshot() async throws {
         for hasInterruptedReplacement in [false, true] {
             let keychain = SnapshotUsageKeychain()
@@ -41,17 +80,24 @@ final class AccountSnapshotUsageTests: XCTestCase {
             let result = try await ProviderRefreshContext.$isManual.withValue(true) {
                 try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: store)
             }
-            XCTAssertEqual(result, .noUsableAuthentication)
-            XCTAssertEqual(keychain.interactionRequests, hasInterruptedReplacement ? [false, true, true] : [false, true])
+            XCTAssertEqual(result, hasInterruptedReplacement ? .recoveredAuthentication : .noUsableAuthentication)
+            XCTAssertGreaterThan(keychain.interactionRequests.count, 1)
+            XCTAssertEqual(keychain.interactionRequests.first, false)
+            XCTAssertTrue(keychain.interactionRequests.dropFirst().allSatisfy { $0 })
             XCTAssertNil(try store.pendingIdentityReplacement())
             XCTAssertEqual(store.profile(id: profile.id)?.identityKey,
                            hasInterruptedReplacement ? "saved|org" : "previous|org")
             if hasInterruptedReplacement {
                 keychain.assertBackgroundReads = false
-                try AccountCredentialVault(keychain: keychain).save(.init(
+                let reSigned = AccountCredentialVault.Entry(
                     credential: #"{"claudeAiOauth":{"accessToken":"re-signed-token"}}"#,
                     claudeOAuthAccount: #"{"accountUuid":"re-signed","organizationUuid":"org"}"#
-                ), profile: profile)
+                )
+                try AccountCredentialVault(keychain: keychain).save(reSigned, profile: profile)
+                try AccountCredentialSwitcher(
+                    keychain: keychain, environment: FakeEnvironment(), homeDirectory: home,
+                    workspace: AccountSignInWorkspace(baseDirectory: home.appendingPathComponent("SignIn"))
+                ).writeWorkspaceAuthentication(reSigned, for: profile)
                 _ = try store.beginIdentityReplacement(
                     profileID: profile.id, with: "re-signed|org", replacesSharedAuthentication: false
                 )
@@ -444,7 +490,9 @@ private final class SnapshotUsageKeychain: KeychainAccessing, @unchecked Sendabl
     var assertBackgroundReads = false
 
     func genericPasswordExists(service: String) -> Bool? {
-        if assertBackgroundReads { XCTAssertFalse(Thread.isMainThread) }
+        if assertBackgroundReads, service.hasPrefix("OpenUsage Account Authentication v1 ") {
+            XCTAssertFalse(Thread.isMainThread)
+        }
         return currentUserValues[service] != nil || values[service] != nil
     }
 

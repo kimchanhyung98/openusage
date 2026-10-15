@@ -291,6 +291,10 @@ final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
         self.currentUserValues = currentUserValues
     }
 
+    func genericPasswordExists(service: String) -> Bool? {
+        values[service] != nil || currentUserValues[service] != nil
+    }
+
     func readGenericPassword(service: String) throws -> String? {
         values[service]
     }
@@ -304,6 +308,11 @@ final class ServiceKeychain: KeychainAccessing, @unchecked Sendable {
         values.removeValue(forKey: service)
         currentUserValues.removeValue(forKey: service)
         modificationDates.removeValue(forKey: service)
+        currentUserModificationDates.removeValue(forKey: service)
+    }
+
+    func deleteGenericPasswordForCurrentUser(service: String) throws {
+        currentUserValues.removeValue(forKey: service)
         currentUserModificationDates.removeValue(forKey: service)
     }
 

@@ -29,7 +29,10 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
 
         let relaunched = makeSync(dataStore: dataStore, defaults: defaults, fileStore: fileStore)
         XCTAssertFalse(relaunched.enabled)
-        try await waitUntil { await fileStore.deletedDeviceIDs.contains(relaunched.deviceID) }
+        try await waitUntil {
+            guard relaunched.isIdentityReady else { return false }
+            return await fileStore.deletedDeviceIDs.contains(relaunched.deviceID)
+        }
         try await waitUntil {
             defaults.string(forKey: "openusage.icloudSync.pendingDeletionDeviceID.v1") == nil
         }
@@ -58,7 +61,10 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
         )
 
         let thirdLaunch = makeSync(dataStore: dataStore, defaults: defaults, fileStore: fileStore)
-        try await waitUntil { await fileStore.deletedDeviceIDs.contains(thirdLaunch.deviceID) }
+        try await waitUntil {
+            guard thirdLaunch.isIdentityReady else { return false }
+            return await fileStore.deletedDeviceIDs.contains(thirdLaunch.deviceID)
+        }
         try await waitUntil {
             defaults.string(forKey: "openusage.icloudSync.pendingDeletionDeviceID.v1") == nil
         }

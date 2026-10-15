@@ -2,6 +2,29 @@ import XCTest
 @testable import OpenUsage
 
 final class AccountSignInLauncherTests: XCTestCase {
+    func testCancelledLoginDoesNotLaunchTheCommand() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let command = root.appendingPathComponent("codex")
+        try Data("#!/bin/sh\n: > \"$CODEX_HOME/launched\"\n".utf8).write(to: command)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: command.path)
+        let task = Task.detached {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AccountSignInLauncher().runLogin(
+                family: "codex", home: root.path,
+                baseEnvironment: ["PATH": root.path], usesLoginShellPATH: false
+            )
+        }
+
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled login must not succeed")
+        } catch is CancellationError {
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("launched").path))
+    }
+
     func testLoginArgumentsMatchTheInstalledCLIs() {
         XCTAssertEqual(AccountSignInLauncher.loginArguments(family: "claude"), ["auth", "login"])
         XCTAssertEqual(

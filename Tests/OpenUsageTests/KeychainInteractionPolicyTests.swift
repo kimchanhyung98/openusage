@@ -4,6 +4,39 @@ import XCTest
 @testable import OpenUsage
 
 final class KeychainInteractionPolicyTests: XCTestCase {
+    func testBackgroundSnapshotReplacementPassesInteractionPolicyToWriter() throws {
+        let entry = AccountCredentialVault.Entry(credential: "old-token", claudeOAuthAccount: nil)
+        let writer = InteractionRecordingWriter()
+        let vault = AccountCredentialVault(keychain: SecurityKeychainAccessor(
+            passwordWriter: writer,
+            appPasswordReader: FixedPolicyReader(value: String(decoding: try JSONEncoder().encode(entry), as: UTF8.self))
+        ))
+
+        try vault.replaceCredential("new-token", family: "codex", profileID: "fixture", allowInteraction: false)
+
+        XCTAssertEqual(writer.requestedInteraction, [false])
+        let saved = try JSONDecoder().decode(AccountCredentialVault.Entry.self, from: XCTUnwrap(writer.value))
+        XCTAssertEqual(saved.credential, "new-token")
+    }
+
+    func testICloudDeviceIDUsesTheNativeReaderWithoutLaunchingSecurityTool() throws {
+        let fixture = try makeFixture()
+        let runner = RejectingPolicyProcessRunner()
+        let keychain = SecurityKeychainAccessor(
+            processRunner: runner,
+            passwordWriter: SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path),
+            appPasswordReader: SecurityFrameworkGenericPasswordReader(keychainPath: fixture.path)
+        )
+        let deviceStore = KeychainICloudDeviceIDStore(
+            keychain: keychain, bundleIdentifier: "OpenUsageTests.Cloud.\(UUID().uuidString)"
+        )
+        let deviceID = UUID().uuidString
+        try deviceStore.writeDeviceID(deviceID)
+
+        XCTAssertEqual(try deviceStore.readDeviceID(), deviceID)
+        XCTAssertEqual(runner.callCount, 0)
+    }
+
     func testInteractionPolicyIsScopedAndRestoredAfterSuccessAndFailure() throws {
         var original: DarwinBoolean = false
         try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&original))
@@ -24,6 +57,99 @@ final class KeychainInteractionPolicyTests: XCTestCase {
                     XCTAssertEqual(restored.boolValue, initiallyAllowed)
                 }
             }
+        }
+    }
+
+    func testWritePolicyScopeRestoresOriginalAfterSuccessAndFailure() throws {
+        var original: DarwinBoolean = false
+        try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&original))
+        defer { XCTAssertEqual(SecKeychainSetUserInteractionAllowed(original.boolValue), errSecSuccess) }
+        for initiallyAllowed in [true, false] {
+            try checkPolicyStatus(SecKeychainSetUserInteractionAllowed(initiallyAllowed))
+            for requested in [false, true] {
+                for fails in [false, true] {
+                    let operation = {
+                        var observed: DarwinBoolean = false
+                        try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&observed))
+                        XCTAssertEqual(observed.boolValue, initiallyAllowed && requested)
+                        if fails { throw PolicyFixtureError.status(errSecAuthFailed) }
+                    }
+                    if fails {
+                        XCTAssertThrowsError(try NativeKeychainAccess.withInteraction(
+                            allowInteraction: requested, operation
+                        ))
+                    } else {
+                        try NativeKeychainAccess.withInteraction(allowInteraction: requested, operation)
+                    }
+                    var restored: DarwinBoolean = false
+                    try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&restored))
+                    XCTAssertEqual(restored.boolValue, initiallyAllowed)
+                }
+            }
+        }
+    }
+
+    func testNativeAddAndUpdateRestorePolicyAcrossSuccessMatrix() throws {
+        var original: DarwinBoolean = false
+        try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&original))
+        defer { XCTAssertEqual(SecKeychainSetUserInteractionAllowed(original.boolValue), errSecSuccess) }
+        let fixture = try makeFixture()
+        for initiallyAllowed in [true, false] {
+            try checkPolicyStatus(SecKeychainSetUserInteractionAllowed(initiallyAllowed))
+            for requested in [false, true] {
+                for isUpdate in [false, true] {
+                    let service = "OpenUsageTests.Write.\(UUID().uuidString)"
+                    let writer = SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path)
+                    if isUpdate {
+                        try writer.write(service: service, account: "Fixture", value: Data("old".utf8),
+                                         allowInteraction: false)
+                    }
+                    try writer.write(service: service, account: "Fixture", value: Data("new".utf8),
+                                     allowInteraction: requested)
+                    var restored: DarwinBoolean = false
+                    try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&restored))
+                    XCTAssertEqual(restored.boolValue, initiallyAllowed)
+                    XCTAssertEqual(try SecurityFrameworkGenericPasswordReader(keychainPath: fixture.path).read(
+                        service: service, account: "Fixture", allowInteraction: false
+                    ), "new")
+                }
+            }
+        }
+    }
+
+    func testLockedFixtureRejectsBackgroundWritesAndAllowsWritesAfterExplicitUnlock() throws {
+        var original: DarwinBoolean = false
+        try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&original))
+        defer { XCTAssertEqual(SecKeychainSetUserInteractionAllowed(original.boolValue), errSecSuccess) }
+        try checkPolicyStatus(SecKeychainSetUserInteractionAllowed(true))
+        for isUpdate in [false, true] {
+            let fixture = try makeFixture()
+            let writer = SecurityFrameworkGenericPasswordWriter(keychainPath: fixture.path)
+            if isUpdate {
+                try writer.write(service: fixture.service, account: "Fixture", value: Data("old".utf8),
+                                 allowInteraction: false)
+            }
+            try checkPolicyStatus(SecKeychainLock(fixture.reference))
+
+            XCTAssertThrowsError(try writer.write(
+                service: fixture.service, account: "Fixture", value: Data("background".utf8),
+                allowInteraction: false
+            ))
+            var restored: DarwinBoolean = false
+            try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&restored))
+            XCTAssertTrue(restored.boolValue)
+
+            try fixture.unlock()
+            XCTAssertEqual(try SecurityFrameworkGenericPasswordReader(keychainPath: fixture.path).read(
+                service: fixture.service, account: "Fixture", allowInteraction: false
+            ), isUpdate ? "old" : nil)
+            try writer.write(service: fixture.service, account: "Fixture", value: Data("manual".utf8),
+                             allowInteraction: true)
+            XCTAssertEqual(try SecurityFrameworkGenericPasswordReader(keychainPath: fixture.path).read(
+                service: fixture.service, account: "Fixture", allowInteraction: false
+            ), "manual")
+            try checkPolicyStatus(SecKeychainGetUserInteractionAllowed(&restored))
+            XCTAssertTrue(restored.boolValue)
         }
     }
 
@@ -136,6 +262,27 @@ final class KeychainInteractionPolicyTests: XCTestCase {
     }
 }
 
+private struct FixedPolicyReader: GenericPasswordReading {
+    let value: String
+
+    func read(service: String, account: String?) throws -> String? { value }
+}
+
+private final class InteractionRecordingWriter: GenericPasswordWriting, @unchecked Sendable {
+    var requestedInteraction: [Bool?] = []
+    var value: Data?
+
+    func write(service: String, account: String?, value: Data) throws {
+        requestedInteraction.append(nil)
+        self.value = value
+    }
+
+    func write(service: String, account: String?, value: Data, allowInteraction: Bool) throws {
+        requestedInteraction.append(allowInteraction)
+        self.value = value
+    }
+}
+
 private struct InteractionCheckingReader: GenericPasswordReading {
     let expected: Bool
     let fails: Bool
@@ -163,6 +310,7 @@ private final class RejectingPolicyProcessRunner: ProcessRunning, @unchecked Sen
 private final class PolicyKeychainFixture: @unchecked Sendable {
     let path: String
     let reference: SecKeychain
+    private let password = UUID().uuidString
     let profile = AccountProfile(
         id: UUID().uuidString, family: "codex", label: "Fixture", identityKey: "fixture", createdAt: Date()
     )
@@ -173,7 +321,7 @@ private final class PolicyKeychainFixture: @unchecked Sendable {
         path = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Keychains/OpenUsageTests.Policy.\(UUID().uuidString).keychain").path
         let fixturePath = path
-        let password = UUID().uuidString
+        let password = password
         var created: SecKeychain?
         let status = password.withCString {
             SecKeychainCreate(fixturePath, UInt32(password.utf8.count), $0, false, nil, &created)
@@ -184,6 +332,12 @@ private final class PolicyKeychainFixture: @unchecked Sendable {
 
     func close() throws {
         try checkPolicyStatus(SecKeychainDelete(reference))
+    }
+
+    func unlock() throws {
+        try checkPolicyStatus(password.withCString {
+            SecKeychainUnlock(reference, UInt32(password.utf8.count), $0, true)
+        })
     }
 
     func addRestrictedItem(value: Data) throws {

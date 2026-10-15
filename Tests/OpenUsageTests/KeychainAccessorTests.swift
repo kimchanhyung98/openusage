@@ -188,6 +188,35 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertNoThrow(try accessor.deleteGenericPassword(service: "Test"))
     }
 
+    func testCurrentUserDeleteThroughProtocolUsesAnExactAccountOnce() throws {
+        let runner = RecordingRunner()
+        let accessor: any KeychainAccessing = SecurityKeychainAccessor(processRunner: runner)
+        let account = ProcessInfo.processInfo.environment["USER"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? NSUserName()
+
+        try accessor.deleteGenericPasswordForCurrentUser(service: "Shared Service")
+
+        XCTAssertEqual(runner.calls, [.init(
+            executable: "/usr/bin/security",
+            arguments: ["delete-generic-password", "-a", account, "-s", "Shared Service"]
+        )])
+    }
+
+    func testCurrentUserDeleteAcceptsOnlySuccessOrItemNotFound() throws {
+        let missing = SecurityKeychainAccessor(processRunner: StubRunner(
+            result: ProcessResult(exitCode: 44, stdout: "", stderr: "missing")
+        ))
+        XCTAssertNoThrow(try missing.deleteGenericPasswordForCurrentUser(service: "Test"))
+        let denied = SecurityKeychainAccessor(processRunner: StubRunner(
+            result: ProcessResult(exitCode: 51, stdout: "", stderr: "denied")
+        ))
+        XCTAssertThrowsError(try denied.deleteGenericPasswordForCurrentUser(service: "Test")) { error in
+            guard case KeychainError.deleteFailed = error else {
+                return XCTFail("Expected deleteFailed, got \(error)")
+            }
+        }
+    }
+
     func testDeleteRepeatsUntilEveryItemForTheServiceIsGone() throws {
         // 한 service에 account-scoped·unscoped item 공존 가능하고 `security`는 호출당 1개만 삭제
         let runner = SequenceRunner(results: [
