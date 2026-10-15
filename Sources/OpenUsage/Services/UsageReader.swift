@@ -52,6 +52,7 @@ public struct UsageReader {
             hasUnregisteredClaudeLogins: accountAssembly.hasUnregisteredClaudeLogins,
             defaultClaudeExtraLogRoots: accountAssembly.defaultClaudeExtraLogRoots,
             codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
+            codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
             claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
         )
         let registry = WidgetRegistry.from(providers)
