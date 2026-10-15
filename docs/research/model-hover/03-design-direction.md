@@ -3,7 +3,8 @@
 > **과거 기록 / 대체됨.**
 > 2026-07-04에 출시된 모델 내역 호버 패널의 방향을 정한 디자인 보고서.
 > 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`HoverPopoverState.swift`](/Sources/OpenUsage/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
-> 아래의 참조, 줄 번호, 제안 컴포넌트 이름은 당시 설계 결정의 기록으로 그대로 유지.
+> 아래의 참조, 줄 번호, 제안 컴포넌트 이름은 조사 당시 기준.
+> 권장안과 미결 사항은 당시 제안의 기록이며, 현재 구현의 요구 사항을 뜻하지 않음.
 
 **리서치 보고서 — 2026-07-04**
 **질문:** 첨부된 AI 생성 콘셉트("TOP DRIVER" 히어로 카드, 도넛, 순위별 모델 목록을 갖춘 "Models" 플라이아웃)를 고려할 때 Today / Yesterday / Last 30 Days 지출 행의 호버 패널이 갖춰야 할 모습은 무엇인가?
@@ -148,7 +149,8 @@ SwiftUI 오버레이가 팝오버 윈도우에 잘리는 상황에서 툴팁을 
 - **일관되지 않은 글자 크기.**
   콘셉트에는 아주 큰 58%, 작은 TOP DRIVER 라벨, 중간 크기 모델 이름, 또 다른 굵기의 달러 금액이 혼재.
   앱의 규칙은 역할별 포인트 크기 하나와 굵기만을 이용한 계층 구성.
-  패널의 글자 크기는 **최대 두 가지**로 제한: 행 크기(= `supportingPointSize`, 12/11)와 헤더 크기(= `headerPointSize`, 14/13).
+  본문과 헤더는 각각 `supportingPointSize`(12/11)와 `headerPointSize`(14/13) 사용.
+  보조 요소인 Top 태그와 출처 노트만 10pt 사용.
 - **모델별 프로바이더 로고.**
   콘셉트에는 GPT의 OpenAI 로고, Claude의 Anthropic 마크, Bugbot 로봇 등 표시.
   앱에는 **모델별 브랜드 에셋이 없고**, *프로바이더*별 `ProviderIcon` 하나만 섹션 헤더에 한 번 사용.
@@ -190,16 +192,20 @@ SwiftUI 오버레이가 팝오버 윈도우에 잘리는 상황에서 툴팁을 
 
 ### 방향 A — 평면 순위 목록(스크린 타임 스타일) **[권장]**
 
+아래 세 방향은 배치 비교용 가상 데이터 사용.
+방향 A는 전체 목록이며, `Other`는 나머지 모델의 합계.
+비율은 전체 지출 대비 비중이며, 예시의 금액·토큰 수는 실제 모델 요율이나 집계 정책을 뜻하지 않음.
+
 ```
 ┌──────────────────────────────────────┐
-│ Last 30 Days              $8.8K · 9B │  ← 헤더: 왼쪽 기간, 오른쪽 합계(headerPointSize / supportingPointSize, .primary / .secondary)
-│ Top model Claude 4.8 Opus    $5.1K  │  ← 첫 행, 차분한 "Top model" 태그, 세미볼드 이름
+│ Last 30 Days               $10K · 5B │  ← 헤더: 왼쪽 기간, 오른쪽 합계(headerPointSize / supportingPointSize, .primary / .secondary)
+│ Top model Claude 4.8 Opus    $5.8K  │  ← 첫 행, 차분한 "Top model" 태그, 세미볼드 이름
 │ ─────────────────────────────────── │  ← .separator 불투명도, 전체 너비
-│   Claude 4.8 Opus   2.9B    $5.1K ▓▓▓▓▓▓▓▓░░ 58%
-│   GPT-5.5           827M    $1.7K ▓▓▓░░░░░░░ 19%
-│   Claude Fable 5    412M    $661  ▓░░░░░░░░░  7%
-│   Claude 4.7 Opus   294M    $470  ▓░░░░░░░░░  5%
-│   Other             181M    $290  ░░░░░░░░░░  3%
+│   Claude 4.8 Opus   2.9B    $5.8K ▓▓▓▓▓▓░░░░ 58%
+│   GPT-5.5           950M    $1.9K ▓▓░░░░░░░░ 19%
+│   Claude Fable 5    500M    $1K   ▓░░░░░░░░░ 10%
+│   Claude 4.7 Opus   350M    $700  ▓░░░░░░░░░  7%
+│   Other             300M    $600  ▓░░░░░░░░░  6%
 │ From your usage history (estimated) │  ← 10pt .secondary 출처 노트
 └──────────────────────────────────────┘
 ```
@@ -209,9 +215,9 @@ SwiftUI 오버레이가 팝오버 윈도우에 잘리는 상황에서 툴팁을 
 - `VStack(alignment: .leading, spacing: 8)` 하나, 패딩 12, 너비 **280pt**(240pt 추세 팝오버와 320pt 메인 팝오버 사이로, 막대 + 수치를 담기에 충분히 넓고 상세로 보일 만큼 좁은 크기).
 - **헤더 행:** `HStack(firstTextBaseline)`.
   왼쪽: 기간 이름("Today" / "Yesterday" / "Last 30 Days"), `headerPointSize`(14/13), `.semibold`, `.primary`.
-  오른쪽: 기간 합계("$8.8K · 9B tokens"), `supportingPointSize`(12/11), `.monospacedDigit`, `.secondary`.
+  오른쪽: 기간 합계("$10K · 5B tokens"), `supportingPointSize`(12/11), `.monospacedDigit`, `.secondary`.
   차트 제목 자리에 기간 이름을 넣은 `UsageTrendDetail.header` 패턴 그대로.
-- **최상위 모델 요약 한 줄**(카드가 아닌 한 줄): "Top model Claude 4.8 Opus · $5.1K (58%)", `supportingPointSize`, `.secondary`, 모델 이름과 백분율은 강조를 위해 `.primary`.
+- **최상위 모델 요약 한 줄**(카드가 아닌 한 줄): "Top model Claude 4.8 Opus · $5.8K (58%)", `supportingPointSize`, `.secondary`, 모델 이름과 백분율은 강조를 위해 `.primary`.
   스크린 타임의 "Most used" 관용구와 같은 차분한 한 줄이며 알약형 배지와 도넛 없음.
   선택 사항으로, 목록이 3개 행 이하라면 순위만으로 충분하므로 생략.
 - **구분선:** `Divider().opacity(0.5)` 또는 0.5pt `.separator` 스트로크, 전체 너비.
@@ -226,7 +232,7 @@ SwiftUI 오버레이가 팝오버 윈도우에 잘리는 상황에서 툴팁을 
       .layoutPriority(1)
     Spacer(minLength: 8)
     Text(model.tokensCompact)          // "2.9B" — 고정폭 숫자, .secondary
-    Text(model.spendCompact)           // "$5.1K" — 고정폭 숫자, .primary, 핵심 값
+    Text(model.spendCompact)           // "$5.8K" — 고정폭 숫자, .primary, 핵심 값
       .frame(minWidth: 48, alignment: .trailing)
   }
   .font(.system(size: density.supportingPointSize))
@@ -245,8 +251,9 @@ SwiftUI 오버레이가 팝오버 윈도우에 잘리는 상황에서 툴팁을 
 - **출처 노트:** 10pt, `.secondary`, 프로바이더별 출처 문자열("From your Claude usage history (estimated)" / "From your Cursor usage export" / "From your Codex logs (estimated)").
   `estimated` 플래그는 이미 `SpendTileMapper`에 프로바이더별로 존재.
 
-**글자 크기 체계:** 정확히 두 가지 크기 — `headerPointSize`(헤더)와 `supportingPointSize`(나머지 전체).
-굵기만으로 계층 구성: 이름과 기간은 세미볼드, 수치와 출처 노트는 레귤러.
+**글자 크기 체계:** 기간 제목은 `headerPointSize`, 모델 행·합계·최상위 모델 요약은 `supportingPointSize` 사용.
+Top 태그와 출처 노트는 10pt 사용.
+같은 크기 안에서는 굵기로 구분: 이름과 기간은 세미볼드, 수치와 출처 노트는 레귤러.
 앱의 기존 규칙과 일치하며 콘셉트의 불규칙한 크기를 바로잡는 방식.
 
 **차트 표현:** 도넛 없음.
@@ -271,11 +278,11 @@ A와 같지만 "Top model …" 요약 한 줄 대신 상위 3~4개 모델의 점
 
 ```
 ┌──────────────────────────────────────┐
-│ Last 30 Days              $8.8K · 9B │
+│ Last 30 Days               $10K · 5B │
 │ ▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░ │  ← 누적 막대 하나: Opus | GPT-5.5 | Fable | 나머지
 │ ─────────────────────────────────── │
-│   Claude 4.8 Opus   $5.1K  58%      │
-│   GPT-5.5           $1.7K  19%      │
+│   Claude 4.8 Opus   $5.8K  58%      │
+│   GPT-5.5           $1.9K  19%      │
 │   …                                 │
 ```
 
@@ -296,17 +303,23 @@ A와 같지만 "Top model …" 요약 한 줄 대신 상위 3~4개 모델의 점
 
 ```
 ┌──────────────────────────────────────┐
-│ Last 30 Days       ╭───╮   $8.8K · 9B│
+│ Last 30 Days       ╭───╮    $10K · 5B│
 │                    │58%│             │
 │                    ╰───╯             │
 │ ─────────────────────────────────── │
-│   Claude 4.8 Opus   $5.1K  ▓▓▓▓░░░░ │
+│   Claude 4.8 Opus   $5.8K  ▓▓▓▓░░░░ │
 │   …                                 │
 ```
 
 - 장점: 콘셉트가 의도한 최대 기여 모델 파악을 간결하고 네이티브한 형태로 유지.
-- 단점: (1) 도넛 조각과 행별 막대가 모두 "58%"를 나타내 정보 중복, (2) 280pt 팝오버에서 도넛이 헤더 공간을 차지해 목록을 아래로 밀어냄, (3) `SectorMark`(Swift Charts)는 macOS 26 이상과 `#available` 게이트가 필요하고 앱에는 **현재 Swift Charts 의존성이 없음**("No new dependencies without justification", AGENTS.md) — 따라서 수작업 `Canvas`/`Path` 도넛이 필요하지만 중복되는 행별 막대보다 코드가 많음, (4) 네 가지 네이티브 사례(활성 상태 보기, 스크린 타임, 배터리, 저장 공간) 중 같은 상황에서 도넛을 쓰는 사례 **없음**.
-  세 방향 중 Apple 네이티브와 가장 먼 선택.
+- 정보 중복: 도넛 조각과 행별 막대가 모두 "58%" 표시.
+- 공간 부담: 280pt 팝오버에서 도넛이 헤더 공간을 차지해 목록을 아래로 밀어냄.
+- 구현 선택 필요: Swift Charts의 [`SectorMark`](https://developer.apple.com/documentation/charts/sectormark)는 macOS 14 이상 지원.
+  앱의 최소 지원 버전인 macOS 15에서 사용 가능하므로 이 API 때문에 별도 `#available` 분기가 필요한 것은 아님.
+  당시 앱은 Swift Charts 미사용 상태이며, 도입하거나 `Canvas`/`Path`로 직접 그리는 방식 중 선택 필요.
+  운영체제 버전 때문에 수작업 도넛이 필수인 것은 아님.
+- 당시 검토한 네 가지 사례에서는 같은 상황에 도넛을 사용하는 예를 찾지 못함.
+  이 조사 범위에서 세 방향 중 기존 Apple 사례와 가장 먼 선택으로 평가.
 
 ---
 
@@ -323,7 +336,10 @@ A와 같지만 "Top model …" 요약 한 줄 대신 상위 3~4개 모델의 점
    모델 패널은 막대 대신 순위 목록을 넣은 같은 골격으로, 호버 동작·닫기·폰트·머티리얼 모두 동일.
    같은 컴포넌트이므로 자연스럽게 앱의 일부로 보이는 결과.
 3. **앱이 이미 적용하는 디자인 언어 규칙과 일치.**
-   두 가지 글자 크기, 굵기만으로 구성한 계층, 값은 `.primary` / 맥락은 `.secondary`, 얇은 헤어라인 높이의 시스템 블루 `Capsule` 막대, 테두리 없는 행, 콘텐츠 레이어의 Liquid Glass 제외, 배경은 시스템 팝오버 머티리얼.
+   헤더와 본문의 두 가지 기본 크기, Top 태그와 출처 노트의 10pt 보조 크기 사용.
+   값은 `.primary`, 맥락은 `.secondary`로 구분하고 같은 크기 안에서는 굵기로 계층 표현.
+   얇은 시스템 블루 `Capsule` 막대, 테두리 없는 행, 시스템 팝오버 머티리얼 사용.
+   콘텐츠 레이어에는 Liquid Glass 미사용.
    새 색상, 새 의존성, 모델별 브랜드 에셋 모두 불필요.
 4. **구조 자체가 프로바이더 중립적.**
    프로바이더 로고가 없고 제목과 푸터에 "Cursor"를 넣지 않으며, 기간 이름을 제목으로 사용하고 출처 노트에는 호버된 프로바이더를 표시.

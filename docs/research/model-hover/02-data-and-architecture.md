@@ -3,14 +3,17 @@
 > **과거 기록 / 대체됨.**
 > 이 실현 가능성 보고서는 2026-07-04 시점의 구현 전 스냅샷.
 > 아래에서 제안하는 모델별 내역 데이터 경로와 지출 행 호버 패널은 같은 날 출시됐으며, 현재 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/OpenUsage/Providers/SpendTileMapper.swift), [`HoverPopoverState.swift`](/Sources/OpenUsage/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
-> 이 분석은 현재 상태 문서가 아닌 과거 기록이며, 코드 변화에 따라 세부 구현 참조 수정 가능.
+> 본문의 기존 구현과 제안은 2026-07-04 기준.
+> 날짜를 따로 표시한 상태 업데이트는 해당 날짜 기준이며, 현재 동작은 위의 문서와 코드 참고.
 
 조사 날짜: 2026-07-04.
-범위: 이 작업 트리의 현재 `main` 개발선 SwiftPM 앱 아키텍처.
+범위: 조사 당시 `main` 개발선의 SwiftPM 앱 아키텍처.
 기존 `Today`, `Yesterday`, `Last 30 Days` 지출 행에서 호버로 표시되는 모델별 지출·사용량 내역에 관한 읽기 전용 기술 조사.
 
 > **상태 업데이트(2026-07-10):** 이 문서는 조사 날짜 시점의 구현 전 아키텍처 기록.
-> 현재 코드는 `ModelUsageSeries`를 통해 모델별 사용량을 전달하며, Cursor 경계 파서는 사용할 수 없는 CSV 구조에서 예외를 던지고 `CursorUsageCSVParseResult`(`rows`와 `rejectedRowCount`) 반환.
+> 2026-07-10 코드는 `ModelUsageSeries`를 통해 모델별 사용량 전달.
+> Cursor 경계 파서는 사용할 수 없는 CSV 구조에서 예외 발생.
+> 파싱에 성공하면 `rows`와 `rejectedRowCount`를 담은 `CursorUsageCSVParseResult` 반환.
 > 현재 사용자 대상 동작은 [Cursor](/docs/providers/cursor.md) 참고.
 
 ## 핵심 결론
@@ -19,9 +22,14 @@
 현재 지출 파이프라인이 원시 프로바이더 입력을 `DailyUsageSeries`로 축소하기 전에 이미 모델 차원 존재.
 
 주요 공백은 구조적 문제로, 현재 지출 행은 일별 합계(`DailyUsageEntry.date`, `totalTokens`, `costUSD`)와 알 수 없는 모델 이름만 수신.
-호버 패널에 필요한 모델별 행을 담는 `MetricLine`, `WidgetData`, 캐시된 `ProviderSnapshot`은 현재 없음.
+조사 당시 `MetricLine`, `WidgetData`, 캐시된 `ProviderSnapshot`에는 모델별 내역을 전달할 필드가 없는 상태.
 
-권장 구조: 기존 스캐너·CSV 매퍼가 `DailyUsageSeries`를 계산할 때 프로바이더 중립적인 일별·모델별 집계도 함께 계산해 `SpendTileMapper`로 전달하고, `Today`, `Yesterday`, `Last 30 Days`에 대응하는 `MetricLine.values`에 기간별 내역을 직접 첨부한 뒤 사용 기간 행의 SwiftUI 호버 팝오버를 `WidgetRowView`에서 렌더링.
+당시 권장 구조:
+
+1. 기존 스캐너·CSV 매퍼에서 `DailyUsageSeries`와 프로바이더 중립적인 일별·모델별 집계를 함께 계산.
+2. 집계를 `SpendTileMapper`로 전달.
+3. `Today`, `Yesterday`, `Last 30 Days`에 대응하는 `MetricLine.values`에 기간별 내역 첨부.
+4. `WidgetRowView`에서 지출 행의 SwiftUI 호버 팝오버 렌더링.
 
 ## 현재 지출 데이터 경로
 

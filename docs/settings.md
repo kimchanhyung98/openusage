@@ -53,7 +53,9 @@ Accounts 섹션에서 Claude와 Codex 계정 관리.
   전환은 확인 요청하며, 확인 버튼은 **Use {Provider}: {account_name}**으로 대상 프로바이더와 계정명 표시.
   **Separate Cards**에서는 대시보드 카드 제목·지표 행의 우클릭 메뉴에서도 같은 전환 가능.
   승인하면 공유되는 Claude 또는 Codex 설정 홈 하나는 그대로 두고, 그 인증 정보만 선택 계정으로 교체.
-  결과는 검증하고, 무엇이든 실패하면 이전 로그인 복원.
+  교체 후 선택한 계정의 신원과 일치하는지 검증.
+  적용이나 검증에 실패하고 이전 인증 정보가 있으면 해당 정보로 복원 시도.
+  복원 자체가 실패할 수도 있으며, 이 경우 앱 로그에 복원 실패 기록.
   승인 시 로그인 셸 시작 파일(zsh 또는 fish)에 작은 `claude`/`codex` 함수도 설치·갱신하므로, 새 터미널 세션이 전환을 따라감.
   전환에는 zsh 또는 fish 로그인 셸 필요 — 다른 로그인 셸에서는 오류로 중단되고 아무것도 바뀌지 않음.
   자세한 내용은 [CLI](/docs/cli.md) 문서 참조 — `openusage` 명령줄 도구는 필요 없음.
@@ -69,7 +71,7 @@ Accounts 섹션에서 Claude와 Codex 계정 관리.
   **Single Card** 모드의 대시보드 계정 선택기는 여기 등록한 계정 중 표시 가능한 계정을 나열하고, 카드에 어느 계정의 사용량을 표시할지 선택 — 미등록 공유 홈 로그인은 추가 선택지에서 제외.
   Settings 또는 대시보드 우클릭 메뉴에서 전환을 확정하면 개별 카드 표시 중에도 저장된 대시보드 선택이 같은 계정으로 한 번 이동 — 메뉴 막대 별표는 프로바이더 설정이라 그대로 유지.
   이후 대시보드 선택기 변경은 보기 전용이며 터미널 전환을 다시 실행하지 않음.
-  비활성 계정의 사용량은 비공개 Keychain 스냅샷에서 읽음.
+  비활성 계정의 사용량은 Keychain 인증 스냅샷의 토큰으로 프로바이더 API에서 조회.
   스냅샷의 토큰이 만료되면 갱신된 토큰을 같은 스냅샷에 다시 저장.
   Codex 갱신 도중 그 계정을 선택하면, 공유 인증 원문이 요청 시작 시 스냅샷 또는 이전 동기화 실패로 남은 원문과 같을 때만 공유 홈에도 갱신본 반영.
   공유 홈 저장 실패 시 오류를 안내하고, 다음 전환에서도 갱신된 스냅샷을 이전 공유 토큰으로 덮어쓰지 않도록 보존.
@@ -170,33 +172,50 @@ Customize는 프로바이더 블록 전체, Settings는 블록 내부 계정 순
   Soft Limit을 켠 동안에만 표시.
   일간·월간·잔액·상한 없는 지표 제외.
 - **Threshold(임계값)**: 1%–100% 정수 직접 입력.
-  안내선과 지원 대상 자동 취소의 사용률 임계값이며, 프로바이더 hard limit이 아닌 사용자 기준선.
+  안내선과 취소 엔진이 사용하는 사용률 임계값이며, 프로바이더가 강제하는 한도와 별개인 사용자 기준선.
   저장된 임계값이 없으면 기본값 90%.
   Soft Limit을 켠 동안에만 표시.
 
-Soft-limit 설정은 이 Mac에 저장되며, 선택 기간을 명시적으로 지원하는 모든 프로바이더 진행 막대에 적용.
-로컬 Codex App Server의 native 취소 연결 구현·테스트 완료, 앱에서 계정 binding 검증은 미완료.
-로컬 제어 소켓은 비어 있지 않은 `CODEX_HOME` 경로를 그대로 사용하며, 미지정·빈 문자열이면 `~/.codex` 사용.
-Enabled를 켜도 자동 취소 차단 유지 — 현재 전체 보호되는 프로바이더 없음.
-독립 Codex CLI·앱·IDE 세션과 다른 모든 프로바이더는 미보호 — 이 Mac 전체 coverage 아님.
-클라이언트를 닫거나 대화를 삭제하지 않고 진행 중 turn만 중단.
-**Connect Codex**에 `codex app-server daemon start`, `codex --remote unix://` 순서 안내 — OpenUsage가 명령 실행이나 기존 세션 재시작을 대신 수행하지 않음.
+Soft Limit 설정은 이 Mac에 저장.
+안내선은 선택 기간을 명시적으로 지원하는 프로바이더 진행 막대에 적용.
+Enter를 누르거나 입력을 마치면 유효한 임계값 적용.
+잘못된 입력은 이전 설정을 유지하고 안내 문구 표시.
+Soft Limit을 껐다 켜도 저장된 임계값 유지.
+Used와 Left를 전환하면 안내선 위치만 반전하며, 95% used와 5% left는 같은 임계값.
+
+### 현재 지원 범위
+
+**현재 앱에서는 자동 취소 사용 불가.**
+로컬 Codex App Server의 취소 연결은 구현됐으나, 연결된 클라이언트와 사용량 계정이 일치하는지 검증하는 기능은 미완료.
+따라서 **Enabled**를 켜도 자동 취소는 차단된 상태 유지.
+독립 Codex CLI·앱·IDE 세션과 다른 프로바이더도 자동 취소 대상에 포함되지 않음.
+
+**Connect Codex**는 사용자가 실행할 명령의 순서 안내.
+먼저 `codex app-server daemon start`, 다음으로 `codex --remote unix://` 실행.
+OpenUsage가 명령을 대신 실행하거나 기존 세션을 재시작하지 않음.
+제어 소켓은 비어 있지 않은 `CODEX_HOME` 아래에서 탐색하며, 미지정·빈 문자열이면 `~/.codex` 사용.
 로컬 연결 절차는 공식 [Codex App Server 문서](https://learn.chatgpt.com/docs/app-server) 참조.
-클라이언트·계정 범위 검증 후에는 활성화·설정 변경 뒤 다음 quota 갱신 성공까지 대기.
-갱신 완료가 늦어도 설정 변경 전에 관측한 quota는 취소 근거에서 제외.
-재로그인·API 키 변경·계정 동기화 오류 시 기존 판정 즉시 무효화, 다음 quota 갱신 성공까지 대기.
-취소 엔진은 반올림 전 사용량으로 비교하고 오래되거나 실패한 quota를 제외하며, 임계값을 넘긴 프로바이더에만 적용.
-취소 확인 중 검사가 중단되면 대기 상태로 전환, 완료로 표시하지 않음.
-범위 검증 및 fresh 임계값 초과 관측을 모두 만족하면 새 작업을 포함한 연결 작업을 2초마다 확인.
-취소 실패는 최소 10초 대기 후 작업당 최대 3회 시도 — 확인된 취소는 반복하지 않음.
-Quota 갱신은 일반 사용량 5분·Claude 15분 주기 적용 — hard cap이나 추가 사용 방지 보장 아님.
-자동 취소에 사용하는 실시간 관측은 기존 5분 유효 기간 유지.
-캐시·실패·429 대기 결과로 관측 유효 기간을 연장하지 않음.
-**Cancellation Status**에서 확인된 중단·미연결·미지원 구분 — 실패는 접힌 영역 밖에도 표시.
-기존 안내선 활성화 상태로 자동 취소를 켜지 않으며 재확인 필요.
-Enter를 누르거나 입력을 마치면 유효한 임계값 적용 — 잘못된 입력은 이전 설정 유지 및 안내 문구 표시.
-기존에 저장한 임계값 유지 — Soft Limit을 껐다 켜도 동일.
-Used와 Left를 전환하면 안내선 위치만 반전하고 의미는 유지 — 95% used와 5% left는 같은 임계값.
+
+### 취소 엔진의 적용 조건
+
+아래 규칙은 클라이언트·계정 범위 검증이 완료된 연결을 전제로 구현된 내부 동작.
+현재 앱에서는 앞의 검증 기능이 미완료여서 실제 자동 취소까지 진행되지 않음.
+
+- 활성화·설정 변경 후에는 다음 한도 조회 성공까지 대기.
+  설정 변경 전에 관측한 값은 요청이 나중에 끝나도 제외.
+- 재로그인·API 키 변경·계정 동기화 오류 시 기존 판정 무효화.
+  다음 한도 조회 성공까지 대기.
+- 반올림 전 사용률이 임계값 이상이고 관측 시점부터 5분이 지나지 않은 경우에만 취소 허용.
+  캐시·조회 실패·429 대기 결과로 관측 유효 기간을 연장하지 않음.
+- 조건을 만족하면 새 작업을 포함해 연결된 작업을 2초마다 확인.
+  클라이언트를 닫거나 대화를 삭제하지 않고 진행 중 응답(turn)만 중단.
+- 취소 실패 후에는 최소 10초 대기하며, 작업당 총 3회까지 시도.
+  확인된 취소는 반복하지 않음.
+- 취소 확인 중 검사가 중단되면 완료 대신 대기 상태로 표시.
+  **Cancellation Status**에서 확인된 중단·미연결·미지원을 구분하고 실패도 표시.
+
+한도 조회는 일반 5분·Claude 15분 주기이므로, 이 엔진만으로 추가 사용 방지를 보장할 수 없음.
+이전에 안내선을 켠 설정만으로 자동 취소에 동의한 것으로 처리하지 않으며, 활성화 전 재확인 필요.
 
 ## 알림
 
@@ -231,70 +250,109 @@ Claude 또는 Codex 카드의 계정을 식별할 수 없는 경우, 계정 목�
 
 | 설정 | 옵션 | 동작 |
 |---|---|---|
-| Hide From Screen Share(화면 공유 중 숨기기) | 켜기 / 끄기 | 켜기(기본값)는 화면을 공유하거나 녹화하는 동안 메뉴 막대 스트립을 OpenUsage 아이콘과 워드마크로 교체하고, 캡처가 끝나는 즉시 별표 지표 복원.<br>[메뉴 막대](/docs/menu-bar.md#화면-공유-중-사용량-숨기기) 참조. |
+| Hide From Screen Share(화면 공유 중 숨기기) | 켜기 / 끄기 | 켜기(기본값)는 화면 공유·녹화를 감지하면 메뉴 막대 지표를 OpenUsage 아이콘과 워드마크로 교체.<br>캡처 종료를 감지하면 별표 지표 복원.<br>감지 지연이나 미지원 캡처 방식으로 사용량이 노출될 수 있음.<br>[메뉴 막대](/docs/menu-bar.md#화면-공유-중-사용량-숨기기) 참조. |
 | Share Anonymous Usage(익명 사용량 공유) | 켜기 / 끄기 | 기본값은 끄기.<br>계정 정보·인증 정보·사용량 값 없이 일일 요약·제한된 실패/복구 진단·조건에 맞는 크래시 리포트 공유.<br>필드와 동의 동작은 [개인정보 및 사용 데이터](/docs/privacy.md) 참조. |
 
 ## Tokscale CLI 동기화
 
-Tokscale 섹션에서 local usage를 공개 Tokscale profile에 게시하는 별도 **Usage Sync** 동작 제공.
-iCloud Sync, Share Anonymous Usage, 프로바이더 활성화, 새로 고침, `openusage` 명령, local API와 독립.
+Tokscale 섹션의 **Usage Sync**는 로컬 사용량을 공개 Tokscale 프로필에 게시하는 기능.
+iCloud 동기화, Share Anonymous Usage, 프로바이더 활성화, 일반 새로 고침과 독립.
+앱이나 Settings를 여는 것만으로는 Tokscale 명령을 실행하지 않음.
+`openusage` 명령과 로컬 HTTP API 요청도 Tokscale 실행을 시작하지 않음.
+공개 범위는 [개인정보 및 사용 데이터](/docs/privacy.md#tokscale-공개-공유), 외부 서비스 정책은 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 참조.
 
-기기 이름 관리에서 **Tokscale Device Name** sheet를 열어 이 Mac의 OpenUsage override 확인·편집 가능.
-기본값은 override 없음.
-값의 앞뒤 공백을 제거하고 비어 있지 않은 UTF-8 기준 최대 120byte만 허용하며 control character는 거부.
-저장 시 command나 network request를 시작하지 않고 이 Mac의 이름을 로컬에 보관.
-Sheet를 다시 열면 저장한 이름을 미리 채우며 app 재시작 후에도 유지.
-이후 sync마다 `TOKSCALE_DEVICE_NAME`으로 Tokscale에 전달.
-Tokscale의 stable device ID는 유지되므로 이름을 바꿔도 새 기기를 만들지 않고 다음 성공 submit에서 같은 public device 이름 갱신.
-**Remove OpenUsage Override**는 Tokscale의 기존 public name을 삭제하지 않고 로컬 override만 제거하며, 이후 sync에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
+### 기기 이름
 
-**Usage Sync**에서 local usage를 public profile에 게시하는 동기화임을 안내하고 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy) 연결 제공.
-명령·설치·공개 범위 상세 정보는 이 문서와 [개인정보 및 사용 데이터](/docs/privacy.md#tokscale-공개-공유)에 유지.
-**Sync**는 provider, date, OpenUsage data argument 없이 다음 명령을 한 번 실행:
+기기 이름 관리 버튼에서 **Tokscale Device Name** 창 열기.
+이 창은 Tokscale에 전달할 이 Mac의 이름을 별도로 지정하는 기능이며, 기본값은 미지정.
+이름은 앞뒤 공백을 제거한 뒤 비어 있지 않아야 하며, UTF-8 기준 최대 120바이트 허용.
+제어 문자는 허용하지 않음.
+저장한 이름은 이 Mac에만 보관하며, 이름 저장만으로 명령이나 네트워크 요청을 시작하지 않음.
+창을 다시 열거나 앱을 재시작해도 저장한 이름 유지.
+이후 제출 명령에 `TOKSCALE_DEVICE_NAME`으로 전달.
+이 설정은 Tokscale의 기기 ID를 변경하지 않음.
+전달한 이름의 공개 프로필 반영은 Tokscale CLI와 서버의 처리에 따름.
+
+**Remove OpenUsage Override**는 OpenUsage에 저장한 이름만 제거.
+Tokscale의 기존 공개 이름은 삭제하지 않음.
+이후 제출에서는 OpenUsage가 이름을 덮어쓰지 않으며, 환경 변수와 저장된 기기 기록의 이름 처리는 Tokscale에서 결정.
+
+### 사용량 제출
+
+**Sync**를 선택하면 프로바이더·날짜·OpenUsage 데이터를 명령 인자로 넘기지 않고 다음 명령을 한 번 실행:
 
 ```sh
 bunx tokscale@latest submit
 ```
 
-선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
-포함할 지원 소스와 field는 Tokscale에서 결정.
-현재 CLI는 usage, client, model, device, 발견된 MCP server 정보를 검색 결과에 노출될 수 있는 public profile에 포함 가능.
-`bunx`에서 `@latest`를 사용하므로 OpenUsage release 이후 동작이 바뀐 최신 package를 내려받아 실행할 수 있음.
-Package 해석은 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
+선택적 GitHub 별표 요청을 거절하도록 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
+포함할 소스와 필드는 Tokscale에서 결정.
+검토한 CLI 버전은 사용량·클라이언트·모델·기기·발견된 MCP 서버 정보를 공개 프로필에 포함 가능.
+해당 프로필은 검색 결과에 노출될 수 있으며, 검토 시점과 제출 항목은 [개인정보 문서](/docs/privacy.md#tokscale-공개-공유) 참조.
+`@latest`는 OpenUsage 출시 이후 동작이 바뀐 패키지를 내려받아 실행할 수 있음.
+패키지 선택은 사용자 Bun 설정을 따르며, 홈 디렉터리 아래의 일치 패키지를 우선할 수 있음.
 
-OpenUsage나 Settings를 여는 것만으로 Tokscale command를 실행하지 않음.
-최초 사용 흐름은 사용자가 **Sync**를 선택할 때만 시작:
+**Sync** 선택 후 앱의 처리 순서:
 
-1. App environment, login shell path, Bun의 설정된 install directory에서 사용 가능한 `bunx`와 `bun` executable 탐색.
-2. Bun runtime 자체가 없으면 카드에 **Installing Bun…** 표시, Bun 공식 installer 다운로드·실행, installer가 선택한 directory의 `bunx` 검증 뒤 app restart 없이 같은 동작 계속 진행.
-3. `bunx tokscale@latest submit`을 한 번 실행하며, app과 login shell에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
-   `HOME`과 작업 directory는 현재 macOS account로 고정하고 무관한 secret·미등록 변수를 제외하며, 저장한 device name은 `TOKSCALE_DEVICE_NAME`만 override.
-   지원 source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수가 아직 허용되지 않은 경우 추가 directory에 `TOKSCALE_EXTRA_DIRS` 사용.
-4. Submit 결과가 검증된 Tokscale 미로그인 응답과 일치할 때만 **Log In…** 표시.
-5. Login 시작 전에 Tokscale가 GitHub 신원 정보를 저장하고 이후 public profile에 username·avatar·display name이 표시될 수 있으며, login command에서 `CLI on <hostname>`을 personal token name으로 사용함을 고지.
-6. **Log In…**으로 작은 **Log In to Tokscale** sheet 표시, sheet 안 **Log In** 선택 시 표준 입력 없이 `bunx tokscale@latest login` 한 번 실행하며 승인 대기 중 browser URL과 user code 표시.
-7. Login 종료 시 카드에 **Tokscale Login Finished. Sync Has Not Started.** 표시.
-8. Login만으로 usage를 자동 submit하지 않으며, 다시 명시적으로 **Sync**를 선택할 때 제출 시작.
+1. 앱 환경 변수의 `PATH`, 로그인 셸의 `PATH`, Bun 설치 경로에서 `bun`과 `bunx` 탐색.
+2. Bun이 없으면 공식 설치 프로그램 실행.
+   설치 중에는 **Installing Bun…** 표시.
+3. 새로 설치한 경우에는 설치 경로의 `bun`과 `bunx` 검증.
+   설치·검증 실패 시 제출을 중단하고 수동 설치 안내 표시.
+4. 사용할 Bun이 확인되면 앱 재시작 없이 제출 명령 실행.
+5. 명령이 0이 아닌 종료 코드와 `Not logged in.` 문구를 반환하면 **Log In…** 표시.
+   그 밖의 0이 아닌 종료 코드는 일반 실패로 표시.
 
-동시에 Tokscale command 하나만 실행.
-카드에서 Bun 설치 중, Tokscale 실행 중, login 필요, 완료, 실패 상태 구분.
-Card에서 ANSI/control sequence를 제거한 bounded command output을 완료·실패 뒤에도 **Done**으로 닫거나 다음 operation 또는 app 종료까지 표시하고, login sheet가 열려 있는 동안 같은 login output도 표시.
-**Done**으로 결과·command output·오류를 비우고 초기 카드로 복귀하며 기기 이름과 Tokscale 인증은 유지.
-설치나 command 실행 중에는 Done 사용 불가.
-Submit exit 0 뒤에는 **Done**으로 결과를 닫기 전까지 **Sync** 비활성화, 닫은 시점부터 최소 10분 동안 비활성화 유지.
-**Sync Available at**으로 다음 실행 가능 시각 안내, 해당 시각에는 버튼만 다시 활성화하고 자동 제출 없음.
-오류·미로그인 안내·login 결과를 닫을 때는 새 대기 시간 없이 복구와 명시적 재시도 가능.
-대기 상태는 같은 앱 세션에서 Settings를 닫고 다시 열어도 유지하며 앱 재시작 시 초기화.
-Exit 0도 제출할 usage가 없다는 뜻일 수 있어 upload 성공을 단정하지 않는 중립적 완료 문구 사용.
-그 밖의 nonzero 결과는 일반 실패로 유지.
-만료되거나 revoke된 저장 credential은 알려진 제한이며 OpenUsage 밖에서 Tokscale 자체 CLI로 복구.
+명령에는 앱과 로그인 셸에서 명시적으로 허용한 언어·네트워크·패키지 저장소·Tokscale 인증·설정·소스 경로 변수만 전달.
+`HOME`과 작업 디렉터리는 현재 macOS 사용자의 홈으로 고정하고, 무관한 비밀 값과 미등록 변수는 제외.
+저장한 기기 이름은 `TOKSCALE_DEVICE_NAME` 값만 덮어씀.
+지원 소스 탐색은 Tokscale에서 수행.
+추가 경로의 환경 변수가 허용 목록에 없으면 `TOKSCALE_EXTRA_DIRS` 사용.
 
-자동 Bun 경로에서 공식 [Bun installer](https://bun.com/docs/installation)를 사용해 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 설치하며 login shell profile을 갱신할 수 있음.
-호환되지 않는 `BUN_INSTALL`은 수정하지 않고 card에서 실패와 수동 설치 안내 표시.
-사용 가능한 기존 Bun 설치는 교체하지 않음.
-Symbolic link나 home 밖의 설정 directory에서도 기존 runtime 탐색 가능 — home 경로 제한은 자동 설치에만 적용.
-기존 Bun runtime은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오류 표시.
-설치나 검증 실패 시 submit을 시작하지 않고 카드에서 공식 설치 안내를 복구 동작으로 제공.
+### 로그인 후 다시 제출
+
+로그인 전 안내에는 GitHub 신원 정보 저장, 공개 프로필의 사용자명·아바타·표시 이름 노출 가능성 포함.
+로그인 명령은 개인 토큰 이름으로 `CLI on <hostname>` 사용.
+
+1. **Log In…**을 선택해 **Log In to Tokscale** 창 열기.
+2. 창 안의 **Log In** 선택.
+   앱은 표준 입력 없이 `bunx tokscale@latest login`을 한 번 실행.
+3. 승인 대기 중 표시되는 브라우저 주소와 사용자 코드로 로그인 승인.
+4. 로그인 창에 완료 상태가 표시되면 **Done**으로 창 닫기.
+5. Settings 카드의 **Tokscale Login Finished. Sync Has Not Started.** 표시 확인.
+6. 사용량을 제출하려면 카드의 **Sync**를 다시 선택.
+
+로그인 완료만으로 사용량을 자동 제출하지 않음.
+만료되거나 폐기된 저장 인증 정보는 OpenUsage의 로그인 안내로 복구되지 않을 수 있으므로 Tokscale 자체 CLI에서 복구.
+
+### 결과와 재실행
+
+동시에 Tokscale 명령 하나만 실행.
+카드에서 Bun 설치 중·명령 실행 중·로그인 필요·완료·실패 상태 구분.
+명령 출력은 ANSI·제어 시퀀스를 제거하고 크기를 제한해 표시.
+완료·실패 후에도 Settings 카드의 **Done**으로 닫거나 다음 작업을 시작하거나 앱을 종료할 때까지 출력 유지.
+로그인 창이 열려 있으면 같은 로그인 출력 표시.
+
+Settings 카드의 **Done**은 결과·명령 출력·오류를 비우고 초기 카드로 복귀.
+로그인 창의 **Done**은 창만 닫으며 카드의 결과와 출력은 유지.
+기기 이름과 Tokscale 인증은 유지하며, 설치·명령 실행 중에는 Done 사용 불가.
+제출 명령의 종료 코드가 0이면 결과를 닫기 전까지 **Sync** 비활성화.
+**Done**으로 결과를 닫은 시점부터 최소 10분간 비활성화 유지.
+**Sync Available at**은 다음 실행 가능 시각 표시.
+해당 시각에는 버튼만 활성화하고 자동 제출하지 않음.
+오류·미로그인 안내·로그인 결과를 닫으면 새 대기 시간 없이 사용자가 재시도 가능.
+대기 상태는 Settings를 닫아도 유지하며 앱 재시작 시 초기화.
+종료 코드 0은 제출할 사용량이 없는 경우에도 가능하므로 업로드 성공을 보장하지 않음.
+
+### Bun 자동 설치 조건
+
+Bun이 없을 때만 공식 [설치 프로그램](https://bun.com/docs/installation) 실행.
+현재 사용자 홈 아래에서 앱의 경로 검증을 통과한 `BUN_INSTALL`, 또는 기본값 `~/.bun`에 설치.
+설치 프로그램은 로그인 셸 설정 파일을 갱신할 수 있음.
+조건에 맞지 않는 `BUN_INSTALL`은 수정하지 않고 실패와 수동 설치 안내 표시.
+사용 가능한 기존 Bun은 교체하지 않음.
+기존 설치 탐색은 심볼릭 링크나 사용자 홈 밖의 경로도 허용하며, 홈 경로 제한은 자동 설치에만 적용.
+Bun은 있지만 사용 가능한 `bunx`가 없으면 재설치하지 않고 오류 표시.
 
 ## 고급
 
@@ -304,7 +362,7 @@ Symbolic link나 home 밖의 설정 directory에서도 기존 runtime 탐색 가
 | Copy Log Path(로그 경로 복사) | 버튼 | 로그 파일 경로(`~/Library/Logs/OpenUsage/OpenUsage.log`)를 클립보드에 복사. |
 | Reveal in Finder(Finder에서 보기) | 버튼 | 로그 파일이 선택된 Finder 창 열기. |
 
-전체 동작 — 서브시스템 태그, 파일 크기 상한, 비밀 값을 절대 기록하지 않는다는 보장 — 은 [로깅](/docs/logging.md) 참조.
+서브시스템 태그, 파일 크기 상한, 민감 정보 마스킹의 범위와 한계는 [로깅](/docs/logging.md) 참조.
 
 ## 업데이트
 
@@ -329,6 +387,7 @@ Symbolic link나 home 밖의 설정 directory에서도 기존 runtime 탐색 가
 (초기 베타는 업데이트마다 모든 설정을 지웠지만, 이제는 그렇지 않음.)
 
 켜 둔 프로바이더도 업데이트 후에 그대로 유지 — 사용자 선택을 덮어쓰지 않음.
-완전히 새로 설치한 경우에는 Mac의 AI 도구를 감지해 시작 세트 결정([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조).
-업데이트로 처음 보는 프로바이더가 들어오면 그 프로바이더에만 같은 로컬 감지를 한 번 실행해 실제로 그 도구가 있을 때만 켜고, 이미 결정해 둔 나머지는 설정한 그대로 유지.
+완전히 새로 설치한 경우에는 Mac의 로컬 인증 정보나 사용 흔적으로 처음 켤 프로바이더 결정([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조).
+업데이트로 새 프로바이더가 추가되면 해당 프로바이더만 같은 기준으로 한 번 확인.
+로컬 감지 조건을 만족하면 자동으로 켜고, 기존 프로바이더의 선택은 유지.
 [활성화되는 프로바이더](/docs/provider-enablement.md) 참조.

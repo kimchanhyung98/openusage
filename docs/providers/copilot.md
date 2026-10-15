@@ -45,9 +45,12 @@ Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org
 2. GitHub CLI 설정: `~/.config/gh/hosts.yml`(`oauth_token`) — `gh`에서 토큰을 파일에 저장하는 경우
 3. GitHub CLI 키체인 항목(서비스 `gh:github.com`) — `gh`에서 토큰을 시스템 키링에 저장하는 경우
 
+처음 읽은 비어 있지 않은 토큰으로 사용량 조회.
+해당 토큰이 API에서 거부돼도 다음 출처로 자동 전환하지 않음.
+
 ### 설정
 
-사용량이 표시되지 않으면 GitHub CLI로 인증:
+편집기 Copilot 토큰이 없으면 GitHub CLI로 인증 가능:
 
 ```bash
 brew install gh   # 필요한 경우
@@ -69,9 +72,12 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 - **"Sign in to GitHub Copilot…"** — 토큰을 찾지 못한 상태.
   편집기에서 Copilot에 로그인하거나 `gh auth login` 실행.
 - **"GitHub token invalid or expired"** — 토큰이 거부된 상태(401/403).
-  `gh auth login`으로 재인증.
+  편집기 토큰을 사용 중이면 해당 편집기에서 Copilot 재로그인.
+  GitHub CLI 토큰을 사용 중이면 `gh auth login` 실행.
+  편집기 토큰이 남아 있으면 GitHub CLI 재로그인 후에도 편집기 토큰을 먼저 사용.
 - **미터에 "No data"가 표시되지만 요금제는 표시됨** — 조직 관리 좌석의 개인 사용 크레딧이 0이거나 제공되지 않고 조직 청구 정보도 조회할 수 없을 때 가능한 상태.
-  조직 관리자인데도 Org Credits가 보이지 않으면 토큰의 조직 목록 조회 가능 여부 확인 — `gh auth login`의 GitHub CLI 토큰은 가능하지만 일부 편집기 플러그인 토큰은 불가능.
+  조직 관리자인데도 Org Credits가 보이지 않으면 현재 사용 중인 토큰의 조직 목록·청구 조회 권한 확인.
+  일부 편집기 토큰은 조직 목록 조회 권한이 없으며, 편집기 토큰이 있으면 GitHub CLI 토큰보다 먼저 사용.
 - **"Personal Credits are unavailable"** — 개인 사용 크레딧 값이 유효하지 않은 상태.
   개인 Credits만 생략하며 조회한 조직 정보는 유지하고, 다음 정상 조회에서 경고 해제.
 

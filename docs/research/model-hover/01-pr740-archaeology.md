@@ -3,11 +3,12 @@
 > **과거 기록 / 대체됨.**
 > 2026-07-04 시점의 저장소 상태를 기록한 보고서.
 > 지출 행 호버에 표시되는 프로바이더 중립적 모델별 내역은 2026-07-04에 출시되었고 이후 계속 발전했으며, 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/OpenUsage/Providers/SpendTileMapper.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
-> 아래의 과거 브랜치 분석은 의도적으로 변경 없이 유지.
+> 아래의 브랜치 분석과 제안은 조사 당시 기준의 기록.
+> 본문의 `main`과 PR 상태는 2026-07-04 기준이며, 현재 구현이나 PR 상태를 뜻하지 않음.
 
 조사일: 2026-07-04.
-PR은 `claude/eager-banach-ecf5a1` 브랜치에서 여전히 **오픈** 및 **미병합** 상태이며 작성 시점 기준 `main`보다 약 106개 커밋 뒤처짐.
-모델별 / 모델 호버 UX를 다시 검토할 때 참고할 수 있도록 해당 브랜치와 현재 `main`을 비교한 문서.
+조사 당시 PR은 `claude/eager-banach-ecf5a1` 브랜치에서 **오픈** 및 **미병합** 상태이며 `main`보다 약 106개 커밋 뒤처짐.
+모델별 사용량과 호버 UX를 다시 검토할 때 참고할 수 있도록 해당 브랜치와 조사 당시 `main`을 비교한 문서.
 
 ## (a) PR #740의 작업 내용
 
@@ -17,7 +18,13 @@ PR은 `claude/eager-banach-ecf5a1` 브랜치에서 여전히 **오픈** 및 **�
 
 - `CursorProvider`에서 지출 타일과 같은 기간의 Cursor 사용량 이벤트 CSV 가져오기.
 - 행을 날짜, 모델 슬러그, 토큰 버킷, `imputedCostDollars`로 구성된 `CursorUsageCSVRow`로 파싱.
-- **`CursorModelBreakdown`**(cursorcat의 `ModelBreakdownAggregator` 이식): `CursorPricing.family(for:)`와 번들 **`model_manifest.json`**의 `family_id`, `family_display_name`을 이용해 행을 **모델 패밀리**별로 그룹화하고, 토큰과 환산 금액을 합산하고, 패밀리별 센트 단위 보정을 한 번 적용하고, 지출 → 토큰 → 이름 순으로 정렬하고, 지출 비중 **3%** 미만인 꼬리 항목을 **Other**로 묶되 가격 미등록 모델은 제외하고, 호버 상세용 원시 모델별 **변형 항목** 첨부.
+- **`CursorModelBreakdown`**은 cursorcat의 `ModelBreakdownAggregator`를 이식한 집계기.
+  `CursorPricing.family(for:)`와 번들 **`model_manifest.json`**의 `family_id`, `family_display_name`으로 행을 **모델 패밀리**별로 그룹화.
+  토큰과 환산 금액을 합산한 뒤 패밀리별 센트 단위 보정을 한 번 적용.
+  지출 → 토큰 → 이름 순으로 정렬.
+  지출 비중 **3%** 미만인 모델 패밀리는 **Other**로 묶음.
+  가격 미등록 모델은 **Other**에 포함하지 않고 개별 항목으로 유지.
+  호버 상세에 사용할 원시 모델별 **변형 항목** 첨부.
 - **`CursorUsageMapper.appendModelLeaderboard`**에서 `MetricLine.modelBreakdown(label: "Models", models: entries, note: …)` 방출.
 
 **지표 / UI 연결**
@@ -76,7 +83,7 @@ GitHub에서 PR을 공식적으로 닫은 기록은 없으며 리뷰 이후 정�
 가장 큰 단절.
 #740은 더 이상 존재하지 않는 **Cursor 전용 가격 책정 스택**을 전제로 함.
 
-| #740 브랜치 | 현재 `main` |
+| #740 브랜치 | 조사 당시 `main` |
 |-------------|----------------|
 | `CursorPricing`, `CursorModelManifest`, 번들 **`model_manifest.json`** | **제거됨.**<br>모든 환산을 **`Sources/OpenUsage/Pricing/`**의 `ModelPricing`, `ModelPricingStore`, LiteLLM + models.dev + **`pricing_supplement.json`**을 통해 처리 — **`docs/pricing.md`** 참고. |
 | 가격 주입 없는 `CursorUsageCSV.parse(csv:)` | **`CursorUsageCSV.parse(csv:pricing:)`**; `imputedCostDollars`는 **`Double?`**(nil = 가격 미등록). |

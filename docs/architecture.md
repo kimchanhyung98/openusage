@@ -5,8 +5,10 @@
 
 ## 앱의 형태
 
-OpenUsage는 공유 모듈 하나와 최소한의 실행 파일 두 개로 구성된 SwiftPM 패키지 — Xcode 프로젝트는 없음.
-메인 실행 파일은 AppKit 상태 항목과 패널 안에 SwiftUI 인터페이스를 호스팅한 메뉴 막대 앱.
+OpenUsage는 공유 모듈 하나와 실행 파일 두 개로 구성된 SwiftPM 패키지.
+Xcode 프로젝트는 없음.
+메뉴 막대 앱은 AppKit 상태 항목과 패널 안에 SwiftUI 화면 표시.
+다른 실행 파일은 사용량·계정을 조회하는 `openusage` CLI.
 코드는 역할별로 구분:
 
 - `App/` — 앱 시작과 AppKit 브리지(메뉴 막대 항목, 패널, 앱 진입점).
@@ -17,50 +19,70 @@ OpenUsage는 공유 모듈 하나와 최소한의 실행 파일 두 개로 구�
 - `Support/` — 작은 공통 헬퍼(포맷팅, 파싱, 애니메이션).
 - `Views/` — SwiftUI 화면(대시보드, Customize, 설정, 메뉴 막대 스트립).
 
-## 컴포지션 루트
+## 구성 요소 연결
 
-`AppContainer`는 모든 구성 요소를 연결하는 유일한 지점.
-실행 시 프로바이더 목록을 `WidgetRegistry`로 구성하고, 스토어를 생성한 뒤 주기적 새로 고침 루프와 로컬 HTTP API 시작.
-나머지 구성 요소는 전역 상태를 직접 참조하지 않고 여기서 필요한 의존성을 받으므로, 각각 독립적으로 테스트 가능.
+`AppContainer`는 GUI 앱의 주요 구성 요소를 연결하는 지점.
+시작 시 `ProviderCatalog`의 프로바이더 목록으로 `WidgetRegistry` 구성.
+필요한 스토어를 생성한 뒤 주기적 새로 고침과 로컬 HTTP API 시작.
+구성 요소 사이의 의존성은 여기서 전달해 개별 테스트 지원.
 
-Reset Watch도 같은 규칙 적용 — `AppContainer`에서 캐시 스토어를 만들고 coordinator에 로더를 명시적으로 전달.
-Coordinator가 한 파일에서 활성 조건 관찰과 독립 새로 고침 주기를 소유하며, 전역 스토어를 직접 선택하지 않음.
-`WidgetData`의 예측 메타데이터를 하나의 선택적 값으로 묶어 기한·새로 고침 실패 상태를 함께 관리하고, 예측 없음과 조회 실패는 계속 구분.
+Reset Watch의 캐시 스토어도 `AppContainer`에서 생성.
+조정 객체에 로더를 전달하므로 조정 객체가 전역 스토어를 직접 선택하지 않음.
+조정 객체는 활성 조건 관찰과 독립 새로 고침 주기 담당.
+`WidgetData`는 예측 메타데이터를 선택적 값 하나로 묶어 기한·조회 실패 상태 관리.
+예측이 없는 상태와 조회에 실패한 상태는 구분.
 
-`openusage` 실행 파일도 같은 모듈을 가져와서 사용.
-매 실행마다 시작 계정 처리를 포함한 표준 `ProviderCatalog`를 구성하고, `ProviderSnapshotCache`를 읽기 전에 없거나 오래된 항목을 `WidgetDataStore`로 새로 고침 — `--force`는 일반 5분·Claude 15분 캐시 신선도 검사만 우회하며 Claude의 429 대기는 유지.
-프로바이더는 안정적인 한도 계약으로 내보낼 스칼라 리소스에 메타데이터를 부여하고, CLI와 `/v1/limits`는 같은 정규화 스냅샷을 직렬화기 하나로 처리.
-GUI를 실행하거나 프로바이더·인증·가격·매핑 로직을 중복 구현하지 않음.
+`openusage` CLI도 같은 공유 모듈 사용.
+`UsageReader`는 실행마다 계정 상태를 확인하고 `ProviderCatalog`로 프로바이더 구성.
+비활성 등록 계정의 Keychain 스냅샷 카드는 GUI 전용이므로 CLI 카탈로그에서 제외.
+CLI는 먼저 `ProviderSnapshotCache`의 저장 결과와 계정 연결을 확인.
+캐시가 없거나 오래됐거나 계정 연결이 바뀌었으면 `WidgetDataStore`를 통해 새로 고침.
+`--force`는 일반 5분·Claude 15분의 캐시 유효 시간 검사만 우회.
+Claude의 429 응답에 따른 재시도 대기는 유지.
+프로바이더는 내보낼 숫자형 한도에 단위·종류 등 메타데이터 부여.
+CLI와 `/v1/limits`는 공통 직렬화기로 정규화된 스냅샷 처리.
+CLI는 GUI를 실행하지 않고 프로바이더·인증·가격·매핑 로직을 공유.
 
 ## 프로바이더 파이프라인
 
 각 프로바이더는 `ProviderRuntime`을 채택한 작은 모듈.
-새로 고침은 세 부분을 거침:
+새로 고침의 주요 역할은 다음 세 가지:
 
-1. **인증 스토어** — Mac에 이미 있는 인증 정보(설정 파일, Keychain) 읽기.
-   OpenUsage가 사용자에게 토큰을 붙여 넣으라고 요구하는 일은 없음.
-2. **사용량 클라이언트** — 프로바이더 API로 HTTP 호출.
-3. **매퍼** — 프로바이더 응답을 앱의 공통 어휘로 변환 — 타입을 갖춘 위젯 값(`.progress`, `.values`, `.badge`, `.chart`)과, 로컬 API에는 남지만 위젯으로 표시하지 않는 `.text` 안내를 담은 `ProviderSnapshot` 생성.
+1. **인증 스토어** — 설정 파일·Keychain 등에서 인증 정보 읽기.
+   대부분 기존 CLI·앱의 로그인 정보를 사용하며, OpenRouter 등은 앱에서 API 키 입력도 지원.
+2. **사용량 수집** — 클라이언트로 프로바이더 API 호출 또는 스캐너로 로컬 사용 기록 읽기.
+3. **매퍼** — 수집한 데이터를 공통 지표 타입으로 변환해 `ProviderSnapshot` 생성.
+   위젯 값은 `.progress`, `.values`, `.badge`, `.chart`로 표현.
+   문자열 안내인 `.text`는 로컬 API에 보존하지만 위젯으로 표시하지 않음.
 
 모든 프로바이더가 같은 `MetricLine` 형태로 정규화하므로, UI는 프로바이더별 세부 사항을 몰라도 동일한 방식으로 렌더링 가능.
 추가 방법은 [프로바이더 추가](/docs/adding-a-provider.md) 참조.
 
 Claude, Codex, pi는 로컬 JSONL 기록에 `IncrementalJSONLScanner`를 공유.
-파일별 파싱 이벤트는 경로·크기·수정 시각을 키로, 프로바이더·홈 신원별로 분리되고 버전이 명시된 Application Support 스토어에 캐시.
+파일별 파싱 결과는 경로·크기·수정 시각을 기준으로 캐시.
+캐시는 프로바이더·설정 홈별로 분리하고 버전을 붙여 Application Support에 저장.
 같은 홈을 읽는 프로바이더 인스턴스는 스캐너 액터 하나를 공유해 카드 간 중복 파싱 방지.
 디스크 스토어를 통해 프로세스 재시작 후에도 결과 재사용.
 소스 파일의 수정일이 요청한 기록 기간을 벗어나면 스캔 과정에서 해당 파일 레코드 제거.
 집계와 가격 계산은 여전히 새로 고침마다 캐시된 이벤트로 실행.
 시작 계정 처리 단계에서 공유 홈의 로그 루트와 비활성 등록 계정의 읽기 전용 스냅샷 카드를 구성.
-Settings의 로그인·전환·제거 작업은 같은 처리를 다시 실행하므로, 앱 재시작 없이도 카드가 계정 변경을 반영.
-등록하지 않은 설정 디렉터리의 Claude 로그인은 카드도 레지스트리 레코드도 만들지 않고, 이 Mac에 다른 로그인이 있다는 사실만 기록.
+Settings의 로그인·전환·제거 작업은 같은 계정 확인 처리를 다시 실행.
+따라서 앱 재시작 없이 카드에 계정 변경 반영.
+등록하지 않은 설정 디렉터리에서 Claude 로그인을 발견하면 다른 로그인이 있다는 사실만 기록.
+이 로그인에 대한 카드나 레지스트리 레코드는 만들지 않음.
 대시보드는 공통 **Usage Cards** 설정에 따라 프로바이더마다 선택 계정 하나 또는 개별 계정 카드 표시.
-등록 계정이 있는 프로바이더는 등록 계정에 연결되지 않은 런타임을 표시 대상에서 제외 — 런타임 카탈로그·인증·CLI·로컬 API는 유지.
-공유 pi 로그는 어느 Claude 로그인이 만들었는지 식별할 수 없으므로, 엉뚱한 계정에 귀속하는 대신 다른 Claude 로그인이 있는 동안에는 생략.
-설정 디렉터리가 다른 계정으로 재인증되면 조정 과정에서 해당 소스 연결을 새 신원으로 옮기고, 이전 레코드와 기록은 보존.
-선택된 관리형 Claude 계정에서는 공유 홈 조정을 로그인 검증이 있는 양방향 경계로 사용.
-공식 Claude CLI에서 완료한 모든 검증 가능한 로그인은 선택 레코드의 안정적인 ID, 계정명과 선택 상태를 유지하면서 저장 인증 정보와 현재 프로바이더 신원을 교체.
-프로바이더 신원은 교체 중 인증 정보와 캐시된 사용량을 분리하는 값이며, 관리형 계정의 불변 키나 중복 금지 조건이 아님.
+등록 계정이 있는 프로바이더는 등록 계정에 연결되지 않은 실행 인스턴스를 대시보드 표시 대상에서 제외.
+표시 대상에서 제외해도 런타임 카탈로그·인증·CLI·로컬 API는 유지.
+공유 pi 로그는 어느 Claude 로그인이 만들었는지 식별할 수 없음.
+따라서 다른 Claude 로그인이 있는 동안에는 Claude 사용량에 pi 기록을 합산하지 않음.
+설정 디렉터리가 다른 계정으로 재인증되면 해당 소스 연결을 새 계정 신원으로 이동.
+이전 레코드와 기록은 보존.
+여기서 프로바이더 신원은 인증 정보에서 확인한 계정 식별 정보.
+OpenUsage에 등록한 관리형 Claude 계정은 공유 홈의 로그인과 양방향으로 조정.
+공식 Claude CLI의 새 로그인을 검증할 수 있으면 선택 레코드의 저장 인증 정보와 프로바이더 신원 교체.
+이때 레코드의 ID·계정명·선택 상태는 유지.
+프로바이더 신원은 인증 교체 시 사용량 캐시를 구분하는 값.
+관리형 계정의 고정 ID나 중복 금지 조건은 아님.
 
 인증·캐시 신원과 iCloud 기록 귀속은 별개.
 관리형 기본 Claude/Codex 런타임의 현재 인증 신원이 하나여도, 공유 홈 로그에는 전환해 쓴 여러 계정의 세션이 섞일 수 있음.
@@ -71,52 +93,74 @@ Settings의 로그인·전환·제거 작업은 같은 처리를 다시 실행�
 
 UI는 관찰 가능한 몇 개의 스토어에서 읽음:
 
-- `WidgetDataStore` — 프로바이더별 최신 스냅샷, 그리고 새로 고침과 캐싱.
-  Mac 로컬 캐시 스냅샷을 렌더링된 스냅샷과 분리해 두어, 다른 Mac의 기록이 다시 기록되며 중복 집계되는 일 자체를 차단.
+- `WidgetDataStore` — 프로바이더별 최신 스냅샷, 새로 고침, 캐시 관리.
+  이 Mac의 원본 스냅샷과 다른 Mac의 기록을 합친 표시용 스냅샷을 분리.
+  합산 결과를 이 Mac의 새 원본으로 저장하지 않아 중복 집계 방지.
 - `LayoutStore` — 어떤 지표를 표시할지, 프로바이더/지표 순서, 메뉴 막대에 별표한 지표.
   이 전부를 프로바이더당 한 벌만 저장하므로, 한 프로바이더의 모든 계정 카드가 같은 레이아웃 설정 공유.
 - 계정 표시 설정 — 공통 표시 모드 하나와 프로바이더 계열별 관리형 계정 순서를 인증·레이아웃과 분리해 로컬 저장.
   순서는 안정적인 관리형 프로필 ID를 사용하므로 이름, 로그인이나 런타임 카드 ID가 바뀌어도 계정 위치 유지.
-  초기 개발 빌드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 계열별 모드를 저장했으며, `openusage.accountCardDisplayMode.v1`에 공통 선택을 저장하기 전까지 해당 모드를 읽기 전용 fallback으로 사용.
-  별도 key로 분리해 초기 형식을 사용하는 빌드가 계정 순서를 다시 저장해도 공통 선택 보호.
+  초기 개발 빌드의 계열별 모드는 `openusage.accountCardPresentation.v1`의 `modesByFamily`에 저장.
+  공통 모드를 `openusage.accountCardDisplayMode.v1`에 저장하기 전까지 이전 형식의 값을 읽기 전용 대체 값으로 사용.
+  공통 모드의 저장 키를 분리해 초기 빌드가 계정 순서를 다시 저장해도 공통 모드 유지.
 - `ProviderEnablementStore` — 사용자가 켜거나 끈 프로바이더.
-- `ProviderStatusStore` — 프로바이더 패밀리별 일시적인 공식 서버 상태.
-  `AppContainer`에서 공개 상태 전용 HTTP client를 명시적으로 주입하며, store 내부에서 전송 계층을 암묵적으로 생성하지 않음.
-  명시적인 공개 컴포넌트 소스가 있는 활성 패밀리만 확인하고 결과를 메모리에 보관하며, 사용량·인증 오류와 분리해 대시보드에 제공.
+- `ProviderStatusStore` — 프로바이더 계열별 공식 서버 상태.
+  `AppContainer`에서 공개 상태 전용 HTTP 클라이언트 전달.
+  스토어 내부에서는 전송 계층을 별도로 생성하지 않음.
+  공개 상태 소스가 등록된 활성 프로바이더 계열만 확인하고 결과는 메모리에 보관.
+  서버 상태는 사용량·인증 오류와 구분해 대시보드에 제공.
 - `ProviderAccountsStore` — Claude/Codex 로그인의 안정적인 카드 ID와 계정별 소스를 담은 계정 중심 레지스트리.
-  `AccountProfilesStore`는 관리형 계정 레코드와 프로바이더 계열별 선택 계정 저장.
+- `AccountProfilesStore` — 관리형 계정 레코드와 프로바이더 계열별 선택 계정 저장.
   각 레코드에 안정적인 ID, 편집 가능한 계정명, 현재 저장 인증 정보에서 파생된 프로바이더 신원 포함.
-  관리형 레코드는 계정명으로 구분하며 재로그인으로 저장 신원 교체 가능, 둘 이상의 관리형 레코드에 같은 신원이 일시적으로 존재할 수도 있음.
+  관리형 레코드는 계정명으로 구분하며 재로그인으로 저장 신원 교체 가능.
+  둘 이상의 관리형 레코드에 같은 신원이 일시적으로 존재할 수도 있음.
   `openusage account` CLI도 공유 기본 설정 도메인을 통해 같은 레코드를 읽음.
   계정 인증 정보는 계정별 Keychain 스냅샷에 저장.
   OpenUsage에서 시작한 재로그인은 Application Support 아래 앱 소유 로그인 작업 공간에서 실행.
-  선택된 Claude 계정은 공유 설정 홈에서 공식 CLI로도 재인증 가능하며, 로그인을 검증한 조정 단계가 기존 스냅샷과 저장 프로바이더 신원을 그 결과로 교체.
-  관리형 계정 모델(레지스트리, Keychain 스냅샷, 로그인 작업 공간, 전환 트랜잭션)은 프로바이더 계열에 독립적이라, 다른 프로바이더의 계정 전환도 별도 체계 없이 같은 메커니즘으로 확장.
-- `ICloudUsageSyncStore` — Mac별 동시 접근을 조정하는 원자적 기록 파일 하나, iCloud 메타데이터 알림, 화면에 표시할 기기·오류 상태.
+  선택된 Claude 계정은 공유 설정 홈에서 공식 CLI로도 재인증 가능.
+  새 로그인을 검증한 조정 단계가 기존 스냅샷과 저장 프로바이더 신원을 교체.
+  레지스트리·Keychain 스냅샷·로그인 작업 공간·전환 트랜잭션은 계정 관리의 공통 구조.
+  다른 프로바이더로 확장할 때도 이 구조 사용 가능.
+- `ICloudUsageSyncStore` — 이 Mac의 기록 파일과 iCloud 파일 변경 알림 관리.
+  Mac별 기록 파일 하나를 원자적으로 교체하고 동시 접근 조정.
+  화면에 기기·오류 상태 제공.
   수명 주기와 실패 테스트를 위해 파일 접근 의존성 주입.
 
-`AppContainer`가 `AppRefreshLoop`의 일반 5분·Claude 15분 루프를 시작.
-각 루프는 대상별 예약과 캐시를 확인하며, 느린 Claude 조회가 일반 사용량·공개 상태 순회를 막지 않음.
+## 새로 고침과 상태 조회
+
+`AppContainer`가 `AppRefreshLoop`의 일반 5분·Claude 15분 루프 시작.
+각 루프는 대상별 예약과 캐시 확인.
+느린 Claude 조회가 일반 사용량·공개 상태 순회를 막지 않도록 별도 실행.
 Claude의 계정별 파일 잠금·재시도 상태를 앱과 CLI가 공유해 중복 조회와 대기 우회 차단.
 마지막 정상 한도 조회 시각은 로컬 집계 완료 시각과 별도로 보존.
-`WidgetDataStore`는 각 프로바이더 조회의 대기를 시스템 잠자기를 제외한 120초로 제한하고 취소된 배치의 자식 조회에도 취소 전달.
-시간 초과는 마지막 정상 스냅샷을 유지하는 네트워크 실패 — 계정·인증·API 키 세대가 달라진 결과는 오류 게시 전에 폐기.
-완료된 조회만 fresh quota 관측에 전달하고 시간 초과는 기존 실패 hook을 통해 해당 프로바이더의 Soft Limit 관측 무효화.
-취소에 협조하지 않는 작업은 강제 종료할 수 없으므로 같은 runtime의 새 조회를 실제 종료까지 보류하며, 늦은 결과의 화면·스냅샷 캐시 쓰기 차단.
-이 대기 제한이 provider 내부의 파일·인증 저장을 되돌리거나 동기 코드가 막은 MainActor를 선점하지는 않음.
+`WidgetDataStore`는 각 프로바이더 조회 대기를 시스템 잠자기를 제외한 120초로 제한.
+조회 묶음을 취소하면 그 안의 개별 조회에도 취소 전달.
+시간 초과는 네트워크 실패로 처리하고 마지막 정상 스냅샷 유지.
+조회 중 계정·인증·API 키가 교체됐으면 이전 상태에서 시작한 결과는 오류 표시 전에 폐기.
+완료된 조회만 새로운 한도 관측값으로 전달.
+시간 초과 시에는 실패 처리 경로에서 해당 프로바이더의 Soft Limit 관측 무효화.
+작업이 취소에 협조하지 않으면 강제 종료 불가.
+이 경우 실제 종료까지 같은 실행 인스턴스의 새 조회를 보류하고 늦게 도착한 결과의 화면·캐시 반영 차단.
+대기 제한은 프로바이더 내부에서 이미 저장한 파일·인증 정보를 되돌리지 않음.
+동기 코드가 MainActor를 차단한 경우에도 이 제한으로 강제 중단 불가.
 계정 재조정·공개 상태·Reset Watch는 이 제한의 적용 범위에서 제외.
-같은 실행·프로바이더 활성화 wake·5분·대시보드 수동 순회에서 사용량과 함께 지원되는 서버 상태도 새로 고침.
-상태 카탈로그는 Claude, Codex, Cursor, Copilot을 명시적으로 지원하며, 다른 패밀리는 상태 요청을 보내지 않음.
-상태 클라이언트는 프로바이더 인증을 사용하지 않으며, 정확한 컴포넌트 선택자가 성능 저하·부분 장애·중대/전체 장애 상태만 서버 문제로 변환.
+
+앱 시작·프로바이더 활성화·일반 5분 주기·대시보드 수동 새로 고침에서 지원되는 서버 상태도 조회.
+상태 카탈로그는 Claude, Codex, Cursor, Copilot 지원.
+다른 프로바이더 계열에는 상태 요청을 보내지 않음.
+상태 클라이언트는 프로바이더 인증을 사용하지 않음.
+정확히 지정된 컴포넌트의 성능 저하·부분 장애·중대/전체 장애만 서버 문제로 변환.
 유지보수와 알 수 없는 상태는 문제로 취급하지 않음.
-상태 응답은 전송 중 64 KiB로 제한하며, 주기 갱신 소유자 종료 시 진행 중 상태 요청 모두 취소.
-계정 재조정 중 소유자가 종료되면 재조정 완료 후 새 사용량·상태 순회를 시작하지 않음.
-사용량 순회 중 소유자가 종료되면 순회 뒤 알림 평가와 다음 wake 대기 시작 차단.
+상태 응답은 전송 중 64 KiB로 제한.
+주기 갱신 작업이 종료되면 진행 중인 상태 요청 모두 취소.
+계정 재조정 중 갱신 작업이 종료되면 재조정 완료 후 새 사용량·상태 순회를 시작하지 않음.
+사용량 순회 중 갱신 작업이 종료되면 순회 뒤 알림 평가와 다음 주기 대기를 시작하지 않음.
 공유 요청의 대기자 하나를 취소해도 다른 대기자를 위한 요청은 유지.
 
 지출 타일이 있는 프로바이더는 내보내기 디스크립터와 함께 기록 범위를 명시.
 Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 계정 전체를 담는 소스는 합산 불가.
-`WidgetDataStore`는 합산한 기록에서 지출 행만 다시 렌더링하고, 할당량과 오류 상태는 로컬 기준으로 유지.
+`WidgetDataStore`는 합산한 기록으로 지출 행만 다시 표시.
+할당량과 오류 상태는 로컬 조회 결과 유지.
 
 ## 계정 표시
 
@@ -127,70 +171,147 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
 
 ## Tokscale CLI 경계
 
-연동은 다른 프로바이더 pipeline이나 sync engine이 아닌 좁은 외부 process 경계.
-경계의 책임은 네 가지:
+OpenUsage는 외부 프로세스로 Tokscale CLI 실행.
+연동 구성 요소의 책임은 설치, 명령 실행, 작업 상태 관리, 설정 화면으로 구분.
 
-- `BunInstaller`는 명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못할 때만 실행하며, runtime은 있지만 `bunx` alias가 없으면 Bun을 재설치하거나 덮어쓰지 않고 실패.
-  고정된 공식 URL `https://bun.com/install`에서 script를 private temporary file로 내려받아 `/bin/bash`로 실행하고 installer가 선택한 `${BUN_INSTALL:-$HOME/.bun}` directory 아래의 `bunx`를 검증한 뒤, app environment 갱신을 기다리지 않고 설치된 executable을 직접 탐색.
-  Installer child에는 고정된 설치값과 자체 download에 필요한 export된 proxy·certificate 설정만 전달.
-  자동 설치는 현재 사용자 home 아래의 안전한 directory만 허용하며, 호환되지 않는 `BUN_INSTALL`은 download 전에 실패하고 수동 설치 안내를 복구 경로로 제공.
-  미생성 폴더를 붙이기 전에 기존 상위 directory의 실제 경로를 해석해 symbolic link가 설치를 home 밖으로 우회하지 못하도록 검증하고, 끊어진 link는 download 전에 거부.
-  쓰기 제한은 새 설치에만 적용 — 사용하지 않는 기본 설치 경로가 깨져 있어도 symbolic link나 외부 설정 directory의 사용 가능한 기존 runtime 탐색 가능.
-- `TokscaleCommandRunner`에서 `submit`, `login`만 허용하고 탐색한 `bunx`를 `posix_spawn`으로 `tokscale@latest submit`, `tokscale@latest login`의 fixed argument array와 함께 직접 실행.
-  `shell -c`, AppleScript, 사용자 제공 command text를 사용하지 않음.
-  선택적 GitHub star 요청의 명시적 거절로 submit 표준 입력에 정확히 `n\n` 한 번을 전달한 뒤 EOF 처리.
-  Login 표준 입력은 null 유지, 두 command 모두 terminal 없이 output streaming.
-  App과 캡처된 login-shell environment를 app 값 우선으로 병합한 뒤 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
-  미등록 변수, AI provider API key, runtime injection 설정, Tokscale test hook, `TOKSCALE_API_URL`은 전달하지 않고 `HOME`과 작업 directory는 현재 macOS account에 고정.
-  Source 탐색은 계속 Tokscale에서 담당하며, 새 경로 변수는 allowlist 갱신이 필요하고 추가 source directory에는 `TOKSCALE_EXTRA_DIRS` 사용 가능.
-  이 UI에서 입력받아 child에 전달하는 유일한 값은 검증된 submit 전용 `TOKSCALE_DEVICE_NAME` environment entry.
-- `TokscaleSyncStore`에서 app 수명 동안 active install 또는 command 하나와 상태를 소유하고 optional device name을 로컬 저장해 Settings가 숨거나 다시 생성되어도 process 고아화와 결과 소실 방지.
-  Submit exit 0 결과가 열린 동안과 **Done**으로 닫은 뒤 10분 동안 재제출 차단, 대기 종료 시각은 메모리에 유지하고 앱 재시작 시 초기화.
-  오류·미로그인 안내·login 결과를 닫을 때는 새 대기 시간 없음, 만료 시 다음 명시적 submit만 허용.
-- `TokscaleSettingsSection`에서 usage sync, **Tokscale Device Name** sheet를 통한 기기 이름 관리, 미로그인 동작, login sheet, operation 종료 후 **Done**으로 결과 닫기 제공.
+### Bun 설치
 
-해당 Settings button에서만 설치나 Tokscale command 시작 가능.
-App launch, Settings 표시, 주기적·수동 새로 고침, provider 변경, iCloud callback, widget update, `openusage` executable, local API 요청으로 둘 다 실행 금지.
-Submit 동작은 정확히 `bunx tokscale@latest submit`을 실행하고 optional device name이 있으면 `TOKSCALE_DEVICE_NAME`으로만 전달.
-기기 이름 저장으로 process나 network request를 시작하지 않으며 다음 성공 submit에서 Tokscale stable device ID와 연결된 표시 이름 갱신.
-**Remove OpenUsage Override**는 로컬 override만 제거하며 Tokscale의 기존 public name은 삭제하지 않고, 이후 submit에서 Tokscale environment나 저장된 device record의 label 사용.
-검증된 미로그인 submit 결과에서만 별도 login 동작을 활성화하고 login에는 public device name override를 전달하지 않음.
-Login 완료 뒤 submit을 시작하지 않으며 자동 retry와 background submit 없음.
-App 종료 시 runner가 소유한 active installer 또는 Tokscale process group을 cancel한 뒤 정리될 때까지 기다려 종료 중 active operation 방치 방지.
-종료한 leader의 process ID를 group 정리 완료까지 유지한 뒤 회수해 늦은 cancel이 재사용된 process group을 대상으로 삼지 않도록 보장.
-Tokscale CLI가 해당 process group 밖에서 시작하는 detached 후속 작업은 Tokscale 소유.
+사용자가 **Sync**를 눌렀고 사용 가능한 Bun을 찾지 못했을 때만 `BunInstaller`로 자동 설치.
+Bun은 있지만 `bunx`가 없으면 기존 설치를 덮어쓰지 않고 오류 표시.
+자동 설치 순서:
 
-제출 생성·filter를 위해 `MetricLine`, `WidgetDataStore`, OpenUsage history, iCloud history, provider account, provider enablement를 읽지 않는 경계.
-Provider collector, parser, contribution model, payload schema, Tokscale 직접 API client, token vault, credential migration은 경계에 포함하지 않음.
-Source 탐색, credential, stable device ID와 `device.json`, 집계, network request는 Tokscale CLI 소유이며 OpenUsage에서 해당 file을 편집하지 않음.
+1. 설치 경로 검증.
+   `BUN_INSTALL`이 있으면 해당 경로, 없으면 `$HOME/.bun` 사용.
+2. 고정된 공식 URL `https://bun.com/install`에서 설치 스크립트 다운로드.
+3. 스크립트를 전용 임시 파일로 저장.
+4. 저장한 파일을 `/bin/bash`로 실행.
+5. 설치 경로 아래의 `bun`과 `bunx` 검증.
+6. 앱 환경 변수 갱신을 기다리지 않고 확인된 실행 파일 사용.
 
-Installer와 Tokscale standard output·error를 동시에 drain하고 ANSI/control sequence를 제거해 bounded memory command buffer에 보관.
-정리 중에도 buffered output을 읽되 pipe별 마지막 64 KiB로 제한해 detached writer의 무한 대기 방지.
-보존하는 앞·뒷부분은 UTF-8 경계의 남는 공간을 공유해 byte 상한 안의 완전한 문자 유지하며, raw C1 control도 제거.
-Settings card에서 사용 가능한 buffer를 표시하고 완료·실패 output도 **Done**으로 결과를 닫거나 다음 operation 또는 app 종료까지 유지하며, login sheet가 열려 있는 동안 같은 login output도 표시.
-결과 닫기는 output·오류를 비우고 카드를 idle로 돌리며 기기 이름과 Tokscale 인증은 유지.
-Raw output, 상속한 environment value, credential, authorization code를 OpenUsage log, telemetry, file, preference에 기록하지 않음.
+설치 프로세스에는 고정된 설치 설정과 다운로드에 필요한 허용된 프록시·인증서 환경 변수만 전달.
+자동 설치 경로는 현재 macOS 사용자 홈 아래로 제한.
+호환되지 않는 `BUN_INSTALL`이면 다운로드 전에 실패하고 수동 설치 안내 제공.
+아직 없는 하위 폴더를 검사하기 전에 기존 상위 디렉터리의 실제 경로 확인.
+심볼릭 링크를 거쳐 홈 밖에 설치되는 경로와 끊어진 링크는 거부.
+이 경로 제한은 새 설치에만 적용.
+기존 Bun은 심볼릭 링크나 별도 설정 디렉터리에 있어도 사용 가능.
+사용하지 않는 기본 설치 경로가 잘못돼 있어도 사용 가능한 기존 Bun 탐색은 계속 진행.
+
+### Tokscale 명령 실행
+
+`TokscaleCommandRunner`가 허용하는 명령은 `submit`과 `login`.
+확인된 `bunx`를 `posix_spawn`으로 직접 실행하고 인수는 다음 고정 배열에서 선택:
+
+- 사용량 제출: `tokscale@latest submit`.
+- 로그인: `tokscale@latest login`.
+
+`shell -c`, AppleScript, 사용자가 작성한 명령 문자열은 사용하지 않음.
+제출 명령에는 GitHub 별표 요청을 거절하는 입력 `n\n`을 한 번 전달한 뒤 표준 입력 종료.
+로그인 명령의 표준 입력은 비워 둠.
+두 명령 모두 터미널 창 없이 출력을 실시간 수집.
+
+앱 환경 변수와 수집된 로그인 셸 환경 변수를 병합하며 같은 키는 앱 값 우선.
+병합 후에는 허용 목록에 있는 언어·지역, 네트워크, 패키지 저장소, Tokscale 인증·설정, 기록 소스 경로만 전달.
+미등록 변수, AI 프로바이더 API 키, 런타임 주입 설정, Tokscale 테스트 설정, `TOKSCALE_API_URL`은 제외.
+`HOME`과 작업 디렉터리는 현재 macOS 사용자 홈으로 고정.
+사용 기록 소스 탐색은 Tokscale 담당.
+새 경로 환경 변수를 지원하려면 허용 목록 갱신 필요.
+추가 기록 디렉터리는 `TOKSCALE_EXTRA_DIRS`로 지정 가능.
+설정 화면에서 사용자가 입력해 자식 프로세스에 전달하는 값은 검증된 기기 이름 하나.
+이 값은 제출 명령에만 `TOKSCALE_DEVICE_NAME`으로 전달.
+
+### 작업 상태와 설정 화면
+
+`TokscaleSyncStore`는 앱 실행 동안 설치 또는 명령 작업을 한 번에 하나만 관리.
+Settings가 닫히거나 다시 생성돼도 실행 중인 프로세스와 결과는 유지.
+사용자가 지정한 기기 이름은 로컬 설정에 저장.
+제출이 종료 코드 0으로 끝나면 설정 카드의 결과를 닫기 전까지 재제출 차단.
+카드의 **Done**으로 결과를 닫으면 그때부터 10분 동안 재제출 차단.
+대기 종료 시각은 메모리에만 보관하므로 앱 재시작 시 초기화.
+오류·미로그인 안내·로그인 결과를 닫을 때는 새 대기 시간 없음.
+대기 시간이 끝나도 자동 제출하지 않고 다음 **Sync** 선택을 기다림.
+
+`TokscaleSettingsSection`은 사용량 제출, 기기 이름 관리, 로그인, 결과 닫기 제공.
+기기 이름 입력은 **Tokscale Device Name** 창에서 처리.
+작업이 끝나면 카드의 **Done**으로 결과 닫기 가능.
+
+### 시작 조건과 종료 처리
+
+설치·명령 실행은 Settings의 해당 버튼을 눌렀을 때만 시작.
+앱 시작, Settings 표시, 주기적·수동 새로 고침, 프로바이더 변경으로는 시작하지 않음.
+iCloud 알림, 위젯 갱신, `openusage` CLI, 로컬 API 요청으로도 시작하지 않음.
+
+사용량 제출은 `bunx tokscale@latest submit` 실행.
+기기 이름을 지정한 경우 `TOKSCALE_DEVICE_NAME`으로만 전달.
+기기 이름 저장 자체는 프로세스나 네트워크 요청을 시작하지 않음.
+저장한 이름은 다음 제출에 전달하며, 공개 기기 이름의 실제 변경은 Tokscale CLI와 서버의 처리에 따름.
+**Remove OpenUsage Override**는 OpenUsage에 저장한 이름만 제거.
+Tokscale에 이미 공개된 이름은 삭제하지 않음.
+이후 제출에는 OpenUsage에 저장된 이름을 전달하지 않음.
+남아 있는 환경 변수와 기기 기록의 처리는 Tokscale 담당.
+
+제출 종료 코드가 0이 아니고 출력에 `Not logged in.`이 포함돼 있으면 미로그인으로 분류.
+이 조건을 만족한 경우에만 별도 로그인 동작 활성화.
+로그인 명령에는 기기 이름 재정의 값 전달 금지.
+로그인 완료 뒤에도 제출을 자동 시작하지 않음.
+자동 재시도와 백그라운드 제출 없음.
+
+앱 종료 시 실행기가 소유한 설치 또는 Tokscale 프로세스 그룹 취소.
+그룹 정리가 끝날 때까지 앱 종료 대기.
+대표 프로세스가 먼저 종료돼도 그룹 정리까지 해당 프로세스 ID 유지.
+정리 후에 ID를 회수해 늦은 취소가 재사용된 다른 프로세스 그룹에 전달되는 일 방지.
+Tokscale CLI가 해당 그룹 밖에서 시작한 별도 후속 작업은 Tokscale이 관리.
+
+### 데이터와 출력 처리
+
+제출 데이터를 만들거나 거를 때 OpenUsage의 지표·사용 기록·iCloud 기록·계정·프로바이더 활성화 설정은 읽지 않음.
+따라서 `MetricLine`과 `WidgetDataStore`의 결과를 Tokscale 제출 데이터로 변환하지 않음.
+사용량 수집기, 파서, 기여도 모델, 전송 데이터 구조, Tokscale 직접 API 클라이언트, 토큰 저장소, 인증 이전 기능은 이 연동에서 구현하지 않음.
+기록 소스 탐색·인증·고정 기기 ID·`device.json`·집계·네트워크 요청은 Tokscale CLI 담당.
+OpenUsage는 Tokscale 소유의 해당 파일을 편집하지 않음.
+
+설치기와 Tokscale의 표준 출력·표준 오류를 동시에 수집.
+ANSI 제어 시퀀스와 C1 제어 문자 등을 제거한 뒤 크기가 제한된 메모리 버퍼에 보관.
+정리 단계에서도 남은 출력을 읽되 파이프별 추가 수집은 64 KiB로 제한.
+이를 통해 분리된 후속 프로세스가 파이프를 계속 열어 둬도 무한 대기 방지.
+버퍼의 앞·뒷부분은 UTF-8 문자 경계에 맞춰 보존.
+한쪽에 남은 공간을 다른 쪽에서 사용할 수 있지만 전체 바이트 상한은 유지.
+
+Settings 카드는 보관된 출력 표시.
+완료·실패 출력은 설정 카드의 **Done**, 다음 작업 시작, 앱 종료 중 먼저 발생하는 시점까지 유지.
+로그인 창이 열려 있으면 같은 로그인 출력을 그 창에도 표시.
+로그인 창의 **Done**은 창만 닫으며 설정 카드의 출력은 유지.
+설정 카드의 결과를 닫으면 출력·오류를 비우고 카드를 대기 상태로 변경.
+기기 이름과 Tokscale 인증은 유지.
+명령의 원문 출력, 상속한 환경 변수 값, 인증 정보, 인증 코드는 OpenUsage 로그·진단 이벤트·파일·설정에 저장하지 않음.
 
 ## AppKit 브리지
 
-macOS 메뉴 막대 앱은 `NSStatusItem` 안에 존재.
-OpenUsage는 콘텐츠를 `NSPopover`가 아니라 키 입력이 가능한 커스텀 `NSPanel`에 표시 — 팝오버 창은 앱 전체가 활성일 때만 키 창이 되며, 최근 macOS에서 메뉴 막대 액세서리 앱의 활성화는 비동기이고 불안정해 두 번째 클릭 전까지 키 입력을 받지 못하게 됨.
-`canBecomeKey`가 `true`인, 앱을 활성화하지 않는 `NSPanel`은 열리는 순간 키 포커스를 가져오므로 키보드 탐색과 Settings 단축키 기록기가 즉시 동작.
-`App/`이 그 AppKit 계층을 소유하고 안에 SwiftUI 뷰를 호스팅하므로, UI 대부분은 순수 SwiftUI로 유지 가능.
+메뉴 막대 항목은 `NSStatusItem`으로 구현.
+대시보드 콘텐츠는 키 입력을 받을 수 있는 커스텀 `NSPanel`에 표시.
+패널은 `.nonactivatingPanel` 스타일과 `canBecomeKey = true` 사용.
+열 때 `makeKeyAndOrderFront`를 호출해 앱 전체 활성화 없이 키 입력 대상이 되도록 처리.
+키보드 탐색과 Settings의 단축키 입력도 이 패널에서 처리.
+`App/`이 AppKit 계층을 소유하고 내부에 SwiftUI 뷰 표시.
 
 ## 플랫폼 지원
 
 OpenUsage는 macOS 15(Sequoia) 이상에서 실행.
-최신 SDK로 빌드하면서 하위 버전도 지원 — macOS 26(Tahoe)에서는 시스템 Liquid Glass 컨트롤을 쓰고, macOS 15에서는 동일한 동작의 표준 컨트롤로 대체(푸터 고정·버튼 상태 유지).
-그 버전 검사는 전부 단일 파일 `Support/LiquidGlassFallbacks.swift`에 모여 있어, 뷰에는 `#available` 검사가 없음.
+최신 SDK로 빌드하면서 macOS 15도 지원.
+macOS 26(Tahoe)에서 사용하는 Liquid Glass 등 최신 UI API는 이전 버전에서 대응 기능으로 대체.
+공통 컨트롤의 버전 분기는 `Support/LiquidGlassFallbacks.swift`에서 관리.
+특수 효과인 `Support/TooMuchTransparencyEffect.swift`도 별도 버전 분기 사용.
 
 릴리스 빌드(`script/release.sh`)는 유니버설 바이너리(arm64 + x86_64)를 제공하므로, DMG 하나로 Apple Silicon과 Intel Mac 모두에서 네이티브 실행.
-개발 빌드(`script/build_and_run.sh`)는 호스트 아키텍처 전용 — 유니버설 개발 빌드는 이점 없이 메인테이너 Mac의 컴파일 시간만 두 배로 늘리기 때문.
+개발 빌드(`script/build_and_run.sh`)는 빌드하는 Mac의 아키텍처만 생성해 빌드 시간 절약.
 
 릴리스 버전은 `origin/main` 이력에 포함된 현재 체크아웃 커밋을 가리키는 실제 Git 태그에서 유도.
-태그는 `v0.7.0` 이상, 숫자 앞의 불필요한 0 금지, 사전 릴리스는 양의 정수 N을 쓰는 `-beta.N`만 허용.
-로컬 릴리스 패키징 전에 `origin/main` fetch 필요.
-개발 빌드는 가장 가까운 도달 가능한 릴리스 태그에 `-dev` 추가, 도달 가능한 릴리스 태그가 없으면 `0.0.0-dev` 사용.
+태그는 `v0.7.0` 이상 사용.
+숫자 앞의 불필요한 0은 허용하지 않음.
+사전 릴리스는 양의 정수 N을 쓰는 `-beta.N` 형식만 허용.
+로컬 릴리스 패키징 전에 `origin/main` 가져오기 필요.
+개발 빌드는 현재 이력에서 도달 가능한 가장 가까운 릴리스 태그에 `-dev` 추가.
+그런 태그가 없으면 `0.0.0-dev` 사용.
 잘못된 태그와 Git 오류 발생 시 빌드 중단.
 
 ## 로컬 HTTP API

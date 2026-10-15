@@ -8,7 +8,7 @@ OpenUsage는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 �
 공유가 켜져 있으면 앱·프로바이더·기능의 일일 요약과 제한된 실패·복구 이벤트 전송:
 
 - **앱 사용** — 오늘 앱이 활성 상태였다는 사실, 앱과 macOS 버전, 켜 둔 프로바이더와 지표, 메뉴 막대에 고정했거나 "show more"(더 보기) 캐럿 뒤로 넣은 지표.
-  사용자나 계정과 연결되지 않은 임의 ID 덕분에 누구도 식별하지 않고 일일 활성 사용자 수를 셀 수 있음.
+  이름·이메일·프로바이더 계정 대신 임의 설치 ID로 일일 활성 사용자 수 집계.
 - **프로바이더 새로 고침** — 성공·실패·부분 실패 횟수, 대략적인 오류 범주, 정기·수동·계정 변경·인증 변경·재설정 크레딧 사용 등의 갱신 원인.
   모든 계정 카드를 프로바이더 이름 아래 합산하며 계정 ID와 계정 수 제외.
   업데이트 전후에도 각 요약의 수집 날짜·앱 버전·빌드 채널 유지.
@@ -102,7 +102,7 @@ Claude의 계정별 429 대기 시각·연속 제한 횟수·마지막 정상 �
 
 ## 기타 네트워크 요청
 
-벤더 도구가 어차피 수행하는 프로바이더 API 호출 외에, OpenUsage는 공개 [모델 가격 목록](/docs/pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
+OpenUsage는 프로바이더 API 조회 외에 공개 [모델 가격 목록](/docs/pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
 공개 데이터를 그대로 내려받는 요청이라 사용량·로그·계정 정보가 실리지 않으며, Share Anonymous Usage 설정과 무관하게 실행.
 지원되는 프로바이더가 활성화돼 있으면 OpenUsage가 실행 시, 해당 프로바이더 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), [GitHub Status](https://www.githubstatus.com/)에서 공개 컴포넌트 상태도 가져옴.
 인증 없는 요청이며 프로바이더 인증 정보, 계정 정보, 사용량 값, 로그를 포함하지 않음.
@@ -131,10 +131,11 @@ OpenUsage의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산�
 
 ## Tokscale 공개 공유
 
-Tokscale 동작은 세 번째 독립 공유 흐름.
-iCloud Sync나 Share Anonymous Usage로 활성화되지 않으며, Tokscale 상태 변경도 두 설정을 바꾸지 않음.
-App launch, 새로 고침, background task, widget update, `openusage` CLI 호출, local API 요청으로 Bun 설치나 Tokscale 실행 금지.
-Settings에서는 공개 사용량 동기화를 요약하고 공식 policy 연결 제공 — 공개 범위·명령·설치 상세 정보는 이 문서에 유지.
+Tokscale은 iCloud 동기화·익명 분석과 별개인 공개 공유 기능.
+iCloud 동기화나 Share Anonymous Usage를 켜도 Tokscale은 실행되지 않음.
+Tokscale 상태 변경도 두 설정에 영향을 주지 않음.
+앱 실행·일반 새로 고침·백그라운드 작업·위젯 갱신·`openusage` CLI·로컬 HTTP API 요청은 Bun 설치나 Tokscale 실행을 시작하지 않음.
+Settings의 **Usage Sync**에서 공개 공유임을 안내하고 공식 개인정보 처리방침 연결 제공.
 
 Settings의 명시적 **Sync**에서만 다음 명령 실행:
 
@@ -142,41 +143,69 @@ Settings의 명시적 **Sync**에서만 다음 명령 실행:
 bunx tokscale@latest submit
 ```
 
-`bunx`가 해석한 Tokscale package에서 지원 소스를 직접 탐색해 검색 engine에 색인될 수 있는 public profile을 갱신하도록 요청하는 명령.
-선택적 GitHub star 요청의 명시적 거절로 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
-2026-09-04 Tokscale v4.15.1 검토 기준, CLI는 token·cost breakdown, 날짜, client, model, message·timing 통계, device 정보, 발견된 MCP server 이름, Tokscale CLI 버전을 포함 가능.
-해당 집계를 계산하기 위해 local session file을 읽을 수 있지만, Tokscale 현재 policy에서는 prompt·response·conversation content, source code, file content·name, AI provider API key·credential을 제출에서 제외.
-OpenUsage widget, iCloud history, 익명 분석에서 제출 데이터를 역산하지 않고 OpenUsage provider 설정을 filter로 적용하지 않음.
-App과 캡처된 login shell environment에서 명시적으로 허용한 locale, network, package registry, Tokscale 인증·설정, 알려진 source 경로 설정만 전달.
-AI provider API key·GitHub token 같은 무관한 credential, 미등록 변수, runtime injection 설정, Tokscale test hook, custom Tokscale API endpoint는 전달하지 않음.
-허용한 설정에도 Tokscale 자체 token이나 proxy 인증 같은 credential이 포함될 수 있으며, OpenUsage에서 해당 값을 기록하지 않음.
-Environment 상속만 제한하며 file 접근 제한은 아님: Bun과 Tokscale는 sandbox로 격리하지 않으므로 local file과 자체 설정을 계속 읽을 수 있음.
-Custom terminal `HOME`은 무시하고 현재 macOS account의 home을 `HOME`과 작업 directory로 사용.
-Tokscale 자체 token은 request 인증에 사용하고, Tokscale 현재 policy에서는 AI provider API key와 credential을 제출 usage data에서 제외.
+`bunx`가 선택한 Tokscale 패키지가 지원 소스를 직접 탐색해 공개 프로필 갱신을 요청.
+해당 프로필은 검색 엔진에 색인될 수 있음.
+선택적 GitHub 별표 요청을 거절하도록 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
+OpenUsage의 위젯·iCloud 히스토리·익명 분석 데이터를 제출용으로 변환하지 않음.
+OpenUsage에서 켠 프로바이더 목록도 Tokscale의 수집 필터로 사용하지 않음.
 
-**Tokscale Device Name** sheet에서 저장한 device name은 Tokscale profile에서 기기를 식별할 수 있는 public label.
-OpenUsage에 로컬로 보관하고 submit process에만 `TOKSCALE_DEVICE_NAME`으로 전달하며, `m1-max` 같은 값은 다음 성공 submit에서 같은 stable device의 표시 이름을 교체.
-이름 저장이나 변경만으로 network request를 실행하지 않음.
-Override 제거로 Tokscale의 기존 public name을 삭제하지 않으며, 이후 submit에서 Tokscale environment나 저장된 device record의 이름을 다시 사용.
+**외부 서비스 검토 기준은 2026-09-04, Tokscale v4.15.1.**
+당시 CLI의 제출 대상에는 토큰·비용 내역, 날짜, 클라이언트, 모델, 메시지·시간 통계, 기기 정보, 발견된 MCP 서버 이름, CLI 버전 포함 가능.
+집계 과정에서 로컬 세션 파일을 읽을 수 있음.
+당시 개인정보 처리방침은 프롬프트·응답·대화 내용, 소스 코드, 파일 내용·이름, AI 프로바이더 API 키·인증 정보를 사용량 제출 대상에서 제외.
+실행 시 `@latest`가 선택하는 버전의 동작은 이 검토 결과와 달라질 수 있음.
 
-Submit 명령에서 검증된 미로그인 결과를 받으면 OpenUsage에서 별도 **Log In…** 동작을 제공하고 표준 입력 없이 `bunx tokscale@latest login` 실행.
-Login 자체는 usage를 제출하지 않으며, 완료 뒤에도 submit을 자동 시작하지 않음.
-현재 login 흐름에서 Tokscale는 GitHub numeric ID, username, display name, avatar URL, email을 저장 가능.
-새 login 중 command에서 `CLI on <hostname>`을 personal token name으로도 전송하며, 이 token name은 public submission device label과 별개이고 기기 이름 관리로 변경되지 않음.
-이후 submit에서 public profile을 생성·갱신하며 GitHub username, avatar, display name을 표시할 수 있음.
+### 실행 환경과 기기 이름
 
-명시적 **Sync**에서 사용 가능한 Bun runtime을 찾지 못하면 OpenUsage에서 Bun 공식 installer를 다운로드·실행한 뒤 계속 진행.
-Installer는 현재 사용자 home 아래의 안전한 `BUN_INSTALL` directory 또는 기본값 `~/.bun`에 file을 생성·갱신하고 login shell profile에 Bun path 설정을 추가할 수 있으며 administrator 권한은 불필요.
-Installer child에는 binary download용으로 export된 proxy·certificate 설정을 전달하지만 그 밖의 login-shell 값은 전달하지 않음.
-OpenUsage는 이 경계 밖의 호환되지 않는 `BUN_INSTALL`을 수정하지 않고 수동 설치 안내 제공.
-변경 가능한 Bun installer와 `@latest`가 고지 경계에 포함 — OpenUsage update 없이 바뀐 Bun 또는 Tokscale code를 내려받아 실행할 수 있음.
-정확한 `bunx` command는 사용자 Bun 설정을 따르며 home directory 아래의 일치 package를 우선할 수 있음.
-신뢰하는 registry endpoint와 가급적 HTTPS 사용 권장 — HTTP registry에서는 package download 변조 위험 존재.
+명령에는 앱과 로그인 셸에서 명시적으로 허용한 언어·네트워크·패키지 저장소·Tokscale 인증·설정·소스 경로 변수만 전달.
+AI 프로바이더 API 키·GitHub 토큰 등 무관한 인증 정보와 미등록 변수는 제외.
+실행 코드 주입 설정, Tokscale 테스트용 설정, 사용자 지정 Tokscale API 주소도 제외.
+허용한 변수에는 Tokscale 자체 토큰이나 프록시 인증 정보가 포함될 수 있으나 OpenUsage 로그에는 해당 값을 기록하지 않음.
+Tokscale 자체 토큰은 요청 인증에 사용.
+
+이 제한은 자식 프로세스에 전달하는 환경 변수에만 적용.
+Bun과 Tokscale은 별도 샌드박스로 격리하지 않으므로 로컬 파일과 자체 설정을 읽을 수 있음.
+터미널에서 별도로 지정한 `HOME`은 무시하고 현재 macOS 사용자의 홈을 `HOME`과 작업 디렉터리로 사용.
+
+**Tokscale Device Name**에서 저장한 기기 이름은 공개 프로필의 표시 이름으로 사용 가능.
+OpenUsage는 이 이름을 로컬에 보관하고 제출 프로세스에만 `TOKSCALE_DEVICE_NAME`으로 전달.
+이 설정은 기기 ID를 변경하지 않으며, 전달한 이름의 공개 프로필 반영은 Tokscale CLI와 서버의 처리에 따름.
+이름 저장·변경만으로 네트워크 요청을 실행하지 않음.
+**Remove OpenUsage Override**는 OpenUsage에 저장한 이름만 제거하며 Tokscale의 기존 공개 이름은 삭제하지 않음.
+이후 제출에서는 OpenUsage가 이름을 덮어쓰지 않으며, 환경 변수와 저장된 기기 기록의 이름 처리는 Tokscale에서 결정.
+
+### 로그인
+
+제출 명령이 0이 아닌 종료 코드와 `Not logged in.` 문구를 반환하면 **Log In…** 표시.
+사용자가 로그인 창의 **Log In**을 선택하면 표준 입력 없이 `bunx tokscale@latest login` 실행.
+로그인 자체는 사용량을 제출하지 않으며, 완료 후에도 제출 명령을 자동 실행하지 않음.
+위 검토 버전의 로그인 흐름에서 Tokscale은 GitHub 숫자 ID·사용자명·표시 이름·아바타 URL·이메일을 저장 가능.
+로그인 명령은 `CLI on <hostname>`을 개인 토큰 이름으로 전송.
+이 토큰 이름은 공개 기기 이름과 별개이며 **Tokscale Device Name**으로 변경되지 않음.
+이후 사용량을 제출하면 공개 프로필을 생성·갱신하고 GitHub 사용자명·아바타·표시 이름을 표시할 수 있음.
+
+### Bun 설치와 명령 출력
+
+사용자가 **Sync**를 선택했으나 사용 가능한 Bun이 없으면 공식 설치 프로그램을 내려받아 실행.
+새 설치의 검증에 성공한 뒤에만 제출 진행.
+설치 위치는 현재 사용자 홈 아래에서 앱의 경로 검증을 통과한 `BUN_INSTALL`, 또는 기본값 `~/.bun`.
+설치 프로그램은 해당 경로의 파일과 로그인 셸 설정 파일을 갱신할 수 있으며 관리자 권한은 필요하지 않음.
+설치 프로세스에는 다운로드에 필요한 프록시·인증서 설정을 전달하며 그 밖의 로그인 셸 값은 전달하지 않음.
+조건에 맞지 않는 `BUN_INSTALL`은 수정하지 않고 수동 설치 안내 제공.
+
+Bun 설치 프로그램과 `@latest` 패키지는 OpenUsage 업데이트 없이도 바뀐 코드를 내려받아 실행할 수 있음.
+패키지 선택은 사용자 Bun 설정을 따르며 홈 디렉터리 아래의 일치 패키지를 우선할 수 있음.
+패키지 저장소는 신뢰하는 주소와 HTTPS 사용 권장.
+HTTP 저장소에서는 다운로드 중 패키지 변조 위험 존재.
 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun 설치 안내](https://bun.com/docs/installation), [Bun `bunx` 문서](https://bun.com/docs/pm/bunx) 참조.
 
-Installer와 command output에는 username, browser URL, authorization code, local path, model 이름, profile URL, usage 값이 포함될 수 있음.
-OpenUsage에서는 bounded memory 사본을 Settings card와 login sheet에 표시하고 완료·실패 output도 카드의 **Done**으로 결과를 닫거나 다음 command 또는 app 종료까지 유지하며, OpenUsage log, telemetry, UserDefaults, file, clipboard에 자동 기록하지 않음.
-OpenUsage에서 Tokscale credential file을 읽거나 복사하지 않으며 Tokscale logout, disconnect, remote data 삭제 UI도 제공하지 않음.
+설치·명령 출력에는 사용자명·브라우저 주소·승인 코드·로컬 경로·모델 이름·프로필 주소·사용량 값이 포함될 수 있음.
+OpenUsage는 크기를 제한한 출력 사본을 메모리에 두고 Settings 카드와 로그인 창에 표시.
+완료·실패 후에도 Settings 카드의 **Done**으로 닫거나 다음 명령을 시작하거나 앱을 종료할 때까지 출력 유지.
+로그인 창의 **Done**은 창만 닫으며 카드의 출력은 유지.
+명령 출력은 OpenUsage 로그·분석 이벤트·UserDefaults·파일·클립보드에 자동 기록하지 않음.
+OpenUsage 자체는 Tokscale 인증 파일을 읽거나 복사하지 않음.
+Tokscale 로그아웃·연결 해제·원격 데이터 삭제 UI는 제공하지 않음.
 
 ## 익명 분석 동작 방식
 

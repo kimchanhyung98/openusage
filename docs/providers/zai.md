@@ -14,38 +14,60 @@ Z.ai가 요금제 이름을 반환하면 프로바이더 이름 옆에 표시.
 
 ## 인증 정보 출처
 
-Z.ai에는 OpenUsage가 인증 정보를 재사용할 수 있는 연동 CLI나 앱이 없어 API 키를 직접 제공해야 함.
+OpenUsage의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 다음 순서에서 처음 찾은 키 사용:
 
-1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}`(Settings에서 쓰는 파일)
+1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}`(API Key 카드에서 저장하는 파일)
 2. `~/.config/zai/key.json`
 3. `ZAI_API_KEY` 환경 변수
 4. `GLM_API_KEY` 환경 변수(레거시 Zhipu 이름도 계속 지원)
 
-파일을 직접 편집하지 않고 **Settings → API Keys**에서 키를 추가하거나 교체 가능.
+파일을 직접 편집하지 않고 **Customize → Z.ai → API Key**에서 키를 추가하거나 교체 가능.
 앱에서 키를 저장하거나 삭제하면 적용 중인 키로 새로 조회하며, 이전 요청이 진행 중이면 완료를 기다리고 그 결과는 무시.
 이전 요청이 대기 한도보다 오래 걸리면 다음 주기 새로 고침에서 현재 키로 재시도.
 비활성 프로바이더는 다시 활성화될 때 조회.
-새 요청이 진행 중이거나 실패하면 이전에 표시하던 마지막 정상 값 유지; 앱 재실행 시에도 현재 키로 조회하기 전 마지막 값 복원 가능.
-어느 방법이든 Z.ai 자체 구독 UI와 동일한 API 호출 외에는 Mac 밖으로 데이터를 전송하지 않음.
+새 요청이 진행 중이거나 실패하면 이전에 표시하던 마지막 정상 값 유지.
+앱 재실행 시에도 현재 키로 조회하기 전 마지막 값 복원 가능.
+사용량 조회 시 API 키를 Z.ai 서버로 전송.
 
 ## 설정
 
-1. [GLM Coding 요금제를 구독](https://z.ai/subscribe)하고 [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 API 키 발급.
-2. **Settings → API Keys**에서 OpenUsage에 키를 추가하거나 다음과 같이 내보내기:
+1. [GLM Coding 요금제 구독](https://z.ai/subscribe).
+2. [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 API 키 발급.
+3. Customize의 프로바이더 목록에서 Z.ai 활성화.
+4. Z.ai 상세의 API Key에서 Add 선택.
+5. 발급한 키 입력.
+6. Save 선택.
 
-```bash
-export ZAI_API_KEY="YOUR_API_KEY"
-```
+조회에 성공하면 대시보드에 사용량 표시.
+메뉴 막대에도 표시하려면 해당 지표의 별표 선택.
 
-3. 다음 새로 고침부터 대시보드에 Z.ai가 나타나며, 지표에 별표를 지정한 뒤에는 메뉴 막대에도 표시.
+### 환경 변수로 키 제공
+
+API Key 카드에 저장하는 대신 셸 프로필에서 키 제공 가능.
+저장된 키가 있으면 환경 변수보다 먼저 사용.
+
+1. 셸 프로필(예: `~/.zshrc` 또는 `~/.zprofile`)에 다음 설정 추가.
+
+   ```bash
+   export ZAI_API_KEY="YOUR_API_KEY"
+   ```
+
+2. OpenUsage 종료.
+3. OpenUsage 다시 실행.
+4. Customize의 프로바이더 목록에서 Z.ai 활성화.
+
+앱은 시작할 때 로그인 셸 환경을 읽음.
+현재 터미널에서만 실행한 `export`는 이미 실행 중인 앱에 적용되지 않음.
 
 ## 내부 동작
 
-Z.ai 자체 구독 UI가 사용하는 문서화되지 않은 내부 엔드포인트 두 개 사용(실제로 안정적으로 동작):
+Z.ai 구독 UI의 비공식 엔드포인트 두 개 사용:
 
 - `GET https://api.z.ai/api/biz/subscription/list` — 요금제 이름(가능한 범위에서 조회하며, 이 호출이 실패해도 미터는 비워지지 않음).
 - `GET https://api.z.ai/api/monitor/usage/quota/limit` — 할당량 미터.
+
+제공자가 응답 형식이나 접근 방법을 변경하면 조회 실패 가능.
 
 할당량 응답에 `limits` 배열 포함.
 `CREDIT_LIMIT`과 기존 `TOKENS_LIMIT` 항목은 할당량 사용 비율을 제공하며, 기간 길이에 따라 반영할 미터 결정(하루 미만 → Session, 여러 날 → Weekly).
@@ -57,7 +79,8 @@ Z.ai 자체 구독 UI가 사용하는 문서화되지 않은 내부 엔드포인
 
 ## 문제 해결
 
-- **"No Z.ai API key"** — Settings → API Keys에서 키를 추가하거나 `ZAI_API_KEY` 환경 변수 내보내기.
+- **"No Z.ai API key"** — Customize → Z.ai → API Key에 키 추가.
+  환경 변수를 사용하면 위 설정 절차에 따라 앱 재실행.
 - **"Z.ai API key invalid"** — 키 거부(401/403).
   [Z.ai 콘솔](https://z.ai/manage-apikey/apikey-list)에서 다시 생성.
 - **"No active GLM Coding Plan"**(이름 옆 황색 안내) — 키는 유효하지만 계정에 GLM Coding Plan이 없어 측정할 항목이 없는 상태.

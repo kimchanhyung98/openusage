@@ -4,6 +4,9 @@
 > 이 2026-06-25 연구는 같은 날 뒤이어 출시되고 이후 계속 다듬어진 조율된 콘텐츠 기반 패널 크기 조절에 앞선 내용.
 > 현재 구현은 [AppKit 브리지](/docs/architecture.md#appkit-브리지), [`DashboardView.swift`](/Sources/OpenUsage/Views/DashboardView.swift), [`PanelHeightCoordinator.swift`](/Sources/OpenUsage/Views/PanelHeightCoordinator.swift), [`PanelHeightController.swift`](/Sources/OpenUsage/App/PanelHeightController.swift) 참조.
 > 아래의 기각된 접근 방식과 제안 파일 구성은 현재 설정 지침이 아닌 과거 연구 기록으로 보존.
+> 본문의 관찰과 제안은 2026-06-25 기준이며, 제안한 동작의 검증 완료를 뜻하지 않음.
+> 현재 높이 전달은 [`PanelHeightModifier.swift`](/Sources/OpenUsage/Views/PanelHeightModifier.swift)의 비동기 메인 큐 브리지 사용.
+> 아래의 동기 전달 예시는 당시 제안이며 현재 구현에 그대로 적용할 지침이 아님.
 
 **연구 보고서 — 2026-06-25**
 **질문:** OpenUsage가 키보드 단축키를 위해 커스텀 `NSPanel`을 유지해야 하는 조건에서, 실제 macOS 앱이 (a) 크기 조절 지연·끊김과 (b) 화면 슬라이드와 윈도우 크기 조절 동시 실행 시 발생하는 "대각선" 움직임 없이 *커스텀 키보드 지원* 팝오버를 콘텐츠에 맞춰 부드럽게 자동 조절하는 방법은 무엇인가?
@@ -12,14 +15,15 @@
 
 ## 요약
 
-두 문제의 **근본 원인은 하나, 서로 충돌하는 두 애니메이션 타이밍.**
+당시 코드에서 확인한 유력한 원인은 **SwiftUI와 AppKit의 서로 다른 애니메이션 타이밍**.
 콘텐츠와 슬라이드는 SwiftUI 엔진이 애니메이션하고, 윈도우 프레임은 AppKit이 애니메이션한 구조(`KVO(preferredContentSize) → animated setFrame`).
-서로 다른 곡선을 따르는 두 독립 타임라인이 약간 다른 시점에 시작하면서 끊김(두 타이밍의 프레임별 불일치)과 "대각선" 움직임(수평 SwiftUI 곡선과 수직 AppKit 곡선의 합성) 발생.
+두 애니메이션의 시작 시점과 곡선 차이가 끊김과 "대각선" 움직임에 영향을 주었을 것으로 추정.
+직접 측정으로 원인을 분리한 결과는 아님.
 
-해결책은 더 나은 AppKit 크기 조절 애니메이션이 아니라 **윈도우를 SwiftUI가 소유한 단일 높이 값의 수동적 추종자로 만드는 것.**
-어려운 핵심은 이미 작동 중: SwiftUI `DragGesture`의 높이 흐름을 프레임마다 `setFrame(display:false)`에 동기 전달해 매우 부드럽게 작동하는 드래그 크기 조절.
-손가락 대신 SwiftUI *애니메이션 엔진*의 보간 값에서 높이 흐름을 가져오도록 **동일한 경로의 일반화** 권장.
-타이밍이 하나뿐이므로 충돌 불가.
+제안: **SwiftUI가 계산한 높이를 패널에 전달해 애니메이션 타이밍을 하나로 통합**.
+당시 수동 드래그에서는 `DragGesture`의 높이를 `setFrame(display:false)`에 전달하는 경로가 부드럽게 동작한 것으로 관찰.
+이 경로에 손가락 위치 대신 SwiftUI 애니메이션의 보간 높이를 전달하는 방안 권장.
+타이밍 통합 후 끊김과 화면 전환이 개선되는지는 기기 검증 필요.
 
 실제 앱 조사로 확인한 **기성 API가 없는** 까다로운 문제: 완성도 높은 SwiftUI 메뉴 막대 앱 **FontSwitch**도 동일한 `canBecomeKey` 패널을 사용하면서 자동 맞춤을 포기하고 *고정* 크기로 출시 [16], 경쟁 앱 **Claude-Usage-Tracker**는 네이티브 크기 조절을 제공하는 `animates` 속성 [13]의 `NSPopover`를 사용해야만 부드러운 자동 크기 조절을 확보하는 대신 "not legal to call `-layoutSubtreeIfNeeded` on a view which is already being laid out" 재귀 경고 발생 [9].
 `LSUIElement` 앱에서 macOS 26+부터 윈도우가 안정적으로 key가 되지 않아 Esc/Return/⌘R과 기록기가 깨진다는 문서화된 이유로 계속 제외되는 `NSPopover`.
@@ -52,20 +56,21 @@ SwiftUI 메뉴 막대 표면의 실현 가능한 형태는 세 가지이며, 각
 
 ---
 
-## 2. 이전 시도별 근본 원인
+## 2. 이전 시도의 관찰과 원인 추정
 
-기억과 코드에 기록된 다섯 가지 실패 사례.
-모두 두 애니메이션 타이밍의 충돌로 설명 가능:
+당시 관찰 기록과 코드에서 정리한 네 가지 실패 사례와 드래그 성공 사례.
+각 사례의 원인 설명은 아래와 같으며, 타이밍 차이와 보간 입력 부재를 구분.
 
 1. **`KVO(preferredContentSize) → setFrame`, "stuttered on every screen switch."**
    `NSHostingController.preferredContentSize`는 SwiftUI의 프레임별 애니메이션 타이밍이 아닌 AppKit 주기로 갱신되는 제약 기반 크기 [2][5].
    이후 윈도우를 *별도의* AppKit 애니메이션으로 처리.
-   두 타이밍으로 인한 끊김.
-   더 큰 문제는 레이아웃 패스 내부에서 측정과 재레이아웃이 일어나 Claude-Usage-Tracker가 기록한 것과 같은 재귀 함정에 빠진 점 [9].
+   두 애니메이션의 타이밍 차이가 끊김에 영향을 주었을 가능성.
+   레이아웃 패스 내부의 측정과 재레이아웃도 재진입 위험 요소.
+   유사한 재진입 사례는 Claude-Usage-Tracker에서 보고 [9].
 
 2. **`animator().setFrame` / `NSAnimationContext` 애니메이션 크기 조절, "janky."**
    `layerContentsRedrawPolicy`가 올바르지 않으면 AppKit의 암시적 레이어 경계 애니메이션이 *캐시된* 레이어 콘텐츠를 늘리고, 레이어에 적합하지 않은 구성은 "animation performance degrades extremely quickly"인 **메인 스레드**의 반복 `-setFrame:` 호출로 구동 [1].
-   완벽히 구현해도 SwiftUI 슬라이드와 충돌하는 *두 번째* 타이밍으로 남는 구조.
+   이 방식에서는 AppKit과 SwiftUI의 애니메이션 타이밍을 별도로 맞춰야 하므로 동기화 부담 유지.
 
 3. **`setFrame(display:false)`, "instant, no glide."**
    애니메이션 구동기가 없는 단순 `setFrame`의 당연한 결과.
@@ -75,14 +80,14 @@ SwiftUI 메뉴 막대 표면의 실현 가능한 형태는 세 가지이며, 각
 
 4. **설정 열기 시 "diagonal".**
    슬라이드는 스프링 기반 SwiftUI `.offset`, 크기 조절은 AppKit `setFrame` 구성.
-   한 박자 차이로 시작한 수평 SwiftUI 곡선 × 수직 AppKit 곡선으로 비뚤게 도착하는 대각선 발생.
-   두 타이밍 간 간섭 그 자체.
+   두 애니메이션의 시작 시점과 곡선 차이가 비뚤게 도착하는 움직임의 원인으로 추정.
+   다른 레이아웃 요인의 영향은 당시 조사에서 분리하지 못한 상태.
 
 5. **드래그 크기 조절: 부드러움.**
    유일한 성공 사례.
    이유는 무엇인가?
    `DragGesture.onChanged`는 레이아웃 패스 내부가 아닌 *이벤트* 콜백이며, 틱마다 하나의 높이를 `setFrame(display:false)` + `layoutSubtreeIfNeeded()` + `displayIfNeeded()`에 동기 전달.
-   손가락이 타이밍 기준이고 윈도우가 정확히 추종.
+   드래그 이벤트에서 받은 높이를 패널에 적용하는 구조.
    **전체 해결책의 기준이 되는 구현.**
 
 ---
@@ -134,13 +139,13 @@ target = clamp(idealHeight, minHeight, maxPanelHeight())   // 기존 maxPanelHei
 
 ### 3.4 SwiftUI 애니메이션 타이밍에서 추종자에 값 공급
 
-핵심 지점.
-두 번째 타이밍 없이 계단이 아닌 곡선 형태의 *보간된* 높이를 얻으려면 대상 높이를 SwiftUI가 프레임 애니메이션하는 비용 없는 뷰에 반영하고 진행 중인 값 읽기:
+대상 높이를 보이지 않는 SwiftUI 뷰에 적용하고, 높이 변화 콜백에서 패널 높이를 갱신하는 제안.
+다음 코드는 당시 개념 예시이며, 애니메이션 중 콜백 빈도와 패널 추종 정확도는 미검증.
+동기 브리지의 레이아웃 재진입 위험은 §6과 §9 참고.
 
 ```swift
-// 0×target 프로브.
-// `withAnimation` 안의 `target` 변경 시 매 렌더링 틱마다 프레임 높이 보간 후 액션 호출.
-// 슬라이드와 동일한 타이밍에서 보간 값 전달.
+// 높이 관찰용 뷰.
+// 애니메이션 중 콜백 빈도는 별도 검증 필요.
 Color.clear
     .frame(height: animatedTarget)
     .onGeometryChange(for: CGFloat.self) { $0.size.height }
@@ -148,24 +153,25 @@ Color.clear
 ```
 
 `applyHeight`에서 패널로 값 전달.
-높이가 `animatedTarget`의 SwiftUI 보간에서 나오므로 드래그가 손가락을 추적하듯 윈도우가 SwiftUI의 곡선과 타이밍을 정확히 추적.
-불일치할 `NSAnimationContext`, `animator()`, AppKit 타이밍 모두 제거.
+목표는 패널이 SwiftUI의 보간 높이를 따라가도록 하는 것.
+별도 `NSAnimationContext`나 `animator()` 애니메이션은 사용하지 않는 구성.
+`onGeometryChange`가 모든 렌더링 프레임에서 호출된다는 보장은 없으므로 실제 갱신 빈도 확인 필요.
 
-> 동등한 방식: 높이를 `animatableData`로 사용하고 setter에서 `applyHeight`를 호출하는 커스텀 `Animatable` modifier — 고전적인 "drive an NSWindow from a SwiftUI animation" 기법.
-> 읽기 쉬운 방식을 선택하면 되며, 둘 다 SwiftUI가 단독으로 타이밍 제어.
+> 대안: 높이를 `animatableData`로 사용하고 setter에서 보간 높이를 전달하는 커스텀 `Animatable` modifier.
+> 두 방식 모두 SwiftUI를 애니메이션의 기준으로 사용하는 제안이며, 전달 시점과 레이아웃 재진입은 각각 검증 필요.
 
 ---
 
 ## 4. "대각선" 문제 해결 — 새로 가능해진 두 가지 선택지
 
-윈도우가 수동적 추종자라면 슬라이드와 크기 조절은 더 이상 두 타이밍으로 분리되지 않으며, 함께 움직일지 순서대로 움직일지만 정하는 순수한 *설계* 문제.
+SwiftUI 높이 전달이 충분히 부드럽고 재진입 없이 동작한다는 전제에서 두 가지 화면 전환 방식 비교.
 
 **선택지 A — 조정된 모프 (권장).**
 `slideProgress`를 구동하는 **동일한 `withAnimation` 안에서** 높이 대상을 목적지 화면의 이상적인 높이로 설정.
 두 페이지가 이미 슬라이드 `HStack`에 마운트되어 있어 두 화면의 이상 높이를 모두 아는 상태.
 이후 하나의 스프링에서 수평 오프셋과 윈도우 높이가 애니메이션되며, 새 화면이 들어올 때 패널이 커지거나 작아지는 하나의 일관된 *모프* 연출.
-기존 "대각선"이 부자연스러웠던 이유는 두 축의 타이밍이 달랐기 때문이며, 하나로 통합하면 시스템 표면의 모프처럼 의도된 움직임으로 표현.
-추가 지연 없음.
+두 축의 타이밍을 맞춰 일관된 움직임을 만드는 것이 목표.
+높이 변경 전에 별도 대기 단계는 없으며, 실제 지연과 시각적 품질은 검증 필요.
 
 ```swift
 withAnimation(Motion.spring) {
@@ -175,17 +181,31 @@ withAnimation(Motion.spring) {
 ```
 
 **선택지 B — 순차 실행 (보수적 대안).**
-최소 지원 범위에 포함되는 macOS 14+ 네이티브 완료 API [14][7][15]로 일정한 높이에서 슬라이드한 뒤 크기 조절:
+최소 지원 범위에 포함되는 macOS 14+ 네이티브 완료 API [14][7][15]로 확대·슬라이드·축소 순서 제어.
+아래는 목적지의 목표 높이 `targetHeight`를 이미 계산했다는 전제의 예시.
+
+목적지가 더 높으면 먼저 확대하고, 확대 완료 후 슬라이드:
+
+```swift
+withAnimation(.spring, completionCriteria: .removed) {
+    animatedTarget = targetHeight
+} completion: {
+    withAnimation(.spring) { slideProgress = 1 }
+}
+```
+
+목적지가 더 낮으면 기존 높이로 슬라이드하고, 슬라이드 완료 후 축소:
 
 ```swift
 withAnimation(.spring, completionCriteria: .removed) {
     slideProgress = 1
 } completion: {
-    withAnimation { animatedTarget = idealHeight[destinationScreen] ?? animatedTarget }
+    withAnimation(.spring) { animatedTarget = targetHeight }
 }
 ```
 
-슬라이드 도중 잘림 방지를 위해 목적지가 더 크면 슬라이드 *전에* 확대하고, 더 작으면 *후에* 축소.
+높이가 같으면 크기 변경 없이 슬라이드만 실행.
+이 순서는 슬라이드 도중 목적지 화면의 잘림을 줄이려는 제안이며, 실제 잘림 여부는 검증 필요.
 더 신중하지만 약간 느린 방식으로, 글래스 카드의 모프가 지나치게 복잡할 경우 선택.
 
 **화면 내 콘텐츠 변경**(프로바이더 로드, 행 확장, 지출 행 토글)은 슬라이드 없이 `withAnimation { animatedTarget = newIdeal }`만 필요한 단순한 사례.
@@ -214,7 +234,8 @@ SwiftUI 레이아웃 *내부에서* 실행될 수 있는 `onGeometryChange` 액�
 애니메이션 기반 값 공급 시 안전 수칙:
 
 - `applyHeight`에서 `panel.setFrame(rect, display: false)`를 호출하고 콜백 내부의 `panel.contentView?.layoutSubtreeIfNeeded()` 강제 호출은 **제외**.
-  고정 너비와 상단 고정 콘텐츠에서 윈도우 확장은 이미 레이아웃된 콘텐츠를 *드러내는* 작업일 뿐이므로 재레이아웃 불필요하며, 재진입 위험이 있는 동기 레이아웃 호출도 불필요.
+  고정 너비와 상단 고정 콘텐츠에서는 강제 레이아웃 없이 이미 배치된 콘텐츠를 드러낼 수 있다는 가정.
+  실제로 콘텐츠 지연이나 잘림이 없는지는 검증 필요.
   `displayIfNeeded()` 또는 일반 CA 그리기 주기에 렌더링 위임.
 - 암시적 `animator()` 애니메이션 없이 *프레임마다 명시적으로* 윈도우 경계를 설정해 Core Animation이 오래된 캐시 레이어를 늘리지 않도록 구성 [1] — 각 프레임의 레이어가 이미 올바른 크기와 콘텐츠 보유.
 - 크기 조절이나 레이아웃 중 `NSHostingController` 지연 생성 금지 — 시작 시 한 번만 생성하는 현재 방식 유지 [9].
@@ -230,9 +251,9 @@ SwiftUI 레이아웃 *내부에서* 실행될 수 있는 `onGeometryChange` 액�
   키보드를 양보할 수 없으므로 NSPopover 사용 불가.
 
 - **AppKit Core Animation 크기 조절(`NSAnimationContext` + `animator().setFrame`, `layerContentsRedrawPolicy = .onSetNeedsDisplay`).**
-  단독으로는 부드럽게 구현 *가능* [1]하나 SwiftUI 스프링과 곡선을 맞출 수 없는 두 번째 타이밍이므로 대각선 문제 재발.
-  슬라이드까지 AppKit에서 구동할 경우에만 가능하지만 원하지 않는 구성.
-  단일 SwiftUI 타이밍을 위해 기각.
+  단독으로는 부드럽게 구현 *가능* [1]하나 SwiftUI 슬라이드와 시작 시점·곡선을 맞추는 추가 작업 필요.
+  동기화가 어긋나면 기존 움직임 문제가 재발할 가능성.
+  당시에는 SwiftUI를 유일한 애니메이션 기준으로 삼는 방향을 택해 기각.
 
 - **수동 드래그 핸들 유지.**
   사용자가 원하지 않았고 자동 맞춤 복원 후 중복이므로 기각.
@@ -245,7 +266,8 @@ SwiftUI 레이아웃 *내부에서* 실행될 수 있는 `onGeometryChange` 액�
 
 ## 8. 검증 계획
 
-여기서는 팝오버를 자동으로 열거나 캡처할 수 없으므로 직접 확인이 필요하되, 객관적 기준 사용:
+아래 항목은 당시 제안한 검증 계획이며, 통과한 결과를 뜻하지 않음.
+기기에서 확인할 기준:
 
 1. **화면 내 크기 조절**(대시보드에서 프로바이더의 지출 행 전환): 패널이 한 번의 부드러운 움직임으로 확대·축소되고 상단 가장자리가 고정되며, 카드 늘어남이나 한 프레임 잘림 없음.
 2. **화면 전환**(대시보드 → 더 높은 설정 화면): 선택지 A에서는 슬라이드와 확대가 단일 모프로 표현되고, 선택지 B에서는 깔끔한 두 단계로 표현.
@@ -262,8 +284,9 @@ SwiftUI 레이아웃 *내부에서* 실행될 수 있는 `onGeometryChange` 액�
 실제 코드를 소스 탐색으로 분석한 결과와 권위 있는 AppKit/SwiftUI 문서, 1차 출처 개발자 블로그, 직접 유사한 오픈 소스 앱 두 개를 바탕으로 한 보고서.
 SwiftUI 보간 값을 동기 `setFrame` 브리지에 공급하면 드래그만큼 부드러울 것이라는 핵심 주장은 (a) 동일한 브리지에서 이미 부드럽게 작동하는 드래그와 (b) 단일 타이밍 원칙에 따른 강한 추론이며, 측정 결과가 **아니므로** 기기 검증 필요(§8).
 재진입 완화(§6)가 가장 위험한 세부 사항: 콜백에서 동기 `layoutSubtreeIfNeeded`를 제거한 뒤 빠른 애니메이션 중 눈에 띄는 한 프레임 콘텐츠 지연이 발생한다면, 플래그로 재진입을 막으면서 호출을 유지하거나 레이아웃 패스 밖으로 전달하는 대안 필요 — 약간의 복잡성 증가.
-애니메이션 중 `onGeometryChange`의 정확한 호출 주기는 공식 문서에 없으며 [10][17], 너무 성기다면 `Animatable` modifier 방식으로 프레임에 고정된 갱신 가능.
-어느 경우에도 아키텍처는 그대로이며 조정 지점만 변경.
+애니메이션 중 `onGeometryChange`의 정확한 호출 주기는 공식 문서에 명시되지 않은 상태 [10][17].
+콜백 간격이 충분하지 않으면 `Animatable` modifier를 대안으로 검토하고, 해당 방식에서도 갱신 빈도와 재진입 여부 확인 필요.
+검증 결과에 따라 높이 전달 방식과 실행 시점 조정 필요.
 
 ---
 

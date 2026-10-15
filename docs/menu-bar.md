@@ -12,9 +12,11 @@
 
 지표에 별표를 달려면 각 행의 우클릭 메뉴, 또는 Customize에서 지표 옆에 항상 보이는 별표 버튼을 사용.
 
-- 첫 실행 시 앱에는 기본 별표 세트(Antigravity Session/Weekly, Claude Weekly, Codex Weekly, Cursor Auto Usage/API Usage, Copilot Credits, Kimi Weekly, Kiro Credits, OpenRouter Credits, Z.ai Session/Weekly)가 들어 있어 스트립에 곧바로 숫자가 표시.
+- 첫 실행 시 기본 별표 세트(Antigravity Session/Weekly, Claude Weekly, Codex Weekly, Cursor Auto Usage/API Usage, Copilot Credits, Kimi Weekly, Kiro Credits, OpenRouter Credits, Z.ai Session/Weekly) 적용.
+  활성 프로바이더에 데이터가 있으면 해당 별표 지표를 스트립에 표시.
   언제든 변경 가능하며, 프로바이더의 Reset은 그 프로바이더의 기본값을, Reset All은 전체 세트를 복원.
-  스트립에는 켜져 있는 프로바이더만 렌더링되고, 새로 설치한 앱은 Mac에서 감지된 프로바이더만 켜므로([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조) 기본 별표가 쓰지 않는 도구로 메뉴 막대를 채우지 않음.
+  새 설치의 활성 프로바이더는 로컬 인증 정보·사용 흔적 감지 결과로 결정.
+  감지 결과가 없으면 Claude와 Codex 활성화([대시보드 § 첫 실행](/docs/dashboard.md#첫-실행) 참조).
 - 별표는 **프로바이더당 최대 2개**.
 - 별표를 더 달 수 없을 때도 버튼은 그대로 클릭 가능 — 누르면 흔들리면서 Customize 하단에 이유가 임시 배지로 표시(예: "Up to 2 stars per provider"(프로바이더당 최대 2개)).
 - 별표는 계정이 아니라 프로바이더 소유 — Claude·Codex의 모든 계정이 같은 별표를 공유하고, 스트립에는 대시보드에서 선택한 계정의 값이 표시.
@@ -36,17 +38,20 @@ Settings → Appearance → Icon Style:
 ## 화면 공유 중 사용량 숨기기
 
 Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값 켬).
-화면이 공유되거나 녹화되는 동안 — Zoom/Meet/Teams 공유, 화면 녹화, macOS 화면 공유 — 스트립이 OpenUsage 아이콘과 워드마크로 대체되므로, 토큰 수와 지출이 다른 사람 앞에 드러나지 않음.
-캡처가 끝나는 순간 별표 지표가 바로 복귀.
-직접 시작한 캡처(예: 화면 녹화)도 해당되므로 그때도 워드마크가 표시.
+화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 OpenUsage 아이콘과 이름으로 대체.
+직접 시작한 화면 녹화도 감지 대상에 포함.
+캡처 종료를 감지하면 별표 지표로 복귀.
 
-감지는 시스템 자체의 "어떤 앱이 화면을 캡처 중" 신호를 사용 — 메뉴 막대의 캡처 표시기를 켜는 그 신호이며, 신호가 바뀌는 즉시 확인하고 설정이 켜져 있는 동안 몇 초마다 다시 확인.
+macOS의 화면 캡처 상태와 변경 알림으로 감지.
+설정이 켜져 있는 동안 3초마다 상태 재확인.
+감지 기능을 사용할 수 없으면 macOS 원격 화면 공유만 확인 가능하며, Zoom·Meet·Teams 등 앱의 공유·녹화는 감지하지 못할 수 있음.
+감지가 늦거나 지원되지 않는 캡처에서는 사용량이 보일 수 있음.
 
 평소:
 
 ![사용량 값이 표시된 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-idle.png)
 
-화면이 공유되거나 녹화되는 동안:
+화면 공유·녹화를 감지한 상태:
 
 ![OpenUsage 워드마크 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
 

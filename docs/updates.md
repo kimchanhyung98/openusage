@@ -1,7 +1,7 @@
 # 업데이트
 
 OpenUsage는 Mac 앱의 표준 업데이트 프레임워크인 [Sparkle](https://sparkle-project.org)로 스스로를 최신 상태로 유지.
-업데이트는 OpenUsage 자체 릴리스 피드에서 내려받고 설치 전에 검증하므로, 항상 변조되지 않은 정식 빌드만 받게 됨.
+업데이트는 OpenUsage 릴리스 피드에서 내려받고, 설치 전에 Sparkle이 서명 검증.
 
 ## 동작 방식
 
@@ -28,7 +28,10 @@ OpenUsage는 Mac 앱의 표준 업데이트 프레임워크인 [Sparkle](https:/
 ## 업데이트 출처
 
 업데이트 빌드는 OpenUsage의 GitHub 릴리스에 게시되고, 사용 가능한 버전 목록("appcast")은 `https://openusage.chanhyung.kim/appcast.xml`에서 제공.
-각 다운로드는 Apple 공증과 OpenUsage 자체 서명으로 이중 서명되며, 일치하지 않는 것은 앱이 거부.
+공식 릴리스의 앱과 DMG는 Developer ID로 코드 서명한 뒤 Apple 공증을 받음.
+공증은 코드 서명과 별도 절차이며, 공증 결과를 앱과 DMG에 첨부.
+업데이트 다운로드에는 Sparkle용 EdDSA 서명도 추가하고, Sparkle이 설치 전에 검증.
+서명 검증에 실패한 업데이트는 설치 거부.
 이 기능은 공식 서명 릴리스 빌드에만 있고 로컬 개발 빌드에는 없음.
 
 ## 유지 관리자: 게시 버전 보호

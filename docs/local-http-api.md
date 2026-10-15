@@ -29,7 +29,8 @@ OpenUsage는 루프백 인터페이스에 읽기 전용 HTTP API를 제공 — �
 
 **활성화된** 모든 프로바이더의 레거시 UI 지향 스냅샷을 저장된 프로바이더 순서대로 반환.
 이 라우트는 폐기 예정이지만 기존 연동은 계속 지원하며, 새 연동은 `/v1/limits` 사용 권장.
-레거시 응답의 `fetchedAt`은 로컬 스냅샷 처리 시각이며 마지막 정상 한도 조회 시각과 다를 수 있음.
+레거시 응답의 `fetchedAt`은 로컬 스냅샷 생성 시각.
+마지막 정상 한도 조회 시각과 다를 수 있음.
 Claude의 429 대기 중 한도 최신 여부는 `/v1/limits`의 `fetchedAt`·`expiresAt`·`stale`로 확인.
 
 두 라우트 모두 렌더링된 같은 프로바이더 스냅샷을 읽음.
@@ -53,7 +54,16 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
 
 ### 그 외 모든 경우
 
-`GET` 이외의 메서드는 **405**, 알 수 없는 라우트는 **404**.
+다음 요청은 라우트 확인 전에 거부:
+
+- 요청 헤더를 해석할 수 없거나 `Host`가 허용되지 않으면 **400** 반환.
+- 요청 헤더와 `Host`가 유효해도 `Origin` 헤더가 있으면 **403** 반환.
+
+요청 검증을 통과한 뒤에는 다음 기준으로 응답:
+
+- 알려진 라우트의 `GET` 이외 메서드는 **405** 반환.
+- 알 수 없는 라우트는 메서드와 관계없이 **404** 반환.
+
 쿼리는 라우팅에 영향을 주지 않으며, 경로가 비어 있거나 쿼리만 있는 `GET` 요청은 **404** 반환.
 쿼리에 지원 라우트 이름이 있어도 쿼리만 있는 요청은 알 수 없는 라우트로 로그 기록.
 서버가 최대치인 동시 연결 16개를 이미 처리 중이면 요청에 **503** 반환 — 간격을 두고 재시도.
@@ -95,10 +105,14 @@ Single Card가 프로바이더의 계정 하나만 보여 줘도 사용 가능�
 ```
 
 `kind`는 `consumption`(`used`) 또는 `balance`(`available`).
-상한이 있는 소비량에는 `limit`, `remaining`, 0–1 범위의 `utilization`도 포함.
+진행률 리소스에는 `limit`과 `remaining` 포함.
+`limit`이 양수이면 `utilization`에 사용량을 한도로 나눈 값 반환.
+사용량이 한도를 넘으면 `utilization`은 1 초과 가능.
+`limit`이 0이면 `utilization` 생략.
 초기화·기간·만료 목록·`estimated` 필드는 프로바이더가 해당 개념을 제공할 때만 포함.
 현재 값이 없는 프로바이더나 리소스는 0으로 만들어 내지 않고 생략.
-`fetchedAt`은 마지막 정상 한도 조회 시각.
+마지막 정상 한도 조회 시각이 저장돼 있으면 `fetchedAt`에 해당 시각 사용.
+해당 시각이 없으면 로컬 스냅샷 생성 시각 사용.
 `expiresAt`은 `fetchedAt`에 일반 사용량 5분·Claude 15분을 더한 값이며, `stale`은 해당 시점의 경과 여부를 표시.
 Claude의 429 대기 중에도 캐시 유효 기간을 늘리지 않으며, 마지막 정상 한도 값이 없으면 `stale`로 표시.
 새로 고침에 실패해도 마지막 정상 프로바이더 스냅샷은 계속 사용할 수 있고, 오류는 `errors`에 `{"providerId":"…","message":"…"}` 형태로 포함.
@@ -176,7 +190,9 @@ Codex의 결합된 Credits UI 행은 `credits`와 `creditValue` 두 스칼라 �
 
 행 타입은 `progress`, `text`, `badge`, `barChart`.
 `barChart` 행은 날짜별 `{ label, value, valueLabel? }`를 오래된 순으로 담은 `points` 배열과 선택적 `note`를 포함 — `value`는 해당 날의 토큰 수, `valueLabel`은 미리 형식화한 표시 값, `label`은 현지화한 월/일(예: "Mar 25").
-`fetchedAt`은 스냅샷을 마지막으로 성공적으로 가져온 시점(ISO 8601).
+`fetchedAt`은 로컬 스냅샷 생성 시각(ISO 8601).
+Claude의 이전 한도를 재사용한 경우, 마지막 정상 한도 조회 시각과 다를 수 있음.
+한도 최신 여부는 `/v1/limits`의 `fetchedAt`·`expiresAt`·`stale`로 확인.
 
 지출 행에 마우스를 올렸을 때 나오는 앱 내 모델별 내역은 아직 이 API에 없음.
 지출 행은 계속 동일한 `text` 행으로 직렬화되므로 기존 로컬 연동의 현재 형태 유지.
@@ -192,7 +208,7 @@ Separate Cards 모드에서도 계정명이나 대시보드의 `{Provider}: {nam
 { "error": "provider_not_found" }
 ```
 
-코드: `provider_not_found`, `not_found`, `method_not_allowed`, `server_busy`.
+코드: `bad_request`, `forbidden`, `provider_not_found`, `not_found`, `method_not_allowed`, `server_busy`.
 
 요청 수신·응답 송신 중 상대 연결 초기화나 broken pipe는 진단에서 취소된 요청으로 집계하며, 그 외 전송 오류는 실패로 유지.
 

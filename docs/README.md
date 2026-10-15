@@ -46,4 +46,4 @@
 - [아키텍처](/docs/architecture.md) — 구성 루트, 스토어, 프로바이더 파이프라인, AppKit 브리지
 - [프로바이더 추가](/docs/adding-a-provider.md) — 지표 계약과 등록/테스트/문서화 단계
 - [디버깅과 로그 캡처](/docs/debugging.md) — 로컬 빌드 실행과 로그 스트리밍
-- [로깅](/docs/logging.md) — 파일 로그, 로그 레벨, 서브시스템 태그, 절대 기록되지 않는 것
+- [로깅](/docs/logging.md) — 파일 로그, 로그 레벨, 서브시스템 태그, 민감 정보 마스킹 범위

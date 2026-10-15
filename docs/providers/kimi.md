@@ -20,8 +20,10 @@ Kimi Code에 이미 로그인된 계정의 코딩 할당량 추적.
 - `KIMI_CODE_HOME`이 설정된 경우 `$KIMI_CODE_HOME/credentials/kimi-code.json`
 - 그 외에는 `~/.kimi-code/credentials/kimi-code.json`
 
-이후 레거시 경로인 `~/.kimi/credentials/kimi-code.json`을 대체 경로로 확인.
-기본 Kimi 호스트의 현재 인증 정보는 CLI와 동일한 잠금 프로토콜로 갱신 가능.
+현재 인증 파일이 없을 때만 레거시 경로인 `~/.kimi/credentials/kimi-code.json` 확인.
+현재 파일의 읽기·형식 오류나 인증 만료 시 레거시 파일로 전환하지 않음.
+현재 인증 파일의 토큰 갱신에는 갱신 토큰과 CLI의 OAuth 잠금 사용.
+`KIMI_DISABLE_OAUTH_LOCK=1`이면 자동 갱신하지 않음.
 레거시 인증 정보는 읽기 전용이며 액세스 토큰이 유효한 동안만 사용 가능.
 
 사용자 지정 API 또는 OAuth 호스트와 범위가 지정된 `kimi-code-env-*.json` 인증 정보는 미지원.

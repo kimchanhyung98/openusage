@@ -2,7 +2,10 @@
 
 **Sync Across Macs**(Mac 간 동기화)는 기본값이 꺼짐.
 켜면 각 Mac이 버전이 붙은 OpenUsage 히스토리 파일 하나를 앱 전용 iCloud 컨테이너에 기록하고, 같은 iCloud 계정으로 로그인된 다른 Mac이 쓴 파일을 읽음.
-임의의 기기 ID는 로그인 키체인에 보관하므로, 앱 환경 설정을 재설정하거나 앱을 재설치한 뒤에도 같은 Mac은 기존 파일을 계속 갱신.
+임의 기기 ID는 로그인 Keychain에 보관.
+앱 환경 설정을 재설정하거나 앱을 재설치해도 기존 Keychain ID를 읽을 수 있으면 같은 파일을 계속 갱신.
+Keychain 접근에 실패하면 환경 설정에 남은 ID를 사용하고, 그 ID도 없으면 새 ID 생성.
+이 경우 중복 기기 파일이 생길 수 있으며 설정과 로그에 오류 표시.
 폴더 선택기도, 페어링 코드도, 별도 계정도 없음.
 
 파일에 담기는 것은 한 Mac에만 있는 소스(Claude, Codex, Grok, OpenCode)의 정규화된 일일 토큰과 지출, 모델별 합계, 알 수 없는 모델 이름.
@@ -74,18 +77,21 @@ OpenUsage는 개발 빌드가 프로덕션 히스토리를 쓰지 못하도록 �
 원본 프로비저닝 프로파일과 서명용 `.p12`는 리포지토리가 아니라 비밀번호 관리자에 보관.
 프로비저닝 프로파일에는 개인 키가 아니라 인증서와 권한(entitlements)이 들어 있지만, 서명 자산으로 취급하면 교체(rotation)를 예측 가능하게 유지.
 
-실행 중인 빌드가 실제로 기록한 히스토리를 확인하려면 파일을 먼저 찾고, 파일이 있을 때만 `jq` 호출:
+히스토리 확인 전, 실행 중인 빌드에 맞는 iCloud 컨테이너 선택.
+아래 예시는 릴리스 컨테이너의 파일을 나열하며, 개발 빌드는 경로 끝의 `openusage`를 `openusage~dev`로 변경.
+목록에는 같은 iCloud 계정의 다른 Mac 파일도 포함될 수 있음.
 
 ```bash
-file=$(find "$HOME/Library/Mobile Documents" \
-  -type f -path '*openusage*/OpenUsage/History/v1/*.json' -print -quit)
+history_dir="$HOME/Library/Mobile Documents/iCloud~com~kimchanhyung98~openusage/OpenUsage/History/v1"
 
-if [[ -n "$file" ]]; then
-  jq . "$file"
+if [[ -d "$history_dir" ]]; then
+  find "$history_dir" -type f -name '*.json' -print
 else
-  echo "No OpenUsage iCloud history file found"
+  echo "No OpenUsage iCloud history directory found"
 fi
 ```
+
+설정의 기기 이름·갱신 시각과 비교할 파일을 골라 `jq . '/선택한/파일/경로.json'`으로 확인.
 
 동기화가 꺼져 있거나, 앱이 일치하는 프로파일 없이 서명됐거나, 첫 쓰기가 아직 끝나지 않았다면 파일이 없는 것이 정상.
 설정 오류와 앱 로그가 이 경우들을 구분해 주며, 스피너는 iCloud 읽기나 쓰기가 실제로 진행 중일 때만 표시.

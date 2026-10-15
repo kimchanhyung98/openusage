@@ -19,7 +19,8 @@ Devin이 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 �
 1. Devin CLI 인증 정보: `~/.local/share/devin/credentials.toml`(`windsurf_api_key` 사용, `api_server_url`이 있으면 함께 사용)
 2. Devin 앱의 로컬 상태 데이터베이스
 
-CLI 인증 정보가 실패해도 앱에서 다른 계정으로 로그인한 상태면 앱의 인증 정보 사용.
+CLI 조회가 실패하면 앱의 인증 정보 확인.
+앱의 API 키 또는 API 서버가 CLI 설정과 다를 때 앱의 인증 정보로 다시 조회.
 
 ## 문제 해결
 

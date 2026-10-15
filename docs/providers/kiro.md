@@ -21,8 +21,10 @@ Kiro IDE 상태, Builder ID 또는 Identity Center 인증 정보, `~/.kiro` 아�
 
 ## 문제 해결
 
-- **"Not logged in to Kiro"** — `kiro-cli login`을 실행한 뒤 OpenUsage 새로 고침.
-- **"Kiro session expired"** — `kiro-cli login`을 다시 실행한 뒤 새로 고침.
+- **"Not logged in to Kiro"** — `kiro-cli login` 실행.
+  소셜 로그인 완료 후 OpenUsage 새로 고침.
+- **"Kiro session expired"** — `kiro-cli login` 다시 실행.
+  소셜 로그인 완료 후 새로 고침.
 - **"Kiro credentials could not be read"** — Kiro CLI 데이터베이스가 존재하고 읽기 가능한지 확인.
 
 ## 내부 동작
