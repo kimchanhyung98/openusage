@@ -141,14 +141,14 @@ struct AccountAddSheet: View {
                 guard code == 0 else {
                     AppDiagnostics.record(.accountAdd, result: .failure, category: .subprocess, providerID: family,
                                           localContext: "Sign-in process exited with status \(code); no account added")
-                    if let profileID { try? importer.removeSignInWorkspace(family: family, profileID: profileID) }
+                    if let profileID { try? await importer.removeSignInWorkspaceAfterLogin(family: family, profileID: profileID) }
                     phase = .failed("The \(familyTitle) sign-in did not complete. Nothing was added — try again.")
                     return
                 }
                 if let profileID {
                     guard let credential = try importer.readWorkspaceCredential(family: family, profileID: profileID) else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
-                        try? importer.removeSignInWorkspace(family: family, profileID: profileID)
+                        try? await importer.removeSignInWorkspaceAfterLogin(family: family, profileID: profileID)
                         phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
                         return
                     }
@@ -171,11 +171,11 @@ struct AccountAddSheet: View {
             } catch is CancellationError {
                 AppDiagnostics.record(.accountAdd, result: .cancelled, providerID: family)
                 if let profileID {
-                    try? importer.removeSignInWorkspace(family: family, profileID: profileID)
+                    try? await importer.removeSignInWorkspaceAfterLogin(family: family, profileID: profileID)
                 }
             } catch {
                 if let profileID {
-                    try? importer.removeSignInWorkspace(family: family, profileID: profileID)
+                    try? await importer.removeSignInWorkspaceAfterLogin(family: family, profileID: profileID)
                 }
                 fail(error)
             }
@@ -269,7 +269,7 @@ struct AccountProfileManagementSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isSigningIn)
+                .disabled(isSigningIn || store.isAuthenticationMutationInProgress)
             }
 
             if let actionError {
@@ -292,7 +292,7 @@ struct AccountProfileManagementSheet: View {
                     isRemoveConfirmationPresented = true
                 }
                 .buttonStyle(.borderless)
-                .disabled(isSigningIn)
+                .disabled(isSigningIn || store.isAuthenticationMutationInProgress)
             }
         }
         .padding(22)
@@ -328,6 +328,7 @@ struct AccountProfileManagementSheet: View {
     /// profile 자신의 Sign-In Workspace에서 공식 re-login. 검증된 credential은 이 계정명의 provider binding 교체.
     /// active profile의 re-sign-in은 Shared Runtime Home도 갱신.
     private func signInAgain() {
+        guard !isSigningIn, !store.isAuthenticationMutationInProgress else { return }
         isSigningIn = true
         actionError = nil
         signInTask = Task {
@@ -344,16 +345,14 @@ struct AccountProfileManagementSheet: View {
                                           localContext: "Sign-in process exited with status \(code); saved account unchanged")
                     return
                 }
-                try AccountCredentialImporter().completeReSignIn(
+                _ = try await AccountCredentialImporter().completeReSignInAfterLogin(
                     profileID: profile.id,
-                    in: store,
-                    isActive: store.preferredProfileID(family: profile.family) == profile.id
+                    in: store
                 )
                 AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
                 onChanged()
             } catch is CancellationError {
                 AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
-                // sheet close로 취소됨 — 변경 없음.
             } catch {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
                 actionError = error.localizedDescription

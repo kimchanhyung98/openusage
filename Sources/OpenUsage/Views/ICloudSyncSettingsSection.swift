@@ -55,7 +55,9 @@ struct ICloudSyncSettingsSection: View {
     @ViewBuilder
     private var enabledContent: some View {
         if sync.displayedDocuments.isEmpty, !sync.isSyncing, sync.serviceError == nil {
-            Text("Waiting for this Mac’s first iCloud update…")
+            Text(sync.isIdentityReady
+                 ? "Waiting for this Mac’s first iCloud update…"
+                 : "Preparing iCloud Sync…")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)

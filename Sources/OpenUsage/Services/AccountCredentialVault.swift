@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// 계정 전환에 쓰이는 인증 snapshot의 전용 Keychain 저장소 — 앱 구현 세부사항.
@@ -8,6 +9,23 @@ struct AccountCredentialVault {
         var claudeOAuthAccount: String?
         /// 연속 동기화 실패로 공유 홈에 남을 수 있는 이전 Codex 인증 후보 — 갱신된 snapshot의 역덮어쓰기 방지.
         var codexStaleSharedCredentialFingerprints: Set<String>? = nil
+
+        /// 같은 identity의 이전 로그인과 구분하는 snapshot 전체 세대 증명.
+        func snapshotDigest() throws -> String {
+            struct Digest: Encodable {
+                var credential: String
+                var claudeOAuthAccount: String?
+                var codexStaleSharedCredentialFingerprints: [String]?
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let digest = Digest(
+                credential: credential, claudeOAuthAccount: claudeOAuthAccount,
+                codexStaleSharedCredentialFingerprints: codexStaleSharedCredentialFingerprints?.sorted()
+            )
+            return SHA256.hash(data: try encoder.encode(digest))
+                .map { String(format: "%02x", $0) }.joined()
+        }
     }
 
     private let keychain: KeychainAccessing
@@ -45,14 +63,16 @@ struct AccountCredentialVault {
         return entry
     }
 
-    func save(_ entry: Entry, profile: AccountProfile) throws {
+    func save(_ entry: Entry, profile: AccountProfile, allowInteraction: Bool = false) throws {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
-        let data = try JSONEncoder().encode(entry)
-        try keychain.writeGenericPasswordForCurrentUser(
-            service: service(for: profile),
-            value: String(decoding: data, as: UTF8.self)
-        )
+        try AccountCredentialMutation.withLock {
+            let data = try JSONEncoder().encode(entry)
+            try keychain.writeAppOwnedPassword(
+                service: service(for: profile), value: String(decoding: data, as: UTF8.self),
+                forCurrentUser: true, allowInteraction: allowInteraction
+            )
+        }
     }
 
     func replaceCredential(
@@ -61,24 +81,29 @@ struct AccountCredentialVault {
     ) throws {
         AccountCredentialMutationLock.acquire(family: family)
         defer { AccountCredentialMutationLock.release(family: family) }
-        guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
-            throw AccountCredentialVaultError.missingEntry
+        try AccountCredentialMutation.withLock {
+            guard var entry = try load(family: family, profileID: profileID, allowInteraction: allowInteraction) else {
+                throw AccountCredentialVaultError.missingEntry
+            }
+            entry.credential = credential
+            if family == "codex" {
+                entry.codexStaleSharedCredentialFingerprints = codexStaleSharedCredentialFingerprints
+            }
+            let data = try JSONEncoder().encode(entry)
+            try keychain.writeAppOwnedPassword(
+                service: Self.service(family: family, profileID: profileID),
+                value: String(decoding: data, as: UTF8.self),
+                forCurrentUser: true, allowInteraction: allowInteraction
+            )
         }
-        entry.credential = credential
-        if family == "codex" {
-            entry.codexStaleSharedCredentialFingerprints = codexStaleSharedCredentialFingerprints
-        }
-        let data = try JSONEncoder().encode(entry)
-        try keychain.writeGenericPasswordForCurrentUser(
-            service: Self.service(family: family, profileID: profileID),
-            value: String(decoding: data, as: UTF8.self)
-        )
     }
 
     func delete(profile: AccountProfile) throws {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
-        try keychain.deleteGenericPassword(service: service(for: profile))
+        try AccountCredentialMutation.withLock {
+            try keychain.deleteGenericPassword(service: service(for: profile))
+        }
     }
 
     static func service(family: String, profileID: String) -> String {
@@ -94,6 +119,12 @@ struct AccountCredentialVault {
 enum AccountCredentialMutationLock {
     private static let lock = NSRecursiveLock()
     nonisolated(unsafe) private static var generation: UInt64 = 0
+
+    static func withLock<T>(_ operation: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try operation()
+    }
 
     static var revision: UInt64 {
         lock.lock()
@@ -119,6 +150,17 @@ enum AccountCredentialMutationLock {
         try operation()
         return true
     }
+
+    /// credential 작업의 잠금 대기 없이 세대 확인 — 잠금·세대 충돌 시 commit 생략.
+    static func withUnchangedRevisionIfAvailable(_ expected: UInt64, _ operation: () throws -> Void) rethrows -> Bool {
+        guard lock.try() else { return false }
+        defer { lock.unlock() }
+        guard generation == expected else { return false }
+        generation &+= 1
+        try operation()
+        return true
+    }
+
 }
 
 public struct AccountCredentialSnapshotRemover: Sendable {

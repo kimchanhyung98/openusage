@@ -14,6 +14,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     @Environment(AppContainer.self) private var container
     @Binding var selection: AccountProfile?
     @Binding var error: String?
+    @State private var switchTask: Task<Void, Never>?
     let localStates: [String: AccountSignInProbe.State]
 
     private var store: AccountProfilesStore { container.accountProfiles }
@@ -36,6 +37,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
                 Button("Use \(profile.family.capitalized): \(profile.label)") {
                     switchTo(profile)
                 }
+                .disabled(switchTask != nil || store.isAuthenticationMutationInProgress)
                 Button("Cancel", role: .cancel) {}
             } message: { profile in
                 if let shell = AccountShellInstaller.defaultShell() {
@@ -44,9 +46,11 @@ private struct AccountSwitchConfirmation: ViewModifier {
                     Text("OpenUsage couldn't detect your login shell, so terminal setup can't be applied automatically.")
                 }
             }
+            .onDisappear { switchTask?.cancel() }
     }
 
     private func switchTo(_ profile: AccountProfile) {
+        guard switchTask == nil, !store.isAuthenticationMutationInProgress else { return }
         let status = container.accountStatus(for: profile, localState: localStates[profile.id])
         guard status.canSwitch else {
             error = status.message ?? "Sign in again before switching to this account."
@@ -61,20 +65,24 @@ private struct AccountSwitchConfirmation: ViewModifier {
                                   localContext: "Login shell could not be detected; account switch not applied")
             return
         }
-        let currentProfile = store.preferredProfile(family: profile.family)
-        do {
-            // wrapper는 계정 무관(shared home만 고정)이므로 먼저 설치 — 실패해도 아무것도 전환되지 않고,
-            // auth transaction commit 이후에는 shared home과 선택 상태 사이에 실패 가능한 단계 없음.
-            try AccountShellInstaller.install(family: profile.family, shell: shell)
-            try AccountCredentialSwitcher().switchAuthentication(to: profile, from: currentProfile)
-            store.setPreferred(family: profile.family, profileID: profile.id)
-            container.refreshAccountCatalog()
-            container.syncDashboardUsageAccount(to: profile)
-            error = nil
-            AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
-        } catch let switchError {
-            AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
-            error = "Couldn't switch to \(profile.label): \(switchError.localizedDescription)"
+        switchTask = Task {
+            defer { switchTask = nil }
+            do {
+                try Task.checkCancellation()
+                guard !store.isAuthenticationMutationInProgress else { throw AccountAuthenticationMutationError.busy }
+                // 계정과 무관한 wrapper 설치를 인증 적용보다 먼저 완료.
+                try AccountShellInstaller.install(family: profile.family, shell: shell)
+                try await AccountCredentialSwitcher().switchAuthentication(to: profile, in: store)
+                container.refreshAccountCatalog()
+                container.syncDashboardUsageAccount(to: store.profile(id: profile.id) ?? profile)
+                error = nil
+                AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
+            } catch is CancellationError {
+                AppDiagnostics.record(.accountSwitch, result: .cancelled, providerID: profile.family)
+            } catch let switchError {
+                AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
+                error = "Couldn't switch to \(profile.label): \(switchError.localizedDescription)"
+            }
         }
     }
 }

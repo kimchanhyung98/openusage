@@ -4,6 +4,14 @@ import Security
 protocol GenericPasswordWriting: Sendable {
     /// `account == nil`은 기존 service-only 항목 하나를 정확히 찾아 갱신하고, 부재 시 빈 account로 생성.
     func write(service: String, account: String?, value: Data) throws
+    func write(service: String, account: String?, value: Data, allowInteraction: Bool) throws
+}
+
+extension GenericPasswordWriting {
+    /// 정책 미모델 mock용 호환 경로 — 실제 native writer는 승인 범위를 직접 적용.
+    func write(service: String, account: String?, value: Data, allowInteraction: Bool) throws {
+        try write(service: service, account: account, value: value)
+    }
 }
 
 enum GenericPasswordWriteError: Error, LocalizedError, Equatable {
@@ -28,8 +36,16 @@ struct SecurityFrameworkGenericPasswordWriter: GenericPasswordWriting {
     }
 
     func write(service: String, account requestedAccount: String?, value: Data) throws {
-        try NativeKeychainAccess.acquire()
-        defer { NativeKeychainAccess.release() }
+        try write(service: service, account: requestedAccount, value: value, allowInteraction: true)
+    }
+
+    func write(service: String, account: String?, value: Data, allowInteraction: Bool) throws {
+        try NativeKeychainAccess.withInteraction(allowInteraction: allowInteraction) {
+            try writeLocked(service: service, account: account, value: value)
+        }
+    }
+
+    private func writeLocked(service: String, account requestedAccount: String?, value: Data) throws {
         let keychain = try defaultKeychain()
         let existingItem: ExistingItem?
         let account: String

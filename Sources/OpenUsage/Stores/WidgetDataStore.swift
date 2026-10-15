@@ -810,6 +810,38 @@ final class WidgetDataStore {
         refreshResults[providerID]?.failure?.message
     }
 
+    /// 앱 내 인증 변경 동안 새 조회 차단·이전 결과 폐기, catalog 반영 후 조회 재개.
+    func coordinateAccountAuthentication(
+        _ profiles: AccountProfilesStore,
+        refreshCatalog: @escaping @MainActor () -> Void
+    ) {
+        let previousSuspension = isRefreshSuspended
+        isRefreshSuspended = { [weak profiles] providerID in
+            previousSuspension?(providerID) == true
+                || (AccountProfilesStore.isSupportedFamily(ProviderAccountID.family(of: providerID))
+                    && profiles?.isAuthenticationMutationInProgress == true)
+        }
+        profiles.onAuthenticationMutationStarted = { [weak self] in
+            guard let self else { return }
+            let providerIDs = Set(knownProviderIDs.filter {
+                AccountProfilesStore.isSupportedFamily(ProviderAccountID.family(of: $0))
+            })
+            for providerID in providerIDs {
+                authenticationGenerations[providerID, default: 0] &+= 1
+                scheduledRefreshDates[providerID] = nil
+                scheduledRefreshUpdatedAt[providerID] = nil
+                invalidatedAuthentication.insert(providerID)
+            }
+            onQuotaInvalidated?(providerIDs)
+        }
+        profiles.onAuthenticationMutationWillEnd = { notifyRefresh in
+            refreshCatalog()
+            if notifyRefresh {
+                NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
+            }
+        }
+    }
+
     /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
     func invalidateAuthentication(for providerID: String) {
         scheduledRefreshDates[providerID] = nil

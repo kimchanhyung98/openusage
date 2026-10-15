@@ -258,6 +258,9 @@ final class AppContainer {
                 ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
             }
         }
+        dataStore.coordinateAccountAuthentication(accountProfiles) { [weak self] in
+            self?.refreshAccountCatalog()
+        }
         self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,
             providerStatus: providerStatus,
@@ -467,16 +470,18 @@ final class AppContainer {
         )
         await dataStore.refreshAll(force: force, trigger: .manual)
         if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
+            for family in reconciliationError.families {
+                dataStore.setExternalProviderError(reconciliationError.message, for: family)
+            }
         }
         await statusRefresh
         await resetWatchTask?.value
     }
 
-    /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
+    /// 단일 카드 사용자 새로 고침 — 관리형 계정 복구와 Claude binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
-        var reconciliationError: String?
-        if ProviderAccountID.family(of: providerID) == "claude" {
+        var reconciliationError: AccountCredentialImporter.ReconciliationFailure?
+        if AccountProfilesStore.isSupportedFamily(ProviderAccountID.family(of: providerID)) {
             reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
@@ -488,23 +493,29 @@ final class AppContainer {
         )
         let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
         if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
+            for family in reconciliationError.families {
+                dataStore.setExternalProviderError(reconciliationError.message, for: family)
+            }
         }
         await statusRefresh
         return outcome
     }
 
     @discardableResult
-    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error> {
-        guard !isReconcilingExternalClaudeAuthentication else { return .success(false) }
+    private func reconcileExternalClaudeAuthentication() async -> Result<Bool, AccountCredentialImporter.ReconciliationFailure> {
+        guard !isReconcilingExternalClaudeAuthentication,
+              !accountProfiles.isAuthenticationMutationInProgress else { return .success(false) }
         isReconcilingExternalClaudeAuthentication = true
         defer { isReconcilingExternalClaudeAuthentication = false }
+        let importer = AccountCredentialImporter()
         do {
-            switch try await AccountCredentialImporter()
-                .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
+            switch try await importer.reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
             case .updated(let profileID):
                 AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
                 AppLog.info(.auth, "external Claude reauthentication updated selected profile (\(profileID.prefix(8))…)")
+                return .success(true)
+            case .recoveredAuthentication:
+                AppDiagnostics.record(.accountReconcile, result: .success)
                 return .success(true)
             case .unchanged:
                 AppDiagnostics.record(.accountReconcile, result: .success, providerID: "claude")
@@ -513,23 +524,27 @@ final class AppContainer {
                 return .success(false)
             }
         } catch {
-            AppDiagnostics.failure(.accountReconcile, error: error, providerID: "claude",
-                                   localContext: "External Claude reauthentication reconciliation failed")
-            return .failure(error)
+            let failure = await importer.reconciliationFailure(for: error, in: accountProfiles)
+            AppDiagnostics.failure(
+                .accountReconcile, error: error,
+                providerID: failure.families.count == 1 ? failure.families.first : nil,
+                localContext: "Account authentication reconciliation failed"
+            )
+            return .failure(failure)
         }
     }
 
-    /// 외부 Claude 로그인 반영 — 실패 시 log와 함께 수동 refresh가 카드에 표시할 친화적 메시지 반환.
+    /// 계정 복구와 외부 Claude 로그인 반영 — 실패 대상과 수동 갱신용 안내 반환.
     @discardableResult
-    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async -> String? {
+    func reconcileExternalClaudeAuthenticationAndRefreshCatalog() async -> AccountCredentialImporter.ReconciliationFailure? {
         switch await reconcileExternalClaudeAuthentication() {
         case .success(true):
             refreshAccountCatalog()
             return nil
         case .success(false):
             return nil
-        case .failure:
-            return "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        case .failure(let failure):
+            return failure
         }
     }
 

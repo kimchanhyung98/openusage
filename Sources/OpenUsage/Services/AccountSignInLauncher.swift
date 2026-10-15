@@ -64,6 +64,7 @@ struct AccountSignInLauncher: Sendable {
         baseEnvironment: [String: String] = ProcessInfo.processInfo.environment,
         usesLoginShellPATH: Bool = true
     ) async throws -> Int32 {
+        try Task.checkCancellation()
         var environment = Self.loginEnvironment(family: family, home: home, base: baseEnvironment)
         if usesLoginShellPATH,
            let shellPATH = LoginShellEnvironment.shared.value(for: "PATH")?.nilIfEmpty {

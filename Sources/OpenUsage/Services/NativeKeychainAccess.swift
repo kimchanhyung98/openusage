@@ -15,13 +15,10 @@ enum NativeKeychainAccess {
     static func tryAcquire() -> Bool { lock.try() }
 
     static func release() { lock.unlock() }
-}
 
-extension GenericPasswordReading {
-    func read(service: String, account: String?, allowInteraction: Bool) throws -> String? {
-        // login Keychain은 쿼리의 UI 금지 옵션을 무시할 수 있어 프로세스 설정으로 제어 후 복원.
-        try NativeKeychainAccess.acquire()
-        defer { NativeKeychainAccess.release() }
+    static func withInteraction<T>(allowInteraction: Bool, _ operation: () throws -> T) throws -> T {
+        try acquire()
+        defer { release() }
         var interactionAllowed: DarwinBoolean = false
         try checkInteractionStatus(SecKeychainGetUserInteractionAllowed(&interactionAllowed))
         try checkInteractionStatus(SecKeychainSetUserInteractionAllowed(allowInteraction && interactionAllowed.boolValue))
@@ -31,19 +28,28 @@ extension GenericPasswordReading {
                 AppLog.error(.keychain, "keychain interaction policy restore failed (status \(status))")
             }
         }
-        do {
-            return try read(service: service, account: account)
-        } catch KeychainError.readFailed(let message) {
-            throw KeychainError.readFailed(
-                "\(message) If access needs approval, unlock Keychain and refresh manually."
-            )
-        }
+        return try operation()
     }
 
-    private func checkInteractionStatus(_ status: OSStatus) throws {
+    private static func checkInteractionStatus(_ status: OSStatus) throws {
         guard status == errSecSuccess else {
             AppLog.error(.keychain, "keychain interaction policy failed (status \(status))")
             throw KeychainError.readFailed("Couldn't configure Keychain access (status \(status)).")
+        }
+    }
+}
+
+extension GenericPasswordReading {
+    func read(service: String, account: String?, allowInteraction: Bool) throws -> String? {
+        // login Keychain은 쿼리의 UI 금지 옵션을 무시할 수 있어 프로세스 설정으로 제어 후 복원.
+        try NativeKeychainAccess.withInteraction(allowInteraction: allowInteraction) {
+            do {
+                return try read(service: service, account: account)
+            } catch KeychainError.readFailed(let message) {
+                throw KeychainError.readFailed(
+                    "\(message) If access needs approval, unlock Keychain and refresh manually."
+                )
+            }
         }
     }
 }

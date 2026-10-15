@@ -297,11 +297,13 @@ enum SQLiteError: Error, LocalizedError, Equatable {
 
 protocol KeychainAccessing: Sendable {
     func readAppOwnedPassword(service: String, forCurrentUser: Bool, allowInteraction: Bool) throws -> String?
+    func writeAppOwnedPassword(service: String, value: String, forCurrentUser: Bool, allowInteraction: Bool) throws
     func readGenericPassword(service: String) throws -> String?
     func readGenericPassword(service: String, allowInteraction: Bool) throws -> String?
     func genericPasswordExists(service: String) -> Bool?
     func writeGenericPassword(service: String, value: String) throws
     func deleteGenericPassword(service: String) throws
+    func deleteGenericPasswordForCurrentUser(service: String) throws
     func readGenericPasswordForCurrentUser(service: String) throws -> String?
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws
     /// Claude Code 공유 항목의 CLI 접근 승인을 유지하는 저장.
@@ -314,6 +316,15 @@ protocol KeychainAccessing: Sendable {
 }
 
 extension KeychainAccessing {
+    /// 정책 미모델 mock용 호환 경로 — 실제 accessor는 native writer에 승인 의도 전달.
+    func writeAppOwnedPassword(service: String, value: String, forCurrentUser: Bool, allowInteraction: Bool) throws {
+        if forCurrentUser {
+            try writeGenericPasswordForCurrentUser(service: service, value: value)
+        } else {
+            try writeGenericPassword(service: service, value: value)
+        }
+    }
+
     func writeCLISharedPassword(service: String, value: String, forCurrentUser: Bool) throws {
         if forCurrentUser {
             try writeGenericPasswordForCurrentUser(service: service, value: value)
@@ -328,6 +339,11 @@ extension KeychainAccessing {
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
         try writeGenericPassword(service: service, value: value)
+    }
+
+    /// account 미모델 mock용 기본 구현 — 실제 accessor는 현재 사용자 항목만 삭제.
+    func deleteGenericPasswordForCurrentUser(service: String) throws {
+        try deleteGenericPassword(service: service)
     }
 
     /// account 미모델 mock용 기본 구현 — service-only 조회 fallback; 실제 `SecurityKeychainAccessor`는 `-a <account>` 전달.
@@ -377,6 +393,13 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         try appPasswordReader.read(
             service: service, account: forCurrentUser ? currentUserAccount() : nil,
             allowInteraction: allowInteraction
+        )
+    }
+
+    func writeAppOwnedPassword(service: String, value: String, forCurrentUser: Bool, allowInteraction: Bool) throws {
+        try writePassword(
+            service: service, account: forCurrentUser ? currentUserAccount() : nil,
+            value: value, allowInteraction: allowInteraction
         )
     }
 
@@ -496,17 +519,35 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         throw KeychainError.deleteFailed("did not converge")
     }
 
+    func deleteGenericPasswordForCurrentUser(service: String) throws {
+        let result = try processRunner.run(
+            executable: "/usr/bin/security",
+            arguments: ["delete-generic-password", "-a", currentUserAccount(), "-s", service],
+            environment: [:],
+            timeout: 5
+        )
+        guard result.succeeded || result.exitCode == Self.itemNotFoundExitCode else {
+            AppLog.warn(.keychain, "keychain current-user delete failed (exit \(result.exitCode))")
+            throw KeychainError.deleteFailed("exit \(result.exitCode)")
+        }
+    }
+
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
         try writePassword(service: service, account: currentUserAccount(), value: value)
     }
 
-    private func writePassword(service: String, account: String?, value: String, writer: (any GenericPasswordWriting)? = nil) throws {
+    private func writePassword(
+        service: String, account: String?, value: String,
+        writer: (any GenericPasswordWriting)? = nil, allowInteraction: Bool? = nil
+    ) throws {
         do {
-            try (writer ?? passwordWriter).write(
-                service: service,
-                account: account,
-                value: Data(value.utf8)
-            )
+            if let allowInteraction {
+                try (writer ?? passwordWriter).write(
+                    service: service, account: account, value: Data(value.utf8), allowInteraction: allowInteraction
+                )
+            } else {
+                try (writer ?? passwordWriter).write(service: service, account: account, value: Data(value.utf8))
+            }
         } catch let error as KeychainError {
             throw error
         } catch let error as GenericPasswordWriteError {

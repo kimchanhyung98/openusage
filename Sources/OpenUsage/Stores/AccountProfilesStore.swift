@@ -77,6 +77,8 @@ struct AccountIdentityReplacement: Codable, Equatable, Sendable {
     var previousIdentityKey: String
     var replacementIdentityKey: String
     var replacesSharedAuthentication: Bool
+    var replacementSnapshotDigest: String?
+    var originalSharedAuthenticationDigest: String?
 }
 
 enum AccountIdentityReplacementError: LocalizedError {
@@ -126,6 +128,10 @@ public final class AccountProfilesStore {
     public private(set) var hasUnreadableRegistry = false
     public private(set) var authenticationRevision = 0
     private(set) var authenticationRevisionsByProfileID: [String: Int] = [:]
+    private(set) var authenticationMetadataRevision = 0
+    var authenticationMutation: AuthenticationMutation?
+    @ObservationIgnored var onAuthenticationMutationStarted: (() -> Void)?
+    @ObservationIgnored var onAuthenticationMutationWillEnd: ((Bool) -> Void)?
     private var preferredByFamily: [String: String] = [:]
 
     public init(defaults: UserDefaults = .standard) {
@@ -159,6 +165,10 @@ public final class AccountProfilesStore {
 
     /// 선택 profile 기록 — active profile이 있는 family는 항상 선택 1개 유지(모든 account toggle off 불가).
     public func setPreferred(family: String, profileID: String?) {
+        guard !isApplyingAuthentication else {
+            AppLog.error(.auth, "refusing to change account selection while authentication is being applied")
+            return
+        }
         guard !hasUnreadableRegistry else {
             AppLog.error(.config, "refusing to change account selection while the registry is unavailable")
             return
@@ -173,13 +183,42 @@ public final class AccountProfilesStore {
             guard profiles(family: family).isEmpty else { return }
             guard preferredByFamily.removeValue(forKey: family) != nil else { return }
         }
+        authenticationMetadataRevision &+= 1
         persist()
+    }
+
+    /// 전환 대상 binding과 선택 저장을 검증 — 저장 확인 실패 시 journal 복구에 위임.
+    func setPreferredChecked(family: String, profileID: String, expectedIdentityKey: String) throws {
+        try ensureAuthenticationMetadataWritable()
+        try ensureRegistryWritable()
+        guard Self.isSupportedFamily(family) else { throw AccountProfileError.unknownFamily(family) }
+        guard let target = profile(id: profileID), target.family == family else {
+            throw AccountProfileError.profileNotFound(profileID)
+        }
+        guard target.identityKey == expectedIdentityKey else {
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        var preferred = preferredByFamily
+        preferred[family] = profileID
+        let blob = Blob(profiles: profiles, preferredByFamily: preferred)
+        let data = try JSONEncoder().encode(blob)
+        defaults.set(data, forKey: Self.storageKey)
+        guard defaults.synchronize(),
+              let stored = defaults.data(forKey: Self.storageKey),
+              let persisted = try? JSONDecoder().decode(Blob.self, from: stored), persisted == blob else {
+            AppLog.error(.config, "account selection persistence could not be verified; retaining recovery journal")
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        preferredByFamily = preferred
+        authenticationRevision &+= 1
+        authenticationMetadataRevision &+= 1
     }
 
     /// 증명된 provider account의 profile 등록 — family 내 `label`만 유일, provider identity 중복 허용.
     /// `id` 지정 시 sign-in flow가 공식 로그인 전에 발급한 workspace 유지; 생략하면 새 UUID 발급.
     @discardableResult
     public func add(family: String, label: String, identityKey: String, id: String? = nil) throws -> AccountProfile {
+        try ensureAuthenticationMetadataWritable()
         try ensureRegistryWritable()
         guard Self.isSupportedFamily(family) else {
             throw AccountProfileError.unknownFamily(family)
@@ -212,6 +251,7 @@ public final class AccountProfilesStore {
         )
         profiles.append(profile)
         selectFirstProfileIfNeeded(family: family)
+        authenticationMetadataRevision &+= 1
         persist()
         return profile
     }
@@ -237,6 +277,7 @@ public final class AccountProfilesStore {
     /// 검증된 재로그인의 provider binding 교체 — stable id·label·생성 시각·선택 상태 불변.
     @discardableResult
     func replaceIdentity(profileID: String, with identityKey: String) throws -> AccountProfile {
+        try ensureAuthenticationMetadataWritable()
         try ensureRegistryWritable()
         guard let index = profiles.firstIndex(where: { $0.id == profileID && !$0.isArchived }) else {
             throw AccountProfileError.profileNotFound(profileID)
@@ -247,6 +288,7 @@ public final class AccountProfilesStore {
         }
         guard profiles[index].identityKey != normalizedIdentity else { return profiles[index] }
         profiles[index].identityKey = normalizedIdentity
+        authenticationMetadataRevision &+= 1
         persist()
         return profiles[index]
     }
@@ -255,8 +297,11 @@ public final class AccountProfilesStore {
     func beginIdentityReplacement(
         profileID: String,
         with identityKey: String,
-        replacesSharedAuthentication: Bool
+        replacesSharedAuthentication: Bool,
+        replacementSnapshotDigest: String? = nil,
+        originalSharedAuthenticationDigest: String? = nil
     ) throws -> AccountIdentityReplacement {
+        try ensureAuthenticationMetadataWritable()
         try ensureRegistryWritable()
         guard let profile = profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
@@ -274,17 +319,27 @@ public final class AccountProfilesStore {
             profileID: profile.id,
             previousIdentityKey: profile.identityKey,
             replacementIdentityKey: replacementIdentityKey,
-            replacesSharedAuthentication: replacesSharedAuthentication
+            replacesSharedAuthentication: replacesSharedAuthentication,
+            replacementSnapshotDigest: replacementSnapshotDigest,
+            originalSharedAuthenticationDigest: originalSharedAuthenticationDigest
         )
-        defaults.set(try JSONEncoder().encode(transaction), forKey: Self.identityReplacementKey)
+        let data = try JSONEncoder().encode(transaction)
+        defaults.set(data, forKey: Self.identityReplacementKey)
+        guard defaults.synchronize(), defaults.data(forKey: Self.identityReplacementKey) == data else {
+            AppLog.error(.auth, "account identity replacement journal persistence could not be verified")
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
+        authenticationMetadataRevision &+= 1
         return transaction
     }
 
     func pendingIdentityReplacement() throws -> AccountIdentityReplacement? {
+        try ensureAuthenticationMetadataWritable()
         guard let data = defaults.data(forKey: Self.identityReplacementKey) else { return nil }
         guard let transaction = try? JSONDecoder().decode(AccountIdentityReplacement.self, from: data) else {
             AppLog.error(.auth, "account identity replacement journal is unreadable")
             defaults.removeObject(forKey: Self.identityReplacementKey)
+            authenticationMetadataRevision &+= 1
             throw AccountIdentityReplacementError.invalidTransaction
         }
         return transaction
@@ -292,6 +347,7 @@ public final class AccountProfilesStore {
 
     @discardableResult
     func commitIdentityReplacement(_ transaction: AccountIdentityReplacement) throws -> AccountProfile {
+        try ensureAuthenticationMetadataWritable()
         guard try pendingIdentityReplacement() == transaction else {
             throw AccountIdentityReplacementError.invalidTransaction
         }
@@ -300,16 +356,19 @@ public final class AccountProfilesStore {
             with: transaction.replacementIdentityKey
         )
         defaults.removeObject(forKey: Self.identityReplacementKey)
+        authenticationMetadataRevision &+= 1
         authenticationRevision &+= 1
         authenticationRevisionsByProfileID[profile.id] = authenticationRevision
         return profile
     }
 
     func cancelIdentityReplacement(_ transaction: AccountIdentityReplacement) throws {
+        try ensureAuthenticationMetadataWritable()
         guard try pendingIdentityReplacement() == transaction else {
             throw AccountIdentityReplacementError.invalidTransaction
         }
         defaults.removeObject(forKey: Self.identityReplacementKey)
+        authenticationMetadataRevision &+= 1
     }
 
     /// profile tombstone 처리 — 다른 active profile이 있는 동안 선택된 profile의 archive는 거부, switchable
@@ -323,10 +382,12 @@ public final class AccountProfilesStore {
             preferredByFamily.removeValue(forKey: family)
         }
         selectFirstProfileIfNeeded(family: family)
+        authenticationMetadataRevision &+= 1
         persist()
     }
 
     func validateArchive(profileID: String) throws {
+        try ensureAuthenticationMetadataWritable()
         try ensureRegistryWritable()
         guard let profile = profiles.first(where: { $0.id == profileID && !$0.isArchived }) else {
             throw AccountProfileError.profileNotFound(profileID)
@@ -350,7 +411,13 @@ public final class AccountProfilesStore {
 
     /// 공유 domain 재읽기 — 장수 앱이 panel open 시 호출, 타 process의 쓰기를 relaunch 없이 반영.
     public func reloadFromDefaults() {
+        guard !isApplyingAuthentication else {
+            AppLog.error(.auth, "deferring account registry reload while authentication is being applied")
+            return
+        }
+        let context = authenticationContext()
         load()
+        if authenticationContext() != context { authenticationMetadataRevision &+= 1 }
     }
 
     private func hasActiveLabel(_ label: String, family: String, excludingProfileID: String?) -> Bool {
