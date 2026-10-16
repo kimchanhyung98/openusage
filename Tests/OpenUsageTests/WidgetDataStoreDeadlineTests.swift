@@ -15,7 +15,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         var waitFinished = false
         let waiter = Task {
             waiting.open()
-            await store.waitForAccountRefreshes()
+            await store.waitForAccountRefreshes(providerIDs: ["claude"])
             waitFinished = true
             XCTAssertTrue(store.refreshingProviderIDs.isEmpty)
             XCTAssertNotNil(store.localSnapshots["claude"])
@@ -45,7 +45,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         var waitFinished = false
         let waiter = Task {
             waiting.open()
-            await store.waitForAccountRefreshes()
+            await store.waitForAccountRefreshes(providerIDs: ["codex"])
             waitFinished = true
         }
         waiter.cancel()
@@ -75,7 +75,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         var waitFinished = false
         let waiter = Task {
             waiting.open()
-            await store.waitForAccountRefreshes()
+            await store.waitForAccountRefreshes(providerIDs: ["codex@retired"])
             waitFinished = true
         }
         await waiting.wait()
@@ -86,26 +86,48 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         XCTAssertTrue(waitFinished)
     }
 
-    func testAccountWaitDoesNotBlockOnNonAccountProvider() async {
-        let runtime = Runtime(id: "cursor")
-        let store = makeStore([runtime], timeout: 60).store
-        let started = Gate()
-        let release = Gate()
-        runtime.beforeRefresh = { started.open(); await release.wait() }
-        let refresh = Task { await store.refresh(providerID: "cursor", force: true) }
-        await started.wait()
-        let finished = expectation(description: "Account wait ignores Cursor refresh")
-        let waiter = Task {
-            await store.waitForAccountRefreshes()
-            finished.fulfill()
+    func testAccountWaitScopesEachWaiterToRequestedProviderIDs() async {
+        let runtimes = [Runtime(), Runtime(id: "codex@other"), Runtime(id: "claude"), Runtime(id: "cursor")]
+        let store = makeStore(runtimes, timeout: 60).store
+        let started = expectation(description: "All refreshes started")
+        started.expectedFulfillmentCount = runtimes.count
+        let releases = runtimes.map { _ in Gate() }
+        let refreshes = runtimes.indices.map { index in
+            let runtime = runtimes[index]
+            runtime.beforeRefresh = { started.fulfill(); await releases[index].wait() }
+            return Task { await store.refresh(providerID: runtime.provider.id, force: true) }
         }
-        await fulfillment(of: [finished], timeout: 2)
-        XCTAssertEqual(store.refreshingProviderIDs, ["cursor"])
+        await fulfillment(of: [started], timeout: 2)
+        let waiting = Gate()
+        let unrelatedWaiting = Gate()
+        let selectedFinished = expectation(description: "Selected account wait ignores unrelated refreshes")
+        var unrelatedWaitFinished = false
+        let selectedWaiter = Task {
+            waiting.open()
+            await store.waitForAccountRefreshes(providerIDs: ["codex"])
+            selectedFinished.fulfill()
+        }
+        let unrelatedWaiter = Task {
+            unrelatedWaiting.open()
+            await store.waitForAccountRefreshes(providerIDs: ["codex@other", "claude"])
+            unrelatedWaitFinished = true
+        }
+        await waiting.wait()
+        await unrelatedWaiting.wait()
 
-        release.open()
-        let outcome = await refresh.value
-        await waiter.value
-        XCTAssertEqual(outcome, .refreshed)
+        releases[0].open()
+        await fulfillment(of: [selectedFinished], timeout: 2)
+        XCTAssertFalse(unrelatedWaitFinished)
+        XCTAssertEqual(store.refreshingProviderIDs, ["codex@other", "claude", "cursor"])
+
+        for release in releases.dropFirst() { release.open() }
+        for refresh in refreshes {
+            let outcome = await refresh.value
+            XCTAssertEqual(outcome, .refreshed)
+        }
+        await selectedWaiter.value
+        await unrelatedWaiter.value
+        XCTAssertTrue(unrelatedWaitFinished)
     }
 
     func testTimeoutPreservesLastGoodAndBlocksOverlapUntilLateWorkFinishes() async {

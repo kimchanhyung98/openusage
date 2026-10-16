@@ -3,6 +3,34 @@ import XCTest
 
 @MainActor
 final class AccountSwitchCoordinatorTests: XCTestCase {
+    func testRefreshScopeIncludesOnlySharedHomeAndBothSwitchAccounts() {
+        let target = AccountProfile(id: "target", family: "codex", label: "Target", identityKey: "target", createdAt: Date())
+        let current = AccountProfile(id: "current", family: "codex", label: "Current", identityKey: "current", createdAt: Date())
+        XCTAssertEqual(AccountSwitchCoordinator.providerIDs(to: target, from: current),
+                       ["codex", "codex@profile-target", "codex@profile-current"])
+        XCTAssertEqual(AccountSwitchCoordinator.providerIDs(to: target, from: nil),
+                       ["codex", "codex@profile-target"])
+    }
+
+    func testManualAccountRefreshIsBlockedOnlyDuringSwitch() async throws {
+        let coordinator = AccountSwitchCoordinator()
+        let release = Gate()
+        defer { release.open() }
+        XCTAssertFalse(coordinator.blocksRefresh(for: "codex"))
+        let task = try XCTUnwrap(coordinator.start(
+            profileID: "target", waitForRefreshes: {},
+            operation: { await release.wait() }, onFailure: { XCTFail("Unexpected failure: \($0)") }
+        ))
+        XCTAssertTrue(coordinator.blocksRefresh(for: "codex"))
+        XCTAssertTrue(coordinator.blocksRefresh(for: "codex@profile-current"))
+        XCTAssertTrue(coordinator.blocksRefresh(for: "claude"))
+        XCTAssertFalse(coordinator.blocksRefresh(for: "cursor"))
+        release.open()
+        await task.value
+        XCTAssertFalse(coordinator.blocksRefresh(for: "codex"))
+        XCTAssertFalse(coordinator.blocksRefresh(for: "claude"))
+    }
+
     func testRejectsOtherRequestsUntilRefreshAndOperationCompletion() async throws {
         let coordinator = AccountSwitchCoordinator()
         let priorRefresh = Gate()
@@ -223,7 +251,7 @@ final class AccountSwitchCoordinatorTests: XCTestCase {
                 waitCount += 1
                 if waitCount == 1 { priorWaitStarted.fulfill() }
                 else { followingWaitStarted.fulfill() }
-                await store.waitForAccountRefreshes()
+                await store.waitForAccountRefreshes(providerIDs: ["codex"])
             },
             operation: {
                 operationCount += 1

@@ -17,7 +17,6 @@ final class WeeklyTimerProbe {
     var beforeLaunch: (() async -> Void)?
     var executionHook: ((String) async -> Void)?
     var verificationHook: (() async -> Void)?
-    var finishedHook: ((String) async -> Void)?
     var result = CodexWeeklyTimerExecutionResult(launched: true, completed: true, updatedAuth: nil, failureDescription: nil)
     var verification: [CodexWeeklyTimerObservation?] = []
     var stampVerification = true
@@ -104,10 +103,7 @@ final class WeeklyTimerProbe {
                 return observation
             },
             report: { _, _, message in self.reports.append(message) },
-            finished: { providerID, _ in
-                await self.finishedHook?(providerID)
-                self.finished.append(providerID)
-            },
+            finished: { providerID, _ in self.finished.append(providerID) },
             now: { self.now },
             wait: { duration in
                 self.waits.append(duration)
