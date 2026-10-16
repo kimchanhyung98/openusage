@@ -55,9 +55,10 @@ private struct AccountSwitchConfirmation: ViewModifier {
                                   localContext: "Login shell could not be detected; account switch not applied")
             return
         }
+        let providerIDs = AccountSwitchCoordinator.providerIDs(to: profile, from: store.preferredProfile(family: profile.family))
         container.accountSwitch.start(
             profileID: profile.id,
-            waitForRefreshes: { await container.waitForAccountSwitchWork() }
+            waitForRefreshes: { await container.waitForAccountSwitchWork(providerIDs: providerIDs) }
         ) {
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
             guard status.canSwitch else {
@@ -75,7 +76,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
             store.setPreferred(family: profile.family, profileID: profile.id)
             let refreshes = container.refreshAccountCatalog()
             await container.syncDashboardUsageAccount(to: profile)
-            for refresh in refreshes { await refresh.value }
+            for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }
             error = nil
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in

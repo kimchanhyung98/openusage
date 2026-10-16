@@ -8,6 +8,18 @@ final class AccountSwitchCoordinator {
     private(set) var profileID: String?
     var isSwitching: Bool { profileID != nil }
 
+    static func providerIDs(to profile: AccountProfile, from current: AccountProfile?) -> Set<String> {
+        var ids: Set<String> = [profile.family, AccountUsageCardPlanner.cardID(family: profile.family, profileID: profile.id)]
+        if let current, current.family == profile.family {
+            ids.insert(AccountUsageCardPlanner.cardID(family: current.family, profileID: current.id))
+        }
+        return ids
+    }
+
+    func blocksRefresh(for providerID: String) -> Bool {
+        isSwitching && ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
+    }
+
     @discardableResult
     func start(
         profileID: String,

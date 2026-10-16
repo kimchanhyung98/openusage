@@ -78,7 +78,9 @@ final class WidgetDataStore {
     @ObservationIgnored private var providersNeedingScheduledRefresh: Set<String> = []
     /// 시간 초과·취소 뒤 남은 작업과 같은 runtime의 재실행 차단 — 실제 종료 때만 해제.
     @ObservationIgnored private var pendingProviderRefreshes: [ObjectIdentifier: String] = [:]
-    @ObservationIgnored private var accountRefreshWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var accountRefreshWaiters: [
+        (providerIDs: Set<String>, continuation: CheckedContinuation<Void, Never>)
+    ] = []
 
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
@@ -252,26 +254,29 @@ final class WidgetDataStore {
         }
     }
 
-    /// 계정 전환 경계의 조회 완료 대기 — 호출자 취소 후에도 실제 provider 작업 종료까지 유지.
-    func waitForAccountRefreshes() async {
-        while hasAccountRefreshes {
-            await withCheckedContinuation { accountRefreshWaiters.append($0) }
+    /// 계정 전환 대상 카드의 조회 완료 대기 — 호출자 취소 후에도 실제 provider 작업 종료까지 유지.
+    func waitForAccountRefreshes(providerIDs: Set<String>) async {
+        while hasAccountRefreshes(providerIDs: providerIDs) {
+            await withCheckedContinuation { accountRefreshWaiters.append((providerIDs, $0)) }
         }
     }
 
-    private var hasAccountRefreshes: Bool {
-        func isAccountProvider(_ providerID: String) -> Bool {
-            ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
-        }
-        return refreshingProviderIDs.contains(where: isAccountProvider)
-            || pendingProviderRefreshes.values.contains(where: isAccountProvider)
+    private func hasAccountRefreshes(providerIDs: Set<String>) -> Bool {
+        !refreshingProviderIDs.isDisjoint(with: providerIDs)
+            || pendingProviderRefreshes.values.contains { providerIDs.contains($0) }
     }
 
     private func resumeAccountRefreshWaitersIfIdle() {
-        guard !hasAccountRefreshes, !accountRefreshWaiters.isEmpty else { return }
+        guard !accountRefreshWaiters.isEmpty else { return }
         let waiters = accountRefreshWaiters
         accountRefreshWaiters.removeAll()
-        for waiter in waiters { waiter.resume() }
+        for waiter in waiters {
+            if hasAccountRefreshes(providerIDs: waiter.providerIDs) {
+                accountRefreshWaiters.append(waiter)
+            } else {
+                waiter.continuation.resume()
+            }
+        }
     }
 
     /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
