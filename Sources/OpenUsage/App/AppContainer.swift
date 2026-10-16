@@ -389,10 +389,12 @@ final class AppContainer {
             await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
         }
         repeat {
+            await accountSwitch.waitForRefreshes(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
             await codexWeeklyTimer.waitForPendingWork(providerIDs: providerIDs)
             await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
-        } while codexWeeklyTimer.hasPendingWork(providerIDs: providerIDs)
+        } while accountSwitch.hasPendingRefreshes(providerIDs: providerIDs)
+            || codexWeeklyTimer.hasPendingWork(providerIDs: providerIDs)
     }
 
     /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
@@ -464,7 +466,9 @@ final class AppContainer {
         )
         var refreshes: [String: Task<Void, Never>] = [:]
         for providerID in addedIDs where enablement.isEnabled(providerID) {
-            refreshes[providerID] = Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
+            refreshes[providerID] = accountSwitch.startRefresh(providerID: providerID) {
+                await self.dataStore.refreshAfterAccountSelection(providerID: providerID)
+            }
         }
         for (providerID, refresh) in refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) {
             refreshes[providerID] = refresh
@@ -475,6 +479,7 @@ final class AppContainer {
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
         guard !isRefreshingAll, !accountSwitch.isSwitching else { return }
+        let switchGeneration = accountSwitch.generation
         isRefreshingAll = true
         defer { isRefreshingAll = false }
         let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
@@ -488,9 +493,9 @@ final class AppContainer {
             force: force
         )
         await dataStore.refreshAll(force: force, trigger: .manual)
-        if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
-        }
+        Self.applyExternalClaudeReconciliationError(
+            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
+        )
         await statusRefresh
         await resetWatchTask?.value
     }
@@ -498,6 +503,7 @@ final class AppContainer {
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
         guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
+        let switchGeneration = accountSwitch.generation
         var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
             reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
@@ -511,9 +517,9 @@ final class AppContainer {
             force: force
         )
         let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
-        if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
-        }
+        Self.applyExternalClaudeReconciliationError(
+            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
+        )
         await statusRefresh
         return outcome
     }

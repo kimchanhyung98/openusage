@@ -22,9 +22,19 @@ extension AppContainer {
             guard let profileID = accountProfileID(for: cardID), changedIDs.contains(profileID) else { continue }
             dataStore.invalidateAuthentication(for: cardID)
             if enablement.isEnabled(cardID), !alreadyScheduledCardIDs.contains(cardID) {
-                refreshes[cardID] = Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
+                refreshes[cardID] = accountSwitch.startRefresh(providerID: cardID) {
+                    await self.dataStore.refreshAfterAccountSelection(providerID: cardID)
+                }
             }
         }
         return refreshes
+    }
+
+    static func applyExternalClaudeReconciliationError(
+        _ message: String?, to dataStore: WidgetDataStore,
+        accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
+    ) {
+        guard let message, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
+        dataStore.setExternalProviderError(message, for: "claude")
     }
 }

@@ -7,6 +7,8 @@ import Observation
 final class AccountSwitchCoordinator {
     private(set) var profileID: String?
     var isSwitching: Bool { profileID != nil }
+    @ObservationIgnored private(set) var generation = 0
+    @ObservationIgnored private var trackedRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
 
     static func providerIDs(to profile: AccountProfile, from current: AccountProfile?) -> Set<String> {
         var ids: Set<String> = [profile.family, AccountUsageCardPlanner.cardID(family: profile.family, profileID: profile.id)]
@@ -20,6 +22,32 @@ final class AccountSwitchCoordinator {
         isSwitching && ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
     }
 
+    /// 카탈로그 조회의 실행 전·재시도 대기도 추적 — 같은 카드의 동시 요청을 각각 보존.
+    func startRefresh(
+        providerID: String,
+        operation: @escaping @MainActor () async -> Void
+    ) -> Task<Void, Never> {
+        let id = UUID()
+        let task = Task {
+            defer { trackedRefreshes[id] = nil }
+            await operation()
+        }
+        trackedRefreshes[id] = (providerID, task)
+        return task
+    }
+
+    func hasPendingRefreshes(providerIDs: Set<String>) -> Bool {
+        trackedRefreshes.values.contains { providerIDs.contains($0.providerID) }
+    }
+
+    func waitForRefreshes(providerIDs: Set<String>) async {
+        while true {
+            let tasks = trackedRefreshes.values.filter { providerIDs.contains($0.providerID) }.map(\.task)
+            guard !tasks.isEmpty else { return }
+            for task in tasks { await task.value }
+        }
+    }
+
     @discardableResult
     func start(
         profileID: String,
@@ -28,6 +56,7 @@ final class AccountSwitchCoordinator {
         onFailure: @escaping @MainActor (Error) -> Void
     ) -> Task<Void, Never>? {
         guard !isSwitching else { return nil }
+        generation &+= 1
         self.profileID = profileID
 
         // Task 생성 전에 점유 — 이미 열린 다른 화면의 요청도 대기열에 넣지 않고 차단.
