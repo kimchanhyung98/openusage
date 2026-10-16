@@ -159,6 +159,7 @@ struct WidgetGroupedListView: View {
             Button("Refresh \(name)") {
                 Task { await container.refresh(providerID: group.provider.id, force: true) }
             }
+            .disabled(container.accountSwitch.blocksRefresh(for: group.provider.id))
             Button("Customize…") {
                 openCustomize(for: group.provider.id)
             }
@@ -337,6 +338,7 @@ struct WidgetGroupedListView: View {
             Button("Refresh \(container.displayName(for: provider))") {
                 Task { await container.refresh(providerID: providerID, force: true) }
             }
+            .disabled(container.accountSwitch.blocksRefresh(for: providerID))
         }
         Button("Customize…") {
             openCustomize(for: providerID)
@@ -352,9 +354,11 @@ struct WidgetGroupedListView: View {
             profiles: container.accountProfiles.profiles
         ) {
             Button("Use \(profile.family.capitalized): \(profile.label)") {
+                guard !container.accountSwitch.isSwitching else { return }
                 pendingAccountSwitch = profile
             }
-            .disabled(container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
+            .disabled(container.accountSwitch.isSwitching
+                || container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
             Divider()
         }
     }

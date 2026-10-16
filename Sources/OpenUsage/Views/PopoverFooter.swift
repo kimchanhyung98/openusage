@@ -86,7 +86,7 @@ struct PopoverFooter: View {
         .buttonStyle(.plain)
         .keyboardShortcut("r", modifiers: .command)
         .hoverTooltip("Refresh now (⌘R)")
-        .disabled(isUpdating)
+        .disabled(isUpdating || container.accountSwitch.isSwitching)
     }
 
     private var isUpdating: Bool {
@@ -95,7 +95,7 @@ struct PopoverFooter: View {
     }
 
     private func refreshNow() {
-        guard !isUpdating else { return }
+        guard !isUpdating, !container.accountSwitch.isSwitching else { return }
         Task { await container.refreshAll(force: true) }
     }
 

@@ -15,6 +15,7 @@ final class CodexWeeklyTimerRouter {
     private var identityKeys: [String: String]
     private var warningsByAccount: [String: String] = [:]
     private var scheduledCheckRequests: Set<String> = []
+    private var followUpRefreshes: [UUID: (providerID: String, task: Task<Void, Never>)] = [:]
     private let isProviderEnabled: (String) -> Bool
     private let executor: any CodexWeeklyTimerExecuting
     private let store: CodexWeeklyTimerAttemptStore
@@ -91,13 +92,16 @@ final class CodexWeeklyTimerRouter {
         },
         finished: { [weak self] providerID, _ in
             guard let self, !self.isShuttingDown, let currentBindingID = self.bindings[providerID]?.id else { return }
-            Task { [weak self] in
+            let id = UUID()
+            let task = Task { [weak self] in
                 guard let self else { return }
+                defer { self.followUpRefreshes[id] = nil }
                 await self.refresh(providerID) { [weak self] in
                     self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
                         && self?.isProviderEnabled(providerID) == true
                 }
             }
+            self.followUpRefreshes[id] = (providerID, task)
         },
         now: now,
         wait: wait
@@ -205,6 +209,29 @@ final class CodexWeeklyTimerRouter {
     }
 
     var hasPendingWork: Bool { coordinator.hasPendingWork }
+
+    func hasPendingWork(providerIDs: Set<String>) -> Bool {
+        let affected = relatedProviderIDs(to: providerIDs)
+        return coordinator.hasPendingWork(providerIDs: affected)
+            || followUpRefreshes.values.contains { affected.contains($0.providerID) }
+    }
+
+    func waitForPendingWork(providerIDs: Set<String>) async {
+        let affected = relatedProviderIDs(to: providerIDs)
+        while true {
+            await coordinator.waitForPendingWork(providerIDs: affected)
+            let refreshes = followUpRefreshes.values.filter { affected.contains($0.providerID) }.map(\.task)
+            guard !refreshes.isEmpty else { return }
+            for refresh in refreshes { await refresh.value }
+        }
+    }
+
+    private func relatedProviderIDs(to providerIDs: Set<String>) -> Set<String> {
+        let accountKeys = Set(providerIDs.compactMap { bindings[$0]?.accountKey })
+        return providerIDs.union(bindings.compactMap { id, binding in
+            binding.accountKey.map { accountKeys.contains($0) } == true ? id : nil
+        })
+    }
 
     func shutdown() async {
         isShuttingDown = true

@@ -14,6 +14,12 @@ final class CodexWeeklyTimerCoordinator {
         var lastObservation: CodexWeeklyTimerObservation?
     }
 
+    private struct PendingWorkWaiter {
+        let providerIDs: Set<String>
+        let accountKeys: Set<String>
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private let store: CodexWeeklyTimerAttemptStore
     private let isCurrent: @MainActor (String, UUID, String) -> Bool
     private let prepare: @MainActor (String, String) async throws -> CodexWeeklyTimerSession?
@@ -31,6 +37,7 @@ final class CodexWeeklyTimerCoordinator {
     private var active: Candidate?
     private var executing: Candidate?
     private var task: Task<Void, Never>?
+    private var pendingWorkWaiters: [PendingWorkWaiter] = []
     private var observationEpoch = UUID()
     private var stopped = false
 
@@ -62,6 +69,33 @@ final class CodexWeeklyTimerCoordinator {
         task != nil || active != nil || !pending.isEmpty
     }
 
+    func hasPendingWork(providerIDs: Set<String>) -> Bool {
+        hasPendingWork(providerIDs: providerIDs, accountKeys: Set(providerIDs.compactMap { accountByProvider[$0]?.accountKey }))
+    }
+
+    func waitForPendingWork(providerIDs: Set<String>) async {
+        let accountKeys = Set(providerIDs.compactMap { accountByProvider[$0]?.accountKey })
+        guard hasPendingWork(providerIDs: providerIDs, accountKeys: accountKeys) else { return }
+        await withCheckedContinuation { continuation in
+            pendingWorkWaiters.append(.init(providerIDs: providerIDs, accountKeys: accountKeys, continuation: continuation))
+        }
+    }
+
+    private func hasPendingWork(providerIDs: Set<String>, accountKeys: Set<String>) -> Bool {
+        let matches: (Candidate) -> Bool = {
+            providerIDs.contains($0.providerID) || accountKeys.contains($0.observation.accountKey)
+        }
+        return active.map(matches) == true || pending.contains(where: matches)
+    }
+
+    private func resumePendingWorkWaiters() {
+        pendingWorkWaiters.removeAll { waiter in
+            guard !hasPendingWork(providerIDs: waiter.providerIDs, accountKeys: waiter.accountKeys) else { return false }
+            waiter.continuation.resume()
+            return true
+        }
+    }
+
     func isRunning(providerID: String) -> Bool {
         guard let active = executing else { return false }
         return active.providerID == providerID
@@ -73,6 +107,7 @@ final class CodexWeeklyTimerCoordinator {
         checkUnconfirmedReset: Bool = false
     ) {
         guard !stopped, isCurrent(providerID, bindingID, observation.accountKey) else { return }
+        defer { resumePendingWorkWaiters() }
         accountByProvider[providerID] = (observation.accountKey, bindingID)
         let candidate = Candidate(providerID: providerID, bindingID: bindingID, observation: observation,
                                   observationEpoch: observationEpoch)
@@ -106,6 +141,7 @@ final class CodexWeeklyTimerCoordinator {
     }
 
     func invalidate(providerID: String) {
+        defer { resumePendingWorkWaiters() }
         pending.removeAll { $0.providerID == providerID }
         if let binding = accountByProvider.removeValue(forKey: providerID),
            !accountByProvider.values.contains(where: { $0.accountKey == binding.accountKey }) {
@@ -122,12 +158,14 @@ final class CodexWeeklyTimerCoordinator {
         observationEpoch = UUID()
         pending.removeAll()
         awaitingReset = awaitingReset.mapValues { _ in PendingVerification(lastObservation: nil) }
+        resumePendingWorkWaiters()
     }
 
     func stop() {
         stopped = true
         pending.removeAll()
         task?.cancel()
+        resumePendingWorkWaiters()
     }
 
     func shutdown() async {
@@ -138,6 +176,7 @@ final class CodexWeeklyTimerCoordinator {
 
     private func drain() async {
         while !pending.isEmpty, !Task.isCancelled, !stopped {
+            defer { resumePendingWorkWaiters() }
             let candidate = pending.removeFirst()
             guard current(candidate) else { continue }
             active = candidate
@@ -146,6 +185,7 @@ final class CodexWeeklyTimerCoordinator {
             if !stopped { finished(candidate.providerID, candidate.bindingID) }
         }
         task = nil
+        resumePendingWorkWaiters()
     }
 
     private func process(_ candidate: Candidate) async {

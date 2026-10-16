@@ -47,6 +47,7 @@ final class AppContainer {
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
+    let accountSwitch = AccountSwitchCoordinator()
     let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
@@ -65,6 +66,7 @@ final class AppContainer {
     private(set) var nextCodexTimerCheckAt: Date?
     /// Settings·주기·수동 refresh가 같은 외부 Claude 로그인을 동시에 귀속하지 않도록 직렬화.
     private var isReconcilingExternalClaudeAuthentication = false
+    @ObservationIgnored private var authenticationReconciliationWaiters: [CheckedContinuation<Void, Never>] = []
     /// 신규 설치 credential 탐지 패스 (`FirstRunSeeder` 참고); 이후 런치에서는 `nil`.
     private let seedTask: Task<Void, Never>?
     /// 신규 provider credential 탐지 패스 (`NewProviderSeeder` 참고); 처음 보는 provider가 없으면 `nil`.
@@ -381,10 +383,24 @@ final class AppContainer {
         )
     }
 
+    /// 전환 대상의 조회·주간 타이머·재조회와 이미 시작한 인증 반영의 종료 대기.
+    func waitForAccountSwitchWork(providerIDs: Set<String>) async {
+        if isReconcilingExternalClaudeAuthentication {
+            await withCheckedContinuation { authenticationReconciliationWaiters.append($0) }
+        }
+        repeat {
+            await accountSwitch.waitForRefreshes(providerIDs: providerIDs)
+            await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
+            await codexWeeklyTimer.waitForPendingWork(providerIDs: providerIDs)
+            await dataStore.waitForAccountRefreshes(providerIDs: providerIDs)
+        } while accountSwitch.hasPendingRefreshes(providerIDs: providerIDs)
+            || codexWeeklyTimer.hasPendingWork(providerIDs: providerIDs)
+    }
+
     /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
     /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
     /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
-    func syncDashboardUsageAccount(to profile: AccountProfile) {
+    func syncDashboardUsageAccount(to profile: AccountProfile) async {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
             profileID: profile.id,
@@ -393,20 +409,22 @@ final class AppContainer {
             return
         }
         noteAccountSelectionChanged()
-        Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
+        await dataStore.refreshAfterAccountSelection(providerID: cardID)
     }
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
-    func refreshAccountCatalog() {
+    @discardableResult
+    func refreshAccountCatalog() -> [String: Task<Void, Never>] {
         var addedIDs: Set<String> = []
-        defer { refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) }
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
             accountProfiles: accountProfiles
         )
-        guard assembly != accountAssembly else { return }
+        guard assembly != accountAssembly else {
+            return refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs)
+        }
         accountAssembly = assembly
         let nextProfileIDs = Self.accountProfileIDsByCardID(assembly: assembly, profiles: accountProfiles)
         let nextProviders = ProviderCatalog.make(
@@ -446,59 +464,76 @@ final class AppContainer {
         codexWeeklyTimer.reconfigure(
             providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
         )
+        var refreshes: [String: Task<Void, Never>] = [:]
         for providerID in addedIDs where enablement.isEnabled(providerID) {
-            Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
+            refreshes[providerID] = accountSwitch.startRefresh(providerID: providerID) {
+                await self.dataStore.refreshAfterAccountSelection(providerID: providerID)
+            }
         }
+        for (providerID, refresh) in refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) {
+            refreshes[providerID] = refresh
+        }
+        return refreshes
     }
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.
     func refreshAll(force: Bool = false) async {
-        guard !isRefreshingAll else { return }
+        guard !isRefreshingAll, !accountSwitch.isSwitching else { return }
+        let switchGeneration = accountSwitch.generation
         isRefreshingAll = true
         defer { isRefreshingAll = false }
         let resetWatchTask = force ? Task { await resetWatchCoordinator.refreshNow() } : nil
         let reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
             await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
         }
+        guard !accountSwitch.isSwitching else { return }
         let enabledProviderIDs = dataStore.knownProviderIDs.filter { enablement.isEnabled($0) }
         async let statusRefresh: Void = providerStatus.refresh(
             providerIDs: enabledProviderIDs,
             force: force
         )
         await dataStore.refreshAll(force: force, trigger: .manual)
-        if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
-        }
+        Self.applyExternalClaudeReconciliationError(
+            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
+        )
         await statusRefresh
         await resetWatchTask?.value
     }
 
     /// 단일 카드 사용자 새로 고침 — Claude managed binding을 먼저 반영.
     func refresh(providerID: String, force: Bool = false) async -> WidgetDataStore.RefreshOutcome {
+        guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
+        let switchGeneration = accountSwitch.generation
         var reconciliationError: String?
         if ProviderAccountID.family(of: providerID) == "claude" {
             reconciliationError = await ProviderRefreshContext.$isManual.withValue(true) {
                 await reconcileExternalClaudeAuthenticationAndRefreshCatalog()
             }
         }
+        guard !accountSwitch.blocksRefresh(for: providerID) else { return .skipped }
         let statusProviderIDs = enablement.isEnabled(providerID) ? [providerID] : []
         async let statusRefresh: Void = providerStatus.refresh(
             providerIDs: statusProviderIDs,
             force: force
         )
         let outcome = await dataStore.refresh(providerID: providerID, force: force, trigger: .manual)
-        if let reconciliationError {
-            dataStore.setExternalProviderError(reconciliationError, for: "claude")
-        }
+        Self.applyExternalClaudeReconciliationError(
+            reconciliationError, to: dataStore, accountSwitch: accountSwitch, startedAt: switchGeneration
+        )
         await statusRefresh
         return outcome
     }
 
     @discardableResult
     private func reconcileExternalClaudeAuthentication() async -> Result<Bool, Error> {
-        guard !isReconcilingExternalClaudeAuthentication else { return .success(false) }
+        guard !accountSwitch.isSwitching, !isReconcilingExternalClaudeAuthentication else { return .success(false) }
         isReconcilingExternalClaudeAuthentication = true
-        defer { isReconcilingExternalClaudeAuthentication = false }
+        defer {
+            isReconcilingExternalClaudeAuthentication = false
+            let waiters = authenticationReconciliationWaiters
+            authenticationReconciliationWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
         do {
             switch try await AccountCredentialImporter()
                 .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
