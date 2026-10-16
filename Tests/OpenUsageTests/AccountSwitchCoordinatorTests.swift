@@ -289,6 +289,103 @@ final class AccountSwitchCoordinatorTests: XCTestCase {
         try await assertAvailableForNextAccount(coordinator)
     }
 
+    func testQueuedAccountRefreshKeepsSwitchWaitingWhileProviderStoreIsIdle() async throws {
+        let suite = "OpenUsageTests.AccountSwitchRetry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let runtime = Runtime()
+        let store = WidgetDataStore(
+            registry: .from([runtime]), providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults, providerRefreshTimeout: 60
+        )
+        let coordinator = AccountSwitchCoordinator()
+        let retryRelease = Gate()
+        let providerRelease = Gate()
+        defer { retryRelease.open(); providerRelease.open() }
+        let waiting = expectation(description: "Switch waits for the queued account refresh")
+        let providerStarted = expectation(description: "Account refresh resumes after retry delay")
+        runtime.beforeRefresh = { _ in providerStarted.fulfill(); await providerRelease.wait() }
+        var refreshStarted = false
+        let refresh = coordinator.startRefresh(providerID: "codex") {
+            refreshStarted = true
+            await retryRelease.wait()
+            await store.refreshAfterAccountSelection(providerID: "codex")
+        }
+        XCTAssertFalse(refreshStarted)
+        XCTAssertTrue(coordinator.hasPendingRefreshes(providerIDs: ["codex"]))
+        var waitCount = 0
+        var operationCount = 0
+        let task = try XCTUnwrap(coordinator.start(
+            profileID: "target",
+            waitForRefreshes: {
+                await store.waitForAccountRefreshes(providerIDs: ["codex"])
+                waitCount += 1
+                if waitCount == 1 { waiting.fulfill() }
+                await coordinator.waitForRefreshes(providerIDs: ["codex"])
+            },
+            operation: { operationCount += 1 },
+            onFailure: { XCTFail("Unexpected failure: \($0)") }
+        ))
+        await fulfillment(of: [waiting], timeout: 2)
+        XCTAssertTrue(store.refreshingProviderIDs.isEmpty)
+        XCTAssertEqual(operationCount, 0)
+        assertRejected(coordinator, profileID: "another-account")
+        retryRelease.open()
+        await fulfillment(of: [providerStarted], timeout: 2)
+        XCTAssertEqual(operationCount, 0)
+        XCTAssertTrue(coordinator.isSwitching)
+        providerRelease.open()
+        await refresh.value
+        await task.value
+        XCTAssertEqual(runtime.completedCount, 1)
+        XCTAssertEqual(operationCount, 1)
+        XCTAssertFalse(coordinator.hasPendingRefreshes(providerIDs: ["codex"]))
+        try await assertAvailableForNextAccount(coordinator)
+    }
+
+    func testSwitchWaitIncludesEveryRefreshForItsAccountAndExcludesOtherAccounts() async throws {
+        let coordinator = AccountSwitchCoordinator()
+        let firstRelease = Gate()
+        let secondRelease = Gate()
+        let unrelatedRelease = Gate()
+        defer { firstRelease.open(); secondRelease.open(); unrelatedRelease.open() }
+        let first = coordinator.startRefresh(providerID: "codex") { await firstRelease.wait() }
+        let second = coordinator.startRefresh(providerID: "codex") { await secondRelease.wait() }
+        let unrelated = coordinator.startRefresh(providerID: "codex@other") { await unrelatedRelease.wait() }
+        let waiting = expectation(description: "Switch waits for all matching account refreshes")
+        var waitCount = 0
+        var operationCount = 0
+        let task = try XCTUnwrap(coordinator.start(
+            profileID: "target",
+            waitForRefreshes: {
+                waitCount += 1
+                if waitCount == 1 { waiting.fulfill() }
+                await coordinator.waitForRefreshes(providerIDs: ["codex"])
+            },
+            operation: { operationCount += 1 },
+            onFailure: { XCTFail("Unexpected failure: \($0)") }
+        ))
+        await fulfillment(of: [waiting], timeout: 2)
+        secondRelease.open()
+        await second.value
+        XCTAssertTrue(coordinator.hasPendingRefreshes(providerIDs: ["codex"]))
+        XCTAssertEqual(operationCount, 0)
+        assertRejected(coordinator, profileID: "another-account")
+        firstRelease.open()
+        await first.value
+        let finished = expectation(description: "Switch finishes before the unrelated refresh")
+        let completion = Task { await task.value; finished.fulfill() }
+        await fulfillment(of: [finished], timeout: 2)
+        XCTAssertEqual(operationCount, 1)
+        XCTAssertFalse(coordinator.hasPendingRefreshes(providerIDs: ["codex"]))
+        XCTAssertTrue(coordinator.hasPendingRefreshes(providerIDs: ["codex@other"]))
+        XCTAssertFalse(coordinator.isSwitching)
+        unrelatedRelease.open()
+        await unrelated.value
+        await completion.value
+    }
+
     private func assertRejected(
         _ coordinator: AccountSwitchCoordinator, profileID: String,
         file: StaticString = #filePath, line: UInt = #line
