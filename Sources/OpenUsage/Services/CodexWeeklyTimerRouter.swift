@@ -91,12 +91,9 @@ final class CodexWeeklyTimerRouter {
         },
         finished: { [weak self] providerID, _ in
             guard let self, !self.isShuttingDown, let currentBindingID = self.bindings[providerID]?.id else { return }
-            Task { [weak self] in
-                guard let self else { return }
-                await self.refresh(providerID) { [weak self] in
-                    self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
-                        && self?.isProviderEnabled(providerID) == true
-                }
+            await self.refresh(providerID) { [weak self] in
+                self?.isShuttingDown == false && self?.bindings[providerID]?.id == currentBindingID
+                    && self?.isProviderEnabled(providerID) == true
             }
         },
         now: now,
@@ -205,6 +202,10 @@ final class CodexWeeklyTimerRouter {
     }
 
     var hasPendingWork: Bool { coordinator.hasPendingWork }
+
+    func waitForPendingWork() async {
+        await coordinator.waitForPendingWork()
+    }
 
     func shutdown() async {
         isShuttingDown = true

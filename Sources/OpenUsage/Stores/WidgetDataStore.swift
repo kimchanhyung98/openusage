@@ -77,7 +77,8 @@ final class WidgetDataStore {
     /// 타이머 조회로 갱신한 캐시가 다음 5분 사용량 조회를 생략하지 않도록 처리.
     @ObservationIgnored private var providersNeedingScheduledRefresh: Set<String> = []
     /// 시간 초과·취소 뒤 남은 작업과 같은 runtime의 재실행 차단 — 실제 종료 때만 해제.
-    @ObservationIgnored private var pendingProviderRefreshes: Set<ObjectIdentifier> = []
+    @ObservationIgnored private var pendingProviderRefreshes: [ObjectIdentifier: String] = [:]
+    @ObservationIgnored private var accountRefreshWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// Quota pace-notification 서브시스템의 소유자 — store는 매 pass의 enabled bounded metric 수집·위임만 담당.
     @ObservationIgnored private let notificationEvaluator = QuotaNotificationEvaluator()
@@ -235,7 +236,7 @@ final class WidgetDataStore {
         registry.providers.map(\.id).filter {
             isProviderEnabled($0) && RefreshSetting.cadence(for: $0) == cadence
                 && isRefreshSuspended?($0) != true && !refreshingProviderIDs.contains($0)
-                && providersByID[$0].map { !pendingProviderRefreshes.contains(ObjectIdentifier($0)) } == true
+                && providersByID[$0].map { pendingProviderRefreshes[ObjectIdentifier($0)] == nil } == true
         }.map { scheduledRefreshDate(for: $0) ?? date }.min()
     }
 
@@ -249,6 +250,28 @@ final class WidgetDataStore {
                 failureRetryAfter[id] = min(retryAfter, date.addingTimeInterval(Self.failureRetryBackoff))
             }
         }
+    }
+
+    /// 계정 전환 경계의 조회 완료 대기 — 호출자 취소 후에도 실제 provider 작업 종료까지 유지.
+    func waitForAccountRefreshes() async {
+        while hasAccountRefreshes {
+            await withCheckedContinuation { accountRefreshWaiters.append($0) }
+        }
+    }
+
+    private var hasAccountRefreshes: Bool {
+        func isAccountProvider(_ providerID: String) -> Bool {
+            ProviderAccountID.families.contains(ProviderAccountID.family(of: providerID))
+        }
+        return refreshingProviderIDs.contains(where: isAccountProvider)
+            || pendingProviderRefreshes.values.contains(where: isAccountProvider)
+    }
+
+    private func resumeAccountRefreshWaitersIfIdle() {
+        guard !hasAccountRefreshes, !accountRefreshWaiters.isEmpty else { return }
+        let waiters = accountRefreshWaiters
+        accountRefreshWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
     /// Account switch 직후의 선택 카드 fetch — 주기 refresh가 카드를 점유 중이면 끝나기를 기다렸다가
@@ -493,7 +516,7 @@ final class WidgetDataStore {
 
         guard let provider = providersByID[providerID] else { return .skipped }
         let runtimeID = ObjectIdentifier(provider)
-        guard !pendingProviderRefreshes.contains(runtimeID) else {
+        guard pendingProviderRefreshes[runtimeID] == nil else {
             AppLog.debug(.refresh, "skipped \(providerID) (previous provider work has not finished)")
             return .skipped
         }
@@ -506,21 +529,23 @@ final class WidgetDataStore {
         var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
         defer {
             refreshingProviderIDs.remove(providerID)
-            if needsScheduleWake, !pendingProviderRefreshes.contains(runtimeID) {
+            if needsScheduleWake, pendingProviderRefreshes[runtimeID] == nil {
                 NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
             }
+            resumeAccountRefreshWaitersIfIdle()
         }
         let boundGeneration = catalogGeneration
         let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         let start = monotonicNow()
         let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self] in
-            self?.pendingProviderRefreshes.insert(runtimeID)
+            self?.pendingProviderRefreshes[runtimeID] = providerID
             defer {
-                self?.pendingProviderRefreshes.remove(runtimeID)
+                self?.pendingProviderRefreshes.removeValue(forKey: runtimeID)
                 if self?.refreshingProviderIDs.contains(providerID) == false {
                     NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
                 }
+                self?.resumeAccountRefreshWaitersIfIdle()
             }
             return await ProviderRefreshContext.$isManual.withValue(trigger == .manual) {
                 await ProviderRefreshContext.$isResetClaim.withValue(trigger == .resetClaim) {

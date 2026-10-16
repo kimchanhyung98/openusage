@@ -352,9 +352,11 @@ struct WidgetGroupedListView: View {
             profiles: container.accountProfiles.profiles
         ) {
             Button("Use \(profile.family.capitalized): \(profile.label)") {
+                guard !container.accountSwitch.isSwitching else { return }
                 pendingAccountSwitch = profile
             }
-            .disabled(container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
+            .disabled(container.accountSwitch.isSwitching
+                || container.accountProfiles.preferredProfileID(family: profile.family) == profile.id)
             Divider()
         }
     }

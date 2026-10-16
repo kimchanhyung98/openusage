@@ -20,7 +20,7 @@ final class CodexWeeklyTimerCoordinator {
     private let execute: @MainActor (String, UUID, CodexWeeklyTimerSession, @escaping @MainActor () -> Bool) async -> CodexWeeklyTimerExecutionResult
     private let verify: @MainActor (String, CodexWeeklyTimerSession) async throws -> CodexWeeklyTimerObservation?
     private let report: @MainActor (String, UUID, String?) -> Void
-    private let finished: @MainActor (String, UUID) -> Void
+    private let finished: @MainActor (String, UUID) async -> Void
     private let now: @MainActor () -> Date
     private let wait: @MainActor (Duration) async throws -> Void
     private var pending: [Candidate] = []
@@ -41,7 +41,7 @@ final class CodexWeeklyTimerCoordinator {
         execute: @escaping @MainActor (String, UUID, CodexWeeklyTimerSession, @escaping @MainActor () -> Bool) async -> CodexWeeklyTimerExecutionResult,
         verify: @escaping @MainActor (String, CodexWeeklyTimerSession) async throws -> CodexWeeklyTimerObservation?,
         report: @escaping @MainActor (String, UUID, String?) -> Void,
-        finished: @escaping @MainActor (String, UUID) -> Void = { _, _ in },
+        finished: @escaping @MainActor (String, UUID) async -> Void = { _, _ in },
         now: @escaping @MainActor () -> Date = Date.init,
         wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
@@ -60,6 +60,10 @@ final class CodexWeeklyTimerCoordinator {
 
     var hasPendingWork: Bool {
         task != nil || active != nil || !pending.isEmpty
+    }
+
+    func waitForPendingWork() async {
+        while let runningTask = task { await runningTask.value }
     }
 
     func isRunning(providerID: String) -> Bool {
@@ -143,7 +147,7 @@ final class CodexWeeklyTimerCoordinator {
             active = candidate
             await process(candidate)
             active = nil
-            if !stopped { finished(candidate.providerID, candidate.bindingID) }
+            if !stopped { await finished(candidate.providerID, candidate.bindingID) }
         }
         task = nil
     }

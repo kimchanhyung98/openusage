@@ -55,6 +55,7 @@ struct AccountsSettingsSection: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Button {
+                    guard !container.accountSwitch.isSwitching else { return }
                     addFamily = "claude"
                     isAddSheetPresented = true
                 } label: {
@@ -64,7 +65,7 @@ struct AccountsSettingsSection: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Add Account")
-                .disabled(store.hasUnreadableRegistry)
+                .disabled(store.hasUnreadableRegistry || container.accountSwitch.isSwitching)
             }
             .padding(.horizontal, 8)
 
@@ -203,7 +204,7 @@ struct AccountsSettingsSection: View {
         Binding(
             get: { store.preferredProfileID(family: family) == profileID },
             set: { isSelected in
-                guard isSelected,
+                guard !container.accountSwitch.isSwitching, isSelected,
                       let profile = store.profiles.first(where: { $0.id == profileID && $0.family == family })
                 else {
                     return

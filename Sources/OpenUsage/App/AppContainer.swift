@@ -47,6 +47,7 @@ final class AppContainer {
     let accounts: ProviderAccountsStore
     /// 관리형 launch-profile registry. 런치 account 패스와 Settings 계정 UI가 공유하는 단일 인스턴스.
     let accountProfiles: AccountProfilesStore
+    let accountSwitch = AccountSwitchCoordinator()
     let accountCardPresentation: AccountCardPresentationStore
     /// 카드 id → 관리형 profile id 매핑. label 편집과 무관하게 안정 — dashboard가 Settings와 같은 profile 선택 가능.
     private var accountProfileIDsByCardID: [String: String]
@@ -381,10 +382,19 @@ final class AppContainer {
         )
     }
 
+    /// 사용량 조회가 시작한 주간 타이머와 재조회까지 종료된 뒤 전환 경계 통과.
+    func waitForAccountSwitchWork() async {
+        repeat {
+            await dataStore.waitForAccountRefreshes()
+            await codexWeeklyTimer.waitForPendingWork()
+            await dataStore.waitForAccountRefreshes()
+        } while codexWeeklyTimer.hasPendingWork
+    }
+
     /// Settings 계정 전환 성공 시 dashboard selector를 1회 갱신.
     /// 메뉴 바 star는 family 설정이라 재지정 불필요 — 표시 값만 선택 카드를 따라감.
     /// 이후 dashboard picker 변경은 view 전용 — terminal 전환 없음.
-    func syncDashboardUsageAccount(to profile: AccountProfile) {
+    func syncDashboardUsageAccount(to profile: AccountProfile) async {
         guard let cardID = DashboardUsageAccountSelection.selectAfterAccountSwitch(
             family: profile.family,
             profileID: profile.id,
@@ -393,20 +403,22 @@ final class AppContainer {
             return
         }
         noteAccountSelectionChanged()
-        Task { await dataStore.refreshAfterAccountSelection(providerID: cardID) }
+        await dataStore.refreshAfterAccountSelection(providerID: cardID)
     }
 
     /// Settings의 관리형 profile 변경 직후 account 카드 추가/제거 반영.
     /// root store는 유지 — 열린 dashboard와 status item이 재시작 없이 새 registry 사용.
-    func refreshAccountCatalog() {
+    @discardableResult
+    func refreshAccountCatalog() -> [Task<Void, Never>] {
         var addedIDs: Set<String> = []
-        defer { refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs) }
         let assembly = ProviderAccountAssembly.make(
             accountsStore: accounts,
             waitsForLoginShell: true,
             accountProfiles: accountProfiles
         )
-        guard assembly != accountAssembly else { return }
+        guard assembly != accountAssembly else {
+            return refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs)
+        }
         accountAssembly = assembly
         let nextProfileIDs = Self.accountProfileIDsByCardID(assembly: assembly, profiles: accountProfiles)
         let nextProviders = ProviderCatalog.make(
@@ -446,9 +458,10 @@ final class AppContainer {
         codexWeeklyTimer.reconfigure(
             providers: nextProviders.compactMap { $0 as? CodexProvider }, identityKeys: assembly.identityKeysByCard
         )
-        for providerID in addedIDs where enablement.isEnabled(providerID) {
+        let refreshes = addedIDs.filter { enablement.isEnabled($0) }.map { providerID in
             Task { await dataStore.refreshAfterAccountSelection(providerID: providerID) }
         }
+        return refreshes + refreshReauthenticatedAccounts(alreadyScheduledCardIDs: addedIDs)
     }
 
     /// 사용자 새로 고침 — shared-home 재인증과 catalog binding을 먼저 반영한 뒤 usage 조회.

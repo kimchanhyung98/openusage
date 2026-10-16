@@ -174,6 +174,7 @@ struct AccountSettingsFamilyCard: View {
                     .lineLimit(1)
                     .accessibilityLabel(profile.label)
                 Button {
+                    guard !container.accountSwitch.isSwitching else { return }
                     onManage(profile)
                 } label: {
                     Image(systemName: "ellipsis.circle")
@@ -182,13 +183,24 @@ struct AccountSettingsFamilyCard: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Manage \(profile.label) Account")
+                .disabled(container.accountSwitch.isSwitching)
             }
             Spacer(minLength: 8)
-            AccountStatusBadge(state: state)
+            if container.accountSwitch.isSwitching, container.accountSwitch.profileID == profile.id {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Switching…")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                AccountStatusBadge(state: state)
+            }
             if total > 1 {
                 Toggle("", isOn: selection(profile.id))
                     .settingsSwitchStyle()
-                    .disabled(!state.canSwitch)
+                    .disabled(!state.canSwitch || container.accountSwitch.isSwitching)
             }
         }
         .padding(.horizontal, 12)

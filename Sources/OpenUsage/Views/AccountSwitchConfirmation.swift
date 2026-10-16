@@ -36,6 +36,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
                 Button("Use \(profile.family.capitalized): \(profile.label)") {
                     switchTo(profile)
                 }
+                .disabled(container.accountSwitch.isSwitching)
                 Button("Cancel", role: .cancel) {}
             } message: { profile in
                 if let shell = AccountShellInstaller.defaultShell() {
@@ -47,32 +48,37 @@ private struct AccountSwitchConfirmation: ViewModifier {
     }
 
     private func switchTo(_ profile: AccountProfile) {
-        let status = container.accountStatus(for: profile, localState: localStates[profile.id])
-        guard status.canSwitch else {
-            error = status.message ?? "Sign in again before switching to this account."
-            let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
-            AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
-                                  localContext: "Account switch requires sign-in; account switch not applied")
-            return
-        }
+        guard !container.accountSwitch.isSwitching else { return }
         guard let shell = AccountShellInstaller.defaultShell() else {
             error = "Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically."
             AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
                                   localContext: "Login shell could not be detected; account switch not applied")
             return
         }
-        let currentProfile = store.preferredProfile(family: profile.family)
-        do {
+        container.accountSwitch.start(
+            profileID: profile.id,
+            waitForRefreshes: { await container.waitForAccountSwitchWork() }
+        ) {
+            let status = container.accountStatus(for: profile, localState: localStates[profile.id])
+            guard status.canSwitch else {
+                error = status.message ?? "Sign in again before switching to this account."
+                let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
+                AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
+                                      localContext: "Account switch requires sign-in; account switch not applied")
+                return
+            }
+            let currentProfile = store.preferredProfile(family: profile.family)
             // wrapper는 계정 무관(shared home만 고정)이므로 먼저 설치 — 실패해도 아무것도 전환되지 않고,
             // auth transaction commit 이후에는 shared home과 선택 상태 사이에 실패 가능한 단계 없음.
             try AccountShellInstaller.install(family: profile.family, shell: shell)
             try AccountCredentialSwitcher().switchAuthentication(to: profile, from: currentProfile)
             store.setPreferred(family: profile.family, profileID: profile.id)
-            container.refreshAccountCatalog()
-            container.syncDashboardUsageAccount(to: profile)
+            let refreshes = container.refreshAccountCatalog()
+            await container.syncDashboardUsageAccount(to: profile)
+            for refresh in refreshes { await refresh.value }
             error = nil
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
-        } catch let switchError {
+        } onFailure: { switchError in
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
             error = "Couldn't switch to \(profile.label): \(switchError.localizedDescription)"
         }

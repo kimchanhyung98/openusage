@@ -90,7 +90,7 @@ struct AccountAddSheet: View {
                 }
                 .glassButtonStyle(prominent: true)
                 .controlSize(.small)
-                .disabled(phase == .signingIn)
+                .disabled(phase == .signingIn || container.accountSwitch.isSwitching)
             }
         }
         .padding(22)
@@ -104,6 +104,7 @@ struct AccountAddSheet: View {
     }
 
     private func addAccount() {
+        guard !container.accountSwitch.isSwitching else { return }
         phase = .signingIn
         let family = family
         let importer = AccountCredentialImporter()
@@ -269,7 +270,7 @@ struct AccountProfileManagementSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isSigningIn)
+                .disabled(isSigningIn || container.accountSwitch.isSwitching)
             }
 
             if let actionError {
@@ -289,10 +290,11 @@ struct AccountProfileManagementSheet: View {
             HStack {
                 Spacer(minLength: 8)
                 Button("Remove Account", role: .destructive) {
+                    guard !container.accountSwitch.isSwitching else { return }
                     isRemoveConfirmationPresented = true
                 }
                 .buttonStyle(.borderless)
-                .disabled(isSigningIn)
+                .disabled(isSigningIn || container.accountSwitch.isSwitching)
             }
         }
         .padding(22)
@@ -304,6 +306,7 @@ struct AccountProfileManagementSheet: View {
             Button("Remove Account", role: .destructive) {
                 removeAccount()
             }
+            .disabled(isSigningIn || container.accountSwitch.isSwitching)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("OpenUsage deletes its saved Keychain authentication and sign-in workspace for this account. Your Claude and Codex settings, sessions, and the current terminal login stay in place.")
@@ -328,6 +331,7 @@ struct AccountProfileManagementSheet: View {
     /// profile 자신의 Sign-In Workspace에서 공식 re-login. 검증된 credential은 이 계정명의 provider binding 교체.
     /// active profile의 re-sign-in은 Shared Runtime Home도 갱신.
     private func signInAgain() {
+        guard !container.accountSwitch.isSwitching else { return }
         isSigningIn = true
         actionError = nil
         signInTask = Task {
@@ -364,6 +368,7 @@ struct AccountProfileManagementSheet: View {
     /// 제거 순서 고정: app 소유 workspace → Keychain snapshot → registry tombstone.
     /// 어느 단계의 실패든 profile은 등록 유지(재시도 가능), shared home은 불변.
     private func removeAccount() {
+        guard !container.accountSwitch.isSwitching else { return }
         // 다른 profile이 존재하는 동안 선택된 profile은 제거 불가 — 먼저 전환 필요.
         if store.preferredProfileID(family: profile.family) == profile.id,
            store.profiles(family: profile.family).count > 1 {
