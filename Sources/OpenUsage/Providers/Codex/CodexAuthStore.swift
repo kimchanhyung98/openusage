@@ -99,7 +99,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
         case .invalidAuthPayload:
             return "Codex auth data is invalid."
         case .credentialsChanged:
-            return "Codex sign-in changed while refreshing. Open Settings > Accounts to reload the current account."
+            return "Codex sign-in changed during this operation. Reload the current account and try again."
         }
     }
 
