@@ -3,6 +3,111 @@ import XCTest
 
 @MainActor
 final class WidgetDataStoreDeadlineTests: XCTestCase {
+    func testAccountWaitFinishesAfterRefreshPublishesAndReleasesItsWrapper() async {
+        let runtime = Runtime(id: "claude")
+        let store = makeStore([runtime], timeout: 60).store
+        let started = Gate()
+        let release = Gate()
+        runtime.beforeRefresh = { started.open(); await release.wait() }
+        let refresh = Task { await store.refresh(providerID: "claude", force: true) }
+        await started.wait()
+        let waiting = Gate()
+        var waitFinished = false
+        let waiter = Task {
+            waiting.open()
+            await store.waitForAccountRefreshes()
+            waitFinished = true
+            XCTAssertTrue(store.refreshingProviderIDs.isEmpty)
+            XCTAssertNotNil(store.localSnapshots["claude"])
+        }
+        await waiting.wait()
+        XCTAssertFalse(waitFinished)
+
+        release.open()
+        let outcome = await refresh.value
+        await waiter.value
+        XCTAssertEqual(outcome, .refreshed)
+        XCTAssertTrue(waitFinished)
+    }
+
+    func testCancelledAccountWaitIncludesActualWorkAfterTimeout() async {
+        let runtime = Runtime()
+        let store = makeStore([runtime]).store
+        let started = Gate()
+        let release = Gate()
+        runtime.beforeRefresh = { started.open(); await release.wait() }
+        let refresh = Task { await store.refresh(providerID: "codex", force: true) }
+        await started.wait()
+        let outcome = await refresh.value
+        XCTAssertEqual(outcome, .failed)
+        XCTAssertTrue(store.refreshingProviderIDs.isEmpty)
+        let waiting = Gate()
+        var waitFinished = false
+        let waiter = Task {
+            waiting.open()
+            await store.waitForAccountRefreshes()
+            waitFinished = true
+        }
+        waiter.cancel()
+        await waiting.wait()
+        XCTAssertFalse(waitFinished, "Cancellation must not hide the provider work left after timeout")
+
+        release.open()
+        await waiter.value
+        XCTAssertTrue(waitFinished)
+        XCTAssertNil(store.localSnapshots["codex"])
+    }
+
+    func testAccountWaitIncludesRuntimeRemovedFromCatalogAfterTimeout() async {
+        let runtime = Runtime(id: "codex@retired")
+        let store = makeStore([runtime]).store
+        let started = Gate()
+        let release = Gate()
+        runtime.beforeRefresh = { started.open(); await release.wait() }
+        let refresh = Task { await store.refresh(providerID: "codex@retired", force: true) }
+        await started.wait()
+        store.replaceProviderCatalog(registry: .from([]), providers: [], identityKeys: [:])
+        let outcome = await refresh.value
+        XCTAssertEqual(outcome, .skipped)
+        XCTAssertTrue(store.refreshingProviderIDs.isEmpty)
+        XCTAssertTrue(store.knownProviderIDs.isEmpty)
+        let waiting = Gate()
+        var waitFinished = false
+        let waiter = Task {
+            waiting.open()
+            await store.waitForAccountRefreshes()
+            waitFinished = true
+        }
+        await waiting.wait()
+        XCTAssertFalse(waitFinished, "Catalog replacement must retain the departed runtime's pending work")
+
+        release.open()
+        await waiter.value
+        XCTAssertTrue(waitFinished)
+    }
+
+    func testAccountWaitDoesNotBlockOnNonAccountProvider() async {
+        let runtime = Runtime(id: "cursor")
+        let store = makeStore([runtime], timeout: 60).store
+        let started = Gate()
+        let release = Gate()
+        runtime.beforeRefresh = { started.open(); await release.wait() }
+        let refresh = Task { await store.refresh(providerID: "cursor", force: true) }
+        await started.wait()
+        let finished = expectation(description: "Account wait ignores Cursor refresh")
+        let waiter = Task {
+            await store.waitForAccountRefreshes()
+            finished.fulfill()
+        }
+        await fulfillment(of: [finished], timeout: 2)
+        XCTAssertEqual(store.refreshingProviderIDs, ["cursor"])
+
+        release.open()
+        let outcome = await refresh.value
+        await waiter.value
+        XCTAssertEqual(outcome, .refreshed)
+    }
+
     func testTimeoutPreservesLastGoodAndBlocksOverlapUntilLateWorkFinishes() async {
         let runtime = Runtime()
         let fixture = makeStore([runtime])

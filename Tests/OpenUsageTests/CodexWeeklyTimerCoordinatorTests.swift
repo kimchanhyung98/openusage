@@ -234,6 +234,75 @@ final class CodexWeeklyTimerCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.hasPendingWork)
     }
 
+    func testCancelledWaiterStillAwaitsPreparationAndFollowUp() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        var releasePreparation: CheckedContinuation<Void, Never>?
+        var releaseFollowUp: CheckedContinuation<Void, Never>?
+        var waiterStarted = false
+        var waiterFinished = false
+        probe.preparationHook = { await withCheckedContinuation { releasePreparation = $0 } }
+        probe.finishedHook = { _ in await withCheckedContinuation { releaseFollowUp = $0 } }
+        let coordinator = probe.coordinator()
+        probe.receive(coordinator)
+        await settle { releasePreparation != nil }
+
+        let waiter = Task {
+            waiterStarted = true
+            await coordinator.waitForPendingWork()
+            waiterFinished = true
+        }
+        await settle { waiterStarted }
+        waiter.cancel()
+        XCTAssertFalse(waiterFinished)
+        XCTAssertTrue(coordinator.hasPendingWork)
+
+        probe.preparationHook = nil
+        releasePreparation?.resume()
+        await settle { releaseFollowUp != nil }
+        XCTAssertFalse(waiterFinished)
+        XCTAssertTrue(coordinator.hasPendingWork)
+        XCTAssertFalse(coordinator.isRunning(providerID: "codex"))
+        XCTAssertEqual(probe.executed, ["a"])
+
+        releaseFollowUp?.resume()
+        await waiter.value
+        XCTAssertTrue(waiterFinished)
+        XCTAssertFalse(coordinator.hasPendingWork)
+        XCTAssertEqual(probe.finished, ["codex"])
+    }
+
+    func testWaitForPendingWorkIncludesAccountQueuedDuringFollowUp() async throws {
+        let probe = try WeeklyTimerProbe()
+        defer { probe.cleanup() }
+        try probe.add(providerID: "second", accountKey: "b")
+        var releaseFollowUp: CheckedContinuation<Void, Never>?
+        var waiterStarted = false
+        var waiterFinished = false
+        probe.finishedHook = { providerID in
+            if providerID == "codex" { await withCheckedContinuation { releaseFollowUp = $0 } }
+        }
+        let coordinator = probe.coordinator()
+        probe.receive(coordinator)
+        await settle { releaseFollowUp != nil }
+        let waiter = Task {
+            waiterStarted = true
+            await coordinator.waitForPendingWork()
+            waiterFinished = true
+        }
+        await settle { waiterStarted }
+        probe.receive(coordinator, providerID: "second", reset: probe.now.addingTimeInterval(900))
+        XCTAssertFalse(waiterFinished)
+        XCTAssertEqual(probe.executed, ["a"])
+
+        releaseFollowUp?.resume()
+        await waiter.value
+        XCTAssertTrue(waiterFinished)
+        XCTAssertFalse(coordinator.hasPendingWork)
+        XCTAssertEqual(probe.executed, ["a", "b"])
+        XCTAssertEqual(probe.finished, ["codex", "second"])
+    }
+
     func testCorruptStateFailsClosedWithoutErasingRecord() async throws {
         let probe = try WeeklyTimerProbe()
         defer { probe.cleanup() }
