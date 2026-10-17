@@ -241,6 +241,31 @@ final class DefaultAccountObserverTests: XCTestCase {
         XCTAssertEqual(makeObserver().observeCodex(), .absent)
     }
 
+    func testCodexUnidentifiedFirstCandidateDoesNotBorrowTheNextAccount() {
+        for first in [codexAuthJSON(accountID: nil), #"{"OPENAI_API_KEY":"fixture-key"}"#] {
+            let observer = makeObserver(files: [
+                "/Users/dev/.config/codex/auth.json": first,
+                "/Users/dev/.codex/auth.json": codexAuthJSON(),
+            ])
+
+            XCTAssertEqual(observer.observeCodex(), .unresolved(reason: "credentials present but no account identity"))
+        }
+    }
+
+    func testCodexSkipsUnusableFirstFileBeforeSelectingAnAccount() {
+        for first in ["{", "{}", #"{"tokens":{"refresh_token":"fixture-refresh"}}"#] {
+            let observer = makeObserver(files: [
+                "/Users/dev/.config/codex/auth.json": first,
+                "/Users/dev/.codex/auth.json": codexAuthJSON(),
+            ])
+
+            XCTAssertEqual(
+                observer.observeCodex(),
+                .resolved(identityKey: "codex-acct-1", label: nil, anchor: "/Users/dev/.codex")
+            )
+        }
+    }
+
     func testCodexKeychainCredentialMakesTheFamilyUnresolved() {
         // keychain item 존재 시 auth file identity가 실제 사용 계정임을 보증 불가 — launch 경로에서 keychain secret 미열람
         let observer = makeObserver(

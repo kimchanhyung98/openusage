@@ -66,6 +66,12 @@ struct CodexSharedCredentialSynchronizationError: LocalizedError {
     }
 }
 
+/// 관찰된 기본 카드의 인증 홈과 사용량 귀속 계정을 함께 고정.
+struct CodexAccountBinding: Equatable, Sendable {
+    var home: String
+    var identityKey: String
+}
+
 enum CodexAuthError: Error, LocalizedError, Equatable {
     case notLoggedIn
     case sessionExpired
@@ -93,7 +99,7 @@ enum CodexAuthError: Error, LocalizedError, Equatable {
         case .invalidAuthPayload:
             return "Codex auth data is invalid."
         case .credentialsChanged:
-            return "Codex sign-in changed while refreshing. Refresh again to use the current account."
+            return "Codex sign-in changed during this operation. Reload the current account and try again."
         }
     }
 
@@ -129,6 +135,7 @@ struct CodexAuthStore: Sendable {
     var keychain: KeychainAccessing
     var now: @Sendable () -> Date
     let scope: CodexCredentialScope
+    let expectedIdentityKey: String?
     let managedSnapshotProfileID: String?
     let managedSharedAuthHome: String?
 
@@ -137,6 +144,7 @@ struct CodexAuthStore: Sendable {
         files: TextFileAccessing = LocalTextFileAccessor(),
         keychain: KeychainAccessing = SecurityKeychainAccessor(),
         scope: CodexCredentialScope = .standard,
+        expectedIdentityKey: String? = nil,
         now: @escaping @Sendable () -> Date = Date.init,
         managedSnapshotProfileID: String? = nil,
         managedSharedAuthHome: String? = nil
@@ -145,6 +153,7 @@ struct CodexAuthStore: Sendable {
         self.files = files
         self.keychain = keychain
         self.scope = scope
+        self.expectedIdentityKey = expectedIdentityKey
         self.now = now
         self.managedSnapshotProfileID = managedSnapshotProfileID
         self.managedSharedAuthHome = managedSharedAuthHome
@@ -155,10 +164,21 @@ struct CodexAuthStore: Sendable {
     }
 
     func loadAuthCandidates(allowInteraction: Bool) throws -> [CodexAuthState] {
+        let candidates: [CodexAuthState]
         if case .accountSnapshot(let profileID) = scope {
-            return [try loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)].compactMap { $0 }
+            candidates = [try loadAccountSnapshot(profileID: profileID, allowInteraction: allowInteraction)].compactMap { $0 }
+        } else {
+            candidates = authPaths().compactMap { loadAuth(at: $0) }
         }
-        return authPaths().compactMap { loadAuth(at: $0) }
+        for candidate in candidates { try validateAccountIdentity(candidate.auth) }
+        return candidates
+    }
+
+    func validateAccountIdentity(_ auth: CodexAuth) throws {
+        guard let expectedIdentityKey else { return }
+        guard DefaultAccountObserver.codexIdentity(for: auth)?.identityKey == expectedIdentityKey else {
+            throw CodexAuthError.credentialsChanged
+        }
     }
 
     /// 단일 auth 파일에서 credential 읽기 — 이미 로드한 source의 재로드용, 후보 경로 전체 재스캔 없음.

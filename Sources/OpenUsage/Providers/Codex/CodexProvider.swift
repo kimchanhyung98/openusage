@@ -106,6 +106,7 @@ final class CodexProvider: ProviderRuntime {
         do {
             return try await withAuthCandidates { try await self.probe(authState: $0) }
         } catch {
+            weeklyTimerObservation = nil
             return ProviderSnapshot.error(provider: provider, error: error)
         }
     }
@@ -316,6 +317,12 @@ final class CodexProvider: ProviderRuntime {
         }
 
         MetricLine.appendNoDataIfNeeded(&mapped.lines)
+        if authStore.expectedIdentityKey != nil {
+            guard let live = try await reloadLiveAuth(source: authState.source) else {
+                throw CodexAuthError.credentialsChanged
+            }
+            try authStore.validateAccountIdentity(live.auth)
+        }
         return ProviderSnapshot.make(
             provider: provider,
             plan: mapped.plan,
@@ -456,6 +463,7 @@ final class CodexProvider: ProviderRuntime {
     }
 
     private func validateTimerIdentity(_ auth: CodexAuth, expectedAccountKey: String?) throws {
+        try authStore.validateAccountIdentity(auth)
         if let expectedAccountKey, CodexWeeklyTimerIdentity.accountKey(for: auth) != expectedAccountKey {
             throw CodexWeeklyTimerProviderError.accountChanged
         }

@@ -67,6 +67,29 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(resetWatchIndex + 1, rateLimitResetsIndex)
     }
 
+    func testCodexIdentityBindingKeepsManagedSnapshotOwnership() throws {
+        let binding = CodexAccountBinding(home: "/Users/x/.codex", identityKey: "account-a")
+        let provider = try XCTUnwrap(ProviderCatalog.make(
+            codexSharedAuthHome: binding.home, codexSharedSnapshotProfileID: "p1",
+            codexAccountBinding: binding
+        ).compactMap { $0 as? CodexProvider }.first)
+
+        XCTAssertEqual(provider.authStore.scope, .home(path: binding.home))
+        XCTAssertEqual(provider.authStore.expectedIdentityKey, binding.identityKey)
+        XCTAssertEqual(provider.authStore.managedSnapshotProfileID, "p1")
+    }
+
+    func testCodexIdentityBindingWithoutManagedHomeDoesNotAcquireSnapshotOwnership() throws {
+        let binding = CodexAccountBinding(home: "/Users/x/.config/codex", identityKey: "account-a")
+        let provider = try XCTUnwrap(ProviderCatalog.make(
+            codexSharedSnapshotProfileID: "p1", codexAccountBinding: binding
+        ).compactMap { $0 as? CodexProvider }.first)
+
+        XCTAssertEqual(provider.authStore.scope, .home(path: binding.home))
+        XCTAssertEqual(provider.authStore.expectedIdentityKey, binding.identityKey)
+        XCTAssertNil(provider.authStore.managedSnapshotProfileID)
+    }
+
     func testManagedSwitchingPinsTheDefaultCodexCardToTheSharedAuthFile() throws {
         let pinned = ProviderCatalog.make(
             codexSharedAuthHome: "/Users/x/.codex",

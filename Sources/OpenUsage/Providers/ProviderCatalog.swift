@@ -12,6 +12,7 @@ enum ProviderCatalog {
         snapshotCards: [AccountUsageSnapshotCard] = [],
         codexSharedAuthHome: String? = nil,
         codexSharedSnapshotProfileID: String? = nil,
+        codexAccountBinding: CodexAccountBinding? = nil,
         claudeManagedSwitchActive: Bool = false
     ) -> [ProviderRuntime] {
         // 기본 provider 순서: 기존 3개 먼저, 나머지는 display name 알파벳순. account 카드는 family 기본 카드 바로 뒤.
@@ -32,10 +33,13 @@ enum ProviderCatalog {
         for card in snapshotCards where card.family == "claude" {
             runtimes.append(claudeSnapshotRuntime(card: card))
         }
+        let codexHome = codexAccountBinding?.home ?? codexSharedAuthHome
         runtimes.append(CodexProvider(
-            authStore: codexSharedAuthHome.map {
-                CodexAuthStore(scope: .home(path: $0), managedSnapshotProfileID: codexSharedSnapshotProfileID)
-            } ?? CodexAuthStore()
+            authStore: CodexAuthStore(
+                scope: codexHome.map { .home(path: $0) } ?? .standard,
+                expectedIdentityKey: codexAccountBinding?.identityKey,
+                managedSnapshotProfileID: codexSharedAuthHome == nil ? nil : codexSharedSnapshotProfileID
+            )
         ))
         for card in snapshotCards where card.family == "codex" {
             runtimes.append(codexSnapshotRuntime(

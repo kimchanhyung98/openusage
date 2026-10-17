@@ -106,6 +106,7 @@ final class AppContainer {
             snapshotCards: accountAssembly.snapshotCards,
             codexSharedAuthHome: accountAssembly.codexSharedAuthHome,
             codexSharedSnapshotProfileID: initialProfileIDs["codex"],
+            codexAccountBinding: accountAssembly.codexDefaultAccountBinding,
             claudeManagedSwitchActive: accountAssembly.claudeManagedSwitchActive
         )
         let registry = WidgetRegistry.from(providers)
@@ -433,6 +434,7 @@ final class AppContainer {
             snapshotCards: assembly.snapshotCards,
             codexSharedAuthHome: assembly.codexSharedAuthHome,
             codexSharedSnapshotProfileID: nextProfileIDs["codex"],
+            codexAccountBinding: assembly.codexDefaultAccountBinding,
             claudeManagedSwitchActive: assembly.claudeManagedSwitchActive
         )
         let nextRegistry = WidgetRegistry.from(nextProviders)
