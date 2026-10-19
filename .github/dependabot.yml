@@ -18,3 +18,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Astro 검사기의 TypeScript 7 지원 전까지 메이저 업데이트 보류.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
