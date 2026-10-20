@@ -92,8 +92,65 @@ final class AntigravityCloudCodeTests: XCTestCase {
 
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
+        guard case .progress(_, _, _, _, let resetsAt, _, _)? = snapshot.lines.first else {
+            return XCTFail("Expected a Gemini session progress line")
+        }
+        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
         XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
         assertNoLegacyRequests(routing)
+    }
+
+    func testMissingProductionResetTimeCanBeFilledFromDaily() throws {
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+
+        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+
+        XCTAssertEqual(lines.map(used), [25])
+        guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
+            return XCTFail("Expected a Gemini session progress line")
+        }
+        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+    }
+
+    func testMalformedProductionFractionKeepsResetTimeWhenDailySuppliesFraction() throws {
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75}]}]}"#
+
+        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+
+        XCTAssertEqual(lines.map(used), [25])
+        guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
+            return XCTFail("Expected a Gemini session progress line")
+        }
+        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+    }
+
+    func testSummaryMergeKeepsFirstValidResetTime() throws {
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":0.75,"resetTime":"invalid"}]}]}"#
+        let daily = """
+        {"groups":[{"buckets":[
+          {"bucketId":"gemini-5h","resetTime":"2026-10-20T09:00:00Z"},
+          {"bucketId":"gemini-5h","remainingFraction":0.1,"resetTime":"2026-10-20T12:00:00Z"}
+        ]}]}
+        """
+
+        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+
+        XCTAssertEqual(lines.map(used), [25])
+        guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
+            return XCTFail("Expected a Gemini session progress line")
+        }
+        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+    }
+
+    func testResetTimesWithoutAnyValidFractionDoNotCreateLine() throws {
+        let production = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","remainingFraction":"unknown","resetTime":"2026-10-20T09:00:00Z"}]}]}"#
+        let daily = #"{"groups":[{"buckets":[{"bucketId":"gemini-5h","resetTime":"2026-10-20T12:00:00Z"}]}]}"#
+
+        let lines = try XCTUnwrap(AntigravityUsageMapper.parseQuotaSummaries([production, daily].map { Data($0.utf8) }))
+
+        XCTAssertTrue(lines.isEmpty)
     }
 
     func testProductionFailureStillUsesValidDailySummary() async {
@@ -273,7 +330,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         }
     }
 
-    func testDailyPlanSurvivesProductionAuthFailure() async {
+    func testLoadCodeAssistUsesDailyBeforeProduction() async {
         let summary = response(completeSummary)
         let plan = response(#"{"paidTier":{"name":"Google AI Pro"}}"#)
         for status in [401, 403] {
@@ -299,7 +356,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         }
     }
 
-    func testDailyLegacyModelsSurviveProductionAuthFailure() async {
+    func testLegacyModelsUseDailyBeforeProduction() async {
         let models = response("""
         {"models":{"gemini":{"displayName":"Gemini 3.1 Pro","quotaInfo":{"remainingFraction":0.75}}}}
         """)
@@ -328,7 +385,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         }
     }
 
-    func testDailyQuotaFallbackSurvivesProductionAuthFailure() async {
+    func testQuotaFallbackUsesDailyBeforeProduction() async {
         let quota = response(#"{"buckets":[{"modelId":"gemini-3-pro-preview","remainingFraction":0.5}]}"#)
         let plan = response(#"{"paidTier":{"name":"Google AI Pro"},"cloudaicompanionProject":"test-project"}"#)
         for status in [401, 403] {

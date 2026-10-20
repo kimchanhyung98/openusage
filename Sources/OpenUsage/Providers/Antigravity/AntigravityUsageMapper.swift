@@ -39,7 +39,7 @@ enum AntigravityUsageMapper {
         parseQuotaSummaries([data])
     }
 
-    /// 여러 서버의 요약을 bucket ID로 병합 — 첫 유효값과 재설정 시각 유지.
+    /// 여러 서버의 요약을 bucket ID로 병합 — 비율·재설정 시각을 각각 첫 유효값으로 유지.
     static func parseQuotaSummaries(_ bodies: [Data]) -> [MetricLine]? {
         let groupLists = bodies.compactMap { data -> [QuotaSummaryGroup]? in
             guard let groups = summaryGroups(data) else {
@@ -50,23 +50,27 @@ enum AntigravityUsageMapper {
         }
         guard !groupLists.isEmpty else { return nil }
 
-        var pooled: [String: (fraction: Double, resetTime: Date?)] = [:]
+        var pooled: [String: Double] = [:]
+        var resetTimes: [String: Date] = [:]
         for bucket in groupLists.joined().flatMap({ $0.buckets ?? [] }) {
             guard let id = bucket.bucketId, summaryBuckets.contains(where: { $0.bucketID == id }) else {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary: skipping unrecognized bucket id '\(bucket.bucketId ?? "<absent>")'")
                 continue
             }
-            guard pooled[id] == nil else { continue } // 중복 bucket id — 첫 항목 승리
+            if resetTimes[id] == nil {
+                resetTimes[id] = bucket.resetTime.flatMap { OpenUsageISO8601.date(from: $0) }
+            }
+            guard pooled[id] == nil else { continue } // 중복 bucket ID — 첫 유효 비율 유지.
             guard let fraction = bucket.remainingFraction, fraction.isFinite else {
-                AppLog.warn(LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has no usable remainingFraction; dropping its line")
+                AppLog.warn(LogTag.plugin("antigravity"), "quota summary: bucket '\(id)' has no usable remainingFraction")
                 continue
             }
-            pooled[id] = (fraction, bucket.resetTime.flatMap { OpenUsageISO8601.date(from: $0) })
+            pooled[id] = fraction
         }
 
         return summaryBuckets.compactMap { spec in
-            guard let entry = pooled[spec.bucketID] else { return nil }
-            return line(pool: spec.label, fraction: entry.fraction, resetTime: entry.resetTime, periodMs: spec.periodMs)
+            guard let fraction = pooled[spec.bucketID] else { return nil }
+            return line(pool: spec.label, fraction: fraction, resetTime: resetTimes[spec.bucketID], periodMs: spec.periodMs)
         }
     }
 
