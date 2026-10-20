@@ -32,6 +32,7 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
   현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
 - **로컬 조회 실패** — Antigravity / `agy`가 macOS 키체인에 저장한 OAuth 토큰으로 Google Cloud Code API 조회.
   앱이 종료된 경우에도 이 경로 사용.
+  production 서버를 먼저 조회하고, 사용량 항목이 빠져 있으면 daily 서버에서 보충.
   만료된 토큰은 자동 갱신(OpenUsage는 Antigravity 자체 키체인 항목에 다시 쓰지 않음).
   단기 캐시는 같은 키체인 로그인이 존재하며 읽을 수 있을 때만 재사용.
 
@@ -59,12 +60,20 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
 OpenUsage는 갱신된 액세스 토큰의 단기 캐시를 현재 키체인 갱신 인증 정보의 단방향 지문에 연결.
 로그아웃, 계정 변경, 레거시 캐시, 만료되거나 손상된 항목으로는 이전 계정의 액세스 토큰 재사용 불가.
 각 출처에서 먼저 할당량 요약 엔드포인트(언어 서버의 `RetrieveUserQuotaSummary`, Cloud Code의 `v1internal:retrieveUserQuotaSummary`) 요청 — 병합된 풀과 주간 기간을 보고하는 유일한 엔드포인트.
+Cloud Code 요약은 production 서버 우선 조회.
+기존 네 개 풀·기간에 모두 유효한 잔여 비율이 있으면 추가 조회 없이 종료.
+항목이 누락되거나 조회에 실패하면 daily 서버도 조회해 같은 `bucketId`의 첫 유효값과 재설정 시각 유지.
+정상 요약을 하나라도 받으면 다른 서버의 인증 오류나 일시 장애 때문에 해당 사용량을 버리지 않음.
 요약 API 미지원, 일시적 조회 실패 또는 응답 해석 실패 시 이전 모델별 엔드포인트 시도.
-원격 API가 인증 오류를 반환하면 이전 엔드포인트 대신 인증 갱신 절차로 진행.
+두 서버 모두에서 정상 요약을 얻지 못하고 인증 오류가 있으면 이전 엔드포인트 대신 인증 갱신 절차로 진행.
+이전 모델별 엔드포인트의 인증 오류도 인증 갱신 대상으로 처리.
 로컬에서는 `GetUserStatus` / `GetCommandModelConfigs`, 원격에서는 `fetchAvailableModels` / `retrieveUserQuota` 사용.
 이전 엔드포인트의 모델별 할당량은 풀마다 가장 낮은 잔여 비율로 합쳐 표시.
 이 경로에서는 5시간 데이터만 표시.
 요약 응답을 정상적으로 해석한 경우에는 항목이 비어 있어도 이전 엔드포인트로 전환하지 않음.
 요금제 이름은 상속된 Windsurf 요금제 필드보다 Antigravity 자체 `userTier` 우선.
+Cloud Code 요금제 요청에는 Antigravity 클라이언트 정보 포함.
+응답의 알려진 `paidTier.id`를 먼저 해석하고, 해당하지 않으면 `paidTier.name`과 `currentTier.name` 순서로 확인.
+요금제를 확인하지 못해도 정상 사용량은 유지하며, 원인은 로그에 기록.
 
 > 앱과 언어 서버 바이너리의 리버스 엔지니어링 결과로, 엔드포인트와 저장 방식은 예고 없이 변경될 수 있음.

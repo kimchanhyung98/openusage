@@ -223,14 +223,13 @@ final class AntigravityProvider: ProviderRuntime {
 
     private func fetchCloudCode(token: String) async -> CloudCodeProbe {
         // authoritative 우선: quota summary(병합 pool + weekly window). 파싱된 summary는 usable bucket이 0이어도 답 — 아래 legacy chain은 quota 부재를 "fully used"로 지어내므로 절대 흘러가면 안 됨. 404(RPC 없는 빌드)는 `.unavailable`로 fallthrough.
-        switch await usageClient.cloudCode(path: AntigravityUsageClient.quotaSummaryPath, token: token, userAgent: "antigravity", body: [:]) {
+        switch await usageClient.cloudCodeQuotaSummaries(token: token) {
         case .authFailed:
             return .authFailed
-        case .ok(let data):
-            if let lines = AntigravityUsageMapper.parseQuotaSummary(data) {
+        case .ok(let bodies):
+            if let lines = AntigravityUsageMapper.parseQuotaSummaries(bodies) {
                 return .success(StrategyResult(plan: await loadPlan(token: token), lines: lines))
             }
-            // 2xx지만 summary payload 아님 — parser가 경고, legacy chain으로 진행.
         case .unavailable:
             break
         }
@@ -251,12 +250,13 @@ final class AntigravityProvider: ProviderRuntime {
         // fallback: loadCodeAssist(plan + project) → retrieveUserQuota(Gemini 전용 bucket).
         var plan: String?
         var project: String?
-        switch await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: "agy", body: [:]) {
+        switch await usageClient.loadCodeAssist(token: token) {
         case .authFailed: return .authFailed
         case .ok(let data):
             plan = AntigravityUsageMapper.parseLoadCodeAssistPlan(data)
             project = AntigravityUsageMapper.parseProject(data)
-        case .unavailable: break
+        case .unavailable:
+            AppLog.warn(LogTag.plugin("antigravity"), "loadCodeAssist unavailable; continuing without plan or project")
         }
 
         var quota = await usageClient.cloudCode(
@@ -279,8 +279,13 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     private func loadPlan(token: String) async -> String? {
-        if case .ok(let data) = await usageClient.cloudCode(path: AntigravityUsageClient.loadCodeAssistPath, token: token, userAgent: "agy", body: [:]) {
+        switch await usageClient.loadCodeAssist(token: token) {
+        case .ok(let data):
             return AntigravityUsageMapper.parseLoadCodeAssistPlan(data)
+        case .authFailed:
+            AppLog.warn(LogTag.plugin("antigravity"), "loadCodeAssist rejected credentials; keeping quota without a plan")
+        case .unavailable:
+            AppLog.warn(LogTag.plugin("antigravity"), "loadCodeAssist unavailable; keeping quota without a plan")
         }
         return nil
     }

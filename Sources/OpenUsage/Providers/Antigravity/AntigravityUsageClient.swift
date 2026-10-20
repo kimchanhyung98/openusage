@@ -7,6 +7,13 @@ enum CloudCodeOutcome: Sendable {
     case unavailable
 }
 
+/// 정상 할당량 요약을 서버 우선순위대로 보존한 결과.
+enum CloudCodeSummariesOutcome: Sendable {
+    case ok([Data])
+    case authFailed
+    case unavailable
+}
+
 /// Google OAuth token refresh 결과 — 죽은 refresh token은 만료된 auth로, 5xx/네트워크 실패는 일시 장애로 읽히도록 분리.
 enum TokenRefreshOutcome: Sendable {
     case refreshed(accessToken: String, expiresIn: Double)
@@ -18,8 +25,8 @@ enum TokenRefreshOutcome: Sendable {
 struct AntigravityUsageClient: Sendable {
     static let lsService = "exa.language_server_pb.LanguageServerService"
     static let cloudCodeURLs = [
-        "https://daily-cloudcode-pa.googleapis.com",
-        "https://cloudcode-pa.googleapis.com"
+        "https://cloudcode-pa.googleapis.com",
+        "https://daily-cloudcode-pa.googleapis.com"
     ]
     static let fetchModelsPath = "/v1internal:fetchAvailableModels"
     static let loadCodeAssistPath = "/v1internal:loadCodeAssist"
@@ -62,28 +69,97 @@ struct AntigravityUsageClient: Sendable {
         return try? await lsHTTP.send(request)
     }
 
-    /// Cloud Code endpoint POST, base URL 순차 시도. 401/403은 `.authFailed`로 즉시 종료(다른 base에서도 같은 token은 실패), 그 외 non-2xx/transport 오류는 다음 base로 넘어가 최종 `.unavailable`.
+    /// 일반 Cloud Code 요청 — 401/403은 즉시 인증 실패, 나머지 오류는 다음 서버 시도.
     func cloudCode(path: String, token: String, userAgent: String, body: [String: String]) async -> CloudCodeOutcome {
         let payload = (try? JSONSerialization.data(withJSONObject: body)) ?? Data("{}".utf8)
+        return await cloudCode(path: path, token: token, userAgent: userAgent, payload: payload)
+    }
+
+    /// 요금제 응답에 필요한 Antigravity 클라이언트 정보 포함.
+    func loadCodeAssist(token: String) async -> CloudCodeOutcome {
+        await cloudCode(
+            path: Self.loadCodeAssistPath,
+            token: token,
+            userAgent: Self.clientUserAgent,
+            payload: Data(#"{"metadata":{"ideType":"ANTIGRAVITY","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}}"#.utf8)
+        )
+    }
+
+    /// 서버가 요금제 조회를 지원하는 Antigravity 클라이언트 형식.
+    private static let clientUserAgent: String = {
+        #if arch(arm64)
+        let architecture = "arm64"
+        #else
+        let architecture = "amd64"
+        #endif
+        return "antigravity/2.24.0 (aidev_client; os_type=darwin; arch=\(architecture))"
+    }()
+
+    private func cloudCode(path: String, token: String, userAgent: String, payload: Data) async -> CloudCodeOutcome {
         for base in Self.cloudCodeURLs {
             guard let url = URL(string: base + path) else { continue }
-            let request = HTTPRequest(
-                method: "POST",
-                url: url,
-                headers: [
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "Authorization": "Bearer \(token)",
-                    "User-Agent": userAgent
-                ],
-                body: payload,
-                timeout: 15
-            )
+            let request = Self.cloudCodeRequest(url: url, token: token, userAgent: userAgent, payload: payload)
             guard let response = try? await http.send(request) else { continue }
             if response.statusCode == 401 || response.statusCode == 403 { return .authFailed }
             if (200..<300).contains(response.statusCode) { return .ok(response.body) }
         }
         return .unavailable
+    }
+
+    /// 부분 요약은 다른 서버에서 보충. 정상 요약이 하나라도 있으면 서버별 인증 오류보다 우선.
+    func cloudCodeQuotaSummaries(token: String) async -> CloudCodeSummariesOutcome {
+        var bodies: [Data] = []
+        var sawAuthFailure = false
+        for base in Self.cloudCodeURLs {
+            guard let url = URL(string: base + Self.quotaSummaryPath) else { continue }
+            let request = Self.cloudCodeRequest(
+                url: url, token: token, userAgent: "antigravity", payload: Data("{}".utf8)
+            )
+            let response: HTTPResponse
+            do {
+                response = try await http.send(request)
+            } catch {
+                if (error as? URLError)?.code != .cancelled {
+                    AppLog.warn(
+                        LogTag.plugin("antigravity"),
+                        "quota summary request failed on \(base) (code=\((error as NSError).code), category=\(ErrorCategory.classify(error).rawValue))"
+                    )
+                }
+                continue
+            }
+            if response.statusCode == 401 || response.statusCode == 403 {
+                sawAuthFailure = true
+            }
+            guard (200..<300).contains(response.statusCode) else {
+                if response.statusCode != 404 {
+                    AppLog.warn(LogTag.plugin("antigravity"), "quota summary HTTP \(response.statusCode) on \(base)")
+                }
+                continue
+            }
+            guard AntigravityUsageMapper.isQuotaSummary(response.body) else {
+                AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups on \(base)")
+                continue
+            }
+            bodies.append(response.body)
+            if AntigravityUsageMapper.isCompleteSummary(response.body) { break }
+        }
+        if !bodies.isEmpty { return .ok(bodies) }
+        return sawAuthFailure ? .authFailed : .unavailable
+    }
+
+    private static func cloudCodeRequest(url: URL, token: String, userAgent: String, payload: Data) -> HTTPRequest {
+        HTTPRequest(
+            method: "POST",
+            url: url,
+            headers: [
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Authorization": "Bearer \(token)",
+                "User-Agent": userAgent
+            ],
+            body: payload,
+            timeout: 15
+        )
     }
 
     /// Google refresh token을 새 access token으로 교환. 죽은 refresh token(4xx, `invalid_grant` 등)과 일시 실패(5xx/네트워크/decode 불가)를 구분 — 호출자가 "sign-in expired"와 "temporarily unavailable"을 정확히 보고.

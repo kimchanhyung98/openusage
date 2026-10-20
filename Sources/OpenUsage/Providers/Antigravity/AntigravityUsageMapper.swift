@@ -36,16 +36,22 @@ enum AntigravityUsageMapper {
     /// nil은 "summary 아님"(decode 불가 body / `groups` 부재) — 호출자가 legacy endpoint로 fallback 가능. non-nil은 비어 있어도 authoritative: legacy 경로는 quota 부재를 "fully used"로 지어내므로 파싱된 summary가 흘러가면 안 됨.
     /// bucket은 관대하게 decode(잘못된 bucket 하나가 envelope를 무효화하지 않음) — `remainingFraction`이 없거나 못 쓰는 bucket은 0%/100% 조작 대신 line을 drop("No data" 행).
     static func parseQuotaSummary(_ data: Data) -> [MetricLine]? {
-        guard let envelope = try? JSONDecoder().decode(QuotaSummaryEnvelope.self, from: data),
-              let groups = envelope.response?.groups ?? envelope.groups
-        else {
-            // 호출자는 2xx body만 파싱 — decode 불가는 schema drift이므로 크게 알림.
-            AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups; treating as not-a-summary")
-            return nil
+        parseQuotaSummaries([data])
+    }
+
+    /// 여러 서버의 요약을 bucket ID로 병합 — 첫 유효값과 재설정 시각 유지.
+    static func parseQuotaSummaries(_ bodies: [Data]) -> [MetricLine]? {
+        let groupLists = bodies.compactMap { data -> [QuotaSummaryGroup]? in
+            guard let groups = summaryGroups(data) else {
+                AppLog.warn(LogTag.plugin("antigravity"), "quota summary response has no decodable groups; treating as not-a-summary")
+                return nil
+            }
+            return groups
         }
+        guard !groupLists.isEmpty else { return nil }
 
         var pooled: [String: (fraction: Double, resetTime: Date?)] = [:]
-        for bucket in groups.flatMap({ $0.buckets ?? [] }) {
+        for bucket in groupLists.joined().flatMap({ $0.buckets ?? [] }) {
             guard let id = bucket.bucketId, summaryBuckets.contains(where: { $0.bucketID == id }) else {
                 AppLog.warn(LogTag.plugin("antigravity"), "quota summary: skipping unrecognized bucket id '\(bucket.bucketId ?? "<absent>")'")
                 continue
@@ -62,6 +68,24 @@ enum AntigravityUsageMapper {
             guard let entry = pooled[spec.bucketID] else { return nil }
             return line(pool: spec.label, fraction: entry.fraction, resetTime: entry.resetTime, periodMs: spec.periodMs)
         }
+    }
+
+    static func isQuotaSummary(_ data: Data) -> Bool {
+        summaryGroups(data) != nil
+    }
+
+    /// 기존 네 bucket에 모두 유효한 비율이 있으면 다른 서버 조회 생략 가능.
+    static func isCompleteSummary(_ data: Data) -> Bool {
+        guard let groups = summaryGroups(data) else { return false }
+        let usable = Set(groups.flatMap { $0.buckets ?? [] }.compactMap { bucket in
+            bucket.remainingFraction?.isFinite == true ? bucket.bucketId : nil
+        })
+        return summaryBuckets.allSatisfy { usable.contains($0.bucketID) }
+    }
+
+    private static func summaryGroups(_ data: Data) -> [QuotaSummaryGroup]? {
+        guard let envelope = try? JSONDecoder().decode(QuotaSummaryEnvelope.self, from: data) else { return nil }
+        return envelope.response?.groups ?? envelope.groups
     }
 
     // MARK: - Response parsing (legacy per-model endpoints)
@@ -121,10 +145,23 @@ enum AntigravityUsageMapper {
         }
     }
 
-    /// Cloud Code `loadCodeAssist` → plan 이름 (paid tier를 current tier보다 우선).
+    /// Cloud Code 요금제 — 알려진 paid tier ID, paid tier 이름, current tier 이름 순서.
     static func parseLoadCodeAssistPlan(_ data: Data) -> String? {
-        guard let envelope = try? JSONDecoder().decode(CCLoadEnvelope.self, from: data) else { return nil }
-        return formatPlan(envelope.paidTier?.name ?? envelope.currentTier?.name)
+        guard let envelope = try? JSONDecoder().decode(CCLoadEnvelope.self, from: data) else {
+            AppLog.warn(LogTag.plugin("antigravity"), "loadCodeAssist response could not be decoded; plan unavailable")
+            return nil
+        }
+        switch envelope.paidTier?.id {
+        case "g1-pro-tier": return "Pro"
+        case "g1-ultra-tier": return "Ultra"
+        case "g1-ultra-lite-tier": return "Ultra Lite"
+        default: break
+        }
+        let plan = formatPlan(envelope.paidTier?.name) ?? formatPlan(envelope.currentTier?.name)
+        if plan == nil {
+            AppLog.warn(LogTag.plugin("antigravity"), "loadCodeAssist response has no recognized paid tier or usable tier name")
+        }
+        return plan
     }
 
     static func parseProject(_ data: Data) -> String? {
@@ -298,7 +335,10 @@ private struct CCLoadEnvelope: Decodable {
     let currentTier: Tier?
     let paidTier: Tier?
 
-    struct Tier: Decodable { let name: String? }
+    struct Tier: Decodable {
+        let id: String?
+        let name: String?
+    }
 }
 
 private struct CCQuotaEnvelope: Decodable {
