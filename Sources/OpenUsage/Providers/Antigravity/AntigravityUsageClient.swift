@@ -25,6 +25,10 @@ enum TokenRefreshOutcome: Sendable {
 struct AntigravityUsageClient: Sendable {
     static let lsService = "exa.language_server_pb.LanguageServerService"
     static let cloudCodeURLs = [
+        "https://daily-cloudcode-pa.googleapis.com",
+        "https://cloudcode-pa.googleapis.com"
+    ]
+    private static let quotaSummaryURLs = [
         "https://cloudcode-pa.googleapis.com",
         "https://daily-cloudcode-pa.googleapis.com"
     ]
@@ -110,7 +114,7 @@ struct AntigravityUsageClient: Sendable {
     func cloudCodeQuotaSummaries(token: String) async -> CloudCodeSummariesOutcome {
         var bodies: [Data] = []
         var sawAuthFailure = false
-        for base in Self.cloudCodeURLs {
+        for base in Self.quotaSummaryURLs {
             guard let url = URL(string: base + Self.quotaSummaryPath) else { continue }
             let request = Self.cloudCodeRequest(
                 url: url, token: token, userAgent: "antigravity", payload: Data("{}".utf8)

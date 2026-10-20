@@ -273,6 +273,88 @@ final class AntigravityCloudCodeTests: XCTestCase {
         }
     }
 
+    func testDailyPlanSurvivesProductionAuthFailure() async {
+        let summary = response(completeSummary)
+        let plan = response(#"{"paidTier":{"name":"Google AI Pro"}}"#)
+        for status in [401, 403] {
+            let rejected = response("", status: status)
+            let routing = RoutingHTTPClient { request in
+                if request.url.path == AntigravityUsageClient.quotaSummaryPath { return summary }
+                if request.url.path == AntigravityUsageClient.loadCodeAssistPath {
+                    return request.url.host == "daily-cloudcode-pa.googleapis.com" ? plan : rejected
+                }
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+
+            let snapshot = await makeProvider(routing, withRefreshToken: true).refresh()
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.plan, "Pro")
+            XCTAssertEqual(snapshot.lines.map(used), [25, 10, 60, 40])
+            XCTAssertEqual(summaryHosts(routing), [productionHost])
+            XCTAssertEqual(routing.requests.filter {
+                $0.url.path == AntigravityUsageClient.loadCodeAssistPath
+            }.compactMap(\.url.host), [dailyHost])
+            XCTAssertFalse(routing.requests.contains { $0.url.host == "oauth2.googleapis.com" })
+        }
+    }
+
+    func testDailyLegacyModelsSurviveProductionAuthFailure() async {
+        let models = response("""
+        {"models":{"gemini":{"displayName":"Gemini 3.1 Pro","quotaInfo":{"remainingFraction":0.75}}}}
+        """)
+        let plan = response(#"{"paidTier":{"name":"Google AI Pro"}}"#)
+        for status in [401, 403] {
+            let rejected = response("", status: status)
+            let routing = RoutingHTTPClient { request in
+                if request.url.path == AntigravityUsageClient.fetchModelsPath {
+                    return request.url.host == "daily-cloudcode-pa.googleapis.com" ? models : rejected
+                }
+                if request.url.path == AntigravityUsageClient.loadCodeAssistPath { return plan }
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+
+            let snapshot = await makeProvider(routing, withRefreshToken: true).refresh()
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.plan, "Pro")
+            XCTAssertEqual(snapshot.lines.map(\.label), ["Session"])
+            XCTAssertEqual(snapshot.lines.map(used), [25])
+            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            XCTAssertEqual(routing.requests.filter {
+                $0.url.path == AntigravityUsageClient.fetchModelsPath
+            }.compactMap(\.url.host), [dailyHost])
+            XCTAssertFalse(routing.requests.contains { $0.url.host == "oauth2.googleapis.com" })
+        }
+    }
+
+    func testDailyQuotaFallbackSurvivesProductionAuthFailure() async {
+        let quota = response(#"{"buckets":[{"modelId":"gemini-3-pro-preview","remainingFraction":0.5}]}"#)
+        let plan = response(#"{"paidTier":{"name":"Google AI Pro"},"cloudaicompanionProject":"test-project"}"#)
+        for status in [401, 403] {
+            let rejected = response("", status: status)
+            let routing = RoutingHTTPClient { request in
+                if request.url.path == AntigravityUsageClient.retrieveQuotaPath {
+                    return request.url.host == "daily-cloudcode-pa.googleapis.com" ? quota : rejected
+                }
+                if request.url.path == AntigravityUsageClient.loadCodeAssistPath { return plan }
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+
+            let snapshot = await makeProvider(routing, withRefreshToken: true).refresh()
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.plan, "Pro")
+            XCTAssertEqual(snapshot.lines.map(\.label), ["Session"])
+            XCTAssertEqual(snapshot.lines.map(used), [50])
+            XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
+            XCTAssertEqual(routing.requests.filter {
+                $0.url.path == AntigravityUsageClient.retrieveQuotaPath
+            }.compactMap(\.url.host), [dailyHost])
+            XCTAssertFalse(routing.requests.contains { $0.url.host == "oauth2.googleapis.com" })
+        }
+    }
+
     private func makeProvider(_ routing: RoutingHTTPClient, withRefreshToken: Bool = false) -> AntigravityProvider {
         let token = withRefreshToken
             ? #"{"token":{"access_token":"ya29.test","refresh_token":"1//test","expiry":"2099-01-01T00:00:00Z"}}"#

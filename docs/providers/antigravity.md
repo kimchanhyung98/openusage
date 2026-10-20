@@ -32,7 +32,7 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
   현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
 - **로컬 조회 실패** — Antigravity / `agy`가 macOS 키체인에 저장한 OAuth 토큰으로 Google Cloud Code API 조회.
   앱이 종료된 경우에도 이 경로 사용.
-  production 서버를 먼저 조회하고, 사용량 항목이 빠져 있으면 daily 서버에서 보충.
+  할당량 요약은 production 서버를 먼저 조회하고, 사용량 항목이 빠져 있으면 daily 서버에서 보충.
   만료된 토큰은 자동 갱신(OpenUsage는 Antigravity 자체 키체인 항목에 다시 쓰지 않음).
   단기 캐시는 같은 키체인 로그인이 존재하며 읽을 수 있을 때만 재사용.
 
@@ -68,6 +68,7 @@ Cloud Code 요약은 production 서버 우선 조회.
 두 서버 모두에서 정상 요약을 얻지 못하고 인증 오류가 있으면 이전 엔드포인트 대신 인증 갱신 절차로 진행.
 이전 모델별 엔드포인트의 인증 오류도 인증 갱신 대상으로 처리.
 로컬에서는 `GetUserStatus` / `GetCommandModelConfigs`, 원격에서는 `fetchAvailableModels` / `retrieveUserQuota` 사용.
+Cloud Code의 요금제·이전 할당량 요청은 기존처럼 daily 서버 우선 조회.
 이전 엔드포인트의 모델별 할당량은 풀마다 가장 낮은 잔여 비율로 합쳐 표시.
 이 경로에서는 5시간 데이터만 표시.
 요약 응답을 정상적으로 해석한 경우에는 항목이 비어 있어도 이전 엔드포인트로 전환하지 않음.
