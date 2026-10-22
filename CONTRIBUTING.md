@@ -99,7 +99,7 @@ Don't open a PR for a feature without an approved issue first. [Open an issue](h
 
 - [@kimchanhyung98](https://github.com/kimchanhyung98) (lead)
 
-All PRs require approval from at least 2 maintainers before merging.
+The repository owner manages PR reviews and merges.
 Release tags (`v*`) are owner-managed and can only be created by [@kimchanhyung98](https://github.com/kimchanhyung98).
 
 ## Questions?

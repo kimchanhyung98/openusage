@@ -21,7 +21,7 @@ enum AboutPanel {
         ]
 
         let credits = NSMutableAttributedString()
-        credits.append(NSAttributedString(string: "Fork Maintained by ", attributes: base))
+        credits.append(NSAttributedString(string: "Fork maintained by ", attributes: base))
         credits.append(link("kimchanhyung98", "https://github.com/kimchanhyung98", base: base))
         credits.append(NSAttributedString(string: "\n\nOpen source on ", attributes: base))
         credits.append(link("GitHub", "https://github.com/kimchanhyung98/openusage", base: base))
