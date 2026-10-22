@@ -226,6 +226,7 @@ Separate Cards 이미지에는 제목에 계정명 포함.
 클릭 또는 **⌘R**로 즉시 새로 고침하되 Claude의 요청 제한 대기는 유지.
 오른쪽에는 **Options** 메뉴 버튼.
 여기에 모든 것이 모여 있음 — **Customize**, **Settings**, **Share Screenshot**(표시 중인 카드 하위 메뉴), **Check for Updates…**, **About OpenUsage**, **Quit OpenUsage**.
+**About OpenUsage**에는 포크 관리자 `kimchanhyung98`와 `kimchanhyung98/openusage` 저장소 링크 표시.
 
 ## 사용자 지정(Customize)
 
