@@ -80,8 +80,8 @@ final class CodexResetWatchNotificationEvaluator {
                 "codex.resetWatch", Self.settingLabel,
                 watch.isScheduled ? "Scheduled Reset" : "Reset Forecast",
                 watch.isScheduled
-                    ? "A community report lists an upcoming Codex reset. Open Reset Watch for details."
-                    : "A new community forecast for a Codex reset is available. Open Reset Watch for details."
+                    ? "A community report lists an upcoming Codex reset."
+                    : "A new community forecast for a Codex reset is available."
             ) { [self] in
                 !Task.isCancelled && generation == deliveryGeneration
                     && candidate().map { !eventIDs(for: $0).isDisjoint(with: identifiers) } == true
