@@ -37,8 +37,8 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **Dashboard popover.** Provider-grouped meters with live reset countdowns and pace indicators. Click usage or reset values to flip their display everywhere; right-click a row to hide or star it, refresh its provider, or open Customize.
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
 - **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
-- **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes.
-- **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache with `openusage`, or bypass freshness with `openusage --force`; the menu-bar app does not need to be running.
+- **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
+- **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `openusage`, or bypass freshness with `openusage --force`; the menu-bar app does not need to be running.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
 - **Native settings.** Launch at login, global shortcut, icon style, theme, density, 12/24-hour time — see [Settings](docs/settings.md).
@@ -106,7 +106,7 @@ For iCloud Sync, store the original development and Developer ID provisioning pr
 
 The two `POSTHOG_CLI_*` secrets are only used to upload debug symbols (dSYMs) so PostHog can symbolicate crash reports: `POSTHOG_CLI_API_KEY` is a PostHog personal API key (PostHog → Settings → Personal API keys) and `POSTHOG_CLI_PROJECT_ID` is the numeric ID from your project URL. The upload host is hardcoded in the workflow (`https://us.i.posthog.com`), so there is no `POSTHOG_CLI_HOST` secret. Unlike the secrets above these don't block a release — if `POSTHOG_CLI_API_KEY` is unset the workflow skips the upload with a warning and the release still ships, but crash reports for that version show raw addresses instead of symbolicated stack traces.
 
-The repository must be public (Sparkle fetches the DMG and appcast anonymously), and the appcast is served from GitHub Pages — confirm Settings → Pages points at the `gh-pages` branch after the first release.
+The repository must be public (Sparkle fetches the DMG and appcast anonymously), and the appcast is served from GitHub Pages — confirm Settings → Pages uses **GitHub Actions** as the deployment source after the first release.
 
 ## Contributing
 
