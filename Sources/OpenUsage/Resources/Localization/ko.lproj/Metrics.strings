@@ -22,6 +22,8 @@
 "%lldh %lldm" = "%lld시간 %lld분";
 "%lldm" = "%lld분";
 "30 Days" = "30일";
+"A community report lists an upcoming Codex reset." = "커뮤니티에 Codex 초기화 예정 정보가 있습니다.";
+"A new community forecast for a Codex reset is available." = "Codex 초기화에 대한 새로운 커뮤니티 예측이 있습니다.";
 "API Usage" = "API 사용량";
 "API usage" = "API 사용량";
 "Across your Macs · %@" = "모든 Mac 합산 · %@";
@@ -37,6 +39,7 @@
 "Chat" = "채팅";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude 주간";
+"Codex Reset Watch" = "Codex 초기화 예측";
 "Completions" = "코드 완성";
 "Cost" = "비용";
 "Cost/MTok" = "비용/MTok";
@@ -90,6 +93,7 @@
 "Projected to finish close to your limit." = "기간 종료 시 사용량이 한도에 근접할 것으로 예상됩니다.";
 "Rate Limit Resets" = "한도 초기화권";
 "Requests" = "요청";
+"Reset Forecast" = "초기화 예측";
 "Reset Watch" = "초기화 예측";
 "Reset expires %@" = "%@ 초기화권 만료";
 "Reset expires in %@" = "%@ 후 초기화권 만료";
@@ -104,6 +108,7 @@
 "Runs out in %@" = "%@ 후 소진";
 "Runs out soon" = "곧 소진";
 "Scheduled %@" = "%@ 예정";
+"Scheduled Reset" = "초기화 예정";
 "Session" = "세션";
 "Sessions start after you send your first message." = "첫 메시지를 보내면 세션이 시작됩니다.";
 "Sonnet" = "Sonnet";

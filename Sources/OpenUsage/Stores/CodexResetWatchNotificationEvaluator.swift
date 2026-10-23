@@ -3,7 +3,7 @@ import Foundation
 /// 공개 리셋 예측·예정의 전역 알림 — 계정 수와 무관하게 이벤트별 전달 기록 유지.
 @MainActor
 final class CodexResetWatchNotificationEvaluator {
-    static let settingLabel = "Codex Reset Watch"
+    static var settingLabel: String { L10n.metrics("Codex Reset Watch") }
     private static let deliveredKey = "openusage.notifications.codexResetWatch.delivered.v1"
 
     typealias Post = @MainActor (String, String, String, String, @MainActor () -> Bool) async -> Bool
@@ -78,10 +78,10 @@ final class CodexResetWatchNotificationEvaluator {
             let deliveryGeneration = generation
             let delivered = await post(
                 "codex.resetWatch", Self.settingLabel,
-                watch.isScheduled ? "Scheduled Reset" : "Reset Forecast",
+                watch.isScheduled ? L10n.metrics("Scheduled Reset") : L10n.metrics("Reset Forecast"),
                 watch.isScheduled
-                    ? "A community report lists an upcoming Codex reset."
-                    : "A new community forecast for a Codex reset is available."
+                    ? L10n.metrics("A community report lists an upcoming Codex reset.")
+                    : L10n.metrics("A new community forecast for a Codex reset is available.")
             ) { [self] in
                 !Task.isCancelled && generation == deliveryGeneration
                     && candidate().map { !eventIDs(for: $0).isDisjoint(with: identifiers) } == true

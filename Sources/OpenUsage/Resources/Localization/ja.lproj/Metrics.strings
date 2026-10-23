@@ -22,6 +22,8 @@
 "%lldh %lldm" = "%lld時間 %lld分";
 "%lldm" = "%lld分";
 "30 Days" = "30日間";
+"A community report lists an upcoming Codex reset." = "コミュニティからCodexのリセット予定が報告されています。";
+"A new community forecast for a Codex reset is available." = "Codexのリセットについて、コミュニティの新しい予測が公開されています。";
 "API Usage" = "API 使用量";
 "API usage" = "API 使用量";
 "Across your Macs · %@" = "すべての Mac の合計 · %@";
@@ -37,6 +39,7 @@
 "Chat" = "チャット";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude 週間";
+"Codex Reset Watch" = "Codexリセット予測";
 "Completions" = "コード補完";
 "Cost" = "費用";
 "Cost/MTok" = "費用/MTok";
@@ -90,6 +93,7 @@
 "Projected to finish close to your limit." = "期間終了時に使用量が上限に近づく見込みです。";
 "Rate Limit Resets" = "制限リセット権";
 "Requests" = "リクエスト";
+"Reset Forecast" = "リセット予測";
 "Reset Watch" = "リセット予測";
 "Reset expires %@" = "%@にリセット権の有効期限が終了";
 "Reset expires in %@" = "%@後にリセット権の有効期限が終了";
@@ -104,6 +108,7 @@
 "Runs out in %@" = "%@後に使い切る見込み";
 "Runs out soon" = "まもなく使い切る見込み";
 "Scheduled %@" = "%@に予定";
+"Scheduled Reset" = "リセット予定";
 "Session" = "セッション";
 "Sessions start after you send your first message." = "最初のメッセージを送信すると、セッションが始まります。";
 "Sonnet" = "Sonnet";

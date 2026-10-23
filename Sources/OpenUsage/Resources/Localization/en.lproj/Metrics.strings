@@ -22,6 +22,8 @@
 "%lldh %lldm" = "%lldh %lldm";
 "%lldm" = "%lldm";
 "30 Days" = "30 Days";
+"A community report lists an upcoming Codex reset." = "A community report lists an upcoming Codex reset.";
+"A new community forecast for a Codex reset is available." = "A new community forecast for a Codex reset is available.";
 "API Usage" = "API Usage";
 "API usage" = "API usage";
 "Across your Macs · %@" = "Across your Macs · %@";
@@ -37,6 +39,7 @@
 "Chat" = "Chat";
 "Claude" = "Claude";
 "Claude Weekly" = "Claude Weekly";
+"Codex Reset Watch" = "Codex Reset Watch";
 "Completions" = "Completions";
 "Cost" = "Cost";
 "Cost/MTok" = "Cost/MTok";
@@ -90,6 +93,7 @@
 "Projected to finish close to your limit." = "Projected to finish close to your limit.";
 "Rate Limit Resets" = "Rate Limit Resets";
 "Requests" = "Requests";
+"Reset Forecast" = "Reset Forecast";
 "Reset Watch" = "Reset Watch";
 "Reset expires %@" = "Reset expires %@";
 "Reset expires in %@" = "Reset expires in %@";
@@ -104,6 +108,7 @@
 "Runs out in %@" = "Runs out in %@";
 "Runs out soon" = "Runs out soon";
 "Scheduled %@" = "Scheduled %@";
+"Scheduled Reset" = "Scheduled Reset";
 "Session" = "Session";
 "Sessions start after you send your first message." = "Sessions start after you send your first message.";
 "Sonnet" = "Sonnet";
