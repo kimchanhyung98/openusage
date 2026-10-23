@@ -147,6 +147,7 @@ enum UsageHistoryAggregator {
 }
 
 enum UsageHistorySnapshotRenderer {
+    static let sharedHistoryPrefix = "Across your Macs · "
     private static let historyLabels: Set<String> = ["Today", "Yesterday", "Last 30 Days", "Usage Trend"]
 
     static func render(
@@ -158,7 +159,7 @@ enum UsageHistorySnapshotRenderer {
     ) -> ProviderSnapshot {
         var result = snapshot
         result.lines.removeAll { historyLabels.contains($0.label) }
-        let sourceNote = combined ? "Across your Macs · \(descriptor.sourceNote)" : descriptor.sourceNote
+        let sourceNote = combined ? sharedHistoryPrefix + descriptor.sourceNote : descriptor.sourceNote
         SpendTileMapper.appendTokenUsage(
             history.series,
             to: &result.lines,

@@ -6,9 +6,11 @@ struct WidgetData: Hashable {
     static let localEstimateNote = "Estimated locally, so it may be off"
     static let cursorUsageHistoryNote = "From your Cursor usage history."
     static let noDataHeadline = "—"
-    static let noDataSubtitle = "No data"
+    static var noDataSubtitle: String { L10n.metrics("No data") }
 
     let title: String          // 예: "Claude 5h"
+    var localizedTitle: String { L10n.metrics(title) }
+
     let icon: IconSource
     let kind: MetricKind
     var used: Double
@@ -91,15 +93,15 @@ struct WidgetData: Hashable {
     }
     var communityVoteLabel: String? {
         guard hasData, let forecast, !forecast.isScheduled, forecast.deadline != nil else { return nil }
-        guard let percent = forecast.communityYesPercent else { return "Vote share unavailable" }
-        return "\(Int(percent))% expect a reset"
+        guard let percent = forecast.communityYesPercent else { return L10n.metrics("Vote share unavailable") }
+        return L10n.metrics("%lld%% expect a reset", Int(percent))
     }
 
     private var resetWatchLabel: String? {
         guard let forecast else { return nil }
         if forecast.isScheduled {
-            guard let date = forecast.deadline else { return "Reset time unknown" }
-            return "Scheduled \(Formatters.monthDayTimeLabel(date))"
+            guard let date = forecast.deadline else { return L10n.metrics("Reset time unknown") }
+            return L10n.metrics("Scheduled %@", Formatters.monthDayTimeLabel(date))
         }
         return forecast.deadline.map { Formatters.resetWatchDeadlineLabel(at: $0) }
     }
@@ -173,18 +175,18 @@ struct WidgetData: Hashable {
         var tooltip: String? {
             switch self {
             case .noData, .level: return nil
-            case .spent: return "Limit reached"
+            case .spent: return L10n.metrics("Limit reached")
             case .healthy(let projectedFraction):
                 let left = Int(((1 - projectedFraction) * 100).rounded())
-                return "~\(left)% left at reset"
+                return L10n.metrics("~%lld%% left at reset", left)
             case .closeToLimit(_, let projectedFraction):
                 let used = Int((projectedFraction * 100).rounded())
-                return "~\(used)% used at reset"
+                return L10n.metrics("~%lld%% used at reset", used)
             case .runningOut(_, let projectedFraction):
-                guard projectedFraction > 1 else { return "~100% used at reset" }
+                guard projectedFraction > 1 else { return L10n.metrics("~%lld%% used at reset", 100) }
                 // 1% floor — 근소 초과가 "~0% over limit"로 읽히는 것 방지.
                 let over = max(1, Int(((projectedFraction - 1) * 100).rounded()))
-                return "~\(over)% over limit at reset"
+                return L10n.metrics("~%lld%% over limit at reset", over)
             }
         }
 
@@ -208,7 +210,7 @@ struct WidgetData: Hashable {
     /// backing metric 없으면 no-data marker 반환 — placeholder sample 숫자가 실측처럼 인쇄되는 일 차단.
     var valueText: String {
         guard hasData else { return Self.noDataHeadline }
-        if let valueTextOverride { return valueTextOverride }
+        if let valueTextOverride { return L10n.metrics(valueTextOverride) }
         // `.values` row의 primary는 첫 selected 값 — meter는 bounded/`used` format으로 fall through.
         if let first = selectedValues.first {
             return (valuePrefix ?? "") + MetricFormatter.number(first.number, kind: first.kind, style: .row)
@@ -230,31 +232,31 @@ struct WidgetData: Hashable {
         }
         if let first = selectedValues.first {
             if let traySuffix, first.kind == .count {
-                return "\(MetricFormatter.number(first.number, kind: .count, style: .tray)) \(traySuffix)"
+                return MetricFormatter.labelledValue(MetricFormatter.number(first.number, kind: .count, style: .tray), label: traySuffix)
             }
             return MetricFormatter.string(for: first, style: .tray)
         }
-        if let valueTextOverride { return valueTextOverride }
+        if let valueTextOverride { return L10n.metrics(valueTextOverride) }
         let number = MetricFormatter.number(displayedValue, kind: kind, style: .tray)
-        if kind == .count, let countSuffix { return "\(number) \(countSuffix)" }
+        if kind == .count, let countSuffix { return MetricFormatter.labelledValue(number, label: countSuffix) }
         return number
     }
 
     var boundedHeadline: String {
         if let valueTextOverride {
-            return valueTextOverride
+            return L10n.metrics(valueTextOverride)
         }
         if isForecast {
-            return "\(valueText) chance"
+            return L10n.metrics("%@ chance", valueText)
         }
-        // 단위는 boundedSubtitle 담당 — "Used"/"Left" 단어의 단일 출처는 `WidgetDisplayMode.label`.
-        return "\(valueText) \(displayMode.label.lowercased())"
+        // 단위는 boundedSubtitle 담당 — 값과 사용·잔여 문구는 완성 문장으로 현지화.
+        return MetricFormatter.usageValue(valueText, word: displayMode == .used ? "used" : "left")
     }
 
     /// bounded headline 아래 subtitle (reset 시점 또는 limit context).
     var boundedSubtitle: String? {
         if let subtitleOverride {
-            return subtitleOverride
+            return L10n.metrics(subtitleOverride)
         }
         if let resetWatchLabel { return resetWatchLabel }
         if let resetLabel {
@@ -263,7 +265,7 @@ struct WidgetData: Hashable {
         // 정확한 reset 일시 없는 cycle형 metric은 reset 주기 표시.
         if let periodDurationMs,
            let duration = Formatters.compactDuration(TimeInterval(periodDurationMs) / 1000) {
-            return "Resets in \(duration)"
+            return L10n.metrics("Resets in %@", duration)
         }
         switch kind {
         case .percent:
@@ -273,10 +275,10 @@ struct WidgetData: Hashable {
             guard let limit else { return nil }
             let digits = limit.rounded() == limit ? 0 : 2
             let amount = Formatters.currency(limit, fractionDigits: digits)
-            return "\(amount) \(limitNoun ?? "limit")"
+            return MetricFormatter.usageValue(amount, word: limitNoun ?? "limit")
         case .count:
             // 단위(예: "credits")로 bounded count와 일반 balance 구분.
-            return countSuffix
+            return countSuffix.map { L10n.metrics($0) }
         }
     }
 
@@ -289,25 +291,25 @@ struct WidgetData: Hashable {
     /// word는 `unboundedValueWord` 우선, 없으면 전역 left/used mode 단어.
     var unboundedDetail: String {
         guard hasData else { return Self.noDataSubtitle }
-        if let valueTextOverride { return valueTextOverride }
+        if let valueTextOverride { return L10n.metrics(valueTextOverride) }
         let selected = selectedValues
         if !selected.isEmpty {
             // 단일 값: 단독 dollar는 widget trailing word, 그 외는 자체 unit label — 복수 값은 " · "로 결합.
             if selected.count == 1 {
                 let value = selected[0]
                 if value.kind == .dollars, let word = unboundedValueWord {
-                    return "\(MetricFormatter.number(value.number, kind: .dollars, style: .row)) \(word)"
+                    return MetricFormatter.usageValue(MetricFormatter.number(value.number, kind: .dollars, style: .row), word: word)
                 }
                 return MetricFormatter.string(for: value, style: .row)
             }
             return selected.map { MetricFormatter.string(for: $0, style: .row) }.joined(separator: " · ")
         }
         // typed 값 없는 unbounded row의 fallback: "<value> <suffix> <word>".
-        let word = unboundedValueWord ?? displayMode.label.lowercased()
+        let word = unboundedValueWord ?? (displayMode == .used ? "used" : "left")
         if kind == .count, let countSuffix {
-            return "\(valueText) \(countSuffix) \(word)"
+            return MetricFormatter.usageValue(MetricFormatter.labelledValue(valueText, label: countSuffix), word: word)
         }
-        return "\(valueText) \(word)"
+        return MetricFormatter.usageValue(valueText, word: word)
     }
 
     /// reset-credit expiry의 색 band — 평시 blue, 1주 미만 amber, 48시간 미만 red.
@@ -349,7 +351,7 @@ struct WidgetData: Hashable {
         }
         guard !entries.isEmpty else { return nil }
         // header가 동사 담당 — "in"은 relative duration에만 적합 (absolute entry는 자체 완결).
-        let header = resetDisplayMode == .relative ? "Resets expire in:" : "Resets expire:"
+        let header = resetDisplayMode == .relative ? L10n.metrics("Resets expire in:") : L10n.metrics("Resets expire:")
         return ([header] + entries).joined(separator: "\n")
     }
 
@@ -361,13 +363,13 @@ struct WidgetData: Hashable {
     /// 전 model 가격 계산된 경우 nil — triangle·tooltip 비표시.
     var unknownModelTooltip: String? {
         guard hasUnknownModels else { return nil }
-        let header = unknownModels.count == 1 ? "Unknown model found" : "Unknown models found"
+        let header = unknownModels.count == 1 ? L10n.metrics("Unknown model found") : L10n.metrics("Unknown models found")
         return ([header] + unknownModels.map { "- \($0)" }).joined(separator: "\n")
     }
 
     var unboundedSubtitle: String? {
         guard hasData else { return nil }
-        return subtitleOverride
+        return subtitleOverride.map { L10n.metrics($0) }
     }
 
     /// row hover tooltip용 전체 값 — 압축 row가 줄인 정확한 숫자.
@@ -385,7 +387,7 @@ struct WidgetData: Hashable {
         // reset-credit row는 expiry breakdown 우선 — 작은 count라 figures tooltip 없음.
         if let expiry = expiryTooltip { return expiry }
         if isZeroUsage && isUsagePeriod {
-            return (["No usage in this period"] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
+            return ([L10n.metrics("No usage in this period")] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
         }
         if let figures = unboundedTooltip {
             return ([figures] + [unboundedTooltipNote].compactMap { $0 }).joined(separator: "\n")
@@ -395,7 +397,7 @@ struct WidgetData: Hashable {
     }
 
     private var unboundedTooltipNote: String? {
-        infoNote ?? valueTooltipNote
+        (infoNote ?? valueTooltipNote).map { L10n.metrics($0) }
     }
 
     /// zero-usage 기간 — 데이터 있고 selected 값 전부 0.
@@ -449,7 +451,7 @@ extension WidgetData {
                 let projected = result.projectedUsage / ctx.limit
                 let spare = Int(((1 - projected) * 100).rounded())
                 guard spare >= 1 else { return .runningOut(eta: nil, projectedFraction: projected) }
-                return .closeToLimit(spare: "~\(spare)% spare", projectedFraction: projected)
+                return .closeToLimit(spare: L10n.metrics("~%lld%% spare", spare), projectedFraction: projected)
             case .behind:
                 // coarse whole-percent meter는 window 초반 허위 blow-out을 projection — used 5% 미만이면 projection 불신, 절대 level band 사용.
                 guard used / ctx.limit >= 0.05 else { return absoluteLevelState(used: used, limit: limit) }
@@ -502,12 +504,12 @@ extension WidgetData {
     /// session row는 rolling window 시작 전 "Not started" 표시.
     func boundedTrailingText(now: Date = Date()) -> String? {
         if forecast?.refreshFailed == true {
-            return hasData ? "Cached forecast · Refresh failed" : "Unavailable · Retry later"
+            return hasData ? L10n.metrics("Cached forecast · Refresh failed") : L10n.metrics("Unavailable · Retry later")
         }
         guard hasData else { return Self.noDataSubtitle }
-        if let subtitleOverride { return subtitleOverride }
+        if let subtitleOverride { return L10n.metrics(subtitleOverride) }
         if let resetWatchLabel { return resetWatchLabel }
-        if isFreshSessionWindow(now: now) { return "Not started" }
+        if isFreshSessionWindow(now: now) { return L10n.metrics("Not started") }
         if let resetsAt {
             return resetDisplayMode == .absolute
                 ? Formatters.resetAbsoluteLabel(at: resetsAt, now: now)
@@ -535,7 +537,7 @@ extension WidgetData {
     }
 
     /// "Not started" trailing label의 hover 설명 문구 — 첫 메시지 전에는 countdown 없음.
-    static let freshSessionTooltip = "Sessions start after you send your first message."
+    static var freshSessionTooltip: String { L10n.metrics("Sessions start after you send your first message.") }
 
     /// reset label의 hover tooltip — 현재 표시와 반대 format, 예측 시각은 countdown.
     /// fresh("Not started") session은 reset 시각 대신 자체 설명 표시.
@@ -562,8 +564,8 @@ extension WidgetData {
     var meterStyleTooltip: String? {
         guard hasMeterStyleToggle, let limit else { return nil }
         let opposite = displayMode == .remaining ? used : max(0, limit - used)
-        let word = (displayMode == .remaining ? WidgetDisplayMode.used : .remaining).label.lowercased()
-        return "\((valuePrefix ?? "") + format(opposite)) \(word)"
+        let word = displayMode == .remaining ? "used" : "left"
+        return MetricFormatter.usageValue((valuePrefix ?? "") + format(opposite), word: word)
     }
 
     /// forecast의 의미상 deadline을 transport/cache freshness보다 우선 적용.

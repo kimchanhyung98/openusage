@@ -31,11 +31,11 @@ struct WidgetGroupedListView: View {
         .animation(Motion.spring, value: dashboardGroups.map(\.provider.id))
         .accountSwitchConfirmation(selection: $pendingAccountSwitch, error: $accountSwitchError)
         .alert(
-            "Couldn't Switch Account",
+            L10n.dashboard("Couldn't Switch Account"),
             isPresented: isAccountSwitchErrorPresented,
             presenting: accountSwitchError
         ) { _ in
-            Button("OK", role: .cancel) {}
+            Button(L10n.dashboard("OK"), role: .cancel) {}
         } message: { error in
             Text(error)
         }
@@ -152,19 +152,19 @@ struct WidgetGroupedListView: View {
             let name = container.displayName(for: group.provider)
             accountSwitchMenu(providerID: group.provider.id)
             // provider section 전체 숨김(Customize provider 리스트에서 복구) — per-metric "Hide"의 상위 버전.
-            Button("Hide \(name)") {
+            Button(L10n.dashboard("Hide %@", name)) {
                 container.setProviderEnabled(false, for: group.provider.id)
             }
             Divider()
-            Button("Refresh \(name)") {
+            Button(L10n.dashboard("Refresh %@", name)) {
                 Task { await container.refresh(providerID: group.provider.id, force: true) }
             }
             .disabled(container.accountSwitch.blocksRefresh(for: group.provider.id))
-            Button("Customize…") {
+            Button(L10n.dashboard("Customize…")) {
                 openCustomize(for: group.provider.id)
             }
             Divider()
-            Button("Share Screenshot") { _ = shareCard(group) }
+            Button(L10n.dashboard("Share Screenshot")) { _ = shareCard(group) }
         }
     }
 
@@ -281,7 +281,7 @@ struct WidgetGroupedListView: View {
         }
         .buttonStyle(.plain)
         .reorderFrame(id: expandedDividerID(for: providerID), in: .named(reorderSpaceName))
-        .accessibilityLabel(isExpanded ? "Show less" : "Show more")
+        .accessibilityLabel(isExpanded ? L10n.dashboard("Show less") : L10n.dashboard("Show more"))
     }
 
     private func expandedDividerID(for providerID: String) -> String {
@@ -319,11 +319,11 @@ struct WidgetGroupedListView: View {
     @ViewBuilder
     private func rowMenu(_ descriptor: WidgetDescriptor, providerID: String) -> some View {
         accountSwitchMenu(providerID: providerID)
-        Button("Hide") {
+        Button(L10n.dashboard("Hide")) {
             layout.setMetricEnabled(descriptor.id, false)
         }
         if descriptor.pinnable {
-            Button(layout.isPinned(descriptor.id) ? "Unstar" : "Star for menu bar") {
+            Button(layout.isPinned(descriptor.id) ? L10n.dashboard("Unstar") : L10n.dashboard("Star for menu bar")) {
                 if layout.isPinned(descriptor.id) {
                     layout.setPinned(false, for: descriptor.id)
                 } else if layout.canPin(descriptor.id) {
@@ -335,12 +335,12 @@ struct WidgetGroupedListView: View {
         }
         Divider()
         if let provider = layout.provider(id: providerID) {
-            Button("Refresh \(container.displayName(for: provider))") {
+            Button(L10n.dashboard("Refresh %@", container.displayName(for: provider))) {
                 Task { await container.refresh(providerID: providerID, force: true) }
             }
             .disabled(container.accountSwitch.blocksRefresh(for: providerID))
         }
-        Button("Customize…") {
+        Button(L10n.dashboard("Customize…")) {
             openCustomize(for: providerID)
         }
     }
@@ -353,7 +353,7 @@ struct WidgetGroupedListView: View {
             profileID: container.accountProfileID(for: providerID),
             profiles: container.accountProfiles.profiles
         ) {
-            Button("Use \(profile.family.capitalized): \(profile.label)") {
+            Button(L10n.dashboard("Use %@: %@", profile.family.capitalized, profile.label)) {
                 guard !container.accountSwitch.isSwitching else { return }
                 pendingAccountSwitch = profile
             }

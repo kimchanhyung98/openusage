@@ -75,7 +75,7 @@ enum DashboardUsageAccountSelection {
     /// 공유 home 계정은 "Default". 카드 제목은 provider 고정이라 계정 구분은 여기서만 드러남
     static func optionTitle(cardID: String, profileLabel: String?, accountName: String?) -> String {
         if let label = profileLabel?.nilIfEmpty { return label }
-        guard ProviderAccountID.isAccountCard(cardID) else { return "Default" }
+        guard ProviderAccountID.isAccountCard(cardID) else { return L10n.common("Default") }
         guard let accountName = accountName?.nilIfEmpty else { return cardID }
         let prefix = "\(ProviderAccountID.family(of: cardID).capitalized) — "
         return accountName.hasPrefix(prefix) ? String(accountName.dropFirst(prefix.count)) : accountName

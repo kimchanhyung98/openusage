@@ -10,7 +10,7 @@ enum ShareCardRenderer {
 
     /// 카드의 `NSImage` 렌더 — `ImageRenderer`가 CGImage를 못 만들면 `nil`. point 크기는 카드 자연 크기, pixel 크기는 ×`scale`.
     static func image<Card: View>(for view: Card) -> NSImage? {
-        let renderer = ImageRenderer(content: view)
+        let renderer = ImageRenderer(content: view.environment(\.locale, L10n.locale))
         renderer.scale = scale
         guard let cgImage = renderer.cgImage else { return nil }
         return NSImage(

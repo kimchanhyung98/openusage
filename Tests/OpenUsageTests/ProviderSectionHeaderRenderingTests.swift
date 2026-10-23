@@ -160,11 +160,11 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
         }
         try withHosting(header(refreshing: false, disrupted: true).frame(width: 276)) { hosting, window in
             let elements = accessibilityElements(in: hosting)
-            let service = try XCTUnwrap(elements.first { $0.accessibilityLabel() == "Service Issue" })
+            let service = try XCTUnwrap(elements.first { $0.accessibilityLabel() == L10n.dashboard("Service Issue") })
             XCTAssertEqual(service.accessibilityValue() as? String, issue.accessibilityValue(providerName: "Claude"))
-            let usage = try XCTUnwrap(elements.first { $0.accessibilityLabel() == "Usage Issue" })
+            let usage = try XCTUnwrap(elements.first { $0.accessibilityLabel() == L10n.dashboard("Usage Issue") })
             XCTAssertEqual(usage.accessibilityValue() as? String, warning)
-            let picker = try XCTUnwrap(elements.first { $0.accessibilityLabel() == "Usage Account" })
+            let picker = try XCTUnwrap(elements.first { $0.accessibilityLabel() == L10n.dashboard("Usage Account") })
             XCTAssertEqual(picker.accessibilityValue() as? String, accountName)
             XCTAssertGreaterThan(service.accessibilityFrame().width, 0)
             XCTAssertGreaterThan(picker.accessibilityFrame().width, 0)

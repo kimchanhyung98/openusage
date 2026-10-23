@@ -10,9 +10,9 @@ struct UpdateBannerCard: View {
     var body: some View {
         DismissableHintCard(
             systemImage: "arrow.down.circle",
-            title: "Update Available",
-            message: "OpenUsage \(version) is ready to download.",
-            buttonTitle: "Install Update",
+            title: L10n.dashboard("Update Available"),
+            message: L10n.dashboard("OpenUsage %@ is ready to download.", version),
+            buttonTitle: L10n.dashboard("Install Update"),
             action: { updater.installAvailableUpdate() },
             onDismiss: { withAnimation(Motion.spring) { updater.dismissAvailableUpdate() } }
         )

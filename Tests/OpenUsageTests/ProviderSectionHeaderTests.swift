@@ -146,7 +146,7 @@ final class ProviderSectionHeaderTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            issue.accessibilityValue(providerName: "Claude"),
+            L10n.withLanguage(.english) { issue.accessibilityValue(providerName: "Claude") },
             "Claude reports a partial outage for Claude API (api.anthropic.com)."
         )
     }

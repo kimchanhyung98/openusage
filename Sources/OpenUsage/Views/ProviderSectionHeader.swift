@@ -83,7 +83,7 @@ struct ProviderSectionHeader: View {
                                 .fixedSize()
                                 .layoutPriority(4)
                                 .hoverTooltip(warning)
-                                .accessibilityLabel("Usage Issue")
+                                .accessibilityLabel(L10n.dashboard("Usage Issue"))
                                 .accessibilityValue(warning)
                         }
                     case .service:
@@ -95,7 +95,7 @@ struct ProviderSectionHeader: View {
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Opens \(displayName) status page in your browser.")
+                            .accessibilityHint(L10n.dashboard("Opens %@ status page in your browser.", displayName))
                             .layoutPriority(4)
                         }
                     }
@@ -117,12 +117,12 @@ struct ProviderSectionHeader: View {
             if refreshing {
                 ProgressView()
                     .controlSize(.mini)
-                    .accessibilityLabel("Refreshing")
+                    .accessibilityLabel(L10n.dashboard("Refreshing"))
             }
             Spacer(minLength: 8)
             if let onCopyScreenshot {
                 CopyFeedbackButton(
-                    accessibilityLabel: "Copy \(displayName) Screenshot",
+                    accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", displayName),
                     isRevealed: isHovered,
                     action: onCopyScreenshot
                 )
@@ -189,7 +189,7 @@ private struct AccountUsagePicker: View {
     let onSelect: (String) -> Void
 
     private var selectedTitle: String {
-        options.first(where: { $0.id == selectedID })?.title ?? "Account"
+        options.first(where: { $0.id == selectedID })?.title ?? L10n.dashboard("Account")
     }
 
     var body: some View {
@@ -222,7 +222,7 @@ private struct AccountUsagePicker: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize(horizontal: true, vertical: false)
-        .accessibilityLabel("Usage Account")
+        .accessibilityLabel(L10n.dashboard("Usage Account"))
         .accessibilityValue(selectedTitle)
     }
 }

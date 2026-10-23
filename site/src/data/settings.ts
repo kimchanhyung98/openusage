@@ -1,6 +1,8 @@
 // 배포 앱의 Settings 순서와 일반 상태 재현. 이스터에그·권한 오류·실행 중 상태는 기본 화면에서 숨김.
 import { accountFamilies, type DemoAccountFamily } from './accounts.ts';
 
+export const languageTags: Record<string, string> = { English: 'en', 한국어: 'ko', 日本語: 'ja' };
+
 export type Control =
   | { kind: 'toggle'; on: boolean }
   | { kind: 'picker'; value: string; options: string[] }
@@ -34,6 +36,8 @@ export const settingGroups: SettingGroup[] = [
       { id: 'showTotalSpend', label: 'Show Total Spend', control: { kind: 'toggle', on: true } },
       { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
       { id: 'globalShortcut', label: 'Global Shortcut', control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
+      { id: 'language', label: 'Language', control: { kind: 'picker', value: 'English', options: ['English', '한국어', '日本語'] },
+        note: 'Restart OpenUsage to apply the language change.' },
     ],
   },
   {

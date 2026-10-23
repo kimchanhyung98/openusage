@@ -7,28 +7,26 @@ struct ICloudSyncSettingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 5) {
-                Text("iCloud Sync")
+                Text(L10n.settings("iCloud Sync"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Image(systemName: "info.circle")
                     .imageScale(.small)
                     .foregroundStyle(.secondary)
                     .hoverTooltip(
-                        "OpenUsage calculates costs and tokens for Claude, Codex, and other providers "
-                            + "from files stored on each Mac. Account limits, credentials, and logs are "
-                            + "never shared."
+                        L10n.settings("OpenUsage calculates costs and tokens for Claude, Codex, and other providers from files stored on each Mac. Account limits, credentials, and logs are never shared.")
                     )
             }
             .padding(.horizontal, 8)
 
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
-                    Text("Sync Across Macs")
+                    Text(L10n.settings("Sync Across Macs"))
                     if sync.enabled, sync.isSyncing, sync.serviceError == nil {
                         ProgressView()
                             .controlSize(.small)
                             .transition(.scale(scale: 0.8).combined(with: .opacity))
-                            .accessibilityLabel("Syncing usage history")
+                            .accessibilityLabel(L10n.settings("Syncing usage history"))
                     }
                     Spacer(minLength: 8)
                     Toggle("", isOn: $sync.enabled)
@@ -37,7 +35,7 @@ struct ICloudSyncSettingsSection: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, density.controlRowPadding)
                 .animation(Motion.spring, value: sync.isSyncing)
-                Text("Shares usage history through iCloud, so you can see one combined summary for all your Macs.")
+                Text(L10n.settings("Shares usage history through iCloud, so you can see one combined summary for all your Macs."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
@@ -55,7 +53,7 @@ struct ICloudSyncSettingsSection: View {
     @ViewBuilder
     private var enabledContent: some View {
         if sync.displayedDocuments.isEmpty, !sync.isSyncing, sync.serviceError == nil {
-            Text("Waiting for this Mac’s first iCloud update…")
+            Text(L10n.settings("Waiting for this Mac’s first iCloud update…"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
@@ -79,7 +77,7 @@ struct ICloudSyncSettingsSection: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                     if isThisMac {
-                        Text("This Mac")
+                        Text(L10n.settings("This Mac"))
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
@@ -89,7 +87,7 @@ struct ICloudSyncSettingsSection: View {
                     }
                 }
                 TimelineView(.periodic(from: .now, by: 60)) { context in
-                    Text("Updated \(relativeAge(document.updatedAt, now: context.date))")
+                    Text(L10n.settings("Updated %@", relativeAge(document.updatedAt, now: context.date)))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -113,9 +111,9 @@ struct ICloudSyncSettingsSection: View {
 
     private func relativeAge(_ date: Date, now: Date) -> String {
         let seconds = max(0, now.timeIntervalSince(date))
-        if seconds < 60 { return "just now" }
-        if seconds < 3_600 { return "\(max(1, Int(seconds / 60)))m ago" }
-        if seconds < 86_400 { return "\(max(1, Int(seconds / 3_600)))h ago" }
-        return "\(max(1, Int(seconds / 86_400)))d ago"
+        if seconds < 60 { return L10n.settings("just now") }
+        if seconds < 3_600 { return L10n.settings("%dm ago", max(1, Int(seconds / 60))) }
+        if seconds < 86_400 { return L10n.settings("%dh ago", max(1, Int(seconds / 3_600))) }
+        return L10n.settings("%dd ago", max(1, Int(seconds / 86_400)))
     }
 }

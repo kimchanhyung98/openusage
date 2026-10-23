@@ -131,6 +131,19 @@ enum LocalUsageAPI {
         }
     }
 
+    /// 표시용 날짜를 제외한 기존 chart point 공개 계약.
+    private struct WireChartPoint: Encodable {
+        let value: Double
+        let label: String
+        let valueLabel: String?
+
+        init(_ point: MetricChartPoint) {
+            value = point.value
+            label = point.label
+            valueLabel = point.valueLabel
+        }
+    }
+
     private struct WireLine: Encodable {
         let line: MetricLine
 
@@ -178,7 +191,7 @@ enum LocalUsageAPI {
                 // 원본 앱의 `barChart` line shape — 일자별 {label, value, valueLabel} point + 선택적 source note, 기존 통합의 trend 읽기 유지.
                 try container.encode("barChart", forKey: .type)
                 try container.encode(label, forKey: .label)
-                try container.encode(points, forKey: .points)
+                try container.encode(points.map(WireChartPoint.init), forKey: .points)
                 try container.encodeIfPresent(note, forKey: .note)
                 try container.encodeNil(forKey: .color)
             }
@@ -186,9 +199,11 @@ enum LocalUsageAPI {
 
         /// `.values` row의 legacy 결합 문자열 — dollars는 full(cents 보존), counts는 compact, " · "로 join.
         private static func legacyValueString(_ values: [MetricValue]) -> String {
-            values
-                .map { MetricFormatter.string(for: $0, style: $0.kind == .count ? .tray : .full) }
-                .joined(separator: " · ")
+            L10n.withLanguage(.english) {
+                values
+                    .map { MetricFormatter.string(for: $0, style: $0.kind == .count ? .tray : .full) }
+                    .joined(separator: " · ")
+            }
         }
     }
 }

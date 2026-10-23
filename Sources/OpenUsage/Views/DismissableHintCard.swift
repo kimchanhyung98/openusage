@@ -37,7 +37,7 @@ struct DismissableHintCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel(L10n.dashboard("Dismiss"))
         }
         .padding(12)
         .cardSurface()

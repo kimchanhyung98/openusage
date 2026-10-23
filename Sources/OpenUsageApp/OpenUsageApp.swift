@@ -2,6 +2,14 @@ import OpenUsage
 import SwiftUI
 
 @main
+enum OpenUsageMain {
+    @MainActor
+    static func main() {
+        AppDelegate.configureLanguageForLaunch()
+        OpenUsageApp.main()
+    }
+}
+
 struct OpenUsageApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

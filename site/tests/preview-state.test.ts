@@ -6,35 +6,61 @@ import { settingGroups } from '../src/data/settings.ts';
 import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
 const source = (path: string): string => readFileSync(new URL(`../../Sources/OpenUsage/${path}`, import.meta.url), 'utf8');
+const englishSource = (path: string): string => source(path)
+  .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
 test('Settings covers every native section in display order', () => {
-  const body = source('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('ScreenCrossLinkRow(')[0];
+  const body = englishSource('Views/SettingsScreen.swift').split('return VStack(alignment: .leading, spacing: density.sectionSpacing)')[1].split('ScreenCrossLinkRow(')[0];
   const sections: Record<string, string> = {
     AccountsSettingsSection: 'Accounts', ICloudSyncSettingsSection: 'iCloud Sync', notificationsSection: 'Notifications',
     TokscaleSettingsSection: 'Tokscale', commandLineSection: 'Command Line', advancedSection: 'Advanced',
   };
   const native = [...body.matchAll(/section\("([^"]+)"\)|\b(AccountsSettingsSection|ICloudSyncSettingsSection|notificationsSection|TokscaleSettingsSection|commandLineSection|advancedSection)\b/g)]
     .map((match) => match[1] ?? sections[match[2]]);
+  assert.ok(native.includes('General'), 'The native section extractor must find the General section');
   assert.deepEqual(settingGroups.map((group) => group.title), native);
 });
 
 test('Settings includes normal native rows and notification triggers', () => {
   const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
   const hiddenEasterEggs = new Set(['Party Mode', 'Drunk Mode']);
-  for (const match of source('Views/SettingsScreen.swift').matchAll(/row\("([^"]+)"\)/g)) {
-    if (!hiddenEasterEggs.has(match[1])) assert.ok(labels.has(match[1]), match[1]);
+  const nativeRows = [...englishSource('Views/SettingsScreen.swift').matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
+  assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
+  assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
+  for (const label of nativeRows) {
+    if (!hiddenEasterEggs.has(label)) assert.ok(labels.has(label), label);
   }
-  const milestones = source('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
-  for (const match of milestones.matchAll(/return "([^"]+)"/g)) assert.ok(labels.has(match[1]), match[1]);
+  const milestones = englishSource('Support/PaceNotificationLogic.swift').split('var settingLabel: String')[1].split('var notificationTitle')[0];
+  const milestoneLabels = [...milestones.matchAll(/(?:return|case \.\w+:)\s*"([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(milestoneLabels.length, 3, 'Every native notification trigger must be checked');
+  for (const label of milestoneLabels) assert.ok(labels.has(label), label);
 });
 
 test('Settings includes the native Log Level options and app actions', () => {
-  const expected = [...source('Stores/LogLevelSetting.swift').matchAll(/case \.\w+: "([^"]+)"/g)].map((match) => match[1]);
+  const expected = [...englishSource('Stores/LogLevelSetting.swift').matchAll(/case \.\w+: "([^"]+)"/g)].map((match) => match[1]);
+  assert.equal(expected.length, 4, 'Every native log level must be checked');
   const logLevel = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'logLevel')!.control;
   assert.equal(logLevel.kind, 'picker');
   if (logLevel.kind === 'picker') assert.deepEqual(logLevel.options, expected);
   const actions = settingGroups.flatMap((group) => group.rows).flatMap((row) => row.control.kind === 'action' ? [row.control.label] : []);
   for (const action of ['Record Shortcut', 'Sync', 'Install…', 'Copy Log Path', 'Reveal in Finder', 'Check for Updates…']) assert.ok(actions.includes(action), action);
+});
+
+test('Language offers the three app languages and preserves the English demo', () => {
+  const control = settingGroups.flatMap((group) => group.rows).find((row) => row.id === 'language')!.control;
+  assert.equal(control.kind, 'picker');
+  if (control.kind !== 'picker') return;
+  assert.deepEqual(control.options, ['English', '한국어', '日本語']);
+  assert.equal(initialPreviewState().preferences.language, 'English');
+  for (const language of control.options) {
+    const changed = changePreference(initialPreviewState(), 'language', language);
+    assert.equal(restorePreviewState(JSON.parse(JSON.stringify(changed))).preferences.language, language);
+  }
+  assert.equal(settingGroups[0].title, 'General');
+  assert.throws(() => changePreference(initialPreviewState(), 'language', 'System'));
+  const oldState = initialPreviewState();
+  delete oldState.preferences.language;
+  assert.equal(restorePreviewState(oldState).preferences.language, 'English');
 });
 
 test('public account examples are shared, generic, and have one active account', () => {

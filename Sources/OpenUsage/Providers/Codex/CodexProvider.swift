@@ -90,6 +90,7 @@ final class CodexProvider: ProviderRuntime {
 
     private var refreshIsDegraded = false
     private var sharedCredentialWarning: String?
+    private var sharedCredentialWarningPresentation: LocalizedMessage?
     private let operationGate = CodexProviderOperationGate()
     private(set) var weeklyTimerObservation: CodexWeeklyTimerObservation?
     private var weeklyTimerCredentialSelection: CodexWeeklyTimerCredentialSelection?
@@ -101,6 +102,7 @@ final class CodexProvider: ProviderRuntime {
         defer { operationGate.release() }
         refreshIsDegraded = false
         sharedCredentialWarning = nil
+        sharedCredentialWarningPresentation = nil
         weeklyTimerObservation = nil
         weeklyTimerCredentialSelection = nil
         do {
@@ -298,12 +300,14 @@ final class CodexProvider: ProviderRuntime {
             : nil
         var usageHistory: ProviderUsageHistory?
         var warning: String?
+        var warningPresentation: [LocalizedMessage] = []
         // native·pi 스캔 사이 cancellation 가능 — 부분 결과가 WidgetDataStore의 last-good combined history를 대체하지 않도록 쌍을 한 단위로 처리.
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
             warning = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            warningPresentation = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.map { .init($0) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(
@@ -330,6 +334,7 @@ final class CodexProvider: ProviderRuntime {
             refreshedAt: now(),
             usageHistory: usageHistory,
             warning: [warning, sharedCredentialWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty,
+            warningPresentation: warningPresentation + [sharedCredentialWarningPresentation].compactMap { $0 },
             isDegraded: refreshIsDegraded ? true : nil,
             liveQuotaObservedAt: quota.observedAt,
             codexResetClaimBinding: CodexResetClaimBinding(authState: authState)
@@ -448,6 +453,7 @@ final class CodexProvider: ProviderRuntime {
             authState = error.savedState
             refreshIsDegraded = true
             sharedCredentialWarning = error.localizedDescription
+            sharedCredentialWarningPresentation = UserFacingErrors.presentation(error)
             AppDiagnostics.record(.credentialSave, result: .degraded, providerID: provider.id, error: error.underlyingError,
                                   localContext: "rotated snapshot saved but shared sign-in synchronization failed")
         } catch CodexAuthError.credentialsChanged {

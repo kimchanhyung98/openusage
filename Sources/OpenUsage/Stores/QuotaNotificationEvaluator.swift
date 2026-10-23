@@ -100,7 +100,7 @@ final class QuotaNotificationEvaluator {
         generation: Int,
         post: Post
     ) async -> Bool {
-        let subtitle = "\(providerName(providerID)) \(data.title)"
+        let subtitle = L10n.metrics("%@ %@", providerName(providerID), data.localizedTitle)
         return await post("\(providerID).\(milestone.rawValue)", milestone.notificationTitle, subtitle, milestone.body) {
             self.generationsByProvider[providerID, default: 0] == generation
         }

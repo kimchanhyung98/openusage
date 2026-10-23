@@ -35,6 +35,6 @@ extension AppContainer {
         accountSwitch: AccountSwitchCoordinator, startedAt generation: Int
     ) {
         guard let message, !accountSwitch.isSwitching, accountSwitch.generation == generation else { return }
-        dataStore.setExternalProviderError(message, for: "claude")
+        dataStore.setExternalProviderError(message, for: "claude", presentation: .init(message))
     }
 }

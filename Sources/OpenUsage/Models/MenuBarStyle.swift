@@ -8,8 +8,8 @@ enum MenuBarStyle: String, Hashable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .text: return "Text"
-        case .bars: return "Bars"
+        case .text: return L10n.settings("Text")
+        case .bars: return L10n.settings("Bars")
         }
     }
 }

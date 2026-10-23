@@ -6,8 +6,8 @@ enum WidgetDisplayMode: String, Hashable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .used: return "Used"
-        case .remaining: return "Left"
+        case .used: return L10n.settings("Used")
+        case .remaining: return L10n.settings("Left")
         }
     }
 

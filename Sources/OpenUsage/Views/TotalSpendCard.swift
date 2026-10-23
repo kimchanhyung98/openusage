@@ -100,18 +100,18 @@ struct TotalSpendCard: View {
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
-        .accessibilityLabel("Total Spend Metric")
+        .accessibilityLabel(L10n.dashboard("Total Spend Metric"))
         .accessibilityValue(metric.title)
     }
 
     /// 링에 실제 반영되는 프로바이더 목록 표기 — 하드코딩 목록 금지, tooltip의 거짓 방지.
     private var infoTooltip: String {
         let names = providers.map { container.displayName(for: $0) }
-        return "Only includes \(names.formatted(.list(type: .and)))."
+        return L10n.dashboard("Only includes %@.", names.formatted(.list(type: .and).locale(L10n.locale)))
     }
 
     private var shareButton: some View {
-        CopyFeedbackButton(accessibilityLabel: "Copy \(metric.title) Screenshot") {
+        CopyFeedbackButton(accessibilityLabel: L10n.dashboard("Copy %@ Screenshot", metric.title)) {
             ShareCardRenderer.shareTotalSpend(
                 total: total,
                 metric: metric,
@@ -139,7 +139,7 @@ struct TotalSpendCard: View {
         .animation(Motion.spring, value: periodRawValue)
         .animation(Motion.spring, value: metricRawValue)
         .contextMenu {
-            Button("Share Screenshot") {
+            Button(L10n.dashboard("Share Screenshot")) {
                 ShareCardRenderer.shareTotalSpend(
                     total: total,
                     metric: metric,
@@ -235,11 +235,11 @@ struct TotalSpendRingContent: View {
         let center = formatValue(projection.centerValue, style: .full)
         switch projection.metric {
         case .cost:
-            return "Total cost \(center) across \(projection.slices.count) providers"
+            return L10n.dashboard("Total cost %@ across %d providers", center, projection.slices.count)
         case .tokens:
-            return "Total tokens \(center) across \(projection.slices.count) providers"
+            return L10n.dashboard("Total tokens %@ across %d providers", center, projection.slices.count)
         case .costPerMtok:
-            return "Blended cost per megatoken \(center) across \(projection.slices.count) providers"
+            return L10n.dashboard("Blended cost per megatoken %@ across %d providers", center, projection.slices.count)
         }
     }
 
@@ -288,7 +288,7 @@ struct TotalSpendRingContent: View {
     private var centerTooltip: String {
         let exact = formatValue(projection.centerValue, style: .full)
         if projection.isEstimated, projection.metric.usesDollarEstimateNote {
-            return "\(exact) · \(WidgetData.localEstimateNote)"
+            return "\(exact) · \(L10n.metrics(WidgetData.localEstimateNote))"
         }
         return exact
     }

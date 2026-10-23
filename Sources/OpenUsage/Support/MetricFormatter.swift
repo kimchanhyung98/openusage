@@ -46,7 +46,32 @@ enum MetricFormatter {
     static func string(for value: MetricValue, style: Style) -> String {
         let text = number(value.number, kind: value.kind, style: style)
         guard let label = value.label, !label.isEmpty else { return text }
-        return "\(text) \(label)"
+        return labelledValue(text, label: label)
+    }
+
+    /// 저장된 단위 식별자는 유지하고 표시 단계에서 수량 문구로 변환.
+    static func labelledValue(_ value: String, label: String) -> String {
+        switch label {
+        case "tokens": return L10n.metrics("%@ tokens", value)
+        case "credits": return L10n.metrics("%@ credits", value)
+        case "available": return L10n.metrics("%@ available", value)
+        case "requests": return L10n.metrics("%@ requests", value)
+        case "searches": return L10n.metrics("%@ searches", value)
+        case "resets": return L10n.metrics("%@ resets", value)
+        default: return L10n.metrics("%@ %@", value, L10n.metrics(label))
+        }
+    }
+
+    /// 영문 접미사를 문장 템플릿으로 해석해 언어별 어순 보존.
+    static func usageValue(_ value: String, word: String) -> String {
+        switch word {
+        case "used": return L10n.metrics("%@ used", value)
+        case "left": return L10n.metrics("%@ left", value)
+        case "spent": return L10n.metrics("%@ spent", value)
+        case "limit": return L10n.metrics("%@ limit", value)
+        case "purchased": return L10n.metrics("%@ purchased", value)
+        default: return L10n.metrics("%@ %@", value, L10n.metrics(word))
+        }
     }
 
     /// legend·tooltip용 dollars per million tokens — dollar 포맷 + 고정 `/MTok` suffix.
@@ -64,7 +89,7 @@ enum MetricFormatter {
         switch metric {
         case .cost:
             // `$` 유지 — unit 줄은 명확성을 위해 "dollars" 표기.
-            return TotalSpendRingCenter(primary: number(value, kind: .dollars, style: .tray), unit: "dollars")
+            return TotalSpendRingCenter(primary: number(value, kind: .dollars, style: .tray), unit: L10n.metrics("dollars"))
         case .tokens:
             return tokenRingCenter(value)
         case .costPerMtok:
@@ -88,26 +113,26 @@ enum MetricFormatter {
             let scaled = value / 1_000_000_000
             return TotalSpendRingCenter(
                 primary: scaled.formatted(.number.precision(.fractionLength(0...1)).locale(locale)),
-                unit: "billion"
+                unit: L10n.metrics("billion")
             )
         }
         if magnitude >= 1_000_000 {
             let scaled = value / 1_000_000
             return TotalSpendRingCenter(
                 primary: scaled.formatted(.number.precision(.fractionLength(0...1)).locale(locale)),
-                unit: "million"
+                unit: L10n.metrics("million")
             )
         }
         if magnitude >= 1_000 {
             let scaled = value / 1_000
             return TotalSpendRingCenter(
                 primary: scaled.formatted(.number.precision(.fractionLength(0...1)).locale(locale)),
-                unit: "thousand"
+                unit: L10n.metrics("thousand")
             )
         }
         return TotalSpendRingCenter(
             primary: value.formatted(.number.precision(.fractionLength(0...1)).locale(locale)),
-            unit: "tokens"
+            unit: L10n.metrics("tokens")
         )
     }
 }

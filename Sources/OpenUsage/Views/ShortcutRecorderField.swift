@@ -48,8 +48,8 @@ struct ShortcutRecorderField: View {
                         .imageScale(.medium)
                 }
                 .buttonStyle(.plain)
-                .hoverTooltip("Clear Shortcut")
-                .accessibilityLabel("Clear Shortcut")
+                .hoverTooltip(L10n.settings("Clear Shortcut"))
+                .accessibilityLabel(L10n.settings("Clear Shortcut"))
             }
         }
         .onAppear {
@@ -65,14 +65,14 @@ struct ShortcutRecorderField: View {
     @ViewBuilder
     private var chipContent: some View {
         if isRecording {
-            Text("Type Shortcut…")
+            Text(L10n.settings("Type Shortcut…"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
         } else if let currentShortcut {
             Text(currentShortcut.description)
                 .font(.system(.callout, design: .monospaced))
         } else {
-            Text("Record Shortcut")
+            Text(L10n.settings("Record Shortcut"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }

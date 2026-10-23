@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "OpenUsage",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v15)
     ],
@@ -26,6 +27,7 @@ let package = Package(
             ],
             path: "Sources/OpenUsage",
             resources: [
+                .process("Resources/Localization"),
                 .copy("Resources/ProviderIcons"),
                 .copy("Resources/pricing_supplement.json"),
                 .copy("Resources/pricing_litellm_snapshot.json"),

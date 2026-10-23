@@ -24,8 +24,8 @@ struct CustomizeProviderListView: View {
             .cardSurface()
             ScreenCrossLinkRow(
                 systemImage: "gearshape",
-                title: "Settings",
-                subtitle: "Notifications, appearance and more",
+                title: L10n.customize("Settings"),
+                subtitle: L10n.customize("Notifications, appearance and more"),
                 destination: .settings
             )
         }

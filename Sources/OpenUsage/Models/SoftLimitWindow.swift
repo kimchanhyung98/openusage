@@ -4,8 +4,8 @@ enum SoftLimitWindow: String, CaseIterable, Sendable {
 
     var label: String {
         switch self {
-        case .fiveHours: "5 Hours"
-        case .weekly: "Weekly"
+        case .fiveHours: L10n.errors("5 Hours")
+        case .weekly: L10n.errors("Weekly")
         }
     }
 
@@ -41,7 +41,7 @@ extension WidgetData {
         guard hasData, let limit, limit > 0, let softLimitUsedFraction else { return nil }
         let percent = Int((softLimitUsedFraction * 100).rounded())
         return (used / limit * 100).rounded() >= Double(percent)
-            ? "Soft limit reached at \(percent)% used"
-            : "Soft limit at \(percent)% used"
+            ? L10n.errors("Soft limit reached at %@%% used", String(percent))
+            : L10n.errors("Soft limit at %@%% used", String(percent))
     }
 }

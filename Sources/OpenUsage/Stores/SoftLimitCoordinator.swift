@@ -73,7 +73,7 @@ final class SoftLimitCoordinator {
             snapshot: snapshot, descriptors: descriptors, window: settings.window, now: now()
         ), observationNotBefore.map({ observation.observedAt >= $0 }) ?? true else {
             observations[providerID] = nil
-            statuses[providerID] = .init(phase: .waiting, message: "Waiting for fresh, supported quota data.")
+            statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Waiting for fresh, supported quota data."))
             return
         }
         observations[providerID] = observation
@@ -81,25 +81,25 @@ final class SoftLimitCoordinator {
             finished = finished.filter { $0.providerID != providerID }
             retries = retries.filter { $0.key.providerID != providerID }
             retryAfter[providerID] = nil
-            statuses[providerID] = .init(phase: .belowLimit, message: "Below the soft limit. No tasks cancelled.")
+            statuses[providerID] = .init(phase: .belowLimit, message: L10n.errors("Below the soft limit. No tasks cancelled."))
         } else if adapters[providerID] == nil {
-            statuses[providerID] = .init(phase: .unsupported, message: "Limit reached. Automatic cancellation is not supported for this provider yet.")
+            statuses[providerID] = .init(phase: .unsupported, message: L10n.errors("Limit reached. Automatic cancellation is not supported for this provider yet."))
         }
     }
 
     func invalidate(providerID: String) {
         observations[providerID] = nil
-        statuses[providerID] = .init(phase: .waiting, message: "Refresh failed. Waiting for fresh quota data before cancelling more tasks.")
+        statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Refresh failed. Waiting for fresh quota data before cancelling more tasks."))
     }
 
     func status(for providerID: String) -> SoftLimitProviderStatus {
         guard adapters[providerID] != nil else {
-            return .init(phase: .unsupported, message: "Automatic cancellation is not supported yet.")
+            return .init(phase: .unsupported, message: L10n.errors("Automatic cancellation is not supported yet."))
         }
         guard isCancellationScopeVerified(providerID) else {
-            return .init(phase: .unsupported, message: "Account scope is not verified. Automatic cancellation is unavailable.")
+            return .init(phase: .unsupported, message: L10n.errors("Account scope is not verified. Automatic cancellation is unavailable."))
         }
-        return statuses[providerID] ?? .init(phase: .waiting, message: "Waiting for the next successful quota refresh.")
+        return statuses[providerID] ?? .init(phase: .waiting, message: L10n.errors("Waiting for the next successful quota refresh."))
     }
 
     /// 한 번의 제어 조회 — GUI timer와 fresh-success callback만 호출.
@@ -115,7 +115,7 @@ final class SoftLimitCoordinator {
               observation.usedFraction >= Double(settings.thresholdPercent) / 100
         else { return }
         guard now() < observation.expiresAt else {
-            statuses[providerID] = .init(phase: .waiting, message: "Quota data is stale. Waiting for a successful refresh before cancelling more tasks.")
+            statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Quota data is stale. Waiting for a successful refresh before cancelling more tasks."))
             return
         }
         guard let adapter = adapters[providerID], !inFlight.contains(providerID),
@@ -131,7 +131,7 @@ final class SoftLimitCoordinator {
             let pending = Set(tasks).subtracting(finished)
             if pending.isEmpty {
                 if statuses[providerID]?.phase != .cancelled {
-                    statuses[providerID] = .init(phase: .noRunningTasks, message: "No running tasks on the connected client. " + adapter.coverageNotice)
+                    statuses[providerID] = .init(phase: .noRunningTasks, message: L10n.errors("No running tasks on the connected client. %@", L10n.errors(adapter.coverageNotice)))
                 }
                 return
             }
@@ -142,11 +142,11 @@ final class SoftLimitCoordinator {
                     statuses[providerID] = .init(
                         phase: .waiting,
                         cancelledCount: cancelledCount,
-                        message: "Cancellation stopped before all tasks were confirmed. Waiting for another check."
+                        message: L10n.errors("Cancellation stopped before all tasks were confirmed. Waiting for another check.")
                     )
                 }
             }
-            statuses[providerID] = .init(phase: .cancelling, cancelledCount: cancelledCount, message: "Cancelling connected tasks…")
+            statuses[providerID] = .init(phase: .cancelling, cancelledCount: cancelledCount, message: L10n.errors("Cancelling connected tasks…"))
             for task in pending.sorted(by: { ($0.sessionID, $0.operationID) < ($1.sessionID, $1.operationID) }) {
                 guard canCancel(providerID, revision: boundRevision) else { return }
                 guard retries[task, default: 0] < 3 else { failures += 1; continue }
@@ -170,9 +170,9 @@ final class SoftLimitCoordinator {
                 phase: failures == 0 ? .cancelled : .failed,
                 cancelledCount: cancelledCount,
                 failedCount: failures,
-                message: "\(cancelledCount) connected task(s) cancelled. "
-                    + (failures > 0 ? "\(failures) cancellation(s) not confirmed. " : "")
-                    + adapter.coverageNotice
+                message: L10n.errors("%@ connected task(s) cancelled. %@%@", String(cancelledCount),
+                    failures > 0 ? L10n.errors("%@ cancellation(s) not confirmed. ", String(failures)) : "",
+                    L10n.errors(adapter.coverageNotice))
             )
             if failures > 0 { retryAfter[providerID] = now().addingTimeInterval(10) }
             AppLog.info(LogTag.plugin(providerID), "Soft Limit result: cancelled=\(cancelledCount), failed=\(failures)")
@@ -181,8 +181,8 @@ final class SoftLimitCoordinator {
         } catch {
             guard canCancel(providerID, revision: boundRevision) else { return }
             adapter.disconnect()
-            let message = (error as? SoftLimitControlError)?.localizedDescription
-                ?? "The local cancellation connection failed. Tasks may still be running."
+            let message = (error as? SoftLimitControlError).map { UserFacingErrors.message($0) }
+                ?? L10n.errors("The local cancellation connection failed. Tasks may still be running.")
             statuses[providerID] = .init(phase: .failed, message: message)
             retryAfter[providerID] = now().addingTimeInterval(10)
             AppLog.error(LogTag.plugin(providerID), "Soft Limit control connection failed")

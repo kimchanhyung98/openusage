@@ -182,7 +182,7 @@ struct AccountSettingsFamilyCard: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Manage \(profile.label) Account")
+                .accessibilityLabel(L10n.accounts("Manage %@ Account", profile.label))
                 .disabled(container.accountSwitch.isSwitching)
             }
             Spacer(minLength: 8)
@@ -190,7 +190,7 @@ struct AccountSettingsFamilyCard: View {
                 HStack(spacing: 4) {
                     ProgressView()
                         .controlSize(.mini)
-                    Text("Switching…")
+                    Text(L10n.accounts("Switching…"))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -233,22 +233,25 @@ struct AccountSettingsFamilyCard: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(profile.label)
                 .accessibilityValue(
-                    "\(isSelected ? "Selected" : "Not Selected"), Position \(position + 1) of \(total)"
+                    L10n.accounts(
+                        "%@, Position %d of %d",
+                        L10n.accounts(isSelected ? "Selected" : "Not Selected"), position + 1, total
+                    )
                 )
                 .accessibilityActions {
                     if position > 0 {
-                        Button("Move Up") {
+                        Button(L10n.accounts("Move Up")) {
                             moveAccount(profile, direction: .up, announcesResult: true)
                         }
                     }
                     if position < total - 1 {
-                        Button("Move Down") {
+                        Button(L10n.accounts("Move Down")) {
                             moveAccount(profile, direction: .down, announcesResult: true)
                         }
                     }
                 }
         } else {
-            row.accessibilityValue(isSelected ? "Selected" : "Not Selected")
+            row.accessibilityValue(L10n.accounts(isSelected ? "Selected" : "Not Selected"))
         }
     }
 
@@ -393,7 +396,7 @@ struct AccountSettingsFamilyCard: View {
            let position = container.orderedAccountProfiles(for: family).firstIndex(where: { $0.id == profile.id })
         {
             AccessibilityNotification.Announcement(
-                "Moved \(profile.label) to position \(position + 1) of \(ordered.count)."
+                L10n.accounts("Moved %@ to position %d of %d.", profile.label, position + 1, ordered.count)
             ).post()
         }
         return true

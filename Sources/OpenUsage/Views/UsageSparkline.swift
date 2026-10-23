@@ -21,7 +21,7 @@ struct UsageSparkline: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(data.title)
+            Text(data.localizedTitle)
                 .font(.system(size: density.supportingPointSize, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -45,7 +45,7 @@ struct UsageSparkline: View {
                 // click-away 해제는 `.ended` 호버 이벤트 없이 뷰 제거 — `overDetail` true 잔존 방지 위해 전체 상태 리셋 필수
                 .popover(isPresented: Binding(get: { hover.isPresented }, set: { if !$0 { hover.dismiss() } }),
                          arrowEdge: .top) {
-                    UsageTrendDetail(title: data.title, points: points, note: data.chartNote) { inside in
+                    UsageTrendDetail(title: data.localizedTitle, points: points, note: data.chartNote) { inside in
                         hover.detailHover(inside)
                     }
                 }
@@ -84,7 +84,8 @@ struct UsageSparkline: View {
 
     private var accessibilityLabel: String {
         guard let peak = points.max(by: { $0.value < $1.value }),
-              let first = points.first, let last = points.last else { return data.title }
-        return "\(data.title): \(points.count) days, \(first.label) to \(last.label), peak \(peak.readout)."
+              let first = points.first, let last = points.last else { return data.localizedTitle }
+        return L10n.dashboard("%@: %d days, %@ to %@, peak %@.",
+                              data.localizedTitle, points.count, first.localizedLabel, last.localizedLabel, peak.localizedReadout)
     }
 }

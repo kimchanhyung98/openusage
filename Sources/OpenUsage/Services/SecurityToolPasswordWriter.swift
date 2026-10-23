@@ -50,21 +50,20 @@ struct SecurityToolGenericPasswordWriter: GenericPasswordWriting {
         let command = try arguments.map(quote).joined(separator: " ") + "\n"
         // security 대화형 입력은 행당 4096바이트 — 잘린 토큰 저장 전에 실패 처리.
         guard command.utf8.count < 4096 else {
-            throw KeychainError.writeFailed(
-                "The credential exceeds the Keychain tool's input limit; the stored credential was not changed.")
+            throw KeychainError.toolInputLimitExceeded
         }
         let written = try processRunner.run(
             executable: "/usr/bin/security", arguments: ["-i", "-q"], environment: [:], timeout: 5,
             standardInput: Data(command.utf8)
         )
         guard written.succeeded else {
-            throw KeychainError.writeFailed("Keychain write failed (exit \(written.exitCode)).")
+            throw KeychainError.toolWriteFailed(exitCode: written.exitCode)
         }
     }
 
     private func quote(_ value: String) throws -> String {
         guard !containsLineBreakOrNul(value) else {
-            throw KeychainError.writeFailed("Keychain item names contain unsupported control characters.")
+            throw KeychainError.invalidItemName
         }
         return "\""
             + value.replacingOccurrences(of: "\\", with: "\\\\")

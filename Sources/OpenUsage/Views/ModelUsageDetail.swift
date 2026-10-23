@@ -43,7 +43,7 @@ struct ModelUsageDetail: View {
     private func modelRow(_ model: ModelUsageEntry, share: Double, percent: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.model)
+                Text(localizedModelName(model.model))
                     .font(.system(size: density.supportingPointSize, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -85,6 +85,13 @@ struct ModelUsageDetail: View {
             .padding(.top, 2)
         }
         .padding(.vertical, density.textRowPadding)
+    }
+
+    private func localizedModelName(_ name: String) -> String {
+        if name == ModelUsageEntry.unattributedModelName || name == ModelUsageEntry.otherModelName {
+            return L10n.metrics(name)
+        }
+        return name
     }
 
     /// 목록 모델 자체 수치 합 기준 share 산출 — 별도 경로에서 반올림되는 `totalCostUSD` 사용 시 표기 수치와 괴리 발생.

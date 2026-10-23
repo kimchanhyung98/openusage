@@ -27,17 +27,17 @@ struct PopoverTopBar: View {
                 navigationBar(title: customizeTitle, back: customizeBack) {
                     resetAllButton
                 }
-                .alert("Reset All Customization?", isPresented: $isPresentingResetAllConfirm) {
-                    Button("Reset All", role: .destructive) {
+                .alert(L10n.dashboard("Reset All Customization?"), isPresented: $isPresentingResetAllConfirm) {
+                    Button(L10n.dashboard("Reset All"), role: .destructive) {
                         withAnimation(Motion.spring) { onResetAll() }
                     }
-                    Button("Cancel", role: .cancel) {}
+                    Button(L10n.dashboard("Cancel"), role: .cancel) {}
                 } message: {
-                    Text("Turns providers back on for the tools you have installed and resets every provider's metrics and order. Are you sure?")
+                    Text(L10n.dashboard("Turns providers back on for the tools you have installed and resets every provider's metrics and order. Are you sure?"))
                 }
             }
         case .settings:
-            navigationBar(title: "Settings") {
+            navigationBar(title: L10n.dashboard("Settings")) {
                 withAnimation(Motion.modeSwitch) { layout.screen = .dashboard }
             } trailing: {
                 EmptyView()
@@ -48,7 +48,7 @@ struct PopoverTopBar: View {
     private var customizeTitle: String {
         layout.customizeProviderID.flatMap { id in
             layout.provider(id: id).map { container.displayName(for: $0) }
-        } ?? "Customize"
+        } ?? L10n.dashboard("Customize")
     }
 
     private func customizeBack() {
@@ -84,15 +84,15 @@ struct PopoverTopBar: View {
 
     private func backButton(action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label("Back", systemImage: "chevron.backward")
+            Label(L10n.dashboard("Back"), systemImage: "chevron.backward")
                 .labelStyle(.iconOnly)
                 .frame(width: 16, height: 16)
         }
         .glassButtonStyle()
         .buttonBorderShape(.circle)
         .controlSize(.large)
-        .hoverTooltip("Back")
-        .accessibilityLabel("Back")
+        .hoverTooltip(L10n.dashboard("Back"))
+        .accessibilityLabel(L10n.dashboard("Back"))
     }
 
     private func resetButton(for providerID: String) -> some View {
@@ -107,8 +107,8 @@ struct PopoverTopBar: View {
         .glassButtonStyle()
         .buttonBorderShape(.circle)
         .controlSize(.large)
-        .hoverTooltip("Reset \(layout.provider(id: providerID).map { container.displayName(for: $0) } ?? providerID)")
-        .accessibilityLabel("Reset")
+        .hoverTooltip(L10n.dashboard("Reset %@", layout.provider(id: providerID).map { container.displayName(for: $0) } ?? providerID))
+        .accessibilityLabel(L10n.dashboard("Reset"))
     }
 
     private var resetAllButton: some View {
@@ -123,7 +123,7 @@ struct PopoverTopBar: View {
         .glassButtonStyle()
         .buttonBorderShape(.circle)
         .controlSize(.large)
-        .hoverTooltip("Reset All Customization")
-        .accessibilityLabel("Reset All Customization")
+        .hoverTooltip(L10n.dashboard("Reset All Customization"))
+        .accessibilityLabel(L10n.dashboard("Reset All Customization"))
     }
 }

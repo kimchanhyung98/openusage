@@ -17,6 +17,7 @@ struct SettingsScreen: View {
     @State private var commandLineTool = CommandLineToolInstaller()
     @AppStorage(TotalSpendSetting.key) private var showTotalSpend = true
     @AppStorage(AppearanceSetting.key) private var appearance = AppearanceSetting.system
+    @AppStorage(LanguageSetting.key) private var language = LanguageSetting.current
     @AppStorage(TimeFormatSetting.key) private var timeFormat = TimeFormatSetting.fallback
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
     @AppStorage(LogLevelSetting.key) private var logLevel = LogLevelSetting.fallback
@@ -50,13 +51,13 @@ struct SettingsScreen: View {
         @Bindable var privacy = container.privacy
         @Bindable var notifications = container.notificationSettings
         return VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            section("General") {
+            section(L10n.settings("General")) {
                 // 활성 spend-capable 프로바이더 존재 시에만 카드 표시 — 이 토글 단독으로는 미노출
-                row("Show Total Spend") {
+                row(L10n.settings("Show Total Spend")) {
                     Toggle("", isOn: $showTotalSpend)
                         .settingsSwitchStyle()
                 }
-                row("Launch at Login") {
+                row(L10n.settings("Launch at Login")) {
                     Toggle("", isOn: Binding(
                         get: { launchAtLogin.isEnabled },
                         set: { launchAtLogin.update(to: $0) }
@@ -66,9 +67,18 @@ struct SettingsScreen: View {
                 if let launchAtLoginError = launchAtLogin.errorMessage {
                     inlineNotice(launchAtLoginError)
                 }
-                row("Global Shortcut") {
+                row(L10n.settings("Global Shortcut")) {
                     ShortcutRecorderField(name: .togglePopover)
-                        .hoverTooltip("Open OpenUsage from anywhere")
+                        .hoverTooltip(L10n.settings("Open OpenUsage from anywhere"))
+                }
+                row(L10n.settings("Language")) {
+                    picker($language, options: LanguageSetting.allCases, label: \.nativeName)
+                        .onChange(of: language) { _, selected in
+                            LanguageSetting.update(to: selected)
+                        }
+                }
+                if language != LanguageSetting.active {
+                    inlineNotice(L10n.settings("Restart OpenUsage to apply the language change."))
                 }
             }
             AccountsSettingsSection(
@@ -78,25 +88,25 @@ struct SettingsScreen: View {
                 scrollToAccount: scrollToAccount
             )
             ICloudSyncSettingsSection(sync: container.iCloudSync)
-            section("Appearance") {
-                row("Icon Style") {
+            section(L10n.settings("Appearance")) {
+                row(L10n.settings("Icon Style")) {
                     picker($layout.menuBarStyle, options: MenuBarStyle.allCases, label: \.label)
                 }
-                row("Theme") {
+                row(L10n.settings("Theme")) {
                     picker($appearance, options: AppearanceSetting.allCases, label: \.label)
                         // 팝오버 패널은 preferredColorScheme 무시 — NSApp 수준 적용 필요
                         .onChange(of: appearance) {
                             AppearanceSetting.applyCurrent()
                         }
                 }
-                row("Density") {
+                row(L10n.settings("Density")) {
                     picker($density, options: DensitySetting.allCases, label: \.label)
                 }
-                row("Time Format") {
+                row(L10n.settings("Time Format")) {
                     picker($timeFormat, options: TimeFormatSetting.allCases, label: \.label)
                 }
                 // 시스템 접근성 설정·party easter egg에 양보 — 일시정지 시 아래 notice 표시
-                row("Increase Transparency") {
+                row(L10n.settings("Increase Transparency")) {
                     Toggle("", isOn: $transparency.increaseTransparency)
                         .settingsSwitchStyle()
                         // party mode가 look 소유 중 — 토글 무효를 dim으로 표시, 저장값은 egg 종료 후 복원
@@ -104,38 +114,38 @@ struct SettingsScreen: View {
                 }
                 // egg 우선: Party 실행 중엔 접근성 notice보다 party notice 우선
                 if transparency.secretCodeActive {
-                    inlineNotice("Party mode is on, so this stays paused.")
+                    inlineNotice(L10n.settings("Party mode is on, so this stays paused."))
                 } else if transparency.isPaused {
-                    inlineNotice("macOS Reduce Transparency or Increase Contrast is on, so this stays paused.")
+                    inlineNotice(L10n.settings("macOS Reduce Transparency or Increase Contrast is on, so this stays paused."))
                 }
                 // 두 행은 시크릿 코드 입력 후에만 노출. Party Mode off는 egg 종료 (두 행 숨김),
                 // Drunk Mode off는 party 유지 — Party off는 Drunk도 함께 해제.
                 if transparency.secretCodeActive {
-                    row("Party Mode") {
+                    row(L10n.settings("Party Mode")) {
                         Toggle("", isOn: $transparency.partyModeActive)
                             .settingsSwitchStyle()
                     }
-                    row("Drunk Mode") {
+                    row(L10n.settings("Drunk Mode")) {
                         Toggle("", isOn: $transparency.drunkMode)
                             .settingsSwitchStyle()
                     }
                     // egg도 접근성 플래그에 양보 — party가 평범해 보이는 이유 설명
                     if transparency.partyPaused {
-                        inlineNotice("macOS Reduce Transparency or Increase Contrast is on, so the party stays paused.")
+                        inlineNotice(L10n.settings("macOS Reduce Transparency or Increase Contrast is on, so the party stays paused."))
                     }
                 }
             }
-            section("Usage Display") {
-                row("Show Usage As") {
+            section(L10n.settings("Usage Display")) {
+                row(L10n.settings("Show Usage As")) {
                     picker($store.meterStyle, options: WidgetDisplayMode.allCases, label: \.label)
                 }
-                row("Reset Times") {
+                row(L10n.settings("Reset Times")) {
                     picker($store.resetDisplayMode, options: ResetDisplayMode.allCases, label: \.label)
                 }
-                row("Always Show Pacing") {
+                row(L10n.settings("Always Show Pacing")) {
                     Toggle("", isOn: $store.alwaysShowPacing)
                         .settingsSwitchStyle()
-                        .hoverTooltip("Show how you're pacing on every metric, not just ones near their limit")
+                        .hoverTooltip(L10n.settings("Show how you're pacing on every metric, not just ones near their limit"))
                 }
             }
             SoftLimitSettingsSection(
@@ -146,25 +156,25 @@ struct SettingsScreen: View {
                 }
             )
             notificationsSection
-            section("Privacy") {
-                row("Hide From Screen Share") {
+            section(L10n.settings("Privacy")) {
+                row(L10n.settings("Hide From Screen Share")) {
                     Toggle("", isOn: $privacy.hideUsageWhileScreenSharing)
                         .settingsSwitchStyle()
                 }
-                Text("While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage.")
+                Text(L10n.settings("While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                row("Share Anonymous Usage") {
+                row(L10n.settings("Share Anonymous Usage")) {
                     Toggle("", isOn: Binding(
                         get: { container.telemetry.isEnabled },
                         set: { container.telemetry.setEnabled($0) }
                     ))
                     .settingsSwitchStyle()
                 }
-                Text("Shares anonymous usage counts and error types to help improve OpenUsage. No account details, credentials, or usage values are sent.")
+                Text(L10n.settings("Shares anonymous usage counts and error types to help improve OpenUsage. No account details, credentials, or usage values are sent."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -176,18 +186,18 @@ struct SettingsScreen: View {
             advancedSection
             // 서명 릴리스 빌드만 feed 보유 — dev 빌드·`swift run`에선 숨김
             if updater.isActive {
-                section("Updates") {
-                    row("Update Automatically") {
+                section(L10n.settings("Updates")) {
+                    row(L10n.settings("Update Automatically")) {
                         Toggle("", isOn: $updater.automaticallyChecksForUpdates)
                             .settingsSwitchStyle()
                     }
-                    row("Beta Updates") {
+                    row(L10n.settings("Beta Updates")) {
                         Toggle("", isOn: $updater.betaChannelEnabled)
                             .settingsSwitchStyle()
-                            .hoverTooltip("Receive pre-release builds before they ship to everyone")
+                            .hoverTooltip(L10n.settings("Receive pre-release builds before they ship to everyone"))
                     }
                     Button { updater.checkForUpdates() } label: {
-                        Text("Check for Updates…").frame(maxWidth: .infinity)
+                        Text(L10n.settings("Check for Updates…")).frame(maxWidth: .infinity)
                     }
                     .glassButtonStyle()
                     .controlSize(.regular)
@@ -198,8 +208,8 @@ struct SettingsScreen: View {
             }
             ScreenCrossLinkRow(
                 systemImage: "slider.horizontal.3",
-                title: "Customize",
-                subtitle: "Choose what's visible and where",
+                title: L10n.settings("Customize"),
+                subtitle: L10n.settings("Choose what's visible and where"),
                 destination: .customize
             )
         }
@@ -221,7 +231,7 @@ struct SettingsScreen: View {
         let needsAttention = notificationsAuth != .authorized && anyToggleOn
         return VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 6) {
-                Text("Notifications")
+                Text(L10n.settings("Notifications"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 if needsAttention {
@@ -229,8 +239,8 @@ struct SettingsScreen: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .hoverTooltip(notificationsAuth == .denied
-                            ? "Notifications are turned off for OpenUsage. Enable them in System Settings."
-                            : "OpenUsage needs permission to send alerts.")
+                            ? L10n.settings("Notifications are turned off for OpenUsage. Enable them in System Settings.")
+                            : L10n.settings("OpenUsage needs permission to send alerts."))
                 }
             }
             .padding(.horizontal, 8)
@@ -289,7 +299,7 @@ struct SettingsScreen: View {
                     Task { await refreshNotificationsAuth() }
                 }
             } label: {
-                Text(notificationsAuth == .denied ? "Open System Settings" : "Allow Notifications")
+                Text(notificationsAuth == .denied ? L10n.settings("Open System Settings") : L10n.settings("Allow Notifications"))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -319,26 +329,26 @@ struct SettingsScreen: View {
     // MARK: - Command Line
 
     private var commandLineSection: some View {
-        section("Command Line") {
-            row("Terminal Helper") {
+        section(L10n.settings("Command Line")) {
+            row(L10n.settings("Terminal Helper")) {
                 switch commandLineTool.status {
                 case .installed:
-                    Button("Uninstall") { commandLineTool.uninstall() }
+                    Button(L10n.settings("Uninstall")) { commandLineTool.uninstall() }
                 case .notInstalled:
-                    Button("Install…") { commandLineTool.install() }
+                    Button(L10n.settings("Install…")) { commandLineTool.install() }
                 case .conflict:
-                    Text("Unavailable")
+                    Text(L10n.settings("Unavailable"))
                         .foregroundStyle(.secondary)
                 }
             }
-            Text("Adds a global `openusage` command agents can use to monitor limits.")
+            Text(L10n.settings("Adds a global openusage command agents can use to monitor limits."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if commandLineTool.status == .conflict {
-                inlineNotice("\(commandLineTool.destinationPath) already exists and wasn't installed by OpenUsage.")
+                inlineNotice(L10n.settings("%@ already exists and wasn't installed by OpenUsage.", commandLineTool.destinationPath))
             } else if let errorMessage = commandLineTool.errorMessage {
                 inlineNotice(errorMessage)
             }
@@ -349,8 +359,8 @@ struct SettingsScreen: View {
 
     /// 로그 레벨 컨트롤 + 파일 로그 복사/열기. 레벨 변경은 재시작 없이 즉시 적용, 재실행 간 유지.
     private var advancedSection: some View {
-        section("Advanced") {
-            row("Log Level") {
+        section(L10n.settings("Advanced")) {
+            row(L10n.settings("Log Level")) {
                 picker($logLevel, options: LogLevelSetting.allCases, label: \.label)
                     .onChange(of: logLevel) {
                         // 새 레벨을 파일 sink에 즉시 적용 후 전환 기록
@@ -358,17 +368,17 @@ struct SettingsScreen: View {
                         AppLog.info(.config, "Log level changed to \(logLevel.rawValue)")
                     }
             }
-            logButton("Copy Log Path") {
+            logButton(L10n.settings("Copy Log Path")) {
                 let pasteboard = NSPasteboard.general
                 pasteboard.clearContents()
                 guard pasteboard.setString(LogFile.url.path, forType: .string) else {
-                    logActionError = "Couldn't copy the log path to the clipboard."
+                    logActionError = L10n.settings("Couldn't copy the log path to the clipboard.")
                     AppLog.warn(.config, "Copy log path failed")
                     return
                 }
                 logActionError = nil
             }
-            logButton("Reveal in Finder") {
+            logButton(L10n.settings("Reveal in Finder")) {
                 NSWorkspace.shared.activateFileViewerSelecting([LogFile.url])
                 logActionError = nil
             }

@@ -17,10 +17,10 @@ enum LogLevelSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBack
 
     var label: String {
         switch self {
-        case .error: "Error"
-        case .warn: "Warning"
-        case .info: "Info"
-        case .debug: "Debug"
+        case .error: L10n.settings("Error")
+        case .warn: L10n.settings("Warning")
+        case .info: L10n.settings("Info")
+        case .debug: L10n.settings("Debug")
         }
     }
 

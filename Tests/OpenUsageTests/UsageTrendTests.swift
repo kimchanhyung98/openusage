@@ -169,9 +169,9 @@ final class UsageTrendTests: XCTestCase {
         Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: 12))!
     }
 
-    /// 기대 axis label — 생산 측과 동일한 공용 formatter 사용으로 locale 무관
+    /// chart 원문 날짜는 생성 시점의 프로세스 locale 사용.
     private func dayLabel(_ year: Int, _ month: Int, _ day: Int) -> String {
-        Formatters.monthDayLabel(date(year, month, day))
+        Formatters.monthDayLabel(date(year, month, day), locale: .current)
     }
 
     private func makeDataStore(provider: Provider, descriptor: WidgetDescriptor) -> WidgetDataStore {

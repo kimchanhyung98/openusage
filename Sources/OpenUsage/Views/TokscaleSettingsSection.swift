@@ -54,7 +54,7 @@ struct TokscaleSettingsSection: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Manage Tokscale Device Name")
+            .accessibilityLabel(L10n.settings("Manage Tokscale Device Name"))
             .disabled(store.isRunning)
         }
         .padding(.horizontal, 8)
@@ -63,14 +63,14 @@ struct TokscaleSettingsSection: View {
     private var actionRow: some View {
         HStack(spacing: 10) {
             HStack(spacing: 5) {
-                Text("Usage Sync")
+                Text(L10n.settings("Usage Sync"))
                 Link(destination: Self.privacyURL) {
                     Image(systemName: "info.circle")
                         .imageScale(.small)
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Tokscale Privacy Policy")
+                .accessibilityLabel(L10n.settings("Tokscale Privacy Policy"))
             }
             Spacer(minLength: 8)
             action
@@ -83,26 +83,26 @@ struct TokscaleSettingsSection: View {
     private var action: some View {
         switch store.phase {
         case .installingBun:
-            Button("Installing…") {}
+            Button(L10n.settings("Installing…")) {}
                 .disabled(true)
         case .submitting:
-            Button("Syncing…") {}
+            Button(L10n.settings("Syncing…")) {}
                 .disabled(true)
         case .loginRequired:
-            Button(store.isRunning ? "Cancelling…" : "Log In…") {
+            Button(store.isRunning ? L10n.settings("Cancelling…") : L10n.settings("Log In…")) {
                 isLoginSheetPresented = true
             }
             .disabled(store.isRunning)
         case .loggingIn:
-            Button("View Login…") {
+            Button(L10n.settings("View Login…")) {
                 isLoginSheetPresented = true
             }
         case .failed where store.failure == .login:
-            Button("Log In…") {
+            Button(L10n.settings("Log In…")) {
                 isLoginSheetPresented = true
             }
         case .idle, .submitFinished, .loginFinished, .failed:
-            Button("Sync") {
+            Button(L10n.settings("Sync")) {
                 store.startSubmit()
             }
             .disabled(store.phase == .submitFinished || store.isSyncCoolingDown)
@@ -111,9 +111,9 @@ struct TokscaleSettingsSection: View {
 
     private var disclosure: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Sync local usage to your public Tokscale profile.")
+            Text(L10n.settings("Sync local usage to your public Tokscale profile."))
             if let nextSyncAllowedAt = store.nextSyncAllowedAt {
-                Text("Sync Available at \(nextSyncAllowedAt, style: .time)")
+                Text(L10n.settings("Sync Available at %@", TimeFormatSetting.current.shortTime(nextSyncAllowedAt, base: L10n.locale)))
             }
         }
         .font(.caption)
@@ -138,7 +138,7 @@ struct TokscaleSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if canDismissResult {
-                    Button("Done") {
+                    Button(L10n.settings("Done")) {
                         withAnimation(Motion.spring) {
                             store.dismissResult()
                         }
@@ -149,7 +149,7 @@ struct TokscaleSettingsSection: View {
             }
 
             if store.failure?.offersBunInstallationGuide == true {
-                Link("Open Bun Installation Guide", destination: Self.bunInstallationURL)
+                Link(L10n.settings("Open Bun Installation Guide"), destination: Self.bunInstallationURL)
                     .font(.caption)
             }
         }
@@ -167,19 +167,19 @@ struct TokscaleSettingsSection: View {
         case .idle:
             ""
         case .installingBun:
-            "Installing Bun…"
+            L10n.settings("Installing Bun…")
         case .submitting:
-            "Running Tokscale…"
+            L10n.settings("Running Tokscale…")
         case .loginRequired:
-            store.isRunning ? "Cancelling Tokscale Login…" : "Login Required"
+            store.isRunning ? L10n.settings("Cancelling Tokscale Login…") : L10n.settings("Login Required")
         case .submitFinished:
-            "Tokscale Command Finished"
+            L10n.settings("Tokscale Command Finished")
         case .loggingIn:
-            "Waiting for Tokscale Login…"
+            L10n.settings("Waiting for Tokscale Login…")
         case .loginFinished:
-            "Tokscale Login Finished. Sync Has Not Started."
+            L10n.settings("Tokscale Login Finished. Sync Has Not Started.")
         case .failed:
-            store.errorMessage ?? "Tokscale couldn't finish the command."
+            store.errorMessage ?? L10n.settings("Tokscale couldn't finish the command.")
         }
     }
 
@@ -194,7 +194,7 @@ struct TokscaleSettingsSection: View {
 
     private var commandOutput: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Command Output")
+            Text(L10n.settings("Command Output"))
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
             TokscaleCommandOutput(output: store.output, height: 108)
@@ -220,29 +220,29 @@ struct TokscaleDeviceNameSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Tokscale Device Name")
+                Text(L10n.settings("Tokscale Device Name"))
                     .font(.title3.weight(.semibold))
                 Spacer(minLength: 12)
-                Button("Cancel") {
+                Button(L10n.settings("Cancel")) {
                     dismiss()
                 }
                 .buttonStyle(.borderless)
             }
 
-            Text("This label appears publicly on your Tokscale profile. Saving it locally does not run Tokscale or make a network request.")
+            Text(L10n.settings("This label appears publicly on your Tokscale profile. Saving it locally does not run Tokscale or make a network request."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Without an OpenUsage override, Tokscale can use `TOKSCALE_DEVICE_NAME` from your environment or the name stored for its stable device.")
+            Text(L10n.settings("Without an OpenUsage override, Tokscale can use TOKSCALE_DEVICE_NAME from your environment or the name stored for its stable device."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Device Name")
+                Text(L10n.settings("Device Name"))
                     .font(.callout.weight(.semibold))
-                TextField("Enter Device Name", text: $draftName)
+                TextField(L10n.settings("Enter Device Name"), text: $draftName)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(save)
                 HStack(alignment: .firstTextBaseline) {
@@ -252,7 +252,7 @@ struct TokscaleDeviceNameSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    Text("\(trimmedByteCount)/\(TokscaleDeviceName.maximumUTF8ByteCount) bytes")
+                    Text(L10n.settings("%d/%d bytes", trimmedByteCount, TokscaleDeviceName.maximumUTF8ByteCount))
                         .foregroundStyle(
                             trimmedByteCount > TokscaleDeviceName.maximumUTF8ByteCount
                                 ? Theme.notice
@@ -264,7 +264,7 @@ struct TokscaleDeviceNameSheet: View {
 
             HStack {
                 if store.deviceName != nil {
-                    Button("Remove OpenUsage Override") {
+                    Button(L10n.settings("Remove OpenUsage Override")) {
                         store.clearDeviceName()
                         dismiss()
                     }
@@ -272,7 +272,7 @@ struct TokscaleDeviceNameSheet: View {
                     .controlSize(.small)
                 }
                 Spacer(minLength: 0)
-                Button("Save") {
+                Button(L10n.settings("Save")) {
                     save()
                 }
                 .glassButtonStyle(prominent: true)
@@ -295,7 +295,7 @@ struct TokscaleDeviceNameSheet: View {
             try store.saveDeviceName(draftName)
             dismiss()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = UserFacingErrors.message(error)
         }
     }
 }
@@ -310,7 +310,7 @@ private struct TokscaleLoginSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Log In to Tokscale")
+                Text(L10n.settings("Log In to Tokscale"))
                     .font(.title3.weight(.semibold))
                 Spacer(minLength: 12)
                 Button(closeButtonTitle) {
@@ -322,12 +322,12 @@ private struct TokscaleLoginSheet: View {
                 .buttonStyle(.borderless)
             }
 
-            Text("Tokscale uses GitHub for sign-in and may store your GitHub ID, username, display name, avatar, and email. A later sync can show your username, avatar, and display name on a public profile.")
+            Text(L10n.settings("Tokscale uses GitHub for sign-in and may store your GitHub ID, username, display name, avatar, and email. A later sync can show your username, avatar, and display name on a public profile."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Login creates a personal token named `CLI on <hostname>`. It does not submit usage or change the public device name.")
+            Text(L10n.settings("Login creates a personal token named CLI on <hostname>. It does not submit usage or change the public device name."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -340,7 +340,7 @@ private struct TokscaleLoginSheet: View {
 
             if showsLoginOutput, !store.output.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Login Output")
+                    Text(L10n.settings("Login Output"))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     TokscaleCommandOutput(output: store.output, height: 150)
@@ -350,7 +350,7 @@ private struct TokscaleLoginSheet: View {
             if canStartLogin {
                 HStack {
                     Spacer(minLength: 0)
-                    Button(store.phase == .loginRequired ? "Log In" : "Try Again") {
+                    Button(store.phase == .loginRequired ? L10n.settings("Log In") : L10n.settings("Try Again")) {
                         didStartLogin = true
                         store.startLogin()
                     }
@@ -367,7 +367,7 @@ private struct TokscaleLoginSheet: View {
     private var loginState: some View {
         switch store.phase {
         case .loginRequired where !didStartLogin:
-            Text("Opening this sheet does not start login. Choose Log In to continue.")
+            Text(L10n.settings("Opening this sheet does not start login. Choose Log In to continue."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -375,23 +375,23 @@ private struct TokscaleLoginSheet: View {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Waiting for Tokscale Login…")
+                Text(L10n.settings("Waiting for Tokscale Login…"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         case .loginFinished:
-            Text("Tokscale Login Finished. Sync Has Not Started.")
+            Text(L10n.settings("Tokscale Login Finished. Sync Has Not Started."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         case .failed:
             VStack(alignment: .leading, spacing: 7) {
-                Text(store.errorMessage ?? "Tokscale couldn't finish login.")
+                Text(store.errorMessage ?? L10n.settings("Tokscale couldn't finish login."))
                     .font(.caption)
                     .foregroundStyle(Theme.notice)
                     .fixedSize(horizontal: false, vertical: true)
                 if store.failure?.offersBunInstallationGuide == true {
-                    Link("Open Bun Installation Guide", destination: TokscaleSettingsSection.bunInstallationURL)
+                    Link(L10n.settings("Open Bun Installation Guide"), destination: TokscaleSettingsSection.bunInstallationURL)
                         .font(.caption)
                 }
             }
@@ -403,11 +403,11 @@ private struct TokscaleLoginSheet: View {
     private var closeButtonTitle: String {
         switch store.phase {
         case .loggingIn:
-            "Cancel Login"
+            L10n.settings("Cancel Login")
         case .loginFinished, .failed:
-            "Done"
+            L10n.settings("Done")
         default:
-            "Cancel"
+            L10n.settings("Cancel")
         }
     }
 
@@ -439,6 +439,6 @@ private struct TokscaleCommandOutput: View {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
                 .strokeBorder(.separator, lineWidth: 0.5)
         }
-        .accessibilityLabel("Tokscale Command Output")
+        .accessibilityLabel(L10n.settings("Tokscale Command Output"))
     }
 }

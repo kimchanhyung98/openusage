@@ -93,6 +93,10 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 
 - 검증은 경계(API 응답)에서만, 앱 내부 타입은 신뢰.
 - 숫자를 알아보기 쉽도록 프로바이더 자체 대시보드가 쓰는 지표 레이블과 단위에 맞추기.
+- ID·`metricLabel`·단위 식별자·오류 원문은 기존 영문 계약 유지.
+  새 표시 문구는 `Sources/OpenUsage/Resources/Localization/` 아래 영어·한국어·일본어의 해당 `.strings`에 함께 등록.
+  앱이 정의한 오류는 `UserPresentableError`와 `LocalizedMessage`로 원문과 표시 정보 분리.
+  상세 규칙은 [표시 언어](/docs/architecture.md#표시-언어) 참조.
 - 프로바이더의 **빠른 링크**는 `Provider` 값(`links:`)에 선언.
   각 링크는 카드 확장 영역에 버튼으로 렌더링되는 `ProviderLink(label:url:)`이며, 기본 브라우저에서 URL을 여는 방식.
   프로바이더 자체 Status / Console / Dashboard 페이지가 있으면 포함하고, 없는 프로바이더는 `links` 생략(기본값은 비어 있음).

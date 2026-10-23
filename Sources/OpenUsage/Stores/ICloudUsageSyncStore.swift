@@ -393,7 +393,7 @@ final class ICloudUsageSyncStore {
                 dataStore.setPeerHistoryDocuments(visibleDocuments, ownDeviceID: deviceID)
                 operationError = result.invalidFileMessages.isEmpty
                     ? nil
-                    : "Some synced usage data couldn’t be read. Check the log for details."
+                    : L10n.errors("Some synced usage data couldn’t be read. Check the log for details.")
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
                     report(error, operation: .iCloudRead)
@@ -411,18 +411,17 @@ final class ICloudUsageSyncStore {
     }
 
     private func report(_ error: Error, operation: DiagnosticOperation) {
-        operationError = error.localizedDescription
+        operationError = UserFacingErrors.message(error)
         AppDiagnostics.failure(operation, error: error)
     }
 
     private func reportDeletion(_ error: Error) {
-        deletionError = "OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. "
-            + "It will try again automatically."
+        deletionError = L10n.errors("OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. It will try again automatically.")
         AppDiagnostics.failure(.iCloudDelete, error: error)
     }
 
     private func reportInvalidDeletionRequest() {
-        deletionError = "OpenUsage couldn’t read the saved iCloud history deletion request."
+        deletionError = L10n.errors("OpenUsage couldn’t read the saved iCloud history deletion request.")
         AppDiagnostics.record(
             .iCloudDelete, result: .failure, category: .decoding,
             localContext: "iCloud history deletion request has an invalid device identifier"
@@ -451,8 +450,7 @@ final class ICloudUsageSyncStore {
         } catch {
             let id = saved ?? UUID().uuidString.lowercased()
             defaults.set(id, forKey: deviceIDKey)
-            let message = "OpenUsage couldn’t save this Mac’s sync identity in Keychain. "
-                + "Sync may create a duplicate device if app preferences are reset."
+            let message = L10n.errors("OpenUsage couldn’t save this Mac’s sync identity in Keychain. Sync may create a duplicate device if app preferences are reset.")
             AppDiagnostics.failure(.iCloudIdentity, error: error)
             return (id, message)
         }

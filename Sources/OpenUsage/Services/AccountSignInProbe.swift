@@ -46,7 +46,7 @@ struct AccountSignInProbe: Sendable {
             return .needsSignIn
         } catch {
             AppLog.error(.auth, "account snapshot read failed during readiness probe: \(error.localizedDescription)")
-            return .readFailed(error.localizedDescription)
+            return .readFailed(UserFacingErrors.message(error))
         }
         guard let snapshot,
               let (identityKey, label) = switcher.identity(of: snapshot, family: profile.family),

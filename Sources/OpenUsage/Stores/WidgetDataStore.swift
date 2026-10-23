@@ -420,13 +420,15 @@ final class WidgetDataStore {
     }
 
     /// provider refresh 밖의 계정 reconciliation 실패를 같은 dashboard 오류 surface에 노출.
-    func setExternalProviderError(_ message: String, for providerID: String) {
+    func setExternalProviderError(
+        _ message: String, for providerID: String, presentation: LocalizedMessage? = nil
+    ) {
         guard providersByID[providerID] != nil else {
             AppLog.error(.refresh, "external provider error targeted an unknown provider (\(providerID))")
             return
         }
         onQuotaInvalidated?([providerID])
-        refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message))
+        refreshResults[providerID] = .failed(ProviderRefreshFailure(message: message, presentation: presentation))
     }
 
     var knownProviderIDs: [String] { registry.providers.map(\.id) }
@@ -586,7 +588,8 @@ final class WidgetDataStore {
             snapshot = .error(
                 provider: provider.provider,
                 message: "Refresh timed out. Retrying is available after the previous request finishes.",
-                category: .network
+                category: .network,
+                presentation: .init("Refresh timed out. Retrying is available after the previous request finishes.")
             )
         case .cancelled:
             needsScheduleWake = true
@@ -597,7 +600,8 @@ final class WidgetDataStore {
             snapshot = .error(
                 provider: provider.provider,
                 message: "The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.",
-                category: .authInvalid
+                category: .authInvalid,
+                presentation: .init("The refreshed account no longer matches the reset confirmation. Refresh usage before trying again.")
             )
         }
         if trigger == .scheduled || scheduledRefreshDates[providerID] == nil {
@@ -617,7 +621,8 @@ final class WidgetDataStore {
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
                 message: message,
                 category: snapshot.errorCategory ?? .other,
-                authenticationIssue: snapshot.authenticationIssue
+                authenticationIssue: snapshot.authenticationIssue,
+                presentation: snapshot.errorPresentation
             ))
             // 신원 미확인 Claude는 같은 계정임을 보장할 수 없어 이전 값을 숨기고, 나머지는 last-good 유지.
             if unresolvedClaudeIdentity {
@@ -837,7 +842,7 @@ final class WidgetDataStore {
     }
 
     func errorMessage(for providerID: String) -> String? {
-        refreshResults[providerID]?.failure?.message
+        refreshResults[providerID]?.failure?.localizedMessage
     }
 
     /// 동일 계정 재로그인도 이전 인증의 성공·실패·진행 중 결과를 무효화하고 새 조회 요구.
@@ -852,6 +857,7 @@ final class WidgetDataStore {
         if var snapshot = localSnapshots[providerID], snapshot.authenticationIssue != nil {
             snapshot.authenticationIssue = nil
             snapshot.warning = nil
+            snapshot.warningPresentation = nil
             localSnapshots[providerID] = snapshot
             rebuildRenderedSnapshots()
         }
@@ -861,13 +867,13 @@ final class WidgetDataStore {
     /// 최신 *성공* snapshot의 soft warning(예: Claude "Re-login for live usage") — 실패 후에도 last-good이
     /// 유지돼 남을 수 있음; 렌더링되는 triangle은 hard error가 우선하는 `headerNotice(for:)` 사용.
     func warningMessage(for providerID: String) -> String? {
-        snapshots[providerID]?.warning
+        snapshots[providerID]?.localizedWarning
     }
 
     /// Provider header의 amber-triangle notice — 현재 hard refresh error가 stale soft warning에 우선
     /// (에러가 밀리면 stale warning이 실제 실패를 가림). 에러 없으면 soft warning 표시.
     func headerNotice(for providerID: String) -> String? {
-        errorMessage(for: providerID) ?? automationWarnings[providerID] ?? warningMessage(for: providerID)
+        errorMessage(for: providerID) ?? automationWarnings[providerID].map { L10n.errors($0) } ?? warningMessage(for: providerID)
     }
 
     func setAutomationWarning(_ message: String?, for providerID: String) {
@@ -913,6 +919,9 @@ final class WidgetDataStore {
            let line = snapshot.line(label: descriptor.metricLabel),
            let data = resolve(line, descriptor: descriptor) {
             result = data
+            if let message = snapshot.metricPresentations?[descriptor.metricLabel] {
+                result.valueTextOverride = message.localized
+            }
             result.codexResetClaimBinding = snapshot.codexResetClaimBinding
         } else {
             // 배치된 tile을 뒷받침하는 실제 metric line 부재 — sample 숫자는 placeholder이므로 no-data 처리.
@@ -951,7 +960,7 @@ final class WidgetDataStore {
         guard age >= RefreshSetting.interval(for: providerID) * 2, let duration = Formatters.compactDuration(age) else {
             return nil
         }
-        return StalenessHint(label: "Outdated", tooltip: "Last updated \(duration) ago")
+        return StalenessHint(label: L10n.metrics("Outdated"), tooltip: L10n.metrics("Last updated %@ ago", duration))
     }
 
     private func resolve(_ line: MetricLine, descriptor: WidgetDescriptor) -> WidgetData? {

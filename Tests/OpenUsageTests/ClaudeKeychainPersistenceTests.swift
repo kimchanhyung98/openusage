@@ -43,9 +43,39 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
             XCTAssertThrowsError(
                 try writer.write(
                     service: fixture.service, account: fixture.account, value: Data(repeating: 65, count: 4096)
-                ))
+                )
+            ) { error in
+                guard case KeychainError.toolInputLimitExceeded = error else {
+                    return XCTFail("expected toolInputLimitExceeded, got \(error)")
+                }
+            }
 
             XCTAssertTrue(runner.arguments.isEmpty)
+            XCTAssertEqual(try fixture.cliPasswordOutput(), before)
+        }
+    }
+
+    func testSharedWriterPreservesToolExitFailureAndStoredCredential() throws {
+        try withoutKeychainUI {
+            let fixture = try SharedCredentialFixture(account: "Fixture")
+            let before = try fixture.cliPasswordOutput()
+            let runner = RecordingWriterRunner(
+                fixedResult: ProcessResult(exitCode: 51, stdout: "", stderr: "Fixture failure")
+            )
+            let writer = SecurityToolGenericPasswordWriter(keychainPath: fixture.path, processRunner: runner)
+
+            XCTAssertThrowsError(
+                try writer.write(
+                    service: fixture.service, account: fixture.account, value: Data("replacement".utf8)
+                )
+            ) { error in
+                guard case KeychainError.toolWriteFailed(let exitCode) = error else {
+                    return XCTFail("expected toolWriteFailed, got \(error)")
+                }
+                XCTAssertEqual(exitCode, 51)
+            }
+
+            XCTAssertEqual(runner.arguments, [["-i", "-q"]])
             XCTAssertEqual(try fixture.cliPasswordOutput(), before)
         }
     }
@@ -114,6 +144,11 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
 
 private final class RecordingWriterRunner: ProcessRunning, @unchecked Sendable {
     private(set) var arguments: [[String]] = []
+    private let fixedResult: ProcessResult?
+
+    init(fixedResult: ProcessResult? = nil) {
+        self.fixedResult = fixedResult
+    }
 
     func run(
         executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval
@@ -128,6 +163,7 @@ private final class RecordingWriterRunner: ProcessRunning, @unchecked Sendable {
         self.arguments.append(arguments)
         XCTAssertEqual(executable, "/usr/bin/security")
         XCTAssertEqual(arguments, ["-i", "-q"])
+        if let fixedResult { return fixedResult }
         return try SystemProcessRunner().run(
             executable: executable, arguments: arguments, environment: environment, timeout: timeout,
             standardInput: standardInput

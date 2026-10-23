@@ -11,12 +11,12 @@ enum AccountStatus: Equatable {
 
     var title: String {
         switch self {
-        case .notChecked: "Not Checked"
-        case .checking: "Checking"
-        case .ready: "Ready"
-        case .sessionExpired: "Session Expired"
-        case .signInNeeded: "Sign-In Needed"
-        case .refreshFailed: "Refresh Failed"
+        case .notChecked: L10n.errors("Not Checked")
+        case .checking: L10n.errors("Checking")
+        case .ready: L10n.errors("Ready")
+        case .sessionExpired: L10n.errors("Session Expired")
+        case .signInNeeded: L10n.errors("Sign-In Needed")
+        case .refreshFailed: L10n.errors("Refresh Failed")
         }
     }
 

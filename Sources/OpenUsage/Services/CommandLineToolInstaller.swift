@@ -60,11 +60,11 @@ final class CommandLineToolInstaller {
         refreshStatus()
         guard status != .installed else { return }
         guard status != .conflict else {
-            errorMessage = "\(destinationPath) already exists and wasn't installed by OpenUsage."
+            errorMessage = L10n.errors("%@ already exists and wasn't installed by OpenUsage.", destinationPath)
             return
         }
         guard fileManager.isExecutableFile(atPath: sourcePath) else {
-            errorMessage = "The bundled terminal helper couldn't be found. Reinstall OpenUsage and try again."
+            errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall OpenUsage and try again.")
             AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
                                   localContext: "Bundled terminal helper is missing or not executable")
             return
@@ -97,7 +97,9 @@ final class CommandLineToolInstaller {
                 category = .other
             }
             AppDiagnostics.record(operation, result: .failure, category: category, localContext: context)
-            errorMessage = "Couldn't \(action) the terminal helper: \(message)"
+            errorMessage = action == "install"
+                ? L10n.errors("Couldn't install the terminal helper: %@", L10n.errors(message))
+                : L10n.errors("Couldn't remove the terminal helper: %@", L10n.errors(message))
         }
         refreshStatus()
     }

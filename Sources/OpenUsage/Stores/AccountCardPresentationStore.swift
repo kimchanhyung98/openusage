@@ -126,7 +126,7 @@ final class AccountCardPresentationStore {
             updateErrorMessage()
             return true
         } catch {
-            errorMessage = "OpenUsage couldn't save the account display settings. Try again and check the app log."
+            errorMessage = L10n.errors("OpenUsage couldn't save the account display settings. Try again and check the app log.")
             AppLog.error(.config, "failed to encode account-card presentation: \(error.localizedDescription)")
             return false
         }
@@ -142,11 +142,11 @@ final class AccountCardPresentationStore {
 
     private func updateErrorMessage() {
         if hasUnreadableSettings {
-            errorMessage = "OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again."
+            errorMessage = L10n.errors("OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again.")
             return
         }
         errorMessage = hasUnsupportedMode
-            ? "A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting."
+            ? L10n.errors("A saved account display mode isn't supported by this version. Choose Single Card or Separate Cards to update the display setting.")
             : nil
     }
 }

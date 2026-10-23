@@ -140,6 +140,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_DISPLAY</string>
   <key>CFBundleDisplayName</key>
   <string>$APP_DISPLAY</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleLocalizations</key>
+  <array><string>en</string><string>ko</string><string>ja</string></array>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

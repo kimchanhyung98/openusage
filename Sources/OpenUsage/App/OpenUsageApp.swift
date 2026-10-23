@@ -12,6 +12,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
     }
 
+    /// SwiftUI·AppKit 초기화 전에 앱 표시 언어 적용.
+    public static func configureLanguageForLaunch() {
+        LanguageSetting.configureLaunch()
+    }
+
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // 다른 로그보다 먼저 bootstrap — 세션 첫 라인 캡처.
         AppLog.bootstrap()

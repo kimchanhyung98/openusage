@@ -16,7 +16,7 @@ final class AccountReconciliationErrorTests: XCTestCase {
 
         XCTAssertEqual(fixture.store.errorMessage(for: "claude"), "Sign-in update failed.")
         XCTAssertEqual(fixture.store.refreshResults["claude"],
-                       .failed(ProviderRefreshFailure(message: "Sign-in update failed.")))
+                       .failed(ProviderRefreshFailure(message: "Sign-in update failed.", presentation: .init("Sign-in update failed."))))
         XCTAssertEqual(invalidations, [Set(["claude"])])
 
         AppContainer.applyExternalClaudeReconciliationError(
@@ -26,6 +26,20 @@ final class AccountReconciliationErrorTests: XCTestCase {
 
         XCTAssertEqual(fixture.store.errorMessage(for: "claude"), "Sign-in update failed.")
         XCTAssertEqual(invalidations.count, 1)
+    }
+
+    func testReconciliationFailureTranslatesOnlyItsDisplayedMessage() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let raw = "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        AppContainer.applyExternalClaudeReconciliationError(
+            raw, to: fixture.store, accountSwitch: fixture.coordinator,
+            startedAt: fixture.coordinator.generation
+        )
+
+        XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure?.message, raw)
+        XCTAssertEqual(L10n.withLanguage(.korean) { fixture.store.headerNotice(for: "claude") },
+                       "선택한 Claude 계정의 로그인을 업데이트하지 못했습니다. 저장된 계정은 변경하지 않았습니다. 앱 로그를 확인한 후 다시 시도하세요.")
     }
 
     func testReconciliationErrorCannotOverwriteStateWhileSwitchIsReserved() async throws {

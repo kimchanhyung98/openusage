@@ -3,7 +3,7 @@
 // 그룹 제목 .caption/semibold/.secondary, 좌우 패딩 8. 행은 좌우 12 · 상하 6(Compact).
 // picker는 앱의 .menu 팝업이라 흐름을 밀지 않고 위에 겹쳐 뜸.
 import Glyph from './Glyph.astro';
-import { settingGroups, settingsCrossLink } from '../../data/settings';
+import { settingGroups, settingsCrossLink, languageTags } from '../../data/settings';
 
 interface Props { nav: boolean; uid: string; onboarding?: boolean }
 const { nav, uid, onboarding = false } = Astro.props;
@@ -42,13 +42,13 @@ const { nav, uid, onboarding = false } = Astro.props;
                     (nav ? (
                       <span class="am-pickwrap">
                         <button type="button" class="am-picker" data-picker={id} aria-label={label} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-pick-${id}`}>
-                          <span data-picker-value>{control.value}</span>
+                          <span data-picker-value lang={id === 'language' ? languageTags[control.value] : undefined}>{control.value}</span>
                           <Glyph name="updown" />
                         </button>
                         <ul class="am-menu am-pickmenu" id={`${uid}-pick-${id}`} role="menu" aria-label={label} hidden>
                           {control.options.map((o) => (
                             <li role="none">
-                              <button type="button" role="menuitemradio" aria-checked={o === control.value ? 'true' : 'false'} data-pick={id} data-value={o}>
+                              <button type="button" role="menuitemradio" aria-checked={o === control.value ? 'true' : 'false'} data-pick={id} data-value={o} lang={id === 'language' ? languageTags[o] : undefined}>
                                 <Glyph name="check" class="am-check" />
                                 {o}
                               </button>
@@ -58,13 +58,13 @@ const { nav, uid, onboarding = false } = Astro.props;
                       </span>
                     ) : (
                       <span class="am-picker">
-                        <span>{control.value}</span>
+                        <span lang={id === 'language' ? languageTags[control.value] : undefined}>{control.value}</span>
                         <Glyph name="updown" />
                       </span>
                     ))}
                 </span>
               </div>
-              {note && <p class="am-note">{note}</p>}
+              {note && <p class="am-note" data-language-notice={id === 'language' ? true : undefined} hidden={id === 'language'}>{note}</p>}
             </>
           ))}
           {
