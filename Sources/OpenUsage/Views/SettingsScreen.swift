@@ -224,7 +224,7 @@ struct SettingsScreen: View {
 
     // MARK: - Notifications
 
-    /// Quota pace 알림 — 트리거별 토글 3개 (마스터 스위치 없음), 기본 전체 off.
+    /// Quota pace·Reset Watch 알림 — 조건별 토글, 기본 전체 off.
     /// 권한 미허용 + 트리거 on 시 헤더 경고 glyph + 액션 행 표시. 첫 트리거 on에 권한 요청.
     private var notificationsSection: some View {
         @Bindable var notifications = container.notificationSettings
@@ -248,6 +248,15 @@ struct SettingsScreen: View {
                 notifToggleRow(.underTenPercent, isOn: $notifications.underTenPercent)
                 notifToggleRow(.healthyToClose, isOn: $notifications.healthyToClose)
                 notifToggleRow(.closeToRunningOut, isOn: $notifications.closeToRunningOut)
+                HStack {
+                    Text(CodexResetWatchNotificationEvaluator.settingLabel)
+                    Spacer(minLength: 8)
+                    Toggle("", isOn: $notifications.codexResetWatch)
+                        .settingsSwitchStyle()
+                        .accessibilityLabel(CodexResetWatchNotificationEvaluator.settingLabel)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, density.controlRowPadding)
                 if needsAttention {
                     notificationsActionRow
                 }

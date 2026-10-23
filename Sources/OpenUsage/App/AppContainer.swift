@@ -27,7 +27,7 @@ final class AppContainer {
     /// Settings에서만 명시적으로 시작하는 Tokscale CLI 동기화 상태.
     let tokscaleSync: TokscaleSyncStore
     let apiKeyProviders: [any APIKeyManaging]
-    /// Settings와 알림 평가가 공유하는 독립 트리거 3종.
+    /// Settings와 알림 평가가 공유하는 조건별 설정.
     let notificationSettings: NotificationSettingsStore
     let softLimitSettings: SoftLimitSettingsStore
     let softLimitCoordinator: SoftLimitCoordinator
@@ -159,12 +159,26 @@ final class AppContainer {
         telemetry.startDiagnostics()
         let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient())
         let resetWatchStore = CodexResetWatchStore()
-        let resetWatchCoordinator = CodexResetWatchCoordinator(
-            load: { force in await resetWatchStore.currentResult(force: force) },
-            publish: { [dataStore] in
-                dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed, isAbsent: $0.isAbsent)
+        let resetWatchNotifications = CodexResetWatchNotificationEvaluator(
+            isEnabled: { [weak dataStore, enablement, notificationSettings] in
+                notificationSettings.codexResetWatch && (dataStore?.knownProviderIDs.contains {
+                    ProviderAccountID.family(of: $0) == "codex" && enablement.isEnabled($0)
+                } ?? false)
             }
         )
+        let resetWatchCoordinator = CodexResetWatchCoordinator(
+            load: { force in await resetWatchStore.currentResult(force: force) },
+            publish: { [dataStore, resetWatchNotifications] in
+                dataStore.setCodexResetWatch($0.watch, refreshFailed: $0.refreshFailed, isAbsent: $0.isAbsent)
+                resetWatchNotifications.receive($0)
+            }
+        )
+        notificationSettings.onCodexResetWatchChange = { [weak resetWatchNotifications, weak resetWatchCoordinator] in
+            resetWatchNotifications?.configurationDidChange()
+            if resetWatchNotifications?.isEnabled() == true, resetWatchCoordinator?.isActive == true {
+                Task { await resetWatchCoordinator?.refreshNow() }
+            }
+        }
         let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
         // provider 재활성화 뒤 이어지는 wake에서 즉시 fetch되도록 usage/status의 일반 failure gate 제거.
         // `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
@@ -172,9 +186,10 @@ final class AppContainer {
             dataStore?.clearFailureBackoff(for: id)
             providerStatus?.providerEnabled(id)
         }
-        enablement.onChange = { [weak dataStore, weak iCloudSync] in
+        enablement.onChange = { [weak dataStore, weak iCloudSync, weak resetWatchNotifications] in
             dataStore?.providerEnablementDidChange()
             iCloudSync?.scheduleWrite()
+            resetWatchNotifications?.configurationDidChange()
         }
         // 신규 설치는 최소 구성으로 시작 — enabled-provider 목록 seed. 이후 런치에서는 no-op.
         let onboarding = OnboardingStore()
@@ -256,10 +271,13 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
-        resetWatchCoordinator.observeActivity { [layout] in
-            layout.orderedRefreshDescriptors().contains {
+        resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
+            resetWatchNotifications.configurationDidChange()
+            let notificationsEnabled = resetWatchNotifications.isEnabled()
+            let metricEnabled = layout.orderedRefreshDescriptors().contains {
                 ProviderAccountID.canonicalMetricID($0.id) == "codex.resetWatch"
             }
+            return metricEnabled || notificationsEnabled
         }
         self.refreshTask.task = AppRefreshLoop.start(
             dataStore: dataStore,

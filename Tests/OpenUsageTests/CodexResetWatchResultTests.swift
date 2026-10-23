@@ -88,7 +88,7 @@ final class CodexResetWatchResultTests: XCTestCase {
     func testCancelledCheckDoesNotBecomeSuccessfulAbsence() async {
         let source = CodexResetWatchStore(http: CancelledResetWatchHTTPClient())
         let result = await source.currentResult()
-        XCTAssertEqual(result, CodexResetWatchResult())
+        XCTAssertEqual(result, CodexResetWatchResult(refreshCancelled: true))
     }
 
     func testCancelledRefreshPreservesReusableForecastAbsenceAndFailure() async {
@@ -111,6 +111,7 @@ final class CodexResetWatchResultTests: XCTestCase {
             }
 
             let cancelled = await source.currentResult(force: true)
+            previous.refreshCancelled = true
             XCTAssertEqual(cancelled, previous)
         }
     }
@@ -132,7 +133,7 @@ final class CodexResetWatchResultTests: XCTestCase {
                 _ = await source.currentResult()
 
                 let cancelled = await source.currentResult(force: true)
-                XCTAssertEqual(cancelled, CodexResetWatchResult(), policy)
+                XCTAssertEqual(cancelled, CodexResetWatchResult(refreshCancelled: true), policy)
             }
         }
     }

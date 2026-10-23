@@ -187,6 +187,41 @@ Mac 로컬 소스는 기기별 파일을 합산할 수 있지만, Cursor처럼 �
 `WidgetDataStore`는 합산한 기록으로 지출 행만 다시 표시.
 할당량과 오류 상태는 로컬 조회 결과 유지.
 
+## 알림
+
+`NotificationSettingsStore`는 기존 사용량 알림 3종과 Codex Reset Watch의 개별 설정 저장.
+Settings의 권한 요청과 거부 안내는 이 스토어의 활성 설정을 함께 확인.
+
+```mermaid
+flowchart LR
+    Usage[사용량 스냅샷] --> Quota[QuotaNotificationEvaluator]
+    Store[CodexResetWatchStore] --> Coordinator[CodexResetWatchCoordinator]
+    Coordinator --> Watch[CodexResetWatchNotificationEvaluator]
+    Coordinator --> Display[WidgetDataStore 표시]
+    Quota --> Notifications[AppNotifications]
+    Watch --> Notifications
+```
+
+`QuotaNotificationEvaluator`는 계정·지표별 잔량과 사용 속도의 상태 변화 판정.
+`CodexResetWatchNotificationEvaluator`는 계정과 무관한 공개 예측·예정 이벤트 판정.
+중복 방지 기준과 조회 주기가 다르므로 두 판정 모듈을 분리하고 macOS 발송 경로 공유.
+
+Reset Watch의 조회·응답 정규화·캐시는 기존 스토어가 소유.
+조정 객체는 표시·핀·알림 설정과 Codex 활성 여부를 관찰하고 독립 15분 조회 유지.
+조정 객체가 게시한 결과는 화면 표시와 전역 알림 평가에 각각 전달.
+계정 카드 수만큼 알림 평가기를 만들지 않음.
+
+Reset Watch 평가기의 입력은 조회 결과인 `receive`와 설정 변경인 `configurationDidChange`.
+설정·프로바이더 비활성화 시 진행 중인 전달을 동기적으로 무효화.
+발송 성공 뒤에만 이벤트 식별자와 별칭을 저장하고, 실패한 전달은 다음 조회에서 재시도.
+최근 확인한 식별자 128개를 이 Mac에 저장해 재시작 후에도 중복 방지 기록 유지.
+현재 시각·설정 저장소·발송 함수를 주입해 실제 시스템 알림 없이 판정과 전달 중 상태 변경 검증 가능.
+
+`AppNotifications.shared.post`는 두 판정 모듈이 공유하는 macOS 알림 진입점.
+권한 요청·재허용 확인, 배너·사운드·그룹화, 오류 기록, 무효 요청 제거와 알림 클릭 처리 담당.
+실제 배너 표시와 권한 창은 별도의 앱 실행 검증 대상.
+사용자 설정과 알림 조건은 [알림 설정](/docs/settings.md#알림)과 [Reset Watch 알림](/docs/providers/codex.md#reset-watch-알림) 참조.
+
 ## 계정 표시
 
 프로바이더 순서와 계정 순서는 각각 별도 관리.
