@@ -527,6 +527,9 @@ enum KeychainError: Error, LocalizedError {
     case invalidData
     case writeFailed(String)
     case nativeWriteFailed(GenericPasswordWriteError)
+    case toolInputLimitExceeded
+    case toolWriteFailed(exitCode: Int32)
+    case invalidItemName
     case readFailed(String)
     case deleteFailed(String)
 
@@ -540,6 +543,12 @@ enum KeychainError: Error, LocalizedError {
             return message.isEmpty ? "Keychain write failed." : message
         case .nativeWriteFailed(let error):
             return error.localizedDescription
+        case .toolInputLimitExceeded:
+            return "The credential exceeds the Keychain tool's input limit; the stored credential was not changed."
+        case .toolWriteFailed(let exitCode):
+            return "Keychain write failed (exit \(exitCode))."
+        case .invalidItemName:
+            return "Keychain item names contain unsupported control characters."
         case .readFailed(let message):
             return message.isEmpty ? "Keychain read failed." : message
         case .deleteFailed(let message):

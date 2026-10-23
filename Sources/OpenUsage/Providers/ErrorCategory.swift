@@ -59,6 +59,7 @@ extension KeychainError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
         case .accessBusy, .readFailed, .writeFailed, .nativeWriteFailed, .deleteFailed: .credentialAccess
+        case .toolInputLimitExceeded, .toolWriteFailed, .invalidItemName: .credentialAccess
         case .invalidData: .authInvalid
         }
     }

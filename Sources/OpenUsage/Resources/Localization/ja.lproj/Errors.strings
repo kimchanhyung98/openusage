@@ -92,7 +92,9 @@
 "Invalid sign-in workspace component: %@" = "ログイン作業領域の構成要素が無効です: %@";
 "Keychain delete failed." = "キーチェーンの項目を削除できませんでした。";
 "Keychain is busy. Respond to the open Keychain dialog, then try again." = "キーチェーンは使用中です。開いているキーチェーンのダイアログに応答してから、もう一度お試しください。";
+"Keychain item names contain unsupported control characters." = "キーチェーンの項目名に、対応していない制御文字が含まれています。";
 "Keychain read failed." = "キーチェーンを読み取れませんでした。";
+"Keychain write failed (exit %@)." = "キーチェーンへの書き込みに失敗しました（終了コード %@）。";
 "Keychain write failed (status %@)." = "キーチェーンへの書き込みに失敗しました（ステータス %@）。";
 "Keychain write failed." = "キーチェーンに保存できませんでした。";
 "Kimi credential lock changed during refresh. Try again." = "更新中に Kimi の認証情報のロックが変更されました。もう一度お試しください。";
@@ -181,6 +183,7 @@
 "The command timed out after %@ seconds." = "%@ 秒が経過し、コマンドがタイムアウトしました。";
 "The command timeout must be finite and greater than zero." = "コマンドのタイムアウトには、0 より大きい有限の値を指定してください。";
 "The command’s standard input exceeds the pipe buffer limit." = "コマンドの標準入力がパイプバッファの上限を超えています。";
+"The credential exceeds the Keychain tool's input limit; the stored credential was not changed." = "認証情報がキーチェーンツールの入力上限を超えています。保存済みの認証情報は変更していません。";
 "The current %@ sign-in doesn't name its account, so it can't be imported." = "現在の%@のログイン情報ではアカウントを特定できないため、インポートできません。";
 "The downloaded Bun installer is invalid." = "ダウンロードした Bun インストーラが無効です。";
 "The downloaded Bun installer is unexpectedly large." = "ダウンロードした Bun インストーラのサイズが想定を超えています。";

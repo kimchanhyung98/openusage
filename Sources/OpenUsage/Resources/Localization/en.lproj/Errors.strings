@@ -92,7 +92,9 @@
 "Invalid sign-in workspace component: %@" = "Invalid sign-in workspace component: %@";
 "Keychain delete failed." = "Keychain delete failed.";
 "Keychain is busy. Respond to the open Keychain dialog, then try again." = "Keychain is busy. Respond to the open Keychain dialog, then try again.";
+"Keychain item names contain unsupported control characters." = "Keychain item names contain unsupported control characters.";
 "Keychain read failed." = "Keychain read failed.";
+"Keychain write failed (exit %@)." = "Keychain write failed (exit %@).";
 "Keychain write failed (status %@)." = "Keychain write failed (status %@).";
 "Keychain write failed." = "Keychain write failed.";
 "Kimi credential lock changed during refresh. Try again." = "Kimi credential lock changed during refresh. Try again.";
@@ -181,6 +183,7 @@
 "The command timed out after %@ seconds." = "The command timed out after %@ seconds.";
 "The command timeout must be finite and greater than zero." = "The command timeout must be finite and greater than zero.";
 "The command’s standard input exceeds the pipe buffer limit." = "The command’s standard input exceeds the pipe buffer limit.";
+"The credential exceeds the Keychain tool's input limit; the stored credential was not changed." = "The credential exceeds the Keychain tool's input limit; the stored credential was not changed.";
 "The current %@ sign-in doesn't name its account, so it can't be imported." = "The current %@ sign-in doesn't name its account, so it can't be imported.";
 "The downloaded Bun installer is invalid." = "The downloaded Bun installer is invalid.";
 "The downloaded Bun installer is unexpectedly large." = "The downloaded Bun installer is unexpectedly large.";

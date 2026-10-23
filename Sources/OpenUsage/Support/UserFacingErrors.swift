@@ -49,6 +49,12 @@ extension KeychainError: UserPresentableError {
             message.isEmpty ? .init("Keychain write failed.") : .verbatim(message)
         case .nativeWriteFailed(let error):
             error.presentationMessage
+        case .toolInputLimitExceeded:
+            .init("The credential exceeds the Keychain tool's input limit; the stored credential was not changed.")
+        case .toolWriteFailed(let exitCode):
+            .init("Keychain write failed (exit %@).", [String(exitCode)])
+        case .invalidItemName:
+            .init("Keychain item names contain unsupported control characters.")
         case .readFailed(let message):
             message.isEmpty ? .init("Keychain read failed.") : .verbatim(message)
         case .deleteFailed(let message):
