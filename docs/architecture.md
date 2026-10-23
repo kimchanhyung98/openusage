@@ -180,9 +180,9 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
 Codex 주간 타이머는 이 실행기 사용.
 두 실행기는 반환 방식과 출력·취소 계약이 달라 별도 인터페이스 유지.
 
-`CodexControlConnection`은 로컬 소켓 검증과 WebSocket·RPC 연결 수명 관리.
-`CodexSoftLimitAdapter`는 이 연결로 활성 대화 조회와 turn 취소 수행.
-제목 생성용 임시 작업은 Adapter에서 제외하고, 소켓 경로 차이는 Connection 내부에서 처리.
+`CodexControlConnection`은 직접 소켓·심볼릭 링크 검증과 WebSocket·RPC 연결 수명 관리.
+`CodexSoftLimitAdapter`는 설정 홈에 따라 소켓 경로를 정하고, 이 연결로 활성 대화 조회와 turn 취소 수행.
+제목 생성용 임시 작업은 Adapter에서 제외.
 계정·quota pool 범위를 검증하지 못하는 현재 앱에서는 `SoftLimitCoordinator`가 자동 취소 차단.
 사용자 설정과 지원 범위는 [설정](/docs/settings.md) 참조.
 
