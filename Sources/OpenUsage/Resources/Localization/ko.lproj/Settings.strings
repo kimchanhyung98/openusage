@@ -83,6 +83,7 @@
 "Remove OpenUsage Override" = "OpenUsage 지정 이름 삭제";
 "Reset Times" = "초기화 시각";
 "Couldn't restart OpenUsage. Quit and reopen the app to apply the language change." = "OpenUsage를 다시 시작하지 못했습니다. 앱을 종료한 뒤 다시 열어 언어 변경을 적용하세요.";
+"Couldn't restart OpenUsage. Reopen the app to apply the language change." = "OpenUsage를 다시 시작하지 못했습니다. 앱을 다시 열어 언어 변경을 적용하세요.";
 "Restart Now" = "지금 다시 시작";
 "Restart OpenUsage to apply the language change." = "언어 변경을 적용하려면 OpenUsage를 다시 시작하세요.";
 "Reveal in Finder" = "Finder에서 보기";

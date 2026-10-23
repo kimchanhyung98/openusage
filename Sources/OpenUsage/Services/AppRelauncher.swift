@@ -43,7 +43,8 @@ final class AppRelauncher {
     static func makeRelaunchProcess(
         bundleURL: URL,
         processIdentifier: Int32,
-        openExecutable: URL = URL(fileURLWithPath: "/usr/bin/open")
+        openExecutable: URL = URL(fileURLWithPath: "/usr/bin/open"),
+        alertExecutable: URL = URL(fileURLWithPath: "/usr/bin/osascript")
     ) -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -54,10 +55,16 @@ final class AppRelauncher {
             status=$?
             if [ "$status" -ne 0 ]; then
                 /usr/bin/logger -p user.err -t OpenUsage "Restart failed (open exit $status)"
+                "$4" -e 'on run argv
+                    activate
+                    display alert "OpenUsage" message (item 1 of argv) as critical buttons {item 2 of argv} default button 1
+                end run' -- "$5" "$6" || /usr/bin/logger -p user.err -t OpenUsage "Restart failure alert failed (exit $?)"
             fi
             exit "$status"
             """,
-            "openusage-relaunch", String(processIdentifier), bundleURL.path, openExecutable.path,
+            "openusage-relaunch", String(processIdentifier), bundleURL.path, openExecutable.path, alertExecutable.path,
+            L10n.settings("Couldn't restart OpenUsage. Reopen the app to apply the language change."),
+            L10n.dashboard("OK"),
         ]
         process.standardInput = FileHandle.nullDevice
         return process

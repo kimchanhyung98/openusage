@@ -56,7 +56,8 @@ final class AppRelauncherTests: XCTestCase {
 
         let bundleURL = directory.appendingPathComponent("한글 App ' $(touch injected) `echo value`.app")
         let helper = AppRelauncher.makeRelaunchProcess(
-            bundleURL: bundleURL, processIdentifier: oldApp.processIdentifier, openExecutable: opener
+            bundleURL: bundleURL, processIdentifier: oldApp.processIdentifier,
+            openExecutable: opener, alertExecutable: opener
         )
         helper.currentDirectoryURL = directory
         let output = Pipe()
@@ -76,5 +77,47 @@ final class AppRelauncherTests: XCTestCase {
         XCTAssertEqual(helper.terminationStatus, 0)
         XCTAssertEqual(String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self), "-n\n\(bundleURL.path)\n")
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("injected").path))
+    }
+
+    func testHelperReportsOpenFailureAndPreservesStatusWhenAlertFails() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("AppRelauncherTests.\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let opener = directory.appendingPathComponent("failing open")
+        try "#!/bin/sh\nexit 42\n".write(to: opener, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: opener.path)
+        let oldApp = Process()
+        oldApp.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try oldApp.run()
+        oldApp.waitUntilExit()
+
+        for alertStatus in [0, 9] {
+            let alert = directory.appendingPathComponent("fake alert ' $(touch injected) `echo value`")
+            try "#!/bin/sh\nprintf '%s\\n' \"$@\"\nexit \(alertStatus)\n".write(to: alert, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: alert.path)
+            let helper = L10n.withLanguage(.korean) {
+                AppRelauncher.makeRelaunchProcess(
+                    bundleURL: directory.appendingPathComponent("OpenUsage.app"),
+                    processIdentifier: oldApp.processIdentifier, openExecutable: opener, alertExecutable: alert
+                )
+            }
+            helper.currentDirectoryURL = directory
+            let output = Pipe()
+            helper.standardOutput = output
+            try helper.run()
+            defer { if helper.isRunning { helper.terminate() } }
+
+            let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+            while helper.isRunning && ContinuousClock.now < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            XCTAssertFalse(helper.isRunning)
+            guard !helper.isRunning else { return }
+            XCTAssertEqual(helper.terminationStatus, 42)
+            let arguments = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            XCTAssertTrue(arguments.hasPrefix("-e\non run argv\n"), arguments)
+            XCTAssertTrue(arguments.hasSuffix("OpenUsage를 다시 시작하지 못했습니다. 앱을 다시 열어 언어 변경을 적용하세요.\n확인\n"), arguments)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("injected").path))
+        }
     }
 }

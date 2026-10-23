@@ -3,7 +3,7 @@ import SwiftUI
 struct LanguageSettingsRow: View {
     @Binding var selection: LanguageSetting
     var activeLanguage: LanguageSetting = .active
-    @State var relauncher = AppRelauncher()
+    @State private var relauncher = AppRelauncher()
     @AppStorage(DensitySetting.key) private var density = DensitySetting.defaultValue
 
     var body: some View {

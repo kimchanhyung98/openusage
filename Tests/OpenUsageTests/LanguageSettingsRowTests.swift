@@ -12,6 +12,7 @@ final class LanguageSettingsRowTests: XCTestCase {
 
     func testActiveLanguageDoesNotOfferRestart() async throws {
         let text = try await recognizedText(selection: .english, activeLanguage: .english)
+        XCTAssertTrue(text.contains("Language"), text)
         XCTAssertFalse(text.contains("Restart Now"), text)
         XCTAssertFalse(text.contains("Restart OpenUsage"), text)
     }
