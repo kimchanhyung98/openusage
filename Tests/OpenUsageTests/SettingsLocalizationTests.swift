@@ -13,7 +13,7 @@ final class SettingsLocalizationTests: XCTestCase {
             XCTAssertEqual(ResetDisplayMode.relative.label, "남은 시간")
         }
         L10n.withLanguage(.japanese) {
-            XCTAssertEqual(AppearanceSetting.system.label, "システム設定")
+            XCTAssertEqual(AppearanceSetting.system.label, "システム")
             XCTAssertEqual(DensitySetting.compact.label, "コンパクト")
             XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24時間")
             XCTAssertEqual(LogLevelSetting.warn.label, "警告")

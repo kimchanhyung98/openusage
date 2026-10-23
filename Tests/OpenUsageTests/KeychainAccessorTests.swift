@@ -89,19 +89,39 @@ final class KeychainAccessorTests: XCTestCase {
         XCTAssertEqual(writer.calls[1], .init(service: "Current", account: expectedAccount, value: Data(payload.utf8)))
     }
 
-    func testNativeWriteErrorsAreSanitized() {
+    func testNativeWriteErrorsPreserveTypedCauseAndLocalizedPresentation() {
         let canary = "SECRET_CANARY"
-        let accessor = SecurityKeychainAccessor(
-            processRunner: RecordingRunner(),
-            passwordWriter: RecordingPasswordWriter(error: .securityStatus(errSecAuthFailed))
-        )
+        let cases: [(cause: GenericPasswordWriteError, english: String, korean: String, japanese: String)] = [
+            (.securityStatus(errSecAuthFailed),
+             "Keychain write failed (status \(errSecAuthFailed)).",
+             "키체인 쓰기에 실패했습니다(상태 코드 \(errSecAuthFailed)).",
+             "キーチェーンへの書き込みに失敗しました（ステータス \(errSecAuthFailed)）。"),
+            (.ambiguousService,
+             "Multiple Keychain items matched the service; no credential was changed.",
+             "서비스에 해당하는 키체인 항목이 여러 개 있어 인증 정보를 변경하지 않았습니다.",
+             "サービスに一致するキーチェーン項目が複数あったため、認証情報は変更されませんでした。")
+        ]
 
-        XCTAssertThrowsError(try accessor.writeGenericPassword(service: canary, value: canary)) { error in
-            guard case KeychainError.writeFailed(let message) = error else {
-                return XCTFail("expected writeFailed, got \(error)")
+        for scenario in cases {
+            let runner = RecordingRunner()
+            let accessor = SecurityKeychainAccessor(
+                processRunner: runner,
+                passwordWriter: RecordingPasswordWriter(error: scenario.cause)
+            )
+
+            XCTAssertThrowsError(try accessor.writeGenericPassword(service: canary, value: canary)) { error in
+                guard case KeychainError.nativeWriteFailed(let cause) = error else {
+                    return XCTFail("expected nativeWriteFailed, got \(error)")
+                }
+                XCTAssertEqual(cause, scenario.cause)
+                XCTAssertEqual(error.localizedDescription, scenario.english)
+                XCTAssertFalse(error.localizedDescription.contains(canary))
+                XCTAssertEqual((error as? CategorizedError)?.errorCategory, .credentialAccess)
+                XCTAssertEqual(L10n.withLanguage(.english) { UserFacingErrors.message(error) }, scenario.english)
+                XCTAssertEqual(L10n.withLanguage(.korean) { UserFacingErrors.message(error) }, scenario.korean)
+                XCTAssertEqual(L10n.withLanguage(.japanese) { UserFacingErrors.message(error) }, scenario.japanese)
             }
-            XCTAssertFalse(message.contains(canary))
-            XCTAssertTrue(message.contains(String(errSecAuthFailed)))
+            XCTAssertTrue(runner.calls.isEmpty)
         }
     }
 

@@ -157,7 +157,7 @@ final class MetricLocalizationTests: XCTestCase {
             XCTAssertTrue(decoded.localizedLabel.contains("월"))
             XCTAssertEqual(decoded.localizedReadout, "1.5K 토큰")
             XCTAssertEqual(decoded.label, "Legacy Date")
-            XCTAssertEqual(decoded.readout, "1.5K tokens")
+            XCTAssertEqual(decoded.valueLabel, "1.5K tokens")
         }
         L10n.withLanguage(.japanese) {
             XCTAssertTrue(decoded.localizedLabel.contains("月"))

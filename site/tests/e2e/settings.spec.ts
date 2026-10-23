@@ -4,19 +4,34 @@ test('language selection persists while the website demo stays in English', asyn
   await openHome(page);
   const app = page.locator('[data-mock]');
   await openSettings(page);
+  const languagePicker = app.getByRole('button', { name: 'Language', exact: true });
+  const selectedLanguage = languagePicker.locator('[data-picker-value]');
+  await expect(selectedLanguage).toHaveAttribute('lang', 'en');
   await expect(app.locator('[data-language-notice]')).toBeHidden();
+  await languagePicker.click();
+  for (const [name, language] of [['English', 'en'], ['한국어', 'ko'], ['日本語', 'ja']]) {
+    await expect(app.getByRole('menuitemradio', { name, exact: true })).toHaveAttribute('lang', language);
+  }
+  await app.getByRole('menuitemradio', { name: '한국어', exact: true }).click();
+  await expect(selectedLanguage).toHaveAttribute('lang', 'ko');
   await chooseSetting(page, 'Language', '日本語');
-  await expect(app.getByRole('button', { name: 'Language', exact: true })).toContainText('日本語');
+  await expect(languagePicker).toContainText('日本語');
+  await expect(selectedLanguage).toHaveAttribute('lang', 'ja');
   await expect(app.getByRole('status')).toContainText('restart OpenUsage to apply it');
   await expect(app.locator('[data-language-notice]')).toHaveText('Restart OpenUsage to apply the language change.');
   await expect(app.locator('[data-language-notice]')).toBeVisible();
   await expect(app).toHaveAttribute('lang', 'en');
   await page.reload();
   await openSettings(page);
-  await expect(app.getByRole('button', { name: 'Language', exact: true })).toContainText('日本語');
+  await expect(languagePicker).toContainText('日本語');
+  await expect(selectedLanguage).toHaveAttribute('lang', 'ja');
   await expect(app.getByRole('button', { name: 'Theme', exact: true })).toBeVisible();
   await expect(app).toHaveAttribute('lang', 'en');
+  await chooseSetting(page, 'Language', '한국어');
+  await expect(app.getByRole('status')).toContainText('restart OpenUsage to apply it');
   await chooseSetting(page, 'Language', 'English');
+  await expect(selectedLanguage).toHaveAttribute('lang', 'en');
+  await expect(app.getByRole('status')).toHaveText('The demo stays in English.');
   await expect(app.locator('[data-language-notice]')).toBeHidden();
 });
 
