@@ -22,7 +22,7 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertEqual(watch.deadline, scheduledFor)
             XCTAssertTrue(watch.isScheduled)
             XCTAssertEqual(watch.eventID, "scheduled:123")
-            XCTAssertNil(watch.expiresAt)
+            XCTAssertEqual(watch.expiresAt, scheduledFor.addingTimeInterval(2 * 3_600))
             XCTAssertNil(watch.episodeID)
             XCTAssertNil(watch.communityYesPercent)
             XCTAssertFalse(result.refreshFailed)
@@ -31,8 +31,8 @@ final class CodexScheduledResetTests: XCTestCase {
         }
     }
 
-    func testNullAndPastScheduledTimesStillRepresentPendingReset() async throws {
-        for scheduledFor in [nil, Self.now, Self.now.addingTimeInterval(-3_600)] as [Date?] {
+    func testUnknownTimeAndScheduledTimesWithinGracePeriodRemainPending() async throws {
+        for scheduledFor in [nil, Self.now, Self.now.addingTimeInterval(-3_600), Self.now.addingTimeInterval(-7_199)] as [Date?] {
             let http = FakeHTTPClient(response: response(scheduledFor: scheduledFor))
             let source = CodexResetWatchStore(http: http, now: { Self.now })
 
@@ -43,6 +43,99 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertTrue(watch.isScheduled)
             XCTAssertFalse(result.refreshFailed)
             XCTAssertEqual(http.requests.count, 1)
+        }
+    }
+
+    func testScheduleExpiresAfterTwoHourGracePeriod() async {
+        for elapsed in [2 * 3_600, 2 * 3_600 + 1, 2 * 86_400, 3 * 86_400] {
+            let http = FakeHTTPClient(
+                response: response(scheduledFor: Self.now.addingTimeInterval(-Double(elapsed)))
+            )
+            let source = CodexResetWatchStore(http: http, now: { Self.now })
+
+            let result = await source.currentResult()
+
+            XCTAssertNil(result.watch, "elapsed: \(elapsed)")
+            XCTAssertTrue(result.isAbsent, "elapsed: \(elapsed)")
+            XCTAssertFalse(result.refreshFailed)
+        }
+    }
+
+    func testExpiredScheduleFallsBackToActiveWatch() async throws {
+        let active = #"{"reset_chance_percent":75,"expires_at":"2099-01-01T00:00:00Z"}"#
+        let http = FakeHTTPClient(response: response(
+            scheduledFor: Self.now.addingTimeInterval(-3 * 86_400), activeWatch: active
+        ))
+        let source = CodexResetWatchStore(http: http, now: { Self.now })
+
+        let result = await source.currentResult()
+        let watch = try XCTUnwrap(result.watch)
+
+        XCTAssertEqual(watch.chancePercent, 75)
+        XCTAssertFalse(watch.isScheduled)
+        XCTAssertFalse(result.isAbsent)
+        XCTAssertFalse(result.refreshFailed)
+    }
+
+    func testExpiredScheduleDoesNotExtendActiveWatchExpiry() async {
+        let active = #"{"reset_chance_percent":75,"expires_at":"2027-01-15T08:00:00Z"}"#
+        let http = FakeHTTPClient(response: response(
+            scheduledFor: Self.now.addingTimeInterval(-3 * 86_400), activeWatch: active
+        ))
+        let source = CodexResetWatchStore(http: http, now: { Self.now })
+
+        let result = await source.currentResult()
+
+        XCTAssertNil(result.watch)
+        XCTAssertTrue(result.isAbsent)
+        XCTAssertFalse(result.refreshFailed)
+    }
+
+    func testRepeatedSuccessfulResponseCannotRestoreExpiredSchedule() async {
+        let clock = ScheduledResetClock(Self.now)
+        let http = FakeHTTPClient(response: response(
+            scheduledFor: Self.now.addingTimeInterval(-7_190),
+            headers: ["etag": "schedule", "cache-control": "max-age=300"]
+        ))
+        let source = CodexResetWatchStore(http: http, now: clock.read)
+        let initial = await source.currentResult()
+        XCTAssertEqual(initial.watch?.chancePercent, 99)
+
+        clock.advance(by: 10)
+        let expired = await source.currentResult()
+
+        XCTAssertNil(expired.watch)
+        XCTAssertTrue(expired.isAbsent)
+        XCTAssertFalse(expired.refreshFailed)
+        XCTAssertEqual(http.requests.count, 2)
+        XCTAssertNil(http.requests.last?.headers["If-None-Match"])
+    }
+
+    func testRevalidatedScheduleExpiresDuringFailureBackoff() async {
+        for statusCode in [429, 503] {
+            let clock = ScheduledResetClock(Self.now)
+            let http = FakeHTTPClient(response: response(
+                scheduledFor: Self.now.addingTimeInterval(-7_190),
+                headers: ["etag": "schedule", "cache-control": "max-age=0"]
+            ))
+            let source = CodexResetWatchStore(http: http, now: clock.read)
+            let initial = await source.currentResult()
+            http.response = HTTPResponse(statusCode: 304, headers: [:], body: Data())
+            let revalidated = await source.currentResult()
+            XCTAssertEqual(revalidated, initial)
+            XCTAssertEqual(http.requests.last?.headers["If-None-Match"], "schedule")
+            http.response = HTTPResponse(statusCode: statusCode, headers: ["retry-after": "300"], body: Data())
+            let failed = await source.currentResult()
+            XCTAssertEqual(failed.watch?.chancePercent, 99)
+            XCTAssertTrue(failed.refreshFailed)
+
+            clock.advance(by: 10)
+            let expired = await source.currentResult()
+
+            XCTAssertNil(expired.watch)
+            XCTAssertTrue(expired.refreshFailed)
+            XCTAssertFalse(expired.isAbsent)
+            XCTAssertEqual(http.requests.count, 3)
         }
     }
 
@@ -114,7 +207,7 @@ final class CodexScheduledResetTests: XCTestCase {
         }
     }
 
-    func testScheduleSurvivesTimePassingRevalidationAndFailureUntilRemoved() async throws {
+    func testScheduleSurvivesRevalidationAndFailureWithinGracePeriod() async throws {
         let clock = ScheduledResetClock(Self.now)
         let http = FakeHTTPClient(
             response: response(
@@ -184,7 +277,7 @@ final class CodexScheduledResetTests: XCTestCase {
         let descriptor = WidgetDescriptor.forecast(id: "codex.resetWatch", provider: provider, title: "Reset Watch")
         let store = WidgetDataStore(
             registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]),
-            providers: [], defaults: defaults
+            providers: [], defaults: defaults, now: { Self.now }
         )
         for scheduledFor in [Self.now.addingTimeInterval(60), Self.now.addingTimeInterval(-60), nil] as [Date?] {
             let source = CodexResetWatchStore(
@@ -201,7 +294,7 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertEqual(data.boundedHeadline, "99% chance")
             XCTAssertEqual(data.boundedTrailingText(), expectedTime)
             XCTAssertEqual(data.boundedSubtitle, expectedTime)
-            XCTAssertNil(data.forecastDeadline)
+            XCTAssertEqual(data.forecastDeadline, scheduledFor?.addingTimeInterval(2 * 3_600))
             XCTAssertNil(data.communityVoteTick)
             XCTAssertNil(data.communityVoteLabel)
             XCTAssertFalse(data.hasResetLabel())
@@ -215,7 +308,7 @@ final class CodexScheduledResetTests: XCTestCase {
                 let metric = try XCTUnwrap(content.groups.first?.metrics.first)
                 XCTAssertEqual(metric.value, "99%")
                 XCTAssertEqual(metric.fraction, 0.99, accuracy: 0.000_001)
-                XCTAssertNil(content.nextInvalidation)
+                XCTAssertEqual(content.nextInvalidation, scheduledFor?.addingTimeInterval(2 * 3_600))
             }
 
             store.setCodexResetWatch(result.watch, refreshFailed: true)
