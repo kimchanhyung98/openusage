@@ -12,6 +12,7 @@ final class CodexResetWatchVotesTests: XCTestCase {
         let result = await store.currentResult()
         let watch = try XCTUnwrap(result.watch)
         XCTAssertEqual(watch.chancePercent, 45)
+        XCTAssertEqual(watch.eventID, "watch:\(Self.episode)")
         XCTAssertEqual(watch.communityYesPercent, 79)
         XCTAssertFalse(result.refreshFailed)
 
@@ -76,6 +77,8 @@ final class CodexResetWatchVotesTests: XCTestCase {
         XCTAssertNil(third.watch?.communityYesPercent)
         XCTAssertEqual(third.watch?.chancePercent, 45)
         XCTAssertFalse(third.refreshFailed)
+        XCTAssertEqual(second.watch?.eventID, first.watch?.eventID)
+        XCTAssertEqual(third.watch?.eventID, first.watch?.eventID)
         let requests = await http.requests
         XCTAssertEqual(requests[2].headers["If-None-Match"], "watch-v1")
         XCTAssertNil(requests[3].headers["If-None-Match"])
@@ -103,7 +106,64 @@ final class CodexResetWatchVotesTests: XCTestCase {
         _ = await store.currentResult()
         let result = await store.currentResult()
         XCTAssertEqual(result.watch?.episodeID, "123")
+        XCTAssertEqual(result.watch?.eventID, "watch:123")
         XCTAssertNil(result.watch?.communityYesPercent)
+    }
+
+    func testForecastIdentitySurvivesChanceDeadlineAndVoteChanges() async {
+        let http = VotesHTTPClient([
+            status(observedAt: "2027-01-15T08:00:00Z"), votes(),
+            status(chance: 60, deadline: Self.now.addingTimeInterval(7_200), observedAt: "2027-01-15T08:10:00Z"),
+            votes(yes: "1", no: "1")
+        ])
+        let store = CodexResetWatchStore(http: http, now: { Self.now })
+        let initial = await store.currentResult()
+        let updated = await store.currentResult(force: true)
+        XCTAssertEqual(updated.watch?.eventID, initial.watch?.eventID)
+        XCTAssertEqual(updated.watch?.chancePercent, 60)
+        XCTAssertEqual(updated.watch?.deadline, Self.now.addingTimeInterval(7_200))
+        XCTAssertEqual(updated.watch?.communityYesPercent, 50)
+        XCTAssertFalse(initial.watch?.eventAliases.isEmpty ?? true)
+        XCTAssertNotEqual(updated.watch?.eventAliases, initial.watch?.eventAliases)
+    }
+
+    func testUnknownSourcePreservesForecastWithoutNotificationIdentity() async {
+        let http = VotesHTTPClient([status(episode: "not-a-post-id")])
+        let store = CodexResetWatchStore(http: http, now: { Self.now })
+        let result = await store.currentResult()
+        XCTAssertEqual(result.watch?.chancePercent, 45)
+        XCTAssertNil(result.watch?.episodeID)
+        XCTAssertNil(result.watch?.eventID)
+        XCTAssertFalse(result.refreshFailed)
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 1)
+    }
+
+    func testUnknownSourceUsesObservationIdentityWithoutRequestingVotes() async {
+        let observedAt = "2027-01-15T08:00:00Z"
+        let http = VotesHTTPClient([
+            status(episode: "not-a-post-id", observedAt: observedAt),
+            status(episode: "not-a-post-id", chance: 70, deadline: Self.now.addingTimeInterval(7_200), observedAt: observedAt)
+        ])
+        let store = CodexResetWatchStore(http: http, now: { Self.now })
+        let first = await store.currentResult()
+        let updated = await store.currentResult(force: true)
+        XCTAssertNotNil(first.watch?.eventID)
+        XCTAssertEqual(first.watch?.eventAliases, first.watch?.eventID.map { [$0] })
+        XCTAssertEqual(updated.watch?.eventID, first.watch?.eventID)
+        XCTAssertNil(updated.watch?.episodeID)
+        XCTAssertEqual(updated.watch?.chancePercent, 70)
+        let requests = await http.requests
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func testInvalidObservationWithoutSourceKeepsForecastWithoutIdentity() async {
+        let http = VotesHTTPClient([status(episode: "not-a-post-id", observedAt: "not-a-date")])
+        let store = CodexResetWatchStore(http: http, now: { Self.now })
+        let result = await store.currentResult()
+        XCTAssertEqual(result.watch?.chancePercent, 45)
+        XCTAssertNil(result.watch?.eventID)
+        XCTAssertFalse(result.refreshFailed)
     }
 
     func testAbsentOrExpiredWatchDoesNotRequestVotes() async {
@@ -270,11 +330,15 @@ final class CodexResetWatchVotesTests: XCTestCase {
         }
     }
 
-    private func status(episode: String = episode, cacheControl: String = "max-age=60", chance: Int = 45) -> HTTPResponse {
+    private func status(
+        episode: String = episode, cacheControl: String = "max-age=60", chance: Int = 45,
+        deadline: Date? = nil, observedAt: String? = nil
+    ) -> HTTPResponse {
+        let observation = observedAt.map { ",\"observed_at\":\"\($0)\"" } ?? ""
         let body = """
         {"data":{"active_watch":{"reset_chance_percent":\(chance),
-        "expires_at":"\(OpenUsageISO8601.string(from: Self.now.addingTimeInterval(3600)))",
-        "source":{"url":"https://x.com/thsottiaux/status/\(episode)"}}}}
+        "expires_at":"\(OpenUsageISO8601.string(from: deadline ?? Self.now.addingTimeInterval(3600)))",
+        "source":{"url":"https://x.com/thsottiaux/status/\(episode)"}\(observation)}}}
         """
         return HTTPResponse(statusCode: 200, headers: ["cache-control": cacheControl, "etag": "watch-v1"], body: Data(body.utf8))
     }

@@ -18,6 +18,7 @@ final class CodexResetWatchStoreTests: XCTestCase {
 
         XCTAssertEqual(watch.chancePercent, 75)
         XCTAssertEqual(watch.deadline, deadline)
+        XCTAssertNil(watch.eventID)
         let recordedRequests = await http.recordedRequests()
         let request = try XCTUnwrap(recordedRequests.first)
         XCTAssertEqual(request.method, "GET")
