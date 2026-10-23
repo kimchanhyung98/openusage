@@ -182,7 +182,7 @@ provider 마크는 사본을 두지 않고 `Sources/OpenUsage/Resources/Provider
 | 누르는 곳 | 결과 | 범위 |
 |---|---|---|
 | Settings 표시 설정 | Total Spend·Used/Left·Reset Times·Theme·Density·Time Format·Pacing·Transparency 반영 | 전체 데모 |
-| Language | 선택값 저장 후 Mac 앱에서 언어를 선택하고 재시작하라는 안내 표시. 데모 문구는 영어 유지 | 전체 데모 |
+| Language | 선택값 저장. 영어 이외 언어를 선택하면 Mac 앱에서 언어를 선택하고 재시작하라는 안내 표시. 데모 문구는 영어 유지 | 전체 데모 |
 | Settings 계정 스위치 | 확인 후 활성 계정과 대시보드 선택 이동. 이미 활성화된 계정은 끌 수 없음 | 해당 provider |
 | Usage Cards | Single Card ↔ Separate Cards. Separate Cards는 계정명 포함 제목과 고정 카드 표시 | 계정 지원 provider 전체 |
 | 카드 헤더 계정 메뉴 | 표시할 계정만 변경. Settings의 활성 계정 유지 | 해당 provider |
