@@ -66,9 +66,9 @@ final class CodexControlConnection: CodexControlRequesting {
     private static let maxFrameBytes = 1_048_576
 
     init(socketPath: String, timeout: Duration = .seconds(5)) throws {
-        try Self.validateSocket(socketPath)
+        let resolvedSocketPath = try Self.validateSocket(socketPath)
         self.timeout = timeout
-        transport = NWConnection(to: .unix(path: socketPath), using: .tcp)
+        transport = NWConnection(to: .unix(path: resolvedSocketPath), using: .tcp)
         transport.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
                 if case .failed = state { self?.close() }
@@ -181,13 +181,33 @@ final class CodexControlConnection: CodexControlRequesting {
         for id in Array(pending.keys) { finish(id: id, result: .failure(error)) }
     }
 
-    static func validateSocket(_ path: String) throws {
+    @discardableResult
+    static func validateSocket(_ path: String) throws -> String {
         guard path.hasPrefix("/"), !path.utf8.contains(0) else { throw SoftLimitControlError.unsafeEndpoint }
         var info = stat()
         guard path.withCString({ lstat($0, &info) }) == 0 else { throw SoftLimitControlError.unavailable }
+        guard info.st_uid == geteuid(), [S_IFSOCK, S_IFLNK].contains(info.st_mode & S_IFMT) else {
+            throw SoftLimitControlError.unsafeEndpoint
+        }
+        try validateParent(of: path)
+        if info.st_mode & S_IFMT == S_IFSOCK {
+            guard info.st_mode & 0o077 == 0 else { throw SoftLimitControlError.unsafeEndpoint }
+            return path
+        }
+        // Codex의 daemon 소켓 링크도 허용하되, 검증한 실제 경로에 연결하여 링크 교체 영향 차단.
+        guard let resolved = realpath(path, nil) else { throw SoftLimitControlError.unavailable }
+        defer { free(resolved) }
+        let resolvedPath = String(cString: resolved)
+        guard lstat(resolved, &info) == 0 else { throw SoftLimitControlError.unavailable }
         guard info.st_mode & S_IFMT == S_IFSOCK, info.st_uid == geteuid(), info.st_mode & 0o077 == 0 else {
             throw SoftLimitControlError.unsafeEndpoint
         }
+        try validateParent(of: resolvedPath)
+        return resolvedPath
+    }
+
+    private static func validateParent(of path: String) throws {
+        var info = stat()
         let parent = (path as NSString).deletingLastPathComponent
         guard parent.withCString({ lstat($0, &info) }) == 0,
               info.st_mode & S_IFMT == S_IFDIR, info.st_uid == geteuid(), info.st_mode & 0o022 == 0

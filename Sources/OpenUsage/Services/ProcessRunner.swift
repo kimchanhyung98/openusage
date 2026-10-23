@@ -100,18 +100,33 @@ struct SystemProcessRunner: ProcessRunning {
         // 두 pipe를 child 실행 전 background queue에서 drain 시작 — OS pipe buffer(~64KB) 초과 출력 child의 write blocking·timeout 오작동 방지, exit 후 read는 deadlock.
         let output = SubprocessOutput()
         let drained = DispatchGroup()
-        drain(stdoutPipe.fileHandleForReading, into: output, isStdout: true, group: drained)
-        drain(stderrPipe.fileHandleForReading, into: output, isStdout: false, group: drained)
+        let deadline = DispatchTime.now() + timeout
+        let timeoutError = ProcessRunnerError.timedOut(executable: executable, timeout: timeout)
+        defer {
+            try? stdoutPipe.fileHandleForWriting.close()
+            try? stderrPipe.fileHandleForWriting.close()
+            drained.wait()
+        }
+        drain(stdoutPipe.fileHandleForReading, into: output, isStdout: true, group: drained,
+              deadline: deadline, timeoutError: timeoutError)
+        drain(stderrPipe.fileHandleForReading, into: output, isStdout: false, group: drained,
+              deadline: deadline, timeoutError: timeoutError)
 
         // 50ms poll loop 대신 kernel-level wait 1회 — termination handler를 `run()` 전에 등록해 즉시 종료 child와의 race 차단, `wait`는 exit 또는 deadline까지 1회 blocking.
         let exited = DispatchGroup()
         exited.enter()
         process.terminationHandler = { _ in exited.leave() }
 
-        try process.run()
+        do {
+            try process.run()
+        } catch {
+            process.terminationHandler = nil
+            exited.leave()
+            throw error
+        }
         try? stdinPipe?.fileHandleForReading.close()
 
-        if exited.wait(timeout: .now() + timeout) == .timedOut {
+        if exited.wait(timeout: deadline) == .timedOut {
             terminateProcessTree(rootPID: process.processIdentifier)
             process.terminate()
             _ = exited.wait(timeout: .now() + 0.1)
@@ -119,25 +134,68 @@ struct SystemProcessRunner: ProcessRunning {
                 kill(process.processIdentifier, SIGKILL)
             }
             process.waitUntilExit()
-            drained.wait() // kill된 child가 pipe를 닫아 drain이 EOF로 종료.
-            throw ProcessRunnerError.timedOut(executable: executable, timeout: timeout)
+            throw timeoutError
         }
 
         process.waitUntilExit()
         drained.wait()
+        if let error = output.error { throw error }
         AppLog.debug(.subprocess, "exit \(process.terminationStatus)")
         return ProcessResult(exitCode: process.terminationStatus, stdout: output.stdoutString, stderr: output.stderrString)
     }
 
-    /// background queue에서 pipe를 EOF까지 read해 `output`에 축적.
-    /// child 실행 전 시작으로 pipe 포화 불가 — EOF는 child exit·write end 닫힘 시 도달.
-    private func drain(_ handle: FileHandle, into output: SubprocessOutput, isStdout: Bool, group: DispatchGroup) {
+    /// 프로세스와 같은 기한까지 원문 출력 수집 — 부모 종료 뒤 자손이 pipe를 보유해도 reader 종료.
+    private func drain(
+        _ handle: FileHandle, into output: SubprocessOutput, isStdout: Bool, group: DispatchGroup,
+        deadline: DispatchTime, timeoutError: ProcessRunnerError
+    ) {
         let box = FileHandleBox(handle)
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            let data = box.handle.readDataToEndOfFile()
-            if isStdout { output.setStdout(data) } else { output.setStderr(data) }
-            group.leave()
+            defer {
+                try? box.handle.close()
+                group.leave()
+            }
+            do {
+                let data = try Self.readOutput(box.handle.fileDescriptor, deadline: deadline, timeoutError: timeoutError)
+                if isStdout { output.setStdout(data) } else { output.setStderr(data) }
+            } catch {
+                output.setError(error)
+            }
+        }
+    }
+
+    private static func readOutput(
+        _ fileDescriptor: Int32, deadline: DispatchTime, timeoutError: ProcessRunnerError
+    ) throws -> Data {
+        let flags = fcntl(fileDescriptor, F_GETFL)
+        guard flags >= 0, fcntl(fileDescriptor, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            AppLog.error(.subprocess, "Could not configure command output (errno \(errno))")
+            throw ProcessRunnerError.outputReadFailed
+        }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4_096)
+        while true {
+            let now = DispatchTime.now()
+            guard now < deadline else { throw timeoutError }
+            let remainingMilliseconds = (deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000
+            var descriptor = pollfd(fd: fileDescriptor, events: Int16(POLLIN | POLLHUP | POLLERR), revents: 0)
+            let polled = Darwin.poll(&descriptor, 1, Int32(max(1, min(100, remainingMilliseconds))))
+            if polled == 0 { continue }
+            if polled < 0, errno == EINTR { continue }
+            guard polled > 0, descriptor.revents & Int16(POLLNVAL) == 0 else {
+                AppLog.error(.subprocess, "Could not poll command output (errno \(errno))")
+                throw ProcessRunnerError.outputReadFailed
+            }
+            let count = buffer.withUnsafeMutableBytes { Darwin.read(fileDescriptor, $0.baseAddress, $0.count) }
+            if count > 0 {
+                data.append(contentsOf: buffer.prefix(count))
+            } else if count == 0 {
+                return data
+            } else if errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK {
+                AppLog.error(.subprocess, "Could not read command output (errno \(errno))")
+                throw ProcessRunnerError.outputReadFailed
+            }
         }
     }
 
@@ -178,6 +236,7 @@ enum ProcessRunnerError: Error, LocalizedError, Equatable {
     case standardInputUnsupported
     case standardInputFailed
     case standardInputTooLarge
+    case outputReadFailed
 
     var errorDescription: String? {
         switch self {
@@ -189,6 +248,8 @@ enum ProcessRunnerError: Error, LocalizedError, Equatable {
             return "Could not send input to the process."
         case .standardInputTooLarge:
             return "Process input exceeds 4096 bytes."
+        case .outputReadFailed:
+            return "Could not read output from the process."
         }
     }
 }
@@ -204,10 +265,13 @@ private final class SubprocessOutput: @unchecked Sendable {
     private let lock = NSLock()
     private var stdout = Data()
     private var stderr = Data()
+    private var readError: (any Error)?
 
     func setStdout(_ data: Data) { lock.lock(); stdout = data; lock.unlock() }
     func setStderr(_ data: Data) { lock.lock(); stderr = data; lock.unlock() }
+    func setError(_ error: any Error) { lock.lock(); if readError == nil { readError = error }; lock.unlock() }
 
+    var error: (any Error)? { lock.lock(); defer { lock.unlock() }; return readError }
     var stdoutString: String { lock.lock(); defer { lock.unlock() }; return String(data: stdout, encoding: .utf8) ?? "" }
     var stderrString: String { lock.lock(); defer { lock.unlock() }; return String(data: stderr, encoding: .utf8) ?? "" }
 }

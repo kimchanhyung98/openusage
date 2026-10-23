@@ -108,10 +108,12 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         var isolatedAuth = auth
         isolatedAuth.apiKey = nil
         do {
-            try await verifyCapabilities(executableURL: executableURL, workspace: workspace)
+            let configuration = try await verifyCapabilities(executableURL: executableURL, workspace: workspace)
             try workspace.writeAuth(isolatedAuth)
             try Task.checkCancellation()
-            result = await runMessage(executableURL: executableURL, workspace: workspace, canLaunch: canLaunch)
+            result = await runMessage(
+                executableURL: executableURL, workspace: workspace, configuration: configuration, canLaunch: canLaunch
+            )
             do {
                 var latestAuth = try workspace.readAuth()
                 if latestAuth != isolatedAuth {
@@ -140,7 +142,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         return result
     }
 
-    private func verifyCapabilities(executableURL: URL, workspace: CodexWeeklyTimerWorkspace) async throws {
+    private func verifyCapabilities(executableURL: URL, workspace: CodexWeeklyTimerWorkspace) async throws -> [String] {
         let help = try await processRunner.run(request(
             executableURL: executableURL, workspace: workspace,
             arguments: ["exec", "--help"], timeout: 5, outputLimit: 32_768
@@ -151,23 +153,41 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
             throw CapabilityError.unsupported
         }
         // 엄격한 파싱으로 버전별 옵션 호환성 확인, 모델 요청·인증 로드는 없는 명령만 사용.
-        let config = try await processRunner.run(request(
+        var configuration = Self.configuration
+        let config = try await verifyConfiguration(configuration, executableURL: executableURL, workspace: workspace)
+        if config.exitCode == 0 { return configuration }
+        let optionalSetting = "features.daemon_auto_start=false"
+        let unsupportedSetting = "Error: unknown configuration field `features.daemon_auto_start` in -c/--config override"
+        guard configuration.contains(optionalSetting),
+              config.standardError.trimmingCharacters(in: .whitespacesAndNewlines) == unsupportedSetting else {
+            throw CapabilityError.unsupported
+        }
+        // daemon_auto_start 설정을 모르는 CLI만 해당 항목 제외, 나머지 격리 설정은 엄격하게 재검증.
+        configuration.removeAll { $0 == optionalSetting }
+        let compatible = try await verifyConfiguration(configuration, executableURL: executableURL, workspace: workspace)
+        guard compatible.exitCode == 0 else { throw CapabilityError.unsupported }
+        return configuration
+    }
+
+    private func verifyConfiguration(
+        _ configuration: [String], executableURL: URL, workspace: CodexWeeklyTimerWorkspace
+    ) async throws -> StreamingProcessResult {
+        try await processRunner.run(request(
             executableURL: executableURL, workspace: workspace,
-            arguments: ["app-server", "--strict-config", "--stdio"] + Self.configurationArguments,
-            timeout: 5, outputLimit: 0
+            arguments: ["app-server", "--strict-config", "--stdio"] + Self.configurationArguments(configuration),
+            timeout: 5, outputLimit: 4_096
         ))
-        guard config.exitCode == 0 else { throw CapabilityError.unsupported }
     }
 
     private func runMessage(
-        executableURL: URL, workspace: CodexWeeklyTimerWorkspace,
+        executableURL: URL, workspace: CodexWeeklyTimerWorkspace, configuration: [String],
         canLaunch: @escaping @MainActor () async -> Bool
     ) async -> CodexWeeklyTimerExecutionResult {
         let events = CodexWeeklyTimerEvents()
         let arguments = [
             "exec", "--json", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--strict-config",
             "--sandbox", "read-only", "--skip-git-repo-check", "--color", "never",
-        ] + Self.configurationArguments + ["-"]
+        ] + Self.configurationArguments(configuration) + ["-"]
         let request = request(
             executableURL: executableURL, workspace: workspace, arguments: arguments,
             standardInput: Data((Self.prompt + "\n").utf8), timeout: timeout, outputLimit: 0
@@ -221,7 +241,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         )
     }
 
-    private static var configurationArguments: [String] {
+    private static func configurationArguments(_ configuration: [String]) -> [String] {
         configuration.flatMap { ["-c", $0] }
     }
 
