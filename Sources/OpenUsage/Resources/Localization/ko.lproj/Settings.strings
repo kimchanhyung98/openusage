@@ -4,8 +4,8 @@
 "%dd ago" = "%d일 전";
 "%dh ago" = "%d시간 전";
 "%dm ago" = "%d분 전";
-"12-hour" = "12시간";
-"24-hour" = "24시간";
+"12-hour" = "12시간제";
+"24-hour" = "24시간제";
 "Adds a global openusage command agents can use to monitor limits." = "에이전트가 한도를 확인할 수 있도록 전역 openusage 명령을 추가합니다.";
 "Advanced" = "고급";
 "Allow Notifications" = "알림 허용";
@@ -82,6 +82,8 @@
 "Record Shortcut" = "단축키 지정";
 "Remove OpenUsage Override" = "OpenUsage 지정 이름 삭제";
 "Reset Times" = "초기화 시각";
+"Couldn't restart OpenUsage. Quit and reopen the app to apply the language change." = "OpenUsage를 다시 시작하지 못했습니다. 앱을 종료한 뒤 다시 열어 언어 변경을 적용하세요.";
+"Restart Now" = "지금 다시 시작";
 "Restart OpenUsage to apply the language change." = "언어 변경을 적용하려면 OpenUsage를 다시 시작하세요.";
 "Reveal in Finder" = "Finder에서 보기";
 "Running Tokscale…" = "Tokscale 실행 중…";

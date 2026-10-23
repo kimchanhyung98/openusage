@@ -69,7 +69,7 @@
 "Couldn't remove the terminal helper: %@" = "터미널 도구를 삭제하지 못했습니다: %@";
 "Couldn't save the OpenRouter API key." = "OpenRouter API 키를 저장할 수 없습니다.";
 "Couldn't save the Z.ai API key." = "Z.ai API 키를 저장할 수 없습니다.";
-"Cursor request-based usage data unavailable. Try again later." = "Cursor의 요청별 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
+"Cursor request-based usage data unavailable. Try again later." = "Cursor의 요청 수 기반 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
 "Cursor sign-in changed while refreshing. Refresh again to use the current account." = "새로고침 중 Cursor 로그인 정보가 변경되었습니다. 현재 계정을 사용하려면 다시 새로고침하세요.";
 "Custom Kimi API or OAuth hosts are not supported." = "사용자 지정 Kimi API 또는 OAuth 호스트는 지원하지 않습니다.";
 "Device names can’t contain control characters." = "기기 이름에는 제어 문자를 포함할 수 없습니다.";
@@ -168,7 +168,7 @@
 "Some synced usage data couldn’t be read. Check the log for details." = "동기화된 사용량 데이터 일부를 읽지 못했습니다. 자세한 내용은 로그를 확인하세요.";
 "Start Antigravity or run `agy` and try again." = "Antigravity를 시작하거나 `agy`를 실행한 뒤 다시 시도하세요.";
 "Switching to %@ could not be verified, so the previous account was restored." = "%@ 계정으로 전환되었는지 확인할 수 없어 이전 계정으로 복원했습니다.";
-"Team request-based usage data unavailable. Try again later." = "Team의 요청별 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
+"Team request-based usage data unavailable. Try again later." = "Team의 요청 수 기반 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
 "The AI client rejected the cancellation control request." = "AI 클라이언트가 취소 제어 요청을 거부했습니다.";
 "The AI client returned an unsupported control response." = "AI 클라이언트가 지원하지 않는 제어 응답을 반환했습니다.";
 "The Bun installer redirected to an unsupported address." = "Bun 설치 프로그램이 지원하지 않는 주소로 연결을 변경했습니다.";
@@ -224,9 +224,9 @@
 "Usage request failed after refresh. Try again." = "새로고침 후 사용량 요청에 실패했습니다. 다시 시도하세요.";
 "Usage request failed. Check your connection." = "사용량 요청에 실패했습니다. 인터넷 연결을 확인하세요.";
 "Usage response invalid. Try again later." = "사용량 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~%@m." = "Anthropic의 요청 한도로 사용량 업데이트가 제한되었습니다. 자동 및 수동 새로고침을 기다린 후 약 %@분 뒤에 다시 시도합니다.";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~now." = "Anthropic의 요청 한도로 사용량 업데이트가 제한되었습니다. 자동 및 수동 새로고침을 잠시 기다린 후 곧 다시 시도합니다.";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait." = "Anthropic의 요청 한도로 사용량 업데이트가 제한되었습니다. 자동 및 수동 새로고침을 잠시 기다립니다.";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~%@m." = "Anthropic의 요청 제한으로 자동 및 수동 새로 고침을 잠시 중단합니다. 약 %@분 후 다시 시도합니다.";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~now." = "Anthropic의 요청 제한으로 자동 및 수동 새로 고침을 잠시 중단합니다. 곧 다시 시도합니다.";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait." = "Anthropic의 요청 제한으로 자동 및 수동 새로 고침을 잠시 중단합니다.";
 "Waiting for fresh, supported quota data." = "지원되는 최신 사용량 한도 데이터를 기다리는 중입니다.";
 "Waiting for the next successful quota refresh." = "사용량 한도를 다시 불러올 때까지 기다리는 중입니다.";
 "Weekly timer account changed before the message was sent." = "메시지를 보내기 전에 주간 타이머 계정이 변경되었습니다.";

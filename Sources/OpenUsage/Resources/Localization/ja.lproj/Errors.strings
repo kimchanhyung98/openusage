@@ -69,7 +69,7 @@
 "Couldn't remove the terminal helper: %@" = "ターミナルツールを削除できませんでした：%@";
 "Couldn't save the OpenRouter API key." = "OpenRouter API キーを保存できませんでした。";
 "Couldn't save the Z.ai API key." = "Z.ai API キーを保存できませんでした。";
-"Cursor request-based usage data unavailable. Try again later." = "Cursorのリクエスト単位の使用量データを取得できません。しばらくしてから、もう一度お試しください。";
+"Cursor request-based usage data unavailable. Try again later." = "Cursorのリクエスト数ベースの使用量データを取得できません。しばらくしてから、もう一度お試しください。";
 "Cursor sign-in changed while refreshing. Refresh again to use the current account." = "更新中に Cursor のログイン情報が変更されました。現在のアカウントを使用するには、もう一度更新してください。";
 "Custom Kimi API or OAuth hosts are not supported." = "Kimi API または OAuth のカスタムホストには対応していません。";
 "Device names can’t contain control characters." = "デバイス名に制御文字を含めることはできません。";
@@ -168,7 +168,7 @@
 "Some synced usage data couldn’t be read. Check the log for details." = "同期された使用量データの一部を読み取れませんでした。詳細はログを確認してください。";
 "Start Antigravity or run `agy` and try again." = "Antigravity を起動するか、`agy` を実行してから、もう一度お試しください。";
 "Switching to %@ could not be verified, so the previous account was restored." = "%@ への切り替えを確認できなかったため、前のアカウントに戻しました。";
-"Team request-based usage data unavailable. Try again later." = "Teamのリクエスト単位の使用量データを取得できません。しばらくしてから、もう一度お試しください。";
+"Team request-based usage data unavailable. Try again later." = "Teamのリクエスト数ベースの使用量データを取得できません。しばらくしてから、もう一度お試しください。";
 "The AI client rejected the cancellation control request." = "AI クライアントがキャンセルの制御リクエストを拒否しました。";
 "The AI client returned an unsupported control response." = "AI クライアントから未対応の制御応答が返されました。";
 "The Bun installer redirected to an unsupported address." = "Bun インストーラが未対応のアドレスにリダイレクトしました。";
@@ -224,9 +224,9 @@
 "Usage request failed after refresh. Try again." = "更新後の使用量の取得に失敗しました。もう一度お試しください。";
 "Usage request failed. Check your connection." = "使用量の取得に失敗しました。インターネット接続を確認してください。";
 "Usage response invalid. Try again later." = "使用量の応答が無効です。しばらくしてから、もう一度お試しください。";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~%@m." = "Anthropicのレート制限により、使用量を更新できません。自動更新と手動更新を待機し、約%@分後に再試行します。";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~now." = "Anthropicのレート制限により、使用量を更新できません。自動更新と手動更新を待機し、まもなく再試行します。";
-"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait." = "Anthropicのレート制限により、使用量を更新できません。自動更新と手動更新を待機します。";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~%@m." = "Anthropicのリクエスト制限により、自動更新と手動更新を一時停止します。約%@分後に再試行します。";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~now." = "Anthropicのリクエスト制限により、自動更新と手動更新を一時停止します。まもなく再試行します。";
+"Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait." = "Anthropicのリクエスト制限により、自動更新と手動更新を一時停止します。";
 "Waiting for fresh, supported quota data." = "対応する最新の使用量上限データを待っています。";
 "Waiting for the next successful quota refresh." = "次の使用量上限の更新が成功するまで待っています。";
 "Weekly timer account changed before the message was sent." = "メッセージを送信する前に、週間タイマーのアカウントが変更されました。";
