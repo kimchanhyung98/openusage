@@ -169,6 +169,29 @@ Customize는 레이아웃의 표준 프로바이더 계열 순서, Settings는 �
 표시 계층은 두 순서와 표시 모드를 합성하며, Dashboard와 Share Screenshot은 같은 최종 카드 목록과 제목 사용.
 제품 동작은 [대시보드](/docs/dashboard.md)와 [설정](/docs/settings.md) 참조.
 
+## 프로세스 실행과 Codex 자동화
+
+`SystemProcessRunner`는 셸 환경·프로세스 탐색·SQLite·Keychain의 동기 명령 실행 담당.
+프로세스 종료와 stdout·stderr 수집에 하나의 제한 시간 적용.
+자손이 출력 파이프를 계속 보유해도 제한 시간에 오류 반환.
+이미 부모와 분리된 자손의 강제 종료까지 보장하지 않음.
+
+`StreamingProcessRunner`는 비동기 명령의 실시간 출력·출력 상한·취소·소유 프로세스 그룹 정리 담당.
+Codex 주간 타이머는 이 실행기 사용.
+두 실행기는 반환 방식과 출력·취소 계약이 달라 별도 인터페이스 유지.
+
+`CodexControlConnection`은 로컬 소켓 검증과 WebSocket·RPC 연결 수명 관리.
+`CodexSoftLimitAdapter`는 이 연결로 활성 대화 조회와 turn 취소 수행.
+제목 생성용 임시 작업은 Adapter에서 제외하고, 소켓 경로 차이는 Connection 내부에서 처리.
+계정·quota pool 범위를 검증하지 못하는 현재 앱에서는 `SoftLimitCoordinator`가 자동 취소 차단.
+사용자 설정과 지원 범위는 [설정](/docs/settings.md) 참조.
+
+`CodexWeeklyTimerRouter`는 사용 설정된 계정과 조회 결과 연결, `CodexWeeklyTimerCoordinator`는 계정별 전송·검증 조정.
+`CodexWeeklyTimerExecutor`는 CLI 설정 검증·임시 인증 작성·메시지 실행·갱신 인증 회수·정리 담당.
+설정 검증 전에 인증 정보를 쓰지 않으며, 검증한 설정 배열을 실제 메시지 실행에도 전달.
+임시 홈의 파일·환경 격리는 `CodexWeeklyTimerWorkspace` 담당.
+전송 조건과 CLI 호환 범위는 [Codex](/docs/providers/codex.md) 참조.
+
 ## Tokscale CLI 경계
 
 OpenUsage는 외부 프로세스로 Tokscale CLI 실행.
