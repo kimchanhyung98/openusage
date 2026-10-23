@@ -3,6 +3,14 @@
     <channel>
         <title>OpenUsage</title>
         <item>
+            <title>0.13.2</title>
+            <pubDate>Fri, 23 Oct 2026 09:29:14 +0000</pubDate>
+            <sparkle:version>1287</sparkle:version>
+            <sparkle:shortVersionString>0.13.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/v0.13.2/OpenUsage-0.13.2.dmg" length="29332116" type="application/octet-stream" sparkle:edSignature="LJc/T4Dt750Xyy95oRQ/u1cWrfpJdOqgKPaBFEyBdXoMXHWhsnbkuYPkrf/G8jkALz9o4k8TD1Zi6EVnUq56Cw=="/>
+        </item>
+        <item>
             <title>0.13.1</title>
             <pubDate>Wed, 14 Oct 2026 15:45:06 +0000</pubDate>
             <sparkle:version>1239</sparkle:version>
