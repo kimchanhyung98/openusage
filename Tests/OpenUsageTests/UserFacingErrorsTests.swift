@@ -83,7 +83,7 @@ final class UserFacingErrorsTests: XCTestCase {
         XCTAssertEqual(decoded.warning, raw)
         XCTAssertEqual(L10n.withLanguage(.english) { decoded.localizedWarning }, raw)
         XCTAssertEqual(L10n.withLanguage(.korean) { decoded.localizedWarning },
-                       "Anthropic의 요청 한도로 사용량 업데이트가 제한되었습니다. 자동 및 수동 새로고침을 기다린 후 약 2분 뒤에 다시 시도합니다.")
+                       "Anthropic의 요청 제한으로 자동 및 수동 새로 고침을 잠시 중단합니다. 약 2분 후 다시 시도합니다.")
         var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         legacy.removeValue(forKey: "warningPresentation")
         let legacyDecoded = try JSONDecoder().decode(ProviderSnapshot.self, from: JSONSerialization.data(withJSONObject: legacy))

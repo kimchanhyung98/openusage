@@ -31,8 +31,8 @@
 "Alert when a limit is projected to finish before it resets." = "초기화 전에 한도 소진이 예상되면 알림.";
 "Alert when a limit is projected to finish with little left." = "기간 종료 시 잔여량이 적을 것으로 예상되면 알림.";
 "Almost Out" = "잔여량 부족";
-"Auto Usage" = "자동 사용량";
-"Auto usage" = "자동 사용량";
+"Auto Usage" = "Auto 사용량";
+"Auto usage" = "Auto 사용량";
 "Balance" = "잔액";
 "By %@" = "%@까지";
 "Cached forecast · Refresh failed" = "저장된 예측 · 새로고침 실패";

@@ -24,7 +24,12 @@ test('Settings covers every native section in display order', () => {
 test('Settings includes normal native rows and notification triggers', () => {
   const labels = new Set(settingGroups.flatMap((group) => group.rows.map((row) => row.label)));
   const hiddenEasterEggs = new Set(['Party Mode', 'Drunk Mode']);
-  const nativeRows = [...englishSource('Views/SettingsScreen.swift').matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
+  const settingsSource = englishSource('Views/SettingsScreen.swift');
+  assert.match(settingsSource, /\bLanguageSettingsRow\(selection:/);
+  const nativeRows = [...settingsSource.matchAll(/row\("([^"]+)"\)/g)].map((match) => match[1]);
+  const languageRows = [...englishSource('Views/LanguageSettingsRow.swift').matchAll(/Text\("([^"]+)"\)\s+Spacer\([^)]*\)\s+Picker\(/g)]
+    .map((match) => match[1]);
+  nativeRows.push(...languageRows);
   assert.ok(nativeRows.includes('Language'), 'The native row extractor must find the Language picker');
   assert.ok(nativeRows.includes('Show Total Spend'), 'The native row extractor must keep existing rows');
   for (const label of nativeRows) {

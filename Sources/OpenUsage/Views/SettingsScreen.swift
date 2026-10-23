@@ -71,15 +71,7 @@ struct SettingsScreen: View {
                     ShortcutRecorderField(name: .togglePopover)
                         .hoverTooltip(L10n.settings("Open OpenUsage from anywhere"))
                 }
-                row(L10n.settings("Language")) {
-                    picker($language, options: LanguageSetting.allCases, label: \.nativeName)
-                        .onChange(of: language) { _, selected in
-                            LanguageSetting.update(to: selected)
-                        }
-                }
-                if language != LanguageSetting.active {
-                    inlineNotice(L10n.settings("Restart OpenUsage to apply the language change."))
-                }
+                LanguageSettingsRow(selection: $language)
             }
             AccountsSettingsSection(
                 reorderSpaceName: reorderSpaceName,

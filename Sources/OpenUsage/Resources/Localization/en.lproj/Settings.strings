@@ -23,6 +23,8 @@
 "Choose what's visible and where" = "Choose what's visible and where";
 "Clear Shortcut" = "Clear Shortcut";
 "Command Line" = "Command Line";
+"Couldn't restart OpenUsage. Quit and reopen the app to apply the language change." = "Couldn't restart OpenUsage. Quit and reopen the app to apply the language change.";
+"Couldn't restart OpenUsage. Reopen the app to apply the language change." = "Couldn't restart OpenUsage. Reopen the app to apply the language change.";
 "Command Output" = "Command Output";
 "Compact" = "Compact";
 "Connect Codex" = "Connect Codex";
@@ -82,6 +84,7 @@
 "Record Shortcut" = "Record Shortcut";
 "Remove OpenUsage Override" = "Remove OpenUsage Override";
 "Reset Times" = "Reset Times";
+"Restart Now" = "Restart Now";
 "Restart OpenUsage to apply the language change." = "Restart OpenUsage to apply the language change.";
 "Reveal in Finder" = "Reveal in Finder";
 "Running Tokscale…" = "Running Tokscale…";
