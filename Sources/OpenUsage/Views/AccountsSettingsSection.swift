@@ -51,7 +51,7 @@ struct AccountsSettingsSection: View {
         let probeRequest = signInProbeRequest
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
             HStack(spacing: 5) {
-                Text("Accounts")
+                Text(L10n.accounts("Accounts"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Button {
@@ -64,7 +64,7 @@ struct AccountsSettingsSection: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Add Account")
+                .accessibilityLabel(L10n.accounts("Add Account"))
                 .disabled(store.hasUnreadableRegistry || container.accountSwitch.isSwitching)
             }
             .padding(.horizontal, 8)
@@ -72,14 +72,14 @@ struct AccountsSettingsSection: View {
             VStack(spacing: density.sectionSpacing) {
                 let populatedFamilies = Self.families.filter { !store.profiles(family: $0.id).isEmpty }
                 if store.hasUnreadableRegistry {
-                    Text(AccountProfileError.registryUnreadable.userMessage)
+                    Text(UserFacingErrors.message(AccountProfileError.registryUnreadable))
                         .font(.system(size: density.planBadgePointSize))
                         .foregroundStyle(Theme.notice)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 12)
                         .padding(.vertical, density.controlRowPadding)
                 } else if populatedFamilies.isEmpty {
-                    Text("Add a Claude or Codex account to switch which sign-in new terminal sessions use.")
+                    Text(L10n.accounts("Add a Claude or Codex account to switch which sign-in new terminal sessions use."))
                         .font(.system(size: density.planBadgePointSize))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,11 +162,11 @@ struct AccountsSettingsSection: View {
 
     private var usageCardsRow: some View {
         HStack(spacing: 10) {
-            Text("Usage Cards")
+            Text(L10n.accounts("Usage Cards"))
             Spacer(minLength: 8)
-            Picker("Usage Cards", selection: accountCardModeBinding) {
+            Picker(L10n.accounts("Usage Cards"), selection: accountCardModeBinding) {
                 ForEach(AccountCardDisplayMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
+                    Text(L10n.accounts(mode.label)).tag(mode)
                 }
             }
             .pickerStyle(.menu)

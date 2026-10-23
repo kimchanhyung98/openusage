@@ -245,6 +245,7 @@ final class ClaudeProvider: ProviderRuntime {
         )
 
         var warning: String?
+        var warningPresentation: [LocalizedMessage] = []
         var authenticationIssue: ProviderAuthenticationIssue?
         switch authStore.liveUsageAvailability(state) {
         case .available:
@@ -255,11 +256,13 @@ final class ClaudeProvider: ProviderRuntime {
             )
             // rate-limited notice는 mapped usage에 실어 header 삼각형까지 전달 — badge/note 라인이 레이아웃에 없어도 표시.
             warning = mapped.warning
+            warningPresentation = mapped.warningPresentation.map { [$0] } ?? []
         case .missingProfileScope:
             // `user:profile` scope 없는 로그인(`claude setup-token` 계열) — session/weekly 바를 조용히
             // 비우는 대신 로그 + header 경고로 재로그인 안내; 로컬 로그 spend 타일은 영향 없음.
             AppLog.warn(LogTag.plugin("claude"), "live usage unavailable: credential lacks the user:profile scope (inference-only token); re-login with `claude` to restore session/weekly limits")
             warning = ClaudeUsageMapper.missingProfileScopeWarning
+            warningPresentation = [.init(ClaudeUsageMapper.missingProfileScopeWarning)]
             authenticationIssue = .signInNeeded
         case .inferenceOnlyToken:
             // 명시적 CLAUDE_CODE_OAUTH_TOKEN은 설계상 inference 전용 — 조회·안내 대상 아님, spend 타일은 유지.
@@ -267,6 +270,7 @@ final class ClaudeProvider: ProviderRuntime {
         }
         if let fallbackWarning, authenticationIssue == nil || fallbackWarning == .desktopPermissionRequired {
             warning = fallbackWarning.localizedDescription
+            warningPresentation = [UserFacingErrors.presentation(fallbackWarning)]
         }
 
         // 로컬 spend 타일 — 네이티브 로그 스캔 + pi 내 Claude usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
@@ -282,6 +286,7 @@ final class ClaudeProvider: ProviderRuntime {
                 ? "From your Claude usage history (estimated)"
                 : "From your Claude usage history and pi (estimated)"
             warning = [warning, scan.numericWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            if let numericWarning = scan.numericWarning { warningPresentation.append(.init(numericWarning)) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(
@@ -302,6 +307,7 @@ final class ClaudeProvider: ProviderRuntime {
             refreshedAt: now(),
             usageHistory: usageHistory,
             warning: warning,
+            warningPresentation: warningPresentation.isEmpty ? nil : warningPresentation,
             authenticationIssue: authenticationIssue,
             isDegraded: refreshIsDegraded ? true : nil,
             liveQuotaObservedAt: mapped.liveQuotaObservedAt,

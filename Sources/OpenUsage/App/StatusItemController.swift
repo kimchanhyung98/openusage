@@ -46,6 +46,7 @@ final class StatusItemController: NSObject {
         let hosting = NSHostingController(
             rootView: AnyView(
                 DashboardView()
+                    .environment(\.locale, L10n.locale)
                     .environment(container)
                     .environment(container.layout)
                     .environment(container.dataStore)
@@ -217,14 +218,14 @@ final class StatusItemController: NSObject {
         if panel.isVisible { hidePanel() }
 
         let menu = NSMenu()
-        menu.addItem(ClosureMenuItem(title: "Customize", systemSymbol: "slider.horizontal.3") { [weak self] in
+        menu.addItem(ClosureMenuItem(title: L10n.common("Customize"), systemSymbol: "slider.horizontal.3") { [weak self] in
             self?.openScreen(.customize)
         })
-        menu.addItem(ClosureMenuItem(title: "Settings", systemSymbol: "gearshape", keyEquivalent: ",") { [weak self] in
+        menu.addItem(ClosureMenuItem(title: L10n.common("Settings"), systemSymbol: "gearshape", keyEquivalent: ",") { [weak self] in
             self?.openScreen(.settings)
         })
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(title: "Quit OpenUsage", systemSymbol: "power", keyEquivalent: "q") {
+        menu.addItem(ClosureMenuItem(title: L10n.common("Quit OpenUsage"), systemSymbol: "power", keyEquivalent: "q") {
             NSApplication.shared.terminate(nil)
         })
 

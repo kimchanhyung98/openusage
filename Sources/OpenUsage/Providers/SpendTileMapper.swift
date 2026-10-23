@@ -90,9 +90,10 @@ enum SpendTileMapper {
             let tokens = tokensByDay[key] ?? 0
             return MetricChartPoint(
                 value: tokens,
-                // 하드코딩 "6/21"이 아닌 앱의 localized "Jun 21" 표기.
-                label: Formatters.monthDayLabel(day),
-                valueLabel: MetricFormatter.number(tokens, kind: .count, style: .row) + " tokens"
+                // API 날짜는 생성 시점 locale의 표시 문자열. 화면은 원본 date·value로 다시 포맷.
+                label: Formatters.monthDayLabel(day, locale: .current),
+                valueLabel: MetricFormatter.number(tokens, kind: .count, style: .row) + " tokens",
+                date: day
             )
         }
     }

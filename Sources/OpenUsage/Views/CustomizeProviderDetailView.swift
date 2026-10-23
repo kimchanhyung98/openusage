@@ -33,8 +33,8 @@ struct CustomizeProviderDetailView: View {
 
     private func metricSections(_ group: ProviderMetrics) -> some View {
         VStack(alignment: .leading, spacing: density.sectionSpacing) {
-            metricSection("Always Visible", metrics: group.alwaysShownMetrics, providerID: group.provider.id)
-            metricSection("On Demand", metrics: group.expandedMetrics, providerID: group.provider.id)
+            metricSection(L10n.customize("Always Visible"), metrics: group.alwaysShownMetrics, providerID: group.provider.id)
+            metricSection(L10n.customize("On Demand"), metrics: group.expandedMetrics, providerID: group.provider.id)
         }
     }
 
@@ -68,12 +68,12 @@ struct CustomizeProviderDetailView: View {
             .frame(height: 30)
             .padding(8)
             .overlay(
-                Text("Drag metrics here")
+                Text(L10n.customize("Drag metrics here"))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             )
             .reorderFrame(id: expandedDividerID(for: providerID), in: .named(reorderSpaceName), yOutset: yOutset)
-            .accessibilityLabel("Drag metrics here")
+            .accessibilityLabel(L10n.customize("Drag metrics here"))
     }
 
     private func metricRow(_ metric: WidgetDescriptor, in providerID: String) -> some View {
@@ -164,10 +164,12 @@ private struct StarButton: View {
             Button {
                 if layout.canPin(metric.id) {
                     layout.togglePin(metric.id)
-                    layout.presentCustomizationNotice(pinned ? "Removed from menu bar" : "Starred for menu bar")
+                    layout.presentCustomizationNotice(L10n.customize(pinned ? "Removed from menu bar" : "Starred for menu bar"))
                 } else {
                     shakeTrigger += 1
-                    layout.presentCustomizationNotice(layout.pinDenialReason(metric.id) ?? "Up to 2 stars per provider", tone: .notice)
+                    layout.presentCustomizationNotice(
+                        L10n.customize("Up to %lld stars per provider", LayoutStore.maxPinsPerProvider), tone: .notice
+                    )
                 }
             } label: {
                 Image(systemName: pinned ? "star.fill" : "star")

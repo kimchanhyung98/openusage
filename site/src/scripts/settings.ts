@@ -43,7 +43,11 @@ export function choosePreviewSetting(mock: HTMLElement, id: string, value: strin
     save();
   } else {
     setPreviewPreference(id, value);
-    if (appOnlyPreferences.has(id)) notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
+    if (id === 'language') {
+      notify(mock, 'The demo stays in English. Choose a language in the Mac app and restart OpenUsage to apply it.');
+    } else if (appOnlyPreferences.has(id)) {
+      notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
+    }
   }
 }
 
@@ -150,6 +154,8 @@ export function applySettingsToMock(mock: HTMLElement): void {
   });
   const iCloud = mock.querySelector<HTMLElement>('[data-icloud-preview]');
   if (iCloud) iCloud.hidden = !preferences.syncAcrossMacs;
+  const languageNotice = mock.querySelector<HTMLElement>('[data-language-notice]');
+  if (languageNotice) languageNotice.hidden = preferences.language === 'English';
   const permission = mock.querySelector<HTMLElement>('[data-notification-permission]');
   if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut'].some((id) => preferences[id]);
 }

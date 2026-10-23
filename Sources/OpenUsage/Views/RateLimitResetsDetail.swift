@@ -88,7 +88,7 @@ struct RateLimitResetsDetail: View {
                 .font(.system(size: 20))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("You have no rate limit resets")
+            Text(L10n.dashboard("You have no rate limit resets"))
                 .font(.system(size: density.supportingPointSize))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -105,10 +105,10 @@ struct RateLimitResetsDetail: View {
                 .font(.system(size: 20))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("\(count) available")
+            Text(L10n.dashboard("%d available", count))
                 .font(.system(size: density.supportingPointSize))
                 .foregroundStyle(.primary)
-            Text("Expiry times unavailable")
+            Text(L10n.dashboard("Expiry times unavailable"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -211,10 +211,10 @@ struct RateLimitResetsDetail: View {
     private func trailing(_ entry: Entry) -> some View {
         Group {
             if claim != nil, claimBinding != nil, hoveredExpiry == entry.date, !claimInProgress {
-                Button("Use") { beginConfirm(entry.date) }
+                Button(L10n.dashboard("Use")) { beginConfirm(entry.date) }
                     .controlSize(.small)
                     .disabled(nothingToReset)
-                    .hoverTooltip(nothingToReset ? "Nothing to reset right now" : nil)
+                    .hoverTooltip(nothingToReset ? L10n.dashboard("Nothing to reset right now") : nil)
                     .transition(.opacity)
             } else if let countdown = entry.countdown {
                 Text(countdown)
@@ -230,21 +230,21 @@ struct RateLimitResetsDetail: View {
 
     private func confirmRow(_ entry: Entry) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Use this reset?")
+            Text(L10n.dashboard("Use this reset?"))
                 .font(.system(size: density.supportingPointSize, weight: .medium))
                 .foregroundStyle(.primary)
-            Text("Immediately reset your usage limits. This can't be undone.")
+            Text(L10n.dashboard("Immediately reset your usage limits. This can't be undone."))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button { runClaim(entry.date) } label: {
-                    Text("Reset").frame(maxWidth: .infinity)
+                    Text(L10n.dashboard("Reset")).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 Button { cancelConfirm() } label: {
-                    Text("Cancel").frame(maxWidth: .infinity)
+                    Text(L10n.dashboard("Cancel")).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -259,7 +259,7 @@ struct RateLimitResetsDetail: View {
 
     private func claimingRow() -> some View {
         HStack(spacing: 8) {
-            Text("Resetting your usage…")
+            Text(L10n.dashboard("Resetting your usage…"))
                 .font(.system(size: density.supportingPointSize))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 8)
@@ -364,15 +364,15 @@ struct RateLimitResetsDetail: View {
         case .success:
             claimedExpiries.insert(date)
             nothingToReset = true
-            banner = .init(text: "Reset claimed. Enjoy!", icon: "checkmark.circle.fill", tint: .green)
+            banner = .init(text: L10n.dashboard("Reset claimed. Enjoy!"), icon: "checkmark.circle.fill", tint: .green)
         case .nothingToReset:
             nothingToReset = true
-            banner = .init(text: "Your usage doesn't need a reset yet", icon: "info.circle.fill", tint: .accentColor)
+            banner = .init(text: L10n.dashboard("Your usage doesn't need a reset yet"), icon: "info.circle.fill", tint: .accentColor)
         case .noCredit:
             claimedExpiries.insert(date)
-            banner = .init(text: "That reset is no longer available", icon: "exclamationmark.triangle.fill", tint: .orange)
+            banner = .init(text: L10n.dashboard("That reset is no longer available"), icon: "exclamationmark.triangle.fill", tint: .orange)
         case .failed:
-            banner = .init(text: "Couldn't reset usage. Please try again.", icon: "xmark.circle.fill", tint: .red)
+            banner = .init(text: L10n.dashboard("Couldn't reset usage. Please try again."), icon: "xmark.circle.fill", tint: .red)
         }
     }
 
@@ -407,7 +407,10 @@ struct RateLimitResetsDetail: View {
         let countdown: String?
 
         var accessibilityLabel: String {
-            "Reset \(number), \(time)" + (countdown.map { ", expires in \($0)" } ?? "")
+            if let countdown {
+                return L10n.dashboard("Reset %d, %@, expires in %@", number, time, countdown)
+            }
+            return L10n.dashboard("Reset %d, %@", number, time)
         }
     }
 
@@ -423,7 +426,7 @@ struct RateLimitResetsDetail: View {
                 number: index + 1,
                 date: date,
                 severity: WidgetData.expirySeverity(secondsRemaining: date.timeIntervalSince(now)),
-                time: (imminent || absolute == nil) ? "Expiring soon" : absolute!,
+                time: (imminent || absolute == nil) ? L10n.dashboard("Expiring soon") : absolute!,
                 countdown: imminent ? nil : relative
             )
         }

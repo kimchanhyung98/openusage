@@ -13,18 +13,18 @@ enum TimeFormatSetting: String, Hashable, Sendable, CaseIterable, UserDefaultsBa
 
     var label: String {
         switch self {
-        case .auto: return "Auto"
-        case .twelveHour: return "12-hour"
-        case .twentyFourHour: return "24-hour"
+        case .auto: return L10n.settings("Auto")
+        case .twelveHour: return L10n.settings("12-hour")
+        case .twentyFourHour: return L10n.settings("24-hour")
         }
     }
 
-    /// override를 반영한 short time 문자열 ("5:30 PM" / "17:30") — locale hour cycle 경유
-    func shortTime(_ date: Date, base: Locale = .current) -> String {
+    /// 표시 언어와 시간 주기를 분리. Auto는 시스템 주기, 나머지는 명시 선택 준수.
+    func shortTime(_ date: Date, base: Locale = L10n.locale, systemLocale: Locale = .current) -> String {
         var components = Locale.Components(locale: base)
         switch self {
         case .auto:
-            break
+            components.hourCycle = systemLocale.hourCycle
         case .twelveHour:
             components.hourCycle = .oneToTwelve
         case .twentyFourHour:

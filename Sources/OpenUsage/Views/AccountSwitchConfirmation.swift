@@ -28,21 +28,24 @@ private struct AccountSwitchConfirmation: ViewModifier {
     func body(content: Content) -> some View {
         content
             .confirmationDialog(
-                "Switch Account?",
+                L10n.accounts("Switch Account?"),
                 isPresented: isPresented,
                 titleVisibility: .visible,
                 presenting: selection
             ) { profile in
-                Button("Use \(profile.family.capitalized): \(profile.label)") {
+                Button(L10n.accounts("Use %@: %@", profile.family.capitalized, profile.label)) {
                     switchTo(profile)
                 }
                 .disabled(container.accountSwitch.isSwitching)
-                Button("Cancel", role: .cancel) {}
+                Button(L10n.accounts("Cancel"), role: .cancel) {}
             } message: { profile in
                 if let shell = AccountShellInstaller.defaultShell() {
-                    Text("New `\(profile.family)` sessions will use \(profile.label). OpenUsage keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the \(shell.title) terminal setup. Open a new terminal window to use it.")
+                    Text(L10n.accounts(
+                        "New %@ sessions will use %@. OpenUsage keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the %@ terminal setup. Open a new terminal window to use it.",
+                        profile.family, profile.label, shell.title
+                    ))
                 } else {
-                    Text("OpenUsage couldn't detect your login shell, so terminal setup can't be applied automatically.")
+                    Text(L10n.accounts("OpenUsage couldn't detect your login shell, so terminal setup can't be applied automatically."))
                 }
             }
     }
@@ -50,7 +53,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     private func switchTo(_ profile: AccountProfile) {
         guard !container.accountSwitch.isSwitching else { return }
         guard let shell = AccountShellInstaller.defaultShell() else {
-            error = "Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically."
+            error = L10n.accounts("Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically.")
             AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
                                   localContext: "Login shell could not be detected; account switch not applied")
             return
@@ -62,7 +65,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
         ) {
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
             guard status.canSwitch else {
-                error = status.message ?? "Sign in again before switching to this account."
+                error = status.message ?? L10n.accounts("Sign in again before switching to this account.")
                 let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
                 AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
                                       localContext: "Account switch requires sign-in; account switch not applied")
@@ -81,7 +84,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
             AppDiagnostics.record(.accountSwitch, result: .success, providerID: profile.family)
         } onFailure: { switchError in
             AppDiagnostics.failure(.accountSwitch, error: switchError, providerID: profile.family)
-            error = "Couldn't switch to \(profile.label): \(switchError.localizedDescription)"
+            error = L10n.accounts("Couldn't switch to %@: %@", profile.label, UserFacingErrors.message(switchError))
         }
     }
 }

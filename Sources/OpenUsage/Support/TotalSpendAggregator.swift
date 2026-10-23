@@ -14,9 +14,9 @@ enum TotalSpendPeriod: String, CaseIterable, Identifiable, Sendable {
     /// period 스위처용 compact segment 제목 — "Last 30 Days"는 320pt popover의 3분할에 안 들어감.
     var shortLabel: String {
         switch self {
-        case .today: "Today"
-        case .yesterday: "Yesterday"
-        case .last30: "30 Days"
+        case .today: L10n.metrics("Today")
+        case .yesterday: L10n.metrics("Yesterday")
+        case .last30: L10n.metrics("30 Days")
         }
     }
 }
@@ -33,18 +33,18 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .cost: "Cost"
-        case .costPerMtok: "Cost/MTok"
-        case .tokens: "Tokens"
+        case .cost: L10n.metrics("Cost")
+        case .costPerMtok: L10n.metrics("Cost/MTok")
+        case .tokens: L10n.metrics("Tokens")
         }
     }
 
     /// 선택된 period에 해당 metric의 provider가 없을 때의 empty-state 문구.
     var emptyMessage: String {
         switch self {
-        case .cost: "No cost data for this period"
-        case .costPerMtok: "No cost-per-token data for this period"
-        case .tokens: "No token data for this period"
+        case .cost: L10n.metrics("No cost data for this period")
+        case .costPerMtok: L10n.metrics("No cost-per-token data for this period")
+        case .tokens: L10n.metrics("No token data for this period")
         }
     }
 

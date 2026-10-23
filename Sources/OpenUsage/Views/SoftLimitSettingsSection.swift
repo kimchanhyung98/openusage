@@ -10,29 +10,29 @@ struct SoftLimitSettingsSection: View {
     var body: some View {
         @Bindable var settings = settings
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text("Soft Limit")
+            Text(L10n.settings("Soft Limit"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
             VStack(spacing: 0) {
                 HStack {
-                    Text("Enabled")
+                    Text(L10n.settings("Enabled"))
                     Spacer(minLength: 8)
                     Toggle("", isOn: Binding(
                         get: { settings.enabled },
                         set: { if $0 { confirmActivation = true } else { settings.enabled = false } }
                     ))
                     .settingsSwitchStyle()
-                    .accessibilityLabel("Enable Soft Limit")
+                    .accessibilityLabel(L10n.settings("Enable Soft Limit"))
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, density.controlRowPadding)
 
                 if settings.enabled {
                     HStack {
-                        Text("Window")
+                        Text(L10n.settings("Window"))
                         Spacer(minLength: 8)
-                        Picker("Window", selection: $settings.window) {
+                        Picker(L10n.settings("Window"), selection: $settings.window) {
                             ForEach(SoftLimitWindow.allCases, id: \.self) { window in
                                 Text(window.label).tag(window)
                             }
@@ -44,11 +44,11 @@ struct SoftLimitSettingsSection: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, density.controlRowPadding)
                     SoftLimitThresholdField(settings: settings)
-                    notice("Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations.")
+                    notice(L10n.settings("Uses fresh quota data after the next successful refresh. Cancellation requires a verified client/account connection and must preserve apps, terminals, and conversations."))
                     ForEach(providers.filter { coordinator.status(for: $0.id).phase == .failed }) { provider in
-                        notice("\(provider.displayName): \(coordinator.status(for: provider.id).message)")
+                        notice(L10n.settings("%@: %@", provider.displayName, coordinator.status(for: provider.id).message))
                     }
-                    DisclosureGroup("Cancellation Status") {
+                    DisclosureGroup(L10n.settings("Cancellation Status")) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(providers) { provider in
                                 VStack(alignment: .leading, spacing: 2) {
@@ -65,14 +65,14 @@ struct SoftLimitSettingsSection: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 8)
                 }
-                notice("The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet.")
-                DisclosureGroup("Connect Codex") {
+                notice(L10n.settings("The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet."))
+                DisclosureGroup(L10n.settings("Connect Codex")) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Start the local server, then open a Codex terminal connected to it:")
+                        Text(L10n.settings("Start the local server, then open a Codex terminal connected to it:"))
                         Text("codex app-server daemon start\ncodex --remote unix://")
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
-                        Text("Existing independent CLI, app, and IDE sessions are not connected automatically. OpenUsage does not restart them.")
+                        Text(L10n.settings("Existing independent CLI, app, and IDE sessions are not connected automatically. OpenUsage does not restart them."))
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -84,11 +84,11 @@ struct SoftLimitSettingsSection: View {
             }
             .cardSurface()
         }
-        .alert("Enable Soft Limit?", isPresented: $confirmActivation) {
-            Button("Enable", role: .destructive) { settings.enabled = true }
-            Button("Cancel", role: .cancel) {}
+        .alert(L10n.settings("Enable Soft Limit?"), isPresented: $confirmActivation) {
+            Button(L10n.settings("Enable"), role: .destructive) { settings.enabled = true }
+            Button(L10n.settings("Cancel"), role: .cancel) {}
         } message: {
-            Text("Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected.")
+            Text(L10n.settings("Shows the limit guide and allows cancellation only for verified client/account connections. The current Codex connection is not account-verified and will not cancel tasks. Unconnected sessions and unsupported providers are not protected."))
         }
     }
 

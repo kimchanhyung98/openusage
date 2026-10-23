@@ -59,15 +59,23 @@ enum ProgressFormat: Hashable, Sendable, Codable {
     }
 }
 
-/// `.chart` line의 하루치 column — 값, 축 label, hover용 pre-format readout.
-/// `valueLabel`은 producer가 format — chart는 이미 가격 계산된 숫자의 dumb renderer.
+/// `.chart` line의 하루치 column — 기존 출력 문자열과 표시 시 재포맷할 원본 날짜·수량.
+/// `date`는 이전 캐시와 호환되는 선택 필드이며 local HTTP API에서 제외.
 struct MetricChartPoint: Hashable, Sendable, Codable {
     var value: Double
     var label: String
     var valueLabel: String?
+    var date: Date? = nil
 
-    /// 하루치 hover readout — producer의 pre-format label, 없으면 compact token count fallback.
-    /// 단일 정의 — inline sparkline과 detail popover의 format 불일치 방지.
+    var localizedLabel: String {
+        date.map { Formatters.monthDayLabel($0) } ?? label
+    }
+
+    var localizedReadout: String {
+        MetricFormatter.labelledValue(MetricFormatter.number(value, kind: .count, style: .row), label: "tokens")
+    }
+
+    /// 기존 호출·출력 계약용 영어 readout. 화면은 `localizedReadout` 사용.
     var readout: String {
         valueLabel ?? (MetricFormatter.number(value, kind: .count, style: .row) + " tokens")
     }

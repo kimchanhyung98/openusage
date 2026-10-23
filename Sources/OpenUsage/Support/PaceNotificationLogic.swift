@@ -14,9 +14,9 @@ extension PaceMilestone {
     /// Settings 행과 알림 제목이 공유하는 사용자 표시 라벨(의도적으로 일치).
     var settingLabel: String {
         switch self {
-        case .underTenPercent: return "Almost Out"
-        case .healthyToClose: return "Cutting It Close"
-        case .closeToRunningOut: return "Will Run Out"
+        case .underTenPercent: return L10n.metrics("Almost Out")
+        case .healthyToClose: return L10n.metrics("Cutting It Close")
+        case .closeToRunningOut: return L10n.metrics("Will Run Out")
         }
     }
 
@@ -26,18 +26,18 @@ extension PaceMilestone {
     /// 알림 본문 — 평이한 판정 문구. subtitle이 provider + metric을 실으므로 본문은 어떤 metric에도 맞는 일반형 유지.
     var body: String {
         switch self {
-        case .underTenPercent: return "Under 10% usage remaining for this window."
-        case .healthyToClose: return "Projected to finish close to your limit."
-        case .closeToRunningOut: return "Projected to finish before the limit resets."
+        case .underTenPercent: return L10n.metrics("Under 10% usage remaining for this window.")
+        case .healthyToClose: return L10n.metrics("Projected to finish close to your limit.")
+        case .closeToRunningOut: return L10n.metrics("Projected to finish before the limit resets.")
         }
     }
 
     /// 발화 조건을 설명하는 Settings 한 줄 tooltip(행 옆 (i)).
     var tooltip: String {
         switch self {
-        case .underTenPercent: return "Alert when a limit drops below 10% remaining."
-        case .healthyToClose: return "Alert when a limit is projected to finish with little left."
-        case .closeToRunningOut: return "Alert when a limit is projected to finish before it resets."
+        case .underTenPercent: return L10n.metrics("Alert when a limit drops below 10% remaining.")
+        case .healthyToClose: return L10n.metrics("Alert when a limit is projected to finish with little left.")
+        case .closeToRunningOut: return L10n.metrics("Alert when a limit is projected to finish before it resets.")
         }
     }
 }

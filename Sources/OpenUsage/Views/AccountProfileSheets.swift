@@ -39,17 +39,17 @@ struct AccountAddSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Add \(familyTitle) Account")
+                Text(L10n.accounts("Add %@ Account", familyTitle))
                     .font(.title3.weight(.semibold))
                 Spacer(minLength: 12)
-                Button("Cancel") {
+                Button(L10n.accounts("Cancel")) {
                     signInTask?.cancel()
                     dismiss()
                 }
                 .buttonStyle(.borderless)
             }
 
-            Picker("Provider", selection: $family) {
+            Picker(L10n.accounts("Provider"), selection: $family) {
                 Text("Claude").tag("claude")
                 Text("Codex").tag("codex")
             }
@@ -58,8 +58,8 @@ struct AccountAddSheet: View {
 
             Text(
                 isFirstAccount
-                    ? "If you're already signed in, OpenUsage imports that account without another login. Otherwise the official \(familyTitle) sign-in opens in your browser."
-                    : "The official \(familyTitle) sign-in opens in your browser. Your current account and terminal sessions stay unchanged."
+                    ? L10n.accounts("If you're already signed in, OpenUsage imports that account without another login. Otherwise the official %@ sign-in opens in your browser.", familyTitle)
+                    : L10n.accounts("The official %@ sign-in opens in your browser. Your current account and terminal sessions stay unchanged.", familyTitle)
             )
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -72,7 +72,7 @@ struct AccountAddSheet: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Waiting for the \(familyTitle) sign-in to finish…")
+                    Text(L10n.accounts("Waiting for the %@ sign-in to finish…", familyTitle))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -85,7 +85,7 @@ struct AccountAddSheet: View {
 
             HStack {
                 Spacer(minLength: 0)
-                Button(phase == .signingIn ? "Signing In…" : "Add Account") {
+                Button(L10n.accounts(phase == .signingIn ? "Signing In…" : "Add Account")) {
                     addAccount()
                 }
                 .glassButtonStyle(prominent: true)
@@ -143,14 +143,14 @@ struct AccountAddSheet: View {
                     AppDiagnostics.record(.accountAdd, result: .failure, category: .subprocess, providerID: family,
                                           localContext: "Sign-in process exited with status \(code); no account added")
                     if let profileID { try? importer.removeSignInWorkspace(family: family, profileID: profileID) }
-                    phase = .failed("The \(familyTitle) sign-in did not complete. Nothing was added — try again.")
+                    phase = .failed(L10n.accounts("The %@ sign-in did not complete. Nothing was added — try again.", familyTitle))
                     return
                 }
                 if let profileID {
                     guard let credential = try importer.readWorkspaceCredential(family: family, profileID: profileID) else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
                         try? importer.removeSignInWorkspace(family: family, profileID: profileID)
-                        phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
+                        phase = .failed(L10n.accounts("The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return
                     }
                     // 새 profile은 등록만 하고 선택하지 않음 — add가 새 터미널의 사용 계정을 조용히 바꾸지 않게 보장.
@@ -164,7 +164,7 @@ struct AccountAddSheet: View {
                 } else {
                     guard try importer.importDefaultAccount(family: family, into: store) != nil else {
                         AppDiagnostics.record(.accountAdd, result: .failure, category: .authInvalid, providerID: family)
-                        phase = .failed("The \(familyTitle) sign-in finished without a usable credential. Nothing was added.")
+                        phase = .failed(L10n.accounts("The %@ sign-in finished without a usable credential. Nothing was added.", familyTitle))
                         return
                     }
                 }
@@ -191,11 +191,7 @@ struct AccountAddSheet: View {
 
     private func fail(_ error: any Error) {
         AppDiagnostics.failure(.accountAdd, error: error, providerID: family)
-        if let error = error as? AccountProfileError {
-            phase = .failed(error.userMessage)
-        } else {
-            phase = .failed(error.localizedDescription)
-        }
+        phase = .failed(UserFacingErrors.message(error))
     }
 }
 
@@ -241,19 +237,19 @@ struct AccountProfileManagementSheet: View {
         let status = accountStatus
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Manage \(familyTitle) Account")
+                Text(L10n.accounts("Manage %@ Account", familyTitle))
                     .font(.title3.weight(.semibold))
                 Spacer(minLength: 12)
-                Button("Done") {
+                Button(L10n.accounts("Done")) {
                     save()
                 }
                 .buttonStyle(.borderless)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Account Name")
+                Text(L10n.accounts("Account Name"))
                     .font(.callout.weight(.semibold))
-                TextField("Account Name", text: $profileLabel)
+                TextField(L10n.accounts("Account Name"), text: $profileLabel)
                     .textFieldStyle(.roundedBorder)
                 if let renameError {
                     Text(renameError)
@@ -265,7 +261,7 @@ struct AccountProfileManagementSheet: View {
             HStack(spacing: 8) {
                 AccountStatusBadge(state: status)
                 Spacer(minLength: 8)
-                Button(isSigningIn ? "Signing In…" : "Sign In Again") {
+                Button(L10n.accounts(isSigningIn ? "Signing In…" : "Sign In Again")) {
                     signInAgain()
                 }
                 .buttonStyle(.bordered)
@@ -289,7 +285,7 @@ struct AccountProfileManagementSheet: View {
 
             HStack {
                 Spacer(minLength: 8)
-                Button("Remove Account", role: .destructive) {
+                Button(L10n.accounts("Remove Account"), role: .destructive) {
                     guard !container.accountSwitch.isSwitching else { return }
                     isRemoveConfirmationPresented = true
                 }
@@ -300,16 +296,16 @@ struct AccountProfileManagementSheet: View {
         .padding(22)
         .frame(width: 360)
         .alert(
-            "Remove \(profile.label)?",
+            L10n.accounts("Remove %@?", profile.label),
             isPresented: $isRemoveConfirmationPresented
         ) {
-            Button("Remove Account", role: .destructive) {
+            Button(L10n.accounts("Remove Account"), role: .destructive) {
                 removeAccount()
             }
             .disabled(isSigningIn || container.accountSwitch.isSwitching)
-            Button("Cancel", role: .cancel) {}
+            Button(L10n.accounts("Cancel"), role: .cancel) {}
         } message: {
-            Text("OpenUsage deletes its saved Keychain authentication and sign-in workspace for this account. Your Claude and Codex settings, sessions, and the current terminal login stay in place.")
+            Text(L10n.accounts("OpenUsage deletes its saved Keychain authentication and sign-in workspace for this account. Your Claude and Codex settings, sessions, and the current terminal login stay in place."))
         }
         .onDisappear {
             signInTask?.cancel()
@@ -321,10 +317,8 @@ struct AccountProfileManagementSheet: View {
             try store.rename(profileID: profile.id, to: profileLabel)
             onChanged()
             dismiss()
-        } catch let error as AccountProfileError {
-            renameError = error.userMessage
         } catch {
-            renameError = error.localizedDescription
+            renameError = UserFacingErrors.message(error)
         }
     }
 
@@ -343,7 +337,7 @@ struct AccountProfileManagementSheet: View {
                 let code = try await launcher.runLogin(family: profile.family, home: home)
                 try Task.checkCancellation()
                 guard code == 0 else {
-                    actionError = "The \(familyTitle) sign-in did not complete. The saved account is unchanged."
+                    actionError = L10n.accounts("The %@ sign-in did not complete. The saved account is unchanged.", familyTitle)
                     AppDiagnostics.record(.accountSignIn, result: .failure, category: .subprocess, providerID: profile.family,
                                           localContext: "Sign-in process exited with status \(code); saved account unchanged")
                     return
@@ -360,7 +354,7 @@ struct AccountProfileManagementSheet: View {
                 // sheet close로 취소됨 — 변경 없음.
             } catch {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
-                actionError = error.localizedDescription
+                actionError = UserFacingErrors.message(error)
             }
         }
     }
@@ -372,19 +366,15 @@ struct AccountProfileManagementSheet: View {
         // 다른 profile이 존재하는 동안 선택된 profile은 제거 불가 — 먼저 전환 필요.
         if store.preferredProfileID(family: profile.family) == profile.id,
            store.profiles(family: profile.family).count > 1 {
-            actionError = AccountProfileError.removeSelectedProfile.userMessage
+            actionError = UserFacingErrors.message(AccountProfileError.removeSelectedProfile)
             return
         }
         do {
             try AccountCredentialImporter().removeAccount(profile, from: store)
             AppDiagnostics.record(.accountRemove, result: .success, providerID: profile.family)
-        } catch let error as AccountProfileError {
-            AppDiagnostics.failure(.accountRemove, error: error, providerID: profile.family)
-            actionError = error.userMessage
-            return
         } catch {
             AppDiagnostics.failure(.accountRemove, error: error, providerID: profile.family)
-            actionError = error.localizedDescription
+            actionError = UserFacingErrors.message(error)
             return
         }
         onChanged()

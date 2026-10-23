@@ -106,10 +106,10 @@ enum MenuBarContentBuilder {
     /// tray 전용 label 축약(dashboard는 전체 이름 유지) — 긴 시간 window metric은 한 글자로, 미지정 label은 통과.
     private static func trayLabel(_ metricLabel: String) -> String {
         switch metricLabel.lowercased() {
-        case "today": return "T"
-        case "yesterday": return "Y"
-        case "last 30 days": return "M"
-        default: return metricLabel
+        case "today": return L10n.metrics("T")
+        case "yesterday": return L10n.metrics("Y")
+        case "last 30 days": return L10n.metrics("M")
+        default: return L10n.metrics(metricLabel)
         }
     }
 }

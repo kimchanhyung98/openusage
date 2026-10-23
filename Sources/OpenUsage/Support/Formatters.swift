@@ -14,25 +14,25 @@ enum Formatters {
     }
 
     /// 앱 공통 compact 월/일 표기(예: "Jun 21") — localized, 연도 없음.
-    static func monthDayLabel(_ date: Date, locale: Locale = .current) -> String {
+    static func monthDayLabel(_ date: Date, locale: Locale = L10n.locale) -> String {
         date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
     }
 
     /// Reset Watch deadline — 날짜 순서는 locale, 시각은 앱의 Auto/12h/24h 설정 준수.
     static func resetWatchDeadlineLabel(
         at date: Date,
-        locale: Locale = .current,
+        locale: Locale = L10n.locale,
         timeFormat: TimeFormatSetting = .current
     ) -> String {
-        "By \(monthDayTimeLabel(date, locale: locale, timeFormat: timeFormat))"
+        L10n.metrics("By %@", monthDayTimeLabel(date, locale: locale, timeFormat: timeFormat))
     }
 
     static func monthDayTimeLabel(
         _ date: Date,
-        locale: Locale = .current,
+        locale: Locale = L10n.locale,
         timeFormat: TimeFormatSetting = .current
     ) -> String {
-        "\(monthDayLabel(date, locale: locale)) at \(timeFormat.shortTime(date, base: locale))"
+        L10n.metrics("%@ at %@", monthDayLabel(date, locale: locale), timeFormat.shortTime(date, base: locale))
     }
 
     /// 모든 "<verb> + when" 라벨이 공유하는 mode-aware deadline 문구.
@@ -45,10 +45,10 @@ enum Formatters {
         calendar: Calendar = .current
     ) -> String? {
         guard let when = whenLabel(at: date, mode: mode, now: now, calendar: calendar) else { return nil }
-        if when == imminent { return "\(prefix) \(when)" }
+        if when == imminent { return L10n.metrics("\(prefix) soon") }
         switch mode {
-        case .relative: return "\(prefix) in \(when)"
-        case .absolute: return "\(prefix) \(when)"
+        case .relative: return L10n.metrics("\(prefix) in %@", when)
+        case .absolute: return L10n.metrics("\(prefix) %@", when)
         }
     }
 
@@ -73,15 +73,15 @@ enum Formatters {
                 to: calendar.startOfDay(for: date)
             ).day ?? 0
             // wall-clock 부분은 사용자의 Auto/12h/24h 시간 형식 설정 준수.
-            let time = TimeFormatSetting.current.shortTime(date)
-            if dayDiff <= 0 { return "today at \(time)" }
-            if dayDiff == 1 { return "tomorrow at \(time)" }
+            let time = TimeFormatSetting.current.shortTime(date, base: L10n.locale)
+            if dayDiff <= 0 { return L10n.metrics("today at %@", time) }
+            if dayDiff == 1 { return L10n.metrics("tomorrow at %@", time) }
             return monthDayTimeLabel(date)
         }
     }
 
     /// past-due이거나 ~5분 이내라 countdown이 무의미한 deadline의 축약 문구.
-    static let imminent = "soon"
+    static var imminent: String { L10n.metrics("soon") }
 
     static func resetRelativeLabel(until resetsAt: Date, now: Date = Date()) -> String? {
         deadlineLabel("Resets", at: resetsAt, mode: .relative, now: now)
@@ -101,11 +101,11 @@ enum Formatters {
         let minutes = totalMinutes % 60
 
         if days > 0 {
-            return "\(days)d \(hours)h"
+            return L10n.metrics("%lldd %lldh", days, hours)
         }
         if hours > 0 {
-            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+            return minutes > 0 ? L10n.metrics("%lldh %lldm", hours, minutes) : L10n.metrics("%lldh", hours)
         }
-        return "\(minutes)m"
+        return L10n.metrics("%lldm", minutes)
     }
 }

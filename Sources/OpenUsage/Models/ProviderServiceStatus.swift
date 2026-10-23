@@ -24,7 +24,11 @@ struct ProviderServiceIssue: Equatable, Sendable {
     let checkedAt: Date
 
     func accessibilityValue(providerName: String) -> String {
-        "\(providerName) reports \(severity.reportPhrase) for \(componentName)."
+        switch severity {
+        case .degraded: L10n.metrics("%@ reports degraded performance for %@.", providerName, componentName)
+        case .partial: L10n.metrics("%@ reports a partial outage for %@.", providerName, componentName)
+        case .major: L10n.metrics("%@ reports a major outage for %@.", providerName, componentName)
+        }
     }
 }
 

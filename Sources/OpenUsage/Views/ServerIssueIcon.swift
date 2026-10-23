@@ -15,7 +15,7 @@ struct ServerIssueIcon: View {
                 dimensions[.bottom] - 2
             }
             .accessibilityElement()
-            .accessibilityLabel("Service Issue")
+            .accessibilityLabel(L10n.dashboard("Service Issue"))
             .accessibilityValue(issue.accessibilityValue(providerName: providerName))
     }
 }

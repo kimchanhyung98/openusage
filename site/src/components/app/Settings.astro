@@ -64,7 +64,7 @@ const { nav, uid, onboarding = false } = Astro.props;
                     ))}
                 </span>
               </div>
-              {note && <p class="am-note">{note}</p>}
+              {note && <p class="am-note" data-language-notice={id === 'language' ? true : undefined} hidden={id === 'language'}>{note}</p>}
             </>
           ))}
           {

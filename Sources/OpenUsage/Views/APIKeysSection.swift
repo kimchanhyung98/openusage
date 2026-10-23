@@ -24,7 +24,7 @@ struct APIKeysSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: density.headerToCardSpacing) {
-            Text("API Key")
+            Text(L10n.customize("API Key"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 8)
@@ -51,7 +51,7 @@ struct APIKeysSection: View {
             Text(provider.provider.displayName)
             Spacer(minLength: 8)
             statusDot
-            Button(isOpen ? "Done" : (status == .notSet ? "Add" : "Edit")) {
+            Button(L10n.customize(isOpen ? "Done" : (status == .notSet ? "Add" : "Edit"))) {
                 toggleExpand()
             }
             .buttonStyle(.bordered)
@@ -75,17 +75,17 @@ struct APIKeysSection: View {
             if status == .notSet {
                 // 키 전무: 처음부터 편집 가능
                 keyField(editable: true)
-                primaryButton("Save", disabled: !hasInput) { save() }
+                primaryButton(L10n.customize("Save"), disabled: !hasInput) { save() }
             } else if status == .fromEnvironment {
                 // env 키만 존재: "Override" 체크 후 편집 가능
                 keyField(editable: overrideChecked)
                 if overrideChecked {
                     HStack(spacing: 8) {
-                        primaryButton("Save", disabled: !hasInput) { save() }
-                        ghostButton("Cancel") { overrideChecked = false; input = "" }
+                        primaryButton(L10n.customize("Save"), disabled: !hasInput) { save() }
+                        ghostButton(L10n.customize("Cancel")) { overrideChecked = false; input = "" }
                     }
                 } else {
-                    Toggle("Override With a Custom Key", isOn: $overrideChecked)
+                    Toggle(L10n.customize("Override With a Custom Key"), isOn: $overrideChecked)
                         .toggleStyle(.checkbox)
                         .font(.caption)
                 }
@@ -142,9 +142,9 @@ struct APIKeysSection: View {
 
     private var sourceHint: String {
         switch status {
-        case .fromEnvironment: "From Your Environment"
-        case .saved: "Saved in App"
-        case .overrideActive: "Custom Key"
+        case .fromEnvironment: L10n.customize("From Your Environment")
+        case .saved: L10n.customize("Saved in App")
+        case .overrideActive: L10n.customize("Custom Key")
         case .notSet: ""
         }
     }
@@ -205,7 +205,7 @@ struct APIKeysSection: View {
             refreshStatus()
             triggerRefresh()
         } catch {
-            actionError = error.localizedDescription
+            actionError = UserFacingErrors.message(error)
             AppLog.error(.auth, "API key save failed for \(provider.provider.id): \(error.localizedDescription)")
         }
     }
@@ -217,7 +217,7 @@ struct APIKeysSection: View {
             refreshStatus()
             triggerRefresh()
         } catch {
-            actionError = error.localizedDescription
+            actionError = UserFacingErrors.message(error)
             AppLog.error(.auth, "API key delete failed for \(provider.provider.id): \(error.localizedDescription)")
         }
     }
@@ -244,7 +244,7 @@ private struct APIKeyField: View {
     var body: some View {
         HStack(spacing: 4) {
             if let onClear {
-                fieldIcon("xmark.circle.fill", action: onClear, label: "Clear")
+                fieldIcon("xmark.circle.fill", action: onClear, label: L10n.customize("Clear"))
             }
             Group {
                 if readOnly {
@@ -257,7 +257,7 @@ private struct APIKeyField: View {
                 }
             }
             .textFieldStyle(.roundedBorder)
-            fieldIcon(reveal ? "eye.slash" : "eye", action: onReveal, label: reveal ? "Hide" : "Show")
+            fieldIcon(reveal ? "eye.slash" : "eye", action: onReveal, label: L10n.customize(reveal ? "Hide" : "Show"))
         }
     }
 

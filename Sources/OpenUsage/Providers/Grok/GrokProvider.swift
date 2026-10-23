@@ -119,7 +119,8 @@ final class GrokProvider: ProviderRuntime {
             lines: mapped.lines,
             refreshedAt: now(),
             usageHistory: usageHistory,
-            warning: warning
+            warning: warning,
+            metricPresentations: mapped.metricPresentations
         )
     }
 

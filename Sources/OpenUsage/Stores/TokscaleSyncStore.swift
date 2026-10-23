@@ -367,26 +367,23 @@ final class TokscaleSyncStore {
     private static func message(for failure: TokscaleSyncFailure, exitCode: Int32?) -> String {
         switch failure {
         case .bunCheck:
-            "OpenUsage couldn’t check for Bun. Try again."
+            L10n.errors("OpenUsage couldn’t check for Bun. Try again.")
         case .bunInstallation:
-            "OpenUsage couldn’t install or verify Bun. Install it manually and try again."
+            L10n.errors("OpenUsage couldn’t install or verify Bun. Install it manually and try again.")
         case .bunxMissing:
-            "Bun is installed, but bunx couldn’t be found. Repair the Bun installation and try again."
+            L10n.errors("Bun is installed, but bunx couldn’t be found. Repair the Bun installation and try again.")
         case .submit:
-            exitCode.map { "Tokscale finished with status \($0). Review the command output and try again." }
-                ?? "OpenUsage couldn’t run Tokscale. Try again."
+            exitCode.map { L10n.errors("Tokscale finished with status %@. Review the command output and try again.", String($0)) }
+                ?? L10n.errors("OpenUsage couldn’t run Tokscale. Try again.")
         case .login:
-            exitCode.map { "Tokscale login finished with status \($0). Review the command output and try again." }
-                ?? "OpenUsage couldn’t run Tokscale login. Try again."
+            exitCode.map { L10n.errors("Tokscale login finished with status %@. Review the command output and try again.", String($0)) }
+                ?? L10n.errors("OpenUsage couldn’t run Tokscale login. Try again.")
         }
     }
 
     private static func safeBunMessage(for error: Error, fallbackFailure: TokscaleSyncFailure) -> String {
-        if let error = error as? BunInstallerError, let description = error.errorDescription {
-            return description
-        }
-        if let error = error as? StreamingProcessRunnerError, let description = error.errorDescription {
-            return description
+        if error is BunInstallerError || error is StreamingProcessRunnerError {
+            return UserFacingErrors.message(error)
         }
         return message(for: fallbackFailure, exitCode: nil)
     }

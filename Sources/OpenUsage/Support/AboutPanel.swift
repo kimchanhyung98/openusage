@@ -20,19 +20,14 @@ enum AboutPanel {
             .paragraphStyle: paragraph,
         ]
 
-        let credits = NSMutableAttributedString()
-        credits.append(NSAttributedString(string: "Fork maintained by ", attributes: base))
-        credits.append(link("kimchanhyung98", "https://github.com/kimchanhyung98", base: base))
-        credits.append(NSAttributedString(string: "\n\nOpen source on ", attributes: base))
-        credits.append(link("GitHub", "https://github.com/kimchanhyung98/openusage", base: base))
-        return credits
-    }
-
-    private static func link(_ text: String, _ urlString: String, base: [NSAttributedString.Key: Any]) -> NSAttributedString {
-        var attributes = base
-        if let url = URL(string: urlString) {
-            attributes[.link] = url
+        let text = L10n.common("Fork maintained by %@\n\nOpen source on %@", "kimchanhyung98", "GitHub")
+        let credits = NSMutableAttributedString(string: text, attributes: base)
+        for (label, url) in [
+            ("kimchanhyung98", "https://github.com/kimchanhyung98"),
+            ("GitHub", "https://github.com/kimchanhyung98/openusage"),
+        ] {
+            credits.addAttribute(.link, value: url, range: (text as NSString).range(of: label))
         }
-        return NSAttributedString(string: text, attributes: attributes)
+        return credits
     }
 }

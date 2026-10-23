@@ -5,6 +5,7 @@ struct ClaudeMappedUsage: Equatable, Sendable, Codable {
     var lines: [MetricLine]
     /// usage에 동반되는 provider header notice(amber 삼각형 + tooltip) — clean fetch면 `nil`.
     var warning: String?
+    var warningPresentation: LocalizedMessage?
     var liveQuotaObservedAt: Date?
     var quotaObservedAt: Date?
     var retryAfter: Date?
@@ -48,7 +49,8 @@ enum ClaudeUsageMapper {
                 .badge(label: "Status", text: waitText, colorHex: "#F59E0B"),
                 rateLimitedNote(retryAfterSeconds: retryAfterSeconds)
             ],
-            warning: rateLimitedWarning(retryAfterSeconds: retryAfterSeconds)
+            warning: rateLimitedWarning(retryAfterSeconds: retryAfterSeconds),
+            warningPresentation: rateLimitedWarningPresentation(retryAfterSeconds: retryAfterSeconds)
         )
     }
 
@@ -58,6 +60,17 @@ enum ClaudeUsageMapper {
         let base = "Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait."
         guard let retryText = retryAfterSeconds.map(formatRateLimitMinutes) else { return base }
         return "\(base) Retrying in ~\(retryText)."
+    }
+
+    static func rateLimitedWarningPresentation(retryAfterSeconds: Int?) -> LocalizedMessage {
+        guard let retryAfterSeconds else {
+            return .init("Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait.")
+        }
+        guard retryAfterSeconds > 0 else {
+            return .init("Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~now.")
+        }
+        let minutes = Int(ceil(Double(retryAfterSeconds) / 60))
+        return .init("Usage updates are rate limited by Anthropic. Automatic and manual refreshes will wait. Retrying in ~%@m.", [String(minutes)])
     }
 
     /// `user:profile` scope 없는 로그인(inference 전용 토큰)의 header 경고 — 재로그인으로

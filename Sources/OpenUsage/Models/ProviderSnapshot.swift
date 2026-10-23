@@ -19,6 +19,9 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     /// 성공 시 항상 nil, 오류 snapshot은 cache되지 않아 미영속.
     var errorCategory: ErrorCategory?
     var authenticationIssue: ProviderAuthenticationIssue?
+    var errorPresentation: LocalizedMessage? = nil
+    var warningPresentation: [LocalizedMessage]?
+    var metricPresentations: [String: LocalizedMessage]?
     /// 성공한 응답에 포함된 부분 실패 여부 — 이전 cache의 누락 필드는 nil.
     var isDegraded: Bool?
     /// 실제 quota 응답 시각 — 내부 last-good 재사용 시 제거, nil이면 자동 취소 판정 제외.
@@ -34,7 +37,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     private enum CodingKeys: String, CodingKey {
         case providerID, displayName, plan, lines, refreshedAt, usageHistory, warning
         case errorCategory, authenticationIssue, isDegraded, liveQuotaObservedAt
-        case quotaObservedAt, usageRetryAfter
+        case quotaObservedAt, usageRetryAfter, warningPresentation, metricPresentations
     }
 
     init(
@@ -47,6 +50,9 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         warning: String? = nil,
         errorCategory: ErrorCategory? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
+        errorPresentation: LocalizedMessage? = nil,
+        warningPresentation: [LocalizedMessage]? = nil,
+        metricPresentations: [String: LocalizedMessage]? = nil,
         isDegraded: Bool? = nil,
         liveQuotaObservedAt: Date? = nil,
         quotaObservedAt: Date? = nil,
@@ -62,11 +68,19 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.warning = warning
         self.errorCategory = errorCategory
         self.authenticationIssue = authenticationIssue
+        self.errorPresentation = errorPresentation
+        self.warningPresentation = warningPresentation ?? warning.map { [LocalizedMessage($0)] }
+        self.metricPresentations = metricPresentations
         self.isDegraded = isDegraded
         self.liveQuotaObservedAt = liveQuotaObservedAt
         self.quotaObservedAt = quotaObservedAt
         self.usageRetryAfter = usageRetryAfter
         self.codexResetClaimBinding = codexResetClaimBinding
+    }
+
+    var localizedWarning: String? {
+        guard let warning else { return nil }
+        return warningPresentation?.map(\.localized).joined(separator: " ") ?? warning
     }
 
     func line(label: String) -> MetricLine? {
@@ -82,6 +96,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         refreshedAt: Date,
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
+        warningPresentation: [LocalizedMessage]? = nil,
+        metricPresentations: [String: LocalizedMessage]? = nil,
         authenticationIssue: ProviderAuthenticationIssue? = nil,
         isDegraded: Bool? = nil,
         liveQuotaObservedAt: Date? = nil,
@@ -98,6 +114,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             usageHistory: usageHistory,
             warning: warning,
             authenticationIssue: authenticationIssue,
+            warningPresentation: warningPresentation,
+            metricPresentations: metricPresentations,
             isDegraded: isDegraded,
             liveQuotaObservedAt: liveQuotaObservedAt,
             quotaObservedAt: quotaObservedAt,
@@ -113,7 +131,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             provider: provider,
             message: error.localizedDescription,
             category: (error as? CategorizedError)?.errorCategory ?? .other,
-            authenticationIssue: ProviderAuthenticationIssue(error: error)
+            authenticationIssue: ProviderAuthenticationIssue(error: error),
+            presentation: UserFacingErrors.presentation(error)
         )
     }
 
@@ -121,14 +140,16 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         provider: Provider,
         message: String,
         category: ErrorCategory? = nil,
-        authenticationIssue: ProviderAuthenticationIssue? = nil
+        authenticationIssue: ProviderAuthenticationIssue? = nil,
+        presentation: LocalizedMessage? = nil
     ) -> ProviderSnapshot {
         ProviderSnapshot(
             providerID: provider.id,
             displayName: provider.displayName,
             lines: [.badge(label: MetricLine.errorBadgeLabel, text: message, colorHex: "#EF4444")],
             errorCategory: category,
-            authenticationIssue: authenticationIssue
+            authenticationIssue: authenticationIssue,
+            errorPresentation: presentation
         )
     }
 }

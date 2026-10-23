@@ -28,7 +28,7 @@ struct ProviderListRow<Handle: View>: View {
                         .font(.system(size: density.headerPointSize, weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                    Text("\(metricCount) metrics")
+                    Text(L10n.customize(metricCount == 1 ? "%lld metric" : "%lld metrics", metricCount))
                         .font(.system(size: density.planBadgePointSize))
                         .foregroundStyle(.secondary)
                 }
@@ -49,7 +49,7 @@ struct ProviderListRow<Handle: View>: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open \(container.displayName(for: provider))")
+            .accessibilityLabel(L10n.customize("Open %@", container.displayName(for: provider)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, density.controlRowPadding)

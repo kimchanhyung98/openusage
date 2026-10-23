@@ -10,8 +10,8 @@ enum DensitySetting: String, Hashable, Sendable, CaseIterable {
 
     var label: String {
         switch self {
-        case .regular: return "Default"
-        case .compact: return "Compact"
+        case .regular: return L10n.settings("Default")
+        case .compact: return L10n.settings("Compact")
         }
     }
 

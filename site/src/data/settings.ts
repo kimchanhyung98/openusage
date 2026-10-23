@@ -34,6 +34,8 @@ export const settingGroups: SettingGroup[] = [
       { id: 'showTotalSpend', label: 'Show Total Spend', control: { kind: 'toggle', on: true } },
       { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
       { id: 'globalShortcut', label: 'Global Shortcut', control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
+      { id: 'language', label: 'Language', control: { kind: 'picker', value: 'English', options: ['English', '한국어', '日本語'] },
+        note: 'Restart OpenUsage to apply the language change.' },
     ],
   },
   {

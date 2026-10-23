@@ -20,21 +20,21 @@ extension WidgetDataStore {
         switch refreshResults[providerID] {
         case .failed(let failure):
             switch failure.authenticationIssue {
-            case .sessionExpired: return .sessionExpired(failure.message)
-            case .signInNeeded: return .signInNeeded(failure.message)
+            case .sessionExpired: return .sessionExpired(failure.localizedMessage)
+            case .signInNeeded: return .signInNeeded(failure.localizedMessage)
             case nil:
                 switch failure.category {
-                case .notLoggedIn, .authExpired, .authInvalid: return .signInNeeded(failure.message)
-                default: return .refreshFailed(failure.message)
+                case .notLoggedIn, .authExpired, .authInvalid: return .signInNeeded(failure.localizedMessage)
+                default: return .refreshFailed(failure.localizedMessage)
                 }
             }
         case .succeeded:
             let snapshot = localSnapshots[providerID]
             switch snapshot?.authenticationIssue {
-            case .sessionExpired: return .sessionExpired(snapshot?.warning ?? "Sign in again to restore usage.")
-            case .signInNeeded: return .signInNeeded(snapshot?.warning)
+            case .sessionExpired: return .sessionExpired(snapshot?.localizedWarning ?? L10n.errors("Sign in again to restore usage."))
+            case .signInNeeded: return .signInNeeded(snapshot?.localizedWarning)
             case nil:
-                if let warning = snapshot?.warning { return .refreshFailed(warning) }
+                if let warning = snapshot?.localizedWarning { return .refreshFailed(warning) }
                 return .ready
             }
         case nil:

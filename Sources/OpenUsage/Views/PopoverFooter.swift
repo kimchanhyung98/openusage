@@ -44,7 +44,7 @@ struct PopoverFooter: View {
     private var shareCopiedPill: some View {
         TransientPill(
             systemImage: "checkmark.circle.fill",
-            text: "Copied to clipboard",
+            text: L10n.dashboard("Copied to clipboard"),
             tint: Theme.positive,
             trigger: layout.shareConfirmationTrigger
         )
@@ -53,8 +53,8 @@ struct PopoverFooter: View {
     private var footerIdentity: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("OpenUsage \(AppInfo.version)")
-            if let notice = layout.pinLimitNotice {
-                Text(notice)
+            if layout.pinLimitNotice != nil {
+                Text(L10n.customize("Up to %lld stars per provider", LayoutStore.maxPinsPerProvider))
                     .foregroundStyle(Theme.notice)
                     .denyShake(trigger: layout.pinNoticeShakeTrigger, shakeOnAppear: true)
             } else {
@@ -85,7 +85,7 @@ struct PopoverFooter: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut("r", modifiers: .command)
-        .hoverTooltip("Refresh now (⌘R)")
+        .hoverTooltip(L10n.dashboard("Refresh now (⌘R)"))
         .disabled(isUpdating || container.accountSwitch.isSwitching)
     }
 

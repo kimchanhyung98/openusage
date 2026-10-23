@@ -38,7 +38,7 @@ struct HeaderView: View {
             menuItems
         } label: {
             HStack(spacing: 5) {
-                Text("Options")
+                Text(L10n.dashboard("Options"))
                     .font(.system(size: 13, weight: .semibold))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
@@ -59,12 +59,12 @@ struct HeaderView: View {
     @ViewBuilder
     private var menuItems: some View {
         Button { toggle(.customize) } label: {
-            Label("Customize", systemImage: "slider.horizontal.3")
+            Label(L10n.dashboard("Customize"), systemImage: "slider.horizontal.3")
         }
         .keyboardShortcut(.return, modifiers: [])
 
         Button { toggle(.settings) } label: {
-            Label("Settings", systemImage: "gearshape")
+            Label(L10n.dashboard("Settings"), systemImage: "gearshape")
         }
         .keyboardShortcut(",")
 
@@ -73,17 +73,17 @@ struct HeaderView: View {
         shareScreenshotMenu
 
         Button { updater.checkForUpdates() } label: {
-            Label("Check for Updates…", systemImage: "arrow.triangle.2.circlepath")
+            Label(L10n.dashboard("Check for Updates…"), systemImage: "arrow.triangle.2.circlepath")
         }
         .disabled(!updater.canCheckForUpdates)
 
         Divider()
 
         Button { AboutPanel.present() } label: {
-            Label("About OpenUsage", systemImage: "info.circle")
+            Label(L10n.dashboard("About OpenUsage"), systemImage: "info.circle")
         }
         Button(role: .destructive) { NSApplication.shared.terminate(nil) } label: {
-            Label("Quit OpenUsage", systemImage: "power")
+            Label(L10n.dashboard("Quit OpenUsage"), systemImage: "power")
         }
         .keyboardShortcut("q") // ⌘Q — 다른 소유자 없음, 항목 등록 안전
     }
@@ -96,7 +96,7 @@ struct HeaderView: View {
         Menu {
             if groups.isEmpty {
                 // 스크린샷 대상 없음 — 빈 서브메뉴 대신 비활성 항목 표시
-                Button("No Enabled Providers") {}
+                Button(L10n.dashboard("No Enabled Providers")) {}
                     .disabled(true)
             } else {
                 ForEach(groups) { group in
@@ -104,7 +104,7 @@ struct HeaderView: View {
                 }
             }
         } label: {
-            Label("Share Screenshot", systemImage: "square.and.arrow.up")
+            Label(L10n.dashboard("Share Screenshot"), systemImage: "square.and.arrow.up")
         }
     }
 

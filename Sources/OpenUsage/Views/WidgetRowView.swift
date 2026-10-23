@@ -82,7 +82,7 @@ struct WidgetRowView: View {
     /// copy는 secondary. 경고가 공간을 우선하고 제목이 truncate.
     private func boundedLabelRow(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
         HStack(spacing: 6) {
-            Text(rowData.title)
+            Text(rowData.localizedTitle)
                 .font(labelFont)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -94,7 +94,7 @@ struct WidgetRowView: View {
                     .font(supportingFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .accessibilityLabel("Community vote share: \(votes)")
+                    .accessibilityLabel(L10n.dashboard("Community vote share: %@", votes))
             }
         }
     }
@@ -104,12 +104,12 @@ struct WidgetRowView: View {
     private func warning(_ rowData: WidgetData, state: WidgetData.MeterState) -> some View {
         switch state {
         case .spent:
-            flameWarning(text: "Limit reached", state: state, accessibility: "Limit reached")
+            flameWarning(text: L10n.dashboard("Limit reached"), state: state, accessibility: L10n.dashboard("Limit reached"))
         case .runningOut(let eta, _):
             // `eta == nil`(float-edge)이면 flame 단독 표시 — projection은 tooltip에. 시간이 보이면
             // reset label처럼 클릭으로 전역 countdown/exact 모드 토글.
             flameWarning(text: eta, state: state,
-                         accessibility: eta ?? "Will reach limit",
+                         accessibility: eta ?? L10n.dashboard("Will reach limit"),
                          action: eta == nil ? nil : onToggleResetDisplay)
         case .closeToLimit(let spare, _):
             Spacer(minLength: 8)
@@ -131,10 +131,10 @@ struct WidgetRowView: View {
             }
         case .level(.warning) where rowData.isForecast:
             forecastWarningIcon("exclamationmark.triangle.fill", severity: .warning,
-                                accessibility: "Reset chance is high")
+                                accessibility: L10n.dashboard("Reset chance is high"))
         case .level(.critical) where rowData.isForecast:
             forecastWarningIcon("flame.fill", severity: .critical,
-                                accessibility: "Reset chance is very high")
+                                accessibility: L10n.dashboard("Reset chance is very high"))
         case .noData, .healthy, .level:
             EmptyView()
         }
@@ -318,7 +318,7 @@ struct WidgetRowView: View {
                 arrowEdge: .top
             ) {
                 if let breakdown = data.modelBreakdown {
-                    ModelUsageDetail(title: data.title, breakdown: breakdown) { inside in
+                    ModelUsageDetail(title: data.localizedTitle, breakdown: breakdown) { inside in
                         modelHover.detailHover(inside)
                     }
                 } else if data.showsResetExpiries {
@@ -352,15 +352,15 @@ struct WidgetRowView: View {
 
     private func expiryStatusAccessibilityLabel(_ severity: WidgetData.MeterSeverity) -> String {
         switch severity {
-        case .neutral, .normal: return "Reset credits expire in more than 7 days"
-        case .warning: return "A reset credit expires within 7 days"
-        case .critical: return "A reset credit expires within 48 hours"
+        case .neutral, .normal: return L10n.dashboard("Reset credits expire in more than 7 days")
+        case .warning: return L10n.dashboard("A reset credit expires within 7 days")
+        case .critical: return L10n.dashboard("A reset credit expires within 48 hours")
         }
     }
 
     private var labelColumn: some View {
         HStack(spacing: 4) {
-            Text(data.title)
+            Text(data.localizedTitle)
                 .font(.system(size: density.supportingPointSize, weight: .semibold))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
@@ -376,7 +376,7 @@ struct WidgetRowView: View {
                 .font(.system(size: density.supportingPointSize - 1))
                 .foregroundStyle(severityColor(.warning))
                 .hoverTooltip(data.unknownModelTooltip)
-                .accessibilityLabel("This period used a model with unknown pricing")
+                .accessibilityLabel(L10n.dashboard("This period used a model with unknown pricing"))
         }
     }
 

@@ -2,6 +2,7 @@ import Foundation
 
 struct GrokMappedUsage: Equatable, Sendable {
     var lines: [MetricLine]
+    var metricPresentations: [String: LocalizedMessage] = [:]
 }
 
 enum GrokUsageMapper {
@@ -32,7 +33,10 @@ enum GrokUsageMapper {
             text: config.onDemandCap > 0 ? "\(formatUnits(config.onDemandCap)) cap" : "Disabled",
             colorHex: config.onDemandCap > 0 ? "#22c55e" : "#a3a3a3"
         ))
-        return GrokMappedUsage(lines: lines)
+        let presentations: [String: LocalizedMessage] = config.onDemandCap > 0
+            ? ["Pay as you go": LocalizedMessage("%@ cap", [formatUnits(config.onDemandCap)], table: "Metrics")]
+            : [:]
+        return GrokMappedUsage(lines: lines, metricPresentations: presentations)
     }
 
     static func planName(from response: HTTPResponse) -> String? {

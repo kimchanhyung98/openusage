@@ -75,9 +75,9 @@ struct UsageTrendDetail: View {
 
     private var axis: some View {
         HStack {
-            Text(points.first?.label ?? "")
+            Text(points.first?.localizedLabel ?? "")
             Spacer()
-            Text(points.last?.label ?? "")
+            Text(points.last?.localizedLabel ?? "")
         }
         .font(.system(size: 10))
         .monospacedDigit()
@@ -89,9 +89,9 @@ struct UsageTrendDetail: View {
     /// 호버 중인 일자 수치, 미호버 시 peak 수치.
     private var readout: String {
         if let activeIndex, points.indices.contains(activeIndex) {
-            return "\(points[activeIndex].label) · \(points[activeIndex].readout)"
+            return "\(points[activeIndex].localizedLabel) · \(points[activeIndex].localizedReadout)"
         }
-        if let peakIndex { return "peak \(points[peakIndex].readout)" }
+        if let peakIndex { return L10n.dashboard("peak %@", points[peakIndex].localizedReadout) }
         return ""
     }
 

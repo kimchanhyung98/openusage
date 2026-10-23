@@ -206,6 +206,7 @@ extension ClaudeProvider {
         if record.lastGood != nil {
             mapped.lines.append(ClaudeUsageMapper.rateLimitedNote(retryAfterSeconds: seconds))
             mapped.warning = ClaudeUsageMapper.rateLimitedWarning(retryAfterSeconds: seconds)
+            mapped.warningPresentation = ClaudeUsageMapper.rateLimitedWarningPresentation(retryAfterSeconds: seconds)
         }
         mapped.liveQuotaObservedAt = nil
         mapped.retryAfter = record.retryAfter
