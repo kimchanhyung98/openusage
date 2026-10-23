@@ -6,7 +6,7 @@ final class SettingsLocalizationTests: XCTestCase {
         L10n.withLanguage(.korean) {
             XCTAssertEqual(AppearanceSetting.system.label, "시스템 설정")
             XCTAssertEqual(DensitySetting.compact.label, "좁게")
-            XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24시간")
+            XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24시간제")
             XCTAssertEqual(LogLevelSetting.warn.label, "경고")
             XCTAssertEqual(MenuBarStyle.bars.label, "막대")
             XCTAssertEqual(WidgetDisplayMode.remaining.label, "남음")
@@ -15,7 +15,7 @@ final class SettingsLocalizationTests: XCTestCase {
         L10n.withLanguage(.japanese) {
             XCTAssertEqual(AppearanceSetting.system.label, "システム")
             XCTAssertEqual(DensitySetting.compact.label, "コンパクト")
-            XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24時間")
+            XCTAssertEqual(TimeFormatSetting.twentyFourHour.label, "24時間表示")
             XCTAssertEqual(LogLevelSetting.warn.label, "警告")
             XCTAssertEqual(MenuBarStyle.bars.label, "バー")
             XCTAssertEqual(WidgetDisplayMode.remaining.label, "残り")
