@@ -6,6 +6,9 @@ struct CodexResetWatch: Equatable, Sendable {
     var episodeID: String?
     var communityYesPercent: Double?
     var isScheduled = false
+    var eventID: String? = nil
+    /// 출처 게시물이 나중에 보완되어도 같은 관측의 알림 기록 연결.
+    var eventAliases: [String] = []
 
     /// 예정 시각 경과는 실행 완료 증거가 아니므로 예측 기한만 만료 처리.
     var expiresAt: Date? { isScheduled ? nil : deadline }
@@ -20,6 +23,7 @@ struct CodexResetWatchResult: Equatable, Sendable {
     var watch: CodexResetWatch?
     var refreshFailed = false
     var isAbsent = false
+    var refreshCancelled = false
 }
 
 typealias CodexResetWatchLoading = @Sendable (_ force: Bool) async -> CodexResetWatchResult
@@ -174,7 +178,7 @@ actor CodexResetWatchStore {
                 throw FetchError.httpStatus(response.statusCode)
             }
         } catch is CancellationError {
-            var cancelled = CodexResetWatchResult(refreshFailed: refreshFailed)
+            var cancelled = CodexResetWatchResult(refreshFailed: refreshFailed, refreshCancelled: true)
             if !lastPolicy.requiresValidation {
                 cancelled.watch = representation.flatMap { watch(from: $0, at: now()) }
                 // 취소는 새 성공 응답이 아니므로 명시적인 빈 캐시만 0%로 유지.
@@ -253,7 +257,10 @@ actor CodexResetWatchStore {
             } else {
                 scheduledFor = nil
             }
-            return .watch(CodexResetWatch(chancePercent: 99, deadline: scheduledFor, isScheduled: true))
+            return .watch(CodexResetWatch(
+                chancePercent: 99, deadline: scheduledFor, isScheduled: true,
+                eventID: scheduled.id.map { "scheduled:\($0)" }
+            ))
         }
         guard let activeWatch = payload.data.activeWatch,
               let chance = activeWatch.resetChancePercent
@@ -265,9 +272,14 @@ actor CodexResetWatchStore {
             throw FetchError.invalidDeadline
         }
         guard deadline > date else { return .absent }
+        let episodeID = activeWatch.source.flatMap { CodexResetWatchVotes.episodeID(from: $0.url) }
+        let observedAt = activeWatch.observedAt.flatMap(OpenUsageISO8601.date(from:))
+        let observationID = observedAt.map { "watch-observed:\(OpenUsageISO8601.string(from: $0))" }
         return .watch(CodexResetWatch(
             chancePercent: Double(chance), deadline: deadline,
-            episodeID: activeWatch.source.flatMap { CodexResetWatchVotes.episodeID(from: $0.url) }
+            episodeID: episodeID,
+            eventID: episodeID.map { "watch:\($0)" } ?? observationID,
+            eventAliases: observationID.map { [$0] } ?? []
         ))
     }
 
@@ -344,16 +356,20 @@ private struct StatusPayload: Decodable {
     struct ScheduledReset: Decodable {
         enum Status: String, Decodable { case scheduled }
 
+        let id: String?
         let status: Status
         let scheduledFor: String?
 
         private enum CodingKeys: String, CodingKey {
-            case status
+            case id, status
             case scheduledFor = "scheduled_for"
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
+            let rawID = (try? container.decodeIfPresent(String.self, forKey: .id))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            id = rawID.flatMap { $0.isEmpty ? nil : $0 }
             status = try container.decode(Status.self, forKey: .status)
             scheduledFor = try container.decode(String?.self, forKey: .scheduledFor)
         }
@@ -361,6 +377,7 @@ private struct StatusPayload: Decodable {
 
     struct ActiveWatch: Decodable {
         let resetChancePercent: Int?
+        let observedAt: String?
         let expiresAt: String
         let source: Source?
 
@@ -370,6 +387,7 @@ private struct StatusPayload: Decodable {
 
         private enum CodingKeys: String, CodingKey {
             case resetChancePercent = "reset_chance_percent"
+            case observedAt = "observed_at"
             case expiresAt = "expires_at"
             case source
         }
@@ -383,6 +401,7 @@ private struct StatusPayload: Decodable {
                 )
             }
             resetChancePercent = try container.decodeIfPresent(Int.self, forKey: .resetChancePercent)
+            observedAt = try? container.decodeIfPresent(String.self, forKey: .observedAt)
             expiresAt = try container.decode(String.self, forKey: .expiresAt)
             source = try? container.decodeIfPresent(Source.self, forKey: .source)
         }
