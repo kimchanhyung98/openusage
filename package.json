@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "OpenUsage development hooks",
-  "author": "robinebers",
+  "author": "kimchanhyung98",
   "scripts": {
     "prepare": "husky"
   },

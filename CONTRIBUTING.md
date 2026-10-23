@@ -56,7 +56,7 @@ Each provider is a small Swift module under `Sources/OpenUsage/Providers/<Name>/
 6. Test it locally with `./script/build_and_run.sh`
 7. Open a PR with screenshots showing it working
 
-You can also [open an issue](https://github.com/robinebers/openusage/issues/new?template=new_provider.yml) to request a provider without building it yourself.
+You can also [open an issue](https://github.com/kimchanhyung98/openusage/issues/new?template=new_provider.yml) to request a provider without building it yourself.
 
 ### Fix a bug
 
@@ -67,7 +67,7 @@ You can also [open an issue](https://github.com/robinebers/openusage/issues/new?
 
 ### Request a feature
 
-Don't open a PR for a feature without an approved issue first. [Open an issue](https://github.com/robinebers/openusage/issues/new?template=feature_request.yml), make your case, and wait for the `approved` label.
+Don't open a PR for a feature without an approved issue first. [Open an issue](https://github.com/kimchanhyung98/openusage/issues/new?template=feature_request.yml), make your case, and wait for the `approved` label.
 
 ## What Gets Accepted
 
@@ -97,13 +97,11 @@ Don't open a PR for a feature without an approved issue first. [Open an issue](h
 
 ## Maintainers
 
-- [@robinebers](https://github.com/robinebers) (lead)
-- [@validatedev](https://github.com/validatedev)
-- [@davidarny](https://github.com/davidarny)
+- [@kimchanhyung98](https://github.com/kimchanhyung98) (lead)
 
-All PRs require approval from at least 2 maintainers before merging.
-Release tags (`v*`) are owner-managed and can only be created by [@robinebers](https://github.com/robinebers).
+The repository owner manages PR reviews and merges.
+Release tags (`v*`) are owner-managed and can only be created by [@kimchanhyung98](https://github.com/kimchanhyung98).
 
 ## Questions?
 
-Open a [bug report](https://github.com/robinebers/openusage/issues/new?template=bug_report.yml) or [feature request](https://github.com/robinebers/openusage/issues/new?template=feature_request.yml) using the issue templates.
+Open a [bug report](https://github.com/kimchanhyung98/openusage/issues/new?template=bug_report.yml) or [feature request](https://github.com/kimchanhyung98/openusage/issues/new?template=feature_request.yml) using the issue templates.
