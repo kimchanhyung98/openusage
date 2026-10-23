@@ -1,5 +1,25 @@
 import { test, expect, openHome, openSettings, chooseSetting } from './fixtures';
 
+test('language selection persists while the website demo stays in English', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await openSettings(page);
+  await expect(app.locator('[data-language-notice]')).toBeHidden();
+  await chooseSetting(page, 'Language', '日本語');
+  await expect(app.getByRole('button', { name: 'Language', exact: true })).toContainText('日本語');
+  await expect(app.getByRole('status')).toContainText('restart OpenUsage to apply it');
+  await expect(app.locator('[data-language-notice]')).toHaveText('Restart OpenUsage to apply the language change.');
+  await expect(app.locator('[data-language-notice]')).toBeVisible();
+  await expect(app).toHaveAttribute('lang', 'en');
+  await page.reload();
+  await openSettings(page);
+  await expect(app.getByRole('button', { name: 'Language', exact: true })).toContainText('日本語');
+  await expect(app.getByRole('button', { name: 'Theme', exact: true })).toBeVisible();
+  await expect(app).toHaveAttribute('lang', 'en');
+  await chooseSetting(page, 'Language', 'English');
+  await expect(app.locator('[data-language-notice]')).toBeHidden();
+});
+
 test('dashboard account selection stays separate from confirmed active-account switching', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
