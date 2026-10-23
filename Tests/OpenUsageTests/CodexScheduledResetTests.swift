@@ -21,6 +21,7 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertEqual(watch.chancePercent, 99)
             XCTAssertEqual(watch.deadline, scheduledFor)
             XCTAssertTrue(watch.isScheduled)
+            XCTAssertEqual(watch.eventID, "scheduled:123")
             XCTAssertNil(watch.expiresAt)
             XCTAssertNil(watch.episodeID)
             XCTAssertNil(watch.communityYesPercent)
@@ -42,6 +43,37 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertTrue(watch.isScheduled)
             XCTAssertFalse(result.refreshFailed)
             XCTAssertEqual(http.requests.count, 1)
+        }
+    }
+
+    func testScheduleIdentitySurvivesTimeChangesAndChangesForNewSchedule() async {
+        let http = FakeHTTPClient(response: response(scheduledFor: Self.now.addingTimeInterval(60)))
+        let source = CodexResetWatchStore(http: http, now: { Self.now })
+        let initial = await source.currentResult()
+        http.response = response(scheduledFor: Self.now.addingTimeInterval(3_600))
+        let rescheduled = await source.currentResult(force: true)
+        XCTAssertEqual(rescheduled.watch?.eventID, initial.watch?.eventID)
+        XCTAssertNotEqual(rescheduled.watch?.deadline, initial.watch?.deadline)
+
+        http.response = response(scheduledFor: nil, idJSON: #""456""#)
+        let next = await source.currentResult(force: true)
+        XCTAssertEqual(next.watch?.eventID, "scheduled:456")
+    }
+
+    func testUnknownScheduleIdentityPreservesDisplayWithoutNotificationIdentity() async {
+        for idField in ["", #""id":null,"#, #""id":"", "#, #""id":"   ","#, #""id":123,"#] {
+            let body = """
+            {"data":{"scheduled_reset":{\(idField)"status":"scheduled","scheduled_for":null},
+            "active_watch":null}}
+            """
+            let source = CodexResetWatchStore(
+                http: FakeHTTPClient(response: HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))),
+                now: { Self.now }
+            )
+            let result = await source.currentResult()
+            XCTAssertTrue(result.watch?.isScheduled == true, idField)
+            XCTAssertNil(result.watch?.eventID, idField)
+            XCTAssertFalse(result.refreshFailed, idField)
         }
     }
 
@@ -224,6 +256,7 @@ final class CodexScheduledResetTests: XCTestCase {
     private func response(
         scheduledFor: Date?,
         activeWatch: String = "null",
+        idJSON: String = #""123""#,
         headers: [String: String] = [:]
     ) -> HTTPResponse {
         let dateJSON = scheduledFor.map { "\"\(OpenUsageISO8601.string(from: $0))\"" } ?? "null"
@@ -231,7 +264,7 @@ final class CodexScheduledResetTests: XCTestCase {
             statusCode: 200, headers: headers,
             body: Data(
                 """
-                {"data":{"scheduled_reset":{"id":"123","status":"scheduled","reset_type":"regular",
+                {"data":{"scheduled_reset":{"id":\(idJSON),"status":"scheduled","reset_type":"regular",
                 "scheduled_for":\(dateJSON),"source":{"url":"https://x.com/thsottiaux/status/123"}},
                 "active_watch":\(activeWatch)}}
                 """.utf8))
