@@ -86,7 +86,8 @@ Every PR description must follow this structure so reviewers can skim it quickly
 - Declaration docs use `///` with a one-line summary; add detail lines only for a contract or invariant the code cannot show. Implementation notes use single-line `//`. Keep `// MARK: -` section dividers (labels stay English).
 - Comment only non-obvious contracts and invariants — no per-property narration, no restating what the next line does.
 - Comments are self-contained: never link to repository docs or external pages, and never replace an explanation with a link.
-- User-facing strings, log messages, and identifiers stay in English.
+- 사용자 표시 문자열은 영어 원문 키와 영어·한국어·일본어 번역 리소스로 관리.
+- 로그·식별자·저장값·API 필드와 단위는 기존 영문 계약 유지.
 
 ## Error Handling
 

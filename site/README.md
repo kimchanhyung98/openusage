@@ -161,7 +161,8 @@ scripts/og.html      OG 이미지 원본
 - 실제 Mac 계정·인증·사용량은 읽지 않음.
 - 지표의 켜짐·섹션·별은 `Stores/DefaultLayout.swift`의 세 배열에서만 판정. 대시보드 행과 L2 스위치가 어긋날 수 없음.
 - Codex의 Reset Watch는 기본 배치인 caret 뒤에 표시.
-- 화면에 보이는 영어 문자열은 앱이 실제로 출력하는 값 그대로. 한국어로 옮기지 않음.
+- 앱 데모는 영어 화면 기준. 앱의 한국어·일본어 화면은 별도로 재현하지 않음.
+- General의 Language 선택지는 앱과 같은 English·한국어·日本語. 기본값은 English.
 - 도넛·스트립 예시와 파생 계산은 `demo.ts`, 계정별 카드 예시는 `dashboard.ts`에서 정의.
 - OG는 별도 정적 이미지이며 데모 설정 변경을 반영하지 않음.
 - 조작 가능한 그래픽은 `role="group"` + `lang="en"`으로 내용 접근 가능.
@@ -181,6 +182,7 @@ provider 마크는 사본을 두지 않고 `Sources/OpenUsage/Resources/Provider
 | 누르는 곳 | 결과 | 범위 |
 |---|---|---|
 | Settings 표시 설정 | Total Spend·Used/Left·Reset Times·Theme·Density·Time Format·Pacing·Transparency 반영 | 전체 데모 |
+| Language | 선택값 저장 후 Mac 앱에서 언어를 선택하고 재시작하라는 안내 표시. 데모 문구는 영어 유지 | 전체 데모 |
 | Settings 계정 스위치 | 확인 후 활성 계정과 대시보드 선택 이동. 이미 활성화된 계정은 끌 수 없음 | 해당 provider |
 | Usage Cards | Single Card ↔ Separate Cards. Separate Cards는 계정명 포함 제목과 고정 카드 표시 | 계정 지원 provider 전체 |
 | 카드 헤더 계정 메뉴 | 표시할 계정만 변경. Settings의 활성 계정 유지 | 해당 provider |
@@ -256,6 +258,7 @@ Docker 안의 WebKit 검사는 Linux 환경이며 실제 macOS Safari·iPhone �
 구성 기준은 [Playwright Docker 안내](https://playwright.dev/docs/docker)와 [GitHub Actions 컨테이너 예제](https://playwright.dev/docs/ci#via-containers).
 
 `npm test`로 앱 코드의 Settings 섹션·행·옵션과 데모 목록 대조.
+번역 함수로 감싼 영어 원문도 추출하며, 필수 행·알림·로그 옵션을 찾지 못하면 실패.
 계정 선택과 활성 계정의 분리, 카드 표시 방식 전환, 설정 저장·복원, 잘못된 저장값 거부, 시간 표시 회귀 검사 포함.
 기능 시연의 전체 화면·확대 화면이 짧거나 좁은 뷰포트를 벗어나지 않는 배치 검사 포함.
 기능 앞뒤 이동, 관성 중복 전환 방지, 첫·마지막 단계 이탈, 섹션 진입과 터치 제스처 회귀 검사 포함.
