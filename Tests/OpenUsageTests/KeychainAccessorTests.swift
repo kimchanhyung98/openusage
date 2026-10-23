@@ -125,6 +125,45 @@ final class KeychainAccessorTests: XCTestCase {
         }
     }
 
+    func testSharedToolWriteErrorsPreserveDiagnosticsAndLocalizedPresentation() {
+        let canary = "SECRET_CANARY"
+        let cases: [(cause: KeychainError, english: String, korean: String, japanese: String)] = [
+            (.toolInputLimitExceeded,
+             "The credential exceeds the Keychain tool's input limit; the stored credential was not changed.",
+             "인증 정보가 키체인 도구의 입력 한도를 초과했습니다. 저장된 인증 정보는 변경하지 않았습니다.",
+             "認証情報がキーチェーンツールの入力上限を超えています。保存済みの認証情報は変更していません。"),
+            (.toolWriteFailed(exitCode: 51),
+             "Keychain write failed (exit 51).",
+             "키체인 쓰기에 실패했습니다(종료 코드 51).",
+             "キーチェーンへの書き込みに失敗しました（終了コード 51）。"),
+            (.invalidItemName,
+             "Keychain item names contain unsupported control characters.",
+             "키체인 항목 이름에 지원하지 않는 제어 문자가 포함되어 있습니다.",
+             "キーチェーンの項目名に、対応していない制御文字が含まれています。")
+        ]
+
+        for scenario in cases {
+            let runner = RecordingRunner()
+            let accessor = SecurityKeychainAccessor(
+                processRunner: runner,
+                sharedPasswordWriter: RecordingPasswordWriter(error: scenario.cause)
+            )
+
+            XCTAssertThrowsError(try accessor.writeCLISharedPassword(
+                service: canary, value: canary, forCurrentUser: true
+            )) { error in
+                XCTAssertNotNil(error as? KeychainError)
+                XCTAssertEqual(error.localizedDescription, scenario.english)
+                XCTAssertFalse(error.localizedDescription.contains(canary))
+                XCTAssertEqual((error as? CategorizedError)?.errorCategory, .credentialAccess)
+                XCTAssertEqual(L10n.withLanguage(.english) { UserFacingErrors.message(error) }, scenario.english)
+                XCTAssertEqual(L10n.withLanguage(.korean) { UserFacingErrors.message(error) }, scenario.korean)
+                XCTAssertEqual(L10n.withLanguage(.japanese) { UserFacingErrors.message(error) }, scenario.japanese)
+            }
+            XCTAssertTrue(runner.calls.isEmpty)
+        }
+    }
+
     func testNativeWriterUpdatesOnlyTheSelectedKeychainByPersistentReference() throws {
         let primary = try TemporaryKeychain()
         let secondary = try TemporaryKeychain()
@@ -336,9 +375,9 @@ private final class RecordingPasswordWriter: GenericPasswordWriting, @unchecked 
     }
 
     private(set) var calls: [Call] = []
-    private let error: GenericPasswordWriteError?
+    private let error: (any Error)?
 
-    init(error: GenericPasswordWriteError? = nil) {
+    init(error: (any Error)? = nil) {
         self.error = error
     }
 
