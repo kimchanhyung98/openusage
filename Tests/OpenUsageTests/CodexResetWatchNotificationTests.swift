@@ -443,6 +443,44 @@ final class CodexResetWatchNotificationTests: XCTestCase {
         XCTAssertEqual(recorder.subtitles, ["Reset Forecast"])
     }
 
+    func testNotificationTextFollowsLanguageForForecastAndScheduledReset() async {
+        let cases: [(LanguageSetting, String, String, String, String, String)] = [
+            (.english, "Codex Reset Watch", "Reset Forecast", "Scheduled Reset",
+             "A new community forecast for a Codex reset is available.",
+             "A community report lists an upcoming Codex reset."),
+            (.korean, "Codex 초기화 예측", "초기화 예측", "초기화 예정",
+             "Codex 초기화에 대한 새로운 커뮤니티 예측이 있습니다.",
+             "커뮤니티에 Codex 초기화 예정 정보가 있습니다."),
+            (.japanese, "Codexリセット予測", "リセット予測", "リセット予定",
+             "Codexのリセットについて、コミュニティの新しい予測が公開されています。",
+             "コミュニティからCodexのリセット予定が報告されています。")
+        ]
+        for (language, title, forecastSubtitle, scheduledSubtitle, forecastBody, scheduledBody) in cases {
+            var messages: [[String]] = []
+            let evaluator = CodexResetWatchNotificationEvaluator(
+                defaults: makeDefaults(), isEnabled: { true }, now: { self.base },
+                post: { id, title, subtitle, body, isCurrent in
+                    guard isCurrent() else { return false }
+                    messages.append([id, title, subtitle, body])
+                    return true
+                }
+            )
+            XCTAssertEqual(L10n.withLanguage(language) { CodexResetWatchNotificationEvaluator.settingLabel }, title)
+            for scheduled in [false, true] {
+                let delivery = L10n.withLanguage(language) {
+                    evaluator.receive(CodexResetWatchResult(watch: watch(
+                        scheduled ? "scheduled:localized" : "watch:localized", scheduled: scheduled
+                    )))
+                }
+                await delivery.value
+            }
+            XCTAssertEqual(messages, [
+                ["codex.resetWatch", title, forecastSubtitle, forecastBody],
+                ["codex.resetWatch", title, scheduledSubtitle, scheduledBody]
+            ])
+        }
+    }
+
     private func eventually(_ condition: @escaping @MainActor @Sendable () async -> Bool) async -> Bool {
         for _ in 0..<1_000 {
             if await condition() { return true }
