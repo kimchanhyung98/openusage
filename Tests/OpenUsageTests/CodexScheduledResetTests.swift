@@ -62,7 +62,7 @@ final class CodexScheduledResetTests: XCTestCase {
     }
 
     func testExpiredScheduleFallsBackToActiveWatch() async throws {
-        let active = #"{"reset_chance_percent":75,"expires_at":"2099-01-01T00:00:00Z"}"#
+        let active = #"{"reset_chance_percent":75,"expires_at":"2027-01-15T09:00:00Z"}"#
         let http = FakeHTTPClient(response: response(
             scheduledFor: Self.now.addingTimeInterval(-3 * 86_400), activeWatch: active
         ))
@@ -72,6 +72,8 @@ final class CodexScheduledResetTests: XCTestCase {
         let watch = try XCTUnwrap(result.watch)
 
         XCTAssertEqual(watch.chancePercent, 75)
+        XCTAssertEqual(watch.deadline, Self.now.addingTimeInterval(3_600))
+        XCTAssertEqual(watch.expiresAt, Self.now.addingTimeInterval(3_600))
         XCTAssertFalse(watch.isScheduled)
         XCTAssertFalse(result.isAbsent)
         XCTAssertFalse(result.refreshFailed)
