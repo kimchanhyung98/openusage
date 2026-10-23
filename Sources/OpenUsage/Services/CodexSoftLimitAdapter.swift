@@ -32,6 +32,8 @@ final class CodexSoftLimitAdapter: SoftLimitCancelling {
                       let modelProvider = thread["modelProvider"]?.string
                 else { throw SoftLimitControlError.invalidResponse }
                 guard status == "active", modelProvider == "openai" else { continue }
+                // 제목 생성용 메모리 작업은 turn 조회를 지원하지 않으며 사용자 대화에 포함되지 않음.
+                if thread["ephemeral"] == .bool(true), thread["threadSource"]?.string == "thread_title" { continue }
                 let turns = try await turns(threadID: id, client: client)
                 for turn in turns where turn.status == "inProgress" {
                     tasks.append(.init(providerID: providerID, sessionID: id, operationID: turn.id))

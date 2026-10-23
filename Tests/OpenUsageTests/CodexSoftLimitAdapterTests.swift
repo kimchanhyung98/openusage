@@ -63,6 +63,32 @@ final class CodexSoftLimitAdapterTests: XCTestCase {
         }
         XCTAssertTrue(rpc.methods.isEmpty)
     }
+
+    func testTitleGenerationThreadDoesNotBlockPersistentConversations() async throws {
+        let rpc = FixtureCodexControl()
+        rpc.ephemeralSource = "thread_title"
+        let adapter = CodexSoftLimitAdapter(makeConnection: { rpc })
+
+        let tasks = try await adapter.runningTasks()
+
+        XCTAssertEqual(Set(tasks.map(\.sessionID)), ["first", "second"])
+        XCTAssertFalse(rpc.turnRequests.contains { $0["threadId"]?.string == "ephemeral" })
+    }
+
+    func testUnsupportedEphemeralConversationIsNotSilentlyIgnored() async {
+        for source in ["user", "unknown"] {
+            let rpc = FixtureCodexControl()
+            rpc.ephemeralSource = source
+            let adapter = CodexSoftLimitAdapter(makeConnection: { rpc })
+            do {
+                _ = try await adapter.runningTasks()
+                XCTFail("Unsupported conversation must remain visible as a control error")
+            } catch {
+                XCTAssertEqual(error as? SoftLimitControlError, .rejected(-32600))
+            }
+            XCTAssertTrue(rpc.interrupted.isEmpty)
+        }
+    }
 }
 
 @MainActor
@@ -72,6 +98,7 @@ private final class FixtureCodexControl: CodexControlRequesting {
     var interrupted: Set<String> = []
     var closeCalls = 0
     var onTurns: (@MainActor () -> Void)?
+    var ephemeralSource: String?
 
     func request(_ method: String, params: ControlJSON) async throws -> ControlJSON {
         methods.append(method)
@@ -79,15 +106,19 @@ private final class FixtureCodexControl: CodexControlRequesting {
         switch method {
         case "thread/loaded/list":
             return params["cursor"] == nil
-                ? .object(["data": .array([.string("first"), .string("idle"), .string("other-provider")]), "nextCursor": .string("next")])
+                ? .object(["data": .array([.string("first"), .string("idle"), .string("other-provider")]
+                    + (ephemeralSource == nil ? [] : [.string("ephemeral")])), "nextCursor": .string("next")])
                 : .object(["data": .array([.string("second")]), "nextCursor": .null])
         case "thread/read":
             return .object(["thread": .object([
                 "status": .object(["type": .string(id == "idle" ? "idle" : "active")]),
-                "modelProvider": .string(id == "other-provider" ? "ollama" : "openai")
+                "modelProvider": .string(id == "other-provider" ? "ollama" : "openai"),
+                "ephemeral": .bool(id == "ephemeral"),
+                "threadSource": .string(id == "ephemeral" ? ephemeralSource ?? "unknown" : "user")
             ])])
         case "thread/turns/list":
             turnRequests.append(params)
+            if id == "ephemeral" { throw SoftLimitControlError.rejected(-32600) }
             onTurns?()
             return .object(["data": .array([.object([
                 "id": .string("\(id)-turn"), "status": .string(interrupted.contains(id) ? "interrupted" : "inProgress")
