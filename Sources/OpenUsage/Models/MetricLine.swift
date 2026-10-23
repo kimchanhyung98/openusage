@@ -74,11 +74,6 @@ struct MetricChartPoint: Hashable, Sendable, Codable {
     var localizedReadout: String {
         MetricFormatter.labelledValue(MetricFormatter.number(value, kind: .count, style: .row), label: "tokens")
     }
-
-    /// 기존 호출·출력 계약용 영어 readout. 화면은 `localizedReadout` 사용.
-    var readout: String {
-        valueLabel ?? (MetricFormatter.number(value, kind: .count, style: .row) + " tokens")
-    }
 }
 
 enum MetricLine: Hashable, Sendable, Codable {

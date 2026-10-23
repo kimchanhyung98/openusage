@@ -1,5 +1,6 @@
 import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../data/preview-state';
+import { languageTags } from '../data/settings';
 
 const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
@@ -44,7 +45,9 @@ export function choosePreviewSetting(mock: HTMLElement, id: string, value: strin
   } else {
     setPreviewPreference(id, value);
     if (id === 'language') {
-      notify(mock, 'The demo stays in English. Choose a language in the Mac app and restart OpenUsage to apply it.');
+      notify(mock, value === 'English'
+        ? 'The demo stays in English.'
+        : 'The demo stays in English. Choose a language in the Mac app and restart OpenUsage to apply it.');
     } else if (appOnlyPreferences.has(id)) {
       notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
     }
@@ -128,7 +131,10 @@ export function applySettingsToMock(mock: HTMLElement): void {
     const value = family ? state.viewedAccounts[family.id] : preferences[id];
     const text = family ? family.profiles.find((profile) => profile.id === value)?.name : value;
     const label = button.querySelector('[data-picker-value]');
-    if (label && text !== undefined) label.textContent = String(text);
+    if (label && text !== undefined) {
+      label.textContent = String(text);
+      if (id === 'language') label.setAttribute('lang', languageTags[String(text)]);
+    }
     mock.querySelectorAll<HTMLElement>(`[data-pick="${id}"]`).forEach((option) => {
       option.setAttribute('aria-checked', String(option.dataset.value === value));
     });

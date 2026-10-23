@@ -47,6 +47,8 @@ extension KeychainError: UserPresentableError {
             .init("The saved Keychain data is invalid.")
         case .writeFailed(let message):
             message.isEmpty ? .init("Keychain write failed.") : .verbatim(message)
+        case .nativeWriteFailed(let error):
+            error.presentationMessage
         case .readFailed(let message):
             message.isEmpty ? .init("Keychain read failed.") : .verbatim(message)
         case .deleteFailed(let message):

@@ -6,7 +6,9 @@ import ServiceManagement
 @MainActor
 @Observable
 final class LaunchAtLoginSetting {
-    static let failureMessage = L10n.errors("macOS wouldn't update Launch at Login. Check System Settings → Login Items.")
+    static var failureMessage: String {
+        L10n.errors("macOS wouldn't update Launch at Login. Check System Settings → Login Items.")
+    }
 
     private(set) var isEnabled: Bool
     private(set) var errorMessage: String?

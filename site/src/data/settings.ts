@@ -1,6 +1,8 @@
 // 배포 앱의 Settings 순서와 일반 상태 재현. 이스터에그·권한 오류·실행 중 상태는 기본 화면에서 숨김.
 import { accountFamilies, type DemoAccountFamily } from './accounts.ts';
 
+export const languageTags: Record<string, string> = { English: 'en', 한국어: 'ko', 日本語: 'ja' };
+
 export type Control =
   | { kind: 'toggle'; on: boolean }
   | { kind: 'picker'; value: string; options: string[] }

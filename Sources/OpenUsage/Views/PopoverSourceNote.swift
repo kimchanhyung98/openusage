@@ -14,7 +14,7 @@ struct PopoverSourceNote: View {
     }
 
     private var localizedText: String {
-        let sharedHistoryPrefix = "Across your Macs · "
+        let sharedHistoryPrefix = UsageHistorySnapshotRenderer.sharedHistoryPrefix
         guard text.hasPrefix(sharedHistoryPrefix) else { return L10n.metrics(text) }
         let source = String(text.dropFirst(sharedHistoryPrefix.count))
         return L10n.metrics("Across your Macs · %@", L10n.metrics(source))

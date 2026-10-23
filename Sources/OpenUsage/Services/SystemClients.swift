@@ -510,7 +510,7 @@ struct SecurityKeychainAccessor: KeychainAccessing {
         } catch let error as KeychainError {
             throw error
         } catch let error as GenericPasswordWriteError {
-            throw KeychainError.writeFailed(error.localizedDescription)
+            throw KeychainError.nativeWriteFailed(error)
         } catch {
             throw KeychainError.writeFailed("")
         }
@@ -526,6 +526,7 @@ enum KeychainError: Error, LocalizedError {
     case accessBusy
     case invalidData
     case writeFailed(String)
+    case nativeWriteFailed(GenericPasswordWriteError)
     case readFailed(String)
     case deleteFailed(String)
 
@@ -537,6 +538,8 @@ enum KeychainError: Error, LocalizedError {
             return "The saved Keychain data is invalid."
         case .writeFailed(let message):
             return message.isEmpty ? "Keychain write failed." : message
+        case .nativeWriteFailed(let error):
+            return error.localizedDescription
         case .readFailed(let message):
             return message.isEmpty ? "Keychain read failed." : message
         case .deleteFailed(let message):

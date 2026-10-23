@@ -58,7 +58,7 @@ protocol CategorizedError: Error {
 extension KeychainError: CategorizedError {
     var errorCategory: ErrorCategory {
         switch self {
-        case .accessBusy, .readFailed, .writeFailed, .deleteFailed: .credentialAccess
+        case .accessBusy, .readFailed, .writeFailed, .nativeWriteFailed, .deleteFailed: .credentialAccess
         case .invalidData: .authInvalid
         }
     }

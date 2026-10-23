@@ -62,7 +62,7 @@
 "From your OpenCode logs" = "OpenCode のログに基づく値";
 "Key Limit" = "キーの上限";
 "Last 30 Days" = "過去30日間";
-"Last updated %@ ago" = "最終更新: %@ 前";
+"Last updated %@ ago" = "最終更新: %@前";
 "Left" = "残り";
 "Limit %@" = "%@に上限に到達";
 "Limit in %@" = "%@後に上限に到達";
@@ -103,7 +103,7 @@
 "Runs out %@" = "%@に使い切る見込み";
 "Runs out in %@" = "%@後に使い切る見込み";
 "Runs out soon" = "まもなく使い切る見込み";
-"Scheduled %@" = "%@ に予定";
+"Scheduled %@" = "%@に予定";
 "Session" = "セッション";
 "Sessions start after you send your first message." = "最初のメッセージを送信すると、セッションが始まります。";
 "Sonnet" = "Sonnet";

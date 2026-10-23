@@ -102,7 +102,7 @@
 "Sync local usage to your public Tokscale profile." = "ローカルの使用量を公開Tokscaleプロフィールに同期します。";
 "Syncing usage history" = "使用履歴を同期中";
 "Syncing…" = "同期中…";
-"System" = "システム設定";
+"System" = "システム";
 "Terminal Helper" = "ターミナルヘルパー";
 "Text" = "テキスト";
 "The Codex cancellation connection has been tested, but automatic cancellation is unavailable until account scope is verified. Other Codex sessions and other providers are not protected yet." = "Codexのキャンセル接続はテスト済みですが、アカウント範囲の検証が完了するまで自動キャンセルは利用できません。他のCodexセッションや他のプロバイダーは、まだ保護されません。";
