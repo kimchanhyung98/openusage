@@ -3,6 +3,29 @@ import XCTest
 
 @MainActor
 final class ResetWatchPresentationTests: XCTestCase {
+    func testForecastTimeSupportsResetDisplayToggle() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let deadline = now.addingTimeInterval(5 * 24 * 3_600)
+
+        for scheduled in [false, true] {
+            var data = forecast(chance: scheduled ? 99 : 75, deadline: deadline)
+            data.forecast?.isScheduled = scheduled
+            data.resetDisplayMode = .absolute
+            let absolute = scheduled
+                ? "Scheduled \(Formatters.monthDayTimeLabel(deadline))"
+                : Formatters.resetWatchDeadlineLabel(at: deadline)
+            XCTAssertTrue(data.hasResetLabel(now: now))
+            XCTAssertEqual(data.boundedTrailingText(now: now), absolute)
+
+            data.resetDisplayMode.toggle()
+            XCTAssertEqual(data.boundedTrailingText(now: now), scheduled ? "Scheduled in 5d 0h" : "Within 5d 0h")
+            XCTAssertEqual(data.boundedTrailingText(now: now.addingTimeInterval(3_600)),
+                           scheduled ? "Scheduled in 4d 23h" : "Within 4d 23h")
+            XCTAssertEqual(data.resetTooltip(now: now), absolute)
+            XCTAssertEqual(data.boundedHeadline, scheduled ? "99% chance" : "75% chance")
+        }
+    }
+
     func testForecastValueAndFillIgnoreUsedLeftMode() {
         var used = forecast(chance: 75)
         used.displayMode = .used
@@ -72,7 +95,7 @@ final class ResetWatchPresentationTests: XCTestCase {
         )
     }
 
-    func testForecastHasNoQuotaToggleResetActionOrPace() {
+    func testForecastTimeToggleDoesNotEnableQuotaToggleOrPace() {
         let now = Date(timeIntervalSince1970: 1_788_069_600)
         var data = forecast(chance: 90, deadline: now.addingTimeInterval(24 * 60 * 60))
         data.displayMode = .remaining
@@ -83,7 +106,7 @@ final class ResetWatchPresentationTests: XCTestCase {
 
         XCTAssertFalse(data.hasMeterStyleToggle)
         XCTAssertNil(data.meterStyleTooltip)
-        XCTAssertFalse(data.hasResetLabel(now: now))
+        XCTAssertTrue(data.hasResetLabel(now: now))
         XCTAssertEqual(data.resetTooltip(now: now), "Resets in 1d 0h")
         XCTAssertNil(data.paceTick(for: state, now: now))
         XCTAssertNil(state.tooltip)
@@ -99,13 +122,10 @@ final class ResetWatchPresentationTests: XCTestCase {
         for scheduled in [false, true] {
             var data = forecast(chance: scheduled ? 99 : 75, deadline: deadline)
             data.forecast?.isScheduled = scheduled
-            for mode in [ResetDisplayMode.absolute, .relative] {
-                data.resetDisplayMode = mode
-                XCTAssertEqual(data.resetTooltip(now: now), quota.resetTooltip(now: now))
-                XCTAssertEqual(data.resetTooltip(now: now), "Resets in 5d 0h")
-                XCTAssertEqual(data.resetTooltip(now: now.addingTimeInterval(3_600)), "Resets in 4d 23h")
-                XCTAssertEqual(data.resetTooltip(now: deadline.addingTimeInterval(-300)), "Resets soon")
-            }
+            XCTAssertEqual(data.resetTooltip(now: now), quota.resetTooltip(now: now))
+            XCTAssertEqual(data.resetTooltip(now: now), "Resets in 5d 0h")
+            XCTAssertEqual(data.resetTooltip(now: now.addingTimeInterval(3_600)), "Resets in 4d 23h")
+            XCTAssertEqual(data.resetTooltip(now: deadline.addingTimeInterval(-300)), "Resets soon")
         }
     }
 
@@ -115,19 +135,46 @@ final class ResetWatchPresentationTests: XCTestCase {
             var data = forecast(chance: scheduled ? 99 : 75, deadline: now.addingTimeInterval(3_600))
             data.forecast?.isScheduled = scheduled
             data.hasData = false
+            XCTAssertFalse(data.hasResetLabel(now: now))
             XCTAssertNil(data.resetTooltip(now: now))
             data.hasData = true
             data.forecast?.refreshFailed = true
+            XCTAssertFalse(data.hasResetLabel(now: now))
             XCTAssertNil(data.resetTooltip(now: now))
             data.forecast?.refreshFailed = false
             data.subtitleOverride = "Custom text"
+            XCTAssertFalse(data.hasResetLabel(now: now))
             XCTAssertNil(data.resetTooltip(now: now))
             data.subtitleOverride = nil
             data.forecast?.deadline = nil
+            XCTAssertFalse(data.hasResetLabel(now: now))
             XCTAssertNil(data.resetTooltip(now: now))
             data.forecast?.deadline = now
+            XCTAssertEqual(data.hasResetLabel(now: now), scheduled)
             XCTAssertEqual(data.resetTooltip(now: now), scheduled ? "Resets soon" : nil)
             XCTAssertEqual(data.presented(at: now).resetTooltip(now: now), scheduled ? "Resets soon" : nil)
+        }
+    }
+
+    func testForecastCountdownHandlesImminentAndPastScheduledTimes() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        for scheduled in [false, true] {
+            var data = forecast(chance: scheduled ? 99 : 75, deadline: now.addingTimeInterval(300))
+            data.forecast?.isScheduled = scheduled
+            data.resetDisplayMode = .relative
+            XCTAssertEqual(data.boundedTrailingText(now: now), scheduled ? "Scheduled soon" : "Reset expected soon")
+            let afterDeadline = now.addingTimeInterval(301)
+            let expired = data.presented(at: afterDeadline)
+            XCTAssertEqual(expired.boundedTrailingText(now: afterDeadline), scheduled ? "Scheduled soon" : nil)
+            XCTAssertEqual(expired.hasResetLabel(now: afterDeadline), scheduled)
+            XCTAssertEqual(expired.boundedHeadline, scheduled ? "99% chance" : "0% chance")
+
+            let afterGrace = now.addingTimeInterval(300 + 7_200)
+            let expiredAfterGrace = data.presented(at: afterGrace)
+            XCTAssertEqual(expiredAfterGrace.boundedHeadline, "0% chance")
+            XCTAssertNil(expiredAfterGrace.boundedTrailingText(now: afterGrace))
+            XCTAssertFalse(expiredAfterGrace.hasResetLabel(now: afterGrace))
+            XCTAssertNil(expiredAfterGrace.resetTooltip(now: afterGrace))
         }
     }
 
@@ -393,6 +440,7 @@ final class ResetWatchPresentationTests: XCTestCase {
             limit: 100
         )
         data.forecast = .init(deadline: deadline)
+        data.resetDisplayMode = .absolute
         return data
     }
 

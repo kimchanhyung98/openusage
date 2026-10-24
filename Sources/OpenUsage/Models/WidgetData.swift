@@ -102,8 +102,15 @@ struct WidgetData: Hashable {
         return L10n.metrics("%lld%% expect a reset", Int(percent))
     }
 
-    private var resetWatchLabel: String? {
+    private func resetWatchLabel(mode: ResetDisplayMode, now: Date = Date()) -> String? {
         guard let forecast else { return nil }
+        if mode == .relative, let deadline = forecast.deadline {
+            guard let when = Formatters.whenLabel(at: deadline, mode: .relative, now: now) else { return nil }
+            if when == Formatters.imminent {
+                return L10n.metrics(forecast.isScheduled ? "Scheduled soon" : "Reset expected soon")
+            }
+            return L10n.metrics(forecast.isScheduled ? "Scheduled in %@" : "Within %@", when)
+        }
         if forecast.isScheduled {
             guard let date = forecast.deadline else { return L10n.metrics("Reset time unknown") }
             return L10n.metrics("Scheduled %@", Formatters.monthDayTimeLabel(date))
@@ -263,7 +270,7 @@ struct WidgetData: Hashable {
         if let subtitleOverride {
             return L10n.metrics(subtitleOverride)
         }
-        if let resetWatchLabel { return resetWatchLabel }
+        if let label = resetWatchLabel(mode: resetDisplayMode) { return label }
         if let resetLabel {
             return resetLabel
         }
@@ -513,7 +520,7 @@ extension WidgetData {
         }
         guard hasData else { return Self.noDataSubtitle }
         if let subtitleOverride { return L10n.metrics(subtitleOverride) }
-        if let resetWatchLabel { return resetWatchLabel }
+        if let label = resetWatchLabel(mode: resetDisplayMode, now: now) { return label }
         if isFreshSessionWindow(now: now) { return L10n.metrics("Not started") }
         if let resetsAt {
             return resetDisplayMode == .absolute
@@ -538,20 +545,25 @@ extension WidgetData {
 
     /// bounded row trailing text가 클릭 가능한 reset countdown인지 여부 — limit/suffix context·fresh window·reset 없음은 false.
     func hasResetLabel(now: Date = Date()) -> Bool {
-        hasData && !isForecast && subtitleOverride == nil && resetsAt != nil && !isFreshSessionWindow(now: now)
+        guard hasData, subtitleOverride == nil else { return false }
+        if let forecast {
+            guard !forecast.refreshFailed, let deadline = forecast.deadline else { return false }
+            return forecast.isScheduled || deadline > now
+        }
+        return resetsAt != nil && !isFreshSessionWindow(now: now)
     }
 
     /// "Not started" trailing label의 hover 설명 문구 — 첫 메시지 전에는 countdown 없음.
     static var freshSessionTooltip: String { L10n.metrics("Sessions start after you send your first message.") }
 
-    /// reset label의 hover tooltip — 현재 표시와 반대 format, 예측 시각은 countdown.
+    /// reset label의 hover tooltip — 현재 표시와 반대 format.
     /// fresh("Not started") session은 reset 시각 대신 자체 설명 표시.
     func resetTooltip(now: Date = Date()) -> String? {
         if let forecast {
-            guard hasData, !forecast.refreshFailed, subtitleOverride == nil, let deadline = forecast.deadline,
-                forecast.isScheduled || deadline > now
-            else { return nil }
-            return Formatters.resetRelativeLabel(until: deadline, now: now)
+            guard hasResetLabel(now: now), let deadline = forecast.deadline else { return nil }
+            return resetDisplayMode == .absolute
+                ? Formatters.resetRelativeLabel(until: deadline, now: now)
+                : resetWatchLabel(mode: .absolute, now: now)
         }
         if isFreshSessionWindow(now: now) { return Self.freshSessionTooltip }
         guard hasResetLabel(now: now), let resetsAt else { return nil }

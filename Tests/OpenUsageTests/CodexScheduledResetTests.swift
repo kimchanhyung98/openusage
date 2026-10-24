@@ -299,7 +299,7 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertEqual(data.forecastDeadline, scheduledFor?.addingTimeInterval(2 * 3_600))
             XCTAssertNil(data.communityVoteTick)
             XCTAssertNil(data.communityVoteLabel)
-            XCTAssertFalse(data.hasResetLabel())
+            XCTAssertEqual(data.hasResetLabel(), scheduledFor != nil)
 
             for mode in [WidgetDisplayMode.used, .remaining] {
                 data.displayMode = mode
@@ -346,6 +346,112 @@ final class CodexScheduledResetTests: XCTestCase {
             XCTAssertEqual(dashboard.size.width, PanelHeightController.panelWidth - 28)
             XCTAssertGreaterThan(dashboard.size.height, wide.size.height, label)
         }
+    }
+
+    func testForecastTimeButtonTogglesSharedSettingWhenHostExposesAccessibility() throws {
+        try withHosting(Button("Control") {}) { hosting in
+            guard accessibilityButton(named: "Control", in: hosting) != nil else {
+                throw XCTSkip("This test host does not expose accessibility children for a standalone SwiftUI button.")
+            }
+        }
+        let suite = "OpenUsageTests.ForecastTimeToggle.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(id: "codex.resetWatch", provider: provider, title: "Reset Watch")
+        let weekly = WidgetDescriptor.percent(id: "codex.weekly", provider: provider, title: "Weekly")
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: [descriptor, weekly]),
+            providers: [], defaults: defaults
+        )
+        for scheduled in [false, true] {
+            store.setCodexResetWatch(CodexResetWatch(
+                chancePercent: scheduled ? 99 : 75, deadline: Date().addingTimeInterval(5 * 24 * 3600),
+                isScheduled: scheduled
+            ))
+            for mode in [ResetDisplayMode.absolute, .relative] {
+                store.resetDisplayMode = mode
+                let data = store.data(for: descriptor)
+                let label = try XCTUnwrap(data.boundedTrailingText())
+                try withHosting(
+                    WidgetRowView(data: data, onToggleResetDisplay: { store.resetDisplayMode.toggle() })
+                        .frame(width: PanelHeightController.panelWidth - 28)
+                        .environment(\.hoverTooltipsDisabled, true)
+                        .defaultAppStorage(defaults)
+                ) { hosting in
+                    let button = try XCTUnwrap(accessibilityButton(named: label, in: hosting))
+                    XCTAssertTrue(button.accessibilityPerformPress())
+                }
+                let toggled: ResetDisplayMode = mode == .absolute ? .relative : .absolute
+                XCTAssertEqual(store.resetDisplayMode, toggled)
+                XCTAssertEqual(defaults.string(forKey: "resetDisplayMode"), toggled.rawValue)
+                XCTAssertEqual(store.data(for: weekly).resetDisplayMode, toggled)
+                XCTAssertNotEqual(store.data(for: descriptor).boundedTrailingText(), label)
+                try withHosting(WidgetRowView(data: data).defaultAppStorage(defaults)) { hosting in
+                    XCTAssertNil(accessibilityButton(named: label, in: hosting))
+                }
+            }
+        }
+    }
+
+    func testClickableScheduledTimeKeepsStaticLayoutInBothModesAndAllLanguages() throws {
+        let suite = "OpenUsageTests.ForecastTimeLayout.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
+        var data = WidgetData(title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
+        data.forecast = .init(deadline: Date().addingTimeInterval(5 * 24 * 3600), isScheduled: true)
+        let export = ProcessInfo.processInfo.environment["OPENUSAGE_RESET_DISPLAY_SCREENSHOTS"]
+            .map { URL(fileURLWithPath: $0, isDirectory: true) }
+        if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
+
+        for language in LanguageSetting.allCases {
+            try L10n.withLanguage(language) {
+                for mode in [ResetDisplayMode.absolute, .relative] {
+                    data.resetDisplayMode = mode
+                    @MainActor func render(interactive: Bool) throws -> NSImage {
+                        try XCTUnwrap(ShareCardRenderer.image(
+                            for: WidgetRowView(data: data, onToggleResetDisplay: interactive ? {} : nil)
+                                .frame(width: PanelHeightController.panelWidth - 28)
+                                .background(Color.black)
+                                .environment(\.colorScheme, .dark)
+                                .environment(\.hoverTooltipsDisabled, true)
+                                .defaultAppStorage(defaults)
+                        ))
+                    }
+                    let interactive = try render(interactive: true)
+                    XCTAssertEqual(interactive.size, try render(interactive: false).size)
+                    if let export {
+                        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(interactive.tiffRepresentation)))
+                        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                        try png.write(to: export.appendingPathComponent("\(language.rawValue)-\(mode.rawValue).png"))
+                    }
+                }
+            }
+        }
+    }
+
+    private func withHosting<Content: View>(
+        _ view: Content, inspect: (NSHostingView<Content>) throws -> Void
+    ) rethrows {
+        let hosting = NSHostingView(rootView: view)
+        let window = NSWindow(
+            contentRect: .init(x: 0, y: 0, width: 320, height: 100),
+            styleMask: .borderless, backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = hosting
+        window.setContentSize(hosting.fittingSize)
+        hosting.layoutSubtreeIfNeeded()
+        try inspect(hosting)
+    }
+
+    private func accessibilityButton(named name: String, in element: any NSAccessibilityProtocol) -> (any NSAccessibilityProtocol)? {
+        if element.accessibilityRole() == .button,
+           element.accessibilityLabel() == name || element.accessibilityTitle() == name { return element }
+        return (element.accessibilityChildren() ?? []).compactMap { $0 as? any NSAccessibilityProtocol }
+            .compactMap { accessibilityButton(named: name, in: $0) }.first
     }
 
     private func response(

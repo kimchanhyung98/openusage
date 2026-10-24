@@ -95,6 +95,7 @@
 "Requests" = "Requests";
 "Reset Forecast" = "Reset Forecast";
 "Reset Watch" = "Reset Watch";
+"Reset expected soon" = "Reset expected soon";
 "Reset expires %@" = "Reset expires %@";
 "Reset expires in %@" = "Reset expires in %@";
 "Reset expires soon" = "Reset expires soon";
@@ -109,6 +110,8 @@
 "Runs out soon" = "Runs out soon";
 "Scheduled %@" = "Scheduled %@";
 "Scheduled Reset" = "Scheduled Reset";
+"Scheduled in %@" = "Scheduled in %@";
+"Scheduled soon" = "Scheduled soon";
 "Session" = "Session";
 "Sessions start after you send your first message." = "Sessions start after you send your first message.";
 "Sonnet" = "Sonnet";
@@ -137,6 +140,7 @@
 "Weekly limit" = "Weekly limit";
 "Weekly quota" = "Weekly quota";
 "Will Run Out" = "Will Run Out";
+"Within %@" = "Within %@";
 "Y" = "Y";
 "Yesterday" = "Yesterday";
 "a major outage" = "a major outage";
