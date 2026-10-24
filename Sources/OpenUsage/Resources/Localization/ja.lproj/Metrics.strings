@@ -95,6 +95,7 @@
 "Requests" = "リクエスト";
 "Reset Forecast" = "リセット予測";
 "Reset Watch" = "リセット予測";
+"Reset expected soon" = "まもなくリセットの見込み";
 "Reset expires %@" = "%@にリセット権の有効期限が終了";
 "Reset expires in %@" = "%@後にリセット権の有効期限が終了";
 "Reset expires soon" = "リセット権の有効期限がまもなく終了";
@@ -109,6 +110,8 @@
 "Runs out soon" = "まもなく使い切る見込み";
 "Scheduled %@" = "%@に予定";
 "Scheduled Reset" = "リセット予定";
+"Scheduled in %@" = "%@後に予定";
+"Scheduled soon" = "まもなくリセット予定";
 "Session" = "セッション";
 "Sessions start after you send your first message." = "最初のメッセージを送信すると、セッションが始まります。";
 "Sonnet" = "Sonnet";
@@ -137,6 +140,7 @@
 "Weekly limit" = "週間の上限";
 "Weekly quota" = "週間の上限";
 "Will Run Out" = "上限到達の見込み";
+"Within %@" = "%@以内";
 "Y" = "昨日";
 "Yesterday" = "昨日";
 "a major outage" = "大規模障害";

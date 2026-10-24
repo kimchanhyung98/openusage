@@ -2,6 +2,28 @@ import XCTest
 @testable import OpenUsage
 
 final class MetricLocalizationTests: XCTestCase {
+    func testForecastCountdownUsesSelectedLanguage() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var data = WidgetData(title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 75, limit: 100)
+        data.forecast = .init(deadline: now.addingTimeInterval(3600))
+        data.resetDisplayMode = .relative
+
+        for (language, expected, scheduled, imminent, scheduledImminent) in [
+            (LanguageSetting.english, "Within 1h", "Scheduled in 1h", "Reset expected soon", "Scheduled soon"),
+            (.korean, "1시간 이내", "1시간 후 예정", "곧 초기화 예상", "곧 초기화 예정"),
+            (.japanese, "1時間以内", "1時間後に予定", "まもなくリセットの見込み", "まもなくリセット予定")
+        ] {
+            L10n.withLanguage(language) {
+                data.forecast?.isScheduled = false
+                XCTAssertEqual(data.boundedTrailingText(now: now), expected)
+                XCTAssertEqual(data.boundedTrailingText(now: now.addingTimeInterval(3300)), imminent)
+                data.forecast?.isScheduled = true
+                XCTAssertEqual(data.boundedTrailingText(now: now), scheduled)
+                XCTAssertEqual(data.boundedTrailingText(now: now.addingTimeInterval(3300)), scheduledImminent)
+            }
+        }
+    }
+
     func testAutoTimePreservesSystemHourCycleAndLocalizesDayPeriod() throws {
         let date = try XCTUnwrap(Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 23, hour: 17, minute: 30)))
         let twelveHourSystem = Locale(identifier: "en_US")

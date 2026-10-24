@@ -95,6 +95,7 @@
 "Requests" = "요청";
 "Reset Forecast" = "초기화 예측";
 "Reset Watch" = "초기화 예측";
+"Reset expected soon" = "곧 초기화 예상";
 "Reset expires %@" = "%@ 초기화권 만료";
 "Reset expires in %@" = "%@ 후 초기화권 만료";
 "Reset expires soon" = "초기화권이 곧 만료됨";
@@ -109,6 +110,8 @@
 "Runs out soon" = "곧 소진";
 "Scheduled %@" = "%@ 예정";
 "Scheduled Reset" = "초기화 예정";
+"Scheduled in %@" = "%@ 후 예정";
+"Scheduled soon" = "곧 초기화 예정";
 "Session" = "세션";
 "Sessions start after you send your first message." = "첫 메시지를 보내면 세션이 시작됩니다.";
 "Sonnet" = "Sonnet";
@@ -137,6 +140,7 @@
 "Weekly limit" = "주간 한도";
 "Weekly quota" = "주간 한도";
 "Will Run Out" = "한도 소진 예상";
+"Within %@" = "%@ 이내";
 "Y" = "어제";
 "Yesterday" = "어제";
 "a major outage" = "대규모 장애";

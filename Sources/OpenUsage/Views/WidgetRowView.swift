@@ -217,23 +217,29 @@ struct WidgetRowView: View {
     @ViewBuilder
     private func trailingContext(_ rowData: WidgetData) -> some View {
         if let text = rowData.boundedTrailingText() {
-            if rowData.forecast?.isScheduled == true {
-                Text(text)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(nil)
-                    .multilineTextAlignment(.trailing)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .hoverTooltip(rowData.resetTooltip())
-            } else if rowData.hasResetLabel(), let onToggleResetDisplay {
+            if rowData.hasResetLabel(), let onToggleResetDisplay {
                 Button(action: onToggleResetDisplay) {
-                    Text(text).foregroundStyle(.secondary)
+                    trailingLabel(text, for: rowData)
                 }
                 .buttonStyle(.plain)
                 .hoverTooltip(rowData.resetTooltip())
             } else {
-                Text(text).foregroundStyle(.secondary)
+                trailingLabel(text, for: rowData)
                     .hoverTooltip(rowData.resetTooltip())
             }
+        }
+    }
+
+    @ViewBuilder
+    private func trailingLabel(_ text: String, for rowData: WidgetData) -> some View {
+        if rowData.forecast?.isScheduled == true {
+            Text(text)
+                .foregroundStyle(.secondary)
+                .lineLimit(nil)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(text).foregroundStyle(.secondary)
         }
     }
 
