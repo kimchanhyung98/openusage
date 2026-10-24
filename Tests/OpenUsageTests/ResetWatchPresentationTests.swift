@@ -168,6 +168,13 @@ final class ResetWatchPresentationTests: XCTestCase {
             XCTAssertEqual(expired.boundedTrailingText(now: afterDeadline), scheduled ? "Scheduled soon" : nil)
             XCTAssertEqual(expired.hasResetLabel(now: afterDeadline), scheduled)
             XCTAssertEqual(expired.boundedHeadline, scheduled ? "99% chance" : "0% chance")
+
+            let afterGrace = now.addingTimeInterval(300 + 7_200)
+            let expiredAfterGrace = data.presented(at: afterGrace)
+            XCTAssertEqual(expiredAfterGrace.boundedHeadline, "0% chance")
+            XCTAssertNil(expiredAfterGrace.boundedTrailingText(now: afterGrace))
+            XCTAssertFalse(expiredAfterGrace.hasResetLabel(now: afterGrace))
+            XCTAssertNil(expiredAfterGrace.resetTooltip(now: afterGrace))
         }
     }
 
@@ -199,6 +206,52 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertEqual(expired.meterState(now: deadline), .noData)
         XCTAssertNil(expired.communityVoteTick)
         XCTAssertNil(expired.communityVoteLabel)
+    }
+
+    func testScheduledResetBecomesZeroAfterTwoHourGracePeriod() {
+        let scheduledFor = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiresAt = scheduledFor.addingTimeInterval(7_200)
+        var data = forecast(chance: 99, deadline: scheduledFor)
+        data.forecast?.isScheduled = true
+
+        let pending = data.presented(at: expiresAt.addingTimeInterval(-1))
+        XCTAssertTrue(pending.hasData)
+        XCTAssertEqual(pending.boundedHeadline, "99% chance")
+        XCTAssertEqual(pending.boundedTrailingText(), "Scheduled \(Formatters.monthDayTimeLabel(scheduledFor))")
+        XCTAssertEqual(pending.forecastDeadline, expiresAt)
+
+        for elapsed in [7_200, 7_201, 2 * 86_400, 3 * 86_400] as [TimeInterval] {
+            let now = scheduledFor.addingTimeInterval(elapsed)
+            let expired = data.presented(at: now)
+            XCTAssertTrue(expired.hasData)
+            XCTAssertEqual(expired.boundedHeadline, "0% chance")
+            XCTAssertEqual(expired.fraction, 0)
+            XCTAssertEqual(expired.meterState(now: now), .level(.neutral))
+            XCTAssertNil(expired.boundedTrailingText(now: now))
+            XCTAssertNil(expired.resetTooltip(now: now))
+            XCTAssertNil(expired.forecastDeadline)
+            XCTAssertNil(expired.communityVoteLabel)
+        }
+    }
+
+    func testFailedCachedScheduledResetBecomesUnavailableAfterTwoHours() {
+        let scheduledFor = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiresAt = scheduledFor.addingTimeInterval(7_200)
+        var data = forecast(chance: 99, deadline: scheduledFor)
+        data.forecast?.isScheduled = true
+        data.forecast?.refreshFailed = true
+
+        let pending = data.presented(at: expiresAt.addingTimeInterval(-1))
+        XCTAssertTrue(pending.hasData)
+        XCTAssertEqual(pending.boundedHeadline, "99% chance")
+        XCTAssertEqual(pending.boundedTrailingText(), "Cached forecast · Refresh failed")
+
+        let expired = data.presented(at: expiresAt)
+        XCTAssertFalse(expired.hasData)
+        XCTAssertEqual(expired.headline, WidgetData.noDataHeadline)
+        XCTAssertEqual(expired.boundedTrailingText(now: expiresAt), "Unavailable · Retry later")
+        XCTAssertEqual(expired.meterState(now: expiresAt), .noData)
+        XCTAssertNil(expired.resetTooltip(now: expiresAt))
     }
 
     func testRemovingForecastMetadataClearsItsMeaningAndDeadlineTogether() {
@@ -319,6 +372,48 @@ final class ResetWatchPresentationTests: XCTestCase {
         XCTAssertFalse(expired.isEmpty)
         XCTAssertEqual(expired.groups.first?.metrics.first?.value, "0%")
         XCTAssertEqual(expired.groups.first?.metrics.first?.fraction, 0)
+    }
+
+    func testPinnedScheduledResetInvalidatesAtEndOfTwoHourGracePeriod() {
+        let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
+        let descriptor = WidgetDescriptor.forecast(
+            id: "codex.resetWatch", provider: provider, title: "Reset Watch"
+        )
+        let scheduledFor = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiresAt = scheduledFor.addingTimeInterval(7_200)
+        let groups = [ProviderMetrics(provider: provider, metrics: [descriptor])]
+        var data = forecast(chance: 99, deadline: scheduledFor)
+        data.forecast?.isScheduled = true
+
+        let pending = MenuBarContentBuilder.build(
+            groups: groups, data: { _ in data }, now: expiresAt.addingTimeInterval(-1)
+        )
+        XCTAssertEqual(pending.nextInvalidation, expiresAt)
+        XCTAssertEqual(pending.groups.first?.metrics.first?.value, "99%")
+
+        let expired = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: expiresAt)
+        XCTAssertNil(expired.nextInvalidation)
+        XCTAssertEqual(expired.groups.first?.metrics.first?.value, "0%")
+        XCTAssertEqual(expired.bars.first?.fraction, 0)
+
+        data.forecast?.refreshFailed = true
+        let failed = MenuBarContentBuilder.build(groups: groups, data: { _ in data }, now: expiresAt)
+        XCTAssertTrue(failed.isEmpty)
+        XCTAssertNil(failed.nextInvalidation)
+    }
+
+    func testScheduledResetRowTimelineExpiresWithoutNetworkRefresh() {
+        let scheduledFor = Date(timeIntervalSince1970: 1_800_000_000)
+        let expiresAt = scheduledFor.addingTimeInterval(7_200)
+        let start = expiresAt.addingTimeInterval(-15)
+        var data = forecast(chance: 99, deadline: scheduledFor)
+        data.forecast?.isScheduled = true
+        let schedule = WidgetRowTimelineSchedule(deadline: data.forecastDeadline, interval: 30)
+
+        let entries = Array(schedule.entries(from: start, mode: .normal).prefix(3))
+
+        XCTAssertEqual(entries, [start, expiresAt])
+        XCTAssertEqual(entries.map { data.presented(at: $0).boundedHeadline }, ["99% chance", "0% chance"])
     }
 
     func testWidgetRowTimelineInsertsExactForecastDeadlineBetweenPeriodicTicks() {

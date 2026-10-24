@@ -1,6 +1,8 @@
 import Foundation
 
 struct CodexResetWatch: Equatable, Sendable {
+    static let scheduledResetGracePeriod: TimeInterval = 2 * 60 * 60
+
     let chancePercent: Double
     let deadline: Date?
     var episodeID: String?
@@ -10,8 +12,10 @@ struct CodexResetWatch: Equatable, Sendable {
     /// 출처 게시물이 나중에 보완되어도 같은 관측의 알림 기록 연결.
     var eventAliases: [String] = []
 
-    /// 예정 시각 경과는 실행 완료 증거가 아니므로 예측 기한만 만료 처리.
-    var expiresAt: Date? { isScheduled ? nil : deadline }
+    /// 예정 리셋은 반영 지연을 2시간 허용하며, 만료는 실행 완료를 의미하지 않음.
+    var expiresAt: Date? {
+        deadline?.addingTimeInterval(isScheduled ? Self.scheduledResetGracePeriod : 0)
+    }
 
     func isExpired(at date: Date) -> Bool {
         guard let expiresAt else { return false }
@@ -257,10 +261,11 @@ actor CodexResetWatchStore {
             } else {
                 scheduledFor = nil
             }
-            return .watch(CodexResetWatch(
+            let watch = CodexResetWatch(
                 chancePercent: 99, deadline: scheduledFor, isScheduled: true,
                 eventID: scheduled.id.map { "scheduled:\($0)" }
-            ))
+            )
+            if !watch.isExpired(at: date) { return .watch(watch) }
         }
         guard let activeWatch = payload.data.activeWatch,
               let chance = activeWatch.resetChancePercent

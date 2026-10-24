@@ -86,7 +86,12 @@ struct WidgetData: Hashable {
     }
 
     var isForecast: Bool { forecast != nil }
-    var forecastDeadline: Date? { forecast?.isScheduled == true ? nil : forecast?.deadline }
+    var forecastDeadline: Date? {
+        guard let forecast, let deadline = forecast.deadline else { return nil }
+        return forecast.isScheduled
+            ? deadline.addingTimeInterval(CodexResetWatch.scheduledResetGracePeriod)
+            : deadline
+    }
     var communityVoteTick: Double? {
         guard hasData, forecast?.isScheduled != true, let percent = forecast?.communityYesPercent else { return nil }
         return percent / 100
@@ -590,6 +595,7 @@ extension WidgetData {
             copy.used = 0
             copy.forecast?.deadline = nil
             copy.forecast?.communityYesPercent = nil
+            copy.forecast?.isScheduled = false
         }
         return copy
     }
