@@ -1,5 +1,5 @@
 /* 앱 화면 재현 그래픽 — 팝오버·provider 카드·지표 행.
-   소스: Sources/OpenUsage/ v0.11.1. 밀도 Compact, 외관 다크.
+   소스: Sources/OpenUsage/ v0.14.0. 밀도 Compact, 외관은 Settings 반영.
    1 CSS px = 1 SwiftUI pt. */
 
 /* ---------- 팝오버 골격 ---------- */
@@ -215,8 +215,32 @@
   bottom: -2px;
   width: 2px;
   border-radius: 1px;
-  background: rgba(242, 242, 247, 0.55);
+  background: var(--am-secondary);
 }
+
+.am-votes { margin-left: auto; color: var(--am-secondary); font-size: var(--am-fs-support); white-space: nowrap; }
+.am-soft-marker { display: none; position: absolute; inset-block: 0; width: 1px; background: #d5a000; left: clamp(0px, var(--soft-limit-used, 90%), calc(100% - 1px)); }
+.am[data-mode='left'] .am-soft-marker { left: clamp(0px, var(--soft-limit-left, 10%), calc(100% - 1px)); }
+.am[data-soft-limit='Weekly'] [data-soft-limit-window='Weekly'] .am-soft-marker,
+.am[data-soft-limit='5 Hours'] [data-soft-limit-window='5 Hours'] .am-soft-marker { display: block; }
+.am[data-theme='dark'] .am-soft-marker { background: #ffd60a; }
+
+.am-resets { position: relative; }
+.am-resets .am-reset-trigger { position: relative; appearance: none; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.am-reset-trigger::before { content: ''; position: absolute; inset: -4px -7px; border-radius: 6px; }
+.am-reset-trigger:hover::before,
+.am-reset-trigger[aria-expanded='true']::before { background: var(--am-track); }
+.am-reset-trigger .am-dot { background: var(--am-warning); }
+.am-reset-detail { position: absolute; right: 14px; bottom: calc(100% + 8px); z-index: 4; width: 250px; margin: 0; padding: 14px; border: 1px solid var(--am-sep); border-radius: 12px; background: color-mix(in srgb, var(--am-tray) 88%, var(--am-primary)); color: var(--am-primary); box-shadow: 0 6px 20px rgba(0, 0, 0, .25); overflow: visible; }
+.am-reset-detail[popover] { position: fixed; inset: auto; }
+.am-reset-detail::before { content: ''; position: absolute; left: calc(var(--reset-arrow-x, 85%) - 5px); bottom: -6px; width: 10px; height: 10px; transform: rotate(45deg); background: inherit; border-right: 1px solid var(--am-sep); border-bottom: 1px solid var(--am-sep); }
+.am-reset-detail[data-side='below']::before { top: -6px; bottom: auto; transform: rotate(225deg); }
+.am-reset-credit { position: relative; display: flex; align-items: center; gap: 10px; height: calc(var(--am-fs-support) + 18px); font-size: var(--am-fs-support); white-space: nowrap; }
+.am-reset-credit:not(:last-child)::before { content: ''; position: absolute; top: 50%; bottom: -50%; left: 8px; width: 1.5px; background: var(--am-track); }
+.am-reset-number { position: relative; border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; flex: none; background: var(--am-normal); color: #fff; font-size: 11px; font-weight: 500; }
+.am-reset-number.is-warning { background: var(--am-warning); color: #000; }
+.am-reset-countdown { margin-left: auto; color: var(--am-secondary); font-variant-numeric: tabular-nums; }
+.am-refresh { appearance: none; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
 
 .am-row-value {
   display: flex;
@@ -389,7 +413,7 @@ button.am-options { cursor: pointer; }
   gap: 4px;
   padding: 3px 8px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--am-track);
   font-size: var(--am-fs-support);
   font-weight: 500;
   white-space: nowrap;
@@ -404,15 +428,18 @@ button.am-options { cursor: pointer; }
   margin-left: auto;
   display: flex;
   align-items: flex-end;
-  gap: 2px;
+  gap: 1px;
+  width: 150px;
+  min-width: 90px;
   height: 14px;
 }
 
 .am-spark i {
   display: block;
-  width: 4px;
+  flex: 1;
+  min-width: 2px;
   border-radius: 1px;
-  background: var(--am-secondary);
+  background: var(--am-normal);
 }
 
 @media (prefers-reduced-motion: reduce) {

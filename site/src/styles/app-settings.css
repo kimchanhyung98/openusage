@@ -335,6 +335,8 @@ button.am-chip {
   font: inherit;
   cursor: pointer;
 }
+.am-number-wrap { display: flex; align-items: center; gap: 5px; }
+.am-number { width: 60px; padding: 3px 5px; border: 1px solid var(--am-sep); border-radius: 5px; background: var(--am-quinary); color: var(--am-primary); font: inherit; }
 .am-action-row .am-item-ctl {
   width: 100%;
   padding-left: 0;

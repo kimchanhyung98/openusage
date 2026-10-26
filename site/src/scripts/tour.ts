@@ -73,6 +73,21 @@ export function initFeatureTour(): void {
     cursor.classList.remove('is-visible', 'is-clicking');
     delete section.dataset.tourHighlight;
     terminal.hidden = true;
+    mock.dataset.softLimit = 'off';
+    get('[data-card="codex"] .am-more').hidden = true;
+    get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'false');
+    get('[data-card="codex"] .am-reset-detail').hidden = true;
+  };
+  const showDashboardFeature = (stage: Stage): void => {
+    if (stage === 'soft-limit') mock.dataset.softLimit = 'Weekly';
+    if (stage === 'reset-watch') {
+      get('[data-card="codex"] .am-more').hidden = false;
+      get('[data-card="codex"] [data-expand]').setAttribute('aria-expanded', 'true');
+    }
+    if (stage === 'soft-limit' || stage === 'reset-watch') {
+      const body = get('[data-scr="dashboard"] .am-body');
+      body.scrollTop = body.scrollHeight;
+    }
   };
   const finish = (): void => {
     announcement.textContent = tabs.find((tab) => tab.dataset.tourTab === selected)?.dataset.tourLabel ?? '';
@@ -84,6 +99,7 @@ export function initFeatureTour(): void {
     section.dataset.tourPopup = selected === 'menu-bar' || selected === 'integrations' ? 'closed' : 'open';
     showAccount(selected === 'accounts');
     terminal.hidden = selected !== 'integrations';
+    showDashboardFeature(selected);
     setPhase(selected === 'accounts' ? 'account-added' : selected);
     showCaption();
     finish();
@@ -147,6 +163,9 @@ export function initFeatureTour(): void {
         await waitForStep(1600, signal);
         delete section.dataset.tourHighlight;
         setPhase('statistics');
+      } else if (stage === 'reset-watch' || stage === 'soft-limit') {
+        showDashboardFeature(stage);
+        setPhase(stage);
       } else if (stage === 'accounts') {
         showAccount(false);
         setPhase('opening-options');
@@ -160,7 +179,7 @@ export function initFeatureTour(): void {
         showScreen('settings');
         setPhase('accounts-empty');
         await waitForStep(750, signal);
-        await clickAt('[data-settings-group="accounts"] [aria-label="Add Account"]', signal);
+        await clickAt('[data-settings-group="accounts"] [data-add-account]', signal);
         sheet.hidden = false;
         setPhase('add-account');
         await waitForStep(750, signal);

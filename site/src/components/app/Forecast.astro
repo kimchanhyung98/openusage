@@ -1,0 +1,28 @@
+---
+import Glyph from './Glyph.astro';
+import type { ForecastRow } from '../../data/demo';
+
+interface Props { r: ForecastRow; metric?: string; hidden?: boolean }
+const { r, metric, hidden = false } = Astro.props;
+const severity = r.probability >= 70 ? 'critical' : r.probability >= 60 ? 'warning' : r.probability >= 40 ? 'normal' : 'neutral';
+---
+
+<div class="am-row am-forecast" data-metric={metric} hidden={hidden}>
+  <div class="am-row-label">
+    <b>{r.label}</b>
+    {severity === 'critical' && <span role="img" aria-label="Reset chance is very high"><Glyph name="flame" class="am-flame is-critical" /></span>}
+    {severity === 'warning' && <span role="img" aria-label="Reset chance is high"><Glyph name="warn" class="am-warn" /></span>}
+    {r.voteShare !== undefined && <span class="am-votes" aria-label={`Community vote share: ${r.voteShare}%`}>{r.voteShare}% expect a reset</span>}
+  </div>
+  <span class="am-meter" aria-hidden="true">
+    <i class={`am-w${r.probability} is-${severity}`}></i>
+    {r.voteShare !== undefined && <b class={`am-t${r.voteShare}`}></b>}
+  </span>
+  <div class="am-row-value">
+    <span class="am-headline is-flat">{r.probability}% chance</span>
+    <button type="button" class="am-reset" data-toggle-reset>
+      <span class="abs" data-preview-time={r.resetAbsolute}>{r.resetAbsolute}</span>
+      <span class="rel">{r.resetRelative}</span>
+    </button>
+  </div>
+</div>

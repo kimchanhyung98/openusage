@@ -3,6 +3,7 @@
 import { maxPins } from '../data/metrics';
 import { initPreviewSettings, applySettingsToMock, choosePreviewSetting, handleSettingsClick, previewPreference } from './settings';
 import { openMenu, closeMenu } from './menus';
+import { localizePreview } from './localization';
 
 const PILL_MS = 4500;
 // 앱은 패널 높이를 min(내용, 화면 85%)로 자르고 넘치면 내부 스크롤(PanelHeightController.swift:139·152).
@@ -62,7 +63,7 @@ function closePickers(mock: HTMLElement): void {
 
 function closeOptions(mock: HTMLElement): void {
   closePickers(mock);
-  mock.querySelectorAll<HTMLElement>('.am-optmenu').forEach((m) => {
+  mock.querySelectorAll<HTMLElement>('.am-optmenu, .am-account-actions').forEach((m) => {
     closeMenu(m);
   });
   mock.querySelectorAll<HTMLElement>('[data-options]').forEach((b) => {
@@ -77,6 +78,7 @@ function pill(mock: HTMLElement, text: string, notice = false): void {
   const el = mock.querySelector<HTMLElement>('[data-pill]');
   if (!el) return;
   el.textContent = text;
+  localizePreview(mock);
   el.classList.toggle('is-notice', notice);
   el.hidden = false;
   window.clearTimeout(pillTimers.get(mock) ?? 0);
@@ -141,6 +143,25 @@ function toggleStar(mock: HTMLElement, button: HTMLElement): void {
 }
 
 export function initPopoverNav(): void {
+  document.querySelectorAll<HTMLElement>('[data-mock] [data-account-actions-trigger]').forEach((header) => {
+    header.tabIndex = 0;
+  });
+  const openAccountActions = (target: Element, event: Event): void => {
+    const section = target.closest<HTMLElement>('[data-mock] .am-section');
+    const menu = section?.querySelector<HTMLElement>('.am-account-actions');
+    const trigger = section?.querySelector<HTMLElement>('[data-account-actions-trigger]');
+    if (!menu || !trigger) return;
+    event.preventDefault();
+    openMenu(menu, trigger);
+  };
+  document.addEventListener('contextmenu', (event) => {
+    if (event.target instanceof Element) openAccountActions(event.target, event);
+  });
+  document.addEventListener('keydown', (event) => {
+    if ((event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) && event.target instanceof Element) {
+      openAccountActions(event.target, event);
+    }
+  });
   document.addEventListener('click', (event) => {
     const target = event.target as Element | null;
     if (!target || !target.closest) return;
@@ -241,7 +262,7 @@ function moveInMenu(event: KeyboardEvent): void {
   const active = document.activeElement as HTMLElement | null;
   const menu = active?.closest<HTMLElement>('[role="menu"]');
   if (!menu || menu.hidden) return;
-  const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]'));
+  const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('button[role^="menuitem"]:not(:disabled)'));
   const i = items.indexOf(active as HTMLButtonElement);
   if (i < 0) return;
   const next: Record<string, number> = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: items.length - 1 };

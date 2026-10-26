@@ -5,6 +5,7 @@ export const languageTags: Record<string, string> = { English: 'en', 한국어: 
 
 export type Control =
   | { kind: 'toggle'; on: boolean }
+  | { kind: 'number'; value: string; min: number; max: number }
   | { kind: 'picker'; value: string; options: string[] }
   | { kind: 'action'; label: string; message: string };
 
@@ -16,6 +17,7 @@ export interface SettingRow {
   note?: string;
   /** 라벨 옆 info.circle. 눌리지 않는 이미지. */
   info?: boolean;
+  requires?: string;
 }
 
 export interface SettingGroup {
@@ -37,7 +39,7 @@ export const settingGroups: SettingGroup[] = [
       { id: 'launchAtLogin', label: 'Launch at Login', control: { kind: 'toggle', on: false } },
       { id: 'globalShortcut', label: 'Global Shortcut', control: { kind: 'action', label: 'Record Shortcut', message: 'Record a global shortcut in the Mac app.' } },
       { id: 'language', label: 'Language', control: { kind: 'picker', value: 'English', options: ['English', '한국어', '日本語'] },
-        note: 'Restart OpenUsage to apply the language change.' },
+        note: 'Language changes apply immediately in this preview.' },
     ],
   },
   {
@@ -84,11 +86,24 @@ export const settingGroups: SettingGroup[] = [
     ],
   },
   {
+    id: 'softLimit', title: 'Soft Limit',
+    rows: [
+      { id: 'softLimitEnabled', label: 'Enabled', control: { kind: 'toggle', on: false },
+        note: 'Shows a personal limit guide. Automatic cancellation is currently unavailable.' },
+      { id: 'softLimitWindow', label: 'Window', requires: 'softLimitEnabled',
+        control: { kind: 'picker', value: 'Weekly', options: ['5 Hours', 'Weekly'] } },
+      { id: 'softLimitThreshold', label: 'Threshold', requires: 'softLimitEnabled',
+        control: { kind: 'number', value: '90', min: 1, max: 100 } },
+    ],
+  },
+  {
     id: 'notifications', title: 'Notifications',
     rows: [
       { id: 'underTenPercent', label: 'Almost Out', control: { kind: 'toggle', on: false }, info: true },
       { id: 'healthyToClose', label: 'Cutting It Close', control: { kind: 'toggle', on: false }, info: true },
       { id: 'closeToRunningOut', label: 'Will Run Out', control: { kind: 'toggle', on: false }, info: true },
+      { id: 'codexResetWatch', label: 'Codex Reset Watch', control: { kind: 'toggle', on: false },
+        note: 'Notifies you about new public reset forecasts or scheduled resets. Not a guarantee of an account reset.' },
     ],
   },
   {

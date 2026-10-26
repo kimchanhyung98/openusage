@@ -4,26 +4,31 @@
 // picker는 앱의 .menu 팝업이라 흐름을 밀지 않고 위에 겹쳐 뜸.
 import Glyph from './Glyph.astro';
 import { settingGroups, settingsCrossLink, languageTags } from '../../data/settings';
+import { initialPreviewState } from '../../data/preview-state';
 
 interface Props { nav: boolean; uid: string; onboarding?: boolean }
 const { nav, uid, onboarding = false } = Astro.props;
+const preferences = initialPreviewState().preferences;
+const groups = settingGroups.map((group) => ({ ...group, rows: group.rows.map((row) => ({ ...row,
+  control: row.control.kind === 'picker' ? { ...row.control, value: String(preferences[row.id]) } : row.control,
+})) }));
 ---
 
 <div class="am-screen">
   {
-    settingGroups.map((g) => (
+    groups.map((g) => (
       <div class="am-group" data-settings-group={g.id}>
         <b>
           {g.title}
-          {g.accessory === 'add' && <button type="button" class="am-icon-action" data-native-action="Add and sign in to accounts in the Mac app." aria-label="Add Account"><Glyph name="plus" class="am-accessory" /></button>}
+          {g.accessory === 'add' && <button type="button" class="am-icon-action" data-add-account data-native-action="Add and sign in to accounts in the Mac app." aria-label="Add Account"><Glyph name="plus" class="am-accessory" /></button>}
           {g.accessory === 'info' && <Glyph name="info" class="am-accessory" />}
           {g.accessory === 'manage' && <button type="button" class="am-icon-action" data-native-action="Manage the Tokscale device name in the Mac app." aria-label="Manage Tokscale Device Name"><Glyph name="more" class="am-accessory" /></button>}
         </b>
         <div class="am-list">
           {onboarding && g.id === 'accounts' && <p class="am-account-empty" data-tour-accounts-empty>Add a Claude or Codex account to switch which sign-in new terminal sessions use.</p>}
-          {g.rows.filter((row) => !onboarding || row.id !== 'usageCards').map(({ id, label, control, info, note }) => (
+          {g.rows.filter((row) => !onboarding || row.id !== 'usageCards').map(({ id, label, control, info, note, requires }) => (
             <>
-              <div class:list={['am-item', { 'am-action-row': !label }]}>
+              <div class:list={['am-item', { 'am-action-row': !label }]} data-requires={requires} hidden={Boolean(requires)}>
                 {label && <span class="am-item-label">
                   {label}
                   {info && <Glyph name="info" class="am-accessory" />}
@@ -31,13 +36,14 @@ const { nav, uid, onboarding = false } = Astro.props;
                 <span class="am-item-ctl">
                   {control.kind === 'toggle' &&
                     (nav ? (
-                      <button type="button" class:list={['am-toggle', { 'is-on': control.on }]} role="switch" aria-checked={control.on ? 'true' : 'false'} data-setting={id}>
+                      <button type="button" class:list={['am-toggle', { 'is-on': control.on }]} role="switch" aria-checked={control.on ? 'true' : 'false'} data-setting={id} aria-label={id === 'softLimitEnabled' ? 'Enable Soft Limit' : undefined}>
                         <span class="am-sr">{label}</span>
                       </button>
                     ) : (
                       <span class:list={['am-toggle', { 'is-on': control.on }]} role="img" aria-label={control.on ? 'On' : 'Off'} />
                     ))}
                   {control.kind === 'action' && <button type="button" class="am-chip" data-native-action={control.message}>{control.label}</button>}
+                  {control.kind === 'number' && <span class="am-number-wrap"><input class="am-number" type="number" min={control.min} max={control.max} step="1" value={control.value} aria-label={label} data-number-setting={id} disabled={!nav} /><span>%</span></span>}
                   {control.kind === 'picker' &&
                     (nav ? (
                       <span class="am-pickwrap">
@@ -64,7 +70,7 @@ const { nav, uid, onboarding = false } = Astro.props;
                     ))}
                 </span>
               </div>
-              {note && <p class="am-note" data-language-notice={id === 'language' ? true : undefined} hidden={id === 'language'}>{note}</p>}
+              {note && <p class="am-note" data-language-notice={id === 'language' ? true : undefined}>{note}</p>}
             </>
           ))}
           {

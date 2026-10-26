@@ -143,6 +143,52 @@ function initAppMock(): void {
   });
 }
 
+function initResetDetails(): void {
+  document.querySelectorAll<HTMLElement>('[data-mock] .am-resets').forEach((row, index) => {
+    const trigger = row.querySelector<HTMLButtonElement>('.am-reset-trigger')!;
+    const detail = row.querySelector<HTMLElement>('.am-reset-detail')!;
+    detail.id = `reset-detail-${index}`;
+    trigger.setAttribute('aria-controls', detail.id);
+    let timer = 0;
+    const cancel = (): void => window.clearTimeout(timer);
+    const open = (): void => {
+      cancel();
+      openMenu(detail, trigger);
+      const anchor = trigger.getBoundingClientRect();
+      const bounds = detail.getBoundingClientRect();
+      const center = (anchor.left + anchor.right) / 2;
+      const left = Math.max(8, Math.min(center - bounds.width / 2, document.documentElement.clientWidth - bounds.width - 8));
+      detail.style.left = `${left}px`;
+      detail.style.setProperty('--reset-arrow-x', `${Math.max(14, Math.min(center - left, bounds.width - 14))}px`);
+      detail.dataset.side = bounds.bottom <= anchor.top ? 'above' : 'below';
+    };
+    const leave = (event: PointerEvent): void => {
+      cancel();
+      if (event.pointerType === 'touch' || detail.contains(document.activeElement)) return;
+      timer = window.setTimeout(() => closeMenu(detail), 180);
+    };
+    trigger.addEventListener('pointerenter', (event) => {
+      if (event.pointerType === 'touch') return;
+      cancel();
+      timer = window.setTimeout(open, 400);
+    });
+    trigger.addEventListener('pointerleave', leave);
+    detail.addEventListener('pointerenter', cancel);
+    detail.addEventListener('pointerleave', leave);
+    trigger.addEventListener('click', () => {
+      cancel();
+      if (!detail.hidden) closeMenu(detail);
+      else {
+        open();
+        detail.focus({ preventScroll: true });
+      }
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') cancel();
+    });
+  });
+}
+
 // 카드가 여럿이라 document 전역에서 하나만 집으면 다른 카드의 메뉴가 열림.
 function openMetricMenu(button: HTMLButtonElement): void {
   const list = button.closest('.am-spend-card')?.querySelector<HTMLElement>('.am-menu');
@@ -249,6 +295,7 @@ try {
   initNav();
   initFeatureTour();
   initMenus();
+  initResetDetails();
   initAppMock();
   initPopoverNav();
 } catch (error) {

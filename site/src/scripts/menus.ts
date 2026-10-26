@@ -20,7 +20,7 @@ export function closeMenu(menu: HTMLElement): void {
   if (menu.matches(':popover-open')) menu.hidePopover();
   menu.hidden = true;
   if (active?.menu === menu) {
-    active.trigger.setAttribute('aria-expanded', 'false');
+    if (active.trigger.hasAttribute('aria-expanded')) active.trigger.setAttribute('aria-expanded', 'false');
     active = undefined;
   }
 }
@@ -47,10 +47,10 @@ export function openMenu(menu: HTMLElement, trigger: HTMLElement): void {
   );
   menu.style.left = `${position.left}px`;
   menu.style.top = `${position.top}px`;
-  trigger.setAttribute('aria-expanded', 'true');
+  if (trigger.hasAttribute('aria-expanded')) trigger.setAttribute('aria-expanded', 'true');
   active = { menu, trigger, openedAt: performance.now() };
-  (menu.querySelector<HTMLElement>('[aria-checked="true"]')
-    ?? menu.querySelector<HTMLElement>('button[role^="menuitem"]'))?.focus({ preventScroll: true });
+  (menu.querySelector<HTMLElement>('[aria-checked="true"]:not(:disabled)')
+    ?? menu.querySelector<HTMLElement>('button[role^="menuitem"]:not(:disabled)'))?.focus({ preventScroll: true });
 }
 
 export function initMenus(): void {

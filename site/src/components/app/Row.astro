@@ -3,6 +3,8 @@
 import type { Row } from '../../data/demo';
 import { metricID, providerMetrics } from '../../data/metrics';
 import Meter from './Meter.astro';
+import Forecast from './Forecast.astro';
+import ResetCredits from './ResetCredits.astro';
 
 interface Props { r: Row; provider: string }
 const { r, provider } = Astro.props;
@@ -12,8 +14,10 @@ const hidden = [...defaults.alwaysVisible, ...defaults.onDemand].find((entry) =>
 ---
 
 {r.kind === 'bounded' && <Meter r={r} metric={metric} hidden={hidden} />}
+{r.kind === 'forecast' && <Forecast r={r} metric={metric} hidden={hidden} />}
+{r.kind === 'text' && metric === 'codex.rateLimitResets' && <ResetCredits metric={metric} hidden={hidden} />}
 {
-  r.kind === 'text' && (
+  r.kind === 'text' && metric !== 'codex.rateLimitResets' && (
     <div class="am-trow" data-metric={metric} data-account-history={['Today', 'Yesterday'].includes(r.label) ? '' : undefined} hidden={hidden}>
       <b>{r.label}</b>
       <span class="am-trow-val">{r.values.join(' · ')}</span>
