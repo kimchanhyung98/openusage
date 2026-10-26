@@ -123,7 +123,7 @@ test('language cycles through Korean, Japanese, and English across interactive a
   const tour = page.locator('[data-tour-mock]');
   const sheet = page.locator('[data-tour-sheet]');
   const downloads = page.locator('[data-download]');
-  await expect(downloads).toContainText(['Download', 'Download', 'Download']);
+  await expect(downloads).toHaveText(['Download', 'Download', 'Download v0.99.2']);
   await openSettings(page);
   for (const [language, locale, title, label, sheetTitle, downloadLabel] of [
     ['한국어', 'ko', '설정', '언어', 'Claude 계정 추가', '다운로드'],
@@ -137,8 +137,7 @@ test('language cycles through Korean, Japanese, and English across interactive a
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveText(language);
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveAttribute('lang', locale);
     await expect(sheet.locator('.tour-sheet-head > b')).toHaveText(sheetTitle);
-    await expect(downloads).toContainText([downloadLabel, downloadLabel, downloadLabel]);
-    await expect(page.locator('.hero [data-download]')).toHaveText(downloadLabel);
+    await expect(downloads).toHaveText([downloadLabel, downloadLabel, `${downloadLabel} v0.99.2`]);
   }
   await expect(app.locator('[data-language-notice]')).toHaveText('Language changes apply immediately in this preview.');
   await app.locator('[data-scr="settings"] .am-back').click();
