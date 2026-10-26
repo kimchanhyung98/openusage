@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, matchesGlob } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function workflowStep(name: string, file = 'publish-site.yml') {
@@ -387,18 +387,43 @@ for (const [updatedAt, valid] of [
 }
 
 test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 처리', () => {
-  const workflow = readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8');
-  const push = workflow.split('  push:\n')[1].split('  pull_request:\n')[0];
-  for (const path of ['site/**', 'script/site_*.sh', '.github/workflows/publish-site.yml']) {
-    assert.equal(push.includes(`      - '${path}'`), false, path);
+  function paths(file: string, event: 'push' | 'pull_request'): string[] {
+    const workflow = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
+    const lines = workflow.split('\n');
+    const start = lines.indexOf(`  ${event}:`);
+    assert.notEqual(start, -1, `${file}: ${event}`);
+    const patterns: string[] = [];
+    for (const line of lines.slice(start + 1)) {
+      if (line && !line.startsWith('    ')) break;
+      const match = line.match(/^      - '([^']+)'$/);
+      if (match) patterns.push(match[1]);
+    }
+    assert.ok(patterns.length > 0, `${file}: ${event} paths`);
+    return patterns;
   }
-  assert.ok(push.includes("      - 'Sources/OpenUsage/**'"));
-  assert.ok(push.includes("      - '!Sources/OpenUsage/Resources/ProviderIcons/**'"));
-  assert.match(workflow, /\n  workflow_call:/);
-  const pullRequest = workflow.split('  pull_request:\n')[1].split('\npermissions:')[0];
-  for (const path of ['site/**', 'script/site_*.sh', 'Sources/OpenUsage/**', '.github/workflows/publish-site.yml']) {
-    assert.ok(pullRequest.includes(`      - '${path}'`), path);
+  const filters = [paths('publish-site.yml', 'push'), paths('site.yml', 'push'), paths('site.yml', 'pull_request')];
+  const ko = 'Sources/OpenUsage/Resources/Localization/ko.lproj/Settings.strings';
+  const cases: Array<[string[], boolean[]]> = [
+    [['site/src/scripts/localization.ts'], [true, false, true]],
+    [['script/site_assemble.sh'], [true, false, true]],
+    [['Sources/OpenUsage/Resources/ProviderIcons/codex.svg'], [true, false, true]],
+    [[ko], [true, false, true]],
+    [['Sources/OpenUsage/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
+    [[ko, 'Sources/OpenUsage/Stores/WidgetDataStore.swift'], [true, true, true]],
+    [['Sources/OpenUsage/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
+    [['Sources/OpenUsage/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
+    [['.github/workflows/publish-site.yml'], [true, false, true]],
+    [['.github/workflows/site.yml'], [false, true, true]],
+    [['docs/settings.md'], [false, false, false]],
+  ];
+  for (const [changed, expected] of cases) {
+    const selected = filters.map((patterns) => changed.some((path) => patterns.reduce((included, pattern) => {
+      const excluded = pattern.startsWith('!');
+      return matchesGlob(path, excluded ? pattern.slice(1) : pattern) ? !excluded : included;
+    }, false)));
+    assert.deepEqual(selected, expected, changed.join(', '));
   }
+  assert.match(readFileSync(new URL('../../.github/workflows/site.yml', import.meta.url), 'utf8'), /\n  workflow_call:/);
 });
 
 

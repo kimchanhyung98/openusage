@@ -1,6 +1,6 @@
 import { test, expect, openHome } from './fixtures';
 
-const stages = ['menu-bar', 'dashboard', 'statistics', 'accounts', 'integrations'];
+const stages = ['menu-bar', 'dashboard', 'statistics', 'reset-watch', 'soft-limit', 'accounts', 'integrations'];
 
 test('terminal boundary keyboard input stays inside the feature preview', async ({ page }) => {
   await openHome(page);

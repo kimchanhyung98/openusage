@@ -41,7 +41,7 @@ test('outer wheel input advances through every tour stage and leaves only at the
   await tour.locator('[data-tour-tab="menu-bar"]').click();
   await page.mouse.move(10, (page.viewportSize()?.height ?? 900) / 2);
   const y = await page.evaluate(() => scrollY);
-  for (const stage of ['dashboard', 'statistics', 'accounts', 'integrations']) {
+  for (const stage of ['dashboard', 'statistics', 'reset-watch', 'soft-limit', 'accounts', 'integrations']) {
     // 독립 휠 제스처의 220ms 간격을 실제 브라우저 입력으로 검증.
     await page.waitForTimeout(240);
     await wheel(page, 200);
