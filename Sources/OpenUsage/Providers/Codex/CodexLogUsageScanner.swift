@@ -160,7 +160,7 @@ actor CodexLogUsageScanner {
         // child session의 replay된 parent history 구간 동안 non-nil.
         var replayGate: ChildReplayGate?
 
-        for line in data.split(separator: UInt8(ascii: "\n")) {
+        for line in JSONLScanning.lines(in: data) {
             let isTurnContext = line.range(of: turnContextMarker) != nil
             let isSessionMeta = !sawSessionMeta && line.range(of: sessionMetaMarker) != nil
             let isTaskStarted = replayGate != nil && line.range(of: taskStartedMarker) != nil

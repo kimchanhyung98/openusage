@@ -93,7 +93,7 @@ actor PiUsageScanner {
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage":{"#.utf8)
         var entries: [Entry] = []
-        for line in data.split(separator: UInt8(ascii: "\n")) {
+        for line in JSONLScanning.lines(in: data) {
             guard line.range(of: marker) != nil, let entry = parseLine(Data(line)) else { continue }
             entries.append(entry)
         }

@@ -3,6 +3,20 @@ import Foundation
 /// incremental scan 기계장치의 `Item` 비의존 절반: 파일 discovery와 scan window 하한.
 /// non-generic namespace — window 계산만 필요한 provider(Grok)가 generic actor 없이 공유.
 enum JSONLScanning {
+    /// 빈 행을 생략하고 마지막 무개행 행까지 순차 제공 — 전체 행 배열과 Swift 바이트별 순회 생략.
+    static func lines(in data: Data) -> some Sequence<Data> {
+        let newline = Data([0x0A])
+        return sequence(state: data.startIndex) { start in
+            while start < data.endIndex {
+                let end = data.range(of: newline, in: start..<data.endIndex)?.lowerBound ?? data.endIndex
+                let lower = start
+                start = end < data.endIndex ? end + 1 : data.endIndex
+                if lower < end { return data[lower..<end] }
+            }
+            return nil
+        }
+    }
+
     /// 발견한 로그 파일 + parse cache의 key가 되는 stat 필드.
     struct DiscoveredFile: Sendable {
         var path: String

@@ -232,7 +232,7 @@ actor ClaudeLogUsageScanner {
         let marker = Data(#""usage""#.utf8)
         var entries: [Entry] = []
         var rejected = false
-        for line in data.split(separator: UInt8(ascii: "\n")) {
+        for line in JSONLScanning.lines(in: data) {
             guard line.range(of: marker) != nil else { continue }
             guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else {
                 rejected = true
