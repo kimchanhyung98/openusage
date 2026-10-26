@@ -51,6 +51,8 @@ final class TelemetryRecorder {
     private let heartbeatSleep: @Sendable () async throws -> Void
     private let appVersion: String
     private let buildChannel: String
+    private var heartbeatStarted = false
+    private var heartbeatTask: Task<Void, Never>?
     private var diagnosticsStarted = false
     private var diagnosticObserver: UUID?
 
@@ -75,6 +77,8 @@ final class TelemetryRecorder {
 
     var isEnabled: Bool { store.enabled }
 
+    deinit { heartbeatTask?.cancel() }
+
     /// 사용자의 공유 선택을 beta-wipe에도 살아남는 store에 persist하고 SDK에 반영 — 미변경 시 no-op
     func setEnabled(_ enabled: Bool) {
         guard store.enabled != enabled else { return }
@@ -87,6 +91,7 @@ final class TelemetryRecorder {
         sink.setEnabled(enabled)
         updateDiagnosticSubscription()
         if enabled { tick() }
+        updateHeartbeat()
         AppLog.info(.config, "telemetry \(enabled ? "enabled" : "disabled") by user")
     }
 
@@ -142,11 +147,30 @@ final class TelemetryRecorder {
         sink.flush()
     }
 
-    func runHeartbeat() async {
-        while !Task.isCancelled {
-            tick()
-            do { try await heartbeatSleep() }
-            catch { return }
+    func startHeartbeat() {
+        heartbeatStarted = true
+        updateHeartbeat()
+    }
+
+    func stopHeartbeat() {
+        heartbeatStarted = false
+        updateHeartbeat()
+    }
+
+    private func updateHeartbeat() {
+        guard heartbeatStarted, store.enabled else {
+            heartbeatTask?.cancel()
+            heartbeatTask = nil
+            return
+        }
+        guard heartbeatTask == nil else { return }
+        heartbeatTask = Task { [weak self, heartbeatSleep] in
+            while !Task.isCancelled {
+                guard self?.isEnabled == true else { return }
+                self?.tick()
+                do { try await heartbeatSleep() }
+                catch { return }
+            }
         }
     }
 

@@ -19,10 +19,10 @@ enum AppRefreshLoop {
         now: @escaping @MainActor () -> Date = Date.init
     ) -> Task<Void, Never> {
         Task {
-            let heartbeat = Task { await telemetry.runHeartbeat() }
+            telemetry.startHeartbeat()
             let claudeTask = ClaudeTaskOwner()
             var nextGeneralPassAt = now()
-            defer { heartbeat.cancel(); claudeTask.task?.cancel() }
+            defer { telemetry.stopHeartbeat(); claudeTask.task?.cancel() }
             await withTaskCancellationHandler {
                 while !Task.isCancelled {
                     if let clockChangedAt = wakeSignal.consumeClockChange() {
@@ -64,8 +64,8 @@ enum AppRefreshLoop {
                     _ = await (statusRefresh, nextWake)
                 }
             } onCancel: {
-                heartbeat.cancel()
                 Task { @MainActor in
+                    telemetry.stopHeartbeat()
                     claudeTask.task?.cancel()
                     providerStatus.cancelRefreshes()
                 }
