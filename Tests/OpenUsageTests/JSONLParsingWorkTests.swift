@@ -31,8 +31,28 @@ final class JSONLParsingWorkTests: XCTestCase {
             let input = Data(bytes)
             let lines = JSONLScanning.lines(in: input)
             XCTAssertEqual(Array(lines), input.split(separator: 0x0A))
-            XCTAssertEqual(Array(lines), input.split(separator: 0x0A))
+            var padded = Data([0xAA])
+            padded.append(input)
+            padded.append(0xBB)
+            let slice = padded[1..<(padded.count - 1)]
+            XCTAssertEqual(slice.startIndex, 1)
+            XCTAssertEqual(Array(JSONLScanning.lines(in: slice)), slice.split(separator: 0x0A))
         }
+    }
+
+    func testLineSequenceKeepsIteratorsIndependent() {
+        let expected = [Data("first".utf8), Data("second".utf8)]
+        let lines = JSONLScanning.lines(in: Data("first\nsecond\n".utf8))
+        var first = lines.makeIterator()
+        var second = lines.makeIterator()
+
+        XCTAssertEqual(first.next(), expected[0])
+        XCTAssertEqual(first.next(), expected[1])
+        XCTAssertNil(first.next())
+        XCTAssertEqual(second.next(), expected[0])
+        XCTAssertEqual(second.next(), expected[1])
+        XCTAssertNil(second.next())
+        XCTAssertEqual(Array(lines), expected)
     }
 
     func testCodexRetainsModelTierAndTotalsAcrossUnusedRows() {
