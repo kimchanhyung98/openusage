@@ -57,6 +57,7 @@ test('Korean applies immediately to settings, accounts, dashboard details, and c
   await expect(forecast).toBeVisible();
   await expect(forecast.locator('.am-row-label > b')).toHaveText('초기화 예측');
   await expect(forecast.locator('.am-headline')).toHaveText('가능성 65%');
+  await expect(forecast.getByRole('img', { name: '초기화 가능성 높음', exact: true })).toBeVisible();
   await expect(forecast.locator('.am-votes')).toHaveText('72%가 초기화 예상');
   await expect(forecast.locator('.am-votes')).toHaveAttribute('aria-label', '커뮤니티 투표 비율: 72%');
   await codex.locator('.am-reset-trigger').click();
@@ -121,11 +122,13 @@ test('language cycles through Korean, Japanese, and English across interactive a
   const app = page.locator('[data-mock]');
   const tour = page.locator('[data-tour-mock]');
   const sheet = page.locator('[data-tour-sheet]');
+  const downloads = page.locator('[data-download]');
+  await expect(downloads).toContainText(['Download', 'Download', 'Download']);
   await openSettings(page);
-  for (const [language, locale, title, label, sheetTitle] of [
-    ['한국어', 'ko', '설정', '언어', 'Claude 계정 추가'],
-    ['日本語', 'ja', '設定', '言語', 'Claude アカウントを追加'],
-    ['English', 'en', 'Settings', 'Language', 'Add Claude Account'],
+  for (const [language, locale, title, label, sheetTitle, downloadLabel] of [
+    ['한국어', 'ko', '설정', '언어', 'Claude 계정 추가', '다운로드'],
+    ['日本語', 'ja', '設定', '言語', 'Claude アカウントを追加', 'ダウンロード'],
+    ['English', 'en', 'Settings', 'Language', 'Add Claude Account', 'Download'],
   ]) {
     await choose(app, 'language', language);
     for (const root of [app, tour, sheet]) await expect(root).toHaveAttribute('lang', locale);
@@ -134,14 +137,16 @@ test('language cycles through Korean, Japanese, and English across interactive a
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveText(language);
     await expect(app.locator('[data-picker="language"] [data-picker-value]')).toHaveAttribute('lang', locale);
     await expect(sheet.locator('.tour-sheet-head > b')).toHaveText(sheetTitle);
+    await expect(downloads).toContainText([downloadLabel, downloadLabel, downloadLabel]);
+    await expect(page.locator('.hero [data-download]')).toHaveText(downloadLabel);
   }
   await expect(app.locator('[data-language-notice]')).toHaveText('Language changes apply immediately in this preview.');
   await app.locator('[data-scr="settings"] .am-back').click();
   const codex = app.locator('[data-card="codex-account-1"]');
   await expect(codex.locator('[data-account-title]')).toHaveText('Codex: Account 1');
   await codex.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(codex.getByRole('img', { name: 'Reset chance is high', exact: true })).toBeVisible();
   await expect(codex.locator('.am-forecast .am-headline')).toHaveText('65% chance');
   await expect(codex.locator('.am-forecast .abs')).toHaveText('By Oct 27 at 10:00');
   await expect(app.locator('.am-spend-card [data-period="today"]')).toHaveText('Today');
-  for (const download of await page.locator('[data-preview-label]').all()) await expect(download).toHaveText('Download');
 });
