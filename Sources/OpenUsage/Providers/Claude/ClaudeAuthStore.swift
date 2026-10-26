@@ -443,18 +443,26 @@ struct ClaudeAuthStore: Sendable {
     // prod 폴백 금지(오설정 은폐 + 사용자 토큰의 production 전송 위험).
     func oauthConfig() throws -> ClaudeOAuthConfig {
         let endpoints = resolveOAuthEndpoints()
-        let usageURLString = "\(endpoints.baseAPI)/api/oauth/usage"
-        guard let usageURL = URL(string: usageURLString) else {
-            throw ClaudeAuthError.invalidOAuthURL(usageURLString)
-        }
-        guard let refreshURL = URL(string: endpoints.refreshURL) else {
-            throw ClaudeAuthError.invalidOAuthURL(endpoints.refreshURL)
-        }
         return ClaudeOAuthConfig(
-            usageURL: usageURL,
-            refreshURL: refreshURL,
+            usageURL: try validatedOAuthURL("\(endpoints.baseAPI)/api/oauth/usage"),
+            refreshURL: try validatedOAuthURL(endpoints.refreshURL),
             clientID: endpoints.clientID
         )
+    }
+
+    /// 원격 OAuth는 HTTPS 필수. HTTP는 명시적 loopback 개발 주소만 허용.
+    private func validatedOAuthURL(_ value: String) throws -> URL {
+        guard let url = URL(string: value) else {
+            throw ClaudeAuthError.invalidOAuthURL(value)
+        }
+        let scheme = url.scheme?.lowercased()
+        let host = url.host?.lowercased() ?? ""
+        let isLoopback = ["localhost", "127.0.0.1", "::1"].contains(host)
+        guard !host.isEmpty, scheme == "https" || (scheme == "http" && isLoopback) else {
+            // 새로 거부한 주소의 userinfo·경로·query·fragment를 오류에 노출하지 않음.
+            throw ClaudeAuthError.invalidOAuthURL("\(scheme ?? "")://\(host)")
+        }
+        return url
     }
 
     func keychainServiceCandidates() -> [String] {

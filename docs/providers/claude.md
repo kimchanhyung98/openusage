@@ -187,6 +187,9 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 로컬에서 토큰의 신원을 확인할 수 없으면 같은 API 주소의 `/api/oauth/profile`로 먼저 확인.
 이 과정에서도 Claude Code 토큰 갱신과 로그인 교체 검증을 적용하며 Desktop 토큰은 읽기 전용 유지.
 Claude Code 토큰은 `platform.claude.com/v1/oauth/token`에서 갱신하고, Claude Desktop 토큰은 읽기 전용이므로 Desktop 자체에서 갱신 필요.
+`CLAUDE_CODE_CUSTOM_OAUTH_URL`과 `CLAUDE_LOCAL_OAUTH_API_BASE`의 원격 주소는 HTTPS 필수.
+로컬 개발용 HTTP 주소는 호스트가 `localhost`, `127.0.0.1`, `::1`일 때만 허용.
+허용하지 않는 주소는 프로필·사용량 조회와 토큰 갱신 전에 오류로 처리하며, 기본 주소로 자동 대체하지 않음.
 토큰이 만료되거나 폐기되면 계정 신원이 확인된 다음 인증 정보 출처로만 재시도.
 
 5시간 세션 사용량이 0%이고 초기화 시각도 없으면 Session 행의 후행 레이블에 **Not started** 표시; 마우스를 올리면 첫 메시지 후 세션이 시작된다는 설명 제공.
