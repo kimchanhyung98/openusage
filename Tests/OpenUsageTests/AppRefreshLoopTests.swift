@@ -6,7 +6,7 @@ final class AppRefreshLoopTests: XCTestCase {
     func testOwnerCancellationStopsHeartbeatWhileReconciliationRemainsSuspended() async throws {
         let heartbeatStarted = expectation(description: "Heartbeat sleeping")
         let heartbeatCancelled = expectation(description: "Heartbeat cancelled")
-        let fixture = try Fixture(heartbeatSleep: {
+        let fixture = try Fixture(telemetryEnabled: true, heartbeatSleep: {
             heartbeatStarted.fulfill()
             do { try await Task.sleep(for: .seconds(30)) }
             catch { heartbeatCancelled.fulfill(); throw error }
@@ -24,6 +24,78 @@ final class AppRefreshLoopTests: XCTestCase {
         await fulfillment(of: [heartbeatCancelled], timeout: 0.5)
         gate.open()
         await loop.value
+    }
+
+    func testDisabledTelemetryDoesNotScheduleHeartbeatSleep() async throws {
+        let unexpectedSleep = expectation(description: "Disabled heartbeat remains stopped")
+        unexpectedSleep.isInverted = true
+        let fixture = try Fixture(heartbeatSleep: {
+            unexpectedSleep.fulfill()
+            throw CancellationError()
+        })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [reconciliationStarted], timeout: 2)
+        await fulfillment(of: [unexpectedSleep], timeout: 0.1)
+        loop.cancel()
+        gate.open()
+        await loop.value
+    }
+
+    func testTelemetryConsentRestartsHeartbeatWhileReconciliationIsSuspended() async throws {
+        let firstSleep = expectation(description: "First consent heartbeat")
+        let firstCancellation = expectation(description: "Opt-out cancels heartbeat")
+        let secondSleep = expectation(description: "Renewed consent heartbeat")
+        let secondCancellation = expectation(description: "Owner cancellation stops renewed heartbeat")
+        let unexpectedSleep = expectation(description: "Stopped owner does not restart heartbeat")
+        unexpectedSleep.isInverted = true
+        let probe = HeartbeatProbe(
+            onSleep: { count in
+                switch count {
+                case 1: firstSleep.fulfill()
+                case 2: secondSleep.fulfill()
+                default: unexpectedSleep.fulfill()
+                }
+            },
+            onCancel: { count in
+                if count == 1 { firstCancellation.fulfill() }
+                if count == 2 { secondCancellation.fulfill() }
+            }
+        )
+        let fixture = try Fixture(heartbeatSleep: { try await probe.sleep() })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [reconciliationStarted], timeout: 2)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [firstSleep], timeout: 0.5)
+        fixture.telemetry.startHeartbeat()
+        fixture.telemetry.startHeartbeat()
+        fixture.telemetry.setEnabled(true)
+        fixture.telemetry.setEnabled(false)
+        await fulfillment(of: [firstCancellation], timeout: 0.5)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [secondSleep], timeout: 0.5)
+        loop.cancel()
+        await fulfillment(of: [secondCancellation], timeout: 0.5)
+        gate.open()
+        await loop.value
+        fixture.telemetry.setEnabled(false)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [unexpectedSleep], timeout: 0.1)
+        let sleeps = await probe.sleepCount
+        XCTAssertEqual(sleeps, 2)
     }
 
     func testCancellationDuringReconciliationDoesNotStartUsageOrStatus() async throws {
@@ -174,8 +246,12 @@ final class AppRefreshLoopTests: XCTestCase {
         let dataStore: WidgetDataStore
         let telemetry: TelemetryRecorder
 
-        init(heartbeatSleep: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(60)) }) throws {
+        init(
+            telemetryEnabled: Bool = false,
+            heartbeatSleep: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(60)) }
+        ) throws {
             defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defaults.set(telemetryEnabled, forKey: "enabled")
             dataStore = WidgetDataStore(
                 registry: WidgetRegistry(providers: [runtime.provider], descriptors: []),
                 providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults
@@ -188,6 +264,25 @@ final class AppRefreshLoopTests: XCTestCase {
         }
 
         func cleanUp() { defaults.removePersistentDomain(forName: suite) }
+    }
+
+    private actor HeartbeatProbe {
+        private(set) var sleepCount = 0
+        let onSleep: @Sendable (Int) -> Void
+        let onCancel: @Sendable (Int) -> Void
+
+        init(onSleep: @escaping @Sendable (Int) -> Void, onCancel: @escaping @Sendable (Int) -> Void) {
+            self.onSleep = onSleep
+            self.onCancel = onCancel
+        }
+
+        func sleep() async throws {
+            sleepCount += 1
+            let count = sleepCount
+            onSleep(count)
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch { onCancel(count); throw error }
+        }
     }
 
     @MainActor
