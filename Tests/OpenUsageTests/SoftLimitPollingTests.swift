@@ -71,7 +71,15 @@ final class SoftLimitPollingTests: XCTestCase {
         fixture.sleeper.wake()
         await fulfillment(of: [repeated], timeout: 1)
         XCTAssertEqual(fixture.adapter.listCalls, 1)
-        XCTAssertEqual(fixture.adapter.cancelCalls, 1)
+        XCTAssertEqual(fixture.adapter.cancelledOperationIDs, ["turn"])
+
+        fixture.adapter.tasks.append(.init(providerID: "codex", sessionID: "session", operationID: "next-turn"))
+        let newTaskChecked = expectation(description: "Next poll checks the new task")
+        fixture.sleeper.onSleep = { newTaskChecked.fulfill() }
+        fixture.sleeper.wake()
+        await fulfillment(of: [newTaskChecked], timeout: 1)
+        XCTAssertEqual(fixture.adapter.listCalls, 2)
+        XCTAssertEqual(fixture.adapter.cancelledOperationIDs, ["turn", "next-turn"])
 
         fixture.now = fixture.now.addingTimeInterval(300)
         let noNextSleep = expectation(description: "Expired quota stops polling")
@@ -80,7 +88,8 @@ final class SoftLimitPollingTests: XCTestCase {
         fixture.sleeper.wake()
         await fulfillment(of: [noNextSleep], timeout: 0.05)
         XCTAssertEqual(fixture.sleeper.pendingCount, 0)
-        XCTAssertEqual(fixture.adapter.listCalls, 1)
+        XCTAssertEqual(fixture.adapter.listCalls, 2)
+        XCTAssertEqual(fixture.adapter.cancelledOperationIDs, ["turn", "next-turn"])
     }
 
     func testInvalidationCancelsPollingAndFreshSuccessRearms() async throws {
@@ -287,17 +296,19 @@ final class SoftLimitPollingTests: XCTestCase {
     private final class Adapter: SoftLimitCancelling {
         let providerID = "codex"
         let coverageNotice = "Fixture only."
+        var tasks: [SoftLimitTask] = [.init(providerID: "codex", sessionID: "session", operationID: "turn")]
         var listCalls = 0
-        var cancelCalls = 0
+        var cancelledOperationIDs: [String] = []
+        var cancelCalls: Int { cancelledOperationIDs.count }
         var onList: (@MainActor () async -> Void)?
         func runningTasks() async throws -> [SoftLimitTask] {
             listCalls += 1
             await onList?()
-            return [.init(providerID: providerID, sessionID: "session", operationID: "turn")]
+            return tasks
         }
         func cancel(_ task: SoftLimitTask, isAuthorized: @escaping @MainActor () -> Bool) async throws -> SoftLimitCancellationOutcome {
             guard isAuthorized() else { throw CancellationError() }
-            cancelCalls += 1
+            cancelledOperationIDs.append(task.operationID)
             return .cancelled
         }
         func disconnect() {}
