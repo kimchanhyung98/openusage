@@ -10,8 +10,8 @@ const severity = r.probability >= 70 ? 'critical' : r.probability >= 60 ? 'warni
 <div class="am-row am-forecast" data-metric={metric} hidden={hidden}>
   <div class="am-row-label">
     <b>{r.label}</b>
-    {severity === 'critical' && <span aria-label="Reset chance is very high"><Glyph name="flame" class="am-flame is-critical" /></span>}
-    {severity === 'warning' && <span aria-label="Reset chance is high"><Glyph name="warn" class="am-warn" /></span>}
+    {severity === 'critical' && <span role="img" aria-label="Reset chance is very high"><Glyph name="flame" class="am-flame is-critical" /></span>}
+    {severity === 'warning' && <span role="img" aria-label="Reset chance is high"><Glyph name="warn" class="am-warn" /></span>}
     {r.voteShare !== undefined && <span class="am-votes" aria-label={`Community vote share: ${r.voteShare}%`}>{r.voteShare}% expect a reset</span>}
   </div>
   <span class="am-meter" aria-hidden="true">

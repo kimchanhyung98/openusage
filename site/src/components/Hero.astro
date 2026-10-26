@@ -18,7 +18,7 @@ const words = copy['hero-title'].split(' ');
       </h1>
       <p class="description">{copy['hero-description']}</p>
       <div class="hero-actions">
-        <a class="btn btn-dark" href={site.releasesLatest} data-download>Mac용 다운로드</a>
+        <a class="btn btn-dark" href={site.releasesLatest} data-download data-preview-label>{copy['s03-cta']}</a>
         <a class="feature-link" href="#features">{copy['hero-features']} <span aria-hidden="true">↗</span></a>
       </div>
       <p class="compatibility">{copy['s03-req']}<br />{copy['hero-languages']}</p>
