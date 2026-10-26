@@ -10,6 +10,7 @@ final class SoftLimitCoordinator {
     @ObservationIgnored private let isProviderEnabled: (String) -> Bool
     @ObservationIgnored private let isCancellationScopeVerified: (String) -> Bool
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let pollingSleep: @MainActor () async throws -> Void
     @ObservationIgnored private var observations: [String: SoftLimitObservation] = [:]
     @ObservationIgnored private var inFlight: Set<String> = []
     @ObservationIgnored private var finished: Set<SoftLimitTask> = []
@@ -18,28 +19,59 @@ final class SoftLimitCoordinator {
     @ObservationIgnored private var revision = 0
     @ObservationIgnored private var observationNotBefore: Date?
     @ObservationIgnored private var pollingTask: Task<Void, Never>?
+    @ObservationIgnored private var isStarted = false
+    @ObservationIgnored private var pollingGeneration = 0
 
     init(
         settings: SoftLimitSettingsStore,
         adapters: [any SoftLimitCancelling],
         isProviderEnabled: @escaping (String) -> Bool,
         isCancellationScopeVerified: @escaping (String) -> Bool = { _ in false },
-        now: @escaping () -> Date = Date.init
+        now: @escaping () -> Date = Date.init,
+        pollingSleep: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(2)) }
     ) {
         self.settings = settings
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.providerID, $0) })
         self.isProviderEnabled = isProviderEnabled
         self.isCancellationScopeVerified = isCancellationScopeVerified
         self.now = now
+        self.pollingSleep = pollingSleep
     }
 
     func start() {
+        isStarted = true
+        updatePolling()
+    }
+
+    private var needsPolling: Bool {
+        guard isStarted, settings.enabled else { return false }
+        return observations.contains { providerID, observation in
+            adapters[providerID] != nil && isProviderEnabled(providerID)
+                && isCancellationScopeVerified(providerID)
+                && observation.usedFraction >= Double(settings.thresholdPercent) / 100
+                && now() < observation.expiresAt
+        }
+    }
+
+    private func updatePolling() {
+        guard needsPolling else {
+            pollingTask?.cancel()
+            pollingTask = nil
+            return
+        }
         guard pollingTask == nil else { return }
+        pollingGeneration += 1
+        let generation = pollingGeneration
+        let pollingSleep = pollingSleep
         pollingTask = Task { [weak self] in
+            defer {
+                if self?.pollingGeneration == generation { self?.pollingTask = nil }
+            }
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(2)) } catch { return }
-                guard let self else { return }
+                do { try await pollingSleep() } catch { return }
+                guard let self, !Task.isCancelled else { return }
                 await self.check()
+                guard self.needsPolling else { return }
             }
         }
     }
@@ -50,8 +82,7 @@ final class SoftLimitCoordinator {
     }
 
     func stop() {
-        pollingTask?.cancel()
-        pollingTask = nil
+        isStarted = false
         settingsDidChange()
     }
 
@@ -64,9 +95,11 @@ final class SoftLimitCoordinator {
         retryAfter.removeAll()
         statuses.removeAll()
         for adapter in adapters.values { adapter.disconnect() }
+        updatePolling()
     }
 
     func receive(_ snapshot: ProviderSnapshot, descriptors: [WidgetDescriptor]) {
+        defer { updatePolling() }
         guard settings.enabled, isProviderEnabled(snapshot.providerID), !snapshot.providerID.contains("@") else { return }
         let providerID = snapshot.providerID
         guard let observation = SoftLimitObservation.project(
@@ -90,6 +123,7 @@ final class SoftLimitCoordinator {
     func invalidate(providerID: String) {
         observations[providerID] = nil
         statuses[providerID] = .init(phase: .waiting, message: L10n.errors("Refresh failed. Waiting for fresh quota data before cancelling more tasks."))
+        updatePolling()
     }
 
     func status(for providerID: String) -> SoftLimitProviderStatus {
