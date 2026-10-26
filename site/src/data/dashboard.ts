@@ -61,7 +61,7 @@ export const cards: Card[] = [
         resetAbsolute: 'Resets today at 16:00', resetRelative: 'Resets in 2h 52m' },
     ],
     onDemand: [
-      { kind: 'trend', label: 'Usage Trend', bars: [0.35, 0.52, 0.28, 0.71, 0.44, 0.88, 0.63] },
+      { kind: 'trend', label: 'Usage Trend', bars: [0.12, 0.18, 0.1, 0.24, 0.14, 0.08, 0.15, 0.35, 0.24, 0.16, 0.52, 0.31, 0.28, 0.19, 0.42, 0.71, 0.39, 0.28, 0.44, 0.21, 0.33, 0.88, 0.6, 0.34, 0.45, 0.29, 0.51, 0.38, 0.63, 0.25] },
       { kind: 'text', label: 'Today', values: ['$4.08', '560K tokens'] },
       { kind: 'text', label: 'Yesterday', values: ['$12.50', '1.7M tokens'] },
     ],
@@ -81,13 +81,13 @@ export const cards: Card[] = [
         resetAbsolute: 'Resets today at 21:00', resetRelative: 'Resets in 6h 0m' },
       // 리셋 전에 한도 초과 예상 — 빨강 + 소진 예상 시각.
       { kind: 'bounded', label: 'Weekly', used: 97, limit: 100, elapsed: 0.9, runOutAt: 'today at 15:07',
-        resetAbsolute: 'Resets Sep 15 at 10:23', resetRelative: 'Resets in 4d 17h' },
+        resetAbsolute: 'Resets Oct 30 at 10:23', resetRelative: 'Resets in 4d 17h' },
     ],
     onDemand: [
-      { kind: 'trend', label: 'Usage Trend', bars: [0.61, 0.44, 0.79, 0.35, 0.92, 0.58, 0.7] },
-      // 값이 아직 없는 forecast 행 — em dash + No data.
-      { kind: 'bounded', label: 'Reset Watch', used: 0, limit: 100, elapsed: 0, noData: true },
-      { kind: 'text', label: 'Rate Limit Resets', values: ['2 resets'] },
+      { kind: 'trend', label: 'Usage Trend', bars: [0.1, 0.16, 0.08, 0.22, 0.15, 0.27, 0.18, 0.61, 0.33, 0.28, 0.44, 0.24, 0.19, 0.79, 0.46, 0.32, 0.35, 0.21, 0.14, 0.92, 0.56, 0.41, 0.25, 0.58, 0.38, 0.2, 0.32, 0.7, 0.26, 0.16] },
+      { kind: 'forecast', label: 'Reset Watch', probability: 65, voteShare: 72,
+        resetAbsolute: 'By Oct 27 at 10:00', resetRelative: 'Within 18h 30m' },
+      { kind: 'text', label: 'Rate Limit Resets', values: ['2 available'] },
       { kind: 'text', label: 'Today', values: ['$2.31', '690K tokens'] },
       { kind: 'text', label: 'Yesterday', values: ['$3.44', '910K tokens'] },
     ],

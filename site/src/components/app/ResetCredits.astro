@@ -1,0 +1,25 @@
+---
+interface Props { metric: string; hidden?: boolean }
+const { metric, hidden = false } = Astro.props;
+const expiries = [
+  { time: 'Oct 31 at 10:00', countdown: '4d 19h', severity: 'warning' },
+  { time: 'Nov 7 at 10:00', countdown: '11d 19h', severity: 'normal' },
+];
+---
+
+<div class="am-resets am-trow" data-metric={metric} hidden={hidden}>
+  <b>Rate Limit Resets</b>
+  <button type="button" class="am-trow-val am-reset-trigger" aria-haspopup="dialog" aria-expanded="false">
+    <span class="am-dot is-warning" aria-hidden="true"></span>
+    <span>2 available</span>
+  </button>
+  <div class="am-reset-detail" role="dialog" aria-label="Rate Limit Resets" tabindex="-1" hidden>
+    {expiries.map(({ time, countdown, severity }, index) => (
+      <div class="am-reset-credit">
+        <span class={`am-reset-number is-${severity}`} aria-hidden="true">{index + 1}</span>
+        <span class="am-reset-date" data-preview-time={time}>{time}</span>
+        <span class="am-reset-countdown">{countdown}</span>
+      </div>
+    ))}
+  </div>
+</div>

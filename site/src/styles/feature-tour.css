@@ -18,8 +18,10 @@
   display: flex;
   flex: none;
   justify-content: center;
-  gap: clamp(16px, 3vw, 36px);
+  gap: clamp(12px, 2vw, 28px);
   padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .tour-tab {
@@ -66,6 +68,7 @@
 }
 .tour-caption p { margin: 0; }
 .tour-caption span { display: block; }
+.tour-caption .tour-note { margin-top: 18px; font-size: 13px; line-height: 1.8; color: var(--ink-2); }
 [data-tour-caption-visible] .tour-caption,
 html:not(.js) .tour-caption {
   opacity: 1;
@@ -252,10 +255,14 @@ html:not(.js) .tour-tabs, html:not(.js) .tour-camera { display: none; }
 html:not(.js) .tour-fallback, [data-tour-error] .tour-fallback { display: flex; position: absolute; inset: 0; align-items: center; justify-content: center; }
 [data-tour-error] .tour-camera { display: none; }
 
+@media (max-width: 899px) {
+  .tour-tabs { justify-content: flex-start; }
+}
 @media (max-width: 599px) {
   .tour-content { gap: 8px; }
   .tour-tabs { gap: 16px; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
   .tour-tab { font-size: 13px; }
+  .tour-caption .tour-note { margin-top: 8px; font-size: 11px; line-height: 1.6; }
 }
 
 @media (max-width: 899px) and (orientation: portrait), (max-width: 599px) {

@@ -13,8 +13,9 @@ export function initialPreviewState(): PreviewState {
   const preferences: PreviewState['preferences'] = {};
   for (const { id, control } of rows) {
     if (control.kind === 'toggle') preferences[id] = control.on;
-    if (control.kind === 'picker') preferences[id] = control.value;
+    if (control.kind === 'picker' || control.kind === 'number') preferences[id] = control.value;
   }
+  preferences.usageCards = 'Separate Cards';
   return {
     preferences,
     activeAccounts: Object.fromEntries(accountFamilies.map((family) => [family.id, family.activeAccount])),
@@ -26,7 +27,9 @@ export function changePreference(state: PreviewState, id: string, value: unknown
   const control = rows.find((row) => row.id === id)?.control;
   if (!control || control.kind === 'action'
     || (control.kind === 'toggle' && typeof value !== 'boolean')
-    || (control.kind === 'picker' && (typeof value !== 'string' || !control.options.includes(value)))) {
+    || (control.kind === 'picker' && (typeof value !== 'string' || !control.options.includes(value)))
+    || (control.kind === 'number' && (typeof value !== 'string' || !/^\d+$/.test(value)
+      || Number(value) < control.min || Number(value) > control.max))) {
     throw new Error(`Invalid preview setting: ${id}`);
   }
   return { ...state, preferences: { ...state.preferences, [id]: value as string | boolean } };

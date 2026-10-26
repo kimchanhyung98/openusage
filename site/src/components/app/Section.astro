@@ -8,6 +8,7 @@ import Row from './Row.astro';
 import type { Card } from '../../data/demo';
 import { completeCard } from '../../data/dashboard';
 import { accountFamilies } from '../../data/accounts';
+import { initialPreviewState } from '../../data/preview-state';
 
 interface Props { c: Card; uid: string; hidden?: boolean }
 const { c: card, uid, hidden = false } = Astro.props;
@@ -15,19 +16,20 @@ const c = completeCard(card);
 const hasMore = c.onDemand.length > 0 || c.links.length > 0;
 const accounts = c.accountOptions ?? [];
 const activeAccount = accountFamilies.find((family) => family.id === c.provider)?.activeAccount;
+const separate = initialPreviewState().preferences.usageCards === 'Separate Cards';
 ---
 
-<div class="am-section" data-card={c.id} data-provider={c.provider} data-account-id={c.accountID} hidden={hidden || (c.accountID && c.accountID !== activeAccount)}>
+<div class="am-section" data-card={c.id} data-provider={c.provider} data-account-id={c.accountID} hidden={hidden || (!separate && c.accountID && c.accountID !== activeAccount)}>
   <div class="am-head">
     <svg class="am-mark" viewBox="0 0 24 24" aria-hidden="true"><use href={`#pi-${c.icon}`} /></svg>
-    <span class="am-head-title">
-      <b data-account-title data-family-title={c.title} data-separate-title={c.account ? `${c.title}: ${c.account}` : c.title}>{c.title}</b>
+    <span class="am-head-title" data-account-actions-trigger={c.accountID ? '' : undefined} role={c.accountID ? 'group' : undefined} tabindex={c.accountID ? -1 : undefined} aria-labelledby={c.accountID ? `${uid}-title-${c.id}` : undefined} aria-haspopup={c.accountID ? 'menu' : undefined} aria-controls={c.accountID ? `${uid}-actions-${c.id}` : undefined}>
+      <b id={`${uid}-title-${c.id}`} data-account-title data-family-title={c.title} data-separate-title={c.account ? `${c.title}: ${c.account}` : c.title}>{separate && c.account ? `${c.title}: ${c.account}` : c.title}</b>
       {c.plan && <span class="am-plan">{c.plan}</span>}
     </span>
     <span class="am-head-sp"></span>
     {
       c.account && accounts.length > 1 && (
-        <span class="am-acctwrap">
+        <span class="am-acctwrap" hidden={separate}>
           <button type="button" class="am-acct" data-picker={`acct-${c.provider}`} aria-label={`${c.title} Account`} aria-haspopup="menu" aria-expanded="false" aria-controls={`${uid}-acct-${c.id}`}>
             <span data-picker-value>{c.account}</span>
             <Glyph name="chevron-down" />
@@ -80,4 +82,10 @@ const activeAccount = accountFamilies.find((family) => family.id === c.provider)
       )
     }
   </div>
+  {c.accountID && <ul class="am-menu am-account-actions" id={`${uid}-actions-${c.id}`} role="menu" aria-label={`${c.title} Actions`} hidden>
+    <li role="none"><button type="button" role="menuitem" data-account-switch={c.provider} data-account-id={c.accountID} disabled={c.accountID === activeAccount}>Use {c.title}: {c.account}</button></li>
+    <li role="separator" class="am-optsep" />
+    <li role="none"><button type="button" role="menuitem" data-native-action={`Refresh ${c.title} from the Mac app. This preview uses sample data.`}>Refresh {c.title}</button></li>
+    <li role="none"><button type="button" role="menuitem" data-go={`metrics:${c.provider}`}>Customize…</button></li>
+  </ul>}
 </div>

@@ -66,7 +66,16 @@ export interface TrendRow {
   bars: number[];
 }
 
-export type Row = BoundedRow | TextRow | TrendRow;
+export interface ForecastRow {
+  kind: 'forecast';
+  label: string;
+  probability: number;
+  voteShare?: number;
+  resetAbsolute: string;
+  resetRelative: string;
+}
+
+export type Row = BoundedRow | TextRow | TrendRow | ForecastRow;
 
 /**
  * 기간 종료 시점 사용량 투영과 그로부터 나오는 심각도·문구. Support/Pace.swift + WidgetData.meterState.
@@ -107,7 +116,7 @@ export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
   };
 }
 
-export const appVersion = '0.11.1';
+export const appVersion = '0.14.0';
 
 export type { QuickLink, Card } from './dashboard';
 export { cards } from './dashboard';

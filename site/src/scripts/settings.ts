@@ -1,16 +1,19 @@
 import { accountFamilies } from '../data/accounts';
 import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../data/preview-state';
 import { languageTags } from '../data/settings';
+import { closeMenu } from './menus';
+import { applyPreviewLanguage, localizePreview } from './localization';
 
 const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
 let render = (): void => {};
 let notify = (_mock: HTMLElement, _message: string): void => {};
-const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLButtonElement }>();
+const pending = new WeakMap<HTMLElement, { family: string; id: string; button: HTMLElement }>();
 
 const appOnlyPreferences = new Set([
   'launchAtLogin', 'underTenPercent', 'healthyToClose', 'closeToRunningOut',
   'hideFromScreenShare', 'shareAnonymousUsage', 'updateAutomatically', 'betaUpdates', 'logLevel', 'iconStyle',
+  'codexResetWatch',
 ]);
 
 function report(error: unknown, message: string): void {
@@ -44,11 +47,7 @@ export function choosePreviewSetting(mock: HTMLElement, id: string, value: strin
     save();
   } else {
     setPreviewPreference(id, value);
-    if (id === 'language') {
-      notify(mock, value === 'English'
-        ? 'The demo stays in English.'
-        : 'The demo stays in English. Choose a language in the Mac app and restart OpenUsage to apply it.');
-    } else if (appOnlyPreferences.has(id)) {
+    if (appOnlyPreferences.has(id)) {
       notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
     }
   }
@@ -64,6 +63,8 @@ function closeAccountDialog(mock: HTMLElement): void {
 export function handleSettingsClick(target: Element, mock: HTMLElement): boolean {
   const native = target.closest<HTMLElement>('[data-native-action]');
   if (native) {
+    const menu = native.closest<HTMLElement>('[role="menu"]');
+    if (menu) closeMenu(menu);
     notify(mock, native.dataset.nativeAction ?? 'Open the Mac app to use this feature.');
     return true;
   }
@@ -90,8 +91,13 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
     const dialog = mock.querySelector<HTMLDialogElement>('[data-account-dialog]');
     const message = dialog?.querySelector<HTMLElement>('[data-account-confirm-text]');
     if (profile && dialog && message) {
-      pending.set(mock, { family, id, button: accountSwitch });
+      const menu = accountSwitch.closest<HTMLElement>('.am-account-actions');
+      const section = menu?.closest('.am-section');
+      const trigger = section?.querySelector<HTMLElement>('[data-account-actions-trigger]') ?? accountSwitch;
+      if (menu) closeMenu(menu);
+      pending.set(mock, { family, id, button: trigger });
       message.textContent = `Use ${profile.name} in this demo? Your Mac’s sign-in will stay unchanged.`;
+      localizePreview(mock);
       dialog.showModal();
     }
     return true;
@@ -100,6 +106,7 @@ export function handleSettingsClick(target: Element, mock: HTMLElement): boolean
   if (toggle) {
     const id = toggle.dataset.setting ?? '';
     setPreviewPreference(id, !state.preferences[id]);
+    if (id === 'softLimitEnabled') notify(mock, 'Preview guide changed. Automatic cancellation is currently unavailable in the Mac app.');
     if (appOnlyPreferences.has(id)) notify(mock, 'Preview value changed. Apply this setting in the Mac app.');
     return true;
   }
@@ -117,6 +124,15 @@ export function applySettingsToMock(mock: HTMLElement): void {
   mock.dataset.pacing = String(preferences.alwaysShowPacing);
   mock.dataset.transparency = String(preferences.increaseTransparency
     && !matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more)').matches);
+  mock.dataset.softLimit = preferences.softLimitEnabled ? String(preferences.softLimitWindow) : 'off';
+  mock.style.setProperty('--soft-limit-used', `${preferences.softLimitThreshold}%`);
+  mock.style.setProperty('--soft-limit-left', `${100 - Number(preferences.softLimitThreshold)}%`);
+  mock.querySelectorAll<HTMLElement>('[data-requires]').forEach((element) => {
+    element.hidden = !preferences[element.dataset.requires ?? ''];
+  });
+  mock.querySelectorAll<HTMLInputElement>('[data-number-setting]').forEach((input) => {
+    input.value = String(preferences[input.dataset.numberSetting ?? '']);
+  });
   const separate = preferences.usageCards === 'Separate Cards';
   mock.dataset.usageCards = separate ? 'separate' : 'single';
 
@@ -141,8 +157,12 @@ export function applySettingsToMock(mock: HTMLElement): void {
   });
   mock.querySelectorAll<HTMLElement>('[data-account-switch]').forEach((button) => {
     const on = state.activeAccounts[button.dataset.accountSwitch ?? ''] === button.dataset.accountId;
-    button.classList.toggle('is-on', on);
-    button.setAttribute('aria-checked', String(on));
+    if (button.getAttribute('role') === 'menuitem') {
+      (button as HTMLButtonElement).disabled = on;
+    } else {
+      button.classList.toggle('is-on', on);
+      button.setAttribute('aria-checked', String(on));
+    }
   });
   mock.querySelectorAll<HTMLElement>('.am-section[data-account-id]').forEach((section) => {
     const family = section.dataset.provider ?? '';
@@ -160,14 +180,16 @@ export function applySettingsToMock(mock: HTMLElement): void {
   });
   const iCloud = mock.querySelector<HTMLElement>('[data-icloud-preview]');
   if (iCloud) iCloud.hidden = !preferences.syncAcrossMacs;
-  const languageNotice = mock.querySelector<HTMLElement>('[data-language-notice]');
-  if (languageNotice) languageNotice.hidden = preferences.language === 'English';
   const permission = mock.querySelector<HTMLElement>('[data-notification-permission]');
-  if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut'].some((id) => preferences[id]);
+  if (permission) permission.hidden = !['underTenPercent', 'healthyToClose', 'closeToRunningOut', 'codexResetWatch'].some((id) => preferences[id]);
+  localizePreview(mock);
 }
 
 export function initPreviewSettings(refresh: () => void, showNotice: typeof notify): void {
-  render = refresh;
+  render = () => {
+    refresh();
+    applyPreviewLanguage(String(state.preferences.language));
+  };
   notify = showNotice;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -187,6 +209,25 @@ export function initPreviewSettings(refresh: () => void, showNotice: typeof noti
       const mock = dialog.closest<HTMLElement>('[data-mock]');
       if (mock) closeAccountDialog(mock);
     });
+  });
+  document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.matches('[data-number-setting]')) return;
+    const mock = input.closest<HTMLElement>('[data-mock]');
+    if (!mock) return;
+    try {
+      setPreviewPreference(input.dataset.numberSetting ?? '', input.value);
+    } catch (error) {
+      report(error, 'Enter a whole percentage from 1 to 100. The previous threshold is unchanged.');
+      render();
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    const input = event.target;
+    if (event.key === 'Enter' && input instanceof HTMLInputElement && input.matches('[data-number-setting]')) {
+      event.preventDefault();
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
   });
   for (const query of ['(prefers-color-scheme: dark)', '(prefers-reduced-transparency: reduce)', '(prefers-contrast: more)']) {
     matchMedia(query).addEventListener('change', render);

@@ -197,6 +197,29 @@ export const providerMetrics: Record<string, ProviderMetrics> = Object.fromEntri
 /** LayoutStore.maxPinsPerProvider. 초과 시 별이 켜지지 않고 거절 알림만 뜸. */
 export const maxPins = 2;
 
+/** 프로바이더가 명시한 Soft Limit 지원 기간. 웹의 고정 예시 지표에 적용. */
+export const softLimitWindows: Partial<Record<string, '5 Hours' | 'Weekly'>> = {
+  'claude.session': '5 Hours',
+  'claude.weekly': 'Weekly',
+  'claude.fable': 'Weekly',
+  'claude.sonnet': 'Weekly',
+  'codex.session': '5 Hours',
+  'codex.weekly': 'Weekly',
+  'codex.spark': '5 Hours',
+  'codex.sparkWeekly': 'Weekly',
+  'antigravity.geminiPro': '5 Hours',
+  'antigravity.geminiWeekly': 'Weekly',
+  'antigravity.claude': '5 Hours',
+  'antigravity.claudeWeekly': 'Weekly',
+  'grok.weekly': 'Weekly',
+  'kimi.session': '5 Hours',
+  'kimi.weekly': 'Weekly',
+  'opencode.session': '5 Hours',
+  'opencode.weekly': 'Weekly',
+  'zai.session': '5 Hours',
+  'zai.weekly': 'Weekly',
+};
+
 /** 대시보드 행 라벨 → 지표 id. 라벨이 곧 WidgetDescriptor.title이라 그대로 맞물림. */
 export function metricID(provider: string, title: string): string | undefined {
   return declared[provider]?.find(([, t]) => t === title)?.[0];

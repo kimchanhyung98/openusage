@@ -46,9 +46,10 @@ import '../styles/feature-tour.css';
       </div>
       <div class="tour-caption" data-tour-caption>
         {tabs.map((t, i) => (
-          <p data-tour-description={t.id} hidden={i !== 0}>
-            {t.description.map((line) => <span>{line}</span>)}
-          </p>
+          <div data-tour-description={t.id} hidden={i !== 0}>
+            <p>{t.description.map((line) => <span>{line}</span>)}</p>
+            {t.note && <p class="tour-note">{t.note}</p>}
+          </div>
         ))}
       </div>
     </div>
