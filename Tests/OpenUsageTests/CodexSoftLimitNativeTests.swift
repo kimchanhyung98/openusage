@@ -65,20 +65,23 @@ final class CodexSoftLimitNativeTests: XCTestCase {
             XCTAssertEqual(terminal.terminationReason, .exit, "Terminal fixture must report child failures")
             XCTAssertEqual(terminal.terminationStatus, 0, "Terminal fixture failed; see the native test log")
         }
-        for _ in 0..<100 {
-            if try await stats(port)["opened"]?.integer == 2 { break }
-            try await Task.sleep(for: .milliseconds(100))
-        }
-        let initialStats = try await stats(port)
-        XCTAssertEqual(initialStats["opened"]?.integer, 2, "Both real Codex turns must reach the local model stream")
         let adapter = CodexSoftLimitAdapter(makeConnection: {
             let connection = try CodexControlConnection(socketPath: socket)
             try await connection.initialize()
             return connection
         })
         defer { adapter.disconnect() }
-        let tasks = try await adapter.runningTasks()
+        var tasks: [SoftLimitTask] = []
+        var initialStats = try await stats(port)
+        for _ in 0..<100 {
+            tasks = try await adapter.runningTasks()
+            initialStats = try await stats(port)
+            if tasks.count == 2, initialStats.hasActiveStreams(for: tasks) { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
         XCTAssertEqual(tasks.count, 2)
+        XCTAssertTrue(initialStats.hasActiveStreams(for: tasks), "Both target turns must reach the local model stream: \(initialStats)")
+        guard tasks.count == 2, initialStats.hasActiveStreams(for: tasks) else { return }
         XCTAssertTrue(Set(tasks.map(\.sessionID)).isSuperset(of: threadIDs))
         threadIDs = tasks.map(\.sessionID)
         let terminalPID = try XCTUnwrap(Int32(String(contentsOf: terminalReady, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
@@ -109,7 +112,7 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         let unverifiedTasks = try await adapter.runningTasks()
         XCTAssertEqual(unverifiedTasks.count, 2, "An unverified account scope must not interrupt either real task")
         let unverifiedStats = try await stats(port)
-        XCTAssertEqual(unverifiedStats["closed"]?.integer, 0)
+        XCTAssertTrue(unverifiedStats.hasActiveStreams(for: tasks))
 
         for used in [89.0, 90.0] {
             coordinator.receive(quota(used), descriptors: [descriptor])
@@ -132,23 +135,97 @@ final class CodexSoftLimitNativeTests: XCTestCase {
             XCTAssertEqual(turns.last?["status"]?.string, "interrupted")
             XCTAssertFalse(turns.last?["items"]?.array?.isEmpty ?? true, "Conversation input must remain after interruption")
         }
+        var finalStats = try await stats(port)
         for _ in 0..<50 {
-            if try await stats(port)["closed"]?.integer == 2 { break }
+            if finalStats.hasClosedStreams(for: tasks) { break }
             try await Task.sleep(for: .milliseconds(100))
+            finalStats = try await stats(port)
         }
-        let finalStats = try await stats(port)
-        XCTAssertEqual(finalStats["closed"]?.integer, 2, "Both model streams must actually close")
+        XCTAssertTrue(finalStats.hasClosedStreams(for: tasks), "Every model stream for both target turns must close: \(finalStats)")
         XCTAssertEqual(kill(terminalPID, 0), 0)
-        print("Native Codex fixture: interrupted=2, serverAlive=\(fixture.isRunning), terminalAlive=\(kill(terminalPID, 0) == 0), conversations=2, closedStreams=\(finalStats["closed"]?.integer ?? -1), directory=\(directory.path)")
+        let targetStreams = finalStats.streams(for: tasks)
+        print("Native Codex fixture: interrupted=2, serverAlive=\(fixture.isRunning), terminalAlive=\(kill(terminalPID, 0) == 0), conversations=2, targetStreams=\(targetStreams.count), closedTargetStreams=\(targetStreams.filter(\.closed).count), totalOpened=\(finalStats.opened), totalClosed=\(finalStats.closed), directory=\(directory.path)")
     }
 
-    private func stats(_ port: Int) async throws -> ControlJSON {
-        let (data, _) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/stats")!)
-        return try JSONDecoder().decode(ControlJSON.self, from: data)
+    func testStreamReadinessRequiresBothTargetTurnsInsteadOfBackgroundRequests() {
+        let first = SoftLimitTask(providerID: "codex", sessionID: "first", operationID: "turn-a")
+        let second = SoftLimitTask(providerID: "codex", sessionID: "second", operationID: "turn-b")
+        let pending = FixtureStats(opened: 2, closed: 0, requests: [
+            .init(threadId: first.sessionID, turnId: first.operationID, closed: false),
+            .init(threadId: "title", turnId: "title-turn", closed: false)
+        ])
+        XCTAssertFalse(pending.hasActiveStreams(for: [first, second]))
+        XCTAssertFalse(pending.hasActiveStreams(for: []))
+
+        let ready = FixtureStats(opened: 3, closed: 0, requests: pending.requests + [
+            .init(threadId: second.sessionID, turnId: second.operationID, closed: false)
+        ])
+        XCTAssertTrue(ready.hasActiveStreams(for: [first, second]))
+        XCTAssertFalse(ready.hasClosedStreams(for: [first, second]))
+    }
+
+    func testStreamClosureRequiresEveryRequestForTheExactTargetTurns() {
+        let first = SoftLimitTask(providerID: "codex", sessionID: "first", operationID: "turn-a")
+        let second = SoftLimitTask(providerID: "codex", sessionID: "second", operationID: "turn-b")
+        let backgroundClosed = FixtureStats(opened: 3, closed: 2, requests: [
+            .init(threadId: first.sessionID, turnId: first.operationID, closed: true),
+            .init(threadId: "title", turnId: "title-turn", closed: true),
+            .init(threadId: second.sessionID, turnId: second.operationID, closed: false)
+        ])
+        XCTAssertFalse(backgroundClosed.hasClosedStreams(for: [first, second]))
+        XCTAssertFalse(backgroundClosed.hasClosedStreams(for: []))
+
+        let targetsClosed = FixtureStats(opened: 3, closed: 2, requests: [
+            .init(threadId: first.sessionID, turnId: first.operationID, closed: true),
+            .init(threadId: second.sessionID, turnId: second.operationID, closed: true),
+            .init(threadId: second.sessionID, turnId: "different-turn", closed: false)
+        ])
+        XCTAssertTrue(targetsClosed.hasClosedStreams(for: [first, second]))
+        let retryOpen = FixtureStats(opened: 4, closed: 2, requests: targetsClosed.requests + [
+            .init(threadId: second.sessionID, turnId: second.operationID, closed: false)
+        ])
+        XCTAssertFalse(retryOpen.hasClosedStreams(for: [first, second]))
+        let missingTurn = SoftLimitTask(providerID: "codex", sessionID: first.sessionID, operationID: "unseen-turn")
+        XCTAssertFalse(targetsClosed.hasClosedStreams(for: [first, missingTurn]))
+    }
+
+    private func stats(_ port: Int) async throws -> FixtureStats {
+        let request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/stats")!, cachePolicy: .reloadIgnoringLocalCacheData)
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(FixtureStats.self, from: data)
     }
 
     private func nativeError(_ message: String, log: URL) -> NSError {
         let detail = (try? String(contentsOf: log, encoding: .utf8)) ?? "No fixture log"
         return NSError(domain: "CodexSoftLimitNativeTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(message): \(detail.suffix(3000))"])
+    }
+
+    private struct FixtureStats: Decodable {
+        struct Request: Decodable {
+            let threadId: String?
+            let turnId: String?
+            let closed: Bool
+        }
+
+        let opened: Int
+        let closed: Int
+        let requests: [Request]
+
+        func streams(for tasks: [SoftLimitTask]) -> [Request] {
+            requests.filter { request in
+                tasks.contains { $0.sessionID == request.threadId && $0.operationID == request.turnId }
+            }
+        }
+
+        func hasActiveStreams(for tasks: [SoftLimitTask]) -> Bool {
+            !tasks.isEmpty && tasks.allSatisfy { task in streams(for: [task]).contains { !$0.closed } }
+        }
+
+        func hasClosedStreams(for tasks: [SoftLimitTask]) -> Bool {
+            !tasks.isEmpty && tasks.allSatisfy { task in
+                let matching = streams(for: [task])
+                return !matching.isEmpty && matching.allSatisfy(\.closed)
+            }
+        }
     }
 }

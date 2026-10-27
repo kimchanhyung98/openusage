@@ -10,12 +10,14 @@ if (!fixtureHome?.startsWith("/tmp/openusage-soft-limit-e2e-") || !socketPath?.s
 
 let opened = 0;
 let closed = 0;
+const requests = [];
 const sockets = new Set();
 const streams = new Set();
 const api = http.createServer((request, response) => {
   if (request.url === "/stats") {
     response.setHeader("Content-Type", "application/json");
-    response.end(JSON.stringify({ opened, closed }));
+    response.setHeader("Cache-Control", "no-store");
+    response.end(JSON.stringify({ opened, closed, requests }));
     return;
   }
   if (request.method === "GET") {
@@ -23,9 +25,21 @@ const api = http.createServer((request, response) => {
     response.end(JSON.stringify({ data: [], models: [] }));
     return;
   }
-  request.resume();
+  let body = "";
+  request.setEncoding("utf8");
+  request.on("data", (chunk) => { body += chunk; });
   request.on("end", () => {
+    let metadata;
+    try { metadata = JSON.parse(body).client_metadata; }
+    catch (error) {
+      process.stderr.write(`Invalid fixture request JSON: ${error.message}\n`);
+      response.writeHead(400).end();
+      return;
+    }
     opened += 1;
+    // 제목 생성·재시도와 사용자 turn의 연결을 구분하기 위한 요청별 기록.
+    const tracked = { id: opened, threadId: metadata?.thread_id ?? null, turnId: metadata?.turn_id ?? null, closed: false };
+    requests.push(tracked);
     streams.add(response);
     response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
     response.write(`event: response.created\ndata: ${JSON.stringify({
@@ -43,6 +57,7 @@ const api = http.createServer((request, response) => {
     response.on("close", () => {
       clearInterval(heartbeat);
       streams.delete(response);
+      tracked.closed = true;
       closed += 1;
     });
   });

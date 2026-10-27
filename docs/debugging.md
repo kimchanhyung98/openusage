@@ -104,6 +104,27 @@ CFFIXED_USER_HOME=/tmp/openusage-telemetry-tests OPENUSAGE_POSTHOG_TOKEN=phc_REP
 릴리스 워크플로는 고정 버전의 PostHog CLI로 dSYM 업로드.
 dSYM 생성·업로드 성공만으로 심볼 해석을 보장하지 않음.
 
+## Codex Soft Limit 연동 검증
+
+테스트 서버의 요청별 집계는 Node.js로 검증:
+
+```sh
+node --test script/fixtures/codex_soft_limit_server.test.mjs
+```
+
+실제 연동 검증에는 설치된 Codex CLI, Node.js, macOS의 `/usr/bin/expect` 필요:
+
+```sh
+OPENUSAGE_RUN_CODEX_CONTROL_TEST=1 swift test --filter CodexSoftLimitNativeTests
+```
+
+임시 `CODEX_HOME`과 로컬 응답 서버를 사용하며, 기존 사용자 세션과 인증 정보는 사용하지 않음.
+App Server와 터미널에서 시작한 두 사용자 turn의 `thread_id`·`turn_id`로 응답 연결 추적.
+각 turn의 응답이 실제로 시작된 뒤 취소하고, 재시도를 포함한 해당 turn의 모든 연결 종료 확인.
+제목 생성 같은 보조 요청은 별도 집계하며, 전체 연결 개수만으로 성공 여부를 판단하지 않음.
+취소 후 서버·터미널 생존과 대화 보존도 확인.
+이 테스트의 성공은 현재 앱에서 차단된 자동 취소 기능을 활성화한다는 의미가 아님.
+
 ## 팁
 
 - **프로바이더에 오류가 표시됨.**
