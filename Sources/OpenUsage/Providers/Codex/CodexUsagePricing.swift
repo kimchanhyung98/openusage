@@ -2,9 +2,52 @@ import Foundation
 
 /// Codex native·Pi 요청의 정규화 토큰에 같은 장문·cache 할인·priority 규칙 적용.
 enum CodexUsagePricing {
+    /// 한 집계의 가격 snapshot에서 모델 해석 결과만 재사용. 요청별 토큰·장문 구간은 매번 계산.
+    struct Resolver {
+        private let pricing: ModelPricing
+        private var cache: [Key: Resolution?] = [:]
+
+        init(pricing: ModelPricing) {
+            self.pricing = pricing
+        }
+
+        mutating func estimate(model: String, tokens: TokenBreakdown, isUltrafast: Bool = false) -> Double? {
+            let key = Key(model: model, isUltrafast: isUltrafast)
+            let resolution: Resolution?
+            if let cached = cache[key] {
+                resolution = cached
+            } else {
+                resolution = CodexUsagePricing.resolve(model: model, pricing: pricing, isUltrafast: isUltrafast)
+                // 미가격 결과도 저장해 같은 모델의 반복 조회 방지.
+                cache.updateValue(resolution, forKey: key)
+            }
+            return resolution?.cost(for: tokens)
+        }
+    }
+
+    private struct Key: Hashable {
+        let model: String
+        let isUltrafast: Bool
+    }
+
+    private struct Resolution {
+        let rates: ModelRates
+        let fastOverride: Bool?
+
+        func cost(for tokens: TokenBreakdown) -> Double {
+            var request = tokens
+            if let fastOverride { request.isFast = fastOverride }
+            return rates.costDollars(for: request)
+        }
+    }
+
     static func estimate(
         model: String, tokens: TokenBreakdown, pricing: ModelPricing, isUltrafast: Bool = false
     ) -> Double? {
+        resolve(model: model, pricing: pricing, isUltrafast: isUltrafast)?.cost(for: tokens)
+    }
+
+    private static func resolve(model: String, pricing: ModelPricing, isUltrafast: Bool) -> Resolution? {
         let normalized = ModelPricing.normalizedFastName(model)
         let canonical =
             pricing.supplement.canonicalName(for: normalized)
@@ -28,9 +71,7 @@ enum CodexUsagePricing {
                     ?? resolveRates(model: qualified, pricing: pricing)
                     ?? resolveRates(model: base + "-ultrafast", pricing: pricing)
             else { return nil }
-            var request = tokens
-            request.isFast = false
-            return adjusted(rates: rates, model: base).costDollars(for: request)
+            return Resolution(rates: adjusted(rates: rates, model: base), fastOverride: false)
         }
         let fastBase = ModelPricing.fastBaseName(canonical)
         if let fastBase,
@@ -55,13 +96,14 @@ enum CodexUsagePricing {
         guard let rates = baseRates ?? resolveRates(model: model, pricing: pricing) else { return nil }
 
         // fast-only catalog는 이미 배율 반영된 단가 — base가 있을 때만 Codex 배율 추가.
-        var request = tokens
-        request.isFast = isFastAlias ? baseRates != nil : tokens.isFast
         var effectiveRates = rates
         if rates.fastMultiplier == 1, let multiplier = pricing.supplement.fastMultiplier(for: rateModel) {
             effectiveRates.fastMultiplier = multiplier
         }
-        return adjusted(rates: effectiveRates, model: rateModel).costDollars(for: request)
+        return Resolution(
+            rates: adjusted(rates: effectiveRates, model: rateModel),
+            fastOverride: isFastAlias ? baseRates != nil : nil
+        )
     }
 
     static func estimatePi(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> PiUsageScanner.CostEstimate {
