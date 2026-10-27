@@ -186,6 +186,7 @@ button.am-star { cursor: pointer; }
 /* Views/TransientPill.swift. Customize 스크롤 위에 떠서 아래에서 12만큼 띄움. */
 .am-pill {
   position: absolute;
+  pointer-events: none;
   left: 50%;
   bottom: 12px;
   z-index: 5;

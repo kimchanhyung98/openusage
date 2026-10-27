@@ -91,6 +91,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
   현재 값 있는 Weekly 예시는 Claude Weekly·Fable, Codex Weekly, Antigravity Weekly·Claude Weekly.
   지원 지표라도 데이터가 없으면 안내선 미표시하며, Reset Watch와 비용·토큰 행은 대상에서 제외.
   미리보기에서 설정한 안내선은 로컬 예시 화면에만 적용.
+  설정 변경 안내가 떠 있는 동안에도 Options와 다른 컨트롤의 클릭·터치 조작 가능.
 - Notifications의 Codex Reset Watch는 세 할당량 알림과 독립 선택.
   알림 발송·권한 요청은 Mac 앱에서 수행.
 - 계정 선택기는 조회할 계정만 변경.

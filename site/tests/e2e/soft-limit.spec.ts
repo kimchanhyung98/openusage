@@ -9,6 +9,27 @@ async function markerFraction(row: Locator): Promise<number> {
   });
 }
 
+test('Soft Limit notices keep Options available while the message is visible', async ({ page }) => {
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await openSettings(page);
+  await app.getByRole('switch', { name: 'Enable Soft Limit' }).click();
+  await app.getByRole('button', { name: 'Back', exact: true }).click();
+  const notice = app.getByRole('status');
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText('Preview guide changed');
+  const options = app.getByRole('button', { name: 'Options', exact: true });
+  await options.scrollIntoViewIfNeeded();
+  expect(await options.evaluate((button) => {
+    const bounds = button.getBoundingClientRect();
+    return button.contains(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2));
+  }), 'The visible notice must not intercept the Options button').toBe(true);
+  await options.click();
+  await app.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  await expect(app).toHaveAttribute('data-screen', 'settings');
+  await expect(notice).toBeVisible();
+});
+
 test('Soft Limit covers Fable and Antigravity model windows and mirrors them in Left mode', async ({ page }) => {
   await openHome(page);
   const app = page.locator('[data-mock]');
