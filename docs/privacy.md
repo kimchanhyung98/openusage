@@ -54,6 +54,10 @@ Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의
 관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 `OpenUsage Account Authentication`으로 시작하는 서비스 이름 아래, 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
 이 스냅샷 덕분에 다시 전환할 때 이전 로그인을 복원 가능.
 각 스냅샷에는 해당 계정명에 현재 저장된 인증 파일 내용이 담기며, 원본은 이 Mac의 키체인에 보관하고 iCloud·익명 분석으로 전송하지 않음.
+Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/OpenUsage/AccountSignIn/claude-switch.json`에 복구 기록 저장.
+기록에는 계정·전환 식별자, 프로바이더 신원, 인증 상태를 비교할 해시만 포함하며 토큰 원문은 저장하지 않음.
+파일은 해당 macOS 사용자만 읽고 쓸 수 있으며 iCloud·익명 분석으로 전송하지 않음.
+선택 상태 저장을 확인하면 기록 삭제; 복구를 확인하지 못한 기록은 보존.
 선택된 관리형 Claude 계정으로 일반 터미널에서 공식 CLI 로그인을 완료하면, OpenUsage가 공유 홈의 새 인증 정보를 검증하고 해당 계정의 스냅샷과 저장 프로바이더 신원을 교체.
 검증된 프로바이더 신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 복사하지 않음.
 추가 계정의 공식 로그인은 `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
