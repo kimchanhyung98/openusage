@@ -140,6 +140,65 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
         }
     }
 
+    func testAggregationReusesPricedAndUnpricedResolutionPerKey() throws {
+        let reference = try observedSnapshot()
+        let repeated = try observedSnapshot()
+        let keys: [(model: String, isUltrafast: Bool)] = [
+            ("fixture-priced", false), ("fixture-priced", true),
+            ("fixture-unpriced", false), ("fixture-unpriced", true)
+        ]
+        let uniqueEvents = keys.enumerated().map { index, key in
+            event(index, model: key.model, isUltrafast: key.isUltrafast)
+        }
+        let requests: [(input: Int, cached: Int, output: Int, isFast: Bool)] = [
+            (1_000, 0, 0, false), (272_000, 72_000, 1_000, true),
+            (272_001, 72_000, 1_000, false)
+        ]
+        let repeatedEvents = requests.enumerated().flatMap { requestIndex, request in
+            keys.enumerated().map { keyIndex, key in
+                event(requestIndex * keys.count + keyIndex, model: key.model,
+                      input: request.input, cached: request.cached, output: request.output,
+                      isFast: request.isFast, isUltrafast: key.isUltrafast)
+            }
+        }
+
+        // 미가격 경로의 내부 별칭 조회도 포함하므로, 키당 단일 이벤트와 같은 가격표 캐시 상태에서 비교.
+        for reversed in [false, true] {
+            reference.patterns.values.forEach { $0.reset() }
+            repeated.patterns.values.forEach { $0.reset() }
+            _ = CodexLogUsageScanner.aggregate(
+                events: reversed ? Array(uniqueEvents.reversed()) : uniqueEvents,
+                since: .distantPast, pricing: reference.pricing)
+            let scan = CodexLogUsageScanner.aggregate(
+                events: reversed ? Array(repeatedEvents.reversed()) : repeatedEvents,
+                since: .distantPast, pricing: repeated.pricing)
+            let expectedLookups = reference.patterns.mapValues { $0.matchCount }
+
+            XCTAssertEqual(expectedLookups["fixture-priced"], 2)
+            XCTAssertGreaterThan(expectedLookups["fixture-unpriced"] ?? 0, 0)
+            XCTAssertEqual(repeated.patterns.mapValues { $0.matchCount }, expectedLookups)
+            XCTAssertEqual(scan.unknownModelsByDay, [
+                "2026-09-12": ["fixture-unpriced", "fixture-unpriced (Ultrafast)"]
+            ])
+        }
+    }
+
+    private func observedSnapshot() throws -> (
+        pricing: ModelPricing, patterns: [String: CountingAliasPattern]
+    ) {
+        let priced = try CountingAliasPattern(pattern: #"^fixture-priced$"#)
+        let unpriced = try CountingAliasPattern(pattern: #"^fixture-unpriced$"#)
+        let pricing = ModelPricing(
+            supplement: PricingSupplement(
+                pricing: ["gpt-6-sol": rates(2, fast: 3), "gpt-6-sol-ultrafast": rates(9)],
+                aliasRules: [
+                    .init(pattern: priced, canonical: "gpt-6-sol"),
+                    .init(pattern: unpriced, canonical: "fixture-canonical-unpriced")
+                ]),
+            primary: PricingCatalog(), secondary: PricingCatalog())
+        return (pricing, ["fixture-priced": priced, "fixture-unpriced": unpriced])
+    }
+
     private func event(
         _ index: Int, model: String, day: Int = 0, input: Int = 1_000, cached: Int = 0,
         output: Int = 0, isFast: Bool = false, isUltrafast: Bool = false, pricingModel: String? = nil
@@ -181,5 +240,27 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
         }
         XCTAssertEqual(scan.rejectedNumericRows, 0, file: file, line: line)
         XCTAssertEqual(scan.unsupportedPricingRows, 0, file: file, line: line)
+    }
+}
+
+private final class CountingAliasPattern: NSRegularExpression, @unchecked Sendable {
+    private let lock = NSLock()
+    private var matchedCalls = 0
+
+    var matchCount: Int { lock.withLock { matchedCalls } }
+
+    func reset() {
+        lock.withLock { matchedCalls = 0 }
+    }
+
+    override func firstMatch(
+        in string: String, options: NSRegularExpression.MatchingOptions = [], range: NSRange
+    ) -> NSTextCheckingResult? {
+        let match = super.firstMatch(in: string, options: options, range: range)
+        // canonical 이름의 내부 조회를 제외하고 fixture 원문 별칭의 조회만 집계.
+        if match != nil {
+            lock.withLock { matchedCalls += 1 }
+        }
+        return match
     }
 }
