@@ -121,6 +121,7 @@ public final class AccountProfilesStore {
     }
 
     private let defaults: UserDefaults
+    private let synchronizeDefaults: () -> Bool
 
     public private(set) var profiles: [AccountProfile] = []
     public private(set) var hasUnreadableRegistry = false
@@ -128,8 +129,9 @@ public final class AccountProfilesStore {
     private(set) var authenticationRevisionsByProfileID: [String: Int] = [:]
     private var preferredByFamily: [String: String] = [:]
 
-    public init(defaults: UserDefaults = .standard) {
+    public init(defaults: UserDefaults = .standard, synchronizeDefaults: (() -> Bool)? = nil) {
         self.defaults = defaults
+        self.synchronizeDefaults = synchronizeDefaults ?? { defaults.synchronize() }
         load()
     }
 
@@ -174,6 +176,24 @@ public final class AccountProfilesStore {
             guard preferredByFamily.removeValue(forKey: family) != nil else { return }
         }
         persist()
+    }
+
+    /// 전환 기록을 지우기 전에 선택 저장 확인 — 실패 시 기록을 남겨 다음 실행에서 복구.
+    func commitPreferredSelection(family: String, profileID: String) throws {
+        try ensureRegistryWritable()
+        guard let profile = profile(id: profileID), profile.family == family else {
+            throw AccountProfileError.profileNotFound(profileID)
+        }
+        setPreferred(family: family, profileID: profileID)
+        guard synchronizeDefaults(),
+              let data = defaults.data(forKey: Self.storageKey),
+              let saved = try? JSONDecoder().decode(Blob.self, from: data),
+              saved.preferredByFamily[family] == profileID,
+              saved.profiles.contains(profile)
+        else {
+            AppLog.error(.auth, "account switch selection could not be persisted; keeping recovery journal")
+            throw AccountIdentityReplacementError.invalidTransaction
+        }
     }
 
     /// 증명된 provider account의 profile 등록 — family 내 `label`만 유일, provider identity 중복 허용.

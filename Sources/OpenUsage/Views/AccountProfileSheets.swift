@@ -211,6 +211,8 @@ struct AccountProfileManagementSheet: View {
     @State private var isSigningIn = false
     @State private var signInTask: Task<Void, Never>?
     @State private var isRemoveConfirmationPresented = false
+    @State private var hasPendingSwitch = false
+    @State private var recoverySelection: AccountProfile?
 
     init(
         profile: AccountProfile,
@@ -269,6 +271,15 @@ struct AccountProfileManagementSheet: View {
                 .disabled(isSigningIn || container.accountSwitch.isSwitching)
             }
 
+            if hasPendingSwitch {
+                Button(L10n.accounts("Use %@: %@", familyTitle, profile.label)) {
+                    recoverySelection = profile
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isSigningIn || container.accountSwitch.isSwitching)
+            }
+
             if let actionError {
                 Text(actionError)
                     .font(.caption2)
@@ -295,6 +306,9 @@ struct AccountProfileManagementSheet: View {
         }
         .padding(22)
         .frame(width: 360)
+        .accountSwitchConfirmation(
+            selection: $recoverySelection, error: $actionError, allowsRecoveryRetry: true
+        )
         .alert(
             L10n.accounts("Remove %@?", profile.label),
             isPresented: $isRemoveConfirmationPresented
@@ -309,6 +323,20 @@ struct AccountProfileManagementSheet: View {
         }
         .onDisappear {
             signInTask?.cancel()
+        }
+        .task { refreshSwitchRecovery() }
+        .onChange(of: container.accountSwitch.isSwitching) { _, isSwitching in
+            if !isSwitching { refreshSwitchRecovery() }
+        }
+    }
+
+    private func refreshSwitchRecovery() {
+        guard profile.family == "claude" else { return }
+        do {
+            hasPendingSwitch = try AccountSelectionSwitcher().hasPendingSwitch()
+        } catch {
+            AppDiagnostics.failure(.accountSwitch, error: error, providerID: profile.family)
+            actionError = UserFacingErrors.message(error)
         }
     }
 
@@ -329,8 +357,15 @@ struct AccountProfileManagementSheet: View {
         isSigningIn = true
         actionError = nil
         signInTask = Task {
-            defer { isSigningIn = false }
+            defer {
+                isSigningIn = false
+                refreshSwitchRecovery()
+            }
             do {
+                if profile.family == "claude" {
+                    _ = try await AccountSelectionSwitcher().recoverInterruptedSwitchAfterStartup(in: store)
+                }
+                try Task.checkCancellation()
                 let workspace = AccountSignInWorkspace()
                 let home = try workspace.prepare(family: profile.family, profileID: profile.id).path
                 let launcher = AccountSignInLauncher()

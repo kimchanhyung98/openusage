@@ -148,6 +148,9 @@ struct AccountCredentialImporter {
     /// managed 계정 제거 — switchable snapshot을 잃은 등록 profile 잔존 금지.
     /// workspace 먼저 삭제, 실패 시 snapshot·registry 유지 — registry preflight는 모든 삭제 전 실행.
     func removeAccount(_ profile: AccountProfile, from store: AccountProfilesStore) throws {
+        if profile.family == "claude" {
+            _ = try AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitch(in: store)
+        }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         try store.validateArchive(profileID: profile.id)
@@ -197,6 +200,10 @@ struct AccountCredentialImporter {
     func reconcileSelectedClaudeSharedAuthentication(
         in store: AccountProfilesStore
     ) throws -> ExternalReauthenticationResult {
+        if try AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitch(in: store),
+           let profileID = store.preferredProfileID(family: "claude") {
+            return .updated(profileID: profileID)
+        }
         _ = try recoverInterruptedIdentityReplacement(in: store)
         guard let profile = store.preferredProfile(family: "claude") else { return .unchanged }
         guard let observation = try observeExternalClaudeAuthentication(for: profile) else {
@@ -209,6 +216,10 @@ struct AccountCredentialImporter {
     func reconcileSelectedClaudeSharedAuthenticationAfterStartup(
         in store: AccountProfilesStore
     ) async throws -> ExternalReauthenticationResult {
+        if try await AccountSelectionSwitcher(switcher: switcher).recoverInterruptedSwitchAfterStartup(in: store),
+           let profileID = store.preferredProfileID(family: "claude") {
+            return .updated(profileID: profileID)
+        }
         let allowInteraction = ProviderRefreshContext.isManual
         if let transaction = try store.pendingIdentityReplacement(),
            let profile = store.profile(id: transaction.profileID) {
@@ -327,6 +338,9 @@ struct AccountCredentialImporter {
         in store: AccountProfilesStore,
         isActive: Bool
     ) throws -> AccountProfile {
+        if store.profile(id: profileID)?.family == "claude", try switcher.switchJournal.load() != nil {
+            throw AccountIdentityReplacementError.pendingTransaction
+        }
         _ = try recoverInterruptedIdentityReplacement(in: store, allowInteraction: true)
         guard let profile = store.profile(id: profileID) else {
             throw AccountProfileError.profileNotFound(profileID)
