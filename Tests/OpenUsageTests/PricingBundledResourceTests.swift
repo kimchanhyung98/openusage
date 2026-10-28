@@ -34,30 +34,30 @@ final class PricingBundledResourceTests: XCTestCase {
     /// Cursor CSV slug 실측 확인 — provider가 재가격 책정하면 상수 갱신 필요
     func testKnownCursorSlugsPriceCorrectly() {
         let pricing = Self.pricing
-        XCTAssertEqual(pricing.resolve(model: "auto")?.inputPerMillion, 1.25)
-        XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking")?.inputPerMillion, 3)
-        XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking")?.inputPerMillion, 5)
-        XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking-fast")?.inputPerMillion, 30)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.5-xhigh-fast")?.inputPerMillion, 12.5)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra")?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast")?.inputPerMillion, 8)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high")?.inputPerMillion, 2)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high-fast")?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna")?.inputPerMillion, 0.2)
-        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna-fast")?.inputPerMillion, 0.4)
-        XCTAssertEqual(pricing.resolve(model: "grok-4-20-thinking")?.inputPerMillion, 2)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5")?.inputPerMillion, 2)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-high")?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-high-fast")?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high-fast")?.inputPerMillion, 4)
-        XCTAssertEqual(pricing.resolve(model: "kimi-k2p5")?.inputPerMillion, 0.6)
-        XCTAssertEqual(pricing.resolve(model: "kimi-k2.7-code")?.inputPerMillion, 0.95)
-        XCTAssertEqual(pricing.resolve(model: "kimi-k2p7")?.inputPerMillion, 0.95)
-        XCTAssertEqual(pricing.resolve(model: "claude-4.7-opus-high-thinking")?.inputPerMillion, 5)
-        XCTAssertEqual(pricing.resolve(model: "claude-4.7-opus-max-thinking-fast")?.inputPerMillion, 30)
-        XCTAssertEqual(pricing.resolve(model: "glm-5.2-max")?.inputPerMillion, 1.4)
-        XCTAssertEqual(pricing.resolve(model: "github_bugbot")?.outputPerMillion, 30)
-        XCTAssertEqual(pricing.resolve(model: "Premium (GPT-5.3-Codex)")?.inputPerMillion, 1.75)
+        XCTAssertEqual(pricing.resolve(model: "auto", source: .cursor)?.inputPerMillion, 1.25)
+        XCTAssertEqual(pricing.resolve(model: "claude-4.5-sonnet-thinking", source: .cursor)?.inputPerMillion, 3)
+        XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking", source: .cursor)?.inputPerMillion, 5)
+        XCTAssertEqual(pricing.resolve(model: "claude-4.6-opus-max-thinking-fast", source: .cursor)?.inputPerMillion, 30)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.5-xhigh-fast", source: .cursor)?.inputPerMillion, 12.5)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra", source: .cursor)?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-sol-ultra-fast", source: .cursor)?.inputPerMillion, 8)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high", source: .cursor)?.inputPerMillion, 2)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-terra-high-fast", source: .cursor)?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna", source: .cursor)?.inputPerMillion, 0.2)
+        XCTAssertEqual(pricing.resolve(model: "gpt-5.6-luna-fast", source: .cursor)?.inputPerMillion, 0.4)
+        XCTAssertEqual(pricing.resolve(model: "grok-4-20-thinking", source: .cursor)?.inputPerMillion, 1.25)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5", source: .cursor)?.inputPerMillion, 2)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-high", source: .cursor)?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-high-fast", source: .cursor)?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high-fast", source: .cursor)?.inputPerMillion, 4)
+        XCTAssertEqual(pricing.resolve(model: "kimi-k2p5", source: .cursor)?.inputPerMillion, 0.6)
+        XCTAssertEqual(pricing.resolve(model: "kimi-k2.7-code", source: .cursor)?.inputPerMillion, 0.95)
+        XCTAssertEqual(pricing.resolve(model: "kimi-k2p7", source: .cursor)?.inputPerMillion, 0.95)
+        XCTAssertEqual(pricing.resolve(model: "claude-4.7-opus-high-thinking", source: .cursor)?.inputPerMillion, 5)
+        XCTAssertEqual(pricing.resolve(model: "claude-4.7-opus-max-thinking-fast", source: .cursor)?.inputPerMillion, 30)
+        XCTAssertEqual(pricing.resolve(model: "glm-5.2-max", source: .cursor)?.inputPerMillion, 1.4)
+        XCTAssertEqual(pricing.resolve(model: "github_bugbot", source: .cursor)?.outputPerMillion, 30)
+        XCTAssertEqual(pricing.resolve(model: "Premium (GPT-5.3-Codex)", source: .cursor)?.inputPerMillion, 1.75)
     }
 
     /// log에 그대로 등장하는 raw model id (alias rewriting 없음)
@@ -85,14 +85,11 @@ final class PricingBundledResourceTests: XCTestCase {
     func testClaudeSonnet5PricingAndAliases() throws {
         let pricing = Self.pricing
         let sonnet5 = try XCTUnwrap(pricing.resolve(model: "claude-sonnet-5-thinking-high"))
-        XCTAssertEqual(sonnet5.inputPerMillion, 3.0)
-        XCTAssertEqual(sonnet5.outputPerMillion, 15.0)
-        XCTAssertEqual(sonnet5.cacheWritePerMillion, 3.75)
-        XCTAssertEqual(sonnet5.cacheReadPerMillion, 0.3)
-
-        let sonnet46 = try XCTUnwrap(pricing.resolve(model: "claude-4.6-sonnet"))
-        XCTAssertEqual(sonnet5.inputPerMillion, sonnet46.inputPerMillion)
-        XCTAssertEqual(sonnet5.outputPerMillion, sonnet46.outputPerMillion)
+        XCTAssertEqual(pricing.resolve(model: "claude-sonnet-5"), sonnet5)
+        XCTAssertEqual(sonnet5.inputPerMillion, 2.0)
+        XCTAssertEqual(sonnet5.outputPerMillion, 10.0)
+        XCTAssertEqual(sonnet5.cacheWritePerMillion, 2.5)
+        XCTAssertEqual(sonnet5.cacheReadPerMillion, 0.2)
     }
 
     func testClaudeOpus5PricingAndAliases() throws {
@@ -212,29 +209,29 @@ final class PricingBundledResourceTests: XCTestCase {
 
     func testGrok45PricingAndAliases() throws {
         let pricing = Self.pricing
-        let standard = try XCTUnwrap(pricing.resolve(model: "grok-4.5-high"))
+        let standard = try XCTUnwrap(pricing.resolve(model: "grok-4.5-high", source: .cursor))
         XCTAssertEqual(standard.inputPerMillion, 2.0)
         XCTAssertEqual(standard.cacheWritePerMillion, 2.0)
         XCTAssertEqual(standard.cacheReadPerMillion, 0.5)
         XCTAssertEqual(standard.outputPerMillion, 6.0)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5"), standard)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-low"), standard)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5", source: .cursor), standard)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-low", source: .cursor), standard)
 
-        let fast = try XCTUnwrap(pricing.resolve(model: "grok-4.5-fast"))
+        let fast = try XCTUnwrap(pricing.resolve(model: "grok-4.5-fast", source: .cursor))
         XCTAssertEqual(fast.inputPerMillion, 4.0)
         XCTAssertEqual(fast.cacheWritePerMillion, 4.0)
         XCTAssertEqual(fast.cacheReadPerMillion, 1.0)
         XCTAssertEqual(fast.outputPerMillion, 18.0)
         // Cursor CSV는 fast-before-effort 순서, effort-before-fast도 허용
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-high"), fast)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-medium"), fast)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-xhigh"), fast)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-xhigh"), standard)
-        XCTAssertEqual(pricing.resolve(model: "grok-4.5-medium-fast"), fast)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-high", source: .cursor), fast)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-medium", source: .cursor), fast)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-fast-xhigh", source: .cursor), fast)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-xhigh", source: .cursor), standard)
+        XCTAssertEqual(pricing.resolve(model: "grok-4.5-medium-fast", source: .cursor), fast)
         // Cursor usage export는 first-party Grok에 `cursor-` prefix를 붙이기도 함
-        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high-fast"), fast)
-        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-fast-high"), fast)
-        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high"), standard)
+        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high-fast", source: .cursor), fast)
+        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-fast-high", source: .cursor), fast)
+        XCTAssertEqual(pricing.resolve(model: "cursor-grok-4.5-high", source: .cursor), standard)
     }
 
     func testKimiK27CodePricingAndAliases() throws {
@@ -304,7 +301,7 @@ final class PricingBundledResourceTests: XCTestCase {
     }
 
     func testUnverifiedNewAliasesRemainUnmatched() {
-        for slug in ["gpt-6-astra-unrecognized", "gpt-7-astra", "grok-4.7", "grok-bot-default",
+        for slug in ["gpt-6-astra-unrecognized", "gpt-7-astra", "grok-bot-default",
                      "grok-bot-automation", "grok-bot-cua", "muse-spark-1.3-contributor",
                      "kimi-k3-fast", "claude-fable-5.1-fast", "gemini-default"] {
             XCTAssertNil(Self.pricing.supplement.canonicalName(for: slug), slug)

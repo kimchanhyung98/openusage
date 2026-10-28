@@ -48,25 +48,59 @@ jobs:
                   datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%SZ")
               except ValueError:
                   problems.append("updated_at must be a valid UTC date and time")
-          for model, entry in supplement["pricing"].items():
-              for field in ("input_per_million", "output_per_million"):
-                  if not isinstance(entry.get(field), (int, float)):
-                      problems.append(f"pricing[{model}].{field} missing or not a number")
-          for rule in supplement["alias_rules"]:
-              try:
-                  re.compile(rule["pattern"])
-              except re.error as error:
-                  problems.append(f"alias pattern {rule['pattern']!r}: {error}")
-              if not rule.get("canonical"):
-                  problems.append(f"alias pattern {rule['pattern']!r} has no canonical")
+          for section in ("pricing", "pricing_v2"):
+              entries = supplement.get(section, {})
+              if not isinstance(entries, dict):
+                  problems.append(f"{section} must be an object")
+                  continue
+              for model, entry in entries.items():
+                  if not isinstance(entry, dict):
+                      problems.append(f"{section}[{model}] must be an object")
+                      continue
+                  for field in ("input_per_million", "output_per_million",
+                                "cache_write_per_million", "cache_read_per_million"):
+                      rate = entry.get(field)
+                      if field in ("cache_write_per_million", "cache_read_per_million") and rate is None:
+                          continue
+                      if type(rate) not in (int, float) or not math.isfinite(rate) or rate < 0:
+                          problems.append(f"{section}[{model}].{field} must be finite and nonnegative")
+                  if "long_context" in entry:
+                      tier = entry["long_context"]
+                      if not isinstance(tier, dict):
+                          problems.append(f"{section}[{model}].long_context must be an object")
+                          continue
+                      threshold = tier.get("threshold_tokens")
+                      if type(threshold) is not int or not 0 < threshold <= 9223372036854775807:
+                          problems.append(f"{section}[{model}].long_context.threshold_tokens must be a positive Int64")
+                      for field in ("input_per_million", "output_per_million",
+                                    "cache_write_per_million", "cache_read_per_million"):
+                          rate = tier.get(field)
+                          if type(rate) not in (int, float) or not math.isfinite(rate) or rate < 0:
+                              problems.append(f"{section}[{model}].long_context.{field} must be finite and nonnegative")
+          for section in ("alias_rules", "alias_rules_v2"):
+              rules = supplement.get(section, [])
+              if not isinstance(rules, list):
+                  problems.append(f"{section} must be an array")
+                  continue
+              for rule in rules:
+                  if not isinstance(rule, dict) or not isinstance(rule.get("pattern"), str):
+                      problems.append(f"{section} entries must have a string pattern")
+                      continue
+                  try:
+                      re.compile(rule["pattern"])
+                  except re.error as error:
+                      problems.append(f"{section} pattern {rule['pattern']!r}: {error}")
+                  if not isinstance(rule.get("canonical"), str) or not rule["canonical"]:
+                      problems.append(f"{section} pattern {rule['pattern']!r} has no canonical")
           for field in ("fast_multipliers", "fast_multipliers_exact"):
               for model, multiplier in (supplement.get(field) or {}).items():
                   if type(multiplier) not in (int, float) or not math.isfinite(multiplier) or multiplier <= 0:
                       problems.append(f"{field}[{model}] must be a positive number")
           if problems:
               sys.exit("Supplement validation failed:\n" + "\n".join(problems))
-          print(f"Supplement OK: {len(supplement['pricing'])} models, "
-                f"{len(supplement['alias_rules'])} alias rules.")
+          model_count = len(supplement["pricing"] | supplement.get("pricing_v2", {}))
+          rule_count = len(supplement["alias_rules"]) + len(supplement.get("alias_rules_v2", []))
+          print(f"Supplement OK: {model_count} models, {rule_count} alias rules.")
           PY
 
       - name: Pages 디렉터리 조립

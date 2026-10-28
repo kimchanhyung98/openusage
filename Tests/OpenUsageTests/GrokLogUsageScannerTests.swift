@@ -5,8 +5,9 @@ final class GrokLogUsageScannerTests: XCTestCase {
     private let since = OpenUsageISO8601.date(from: "2026-06-01T00:00:00.000Z")!
 
     func testProviderQualifiedGrok46AliasesKeepUsagePriced() throws {
+        // 일반 요청은 200k 초과 장문 단가(입력 4 + 출력 12), Fast는 명시 단가(입력 4 + 출력 12) 적용.
         for (model, expected) in [
-            ("xai/grok-4.6", 8.0), ("xai/grok-4-6-high", 8.0),
+            ("xai/grok-4.6", 16.0), ("xai/grok-4-6-high", 16.0),
             ("xai/grok-4.6-fast", 16.0), ("xai/grok-4-6-fast-xhigh", 16.0),
             ("xai/grok-4.6-high-fast", 16.0)
         ] {
@@ -19,7 +20,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
             XCTAssertEqual(try XCTUnwrap(usage.series.daily.first?.costUSD), expected, accuracy: 1e-9, model)
             XCTAssertTrue(usage.unknownModelsByDay.isEmpty, model)
         }
-        for model in ["xai/grok-4.7", "xai/grok-4.6-unknown", "reseller/grok-4.6"] {
+        for model in ["xai/grok-4.99", "xai/grok-4.6-unknown", "reseller/grok-4.6"] {
             XCTAssertNil(TestPricing.bundled.supplement.canonicalName(for: model), model)
         }
     }
@@ -37,8 +38,8 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
         let day = usage.series.daily.first { $0.date == "2026-06-10" }
         XCTAssertEqual(day?.totalTokens, 4_000_000)
-        // 계산: grok-build 입력 1M × $1 + 출력 1M × $2 = $3, composer-2.5-fast 입력 1M × $3 + 출력 1M × $15 = $18
-        XCTAssertEqual(day?.costUSD ?? 0, 21.0, accuracy: 0.0001)
+        // grok-build 장문 입력 1M × $2 + 출력 1M × $4 = $6, composer-2.5-fast 입력·출력 합계 $18.
+        XCTAssertEqual(day?.costUSD ?? 0, 24.0, accuracy: 0.0001)
         let models = usage.modelUsage?.daily.first { $0.date == "2026-06-10" }?.models ?? []
         XCTAssertEqual(Set(models.map(\.model)), Set(["grok-build", "grok-composer-2.5-fast"]))
     }
@@ -53,12 +54,12 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
         let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
 
-        // 첫 row는 grok-build($1/M input), switch 이후 row는 composer-2.5-fast($3/M)로 가격 산정
-        XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 4.0, accuracy: 0.0001)
+        // 첫 요청은 grok-build 장문 입력 $2/M, 전환 이후 요청은 composer-2.5-fast 입력 $3/M 적용.
+        XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 5.0, accuracy: 0.0001)
     }
 
     func testUsesCachedReadRateForCachedPromptTokens() {
-        // fixture: 1M prompt token 중 800k는 cache read (grok-build: read $0.2/M vs input $1/M)
+        // 1M 입력 중 800k는 캐시 읽기 — 캐시를 포함한 요청 전체에 장문 단가 적용.
         let log = """
         {"ts":"2026-06-12T08:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
         {"ts":"2026-06-12T09:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":800000,"completion_tokens":0,"reasoning_tokens":0}}
@@ -66,8 +67,8 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
         let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
 
-        // 200k input @ $1/M ($0.2) + 800k cache read @ $0.2/M ($0.16) = 총 $0.36
-        XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 0.36, accuracy: 0.0001)
+        // 일반 입력 200k × $2/M = $0.40, 캐시 읽기 800k × $0.40/M = $0.32.
+        XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 0.72, accuracy: 0.0001)
     }
 
     func testSkipsRowsWithoutTokenFieldsAndOutsideWindow() {
