@@ -60,6 +60,7 @@ final class PricingSupplementCompatibilityTests: XCTestCase {
             "gpt-5.1": 2, "gpt-5-mini": 1.8, "gpt-4.1": 1.75, "gpt-4.1-mini": 1.75,
             "gpt-4.1-nano": 2, "gpt-4o": 1.7, "gpt-4o-2024-05-13": 1.75,
             "gpt-4o-mini": 1.6666666666666667,
+            "gpt-6.1-terra": 2, "o3": 1.75, "o4-mini": 20.0 / 11.0, "claude-opus-5-5": 2,
         ]
 
         XCTAssertEqual(legacy, expectedLegacy)
