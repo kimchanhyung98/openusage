@@ -97,7 +97,8 @@ enum CursorUsageCSV {
                 imputedCostDollars: pricing.estimatedCostDollars(
                     model: model,
                     tokens: tokens,
-                    applyLongContextRates: false
+                    applyLongContextRates: false,
+                    source: .cursor
                 )
             ))
         }

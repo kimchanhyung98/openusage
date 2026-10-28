@@ -311,9 +311,13 @@ enum CursorUsageMapper {
         )
     }
 
-    /// raw CSV slug의 표시 family: canonical pricing key에서 `-fast` suffix를 base로 흡수(`gpt-5.5-extra-high-fast` → `gpt-5.5-fast` → `gpt-5.5`). alias rule이 모르는 slug는 raw 이름 유지 — 잘못된 추측은 무관한 모델을 조용히 병합.
+    /// Cursor 별칭을 우선해 표시 family 결정 — 공급 경로 접두사 제거, Fast는 기본 모델에 합산, 미등록 이름은 원문 유지.
     private static func familyName(for model: String, pricing: ModelPricing) -> String {
-        let canonical = pricing.supplement.canonicalName(for: model) ?? model
+        var canonical = pricing.supplement.canonicalName(for: "cursor/" + model)
+            ?? pricing.supplement.canonicalName(for: model) ?? model
+        if canonical.hasPrefix("cursor/") {
+            canonical = String(canonical.dropFirst("cursor/".count))
+        }
         guard canonical.hasSuffix("-fast") else { return canonical }
         let base = String(canonical.dropLast("-fast".count))
         return base.isEmpty ? canonical : base

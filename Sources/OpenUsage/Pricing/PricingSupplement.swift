@@ -100,19 +100,26 @@ extension PricingSupplement {
     static func decode(from data: Data) throws -> PricingSupplement {
         let file = try JSONDecoder().decode(SupplementFile.self, from: data)
         var pricing: [String: ModelRates] = [:]
-        for (model, entry) in file.pricing {
+        // 새 해석 규칙이 필요한 항목은 구버전 앱이 읽지 않는 필드에서 우선 적용.
+        let entries = file.pricing.merging(file.pricingV2) { _, updated in updated }
+        for (model, entry) in entries {
             pricing[model] = ModelRates(
                 inputPerMillion: entry.inputPerMillion,
                 outputPerMillion: entry.outputPerMillion,
                 cacheWritePerMillion: entry.cacheWritePerMillion ?? entry.inputPerMillion,
                 cacheReadPerMillion: entry.cacheReadPerMillion ?? entry.inputPerMillion * 0.1,
+                inputAbove200kPerMillion: entry.longContext?.inputPerMillion,
+                outputAbove200kPerMillion: entry.longContext?.outputPerMillion,
+                cacheWriteAbove200kPerMillion: entry.longContext?.cacheWritePerMillion,
+                cacheReadAbove200kPerMillion: entry.longContext?.cacheReadPerMillion,
                 cacheReadIsExplicit: entry.cacheReadPerMillion != nil,
+                longContextThresholdTokens: entry.longContext?.thresholdTokens ?? 200_000,
                 // Claude `speed` field 같은 request 수준 fast 신호 보존.
                 fastMultiplier: file.exactFastMultipliers?[model] ?? file.fastMultipliers?[model] ?? 1
             )
         }
         var rules: [AliasRule] = []
-        for rule in file.aliasRules {
+        for rule in file.aliasRulesV2 + file.aliasRules {
             do {
                 let pattern = try NSRegularExpression(pattern: rule.pattern)
                 rules.append(AliasRule(pattern: pattern, canonical: rule.canonical))
@@ -132,17 +139,81 @@ extension PricingSupplement {
     private struct SupplementFile: Decodable {
         var updatedAt: String?
         var pricing: [String: Entry]
+        var pricingV2: [String: Entry]
         var fastMultipliers: [String: Double]?
         var exactFastMultipliers: [String: Double]?
         var aliasRules: [Rule]
+        var aliasRulesV2: [Rule]
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+            pricing = try container.decode([String: Entry].self, forKey: .pricing)
+            pricingV2 = container.contains(.pricingV2)
+                ? try container.decode([String: Entry].self, forKey: .pricingV2) : [:]
+            fastMultipliers = try container.decodeIfPresent([String: Double].self, forKey: .fastMultipliers)
+            exactFastMultipliers = try container.decodeIfPresent([String: Double].self, forKey: .exactFastMultipliers)
+            aliasRules = try container.decode([Rule].self, forKey: .aliasRules)
+            aliasRulesV2 = container.contains(.aliasRulesV2)
+                ? try container.decode([Rule].self, forKey: .aliasRulesV2) : []
+        }
 
         struct Entry: Decodable {
             var inputPerMillion: Double
             var outputPerMillion: Double
             var cacheWritePerMillion: Double?
             var cacheReadPerMillion: Double?
+            var longContext: LongContext?
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                inputPerMillion = try container.decode(Double.self, forKey: .inputPerMillion)
+                outputPerMillion = try container.decode(Double.self, forKey: .outputPerMillion)
+                cacheWritePerMillion = try container.decodeIfPresent(Double.self, forKey: .cacheWritePerMillion)
+                cacheReadPerMillion = try container.decodeIfPresent(Double.self, forKey: .cacheReadPerMillion)
+                longContext = container.contains(.longContext)
+                    ? try container.decode(LongContext.self, forKey: .longContext) : nil
+            }
 
             enum CodingKeys: String, CodingKey {
+                case inputPerMillion = "input_per_million"
+                case outputPerMillion = "output_per_million"
+                case cacheWritePerMillion = "cache_write_per_million"
+                case cacheReadPerMillion = "cache_read_per_million"
+                case longContext = "long_context"
+            }
+        }
+
+        struct LongContext: Decodable {
+            var thresholdTokens: Int
+            var inputPerMillion: Double
+            var outputPerMillion: Double
+            var cacheWritePerMillion: Double
+            var cacheReadPerMillion: Double
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                thresholdTokens = try container.decode(Int.self, forKey: .thresholdTokens)
+                guard thresholdTokens > 0 else {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: .thresholdTokens, in: container, debugDescription: "Expected a positive token threshold")
+                }
+                inputPerMillion = try container.decode(Double.self, forKey: .inputPerMillion)
+                outputPerMillion = try container.decode(Double.self, forKey: .outputPerMillion)
+                cacheWritePerMillion = try container.decode(Double.self, forKey: .cacheWritePerMillion)
+                cacheReadPerMillion = try container.decode(Double.self, forKey: .cacheReadPerMillion)
+                let rates: [(CodingKeys, Double)] = [
+                    (.inputPerMillion, inputPerMillion), (.outputPerMillion, outputPerMillion),
+                    (.cacheWritePerMillion, cacheWritePerMillion), (.cacheReadPerMillion, cacheReadPerMillion),
+                ]
+                for (key, value) in rates where !value.isFinite || value < 0 {
+                    throw DecodingError.dataCorruptedError(
+                        forKey: key, in: container, debugDescription: "Expected a finite nonnegative rate")
+                }
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case thresholdTokens = "threshold_tokens"
                 case inputPerMillion = "input_per_million"
                 case outputPerMillion = "output_per_million"
                 case cacheWritePerMillion = "cache_write_per_million"
@@ -158,9 +229,11 @@ extension PricingSupplement {
         enum CodingKeys: String, CodingKey {
             case updatedAt = "updated_at"
             case pricing
+            case pricingV2 = "pricing_v2"
             case fastMultipliers = "fast_multipliers"
             case exactFastMultipliers = "fast_multipliers_exact"
             case aliasRules = "alias_rules"
+            case aliasRulesV2 = "alias_rules_v2"
         }
     }
 }

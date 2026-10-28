@@ -5,6 +5,16 @@ import os
 /// 해석 순서: supplement alias 재작성 → supplement 정확 일치 → LiteLLM 정확 → `-fast`는 base × fast multiplier(배율 없으면 미가격)
 /// → LiteLLM fuzzy(비-fast slug만) → models.dev 정확 일치만 — reseller 집계 특성상 fuzzy는 오가격 위험, unknown variant는 미가격 유지.
 final class ModelPricing: Sendable {
+    enum Source: Hashable, Sendable {
+        case api
+        case cursor
+    }
+
+    private struct ResolutionKey: Hashable {
+        let model: String
+        let source: Source
+    }
+
     let supplement: PricingSupplement
     /// LiteLLM `model_prices_and_context_window.json` — bundled snapshot에 fetch 데이터 merge.
     let primary: PricingCatalog
@@ -12,7 +22,7 @@ final class ModelPricing: Sendable {
     let secondary: PricingCatalog
 
     /// fuzzy miss마다 전체 catalog 순회 — model 이름별 memoize. snapshot 불변이라 entry invalidation 없음.
-    private let memo = OSAllocatedUnfairLock<[String: ModelRates?]>(initialState: [:])
+    private let memo = OSAllocatedUnfairLock<[ResolutionKey: ModelRates?]>(initialState: [:])
 
     init(supplement: PricingSupplement, primary: PricingCatalog, secondary: PricingCatalog) {
         self.supplement = supplement
@@ -23,12 +33,14 @@ final class ModelPricing: Sendable {
     static let empty = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(), secondary: PricingCatalog())
 
     /// `model`의 rates — 어떤 source도 가격 못 매기면 nil (caller가 unknown-model 경고 표시, token은 $0 계산).
-    func resolve(model: String) -> ModelRates? {
-        if let cached = memo.withLock({ $0[model] }) {
+    func resolve(model: String, source: Source = .api) -> ModelRates? {
+        let key = ResolutionKey(model: model, source: source)
+        if let cached = memo.withLock({ $0[key] }) {
             return cached
         }
-        let resolved = resolveUncached(model: model)
-        memo.withLock { $0[model] = resolved }
+        let scoped = source == .cursor ? cursorRates(model: model) : nil
+        let resolved = scoped ?? resolveUncached(model: model)
+        memo.withLock { $0[key] = resolved }
         return resolved
     }
 
@@ -37,10 +49,22 @@ final class ModelPricing: Sendable {
     func estimatedCostDollars(
         model: String,
         tokens: TokenBreakdown,
-        applyLongContextRates: Bool = true
+        applyLongContextRates: Bool = true,
+        source: Source = .api
     ) -> Double? {
-        guard let rates = resolve(model: model) else { return nil }
+        guard let rates = resolve(model: model, source: source) else { return nil }
         return rates.costDollars(for: tokens, applyLongContextRates: applyLongContextRates)
+    }
+
+    /// Cursor 별도 요율은 보충 파일의 정확 항목·등록 별칭으로만 조회 — 공급 경로 접두사를 공개 카탈로그 유사 매칭에 전달하지 않음.
+    private func cursorRates(model: String) -> ModelRates? {
+        let scoped = "cursor/" + model
+        if let canonical = supplement.canonicalName(for: scoped),
+           let rates = supplement.pricing[canonical]
+        {
+            return rates
+        }
+        return supplement.pricing[scoped]
     }
 
     private func resolveUncached(model: String) -> ModelRates? {
