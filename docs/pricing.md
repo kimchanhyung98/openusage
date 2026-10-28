@@ -135,6 +135,8 @@ GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까�
   신규 Fast 배율은 `fast_multipliers_exact`에 등록하고, 구버전의 넓은 이름 매칭을 사용하는 `fast_multipliers`는 유지.
   장문·공급 경로별 처리가 필요한 값과 새 단가는 `pricing_v2`·`alias_rules_v2`에 등록.
   기존 `pricing`·`alias_rules`는 구버전 앱이 계속 읽으므로 호환성을 확인하지 않고 변경하지 않음.
+  게시 시 `pricing`·`pricing_v2`의 기본 입력·출력 단가는 유한한 비음수 필수이며 불리언은 거부.
+  기본 캐시 쓰기·읽기 단가는 누락·`null`을 허용하되, 값이 있으면 같은 조건으로 검증.
   장문 요율은 선택적 `long_context` 객체의 `threshold_tokens`와 입력·출력·캐시 쓰기·읽기 네 단가로 등록.
   경계는 양의 정수, 단가는 유한한 비음수 필수이며 잘못된 장문 객체는 로딩·게시 단계에서 거부.
   Cursor 전용 단가는 `cursor/` 키와 전용 별칭으로 등록하고, 공급자의 API 단가와 별도로 검증.

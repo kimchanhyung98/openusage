@@ -57,9 +57,13 @@ jobs:
                   if not isinstance(entry, dict):
                       problems.append(f"{section}[{model}] must be an object")
                       continue
-                  for field in ("input_per_million", "output_per_million"):
-                      if not isinstance(entry.get(field), (int, float)):
-                          problems.append(f"{section}[{model}].{field} missing or not a number")
+                  for field in ("input_per_million", "output_per_million",
+                                "cache_write_per_million", "cache_read_per_million"):
+                      rate = entry.get(field)
+                      if field in ("cache_write_per_million", "cache_read_per_million") and rate is None:
+                          continue
+                      if type(rate) not in (int, float) or not math.isfinite(rate) or rate < 0:
+                          problems.append(f"{section}[{model}].{field} must be finite and nonnegative")
                   if "long_context" in entry:
                       tier = entry["long_context"]
                       if not isinstance(tier, dict):

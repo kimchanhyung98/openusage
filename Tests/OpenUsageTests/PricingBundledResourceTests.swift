@@ -85,6 +85,7 @@ final class PricingBundledResourceTests: XCTestCase {
     func testClaudeSonnet5PricingAndAliases() throws {
         let pricing = Self.pricing
         let sonnet5 = try XCTUnwrap(pricing.resolve(model: "claude-sonnet-5-thinking-high"))
+        XCTAssertEqual(pricing.resolve(model: "claude-sonnet-5"), sonnet5)
         XCTAssertEqual(sonnet5.inputPerMillion, 2.0)
         XCTAssertEqual(sonnet5.outputPerMillion, 10.0)
         XCTAssertEqual(sonnet5.cacheWritePerMillion, 2.5)
