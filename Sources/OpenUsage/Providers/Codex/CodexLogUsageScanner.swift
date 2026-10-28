@@ -481,6 +481,7 @@ actor CodexLogUsageScanner {
         var seen: Set<EventKey> = []
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var costEstimator = CodexUsagePricing.Resolver(pricing: pricing)
 
         for event in events where event.timestamp >= since {
             guard !event.invalidNumericValues else {
@@ -507,8 +508,8 @@ actor CodexLogUsageScanner {
             )
             let pricingModel = event.pricingModel ?? model
             guard
-                let eventCost = CodexUsagePricing.estimate(
-                    model: pricingModel, tokens: tokens, pricing: pricing, isUltrafast: event.isUltrafast
+                let eventCost = costEstimator.estimate(
+                    model: pricingModel, tokens: tokens, isUltrafast: event.isUltrafast
                 )
             else {
                 if event.total > 0 {
