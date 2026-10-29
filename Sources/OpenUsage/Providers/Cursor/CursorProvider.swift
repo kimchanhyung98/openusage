@@ -137,12 +137,13 @@ final class CursorProvider: ProviderRuntime {
 
         if shouldTryGenericRequestFallback(usage: usage) {
             do {
-                let mapped = try await requestBasedResult(
+                var mapped = try await requestBasedResult(
                     accessToken: currentToken,
                     planName: planName,
                     unavailableMessage: "Cursor request-based usage data unavailable. Try again later."
                 )
-                return snapshot(mapped)
+                let history = await appendSpendLines(to: &mapped.lines, accessToken: currentToken)
+                return snapshot(mapped, usageHistory: history)
             } catch {
                 noteDegraded(.cursorFallback, error: error, localContext: "optional request-based usage fallback failed")
             }
