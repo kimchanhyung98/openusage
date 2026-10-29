@@ -10,6 +10,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         case snapshotIdentityMismatch(String)
         case invalidClaudeState(URL)
         case incompleteClaudeAuthentication
+        case conflictingClaudeAuthentication
         case switchVerificationFailed(String)
         case switchRecoveryRequired
         case selectionSaveFailed
@@ -26,6 +27,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
                 "Claude account state is invalid: \(url.path)"
             case .incompleteClaudeAuthentication:
                 "Claude sign-in has not finished updating its account state. Finish signing in and try again."
+            case .conflictingClaudeAuthentication:
+                "Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again."
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified. Check the selected account and try again."
             case .switchRecoveryRequired:
@@ -103,14 +106,19 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     }
 
     /// snapshot 교체용 Claude 로그인 — state가 새 credential을 반영한 완료 상태일 때만 반환.
+    /// 정규화 여부도 같은 관찰에서 결정 — 후속 읽기에서 발견한 새 충돌을 덮어쓰기 근거로 사용 금지.
     func readSharedClaudeExternalAuthentication(
         comparedTo previousSnapshot: AccountCredentialVault.Entry?
-    ) throws -> AccountCredentialVault.Entry? {
+    ) throws -> (entry: AccountCredentialVault.Entry, requiresNormalization: Bool)? {
         guard let observed = try sharedClaudeAuthentication() else { return nil }
-        guard observed.entry != previousSnapshot else { return observed.entry }
+        let authentication = (
+            entry: observed.entry,
+            requiresNormalization: try claudeSharedNormalizationRequired(for: observed)
+        )
+        guard observed.entry != previousSnapshot else { return authentication }
         if let previousSnapshot,
            sameClaudeCredentialChain(previousSnapshot, observed.entry) {
-            return observed.entry
+            return authentication
         }
         guard let credentialModifiedAt = observed.credentialModifiedAt,
               let stateModifiedAt = observed.stateModifiedAt,
@@ -119,7 +127,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             AppLog.error(.auth, "shared Claude account state predates its credential; preserving the managed snapshot")
             throw Error.incompleteClaudeAuthentication
         }
-        return observed.entry
+        return authentication
     }
 
     private func sameClaudeCredentialChain(
@@ -146,79 +154,70 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
 
     private func sharedClaudeAuthentication() throws -> SharedClaudeAuthentication? {
         let home = sharedHomePath(family: "claude")
-        let scopedService = ClaudeAuthStore.scopedKeychainServiceName(
+        var service = ClaudeAuthStore.scopedKeychainServiceName(
             forConfigDirLiteral: home,
             environment: environment
         )
-        let localState = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
-        if let scopedCredential = try keychain.readGenericPasswordForCurrentUser(service: scopedService) {
-            guard isUsableClaudeCredential(scopedCredential),
-                  let account = try claudeOAuthAccount(inFirstOf: [localState])
-            else {
-                return nil
-            }
-            return SharedClaudeAuthentication(
-                entry: AccountCredentialVault.Entry(
-                    credential: scopedCredential,
-                    claudeOAuthAccount: account
-                ),
-                credentialModifiedAt: try keychain.genericPasswordModificationDateForCurrentUser(
-                    service: scopedService
-                ),
-                stateModifiedAt: try modificationDateIfPresent(localState)
-            )
+        var stateURL = URL(fileURLWithPath: home).appendingPathComponent(".claude.json")
+        var stored = try claudeKeychainCredential(service: service)
+        if stored == nil {
+            // 관리형 home의 scoped credential 부재는 로그아웃 — 이전 base 인증으로 복원 금지.
+            guard !fileManager.fileExists(atPath: stateURL.path) else { return nil }
+            // 최초 등록 전 plain 로그인만 base credential + 루트 state에서 수용.
+            service = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+            stateURL = homeDirectory.appendingPathComponent(".claude.json")
+            stored = try claudeKeychainCredential(service: service)
         }
-        if let scopedCredential = try keychain.readGenericPassword(service: scopedService) {
-            guard isUsableClaudeCredential(scopedCredential),
-                  let account = try claudeOAuthAccount(inFirstOf: [localState])
-            else {
-                return nil
-            }
-            return SharedClaudeAuthentication(
-                entry: AccountCredentialVault.Entry(
-                    credential: scopedCredential,
-                    claudeOAuthAccount: account
-                ),
-                credentialModifiedAt: try keychain.genericPasswordModificationDate(service: scopedService),
-                stateModifiedAt: try modificationDateIfPresent(localState)
-            )
-        }
-
-        // 관리형 scoped home이 한 번 만들어진 뒤 scoped credential만 사라진 상태는 로그아웃.
-        // OpenUsage가 이전 전환 때 남긴 base credential로 되살리지 않음.
-        guard !fileManager.fileExists(atPath: localState.path) else { return nil }
-
-        // 최초 관리형 등록 전 plain Claude 로그인은 base credential + 루트 state만 보유.
-        // 이 경우에만 reconciliation이 scoped shared home으로 이관할 수 있도록 수용.
-        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
-        let rootState = homeDirectory.appendingPathComponent(".claude.json")
-        if let baseCredential = try keychain.readGenericPasswordForCurrentUser(service: baseService) {
-            guard isUsableClaudeCredential(baseCredential),
-                  let account = try claudeOAuthAccount(inFirstOf: [rootState])
-            else { return nil }
-            return SharedClaudeAuthentication(
-                entry: AccountCredentialVault.Entry(
-                    credential: baseCredential,
-                    claudeOAuthAccount: account
-                ),
-                credentialModifiedAt: try keychain.genericPasswordModificationDateForCurrentUser(
-                    service: baseService
-                ),
-                stateModifiedAt: try modificationDateIfPresent(rootState)
-            )
-        }
-        guard let baseCredential = try keychain.readGenericPassword(service: baseService),
-              isUsableClaudeCredential(baseCredential),
-              let account = try claudeOAuthAccount(inFirstOf: [rootState])
+        guard let stored, isUsableClaudeCredential(stored.value),
+              let account = try claudeOAuthAccount(inFirstOf: [stateURL])
         else { return nil }
         return SharedClaudeAuthentication(
-            entry: AccountCredentialVault.Entry(
-                credential: baseCredential,
-                claudeOAuthAccount: account
-            ),
-            credentialModifiedAt: try keychain.genericPasswordModificationDate(service: baseService),
-            stateModifiedAt: try modificationDateIfPresent(rootState)
+            entry: .init(credential: stored.value, claudeOAuthAccount: account),
+            credentialModifiedAt: try stored.isCurrentUser
+                ? keychain.genericPasswordModificationDateForCurrentUser(service: service)
+                : keychain.genericPasswordModificationDate(service: service),
+            stateModifiedAt: try modificationDateIfPresent(stateURL)
         )
+    }
+
+    private func claudeKeychainCredential(service: String) throws -> (value: String, isCurrentUser: Bool)? {
+        if let value = try keychain.readGenericPasswordForCurrentUser(service: service) {
+            return (value, true)
+        }
+        guard let value = try keychain.readGenericPassword(service: service) else { return nil }
+        return (value, false)
+    }
+
+    /// 충돌한 기본 로그인은 scoped 인증·state보다 모두 오래됐을 때만 자동 정규화 허용.
+    private func claudeSharedNormalizationRequired(for observed: SharedClaudeAuthentication) throws -> Bool {
+        let rootState = homeDirectory.appendingPathComponent(".claude.json")
+        guard let rootAccount = try claudeOAuthAccount(inFirstOf: [rootState]) else { return false }
+        guard let rootIdentity = identity(
+            of: .init(credential: observed.entry.credential, claudeOAuthAccount: rootAccount), family: "claude"
+        )?.identityKey,
+        let observedIdentity = identity(of: observed.entry, family: "claude")?.identityKey else {
+            AppLog.error(.auth, "Claude sign-in identity is unresolved; preserving all authentication")
+            throw Error.conflictingClaudeAuthentication
+        }
+        guard rootIdentity != observedIdentity else { return false }
+
+        var conflictingDates = [try modificationDateIfPresent(rootState)]
+        let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)
+        if let base = try claudeKeychainCredential(service: baseService), base.value != observed.entry.credential {
+            conflictingDates.append(try base.isCurrentUser
+                ? keychain.genericPasswordModificationDateForCurrentUser(service: baseService)
+                : keychain.genericPasswordModificationDate(service: baseService))
+        }
+        guard let credentialDate = observed.credentialModifiedAt,
+              let stateDate = observed.stateModifiedAt,
+              conflictingDates.allSatisfy({ date in
+                  date.map { $0 < min(credentialDate, stateDate) } ?? false
+              })
+        else {
+            AppLog.error(.auth, "conflicting Claude sign-in is newer or its write order is unknown; preserving all authentication")
+            throw Error.conflictingClaudeAuthentication
+        }
+        return true
     }
 
     /// 한 home의 인증 read (Shared Runtime Home·Sign-In Workspace·legacy profile home).
