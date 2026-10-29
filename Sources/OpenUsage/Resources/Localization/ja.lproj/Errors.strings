@@ -36,6 +36,7 @@
 "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claudeのアカウント切り替えを復旧する必要があります。設定 → アカウントで使用するアカウントの「Claude アカウントを管理」を開き、使用ボタンを選んでください。";
 "Claude login changed during refresh. Refresh again." = "更新中に Claude のログイン情報が変更されました。もう一度更新してください。";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude のログインに伴うアカウント状態の更新が完了していません。ログインを完了してから、もう一度お試しください。";
+"Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry." = "異なる場所に保存された Claude のログイン情報が競合しています。新しいターミナルで再度ログインしてから、もう一度お試しください。";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude 使用量の再試行データを読み取れませんでした。アプリのログを確認してから、もう一度お試しください。";
 "Claude usage retry data could not be saved or opened. Check the app log and try again." = "Claude 使用量の再試行データを保存または開くことができませんでした。アプリのログを確認して、もう一度お試しください。";
 "Codex CLI could not be found for the weekly timer message." = "週間タイマーのメッセージを送信するためのCodex CLIが見つかりませんでした。";

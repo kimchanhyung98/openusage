@@ -32,7 +32,7 @@ extension AppContainer {
 
     static func externalClaudeReconciliationMessage(for error: Error) -> String {
         if let error = error as? AccountCredentialSwitcher.Error,
-           error == .switchRecoveryRequired || error == .selectionSaveFailed {
+           error == .switchRecoveryRequired || error == .selectionSaveFailed || error == .conflictingClaudeAuthentication {
             return error.localizedDescription
         }
         return "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."

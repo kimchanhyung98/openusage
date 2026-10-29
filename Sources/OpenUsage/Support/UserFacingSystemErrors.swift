@@ -222,6 +222,8 @@ extension AccountCredentialSwitcher.Error: UserPresentableError {
             .init("Claude account state is invalid: %@", [String(url.path)])
         case .incompleteClaudeAuthentication:
             .init("Claude sign-in has not finished updating its account state. Finish signing in and try again.")
+        case .conflictingClaudeAuthentication:
+            .init("Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry.")
         case .switchVerificationFailed(let label):
             .init("Switching to %@ could not be verified. Check the selected account and try again.", [String(label)])
         case .switchRecoveryRequired:

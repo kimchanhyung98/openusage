@@ -36,6 +36,7 @@
 "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.";
 "Claude login changed during refresh. Refresh again." = "Claude login changed during refresh. Refresh again.";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude sign-in has not finished updating its account state. Finish signing in and try again.";
+"Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry." = "Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry.";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude usage retry data could not be read. Check the app log before retrying.";
 "Claude usage retry data could not be saved or opened. Check the app log and try again." = "Claude usage retry data could not be saved or opened. Check the app log and try again.";
 "Codex CLI could not be found for the weekly timer message." = "Codex CLI could not be found for the weekly timer message.";

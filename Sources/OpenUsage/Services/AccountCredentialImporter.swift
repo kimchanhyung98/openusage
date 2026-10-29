@@ -266,23 +266,20 @@ struct AccountCredentialImporter {
         for profile: AccountProfile, allowInteraction: Bool = false
     ) throws -> ExternalClaudeObservation? {
         let previousSnapshot = try switcher.loadSnapshot(for: profile, allowInteraction: allowInteraction)
-        guard let shared = try switcher.readSharedClaudeExternalAuthentication(
+        guard let authentication = try switcher.readSharedClaudeExternalAuthentication(
             comparedTo: previousSnapshot
         ),
-              let identityKey = switcher.identity(of: shared, family: "claude")?.identityKey
+              let identityKey = switcher.identity(of: authentication.entry, family: "claude")?.identityKey
         else {
             return nil
         }
         let currentShared = try switcher.readSharedAuthentication(family: "claude")
-        let sharedNeedsNormalization = currentShared.flatMap {
-            switcher.identity(of: $0, family: "claude")?.identityKey
-        } != identityKey
         return ExternalClaudeObservation(
             previousSnapshot: previousSnapshot,
-            shared: shared,
+            shared: authentication.entry,
             identityKey: identityKey,
             currentShared: currentShared,
-            sharedNeedsNormalization: sharedNeedsNormalization
+            sharedNeedsNormalization: authentication.requiresNormalization
         )
     }
 
