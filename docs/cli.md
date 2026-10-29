@@ -77,7 +77,10 @@ Codex에서는 `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 제거
 처음 설정한 뒤에는 새 터미널을 열거나, 이미 열린 터미널에서 셸 시작 파일을 다시 읽기.
 
 wrapper는 Claude의 공식 인증 명령에도 똑같이 적용.
-선택된 관리형 Claude 계정으로 일반 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 OpenUsage가 관찰하는 같은 공유 홈에 기록.
+OpenUsage의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 OpenUsage가 관찰하는 같은 공유 홈에 기록.
 사용 가능한 프로바이더 신원을 검증한 뒤 OpenUsage가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
 새 로그인이 이전과 다른 프로바이더 신원이어도 계정명과 선택 상태는 유지하며, 다른 계정명을 조용히 다시 선택하지 않음.
 완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.
+함수를 거치지 않은 로그인과 충돌하면 기본 로그인이 더 오래됐음을 확인할 때만 자동 정리하며, 더 새롭거나 최신성을 확인할 수 없으면 인증·저장 계정·선택 보존.
+기존 로그인을 첫 계정으로 가져오기만 하면 함수가 설치되지 않을 수 있음.
+함수가 없거나 지원하지 않는 셸을 사용하는 경우, 또는 충돌 안내가 표시되면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
