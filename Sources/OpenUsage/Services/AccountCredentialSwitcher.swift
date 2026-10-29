@@ -28,7 +28,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .incompleteClaudeAuthentication:
                 "Claude sign-in has not finished updating its account state. Finish signing in and try again."
             case .conflictingClaudeAuthentication:
-                "Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry."
+                "Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again."
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified. Check the selected account and try again."
             case .switchRecoveryRequired:
@@ -191,10 +191,15 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
     /// 충돌한 기본 로그인은 scoped 인증·state보다 모두 오래됐을 때만 자동 정규화 허용.
     private func claudeSharedNormalizationRequired(for observed: SharedClaudeAuthentication) throws -> Bool {
         let rootState = homeDirectory.appendingPathComponent(".claude.json")
-        guard let rootAccount = try claudeOAuthAccount(inFirstOf: [rootState]),
-              identity(of: .init(credential: observed.entry.credential, claudeOAuthAccount: rootAccount), family: "claude")?.identityKey
-                != identity(of: observed.entry, family: "claude")?.identityKey
-        else { return false }
+        guard let rootAccount = try claudeOAuthAccount(inFirstOf: [rootState]) else { return false }
+        guard let rootIdentity = identity(
+            of: .init(credential: observed.entry.credential, claudeOAuthAccount: rootAccount), family: "claude"
+        )?.identityKey,
+        let observedIdentity = identity(of: observed.entry, family: "claude")?.identityKey else {
+            AppLog.error(.auth, "Claude sign-in identity is unresolved; preserving all authentication")
+            throw Error.conflictingClaudeAuthentication
+        }
+        guard rootIdentity != observedIdentity else { return false }
 
         var conflictingDates = [try modificationDateIfPresent(rootState)]
         let baseService = ClaudeAuthStore.baseKeychainServiceName(environment: environment)

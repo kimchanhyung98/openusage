@@ -274,6 +274,12 @@ struct AccountCredentialImporter {
             return nil
         }
         let currentShared = try switcher.readSharedAuthentication(family: "claude")
+        guard let latest = try switcher.readSharedClaudeExternalAuthentication(comparedTo: previousSnapshot),
+              latest.entry == authentication.entry,
+              latest.requiresNormalization == authentication.requiresNormalization else {
+            AppLog.error(.auth, "Claude sign-in changed during observation; preserving all authentication")
+            throw AccountCredentialSwitcher.Error.conflictingClaudeAuthentication
+        }
         return ExternalClaudeObservation(
             previousSnapshot: previousSnapshot,
             shared: authentication.entry,

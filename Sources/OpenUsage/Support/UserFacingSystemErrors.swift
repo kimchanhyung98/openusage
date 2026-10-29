@@ -223,7 +223,7 @@ extension AccountCredentialSwitcher.Error: UserPresentableError {
         case .incompleteClaudeAuthentication:
             .init("Claude sign-in has not finished updating its account state. Finish signing in and try again.")
         case .conflictingClaudeAuthentication:
-            .init("Claude sign-ins in different locations conflict. Sign in again from a new terminal, then retry.")
+            .init("Claude sign-ins in different locations conflict. Open Settings → Accounts → Manage Claude Account, then choose Sign In Again.")
         case .switchVerificationFailed(let label):
             .init("Switching to %@ could not be verified. Check the selected account and try again.", [String(label)])
         case .switchRecoveryRequired:
