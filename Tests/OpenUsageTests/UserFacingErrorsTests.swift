@@ -128,6 +128,25 @@ final class UserFacingErrorsTests: XCTestCase {
         }
     }
 
+    func testClaudeAuthenticationConflictGuidanceNamesTheAppReSignInPath() {
+        let error = AccountCredentialSwitcher.Error.conflictingClaudeAuthentication
+        let diagnostic = error.localizedDescription
+        for language in [LanguageSetting.english, .korean, .japanese] {
+            L10n.withLanguage(language) {
+                let message = UserFacingErrors.message(error)
+                XCTAssertTrue(message.contains(L10n.common("Settings")))
+                XCTAssertTrue(message.contains(L10n.accounts("Accounts")))
+                XCTAssertTrue(message.contains(L10n.accounts("Manage %@ Account", "Claude")))
+                XCTAssertTrue(message.contains(L10n.accounts("Sign In Again")))
+                XCTAssertFalse(message.contains("%@"))
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+                if language == .english {
+                    XCTAssertEqual(message, diagnostic)
+                }
+            }
+        }
+    }
+
     func testCachedWarningPresentationSurvivesLanguageChangeAndLegacyCache() throws {
         let raw = ClaudeUsageMapper.rateLimitedWarning(retryAfterSeconds: 90)
         let snapshot = ProviderSnapshot(

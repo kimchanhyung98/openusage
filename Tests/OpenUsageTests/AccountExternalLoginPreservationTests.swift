@@ -96,6 +96,19 @@ final class AccountExternalLoginPreservationTests: XCTestCase {
         try assertConflictPreservesAuthentication()
     }
 
+    func testUnresolvedRootIdentityPreservesAuthenticationEvenWhenOlder() throws {
+        try seedShared(
+            scoped: entry(token: "scoped-b", account: "b"), scopedTime: 200,
+            base: entry(token: "older-base-c", account: "c"), baseTime: 100
+        )
+        try Data(#"{"keep":"root","oauthAccount":{"organizationUuid":"org-c"}}"#.utf8).write(to: rootState)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 100)], ofItemAtPath: rootState.path
+        )
+
+        try assertConflictPreservesAuthentication()
+    }
+
     func testMissingCredentialWriteGenerationPreservesConflictingAuthentication() throws {
         for serviceWithoutDate in [scopedService, baseService] {
             try seedShared(
@@ -126,6 +139,44 @@ final class AccountExternalLoginPreservationTests: XCTestCase {
         let externalAccount = try XCTUnwrap(external.claudeOAuthAccount)
         let externalRoot = Data(#"{"keep":"root","oauthAccount":\#(externalAccount)}"#.utf8)
         let externalDate = Date(timeIntervalSince1970: 200)
+        var expected = try captureArtifacts()
+        expected.currentUserValues[baseService] = external.credential
+        expected.currentUserModificationDates[baseService] = externalDate
+        expected.files[rootState.path] = externalRoot
+        let observingKeychain = SecondScopedReadKeychain(
+            storage: keychain, scopedService: scopedService
+        ) { [storage = keychain!, baseService, rootState] in
+            storage.currentUserValues[baseService] = external.credential
+            storage.currentUserModificationDates[baseService] = externalDate
+            try externalRoot.write(to: rootState)
+            try FileManager.default.setAttributes([.modificationDate: externalDate], ofItemAtPath: rootState.path)
+        }
+        let observingImporter = AccountCredentialImporter(
+            keychain: observingKeychain, environment: FakeEnvironment(), homeDirectory: root, workspace: workspace
+        )
+
+        let result = Result { try observingImporter.reconcileSelectedClaudeSharedAuthentication(in: store) }
+
+        XCTAssertTrue(observingKeychain.didMutate)
+        try assertPreserved(expected)
+        switch result {
+        case .success(let reconciliation):
+            XCTAssertEqual(reconciliation, .unchanged)
+        case .failure(let error):
+            XCTAssertEqual(error as? AccountCredentialSwitcher.Error, .conflictingClaudeAuthentication)
+        }
+    }
+
+    func testNewerExternalLoginAfterNormalizationWasAllowedIsPreserved() throws {
+        let saved = try XCTUnwrap(switcher.loadSnapshot(for: profile))
+        try seedShared(
+            scoped: saved, scopedTime: 200,
+            base: entry(token: "older-base-c", account: "c"), baseTime: 100
+        )
+        let external = entry(token: "external-d", account: "d")
+        let externalAccount = try XCTUnwrap(external.claudeOAuthAccount)
+        let externalRoot = Data(#"{"keep":"root","oauthAccount":\#(externalAccount)}"#.utf8)
+        let externalDate = Date(timeIntervalSince1970: 300)
         var expected = try captureArtifacts()
         expected.currentUserValues[baseService] = external.credential
         expected.currentUserModificationDates[baseService] = externalDate
