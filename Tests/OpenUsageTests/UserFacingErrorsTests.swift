@@ -88,20 +88,23 @@ final class UserFacingErrorsTests: XCTestCase {
         }
     }
 
-    func testAccountSwitchRecoveryGuidanceNamesTheLocalizedManagementControls() {
+    func testAccountSwitchRecoveryGuidanceNamesLocalizedControlsWithoutPlaceholders() {
         let error = AccountCredentialSwitcher.Error.switchRecoveryRequired
         let diagnostic = error.localizedDescription
-        for (language, accountPlaceholder) in [
-            (LanguageSetting.english, "[account name]"),
-            (.korean, "[계정 이름]"),
-            (.japanese, "[アカウント名]")
+        for (language, action) in [
+            (LanguageSetting.english, "Use Claude"),
+            (.korean, "사용"),
+            (.japanese, "使用")
         ] {
             L10n.withLanguage(language) {
                 let message = UserFacingErrors.message(error)
                 XCTAssertTrue(message.contains(L10n.common("Settings")))
                 XCTAssertTrue(message.contains(L10n.accounts("Accounts")))
                 XCTAssertTrue(message.contains(L10n.accounts("Manage %@ Account", "Claude")))
-                XCTAssertTrue(message.contains(L10n.accounts("Use %@: %@", "Claude", accountPlaceholder)))
+                XCTAssertTrue(message.contains(action))
+                XCTAssertFalse(message.contains("["))
+                XCTAssertFalse(message.contains("]"))
+                XCTAssertFalse(message.contains("%@"))
                 XCTAssertEqual(error.localizedDescription, diagnostic)
                 if language == .english {
                     XCTAssertEqual(message, diagnostic)

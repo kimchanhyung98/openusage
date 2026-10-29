@@ -46,7 +46,7 @@ final class AccountReconciliationErrorTests: XCTestCase {
                        "선택한 Claude 계정의 로그인을 업데이트하지 못했습니다. 저장된 계정은 변경하지 않았습니다. 앱 로그를 확인한 후 다시 시도하세요.")
     }
 
-    func testSwitchRecoveryFailuresKeepActionableMessageThroughDashboardRefresh() throws {
+    func testSwitchRecoveryFailuresKeepActionableDashboardErrorPresentation() throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         for error in [
