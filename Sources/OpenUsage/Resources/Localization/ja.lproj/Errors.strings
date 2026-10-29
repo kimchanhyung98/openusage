@@ -33,6 +33,7 @@
 "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage." = "Claude Desktop のログイン情報が古くなっています。Claude Desktop を開いてから、OpenUsage を更新してください。";
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude アカウントの識別情報を確認できませんでした。使用量を更新する前に、ログインし直してください。";
 "Claude account state is invalid: %@" = "Claude のアカウント状態が無効です: %@";
+"Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claudeのアカウント切り替えを復旧する必要があります。設定 → アカウントで使用するアカウントの「Claude アカウントを管理」を開き、使用ボタンを選んでください。";
 "Claude login changed during refresh. Refresh again." = "更新中に Claude のログイン情報が変更されました。もう一度更新してください。";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude のログインに伴うアカウント状態の更新が完了していません。ログインを完了してから、もう一度お試しください。";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude 使用量の再試行データを読み取れませんでした。アプリのログを確認してから、もう一度お試しください。";
@@ -137,6 +138,7 @@
 "OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again." = "保存されたアカウントの表示設定を読み取れなかったため、設定は変更していません。OpenUsageを再起動してログを確認してから、もう一度試してください。";
 "OpenUsage couldn't read the saved account list. It was left unchanged. Restart OpenUsage and check the log before trying again." = "保存済みのアカウント一覧を読み取れなかったため、変更せずに保持しました。OpenUsage を再起動し、ログを確認してから、もう一度お試しください。";
 "OpenUsage couldn't save the account display settings. Try again and check the app log." = "アカウントの表示設定を保存できませんでした。もう一度試して、アプリのログを確認してください。";
+"OpenUsage couldn't save the selected account. The recovery record was kept. Try again." = "選択したアカウントを保存できませんでした。復旧記録は保持されています。もう一度お試しください。";
 "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again." = "選択したClaudeアカウントのログイン情報を更新できませんでした。保存済みアカウントは変更していません。アプリのログを確認してから、もう一度お試しください。";
 "OpenUsage couldn’t check for Bun. Try again." = "Bunを確認できませんでした。もう一度試してください。";
 "OpenUsage couldn’t install or verify Bun. Install it manually and try again." = "Bunをインストールまたは確認できませんでした。手動でインストールしてから、もう一度試してください。";
@@ -167,7 +169,7 @@
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
 "Some synced usage data couldn’t be read. Check the log for details." = "同期された使用量データの一部を読み取れませんでした。詳細はログを確認してください。";
 "Start Antigravity or run `agy` and try again." = "Antigravity を起動するか、`agy` を実行してから、もう一度お試しください。";
-"Switching to %@ could not be verified, so the previous account was restored." = "%@ への切り替えを確認できなかったため、前のアカウントに戻しました。";
+"Switching to %@ could not be verified. Check the selected account and try again." = "%@ への切り替えを確認できませんでした。選択したアカウントを確認して、もう一度お試しください。";
 "Team request-based usage data unavailable. Try again later." = "Teamのリクエスト数ベースの使用量データを取得できません。しばらくしてから、もう一度お試しください。";
 "The AI client rejected the cancellation control request." = "AI クライアントがキャンセルの制御リクエストを拒否しました。";
 "The AI client returned an unsupported control response." = "AI クライアントから未対応の制御応答が返されました。";

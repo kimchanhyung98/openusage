@@ -4,9 +4,12 @@ extension View {
     func accountSwitchConfirmation(
         selection: Binding<AccountProfile?>,
         error: Binding<String?>,
-        localStates: [String: AccountSignInProbe.State] = [:]
+        localStates: [String: AccountSignInProbe.State] = [:],
+        allowsRecoveryRetry: Bool = false
     ) -> some View {
-        modifier(AccountSwitchConfirmation(selection: selection, error: error, localStates: localStates))
+        modifier(AccountSwitchConfirmation(
+            selection: selection, error: error, localStates: localStates, allowsRecoveryRetry: allowsRecoveryRetry
+        ))
     }
 }
 
@@ -15,6 +18,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     @Binding var selection: AccountProfile?
     @Binding var error: String?
     let localStates: [String: AccountSignInProbe.State]
+    let allowsRecoveryRetry: Bool
 
     private var store: AccountProfilesStore { container.accountProfiles }
 
@@ -63,20 +67,19 @@ private struct AccountSwitchConfirmation: ViewModifier {
             profileID: profile.id,
             waitForRefreshes: { await container.waitForAccountSwitchWork(providerIDs: providerIDs) }
         ) {
+            let switcher = AccountSelectionSwitcher()
             let status = container.accountStatus(for: profile, localState: localStates[profile.id])
-            guard status.canSwitch else {
+            let isRecoveryRetry = try allowsRecoveryRetry && profile.family == "claude" && switcher.hasPendingSwitch()
+            guard status.canSwitch || isRecoveryRetry else {
                 error = status.message ?? L10n.accounts("Sign in again before switching to this account.")
                 let category: ErrorCategory = if case .sessionExpired = status { .authExpired } else { .notLoggedIn }
                 AppDiagnostics.record(.accountSwitch, result: .failure, category: category, providerID: profile.family,
                                       localContext: "Account switch requires sign-in; account switch not applied")
                 return
             }
-            let currentProfile = store.preferredProfile(family: profile.family)
-            // wrapper는 계정 무관(shared home만 고정)이므로 먼저 설치 — 실패해도 아무것도 전환되지 않고,
-            // auth transaction commit 이후에는 shared home과 선택 상태 사이에 실패 가능한 단계 없음.
+            // wrapper 설치가 실패하면 공유 인증과 전환 기록 모두 변경하지 않음.
             try AccountShellInstaller.install(family: profile.family, shell: shell)
-            try AccountCredentialSwitcher().switchAuthentication(to: profile, from: currentProfile)
-            store.setPreferred(family: profile.family, profileID: profile.id)
+            try await switcher.switchAuthentication(to: profile, in: store)
             let refreshes = container.refreshAccountCatalog()
             await container.syncDashboardUsageAccount(to: profile)
             for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }

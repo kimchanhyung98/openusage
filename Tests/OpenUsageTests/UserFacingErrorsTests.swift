@@ -72,6 +72,62 @@ final class UserFacingErrorsTests: XCTestCase {
         }
     }
 
+    func testAccountSwitchVerificationFailureDoesNotClaimThePreviousAccountWasRestored() {
+        let label = "계정 %@ **work**"
+        let error = AccountCredentialSwitcher.Error.switchVerificationFailed(label)
+        let diagnostic = "Switching to \(label) could not be verified. Check the selected account and try again."
+        for (language, expected) in [
+            (LanguageSetting.english, diagnostic),
+            (.korean, "\(label) 계정으로 전환되었는지 확인하지 못했습니다. 선택한 계정을 확인하고 다시 시도하세요."),
+            (.japanese, "\(label) への切り替えを確認できませんでした。選択したアカウントを確認して、もう一度お試しください。")
+        ] {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(UserFacingErrors.message(error), expected)
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+            }
+        }
+    }
+
+    func testAccountSwitchRecoveryGuidanceNamesLocalizedControlsWithoutPlaceholders() {
+        let error = AccountCredentialSwitcher.Error.switchRecoveryRequired
+        let diagnostic = error.localizedDescription
+        for (language, action) in [
+            (LanguageSetting.english, "Use Claude"),
+            (.korean, "사용"),
+            (.japanese, "使用")
+        ] {
+            L10n.withLanguage(language) {
+                let message = UserFacingErrors.message(error)
+                XCTAssertTrue(message.contains(L10n.common("Settings")))
+                XCTAssertTrue(message.contains(L10n.accounts("Accounts")))
+                XCTAssertTrue(message.contains(L10n.accounts("Manage %@ Account", "Claude")))
+                XCTAssertTrue(message.contains(action))
+                XCTAssertFalse(message.contains("["))
+                XCTAssertFalse(message.contains("]"))
+                XCTAssertFalse(message.contains("%@"))
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+                if language == .english {
+                    XCTAssertEqual(message, diagnostic)
+                }
+            }
+        }
+    }
+
+    func testAccountSelectionSaveFailureExplainsThatTheRecoveryRecordWasKept() {
+        let error = AccountCredentialSwitcher.Error.selectionSaveFailed
+        let diagnostic = "OpenUsage couldn't save the selected account. The recovery record was kept. Try again."
+        for (language, expected) in [
+            (LanguageSetting.english, diagnostic),
+            (.korean, "선택한 계정을 저장하지 못했습니다. 복구 기록은 유지했습니다. 다시 시도하세요."),
+            (.japanese, "選択したアカウントを保存できませんでした。復旧記録は保持されています。もう一度お試しください。")
+        ] {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(UserFacingErrors.message(error), expected)
+                XCTAssertEqual(error.localizedDescription, diagnostic)
+            }
+        }
+    }
+
     func testCachedWarningPresentationSurvivesLanguageChangeAndLegacyCache() throws {
         let raw = ClaudeUsageMapper.rateLimitedWarning(retryAfterSeconds: 90)
         let snapshot = ProviderSnapshot(

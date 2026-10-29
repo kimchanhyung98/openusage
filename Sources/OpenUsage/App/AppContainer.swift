@@ -583,8 +583,8 @@ final class AppContainer {
             return nil
         case .success(false):
             return nil
-        case .failure:
-            return "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        case .failure(let error):
+            return Self.externalClaudeReconciliationMessage(for: error)
         }
     }
 

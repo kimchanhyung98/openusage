@@ -32,6 +32,10 @@ final class AccountReconciliationErrorTests: XCTestCase {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         let raw = "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        XCTAssertEqual(
+            AppContainer.externalClaudeReconciliationMessage(for: AccountIdentityReplacementError.invalidTransaction),
+            raw
+        )
         AppContainer.applyExternalClaudeReconciliationError(
             raw, to: fixture.store, accountSwitch: fixture.coordinator,
             startedAt: fixture.coordinator.generation
@@ -40,6 +44,28 @@ final class AccountReconciliationErrorTests: XCTestCase {
         XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure?.message, raw)
         XCTAssertEqual(L10n.withLanguage(.korean) { fixture.store.headerNotice(for: "claude") },
                        "선택한 Claude 계정의 로그인을 업데이트하지 못했습니다. 저장된 계정은 변경하지 않았습니다. 앱 로그를 확인한 후 다시 시도하세요.")
+    }
+
+    func testSwitchRecoveryFailuresKeepActionableDashboardErrorPresentation() throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        for error in [
+            AccountCredentialSwitcher.Error.switchRecoveryRequired,
+            AccountCredentialSwitcher.Error.selectionSaveFailed
+        ] {
+            let raw = AppContainer.externalClaudeReconciliationMessage(for: error)
+            AppContainer.applyExternalClaudeReconciliationError(
+                raw, to: fixture.store, accountSwitch: fixture.coordinator,
+                startedAt: fixture.coordinator.generation
+            )
+
+            XCTAssertEqual(fixture.store.refreshResults["claude"]?.failure?.message, error.localizedDescription)
+            for language in [LanguageSetting.english, .korean, .japanese] {
+                L10n.withLanguage(language) {
+                    XCTAssertEqual(fixture.store.headerNotice(for: "claude"), UserFacingErrors.message(error))
+                }
+            }
+        }
     }
 
     func testReconciliationErrorCannotOverwriteStateWhileSwitchIsReserved() async throws {

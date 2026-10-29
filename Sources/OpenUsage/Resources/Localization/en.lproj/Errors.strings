@@ -33,6 +33,7 @@
 "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage." = "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage.";
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude account identity could not be verified. Sign in again before refreshing usage.";
 "Claude account state is invalid: %@" = "Claude account state is invalid: %@";
+"Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.";
 "Claude login changed during refresh. Refresh again." = "Claude login changed during refresh. Refresh again.";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude sign-in has not finished updating its account state. Finish signing in and try again.";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude usage retry data could not be read. Check the app log before retrying.";
@@ -137,6 +138,7 @@
 "OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again." = "OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again.";
 "OpenUsage couldn't read the saved account list. It was left unchanged. Restart OpenUsage and check the log before trying again." = "OpenUsage couldn't read the saved account list. It was left unchanged. Restart OpenUsage and check the log before trying again.";
 "OpenUsage couldn't save the account display settings. Try again and check the app log." = "OpenUsage couldn't save the account display settings. Try again and check the app log.";
+"OpenUsage couldn't save the selected account. The recovery record was kept. Try again." = "OpenUsage couldn't save the selected account. The recovery record was kept. Try again.";
 "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again." = "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again.";
 "OpenUsage couldn’t check for Bun. Try again." = "OpenUsage couldn’t check for Bun. Try again.";
 "OpenUsage couldn’t install or verify Bun. Install it manually and try again." = "OpenUsage couldn’t install or verify Bun. Install it manually and try again.";
@@ -167,7 +169,7 @@
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
 "Some synced usage data couldn’t be read. Check the log for details." = "Some synced usage data couldn’t be read. Check the log for details.";
 "Start Antigravity or run `agy` and try again." = "Start Antigravity or run `agy` and try again.";
-"Switching to %@ could not be verified, so the previous account was restored." = "Switching to %@ could not be verified, so the previous account was restored.";
+"Switching to %@ could not be verified. Check the selected account and try again." = "Switching to %@ could not be verified. Check the selected account and try again.";
 "Team request-based usage data unavailable. Try again later." = "Team request-based usage data unavailable. Try again later.";
 "The AI client rejected the cancellation control request." = "The AI client rejected the cancellation control request.";
 "The AI client returned an unsupported control response." = "The AI client returned an unsupported control response.";
