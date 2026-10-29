@@ -79,12 +79,12 @@ struct CopilotAuthStore: Sendable {
     }
 
     private func readGhKeychainRaw() -> String? {
-        // `gh`는 Keychain 항목의 account로 GitHub username 사용 — hosts.yml에서 복구 가능하면 그 account로 조회, 아니면 service 단독 조회로 fallback.
+        // 활성 username 우선, 이후 `gh`의 빈 account 활성 항목 조회 — 계정 조건 없는 조회는 다른 사용자 선택 가능.
         if let account = ghUsername(),
            let raw = try? keychain.readGenericPassword(service: Self.ghKeychainService, account: account) {
             return raw
         }
-        return try? keychain.readGenericPassword(service: Self.ghKeychainService)
+        return try? keychain.readGenericPassword(service: Self.ghKeychainService, account: "")
     }
 
     private func ghUsername() -> String? {
@@ -123,20 +123,25 @@ struct CopilotAuthStore: Sendable {
         return nil
     }
 
-    /// GitHub CLI `hosts.yml`의 특정 host 블록 안 들여쓰기된 `key: value` 읽기. `github.com` 블록으로 한정 필수 — 같은 파일의 GitHub Enterprise 블록 `oauth_token`이 api.github.com으로 전송되면 확정 401/403.
-    /// 중첩 map인 `users:`는 콜론 위치가 달라 `user:`와 매칭되지 않음.
+    /// GitHub CLI `hosts.yml`의 host 직속 필드 읽기 — 중첩된 다른 계정의 토큰 제외.
     static func yamlValue(_ text: String, key: String, host: String = "github.com") -> String? {
         let prefix = key + ":"
         let hostHeader = host + ":"
         var inHost = false
+        var fieldIndentation: Int?
         for line in text.split(whereSeparator: \.isNewline) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
             // 비들여쓰기 줄은 새 최상위 블록(host header 또는 root key) 시작 — github.com 블록의 자식만 읽음.
             if let first = line.first, !first.isWhitespace {
-                inHost = line.trimmingCharacters(in: .whitespaces).hasPrefix(hostHeader)
+                inHost = trimmed.hasPrefix(hostHeader)
+                fieldIndentation = nil
                 continue
             }
             guard inHost else { continue }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let indentation = line.prefix(while: \.isWhitespace).count
+            if fieldIndentation == nil { fieldIndentation = indentation }
+            guard indentation == fieldIndentation else { continue }
             guard trimmed.hasPrefix(prefix) else { continue }
             let value = trimmed.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
             let unquoted = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))

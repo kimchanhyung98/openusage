@@ -42,11 +42,14 @@ Credits와 Extra Usage는 기본적으로 Always Visible이며, Org Credits, Org
 다음 순서로 확인(사용자 확인이 필요 없는 파일 우선, 키체인 마지막):
 
 1. Copilot 편집기 토큰: `~/.config/github-copilot/apps.json`(이전 `hosts.json`) — VS Code / JetBrains / Neovim Copilot 플러그인에서 기록
-2. GitHub CLI 설정: `~/.config/gh/hosts.yml`(`oauth_token`) — `gh`에서 토큰을 파일에 저장하는 경우
-3. GitHub CLI 키체인 항목(서비스 `gh:github.com`) — `gh`에서 토큰을 시스템 키링에 저장하는 경우
+2. GitHub CLI 설정: `~/.config/gh/hosts.yml`의 `github.com` 바로 아래 `oauth_token` — 활성 계정의 토큰을 파일에 저장하는 경우
+3. GitHub CLI 활성 계정의 키체인 항목(서비스 `gh:github.com`) — `gh`에서 토큰을 시스템 키링에 저장하는 경우
 
 처음 읽은 비어 있지 않은 토큰으로 사용량 조회.
 해당 토큰이 API에서 거부돼도 다음 출처로 자동 전환하지 않음.
+GitHub CLI 인증 사용 시 `gh auth switch`로 바꾼 활성 계정을 다음 새로 고침에 반영.
+`users` 아래 다른 계정의 저장 토큰은 선택하지 않음.
+편집기 Copilot 토큰을 사용하는 경우에는 GitHub CLI 계정 전환과 별개로 편집기 로그인을 계속 사용.
 
 ### 설정
 
