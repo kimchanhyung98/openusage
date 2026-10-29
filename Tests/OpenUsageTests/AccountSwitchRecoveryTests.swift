@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class AccountSwitchRecoveryTests: XCTestCase {
-    func testProductionTransactionPersistsSelectionAndPreservesRotatedDeparture() throws {
+    func testProductionTransactionPersistsSelectionAndPreservesRotatedDeparture() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let rotated = AccountSwitchRecoveryFixture.entry("a", token: "rotated-a")
         try fixture.switcher.applySharedAuthentication(rotated, family: "claude")
@@ -16,22 +16,22 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             }
         }
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertTrue(sawJournalBeforeSharedWrite)
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNil(try fixture.journal.load())
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.a.id)
         XCTAssertNil(try fixture.journal.load())
     }
 
-    func testSharedCommitBeforeSelectionPersistenceRecoversWithoutOverwritingA() throws {
+    func testSharedCommitBeforeSelectionPersistenceRecoversWithoutOverwritingA() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { false })
         let originalRegistry = fixture.defaults.data(forKey: AccountProfilesStore.storageKey)
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
         XCTAssertNotNil(try fixture.journal.load())
         fixture.defaults.set(originalRegistry, forKey: AccountProfilesStore.storageKey)
         let reloaded = try fixture.freshStore()
@@ -47,22 +47,22 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         XCTAssertEqual(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: reloaded), .unchanged)
     }
 
-    func testScopedOnlyRotationPreservesDepartureAndRoundTrips() throws {
+    func testScopedOnlyRotationPreservesDepartureAndRoundTrips() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let rotated = try fixture.rotateScopedCredentials()
         XCTAssertNotEqual(rotated.credential, fixture.entryA.credential)
         XCTAssertEqual(fixture.keychain.currentUserValues[fixture.baseService], fixture.entryA.credential)
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
         let home = try fixture.workspace.directory(family: "claude", profileID: fixture.a.id).path
         XCTAssertEqual(try fixture.switcher.readAuthentication(family: "claude", home: home), rotated)
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
     }
 
-    func testScopedAccessAndRefreshRotationPreservesDepartureWithoutNewAccountState() throws {
+    func testScopedAccessAndRefreshRotationPreservesDepartureWithoutNewAccountState() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let rotated = try fixture.rotateScopedCredentials(replacingRefreshToken: true)
         let credentialDate = Date(timeIntervalSince1970: 2_000_000_000)
@@ -81,35 +81,35 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             "rotated-refresh-a"
         )
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), rotated)
         let home = try fixture.workspace.directory(family: "claude", profileID: fixture.a.id).path
         XCTAssertEqual(try fixture.switcher.readAuthentication(family: "claude", home: home), rotated)
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), rotated)
     }
 
-    func testPendingRetryDoesNotPreserveDivergentSameChainCredential() throws {
+    func testPendingRetryDoesNotPreserveDivergentSameChainCredential() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.stageIntent()
         _ = try fixture.rotateScopedCredentials()
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertNil(try fixture.journal.load())
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testFileOnlyDepartureWithMatchingSnapshotRemainsSwitchable() throws {
+    func testFileOnlyDepartureWithMatchingSnapshotRemainsSwitchable() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         fixture.keychain.currentUserValues.removeValue(forKey: fixture.scopedService)
         fixture.keychain.currentUserValues.removeValue(forKey: fixture.baseService)
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertEqual(try fixture.switcher.loadSnapshot(for: fixture.a), fixture.entryA)
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
         XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryA)
     }
 
@@ -129,14 +129,14 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testPersistedSelectionWithUnremovedJournalRecoversIdempotently() throws {
+    func testPersistedSelectionWithUnremovedJournalRecoversIdempotently() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let files = SwitchJournalFiles()
         files.failRemove = true
         let service = AccountSelectionSwitcher(
             switcher: fixture.switcher, journal: AccountSwitchJournal(path: fixture.journal.path, files: files)
         )
-        XCTAssertThrowsError(try service.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await service.switchAuthentication(to: fixture.b, in: fixture.store) }
         let reloaded = try fixture.freshStore()
         XCTAssertEqual(reloaded.preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNotNil(try fixture.journal.load())
@@ -149,7 +149,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testJournalWriteFailurePreventsCredentialAndSelectionWrites() throws {
+    func testJournalWriteFailurePreventsCredentialAndSelectionWrites() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let files = SwitchJournalFiles()
         files.failWrite = true
@@ -159,7 +159,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let before = try fixture.switcher.readClaudeSwitchState()
         let writesBefore = fixture.keychain.writeCount
 
-        XCTAssertThrowsError(try service.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await service.switchAuthentication(to: fixture.b, in: fixture.store) }
 
         XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
         XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
@@ -168,13 +168,13 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testFailureBeforeSharedMutationRecoversTheOriginalSelection() throws {
+    func testFailureBeforeSharedMutationRecoversTheOriginalSelection() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let snapshotService = AccountCredentialVault.service(family: "claude", profileID: fixture.a.id)
         fixture.keychain.beforeWrite = { service, _ in
             if service == snapshotService { throw SwitchRecoveryKeychain.Failure.injected }
         }
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
         XCTAssertNotNil(try fixture.journal.load())
         fixture.keychain.beforeWrite = nil
 
@@ -196,7 +196,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
                 throw SwitchRecoveryKeychain.Failure.injected
             }
         }
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
         fixture.keychain.beforeWrite = nil
         let record = try XCTUnwrap(fixture.journal.load())
         let before = try fixture.switcher.readClaudeSwitchState()
@@ -292,7 +292,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         }
     }
 
-    func testCorruptJournalAndKeychainReadFailureRemainBlocked() throws {
+    func testCorruptJournalAndKeychainReadFailureRemainBlocked() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let record = try fixture.stageIntent()
         fixture.keychain.readFailureService = fixture.scopedService
@@ -303,16 +303,16 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let writesBefore = fixture.keychain.writeCount
 
         XCTAssertThrowsError(try fixture.importer.reconcileSelectedClaudeSharedAuthentication(in: fixture.freshStore()))
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
 
         XCTAssertEqual(try String(contentsOfFile: fixture.journal.path, encoding: .utf8), "broken-journal")
         XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testExplicitRetryKeepsOriginalDepartureProofAfterSelectionWasSaved() throws {
+    func testExplicitRetryKeepsOriginalDepartureProofAfterSelectionWasSaved() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { false })
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
         let first = try XCTUnwrap(fixture.journal.load())
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.b.id)
         fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryA.credential
@@ -321,7 +321,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.switcher.saveSnapshot(entryC, for: c)
         try fixture.switcher.writeWorkspaceAuthentication(entryC, for: c)
 
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: c, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: c, in: fixture.store) }
 
         let retried = try XCTUnwrap(fixture.journal.load())
         XCTAssertNotEqual(retried.id, first.id)
@@ -341,9 +341,9 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testRepeatedRetriesRecoverFromAnEarlierPersistedSelection() throws {
+    func testRepeatedRetriesRecoverFromAnEarlierPersistedSelection() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self, synchronize: { false })
-        XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store) }
         let first = try XCTUnwrap(fixture.journal.load())
         var selected = fixture.b
         for suffix in ["c", "d"] {
@@ -355,7 +355,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             let entry = AccountSwitchRecoveryFixture.entry(suffix)
             try fixture.switcher.saveSnapshot(entry, for: selected)
             try fixture.switcher.writeWorkspaceAuthentication(entry, for: selected)
-            XCTAssertThrowsError(try fixture.selectionSwitcher.switchAuthentication(to: selected, in: fixture.store))
+            await assertSwitchFails { try await fixture.selectionSwitcher.switchAuthentication(to: selected, in: fixture.store) }
         }
         let record = try XCTUnwrap(fixture.journal.load())
         XCTAssertEqual(record.previousStateFingerprint, first.previousStateFingerprint)
@@ -372,12 +372,12 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testExplicitRetryCompletesAndClearsTheOriginalJournal() throws {
+    func testExplicitRetryCompletesAndClearsTheOriginalJournal() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let first = try fixture.stageIntent()
         fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
 
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
         XCTAssertNil(try fixture.journal.load())
@@ -385,7 +385,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testRetryJournalFailureKeepsTheOriginalRecoveryProof() throws {
+    func testRetryJournalFailureKeepsTheOriginalRecoveryProof() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let record = try fixture.stageIntent()
         fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
@@ -396,24 +396,24 @@ final class AccountSwitchRecoveryTests: XCTestCase {
             switcher: fixture.switcher, journal: AccountSwitchJournal(path: fixture.journal.path, files: files)
         )
 
-        XCTAssertThrowsError(try service.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await service.switchAuthentication(to: fixture.b, in: fixture.store) }
 
         XCTAssertEqual(try fixture.journal.load(), record)
         XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)
         try fixture.assertSavedAccountsUnchanged()
     }
 
-    func testReselectingCurrentProfileDoesNotCreateARecoveryJournal() throws {
+    func testReselectingCurrentProfileDoesNotCreateARecoveryJournal() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let writesBefore = fixture.keychain.writeCount
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
 
         XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
         XCTAssertNil(try fixture.journal.load())
     }
 
-    func testUnreadableJournalBlocksRecoveryAndSwitchWithoutMutation() throws {
+    func testUnreadableJournalBlocksRecoveryAndSwitchWithoutMutation() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         let record = try fixture.stageIntent()
         let files = SwitchJournalFiles()
@@ -425,7 +425,7 @@ final class AccountSwitchRecoveryTests: XCTestCase {
         let writesBefore = fixture.keychain.writeCount
 
         XCTAssertThrowsError(try service.recoverInterruptedSwitch(in: fixture.store))
-        XCTAssertThrowsError(try service.switchAuthentication(to: fixture.b, in: fixture.store))
+        await assertSwitchFails { try await service.switchAuthentication(to: fixture.b, in: fixture.store) }
 
         XCTAssertEqual(try fixture.journal.load(), record)
         XCTAssertEqual(try fixture.switcher.readClaudeSwitchState(), before)

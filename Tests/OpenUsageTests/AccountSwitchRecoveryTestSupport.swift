@@ -123,37 +123,82 @@ struct AccountSwitchRecoveryFixture {
 final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
     enum Failure: Error { case injected }
 
-    var values: [String: String] = [:]
-    var currentUserValues: [String: String] = [:]
-    var currentUserModificationDates: [String: Date] = [:]
-    var writeCount = 0
-    var readFailureService: String?
-    var beforeRead: (@Sendable (String) throws -> Void)?
-    var beforeWrite: ((String, String) throws -> Void)?
+    private struct State {
+        var values: [String: String] = [:]
+        var currentUserValues: [String: String] = [:]
+        var currentUserModificationDates: [String: Date] = [:]
+        var writeCount = 0
+        var readFailureService: String?
+        var beforeRead: (@Sendable (String) throws -> Void)?
+        var beforeWrite: ((String, String) throws -> Void)?
+    }
+
+    private let lock = NSLock()
+    private var state = State()
+
+    var values: [String: String] {
+        get { lock.withLock { state.values } }
+        set { lock.withLock { state.values = newValue } }
+    }
+
+    var currentUserValues: [String: String] {
+        get { lock.withLock { state.currentUserValues } }
+        set { lock.withLock { state.currentUserValues = newValue } }
+    }
+
+    var currentUserModificationDates: [String: Date] {
+        get { lock.withLock { state.currentUserModificationDates } }
+        set { lock.withLock { state.currentUserModificationDates = newValue } }
+    }
+
+    var writeCount: Int { lock.withLock { state.writeCount } }
+
+    var readFailureService: String? {
+        get { lock.withLock { state.readFailureService } }
+        set { lock.withLock { state.readFailureService = newValue } }
+    }
+
+    var beforeRead: (@Sendable (String) throws -> Void)? {
+        get { lock.withLock { state.beforeRead } }
+        set { lock.withLock { state.beforeRead = newValue } }
+    }
+
+    var beforeWrite: ((String, String) throws -> Void)? {
+        get { lock.withLock { state.beforeWrite } }
+        set { lock.withLock { state.beforeWrite = newValue } }
+    }
 
     func readGenericPassword(service: String) throws -> String? {
         try beforeRead?(service)
-        if service == readFailureService { throw Failure.injected }
-        return values[service]
+        return try lock.withLock {
+            if service == state.readFailureService { throw Failure.injected }
+            return state.values[service]
+        }
     }
 
     func readGenericPasswordForCurrentUser(service: String) throws -> String? {
         try beforeRead?(service)
-        if service == readFailureService { throw Failure.injected }
-        return currentUserValues[service]
+        return try lock.withLock {
+            if service == state.readFailureService { throw Failure.injected }
+            return state.currentUserValues[service]
+        }
     }
 
     func writeGenericPassword(service: String, value: String) throws {
         try beforeWrite?(service, value)
-        writeCount += 1
-        values[service] = value
+        lock.withLock {
+            state.writeCount += 1
+            state.values[service] = value
+        }
     }
 
     func writeGenericPasswordForCurrentUser(service: String, value: String) throws {
         try beforeWrite?(service, value)
-        writeCount += 1
-        currentUserValues[service] = value
-        currentUserModificationDates[service] = Date()
+        lock.withLock {
+            state.writeCount += 1
+            state.currentUserValues[service] = value
+            state.currentUserModificationDates[service] = Date()
+        }
     }
 
     func genericPasswordModificationDateForCurrentUser(service: String) throws -> Date? {
@@ -161,8 +206,10 @@ final class SwitchRecoveryKeychain: KeychainAccessing, @unchecked Sendable {
     }
 
     func deleteGenericPassword(service: String) throws {
-        values.removeValue(forKey: service)
-        currentUserValues.removeValue(forKey: service)
+        lock.withLock {
+            state.values.removeValue(forKey: service)
+            state.currentUserValues.removeValue(forKey: service)
+        }
     }
 }
 
@@ -217,4 +264,16 @@ final class SwitchRecoveryReadGate: @unchecked Sendable {
     func release() {
         resume.signal()
     }
+}
+
+@MainActor
+func assertSwitchFails(
+    _ operation: @MainActor () async throws -> Void,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        try await operation()
+        XCTFail("The account switch should fail.", file: file, line: line)
+    } catch {}
 }

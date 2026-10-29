@@ -3,14 +3,14 @@ import XCTest
 
 @MainActor
 final class AccountSwitchRecoveryMutationTests: XCTestCase {
-    func testExplicitRetryOfCurrentAccountClearsMixedSwitchAndAllowsReSignIn() throws {
+    func testExplicitRetryOfCurrentAccountClearsMixedSwitchAndAllowsReSignIn() async throws {
         let fixture = try AccountSwitchRecoveryFixture(test: self)
         _ = try fixture.stageIntent()
         fixture.keychain.currentUserValues[fixture.scopedService] = fixture.entryB.credential
         XCTAssertThrowsError(try fixture.selectionSwitcher.recoverInterruptedSwitch(in: fixture.store))
         XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), fixture.a.id)
 
-        try fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
+        try await fixture.selectionSwitcher.switchAuthentication(to: fixture.a, in: fixture.store)
 
         XCTAssertNil(try fixture.journal.load())
         XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.a.id)
@@ -173,5 +173,186 @@ final class AccountSwitchRecoveryMutationTests: XCTestCase {
         XCTAssertEqual(try fixture.journal.load(), replacement)
         XCTAssertEqual(fixture.keychain.writeCount, writesBefore)
         try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testUserSwitchObservationsLeaveMainActorResponsive() async throws {
+        for phase in ["preflight", "applied", "pendingRecovery"] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self)
+            if phase == "pendingRecovery" {
+                _ = try fixture.stageIntent()
+                try fixture.switcher.applySharedAuthentication(fixture.entryB, family: "claude")
+            }
+            let started = expectation(description: "\(phase) observation started")
+            let responsive = expectation(description: "MainActor responds during \(phase)")
+            let gate = SwitchRecoveryReadGate(started: started)
+            let keychain = fixture.keychain
+            let base = fixture.baseService
+            let target = fixture.entryB.credential
+            keychain.beforeRead = { service in
+                if service == base, phase != "applied" || keychain.currentUserValues[base] == target {
+                    try gate.pauseOnce()
+                }
+            }
+            defer {
+                gate.release()
+                keychain.beforeRead = nil
+            }
+            let operation = Task {
+                try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            }
+            await fulfillment(of: [started], timeout: 3)
+            let heartbeat = Task { @MainActor in
+                responsive.fulfill()
+                gate.release()
+            }
+            await fulfillment(of: [responsive], timeout: 1)
+            await heartbeat.value
+            try await operation.value
+
+            XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.b.id)
+            XCTAssertNil(try fixture.journal.load())
+            try fixture.assertSavedAccountsUnchanged()
+        }
+    }
+
+    func testPreflightObservationRejectsConcurrentAccountChangesBeforeWriting() async throws {
+        for mutation in ["profile", "preferred", "revision", "identityTransaction", "journal"] {
+            let fixture = try AccountSwitchRecoveryFixture(test: self)
+            let started = expectation(description: "preflight observation before \(mutation)")
+            let gate = SwitchRecoveryReadGate(started: started)
+            let base = fixture.baseService
+            fixture.keychain.beforeRead = { service in
+                if service == base { try gate.pauseOnce() }
+            }
+            defer {
+                gate.release()
+                fixture.keychain.beforeRead = nil
+            }
+            let writesBefore = fixture.keychain.writeCount
+            let operation = Task {
+                try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+            }
+            await fulfillment(of: [started], timeout: 3)
+            var expectedJournal: AccountSwitchJournal.Record?
+            var expectedIdentityTransaction: AccountIdentityReplacement?
+            do {
+                switch mutation {
+                case "profile":
+                    try fixture.store.rename(profileID: fixture.b.id, to: "Renamed B")
+                case "preferred":
+                    fixture.store.setPreferred(family: "claude", profileID: fixture.b.id)
+                case "revision", "identityTransaction":
+                    let transaction = try fixture.store.beginIdentityReplacement(
+                        profileID: fixture.b.id, with: fixture.b.identityKey, replacesSharedAuthentication: false
+                    )
+                    if mutation == "revision" {
+                        try fixture.store.commitIdentityReplacement(transaction)
+                    } else {
+                        expectedIdentityTransaction = transaction
+                    }
+                default:
+                    expectedJournal = try fixture.stageIntent()
+                }
+            } catch {
+                gate.release()
+                _ = await operation.result
+                throw error
+            }
+            let expectedProfiles = fixture.store.profiles
+            let expectedPreferred = fixture.store.preferredProfileID(family: "claude")
+            let expectedRevision = fixture.store.authenticationRevision
+            gate.release()
+            await assertSwitchFails { try await operation.value }
+            fixture.keychain.beforeRead = nil
+
+            XCTAssertEqual(fixture.keychain.writeCount, writesBefore, mutation)
+            XCTAssertEqual(fixture.store.profiles, expectedProfiles, mutation)
+            XCTAssertEqual(fixture.store.preferredProfileID(family: "claude"), expectedPreferred, mutation)
+            XCTAssertEqual(fixture.store.authenticationRevision, expectedRevision, mutation)
+            XCTAssertEqual(try fixture.journal.load(), expectedJournal, mutation)
+            XCTAssertEqual(try fixture.store.pendingIdentityReplacement(), expectedIdentityTransaction, mutation)
+            XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryA, mutation)
+            try fixture.assertSavedAccountsUnchanged()
+        }
+    }
+
+    func testAppliedObservationPreservesReplacementJournalAndOldSelection() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let started = expectation(description: "applied observation started")
+        let gate = blockAppliedObservation(in: fixture, started: started)
+        defer {
+            gate.release()
+            fixture.keychain.beforeRead = nil
+        }
+        let operation = Task {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        await fulfillment(of: [started], timeout: 3)
+        let replacement: AccountSwitchJournal.Record
+        do {
+            let original = try XCTUnwrap(fixture.journal.load())
+            var changed = original
+            changed.id = UUID()
+            try fixture.journal.save(changed, replacing: original)
+            replacement = changed
+        } catch {
+            gate.release()
+            _ = await operation.result
+            throw error
+        }
+        let writesBeforeResume = fixture.keychain.writeCount
+        gate.release()
+        await assertSwitchFails { try await operation.value }
+        fixture.keychain.beforeRead = nil
+
+        XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertEqual(try fixture.journal.load(), replacement)
+        XCTAssertEqual(fixture.keychain.writeCount, writesBeforeResume)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    func testCancellationDuringAppliedObservationKeepsRecoveryJournal() async throws {
+        let fixture = try AccountSwitchRecoveryFixture(test: self)
+        let started = expectation(description: "applied observation before cancellation")
+        let gate = blockAppliedObservation(in: fixture, started: started)
+        defer {
+            gate.release()
+            fixture.keychain.beforeRead = nil
+        }
+        let operation = Task {
+            try await fixture.selectionSwitcher.switchAuthentication(to: fixture.b, in: fixture.store)
+        }
+        await fulfillment(of: [started], timeout: 3)
+        operation.cancel()
+        gate.release()
+        do {
+            try await operation.value
+            XCTFail("Cancellation must retain the switch journal before selection commit")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        fixture.keychain.beforeRead = nil
+
+        let record = try XCTUnwrap(fixture.journal.load())
+        XCTAssertEqual(record.previousProfileID, fixture.a.id)
+        XCTAssertEqual(record.selectedProfileID, fixture.b.id)
+        XCTAssertEqual(try fixture.freshStore().preferredProfileID(family: "claude"), fixture.a.id)
+        XCTAssertEqual(try fixture.switcher.readSharedAuthentication(family: "claude"), fixture.entryB)
+        try fixture.assertSavedAccountsUnchanged()
+    }
+
+    private func blockAppliedObservation(
+        in fixture: AccountSwitchRecoveryFixture,
+        started: XCTestExpectation
+    ) -> SwitchRecoveryReadGate {
+        let gate = SwitchRecoveryReadGate(started: started)
+        let keychain = fixture.keychain
+        let base = fixture.baseService
+        let target = fixture.entryB.credential
+        keychain.beforeRead = { service in
+            if service == base, keychain.currentUserValues[base] == target { try gate.pauseOnce() }
+        }
+        return gate
     }
 }
