@@ -18,7 +18,7 @@ struct AccountSelectionSwitcher {
         try journal.load() != nil
     }
 
-    func switchAuthentication(to selected: AccountProfile, in store: AccountProfilesStore) throws {
+    func switchAuthentication(to selected: AccountProfile, in store: AccountProfilesStore) async throws {
         guard store.profile(id: selected.id) == selected else {
             throw AccountProfileError.profileNotFound(selected.id)
         }
@@ -32,7 +32,7 @@ struct AccountSelectionSwitcher {
         }
         var previousRecord = try journal.load()
         if let record = previousRecord {
-            let state = try switcher.readClaudeSwitchState()
+            let state = try await readSwitchState(in: store, expecting: record)
             if let profileID = selection(for: record, state: state, in: store) {
                 try finish(record, selecting: profileID, in: store)
                 previousRecord = nil
@@ -59,7 +59,7 @@ struct AccountSelectionSwitcher {
             throw AccountCredentialSwitcher.Error.snapshotIdentityMismatch(selected.label)
         }
 
-        let state = try switcher.readClaudeSwitchState()
+        let state = try await readSwitchState(in: store, expecting: previousRecord)
         let active = try switcher.readSharedAuthentication(family: "claude")
         let activeFingerprint = active.map { AccountSwitchJournal.fingerprint($0.credential) }
         let canPreservePrevious = previousRecord == nil
@@ -82,13 +82,13 @@ struct AccountSelectionSwitcher {
             try journal.save(record, replacing: previousRecord)
             // 재시도 중 혼합된 공유 인증은 어느 계정의 저장 인증에도 반영하지 않음.
             try switcher.switchAuthentication(to: selected, from: previousRecord == nil ? previous : nil)
-            let applied = try switcher.readClaudeSwitchState()
+            let applied = try await readSwitchState(in: store, expecting: record)
             guard applied.matches(
                 credentialFingerprint: record.selectedCredentialFingerprint,
                 identity: record.selectedIdentity,
                 requiresAllSources: true
             ) else {
-                throw AccountIdentityReplacementError.invalidTransaction
+                throw AccountCredentialSwitcher.Error.switchRecoveryRequired
             }
             try finish(record, selecting: selected.id, in: store)
         } catch {
@@ -107,21 +107,34 @@ struct AccountSelectionSwitcher {
     @discardableResult
     func recoverInterruptedSwitchAfterStartup(in store: AccountProfilesStore) async throws -> Bool {
         guard let record = try journal.load() else { return false }
-        let previous = store.profile(id: record.previousProfileID)
-        let selected = store.profile(id: record.selectedProfileID)
+        let state = try await readSwitchState(in: store, expecting: record)
+        return try recover(record, state: state, in: store)
+    }
+
+    private func readSwitchState(
+        in store: AccountProfilesStore,
+        expecting record: AccountSwitchJournal.Record?
+    ) async throws -> AccountSwitchJournal.SharedState {
+        guard !store.hasUnreadableRegistry, try journal.load() == record else {
+            throw AccountIdentityReplacementError.pendingTransaction
+        }
+        let profiles = store.profiles
         let preferred = store.preferredProfileID(family: "claude")
         let revision = store.authenticationRevision
+        let identityReplacement = try store.pendingIdentityReplacement()
         let observer = switcher
         let state = try await loadOffMainActor { try observer.readClaudeSwitchState() }
-        guard !Task.isCancelled,
-              store.profile(id: record.previousProfileID) == previous,
-              store.profile(id: record.selectedProfileID) == selected,
+        try Task.checkCancellation()
+        guard !store.hasUnreadableRegistry,
+              store.profiles == profiles,
               store.preferredProfileID(family: "claude") == preferred,
-              store.authenticationRevision == revision
+              store.authenticationRevision == revision,
+              try store.pendingIdentityReplacement() == identityReplacement,
+              try journal.load() == record
         else {
             throw AccountIdentityReplacementError.pendingTransaction
         }
-        return try recover(record, state: state, in: store)
+        return state
     }
 
     private func recover(
@@ -131,7 +144,7 @@ struct AccountSelectionSwitcher {
     ) throws -> Bool {
         guard let profileID = selection(for: record, state: state, in: store) else {
             AppLog.error(.auth, "account switch recovery found an unknown credential generation; preserving saved accounts")
-            throw AccountIdentityReplacementError.invalidTransaction
+            throw AccountCredentialSwitcher.Error.switchRecoveryRequired
         }
         try finish(record, selecting: profileID, in: store)
         return true

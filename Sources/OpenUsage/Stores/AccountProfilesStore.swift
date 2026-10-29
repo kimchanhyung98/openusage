@@ -192,7 +192,7 @@ public final class AccountProfilesStore {
               saved.profiles.contains(profile)
         else {
             AppLog.error(.auth, "account switch selection could not be persisted; keeping recovery journal")
-            throw AccountIdentityReplacementError.invalidTransaction
+            throw AccountCredentialSwitcher.Error.selectionSaveFailed
         }
     }
 

@@ -79,7 +79,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
             }
             // wrapper 설치가 실패하면 공유 인증과 전환 기록 모두 변경하지 않음.
             try AccountShellInstaller.install(family: profile.family, shell: shell)
-            try switcher.switchAuthentication(to: profile, in: store)
+            try await switcher.switchAuthentication(to: profile, in: store)
             let refreshes = container.refreshAccountCatalog()
             await container.syncDashboardUsageAccount(to: profile)
             for (providerID, refresh) in refreshes where providerIDs.contains(providerID) { await refresh.value }

@@ -11,6 +11,8 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
         case invalidClaudeState(URL)
         case incompleteClaudeAuthentication
         case switchVerificationFailed(String)
+        case switchRecoveryRequired
+        case selectionSaveFailed
 
         var errorDescription: String? {
             switch self {
@@ -25,7 +27,11 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .incompleteClaudeAuthentication:
                 "Claude sign-in has not finished updating its account state. Finish signing in and try again."
             case .switchVerificationFailed(let label):
-                "Switching to \(label) could not be verified, so the previous account was restored."
+                "Switching to \(label) could not be verified. Check the selected account and try again."
+            case .switchRecoveryRequired:
+                "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose Use Claude: [account name]."
+            case .selectionSaveFailed:
+                "OpenUsage couldn't save the selected account. The recovery record was kept. Try again."
             }
         }
     }

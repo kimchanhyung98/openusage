@@ -362,8 +362,9 @@ struct AccountProfileManagementSheet: View {
                 refreshSwitchRecovery()
             }
             do {
-                if profile.family == "claude" {
-                    _ = try await AccountSelectionSwitcher().recoverInterruptedSwitchAfterStartup(in: store)
+                if profile.family == "claude",
+                   try await AccountSelectionSwitcher().recoverInterruptedSwitchAfterStartup(in: store) {
+                    onChanged()
                 }
                 try Task.checkCancellation()
                 let workspace = AccountSignInWorkspace()
@@ -386,7 +387,7 @@ struct AccountProfileManagementSheet: View {
                 onChanged()
             } catch is CancellationError {
                 AppDiagnostics.record(.accountSignIn, result: .cancelled, providerID: profile.family)
-                // sheet close로 취소됨 — 변경 없음.
+                // 재로그인 취소 — 먼저 완료한 전환 복구는 유지.
             } catch {
                 AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family)
                 actionError = UserFacingErrors.message(error)
