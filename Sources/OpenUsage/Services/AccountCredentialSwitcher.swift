@@ -29,7 +29,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .switchVerificationFailed(let label):
                 "Switching to \(label) could not be verified. Check the selected account and try again."
             case .switchRecoveryRequired:
-                "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose Use Claude: [account name]."
+                "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use."
             case .selectionSaveFailed:
                 "OpenUsage couldn't save the selected account. The recovery record was kept. Try again."
             }

@@ -225,7 +225,7 @@ extension AccountCredentialSwitcher.Error: UserPresentableError {
         case .switchVerificationFailed(let label):
             .init("Switching to %@ could not be verified. Check the selected account and try again.", [String(label)])
         case .switchRecoveryRequired:
-            .init("Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose Use Claude: [account name].")
+            .init("Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.")
         case .selectionSaveFailed:
             .init("OpenUsage couldn't save the selected account. The recovery record was kept. Try again.")
         }

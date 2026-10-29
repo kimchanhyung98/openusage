@@ -33,7 +33,7 @@
 "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage." = "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage.";
 "Claude account identity could not be verified. Sign in again before refreshing usage." = "Claude account identity could not be verified. Sign in again before refreshing usage.";
 "Claude account state is invalid: %@" = "Claude account state is invalid: %@";
-"Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose Use Claude: [account name]." = "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose Use Claude: [account name].";
+"Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use." = "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.";
 "Claude login changed during refresh. Refresh again." = "Claude login changed during refresh. Refresh again.";
 "Claude sign-in has not finished updating its account state. Finish signing in and try again." = "Claude sign-in has not finished updating its account state. Finish signing in and try again.";
 "Claude usage retry data could not be read. Check the app log before retrying." = "Claude usage retry data could not be read. Check the app log before retrying.";
