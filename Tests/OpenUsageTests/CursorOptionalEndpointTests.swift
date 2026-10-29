@@ -149,9 +149,27 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertTrue(logs.contains("optional prepaid-balance response contained invalid balance metadata"), logs)
     }
 
-    func testSuccessfulGenericRequestFallbackRecordsSuccessAfterMapping() async {
+    func testSuccessfulGenericRequestFallbackIncludesSpendAndHistory() async throws {
         let diagnostics = DiagnosticEventRecorder()
-        let provider = makeProvider { request in
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let yesterday = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: -1, to: now))
+        let iso = ISO8601DateFormatter()
+        let csv = """
+        Date,Model,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens
+        \(iso.string(from: now)),test-model,0,0,0,1000000
+        \(iso.string(from: yesterday)),test-model,0,0,0,500000
+        """
+        let pricing = ModelPricing(
+            supplement: PricingSupplement(),
+            primary: PricingCatalog(entries: ["test-model": ModelRates(
+                inputPerMillion: 1, outputPerMillion: 10, cacheWritePerMillion: 1, cacheReadPerMillion: 0.1
+            )]),
+            secondary: PricingCatalog()
+        )
+        let provider = makeProvider(pricing: pricing) { request in
+            if request.url.path == CursorUsageClient.exportCSVURL.path {
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+            }
             if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(
                     #"{"gpt-4":{"maxRequestUsage":500,"numRequests":100}}"#.utf8
@@ -177,6 +195,75 @@ final class CursorOptionalEndpointTests: XCTestCase {
         XCTAssertEqual(diagnostics.events.filter { $0.operation == .cursorFallback }, [
             DiagnosticEvent(.cursorFallback, result: .success, providerID: "cursor")
         ])
+        XCTAssertEqual(diagnostics.events.filter { $0.operation == .historyScan }, [
+            DiagnosticEvent(.historyScan, result: .success, providerID: "cursor")
+        ])
+        for (label, dollars, tokens) in [("Today", 10.0, 1_000_000.0), ("Yesterday", 5.0, 500_000.0), ("Last 30 Days", 15.0, 1_500_000.0)] {
+            guard case .values(_, let values, _, _, _, _) = snapshot.lines.first(where: { $0.label == label }) else {
+                XCTFail("Missing \(label) spend line")
+                continue
+            }
+            XCTAssertEqual(values, [
+                MetricValue(number: dollars, kind: .dollars, estimated: true),
+                MetricValue(number: tokens, kind: .count, label: "tokens")
+            ])
+        }
+        XCTAssertEqual(snapshot.usageHistory?.series.daily, [
+            DailyUsageEntry(date: DailyUsageAccumulator.dayKey(from: now), totalTokens: 1_000_000, costUSD: 10),
+            DailyUsageEntry(date: DailyUsageAccumulator.dayKey(from: yesterday), totalTokens: 500_000, costUSD: 5)
+        ])
+        guard case .chart(_, let points, _) = snapshot.lines.first(where: { $0.label == "Usage Trend" }) else {
+            return XCTFail("Missing usage trend")
+        }
+        XCTAssertEqual(points.suffix(2).map(\.value), [500_000, 1_000_000])
+    }
+
+    func testGenericRequestFallbackPreservesUsageWhenSpendExportFails() async throws {
+        let failures: [(HTTPResponse?, ErrorCategory)] = [
+            (nil, .network),
+            (HTTPResponse(statusCode: 503, headers: [:], body: Data()), .http5xx),
+            (HTTPResponse(statusCode: 200, headers: [:], body: Data("not-csv".utf8)), .decoding)
+        ]
+        for (response, category) in failures {
+            let diagnostics = DiagnosticEventRecorder()
+            let provider = makeProvider { request in
+                if request.url.path == CursorUsageClient.exportCSVURL.path {
+                    guard let response else { throw URLError(.cannotConnectToHost) }
+                    return response
+                }
+                if request.url.absoluteString.hasPrefix(CursorUsageClient.restUsageURL.absoluteString) {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(
+                        #"{"gpt-4":{"maxRequestUsage":500,"numRequests":100}}"#.utf8
+                    ))
+                }
+                switch request.url {
+                case CursorUsageClient.usageURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"enabled":true,"planUsage":{}}"#.utf8))
+                case CursorUsageClient.planURL:
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"planInfo":{"planName":"pro"}}"#.utf8))
+                default:
+                    XCTFail("Unexpected request: \(request.url)")
+                    return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+                }
+            }
+
+            let (snapshot, logs) = try await captureLogs { await provider.refresh() }
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.isDegraded, true)
+            XCTAssertEqual(progress(snapshot.lines, "Requests")?.used, 100)
+            XCTAssertEqual(progress(snapshot.lines, "Requests")?.limit, 500)
+            XCTAssertNil(snapshot.usageHistory)
+            XCTAssertFalse(snapshot.lines.contains { ["Today", "Yesterday", "Last 30 Days", "Usage Trend"].contains($0.label) })
+            XCTAssertEqual(diagnostics.events.filter { $0.operation == .cursorFallback }, [
+                DiagnosticEvent(.cursorFallback, result: .success, providerID: "cursor")
+            ])
+            XCTAssertEqual(diagnostics.events.filter { $0.operation == .historyScan }, [
+                DiagnosticEvent(.historyScan, result: .degraded, category: category, providerID: "cursor")
+            ])
+            XCTAssertTrue(logs.contains("usage CSV"), logs)
+            XCTAssertFalse(logs.contains(makeCursorJWT(includeSubject: true)), logs)
+        }
     }
 
     func testFailedGenericRequestFallbackIsLoggedBeforePrimaryMappingError() async throws {
@@ -261,6 +348,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
 
     private func makeProvider(
         accessToken: String = makeCursorJWT(includeSubject: true),
+        pricing: ModelPricing = TestPricing.bundled,
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse
     ) -> CursorProvider {
         CursorProvider(
@@ -270,7 +358,7 @@ final class CursorOptionalEndpointTests: XCTestCase {
             ),
             usageClient: CursorUsageClient(http: RoutingHTTPClient(handler: handler)),
             now: { Date(timeIntervalSince1970: 1_800_000_000) },
-            pricing: { TestPricing.bundled }
+            pricing: { pricing }
         )
     }
 
