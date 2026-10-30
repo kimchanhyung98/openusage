@@ -778,8 +778,11 @@ final class WidgetDataStore {
             descriptors: enabledDescriptors,
             now: renderDate
         )
+        let enabledFamilies = Set(registry.historyDescriptorsByProvider.keys
+            .filter { isProviderEnabled($0) }
+            .map { ProviderAccountID.family(of: $0) })
         remoteOnlySpend = Self.renderRemoteOnlySpend(
-            remapped.remoteOnly,
+            remapped.remoteOnly.filter { enabledFamilies.contains($0.family) },
             registry: registry,
             now: renderDate
         )
