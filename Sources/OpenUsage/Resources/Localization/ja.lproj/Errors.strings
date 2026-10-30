@@ -14,6 +14,7 @@
 "Another account sign-in update is still being recovered. Try again after the next refresh." = "別のアカウントのログイン情報の更新を復旧しています。次の更新が終わってから、もう一度お試しください。";
 "Antigravity credentials are invalid. Open Antigravity or run `agy` to sign in again." = "Antigravity の認証情報が無効です。Antigravity を開くか、`agy` を実行してログインし直してください。";
 "Antigravity sign-in expired. Open Antigravity or run `agy` to refresh." = "Antigravity のログインの有効期限が切れました。Antigravity を開くか、`agy` を実行して更新してください。";
+"Antigravity usage history could not be read. Try again later." = "Antigravity の使用履歴を読み込めませんでした。しばらくしてからもう一度お試しください。";
 "Antigravity usage is temporarily unavailable. Try again shortly." = "Antigravity の使用量を一時的に取得できません。しばらくしてから、もう一度お試しください。";
 "Automatic cancellation is not supported yet." = "自動キャンセルはまだサポートされていません。";
 "BUN_INSTALL must be a shell-safe absolute directory inside your home folder." = "BUN_INSTALL には、ホームフォルダ内にある、シェルで安全に使用できるディレクトリの絶対パスを指定してください。";
@@ -166,6 +167,7 @@
 "Sign-In Needed" = "ログインが必要";
 "Soft limit at %@%% used" = "ソフトリミット：使用量%@%%";
 "Soft limit reached at %@%% used" = "使用量%@%%でソフトリミットに達しました";
+"Some Antigravity models have no price. Their usage is excluded from totals." = "一部の Antigravity モデルの価格を確認できないため、その使用量は合計から除外されています。";
 "Some local usage has unsupported pricing details and was excluded." = "一部のローカル使用記録は価格情報に対応していないため、集計から除外されました。";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
 "Some synced usage data couldn’t be read. Check the log for details." = "同期された使用量データの一部を読み取れませんでした。詳細はログを確認してください。";

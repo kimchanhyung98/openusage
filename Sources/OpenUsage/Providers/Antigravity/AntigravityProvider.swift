@@ -5,30 +5,41 @@ import Foundation
 /// 각 source에서 `RetrieveUserQuotaSummary` 우선(병합 pool·weekly window를 보고하는 유일한 endpoint) — 미지원 빌드는 legacy per-model endpoint로 fallback, 5h 전용이라 weekly meter는 "No data".
 @MainActor
 final class AntigravityProvider: ProviderRuntime {
+    private static let historySourceNote = "From your Antigravity usage history (estimated)"
+
     let provider = Provider(id: "antigravity", displayName: "Antigravity", icon: .providerMark("antigravity"))
 
     let authStore: AntigravityAuthStore
     let usageClient: AntigravityUsageClient
     let discovery: LanguageServerDiscovery
+    let usageScan: @Sendable (Date, ModelPricing) async throws -> LogUsageScan?
     let now: @Sendable () -> Date
+    let pricing: @Sendable () async -> ModelPricing
 
     init(
         authStore: AntigravityAuthStore = AntigravityAuthStore(),
         usageClient: AntigravityUsageClient = AntigravityUsageClient(),
         discovery: LanguageServerDiscovery = LanguageServerDiscovery(),
-        now: @escaping @Sendable () -> Date = Date.init
+        usageScan: @escaping @Sendable (Date, ModelPricing) async throws -> LogUsageScan? = { now, pricing in
+            try await AntigravityUsageScanner.shared.scan(now: now, pricing: pricing)
+        },
+        now: @escaping @Sendable () -> Date = Date.init,
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.discovery = discovery
+        self.usageScan = usageScan
         self.now = now
+        self.pricing = pricing
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: AntigravityMetric.geminiID, provider: provider, title: AntigravityMetric.sessionLabel, sessionStartSignal: .zeroUsage)
                 .supportingSoftLimit(.fiveHours)
-                .exportingLimit("geminiSession", unit: "percent"),
+                .exportingLimit("geminiSession", unit: "percent")
+                .exportingHistory(scope: .machineLocal, estimatedCost: true, sourceNote: Self.historySourceNote),
             .percent(id: AntigravityMetric.geminiWeeklyID, provider: provider, title: AntigravityMetric.weeklyLabel)
                 .supportingSoftLimit(.weekly)
                 .exportingLimit("geminiWeekly", unit: "percent"),
@@ -59,12 +70,87 @@ final class AntigravityProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        let refreshedAt = now()
+        var quota: StrategyResult?
+        var quotaError: Error?
         do {
-            let result = try await probe()
-            return ProviderSnapshot.make(provider: provider, plan: result.plan, lines: result.lines, refreshedAt: now())
+            try Task.checkCancellation()
+            quota = try await probe()
+            try Task.checkCancellation()
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: error)
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            }
+            quotaError = error
         }
+
+        var scan: LogUsageScan?
+        var scanError: Error?
+        do {
+            let currentPricing = await pricing()
+            try Task.checkCancellation()
+            scan = try await usageScan(refreshedAt, currentPricing)
+            try Task.checkCancellation()
+        } catch {
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            }
+            scanError = error
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, providerID: provider.id, error: error,
+                localContext: "local conversation history could not be read"
+            )
+        }
+
+        let history = scan?.usageHistory
+        let hasLocalUsage = history?.series.daily.contains { $0.totalTokens > 0 || ($0.costUSD ?? 0) > 0 } == true
+        if let quotaError, !hasLocalUsage {
+            return ProviderSnapshot.error(provider: provider, error: quotaError)
+        }
+
+        var warnings: [String] = []
+        var warningPresentations: [LocalizedMessage] = []
+        if let quotaError {
+            warnings.append(quotaError.localizedDescription)
+            warningPresentations.append(UserFacingErrors.presentation(quotaError))
+            AppLog.warn(
+                LogTag.plugin("antigravity"),
+                "quota unavailable; keeping local conversation usage (category=\(ErrorCategory.classify(quotaError).rawValue), code=\((quotaError as NSError).code))"
+            )
+        }
+        if scanError != nil {
+            let message = "Antigravity usage history could not be read. Try again later."
+            warnings.append(message)
+            warningPresentations.append(.init(message))
+        }
+        if scan?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true {
+            let message = "Some Antigravity models have no price. Their usage is excluded from totals."
+            warnings.append(message)
+            warningPresentations.append(.init(message))
+            AppLog.warn(LogTag.plugin("antigravity"), "unpriced models excluded from local usage totals")
+        }
+        for message in [scan?.numericWarning, scan?.pricingWarning].compactMap({ $0 }) {
+            warnings.append(message)
+            warningPresentations.append(.init(message))
+        }
+
+        var lines = quota?.lines ?? []
+        if let history {
+            SpendTileMapper.appendTokenUsage(
+                history.series, to: &lines, now: refreshedAt,
+                unknownModelsByDay: history.unknownModelsByDay,
+                modelUsage: history.modelUsage,
+                modelSourceNote: Self.historySourceNote
+            )
+        }
+        return ProviderSnapshot.make(
+            provider: provider, plan: quota?.plan, lines: lines, refreshedAt: refreshedAt,
+            usageHistory: history,
+            warning: warnings.isEmpty ? nil : warnings.joined(separator: " "),
+            warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
+            authenticationIssue: quotaError.flatMap { ProviderAuthenticationIssue(error: $0) },
+            isDegraded: warnings.isEmpty ? nil : true
+        )
     }
 
     private struct StrategyResult {
