@@ -59,6 +59,7 @@
 "From your Claude usage history and pi (estimated)" = "Claude の使用履歴と pi に基づく推定値";
 "From your Codex logs (estimated)" = "Codex のログに基づく推定値";
 "From your Codex logs and pi (estimated)" = "Codex のログと pi に基づく推定値";
+"From your Copilot CLI logs" = "Copilot CLI ログより";
 "From your Cursor usage export" = "Cursor の使用量エクスポートに基づく値";
 "From your Cursor usage history." = "Cursor の使用履歴に基づく値。";
 "From your Grok logs (estimated)" = "Grok のログに基づく推定値";
