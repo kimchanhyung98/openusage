@@ -104,6 +104,7 @@ final class AntigravityProvider: ProviderRuntime {
 
         let history = scan?.usageHistory
         let hasLocalUsage = history?.series.daily.contains { $0.totalTokens > 0 || ($0.costUSD ?? 0) > 0 } == true
+            || history?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true
         if let quotaError, !hasLocalUsage {
             return ProviderSnapshot.error(provider: provider, error: quotaError)
         }

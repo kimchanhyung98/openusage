@@ -88,7 +88,7 @@ actor AntigravityUsageScanner {
                 let day = DailyUsageAccumulator.dayKey(from: record.date)
                 if let cost = pricing.estimatedCostDollars(model: record.model, tokens: record.tokens, source: .api) {
                     accumulator.add(day: day, tokens: record.tokens.totalTokens, cost: cost, model: record.model)
-                } else {
+                } else if record.tokens.totalTokens > 0 {
                     accumulator.addUnknownModel(day: day, model: record.model)
                 }
             }
