@@ -218,7 +218,9 @@ final class CopilotPersonalCreditsProviderTests: XCTestCase {
                 CopilotAuthStore.editorAppsPath: #"{"github.com":{"oauth_token":"fixture-token"}}"#
             ]), keychain: FakeKeychain()),
             usageClient: CopilotUsageClient(http: usageHTTP),
-            orgBillingClient: CopilotOrgBillingClient(http: orgHTTP), defaults: defaults
+            orgBillingClient: CopilotOrgBillingClient(http: orgHTTP),
+            usageScanner: .init(databasePath: { nil }),
+            defaults: defaults
         )
     }
 
