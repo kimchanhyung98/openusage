@@ -170,6 +170,7 @@
 "Soft limit reached at %@%% used" = "사용량 %@%%에서 소프트 한도에 도달했습니다";
 "Some local usage has unsupported pricing details and was excluded." = "일부 로컬 사용 기록의 가격 정보를 지원하지 않아 집계에서 제외했습니다.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "일부 로컬 사용 기록에 잘못된 숫자가 있습니다. 사용 내역이 누락될 수 있습니다.";
+"Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "일부 로컬 사용 기록의 시각 또는 모델 이름이 잘못되었습니다. 사용 내역이 누락될 수 있습니다.";
 "Some synced usage data couldn’t be read. Check the log for details." = "동기화된 사용량 데이터 일부를 읽지 못했습니다. 자세한 내용은 로그를 확인하세요.";
 "Start Antigravity or run `agy` and try again." = "Antigravity를 시작하거나 `agy`를 실행한 뒤 다시 시도하세요.";
 "Switching to %@ could not be verified. Check the selected account and try again." = "%@ 계정으로 전환되었는지 확인하지 못했습니다. 선택한 계정을 확인하고 다시 시도하세요.";

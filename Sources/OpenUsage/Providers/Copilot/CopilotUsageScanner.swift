@@ -102,19 +102,23 @@ struct CopilotUsageScanner: Sendable {
         let days = UsageHistoryWindow.dayKeys(through: now, calendar: calendar)
         var accumulator = DailyUsageAccumulator()
         var unsupportedPricingRows = 0
+        var rejectedMetadataRows = 0
         for row in rows {
             try Task.checkCancellation()
             guard row.count == 5 else { throw CopilotHistoryError.malformedData }
             guard let rawDate = row[0] as? String,
                   let timestamp = OpenUsageISO8601.date(from: rawDate)
             else {
-                accumulator.rejectNumericRow()
+                rejectedMetadataRows += 1
                 continue
             }
             let day = DailyUsageAccumulator.dayKey(from: timestamp, calendar: calendar)
             guard timestamp <= now, days.contains(day) else { continue }
-            guard let model = row[1] as? String,
-                  let input = UsageLogNumbers.count(row[2]),
+            guard let model = row[1] as? String else {
+                rejectedMetadataRows += 1
+                continue
+            }
+            guard let input = UsageLogNumbers.count(row[2]),
                   let output = UsageLogNumbers.count(row[3]),
                   let tokens = UsageLogNumbers.sum(input, output)
             else {
@@ -143,7 +147,16 @@ struct CopilotUsageScanner: Sendable {
                 localContext: "source=copilot; unsupported_pricing_rows=\(unsupportedPricingRows)"
             )
         }
-        return accumulator.build(source: "copilot", unsupportedPricingRows: unsupportedPricingRows)
+        if rejectedMetadataRows > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "copilot",
+                localContext: "source=copilot; invalid_metadata_rows=\(rejectedMetadataRows)"
+            )
+        }
+        return accumulator.build(
+            source: "copilot", unsupportedPricingRows: unsupportedPricingRows,
+            rejectedMetadataRows: rejectedMetadataRows
+        )
     }
 
     static func dataSQL(since: Date) -> String {

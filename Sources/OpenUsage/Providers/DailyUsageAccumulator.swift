@@ -47,9 +47,11 @@ struct DailyUsageAccumulator {
         guard !present.isEmpty else { return nil }
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var rejectedMetadataRows = 0
         var unsupportedPricingRows = 0
         for scan in present {
             rejectedNumericRows += scan.rejectedNumericRows
+            rejectedMetadataRows += scan.rejectedMetadataRows
             unsupportedPricingRows += scan.unsupportedPricingRows
             for day in scan.modelUsage?.daily ?? [] {
                 for model in day.models {
@@ -65,7 +67,8 @@ struct DailyUsageAccumulator {
             }
         }
         return accumulator.build(
-            rejectedNumericRows: rejectedNumericRows, unsupportedPricingRows: unsupportedPricingRows
+            rejectedNumericRows: rejectedNumericRows, unsupportedPricingRows: unsupportedPricingRows,
+            rejectedMetadataRows: rejectedMetadataRows
         )
     }
 
@@ -78,7 +81,8 @@ struct DailyUsageAccumulator {
     /// 집계된 날은 전부 priced — `costUSD`는 항상 실제 합계.
     func build(
         rejectedNumericRows previouslyRejected: Int = 0, source: String = "local-usage",
-        reportNumericFailures: Bool = true, unsupportedPricingRows: Int = 0
+        reportNumericFailures: Bool = true, unsupportedPricingRows: Int = 0,
+        rejectedMetadataRows: Int = 0
     ) -> LogUsageScan {
         if reportNumericFailures { UsageLogNumbers.reportRejectedRows(rejectedNumericRows, source: source) }
         let days = tokensByDay.keys.sorted(by: >).map { day in
@@ -95,7 +99,8 @@ struct DailyUsageAccumulator {
             modelUsage: modelUsage,
             unknownModelsByDay: unknownModelsByDay,
             rejectedNumericRows: previouslyRejected + rejectedNumericRows,
-            unsupportedPricingRows: unsupportedPricingRows
+            unsupportedPricingRows: unsupportedPricingRows,
+            rejectedMetadataRows: rejectedMetadataRows
         )
     }
 

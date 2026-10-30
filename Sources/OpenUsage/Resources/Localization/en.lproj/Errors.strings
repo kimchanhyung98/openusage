@@ -170,6 +170,7 @@
 "Soft limit reached at %@%% used" = "Soft limit reached at %@%% used";
 "Some local usage has unsupported pricing details and was excluded." = "Some local usage has unsupported pricing details and was excluded.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
+"Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.";
 "Some synced usage data couldn’t be read. Check the log for details." = "Some synced usage data couldn’t be read. Check the log for details.";
 "Start Antigravity or run `agy` and try again." = "Start Antigravity or run `agy` and try again.";
 "Switching to %@ could not be verified. Check the selected account and try again." = "Switching to %@ could not be verified. Check the selected account and try again.";

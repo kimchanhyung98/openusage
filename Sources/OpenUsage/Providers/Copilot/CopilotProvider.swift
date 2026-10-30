@@ -70,35 +70,26 @@ final class CopilotProvider: ProviderRuntime {
             snapshot = try await quotaSnapshot(refreshedAt: refreshedAt)
         } catch {
             snapshot = ProviderSnapshot.error(provider: provider, error: error)
+            snapshot.refreshedAt = refreshedAt
         }
 
         do {
             if let scan = try await usageScanner.scan(now: refreshedAt) {
                 if let history = scan.usageHistory {
                     // 로컬 이력은 현재 원격 로그인과 무관한 Mac 전체 기록. 할당량 실패도 이 기록을 가리지 않음.
-                    if let category = snapshot.errorCategory {
-                        AppDiagnostics.record(.providerRefresh, result: .degraded, category: category, providerID: provider.id)
-                        AppLog.warn(LogTag.plugin(provider.id), "quota unavailable; retaining local CLI history (category=\(category.rawValue))")
-                        let quotaPresentation = snapshot.errorPresentation
-                        snapshot = ProviderSnapshot.make(
-                            provider: provider, plan: nil, lines: [], refreshedAt: refreshedAt,
-                            warning: "Copilot quota could not be refreshed. Local CLI history is still available.",
-                            isDegraded: true
-                        )
-                        if let quotaPresentation {
-                            snapshot.warningPresentation?.append(quotaPresentation)
-                        }
-                    }
                     snapshot.usageHistory = history
-                    snapshot = UsageHistorySnapshotRenderer.render(
-                        local: snapshot, history: history,
-                        descriptor: UsageHistoryDescriptor(
-                            scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote
-                        ),
-                        now: refreshedAt, combined: false
-                    )
+                    if snapshot.errorCategory == nil {
+                        snapshot = UsageHistorySnapshotRenderer.render(
+                            local: snapshot, history: history,
+                            descriptor: UsageHistoryDescriptor(
+                                scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote
+                            ),
+                            now: refreshedAt, combined: false
+                        )
+                    }
                 }
                 if let warning = scan.numericWarning { appendWarning(warning, to: &snapshot) }
+                if let warning = scan.metadataWarning { appendWarning(warning, to: &snapshot) }
                 if let warning = scan.pricingWarning { appendWarning(warning, to: &snapshot) }
             }
         } catch is CancellationError {

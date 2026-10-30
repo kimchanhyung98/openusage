@@ -89,22 +89,30 @@ struct LogUsageScan: Sendable {
     /// `yyyy-MM-dd` day key → 가격 부재로 합계에서 제외된 그날의 model 목록.
     var unknownModelsByDay: [String: Set<String>]
     var rejectedNumericRows: Int
+    var rejectedMetadataRows: Int
     var unsupportedPricingRows: Int
 
     init(
         series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil,
         unknownModelsByDay: [String: Set<String>], rejectedNumericRows: Int = 0,
-        unsupportedPricingRows: Int = 0
+        unsupportedPricingRows: Int = 0, rejectedMetadataRows: Int = 0
     ) {
         self.series = series
         self.modelUsage = modelUsage
         self.unknownModelsByDay = unknownModelsByDay
         self.rejectedNumericRows = rejectedNumericRows
+        self.rejectedMetadataRows = rejectedMetadataRows
         self.unsupportedPricingRows = unsupportedPricingRows
     }
 
     var numericWarning: String? {
         rejectedNumericRows > 0 ? "Some local usage records contain invalid numbers. Usage history may be incomplete." : nil
+    }
+
+    var metadataWarning: String? {
+        rejectedMetadataRows > 0
+            ? "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete."
+            : nil
     }
 
     var pricingWarning: String? {
@@ -117,6 +125,7 @@ struct LogUsageScan: Sendable {
     var usageHistory: ProviderUsageHistory? {
         guard unsupportedPricingRows == 0 || !series.daily.isEmpty else { return nil }
         guard rejectedNumericRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }
+        guard rejectedMetadataRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }
         return ProviderUsageHistory(series: series, modelUsage: modelUsage, unknownModelsByDay: unknownModelsByDay)
     }
 }
