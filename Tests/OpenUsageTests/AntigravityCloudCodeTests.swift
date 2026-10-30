@@ -420,7 +420,9 @@ final class AntigravityCloudCodeTests: XCTestCase {
         return AntigravityProvider(
             authStore: AntigravityAuthStore(keychain: FakeKeychain(wrapped), files: FakeFiles()),
             usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
-            discovery: LanguageServerDiscovery(processRunner: NoProcessRunner())
+            discovery: LanguageServerDiscovery(processRunner: NoProcessRunner()),
+            usageScan: { _, _ in nil },
+            pricing: { .empty }
         )
     }
 
