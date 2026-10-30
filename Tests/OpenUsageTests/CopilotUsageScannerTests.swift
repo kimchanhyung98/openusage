@@ -116,8 +116,37 @@ final class CopilotUsageScannerTests: XCTestCase {
         let scan = try XCTUnwrap(result)
 
         XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 150)
-        XCTAssertEqual(scan.rejectedNumericRows, 2)
-        XCTAssertNotNil(scan.numericWarning)
+        XCTAssertEqual(scan.rejectedNumericRows, 0)
+        XCTAssertEqual(scan.rejectedMetadataRows, 2)
+        XCTAssertNil(scan.numericWarning)
+        XCTAssertNotNil(scan.metadataWarning)
+        XCTAssertNotNil(scan.usageHistory)
+    }
+
+    func testInvalidMetadataIsSeparateFromNumericFailuresAndCannotClearHistory() throws {
+        let scan = try CopilotUsageScanner.aggregate(json: """
+            [["invalid-date","fixture-model",100,20,100000000000],
+             ["2026-10-30T15:00:00Z",null,100,20,100000000000]]
+            """, now: now)
+
+        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertEqual(scan.rejectedMetadataRows, 2)
+        XCTAssertEqual(scan.rejectedNumericRows, 0)
+        XCTAssertNotNil(scan.metadataWarning)
+        XCTAssertNil(scan.numericWarning)
+        XCTAssertNil(scan.usageHistory)
+
+        let mixed = try CopilotUsageScanner.aggregate(json: """
+            [["invalid-date","fixture-model",100,20,100000000000],
+             ["2026-10-30T15:00:00Z","fixture-model",-1,20,100000000000],
+             ["2026-10-30T15:00:00Z","fixture-model",100,20,100000000000]]
+            """, now: now)
+        XCTAssertEqual(mixed.rejectedMetadataRows, 1)
+        XCTAssertEqual(mixed.rejectedNumericRows, 1)
+        XCTAssertNotNil(mixed.metadataWarning)
+        XCTAssertNotNil(mixed.numericWarning)
+        XCTAssertEqual(mixed.usageHistory?.series.daily.first?.totalTokens, 120)
+        XCTAssertEqual(mixed.usageHistory?.series.daily.first?.costUSD, 1)
     }
 
     func testNullUsageFieldsDoNotBecomeZeroOrErasePriorHistory() async throws {
