@@ -249,7 +249,135 @@ final class PeerHistoryIdentityTests: XCTestCase {
         XCTAssertTrue(dataStore.remoteOnlySpend.isEmpty, "sync off returns Total Spend to local-only")
     }
 
+    func testRemoteOnlySpendExcludesDisabledFamilyOnPeerArrival() throws {
+        let fixture = try makeRemoteSpendFixture(enabledIDs: ["codex"])
+
+        XCTAssertTrue(fixture.layout.hasSpendCapableProvider)
+        XCTAssertEqual(fixture.layout.spendCapableProviders.map(\.id), ["codex"])
+        XCTAssertEqual(fixture.store.remoteOnlySpend.map(\.provider.id), [fixture.remoteCodexID])
+        XCTAssertNil(fixture.store.snapshots["claude"])
+        for period in [TotalSpendPeriod.today, .last30] {
+            let total = totalSpend(fixture.store, layout: fixture.layout, period: period)
+            XCTAssertEqual(total.slices.map(\.id), [fixture.remoteCodexID])
+            XCTAssertEqual(total.totalUSD, 7, accuracy: 0.001)
+            XCTAssertEqual(total.totalTokens, 700)
+        }
+    }
+
+    func testRemoteOnlySpendFollowsFamilyToggleWithoutReloadingPeers() throws {
+        let fixture = try makeRemoteSpendFixture(enabledIDs: ["claude", "codex"])
+        let before = totalSpend(fixture.store, layout: fixture.layout)
+        XCTAssertEqual(fixture.store.remoteOnlySpend.count, 3)
+        XCTAssertEqual(before.slices.count, 4)
+        XCTAssertEqual(before.totalUSD, 65, accuracy: 0.001)
+        XCTAssertEqual(before.totalTokens, 6_500)
+
+        fixture.enablement.setEnabled(false, for: "claude")
+
+        let disabled = totalSpend(fixture.store, layout: fixture.layout)
+        XCTAssertEqual(fixture.store.remoteOnlySpend.map(\.provider.id), [fixture.remoteCodexID])
+        XCTAssertNil(fixture.store.snapshots["claude"])
+        XCTAssertEqual(disabled.slices.map(\.id), [fixture.remoteCodexID])
+        XCTAssertEqual(disabled.totalUSD, 7, accuracy: 0.001)
+        XCTAssertEqual(disabled.totalTokens, 700)
+
+        fixture.enablement.setEnabled(true, for: "claude")
+
+        XCTAssertEqual(fixture.store.remoteOnlySpend.count, 3)
+        XCTAssertEqual(totalSpend(fixture.store, layout: fixture.layout), before)
+    }
+
+    func testRemoteOnlySpendRemainsWhileAnAdditionalFamilyCardIsEnabled() throws {
+        let fixture = try makeRemoteSpendFixture(enabledIDs: ["claude@f15456b0", "codex"])
+
+        XCTAssertFalse(fixture.enablement.isEnabled("claude"))
+        XCTAssertTrue(fixture.enablement.isEnabled("claude@f15456b0"))
+        XCTAssertEqual(fixture.store.remoteOnlySpend.count, 3)
+        XCTAssertNil(fixture.store.snapshots["claude"], "the disabled matching account stays excluded")
+        let total = totalSpend(fixture.store, layout: fixture.layout)
+        XCTAssertEqual(total.slices.count, 3)
+        XCTAssertEqual(total.totalUSD, 54, accuracy: 0.001)
+        XCTAssertEqual(total.totalTokens, 5_400)
+
+        fixture.enablement.setEnabled(false, for: "claude@f15456b0")
+
+        let disabled = totalSpend(fixture.store, layout: fixture.layout)
+        XCTAssertEqual(fixture.store.remoteOnlySpend.map(\.provider.id), [fixture.remoteCodexID])
+        XCTAssertEqual(disabled.slices.map(\.id), [fixture.remoteCodexID])
+        XCTAssertEqual(disabled.totalUSD, 7, accuracy: 0.001)
+        XCTAssertEqual(disabled.totalTokens, 700)
+    }
+
     // MARK: - Fixtures
+
+    private func makeRemoteSpendFixture(enabledIDs: Set<String>) throws -> (
+        store: WidgetDataStore, enablement: ProviderEnablementStore,
+        layout: LayoutStore, remoteCodexID: String
+    ) {
+        let now = Date(timeIntervalSince1970: 1_793_249_200)
+        let today = dayKey(now)
+        let providers = [
+            ClaudeProvider.makeProvider(),
+            ClaudeProvider.makeProvider(id: "claude@f15456b0", displayName: "Claude — Team"),
+            CodexProvider.makeProvider(),
+        ]
+        let descriptors = providers.flatMap { provider in
+            [WidgetDescriptor.usageTrend(provider: provider)
+                .exportingHistory(scope: .machineLocal, estimatedCost: true, sourceNote: "test")]
+                + WidgetDescriptor.spendTiles(provider: provider)
+        }
+        let registry = WidgetRegistry(providers: providers, descriptors: descriptors)
+        let defaults = makeScratchDefaults("RemoteEnablement")
+        let enablement = ProviderEnablementStore(defaults: defaults)
+        enablement.seedEnabledProviders(enabledIDs)
+        let store = WidgetDataStore(
+            registry: registry, providers: [],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { now }),
+            defaults: defaults,
+            isProviderEnabled: { enablement.isEnabled($0) },
+            now: { now },
+            providerIdentityKeys: ["claude": maxKey, "claude@f15456b0": teamKey]
+        )
+        enablement.onChange = { [weak store] in store?.providerEnablementDidChange() }
+        let layout = LayoutStore(
+            registry: registry, defaults: defaults,
+            isProviderEnabled: { enablement.isEnabled($0) }
+        )
+        let document = UsageHistoryDocument(
+            deviceID: "peer", deviceName: "Peer Mac", updatedAt: now,
+            providers: [
+                "claude": history(day: today, tokens: 1_100, cost: 11),
+                "claude@11111111": history(day: today, tokens: 4_200, cost: 42),
+                "claude@22222222": history(day: today, tokens: 500, cost: 5),
+                "codex@33333333": history(day: today, tokens: 700, cost: 7),
+            ],
+            identities: [
+                "claude": maxKey,
+                "claude@11111111": "remote-claude|org-x",
+                "codex@33333333": "remote-codex",
+            ]
+        )
+        try document.validate()
+        store.setPeerHistoryDocuments([document], ownDeviceID: "this-mac")
+        return (
+            store, enablement, layout,
+            "codex@peer-\(ProviderAccountID.hash8("remote-codex"))"
+        )
+    }
+
+    private func totalSpend(
+        _ store: WidgetDataStore, layout: LayoutStore, period: TotalSpendPeriod = .today
+    ) -> TotalSpend {
+        var snapshots = store.snapshots
+        for entry in store.remoteOnlySpend {
+            snapshots[entry.provider.id] = entry.snapshot
+        }
+        return TotalSpendAggregator.total(
+            for: period,
+            providers: layout.spendCapableProviders + store.remoteOnlySpend.map(\.provider),
+            snapshots: snapshots
+        )
+    }
 
     private func makeRegistry() -> WidgetRegistry {
         let claude = ClaudeProvider.makeProvider()
