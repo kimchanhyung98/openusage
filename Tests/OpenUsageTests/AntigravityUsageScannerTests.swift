@@ -108,6 +108,20 @@ final class AntigravityUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan?.unknownModelsByDay[day(now)], ["unpriced-synthetic-model"])
     }
 
+    func testUnknownModelWithZeroTokensDoesNotWarnOrCreateUsage() async throws {
+        let db = try AntigravityScannerDatabase()
+        defer { db.remove() }
+        try db.model(index: 0, name: "unpriced-synthetic-model")
+        try db.step(index: 1, date: now, input: 0, output: 0)
+
+        let scan = try await AntigravityUsageScanner(databasePaths: { [db.path] })
+            .scan(now: now, pricing: pricing())
+
+        let result = try XCTUnwrap(scan)
+        XCTAssertTrue(result.series.daily.isEmpty)
+        XCTAssertTrue(result.unknownModelsByDay.isEmpty)
+    }
+
     func testMissingModelOrGenerationRowFailsInsteadOfReturningZero() async throws {
         for model in [nil, ""] as [String?] {
             let db = try AntigravityScannerDatabase()

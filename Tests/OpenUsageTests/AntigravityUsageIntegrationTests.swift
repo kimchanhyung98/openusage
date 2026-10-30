@@ -140,6 +140,43 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         XCTAssertFalse(snapshot.lines.contains(where: \.isError))
     }
 
+    func testOnlyUnpricedHistorySurvivesQuotaFailureAndClearsPreviousTotals() async throws {
+        let day = DailyUsageAccumulator.dayKey(from: fixedNow)
+        let scan = LogUsageScan(
+            series: DailyUsageSeries(daily: []),
+            unknownModelsByDay: [day: ["unpriced-synthetic-model"]]
+        )
+        let sequence = UsageScanSequence([usageScan(), scan])
+        let provider = makeProvider(usageScan: { _, _ in await sequence.next() }, quotaAvailable: false)
+        let fixture = makeStore(provider)
+
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+        XCTAssertNotNil(fixture.store.localSnapshots[provider.provider.id]?.line(label: "Today"))
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+
+        let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
+        let warning = try XCTUnwrap(snapshot.warning)
+        XCTAssertTrue(warning.contains(AntigravityError.unavailable.localizedDescription))
+        XCTAssertTrue(warning.contains("Some Antigravity models have no price. Their usage is excluded from totals."))
+        XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), snapshot.localizedWarning)
+        XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertEqual(snapshot.usageHistory, scan.usageHistory)
+        XCTAssertTrue(snapshot.lines.isEmpty)
+        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: [provider.provider.id])[provider.provider.id], snapshot)
+        for period in TotalSpendPeriod.allCases {
+            let total = TotalSpendAggregator.total(
+                for: period, providers: [provider.provider], snapshots: fixture.store.snapshots
+            )
+            XCTAssertTrue(total.projection(for: .cost).isEmpty)
+            XCTAssertTrue(total.projection(for: .tokens).isEmpty)
+        }
+        let document = fixture.store.localHistoryDocument(
+            deviceID: "fixture-mac", deviceName: "Fixture Mac", updatedAt: fixedNow
+        )
+        XCTAssertEqual(document.providers[provider.provider.id], scan.usageHistory)
+    }
+
     func testMissingScanPreservesHistoryButCompletedEmptyScanClearsIt() async throws {
         let scan = usageScan()
         let empty = LogUsageScan(series: DailyUsageSeries(daily: []), unknownModelsByDay: [:])
