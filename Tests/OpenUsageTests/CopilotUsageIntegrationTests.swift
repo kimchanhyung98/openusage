@@ -72,6 +72,7 @@ final class CopilotUsageIntegrationTests: XCTestCase {
                 "completions": ["entitlement": 100, "remaining": 90]
             ]
         ]))
+        let successfulQuota = http.response
         let fixture = try makeFixture(rows: [row()], quotaHTTP: http)
         var freshQuotaCallbacks = 0
         fixture.store.onFreshSnapshot = { _, _, _ in freshQuotaCallbacks += 1 }
@@ -126,12 +127,48 @@ final class CopilotUsageIntegrationTests: XCTestCase {
         XCTAssertFalse(afterRestart.lines.contains(where: \.isError))
         XCTAssertEqual(restartedCache.loadSnapshots(providerIDs: ["copilot"])["copilot"], afterRestart)
         XCTAssertNotNil(restarted.providerErrors["copilot"])
+        XCTAssertNil(restartedCache.snapshot(providerID: "copilot"))
+        let backedOff = await restarted.refresh(providerID: "copilot")
+        XCTAssertEqual(backedOff, .backedOff)
 
         fixture.sqlite.json = "[]"
         await restarted.refreshAll(force: true)
         XCTAssertEqual(restarted.localSnapshots["copilot"]?.line(label: "Credits"), previous.line(label: "Credits"))
         XCTAssertTrue(restarted.localSnapshots["copilot"]?.usageHistory?.series.daily.isEmpty == true)
         XCTAssertNil(restarted.localSnapshots["copilot"]?.line(label: "Today"))
+
+        fixture.clock.date = now.addingTimeInterval(181)
+        http.response = successfulQuota
+        let recovered = await restarted.refresh(providerID: "copilot")
+        XCTAssertEqual(recovered, .refreshed)
+        XCTAssertEqual(http.requests.count, 5)
+        XCTAssertNil(restarted.providerErrors["copilot"])
+    }
+
+    func testQuotaAndHistoryFailuresBothAppearWithoutReplacingLastGoodData() async throws {
+        let http = FakeHTTPClient(response: try response([
+            "copilot_plan": "pro",
+            "quota_snapshots": ["premium_interactions": ["entitlement": 100, "remaining": 75]]
+        ]))
+        let fixture = try makeFixture(rows: [row()], quotaHTTP: http)
+        await fixture.store.refreshAll(force: true)
+        let previous = try XCTUnwrap(fixture.store.localSnapshots["copilot"])
+        http.response = HTTPResponse(statusCode: 503, headers: [:], body: Data())
+        fixture.sqlite.failReads = true
+
+        await fixture.store.refreshAll(force: true)
+
+        let quotaError = CopilotUsageError.requestFailed(503)
+        let historyError = CopilotHistoryError.databaseUnreadable
+        XCTAssertEqual(fixture.store.localSnapshots["copilot"], previous)
+        XCTAssertEqual(fixture.store.providerErrors["copilot"],
+                       quotaError.localizedDescription + " " + historyError.localizedDescription)
+        for language in [LanguageSetting.english, .korean, .japanese] {
+            L10n.withLanguage(language) {
+                XCTAssertEqual(fixture.store.headerNotice(for: "copilot"),
+                               UserFacingErrors.message(quotaError) + " " + UserFacingErrors.message(historyError))
+            }
+        }
     }
 
     func testHistoryCacheDoesNotSuppressQuotaRetryAfterFailureBackoff() async throws {
