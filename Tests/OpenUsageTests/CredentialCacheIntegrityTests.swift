@@ -293,7 +293,9 @@ final class AntigravityCredentialCacheIntegrityTests: XCTestCase {
             authStore: AntigravityAuthStore(keychain: keychain, files: files, now: { fixedNow }),
             usageClient: AntigravityUsageClient(lsHTTP: http, http: http),
             discovery: LanguageServerDiscovery(processRunner: CredentialEmptyProcessRunner()),
-            now: { fixedNow }
+            usageScan: { _, _ in nil },
+            now: { fixedNow },
+            pricing: { .empty }
         )
     }
 

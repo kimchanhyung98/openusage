@@ -20,6 +20,42 @@ final class AntigravityLayoutTests: XCTestCase {
         XCTAssertEqual(group?.expandedMetrics.map(\.id), ["antigravity.claude", "antigravity.claudeWeekly"])
     }
 
+    func testHistoryOnlyProviderIsSpendCapableWhileEnabledWithoutChangingLayout() {
+        let enablement = ProviderEnablementStore(defaults: makeDefaults("HistoryEnablement"))
+        let store = LayoutStore(
+            registry: .antigravityOnly,
+            defaults: makeDefaults("HistoryLayout"),
+            storageKey: "layout",
+            isProviderEnabled: { enablement.isEnabled($0) }
+        )
+        let placed = store.placed
+        let pins = store.pinnedMetricIDs
+        let expanded = store.expandedMetricIDs
+
+        XCTAssertEqual(store.registry.descriptors.map(\.id), [
+            "antigravity.geminiPro", "antigravity.geminiWeekly",
+            "antigravity.claude", "antigravity.claudeWeekly"
+        ])
+        XCTAssertTrue(store.hasSpendCapableProvider)
+        XCTAssertEqual(store.spendCapableProviders.map(\.id), ["antigravity"])
+
+        enablement.setEnabled(false, for: "antigravity")
+
+        XCTAssertFalse(store.hasSpendCapableProvider)
+        XCTAssertTrue(store.spendCapableProviders.isEmpty)
+        XCTAssertEqual(store.placed, placed)
+        XCTAssertEqual(store.pinnedMetricIDs, pins)
+        XCTAssertEqual(store.expandedMetricIDs, expanded)
+
+        enablement.setEnabled(true, for: "antigravity")
+
+        XCTAssertTrue(store.hasSpendCapableProvider)
+        XCTAssertEqual(store.spendCapableProviders.map(\.id), ["antigravity"])
+        XCTAssertEqual(store.placed, placed)
+        XCTAssertEqual(store.pinnedMetricIDs, pins)
+        XCTAssertEqual(store.expandedMetricIDs, expanded)
+    }
+
     func testExistingUserLayoutAutoSeedsWeeklyMetricsBelowCaretForClaudePool() {
         // weekly metric 출시 전 layout: 마이그레이션 baseline에 Antigravity 부재 → `seedNewDefaultMetrics`가 1회 자동 enable
         let defaults = makeDefaults("SeedWeeklies")

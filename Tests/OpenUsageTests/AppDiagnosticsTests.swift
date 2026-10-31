@@ -127,7 +127,9 @@ final class AppDiagnosticsTests: XCTestCase {
         let provider = AntigravityProvider(
             authStore: AntigravityAuthStore(keychain: FakeKeychain(token), files: FakeFiles()),
             usageClient: AntigravityUsageClient(lsHTTP: http, http: http),
-            discovery: LanguageServerDiscovery(processRunner: DiagnosticEmptyProcessRunner())
+            discovery: LanguageServerDiscovery(processRunner: DiagnosticEmptyProcessRunner()),
+            usageScan: { _, _ in nil },
+            pricing: { .empty }
         )
         let suite = "AppDiagnosticsTests.Antigravity." + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
