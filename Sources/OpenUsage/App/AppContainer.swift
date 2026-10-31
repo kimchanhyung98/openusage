@@ -126,8 +126,7 @@ final class AppContainer {
             notificationSettings: { notificationSettings },
             softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
-            familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
-            resolveDisplayName: { [accounts] in accounts.resolvedDisplayName(cardID: $0) }
+            familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs
         )
         // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
         let telemetryStore = TelemetryStore()
@@ -271,6 +270,9 @@ final class AppContainer {
                 errors: dataStore.providerErrors
             )
         })
+        Self.configureQuotaNotificationNames(dataStore: dataStore, accounts: accounts, profiles: accountProfiles) { [weak self] in
+            self?.accountProfileID(for: $0)
+        }
         resetWatchCoordinator.observeActivity { [layout, resetWatchNotifications] in
             resetWatchNotifications.configurationDidChange()
             let notificationsEnabled = resetWatchNotifications.isEnabled()
