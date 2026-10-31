@@ -48,7 +48,8 @@ OpenUsage의 OpenRouter 조회에는 사용자가 제공한 API 키 필요.
 잔액과 키별 사용액은 [API Keys](https://openrouter.ai/keys)의 일반 키 사용 가능.
 상단 비용·토큰 통계는 [Management Keys](https://openrouter.ai/settings/management-keys)에서 발급한 관리 키 필요.
 OpenUsage가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회.
-앱은 관리 키로 통계만 조회하며 다른 키의 생성·수정·삭제를 수행하지 않음.
+앱은 관리 키로 잔액·등급·키 한도·사용 통계만 조회.
+다른 키의 생성·수정·삭제는 수행하지 않음.
 키의 만료 기간과 권한 범위는 [공식 관리 키 문서](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) 참조.
 **Customize → OpenRouter → API Key**에서 Add 선택.
 키 입력.
