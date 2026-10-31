@@ -28,4 +28,15 @@ final class UsageHistoryClassificationTests: XCTestCase {
             "opencode": .machineLocal
         ])
     }
+
+    func testAntigravityExportsMachineLocalHistoryWithoutSpendTiles() throws {
+        let registry = WidgetRegistry.from([AntigravityProvider()])
+        let descriptors = registry.descriptors(for: "antigravity")
+
+        XCTAssertFalse(descriptors.contains(where: \.isSpendTile))
+        XCTAssertEqual(descriptors.compactMap(\.historyResource).count, 1)
+        let history = try XCTUnwrap(registry.historyDescriptorsByProvider["antigravity"])
+        XCTAssertEqual(history.scope, .machineLocal)
+        XCTAssertTrue(history.estimatedCost)
+    }
 }

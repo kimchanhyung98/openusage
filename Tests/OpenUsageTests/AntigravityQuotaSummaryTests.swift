@@ -163,7 +163,9 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         return AntigravityProvider(
             authStore: AntigravityAuthStore(keychain: FakeKeychain(wrapped), files: FakeFiles()),
             usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
-            discovery: LanguageServerDiscovery(processRunner: NoProcessRunner())
+            discovery: LanguageServerDiscovery(processRunner: NoProcessRunner()),
+            usageScan: { _, _ in nil },
+            pricing: { .empty }
         )
     }
 
@@ -217,7 +219,9 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         AntigravityProvider(
             authStore: AntigravityAuthStore(keychain: FakeKeychain(nil), files: FakeFiles()),
             usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
-            discovery: LanguageServerDiscovery(processRunner: FakeLSProcessRunner())
+            discovery: LanguageServerDiscovery(processRunner: FakeLSProcessRunner()),
+            usageScan: { _, _ in nil },
+            pricing: { .empty }
         )
     }
 
