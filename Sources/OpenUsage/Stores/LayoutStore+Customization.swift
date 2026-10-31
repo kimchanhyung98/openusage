@@ -28,13 +28,13 @@ extension LayoutStore {
         expandedMetricIDs.contains(Self.canonical(descriptorID))
     }
 
-    /// Total Spend 카드의 capability gate — 일별 지출을 공급하는 enabled provider 존재 여부.
+    /// Total Spend 카드의 capability gate — 일별 이력 또는 지출 타일이 있는 활성 provider 존재 여부.
     /// registry descriptor 기준(refresh 데이터 무관)이라 데이터 없는 아침에도 "No spend data" 상태로 표시.
     var hasSpendCapableProvider: Bool {
         !spendCapableProviders.isEmpty
     }
 
-    /// spend tile 또는 명시적 일별 history를 제공하는 enabled provider(사용자 provider 순서) —
+    /// 일별 이력 또는 지출 타일이 있는 활성 provider(사용자 provider 순서) —
     /// Total Spend가 집계하는 정확한 집합. `displayGroups`가 아닌 이유: metric을 전부 숨긴 provider도
     /// 지출은 계속되므로 포함, 타 provider의 유사 dollar 행(OpenRouter API-spend "Today")은 제외.
     var spendCapableProviders: [Provider] {

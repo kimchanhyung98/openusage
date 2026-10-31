@@ -60,6 +60,7 @@
 "From your Claude usage history and pi (estimated)" = "Claude 사용 기록 및 pi 기준 추정값";
 "From your Codex logs (estimated)" = "Codex 로그 기준 추정값";
 "From your Codex logs and pi (estimated)" = "Codex 로그 및 pi 기준 추정값";
+"From your Copilot CLI logs" = "Copilot CLI 로그 기준";
 "From your Cursor usage export" = "Cursor 사용량 내보내기 자료 기준";
 "From your Cursor usage history." = "Cursor 사용 기록 기준.";
 "From your Grok logs (estimated)" = "Grok 로그 기준 추정값";

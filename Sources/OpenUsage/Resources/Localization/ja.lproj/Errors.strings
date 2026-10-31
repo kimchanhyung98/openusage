@@ -56,6 +56,7 @@
 "Codex weekly timer temporary credentials could not be removed." = "Codex週間タイマーの一時認証情報を削除できませんでした。";
 "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry." = "前回のセッションで使用したCodex週間タイマーの一時認証情報を削除できませんでした。OpenUsageを再起動して、もう一度試してください。";
 "Command arguments cannot contain null bytes." = "コマンドの引数にヌルバイトを含めることはできません。";
+"Copilot quota could not be refreshed. Local CLI history is still available." = "Copilot の使用枠を更新できませんでした。ローカル CLI の使用履歴は引き続き利用できます。";
 "Copilot usage data is unavailable for this account." = "このアカウントの Copilot 使用量データを取得できません。";
 "Copilot usage request failed (HTTP %@). Try again later." = "Copilot の使用量の取得に失敗しました（HTTP %@）。しばらくしてから、もう一度お試しください。";
 "Copilot usage response invalid. Try again later." = "Copilot の使用量の応答が無効です。しばらくしてから、もう一度お試しください。";
@@ -65,6 +66,7 @@
 "Couldn't reach GitHub. Check your connection." = "GitHub に接続できませんでした。インターネット接続を確認してください。";
 "Couldn't reach OpenRouter. Check your connection." = "OpenRouter に接続できませんでした。インターネット接続を確認してください。";
 "Couldn't read Antigravity credentials from Keychain. Unlock Keychain or sign in to Antigravity again." = "キーチェーンから Antigravity の認証情報を読み取れませんでした。キーチェーンのロックを解除するか、Antigravity にログインし直してください。";
+"Couldn't read Copilot CLI usage history. Update Copilot CLI or check the local database permissions." = "Copilot CLI の使用履歴を読み取れませんでした。Copilot CLI を更新するか、ローカルデータベースの権限を確認してください。";
 "Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again." = "OpenCode の auth.json を読み取れませんでした。ファイルのアクセス権を確認するか、OpenCode Go にログインし直してください。";
 "Couldn't read OpenCode's local database. Quit OpenCode and refresh, or check the data directory's permissions." = "OpenCode のローカルデータベースを読み取れませんでした。OpenCode を終了して更新するか、データディレクトリのアクセス権を確認してください。";
 "Couldn't remove the saved OpenRouter API key." = "保存済みの OpenRouter API キーを削除できませんでした。";
@@ -170,6 +172,7 @@
 "Some Antigravity models have no price. Their usage is excluded from totals." = "一部の Antigravity モデルの価格を確認できないため、その使用量は合計から除外されています。";
 "Some local usage has unsupported pricing details and was excluded." = "一部のローカル使用記録は価格情報に対応していないため、集計から除外されました。";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
+"Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "一部のローカル使用記録の日時またはモデル名が無効です。使用履歴が不完全な可能性があります。";
 "Some synced usage data couldn’t be read. Check the log for details." = "同期された使用量データの一部を読み取れませんでした。詳細はログを確認してください。";
 "Start Antigravity or run `agy` and try again." = "Antigravity を起動するか、`agy` を実行してから、もう一度お試しください。";
 "Switching to %@ could not be verified. Check the selected account and try again." = "%@ への切り替えを確認できませんでした。選択したアカウントを確認して、もう一度お試しください。";

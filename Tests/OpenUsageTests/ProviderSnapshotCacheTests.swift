@@ -107,6 +107,48 @@ final class ProviderSnapshotCacheTests: XCTestCase {
         XCTAssertNil(relaunched.snapshot(providerID: "alpha"))
     }
 
+    func testHistoryOnlyWritePersistsWithoutPromotingRelaunchLoadedQuota() throws {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        ProviderSnapshotCache(userDefaults: defaults, storageKey: "k", ttl: 300, now: { now })
+            .store(snapshot("alpha", used: 42, now: now.addingTimeInterval(-30)), producedByIdentityKey: "account")
+        let relaunched = ProviderSnapshotCache(userDefaults: defaults, storageKey: "k", ttl: 300, now: { now })
+        var retained = try XCTUnwrap(relaunched.loadSnapshots(providerIDs: ["alpha"])["alpha"])
+        retained.usageHistory = ProviderUsageHistory(series: DailyUsageSeries(daily: [
+            DailyUsageEntry(date: DailyUsageAccumulator.dayKey(from: now), totalTokens: 100, costUSD: 1)
+        ]))
+
+        relaunched.store(retained, producedByIdentityKey: "account", markSessionFresh: false)
+
+        XCTAssertNil(relaunched.snapshot(providerID: "alpha"))
+        let reloaded = ProviderSnapshotCache(userDefaults: defaults, storageKey: "k", ttl: 300, now: { now })
+        XCTAssertEqual(reloaded.loadSnapshots(providerIDs: ["alpha"])["alpha"], retained)
+        XCTAssertEqual(reloaded.producedByIdentityKey(providerID: "alpha"), "account")
+        XCTAssertNil(reloaded.snapshot(providerID: "alpha"))
+    }
+
+    func testHistoryOnlyWriteKeepsExistingSessionFreshnessWithoutExtendingTTL() {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        var now = start
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "k", ttl: 100, now: { now })
+        var retained = snapshot("alpha", used: 42, now: start)
+        cache.store(retained)
+        now = start.addingTimeInterval(50)
+        retained.usageHistory = ProviderUsageHistory(series: DailyUsageSeries(daily: [
+            DailyUsageEntry(date: DailyUsageAccumulator.dayKey(from: now), totalTokens: 100, costUSD: 1)
+        ]))
+
+        cache.store(retained, markSessionFresh: false)
+
+        XCTAssertEqual(cache.snapshot(providerID: "alpha"), retained)
+        now = start.addingTimeInterval(100)
+        XCTAssertNil(cache.snapshot(providerID: "alpha"))
+        XCTAssertEqual(cache.loadSnapshots(providerIDs: ["alpha"])["alpha"], retained)
+    }
+
     func testSnapshotWrittenThisSessionStaysFreshWithinTTL() {
         let (defaults, suite) = makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }

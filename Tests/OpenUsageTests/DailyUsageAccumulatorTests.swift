@@ -45,4 +45,15 @@ final class DailyUsageAccumulatorTests: XCTestCase {
         XCTAssertEqual(scan.modelUsage?.daily.isEmpty, true)
         XCTAssertEqual(scan.unknownModelsByDay, ["2024-06-02": ["mystery-model"]])
     }
+
+    func testMergedMetadataFailuresCannotBecomeAuthoritativeEmptyHistory() throws {
+        let invalid = LogUsageScan(
+            series: DailyUsageSeries(daily: []), unknownModelsByDay: [:], rejectedMetadataRows: 1
+        )
+        let merged = try XCTUnwrap(DailyUsageAccumulator.merged([invalid, nil]))
+        XCTAssertEqual(merged.rejectedMetadataRows, 1)
+        XCTAssertNotNil(merged.metadataWarning)
+        XCTAssertNil(merged.numericWarning)
+        XCTAssertNil(merged.usageHistory)
+    }
 }

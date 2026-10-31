@@ -18,19 +18,23 @@ final class CopilotProvider: ProviderRuntime {
     let authStore: CopilotAuthStore
     let usageClient: CopilotUsageClient
     let orgBillingClient: CopilotOrgBillingClient
+    let usageScanner: CopilotUsageScanner
     let defaults: UserDefaults
     let now: @Sendable () -> Date
+    private static let historySourceNote = "From your Copilot CLI logs"
 
     init(
         authStore: CopilotAuthStore = CopilotAuthStore(),
         usageClient: CopilotUsageClient = CopilotUsageClient(),
         orgBillingClient: CopilotOrgBillingClient = CopilotOrgBillingClient(),
+        usageScanner: CopilotUsageScanner = CopilotUsageScanner(),
         defaults: UserDefaults = .standard,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.orgBillingClient = orgBillingClient
+        self.usageScanner = usageScanner
         self.defaults = defaults
         self.now = now
     }
@@ -38,7 +42,8 @@ final class CopilotProvider: ProviderRuntime {
     var widgetDescriptors: [WidgetDescriptor] {
         [
             .percent(id: "copilot.premium", provider: provider, title: "Credits")
-                .exportingLimit("premiumCredits", unit: "credits", source: .progressOrValue(kind: .count)),
+                .exportingLimit("premiumCredits", unit: "credits", source: .progressOrValue(kind: .count))
+                .exportingHistory(scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote),
             .values(id: "copilot.extra", provider: provider, title: "Extra Usage", selection: .kind(.count))
                 .exportingLimit("extraUsage", unit: "count", source: .value(kind: .count)),
             .values(id: "copilot.orgCredits", provider: provider, title: "Org Credits", selection: .kind(.count))
@@ -53,24 +58,71 @@ final class CopilotProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // `refresh()`와 같은 source: 에디터 config, gh config, gh keychain 항목.
-        await loadOffMainActor { [authStore] in authStore.loadToken() } != nil
+        await loadOffMainActor { [authStore, usageScanner] in
+            usageScanner.hasLocalUsageStore() || authStore.loadToken() != nil
+        }
     }
 
     func refresh() async -> ProviderSnapshot {
+        let refreshedAt = now()
+        var snapshot: ProviderSnapshot
+        do {
+            snapshot = try await quotaSnapshot(refreshedAt: refreshedAt)
+        } catch {
+            snapshot = ProviderSnapshot.error(provider: provider, error: error)
+            snapshot.refreshedAt = refreshedAt
+        }
+
+        do {
+            if let scan = try await usageScanner.scan(now: refreshedAt) {
+                if let history = scan.usageHistory {
+                    // 로컬 이력은 현재 원격 로그인과 무관한 Mac 전체 기록. 할당량 실패도 이 기록을 가리지 않음.
+                    snapshot.usageHistory = history
+                    if snapshot.errorCategory == nil {
+                        snapshot = UsageHistorySnapshotRenderer.render(
+                            local: snapshot, history: history,
+                            descriptor: UsageHistoryDescriptor(
+                                scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote
+                            ),
+                            now: refreshedAt, combined: false
+                        )
+                    }
+                }
+                if let warning = scan.numericWarning { appendWarning(warning, to: &snapshot) }
+                if let warning = scan.metadataWarning { appendWarning(warning, to: &snapshot) }
+                if let warning = scan.pricingWarning { appendWarning(warning, to: &snapshot) }
+            }
+        } catch is CancellationError {
+            return snapshot
+        } catch {
+            AppDiagnostics.record(
+                .historyScan, result: .failure, category: ErrorCategory.classify(error), providerID: provider.id
+            )
+            appendWarning(error.localizedDescription, presentation: UserFacingErrors.presentation(error), to: &snapshot)
+        }
+        return snapshot
+    }
+
+    private func appendWarning(_ message: String, presentation: LocalizedMessage? = nil, to snapshot: inout ProviderSnapshot) {
+        snapshot.warningPresentation = (snapshot.warningPresentation ?? []) + [presentation ?? .init(message)]
+        snapshot.warning = [snapshot.warning, message].compactMap { $0 }.joined(separator: " ")
+        snapshot.isDegraded = true
+    }
+
+    private func quotaSnapshot(refreshedAt: Date) async throws -> ProviderSnapshot {
         let token = await loadOffMainActor { [authStore] in authStore.loadToken() }
         guard let token else {
-            return ProviderSnapshot.error(provider: provider, error: CopilotAuthError.notLoggedIn)
+            throw CopilotAuthError.notLoggedIn
         }
 
         do {
             let response = try await usageClient.fetchUsage(token: token.value)
 
             if response.statusCode == 401 || response.statusCode == 403 {
-                return ProviderSnapshot.error(provider: provider, error: CopilotAuthError.tokenInvalid)
+                throw CopilotAuthError.tokenInvalid
             }
             guard (200..<300).contains(response.statusCode) else {
-                return ProviderSnapshot.error(provider: provider, error: CopilotUsageError.requestFailed(response.statusCode))
+                throw CopilotUsageError.requestFailed(response.statusCode)
             }
 
             let mapped = try CopilotUsageMapper.map(response)
@@ -85,14 +137,16 @@ final class CopilotProvider: ProviderRuntime {
             }
 
             return ProviderSnapshot.make(
-                provider: provider, plan: mapped.plan, lines: lines, refreshedAt: now(),
+                provider: provider, plan: mapped.plan, lines: lines, refreshedAt: refreshedAt,
                 warning: mapped.hasInvalidPersonalCredits ? "Personal Credits are unavailable. Try refreshing again later." : nil,
                 isDegraded: mapped.hasInvalidPersonalCredits ? true : nil
             )
+        } catch let error as CopilotAuthError {
+            throw error
         } catch let error as CopilotUsageError {
-            return ProviderSnapshot.error(provider: provider, error: error)
+            throw error
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: CopilotUsageError.connectionFailed)
+            throw CopilotUsageError.connectionFailed
         }
     }
 

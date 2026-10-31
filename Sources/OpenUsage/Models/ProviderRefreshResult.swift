@@ -23,8 +23,11 @@ struct ProviderRefreshFailure: Equatable, Sendable {
     var category: ErrorCategory = .other
     var authenticationIssue: ProviderAuthenticationIssue?
     var presentation: LocalizedMessage?
+    var warningPresentations: [LocalizedMessage] = []
 
-    var localizedMessage: String { presentation?.localized ?? message }
+    var localizedMessage: String {
+        ([presentation?.localized ?? message] + warningPresentations.map(\.localized)).joined(separator: " ")
+    }
 }
 
 /// 현재 앱 실행에서 완료된 refresh 결과 — 과거 사용량 cache를 인증 성공으로 오인하지 않음.

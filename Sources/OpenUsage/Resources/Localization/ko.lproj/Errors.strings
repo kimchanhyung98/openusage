@@ -56,6 +56,7 @@
 "Codex weekly timer temporary credentials could not be removed." = "Codex 주간 타이머의 임시 인증 정보를 삭제하지 못했습니다.";
 "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry." = "이전 세션에서 사용한 Codex 주간 타이머의 임시 인증 정보를 삭제하지 못했습니다. OpenUsage를 재시작하여 다시 시도하세요.";
 "Command arguments cannot contain null bytes." = "명령 인자에는 널 바이트를 포함할 수 없습니다.";
+"Copilot quota could not be refreshed. Local CLI history is still available." = "Copilot 할당량을 새로 고치지 못했습니다. 로컬 CLI 사용 이력은 계속 확인할 수 있습니다.";
 "Copilot usage data is unavailable for this account." = "이 계정의 Copilot 사용량 데이터를 확인할 수 없습니다.";
 "Copilot usage request failed (HTTP %@). Try again later." = "Copilot 사용량 요청에 실패했습니다(HTTP %@). 잠시 후 다시 시도하세요.";
 "Copilot usage response invalid. Try again later." = "Copilot 사용량 응답이 올바르지 않습니다. 잠시 후 다시 시도하세요.";
@@ -65,6 +66,7 @@
 "Couldn't reach GitHub. Check your connection." = "GitHub에 연결할 수 없습니다. 인터넷 연결을 확인하세요.";
 "Couldn't reach OpenRouter. Check your connection." = "OpenRouter에 연결할 수 없습니다. 인터넷 연결을 확인하세요.";
 "Couldn't read Antigravity credentials from Keychain. Unlock Keychain or sign in to Antigravity again." = "키체인에서 Antigravity 인증 정보를 읽을 수 없습니다. 키체인 잠금을 해제하거나 Antigravity에 다시 로그인하세요.";
+"Couldn't read Copilot CLI usage history. Update Copilot CLI or check the local database permissions." = "Copilot CLI 사용 이력을 읽지 못했습니다. Copilot CLI를 업데이트하거나 로컬 데이터베이스의 권한을 확인하세요.";
 "Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again." = "OpenCode의 auth.json을 읽을 수 없습니다. 파일 권한을 확인하거나 OpenCode Go에 다시 로그인하세요.";
 "Couldn't read OpenCode's local database. Quit OpenCode and refresh, or check the data directory's permissions." = "OpenCode의 로컬 데이터베이스를 읽을 수 없습니다. OpenCode를 종료한 뒤 새로고침하거나 데이터 디렉터리의 권한을 확인하세요.";
 "Couldn't remove the saved OpenRouter API key." = "저장된 OpenRouter API 키를 삭제할 수 없습니다.";
@@ -170,6 +172,7 @@
 "Some Antigravity models have no price. Their usage is excluded from totals." = "일부 Antigravity 모델의 가격을 확인할 수 없어 해당 사용량을 합계에서 제외했습니다.";
 "Some local usage has unsupported pricing details and was excluded." = "일부 로컬 사용 기록의 가격 정보를 지원하지 않아 집계에서 제외했습니다.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "일부 로컬 사용 기록에 잘못된 숫자가 있습니다. 사용 내역이 누락될 수 있습니다.";
+"Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "일부 로컬 사용 기록의 시각 또는 모델 이름이 잘못되었습니다. 사용 내역이 누락될 수 있습니다.";
 "Some synced usage data couldn’t be read. Check the log for details." = "동기화된 사용량 데이터 일부를 읽지 못했습니다. 자세한 내용은 로그를 확인하세요.";
 "Start Antigravity or run `agy` and try again." = "Antigravity를 시작하거나 `agy`를 실행한 뒤 다시 시도하세요.";
 "Switching to %@ could not be verified. Check the selected account and try again." = "%@ 계정으로 전환되었는지 확인하지 못했습니다. 선택한 계정을 확인하고 다시 시도하세요.";

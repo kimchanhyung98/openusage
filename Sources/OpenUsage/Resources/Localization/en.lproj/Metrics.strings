@@ -60,6 +60,7 @@
 "From your Claude usage history and pi (estimated)" = "From your Claude usage history and pi (estimated)";
 "From your Codex logs (estimated)" = "From your Codex logs (estimated)";
 "From your Codex logs and pi (estimated)" = "From your Codex logs and pi (estimated)";
+"From your Copilot CLI logs" = "From your Copilot CLI logs";
 "From your Cursor usage export" = "From your Cursor usage export";
 "From your Cursor usage history." = "From your Cursor usage history.";
 "From your Grok logs (estimated)" = "From your Grok logs (estimated)";

@@ -40,7 +40,7 @@ final class WidgetDataStore {
     private static let meterStyleKey = "meterStyle"
     private static let resetDisplayModeKey = "resetDisplayMode"
     private static let alwaysShowPacingKey = "alwaysShowPacing"
-    /// 실패한 provider의 재probe 억제 윈도우 — 실패는 캐시되지 않아 이 negative-cache만이 wake 연발의 재probe를 차단.
+    /// 실패한 provider의 재probe 억제 윈도우 — 로컬 이력 캐시와 별개로 wake 연발의 재probe 차단.
     /// refresh interval보다 짧아 5분 heartbeat 재시도는 유지; 수동 force refresh(⌘R)는 항상 우회.
     private static let failureRetryBackoff: TimeInterval = 60
     static let defaultSlowProviderRefreshThreshold: TimeInterval = 10
@@ -193,7 +193,7 @@ final class WidgetDataStore {
             return RefreshSetting.cadence(for: id) == cadence && (scheduledRefreshDate(for: id) ?? now()) <= now()
         }
         guard !providerIDs.isEmpty else { return }
-        let historyProviderIDs = providerIDs.filter { localSnapshots[$0]?.usageHistory != nil }
+        let previousHistories = providerIDs.map { localSnapshots[$0]?.usageHistory }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
         let tasks = providerIDs.map { providerID in
@@ -209,10 +209,15 @@ final class WidgetDataStore {
         } onCancel: {
             for task in tasks { task.cancel() }
         }
-        let historyRemoved = historyProviderIDs.contains { localSnapshots[$0]?.usageHistory == nil }
         guard !Task.isCancelled else {
+            let historyRemoved = zip(providerIDs, previousHistories).contains { providerID, history in
+                history != nil && localSnapshots[providerID]?.usageHistory == nil
+            }
             if historyRemoved { onLocalHistoryChanged?() }
             return
+        }
+        let historyChanged = zip(providerIDs, previousHistories).contains { providerID, history in
+            localSnapshots[providerID]?.usageHistory != history
         }
         // 각 갱신 그룹의 완료 기록 — 대상별 다음 일정은 별도 보존.
         lastRefreshAt = now()
@@ -222,7 +227,7 @@ final class WidgetDataStore {
         let failed = outcomes.count { $0 == .failed }
         let cached = outcomes.count { $0 == .cacheHit }
         let backedOff = outcomes.count { $0 == .backedOff }
-        if refreshed > 0 || historyRemoved {
+        if refreshed > 0 || historyChanged {
             onLocalHistoryChanged?()
         }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
@@ -515,7 +520,7 @@ final class WidgetDataStore {
         }
         if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
 
-        // 실패는 캐시되지 않아 backoff 만료까지 재probe 보류; 수동 force refresh는 backoff 무시.
+        // 현재 실패는 이력 캐시와 무관하게 backoff 만료까지 재probe 보류; 수동 force refresh는 backoff 무시.
         if !force, let retryAfter = failureRetryAfter[providerID], now() < retryAfter {
             AppLog.debug(.refresh, "backoff skip \(providerID) (failed <\(Int(Self.failureRetryBackoff))s ago)")
             return .backedOff
@@ -619,16 +624,42 @@ final class WidgetDataStore {
             && providerIdentityKeys[providerID] == nil
         if let message = Self.errorMessage(in: snapshot) {
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
-                message: message,
+                message: [message, snapshot.warning].compactMap { $0 }.joined(separator: " "),
                 category: snapshot.errorCategory ?? .other,
                 authenticationIssue: snapshot.authenticationIssue,
-                presentation: snapshot.errorPresentation
+                presentation: snapshot.errorPresentation ?? snapshot.warning.map { _ in .verbatim(message) },
+                warningPresentations: snapshot.warningPresentation ?? snapshot.warning.map { [.verbatim($0)] } ?? []
             ))
             // 신원 미확인 Claude는 같은 계정임을 보장할 수 없어 이전 값을 숨기고, 나머지는 last-good 유지.
             if unresolvedClaudeIdentity {
                 let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
                 rebuildRenderedSnapshots()
                 if removedHistory, notifyHistoryChange { onLocalHistoryChanged?() }
+            } else if let history = snapshot.usageHistory,
+                      let descriptor = registry.historyDescriptorsByProvider[providerID] {
+                // 한도 실패와 독립된 로컬 이력만 갱신. 기존 한도·플랜·조회 시각은 그대로 보존.
+                var retained = localSnapshots[providerID] ?? ProviderSnapshot.make(
+                    provider: provider.provider, plan: nil, lines: [], refreshedAt: snapshot.refreshedAt
+                )
+                retained.usageHistory = history
+                retained.warning = snapshot.warning
+                retained.warningPresentation = snapshot.warningPresentation
+                retained.authenticationIssue = snapshot.authenticationIssue
+                retained.isDegraded = true
+                retained.liveQuotaObservedAt = nil
+                retained.codexResetClaimBinding = nil
+                retained = UsageHistorySnapshotRenderer.render(
+                    local: retained, history: history, descriptor: descriptor, now: now(), combined: false
+                )
+                localSnapshots[providerID] = retained
+                // 정상 캐시 없는 이력 전용 값은 CLI의 persisted freshness에서 한도 성공으로 오인하지 않도록 미저장.
+                if !staleAccountStamp, cache.loadSnapshots(providerIDs: [providerID])[providerID] != nil {
+                    cache.store(
+                        retained, producedByIdentityKey: providerIdentityKeys[providerID], markSessionFresh: false
+                    )
+                }
+                rebuildRenderedSnapshots()
+                if notifyHistoryChange { onLocalHistoryChanged?() }
             }
             // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)

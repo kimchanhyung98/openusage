@@ -14,8 +14,8 @@ struct ProviderSnapshotCache {
     /// 인스턴스당 최대 1회 decode(첫 접근); 쓰기는 mirror 갱신 후 persist. lock으로 value-type 공유 안전.
     private let memo = OSAllocatedUnfairLock<Payload?>(initialState: nil)
 
-    /// 이 cache 인스턴스 생애(=이 세션)에 `store`가 쓴 provider id — freshness gate는 여기 있는 provider만
-    /// 신뢰. launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
+    /// 이 cache 인스턴스에서 정상 refresh로 저장한 provider ID — 로컬 이력만 갱신한 쓰기는 제외.
+    /// launch에 disk에서 로드된 snapshot은 표시만 되고 fresh로 취급되지 않아 첫 pass에 refresh 강제(#697).
     private let sessionWrites = OSAllocatedUnfairLock<Set<String>>(initialState: [])
 
     private let userDefaults: UserDefaults
@@ -81,14 +81,16 @@ struct ProviderSnapshotCache {
 
     /// `producedByIdentityKey`는 이 snapshot을 생산한 account identity(쓰기 시점의 카드 identity) —
     /// account identity 없는 provider·identity 미해석이면 nil.
-    func store(_ snapshot: ProviderSnapshot, producedByIdentityKey: String? = nil) {
+    /// `markSessionFresh`가 false이면 기존 세션 freshness 자격 유지.
+    func store(
+        _ snapshot: ProviderSnapshot, producedByIdentityKey: String? = nil, markSessionFresh: Bool = true
+    ) {
         guard !snapshot.lines.contains(where: \.isError) else {
             AppLog.debug(.cache, "skip write \(snapshot.providerID) (error snapshot)")
             return
         }
         AppLog.debug(.cache, "write \(snapshot.providerID)")
-        // 이 세션의 쓰기로 기록 — 이제 freshness gate 충족(launch 로드 snapshot은 불충족, `sessionWrites` 참고).
-        sessionWrites.withLock { $0.insert(snapshot.providerID) }
+        if markSessionFresh { sessionWrites.withLock { $0.insert(snapshot.providerID) } }
         var payload = loadPayload()
         payload.snapshots[snapshot.providerID] = snapshot
         // entry 옆에 생산 account를 stamp(또는 clear) — nil identity는 이전 stamp를 반드시 clear.

@@ -56,6 +56,7 @@
 "Codex weekly timer temporary credentials could not be removed." = "Codex weekly timer temporary credentials could not be removed.";
 "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry." = "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry.";
 "Command arguments cannot contain null bytes." = "Command arguments cannot contain null bytes.";
+"Copilot quota could not be refreshed. Local CLI history is still available." = "Copilot quota could not be refreshed. Local CLI history is still available.";
 "Copilot usage data is unavailable for this account." = "Copilot usage data is unavailable for this account.";
 "Copilot usage request failed (HTTP %@). Try again later." = "Copilot usage request failed (HTTP %@). Try again later.";
 "Copilot usage response invalid. Try again later." = "Copilot usage response invalid. Try again later.";
@@ -65,6 +66,7 @@
 "Couldn't reach GitHub. Check your connection." = "Couldn't reach GitHub. Check your connection.";
 "Couldn't reach OpenRouter. Check your connection." = "Couldn't reach OpenRouter. Check your connection.";
 "Couldn't read Antigravity credentials from Keychain. Unlock Keychain or sign in to Antigravity again." = "Couldn't read Antigravity credentials from Keychain. Unlock Keychain or sign in to Antigravity again.";
+"Couldn't read Copilot CLI usage history. Update Copilot CLI or check the local database permissions." = "Couldn't read Copilot CLI usage history. Update Copilot CLI or check the local database permissions.";
 "Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again." = "Couldn't read OpenCode's auth.json. Check its file permissions or log into OpenCode Go again.";
 "Couldn't read OpenCode's local database. Quit OpenCode and refresh, or check the data directory's permissions." = "Couldn't read OpenCode's local database. Quit OpenCode and refresh, or check the data directory's permissions.";
 "Couldn't remove the saved OpenRouter API key." = "Couldn't remove the saved OpenRouter API key.";
@@ -170,6 +172,7 @@
 "Some Antigravity models have no price. Their usage is excluded from totals." = "Some Antigravity models have no price. Their usage is excluded from totals.";
 "Some local usage has unsupported pricing details and was excluded." = "Some local usage has unsupported pricing details and was excluded.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
+"Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.";
 "Some synced usage data couldn’t be read. Check the log for details." = "Some synced usage data couldn’t be read. Check the log for details.";
 "Start Antigravity or run `agy` and try again." = "Start Antigravity or run `agy` and try again.";
 "Switching to %@ could not be verified. Check the selected account and try again." = "Switching to %@ could not be verified. Check the selected account and try again.";
