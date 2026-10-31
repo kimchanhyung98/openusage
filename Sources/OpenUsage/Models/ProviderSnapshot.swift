@@ -8,6 +8,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var displayName: String
     var plan: String?
     var lines: [MetricLine]
+    /// 카드의 키별 사용액과 분리된 계정 전체 기간 합계 — 지원 provider만 사용.
+    var totalSpendLines: [MetricLine]?
     var refreshedAt: Date
     /// spend row 구성용 raw 정규화 일별 history — 항상 이 Mac 소유.
     /// peer history는 in-memory 렌더 뷰에서만 결합, cache 미기록.
@@ -35,7 +37,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var codexResetClaimBinding: CodexResetClaimBinding?
 
     private enum CodingKeys: String, CodingKey {
-        case providerID, displayName, plan, lines, refreshedAt, usageHistory, warning
+        case providerID, displayName, plan, lines, totalSpendLines, refreshedAt, usageHistory, warning
         case errorCategory, authenticationIssue, isDegraded, liveQuotaObservedAt
         case quotaObservedAt, usageRetryAfter, warningPresentation, metricPresentations
     }
@@ -45,6 +47,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         displayName: String,
         plan: String? = nil,
         lines: [MetricLine],
+        totalSpendLines: [MetricLine]? = nil,
         refreshedAt: Date = Date(),
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
@@ -63,6 +66,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         self.displayName = displayName
         self.plan = plan
         self.lines = lines
+        self.totalSpendLines = totalSpendLines
         self.refreshedAt = refreshedAt
         self.usageHistory = usageHistory
         self.warning = warning
@@ -93,6 +97,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
         provider: Provider,
         plan: String?,
         lines: [MetricLine],
+        totalSpendLines: [MetricLine]? = nil,
         refreshedAt: Date,
         usageHistory: ProviderUsageHistory? = nil,
         warning: String? = nil,
@@ -110,6 +115,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
             displayName: provider.displayName,
             plan: plan,
             lines: lines,
+            totalSpendLines: totalSpendLines,
             refreshedAt: refreshedAt,
             usageHistory: usageHistory,
             warning: warning,

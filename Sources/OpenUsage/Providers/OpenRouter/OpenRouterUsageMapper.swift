@@ -30,14 +30,18 @@ enum OpenRouterUsageMapper {
     }
 
     /// `/key`에서 period spend + per-key cap(선택) 생성, tier는 plan 이름으로 노출.
-    static func keyMetrics(from data: [String: Any]) -> (plan: String?, lines: [MetricLine], hasInvalidKeyLimit: Bool) {
+    static func keyMetrics(
+        from data: [String: Any], includePeriodUsage: Bool = true
+    ) -> (plan: String?, lines: [MetricLine], hasInvalidKeyLimit: Bool) {
         var lines: [MetricLine] = []
         var hasInvalidKeyLimit = false
 
         // period spend는 로컬 로그 scan이 아닌 API 직접 값 — 실측 0은 측정된 0으로 유지
-        appendSpend(data["usage_daily"], label: "Today", into: &lines)
-        appendSpend(data["usage_weekly"], label: "This Week", into: &lines)
-        appendSpend(data["usage_monthly"], label: "This Month", into: &lines)
+        if includePeriodUsage {
+            appendSpend(data["usage_daily"], label: "Today", into: &lines)
+            appendSpend(data["usage_weekly"], label: "This Week", into: &lines)
+            appendSpend(data["usage_monthly"], label: "This Month", into: &lines)
+        }
 
         if let limit = ProviderParse.number(data["limit"]), limit > 0 {
             // `usage`는 전체 기간 누적액 — 현재 한도 창의 잔여액으로만 사용량 계산.

@@ -3,6 +3,7 @@ import Foundation
 struct OpenRouterUsageClient: Sendable {
     static let creditsURL = "https://openrouter.ai/api/v1/credits"
     static let keyURL = "https://openrouter.ai/api/v1/key"
+    static let analyticsURL = "https://openrouter.ai/api/v1/analytics/query"
 
     var http: any HTTPClient
 
@@ -18,6 +19,32 @@ struct OpenRouterUsageClient: Sendable {
     /// best-effort key metadata 조회 — tier, per-key spend cap(선택), daily/weekly/monthly spend.
     func fetchKey(apiKey: String) async throws -> HTTPResponse {
         try await get(Self.keyURL, apiKey: apiKey)
+    }
+
+    func fetchAnalytics(apiKey: String, start: Date, end: Date) async throws -> HTTPResponse {
+        guard let url = URL(string: Self.analyticsURL) else {
+            throw OpenRouterUsageError.invalidResponse
+        }
+        let body: [String: Any] = [
+            "metrics": ["total_usage", "tokens_total"],
+            "time_range": [
+                "start": OpenUsageISO8601.string(from: start),
+                "end": OpenUsageISO8601.string(from: end)
+            ],
+            "limit": 10
+        ]
+
+        return try await http.send(HTTPRequest(
+            method: "POST",
+            url: url,
+            headers: [
+                "Authorization": "Bearer \(apiKey)",
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            ],
+            body: try JSONSerialization.data(withJSONObject: body),
+            timeout: 15
+        ))
     }
 
     private func get(_ urlString: String, apiKey: String) async throws -> HTTPResponse {

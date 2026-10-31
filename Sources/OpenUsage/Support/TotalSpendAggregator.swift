@@ -171,8 +171,9 @@ enum TotalSpendAggregator {
         title: (Provider) -> String = { $0.displayName }
     ) -> TotalSpend {
         let slices = providers.compactMap { provider -> TotalSpendSlice? in
-            guard let snapshot = snapshots[provider.id],
-                  let line = snapshot.line(label: period.lineLabel),
+            guard let snapshot = snapshots[provider.id] else { return nil }
+            let lines = provider.usesDedicatedSpendLines ? (snapshot.totalSpendLines ?? []) : snapshot.lines
+            guard let line = lines.first(where: { $0.label == period.lineLabel }),
                   case .values(_, let values, _, _, _, _) = line else { return nil }
 
             let dollars = values.filter { $0.kind == .dollars }

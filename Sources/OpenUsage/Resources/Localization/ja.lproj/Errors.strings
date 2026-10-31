@@ -170,6 +170,7 @@
 "Soft limit at %@%% used" = "ソフトリミット：使用量%@%%";
 "Soft limit reached at %@%% used" = "使用量%@%%でソフトリミットに達しました";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "一部の Antigravity モデルの価格を確認できないため、その使用量は合計から除外されています。";
+"Some OpenRouter statistics are unavailable. Other usage data is still available." = "一部の OpenRouter 統計を取得できません。他の使用量データは引き続き表示されます。";
 "Some local usage has unsupported pricing details and was excluded." = "一部のローカル使用記録は価格情報に対応していないため、集計から除外されました。";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
 "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "一部のローカル使用記録の日時またはモデル名が無効です。使用履歴が不完全な可能性があります。";

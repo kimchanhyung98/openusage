@@ -7,12 +7,17 @@ struct Provider: Identifiable, Hashable {
     let icon: IconSource
     /// 카드 확장 영역에 버튼으로 표시되는 provider별 quick link — 기본값 빈 배열.
     let links: [ProviderLink]
+    let usesDedicatedSpendLines: Bool
 
-    init(id: String, displayName: String, icon: IconSource, links: [ProviderLink] = []) {
+    init(
+        id: String, displayName: String, icon: IconSource,
+        links: [ProviderLink] = [], usesDedicatedSpendLines: Bool = false
+    ) {
         self.id = id
         self.displayName = displayName
         self.icon = icon
         self.links = links
+        self.usesDedicatedSpendLines = usesDedicatedSpendLines
     }
 
     /// 렌더 가능한 link만 필터 — trim 후 비어 있지 않은 label·URL, `http(s)` scheme 한정.

@@ -170,6 +170,7 @@
 "Soft limit at %@%% used" = "Soft limit at %@%% used";
 "Soft limit reached at %@%% used" = "Soft limit reached at %@%% used";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "Some Antigravity models have no price. Their usage is excluded from totals.";
+"Some OpenRouter statistics are unavailable. Other usage data is still available." = "Some OpenRouter statistics are unavailable. Other usage data is still available.";
 "Some local usage has unsupported pricing details and was excluded." = "Some local usage has unsupported pricing details and was excluded.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
 "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.";
