@@ -106,7 +106,8 @@ struct TotalSpendCard: View {
 
     /// 링에 실제 반영되는 프로바이더 목록 표기 — 하드코딩 목록 금지, tooltip의 거짓 방지.
     private var infoTooltip: String {
-        let names = providers.map { container.displayName(for: $0) }
+        var seen = Set<String>()
+        let names = providers.map { container.displayName(for: $0) }.filter { seen.insert($0).inserted }
         return L10n.dashboard("Only includes %@.", names.formatted(.list(type: .and).locale(L10n.locale)))
     }
 
