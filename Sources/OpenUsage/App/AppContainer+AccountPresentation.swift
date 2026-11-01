@@ -1,6 +1,20 @@
 import Foundation
 
 extension AppContainer {
+    static func configureQuotaNotificationNames(
+        dataStore: WidgetDataStore,
+        accounts: ProviderAccountsStore,
+        profiles: AccountProfilesStore,
+        profileID: @escaping @MainActor (String) -> String?
+    ) {
+        dataStore.resolveDisplayName = { cardID in
+            guard let id = profileID(cardID), let profile = profiles.profile(id: id) else {
+                return accounts.resolvedDisplayName(cardID: cardID)
+            }
+            return L10n.metrics("%@ — %@", profile.family.capitalized, profile.label)
+        }
+    }
+
     func orderedAccountProfiles(for family: String) -> [AccountProfile] {
         accountCardPresentation.orderedProfiles(accountProfiles.profiles(family: family), family: family)
     }

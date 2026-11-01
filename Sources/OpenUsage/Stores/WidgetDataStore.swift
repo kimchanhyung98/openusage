@@ -32,8 +32,8 @@ final class WidgetDataStore {
     /// snapshot cache의 account stamp 근거 — 쓰기는 producer를 기록, launch 로드는 stamp 일치 entry만 paint.
     private var providerIdentityKeys: [String: String]
     private var familyTotalHistoryCardIDs: Set<String>
-    /// Card id → live 카드 title 리졸버(비계정 provider는 nil) — nil(테스트·one-shot CLI)이면 derived name 폴백.
-    private let resolveDisplayName: (@MainActor (String) -> String?)?
+    /// 할당량 알림 표시명 — 발송 시 현재 카드의 계정명 조회, nil이면 provider 이름 사용.
+    @ObservationIgnored var resolveDisplayName: (@MainActor (String) -> String?)?
     /// Milestone notification 전달 지점 — 반환 Bool은 실제 전달 여부, false면 un-marked로 남겨 다음 pass 재시도.
     private let postNotification: QuotaNotificationEvaluator.Post
 

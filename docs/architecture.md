@@ -204,6 +204,8 @@ flowchart LR
 ```
 
 `QuotaNotificationEvaluator`는 계정·지표별 잔량과 사용 속도의 상태 변화 판정.
+할당량 알림의 표시명은 카드에 연결된 등록 계정명을 매번 조회하며, 이름 변경·계정 전환 후에도 현재 매핑 사용.
+등록 계정 연결이 없는 카드는 기존 프로바이더 표시명 유지.
 `CodexResetWatchNotificationEvaluator`는 계정과 무관한 공개 예측·예정 이벤트 판정.
 중복 방지 기준과 조회 주기가 다르므로 두 판정 모듈을 분리하고 macOS 발송 경로 공유.
 
