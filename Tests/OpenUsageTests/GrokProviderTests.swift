@@ -313,6 +313,31 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Usage Trend" }), "no log means no trend chart")
     }
 
+    func testUnattributedAndInvalidSessionsKeepSeparateWarningsAndPreserveHistory() async {
+        let scanner = GrokLogUsageScanner(
+            files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+            {"pid":1,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+            {"ts":"2026-06-18T10:00:00Z","pid":1,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+            {"ts":"2026-06-18T11:00:00Z","pid":1,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":-1}}
+            """]),
+            environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/home/test") }
+        )
+        let provider = makeProvider(httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner)
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
+        XCTAssertTrue(snapshot.warning?.contains("model names") == true)
+        XCTAssertEqual(snapshot.warningPresentation, [
+            LocalizedMessage("Some local usage records contain invalid numbers. Usage history may be incomplete."),
+            LocalizedMessage("Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.")
+        ])
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(values(snapshot.lines, "Today"))
+    }
+
     /// happy-path 기본 route — 캡처된 weekly credits config + plan 이름
     private static func defaultRoutes(_ request: HTTPRequest) -> HTTPResponse {
         if request.url == GrokUsageClient.creditsConfigURL {

@@ -58,6 +58,64 @@ final class GrokLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 5.0, accuracy: 0.0001)
     }
 
+    func testSessionsSharingProcessKeepTheirOwnModels() {
+        let log = """
+        {"pid":7,"sid":"parent","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"sid":"child","msg":"backend_search: model switch","ctx":{"new_model":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"unknown-default"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 4_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 24)
+        let models = usage.modelUsage?.daily.first?.models ?? []
+        XCTAssertEqual(models.first { $0.model == "grok-build" }?.costUSD, 6)
+        XCTAssertEqual(models.first { $0.model == "grok-composer-2.5-fast" }?.costUSD, 18)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+    }
+
+    func testSameSessionIDInDifferentProcessesIsIndependent() {
+        let log = """
+        {"pid":7,"sid":"session","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":8,"sid":"session","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":8,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 2_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 5)
+    }
+
+    func testUnscopedChildModelCannotChangeParentOrPriceUnknownChild() {
+        let log = """
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"ts":"2026-05-31T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1}}
+        {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast","parent_model":"grok-build"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 1_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 2)
+        XCTAssertEqual(usage.modelUsage?.daily.first?.models.map(\.model), ["grok-build"])
+        XCTAssertEqual(usage.rejectedMetadataRows, 1)
+        XCTAssertNotNil(usage.metadataWarning)
+    }
+
+    func testScopedChildModelIsUsedWhenSessionIsKnown() {
+        let log = """
+        {"pid":7,"sid":"parent","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"sid":"child","msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 5)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+    }
+
     func testUsesCachedReadRateForCachedPromptTokens() {
         // 1M 입력 중 800k는 캐시 읽기 — 캐시를 포함한 요청 전체에 장문 단가 적용.
         let log = """
