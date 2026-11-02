@@ -96,8 +96,10 @@ final class GrokProvider: ProviderRuntime {
         // Grok CLI 로그를 직접 읽어 shared pricing store로 가격 산정 — `scan` await로 읽기+parse는 main actor 밖에서 수행
         var usageHistory: ProviderUsageHistory?
         var warning: String?
+        var warningPresentation: [LocalizedMessage] = []
         if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
-            warning = scan.numericWarning
+            warning = [scan.numericWarning, scan.metadataWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            warningPresentation = [scan.numericWarning, scan.metadataWarning].compactMap { $0 }.map { .init($0) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(
@@ -120,6 +122,7 @@ final class GrokProvider: ProviderRuntime {
             refreshedAt: now(),
             usageHistory: usageHistory,
             warning: warning,
+            warningPresentation: warningPresentation.isEmpty ? nil : warningPresentation,
             metricPresentations: mapped.metricPresentations
         )
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Grok CLI의 로컬 로그에서 일별 token/cost 추정치 생성.
-/// token 행(`shell.turn.inference_done`)에 model id가 없어 CLI process(`pid`)별 current model 추적으로 귀속.
+/// token 행(`shell.turn.inference_done`)에 model id가 없어 process·session별 모델 추적으로 귀속.
 /// 출력은 Claude/Codex spend tile과 동일한 `DailyUsageSeries` 형태로 `SpendTileMapper`에 그대로 연결.
 struct GrokLogUsageScanner: Sendable {
     var files: TextFileAccessing
@@ -55,13 +55,15 @@ struct GrokLogUsageScanner: Sendable {
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.
-    /// model 이벤트는 날짜와 무관하게 `pid`별 current model 갱신 — `since` 경계에 걸친 session도 귀속 유지.
-    /// window 내 `inference_done` 행은 해당 `pid`의 current model로 가격 산정 후 로컬 달력일로 bucket 분류.
+    /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
     static func parse(
         _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
     ) -> LogUsageScan {
         var modelByPID: [Int: String] = [:]
+        var modelBySession: [SessionKey: String] = [:]
+        var ambiguousPIDs: Set<Int> = []
         var accumulator = DailyUsageAccumulator()
+        var rejectedMetadataRows = 0
 
         text.enumerateLines { line, _ in
             // JSON parse 전 저비용 pre-filter — token 행은 "inference_done", 모든 model 이벤트의 `msg`는 "model" 포함
@@ -73,14 +75,35 @@ struct GrokLogUsageScanner: Sendable {
 
             let ctx = object["ctx"] as? [String: Any] ?? [:]
             let pid = UsageLogNumbers.count(object["pid"]).flatMap { $0 > 0 ? $0 : nil }
+            let sid = (object["sid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let session = pid.flatMap { pid in sid.map { SessionKey(pid: pid, sid: $0) } }
 
-            if let model = modelID(msg: msg, ctx: ctx) {
-                if let pid { modelByPID[pid] = model }
+            // 공식 child_model 이벤트에는 sid가 없음. 이후 미확인 세션을 부모 기본 모델로 가격 산정 금지.
+            if msg == "subagent model resolved", sid == nil {
+                if let pid { ambiguousPIDs.insert(pid) }
                 return
             }
 
-            guard msg == "shell.turn.inference_done",
-                  ctx["prompt_tokens"] != nil,
+            if let model = modelID(msg: msg, ctx: ctx) {
+                if let session {
+                    modelBySession[session] = model
+                } else if let pid {
+                    modelByPID[pid] = model
+                }
+                return
+            }
+
+            guard msg == "shell.turn.inference_done" else { return }
+            let model: String?
+            if let session {
+                if modelBySession[session] == nil, !ambiguousPIDs.contains(session.pid) {
+                    modelBySession[session] = modelByPID[session.pid]
+                }
+                model = modelBySession[session]
+            } else {
+                model = pid.flatMap { ambiguousPIDs.contains($0) ? nil : modelByPID[$0] }
+            }
+            guard ctx["prompt_tokens"] != nil,
                   let timestamp = (object["ts"] as? String).flatMap(OpenUsageISO8601.date(from:)),
                   timestamp >= since
             else { return }
@@ -103,8 +126,12 @@ struct GrokLogUsageScanner: Sendable {
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
 
             // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
-            // 가격 없는 model 이름만 `unknownModelsByDay`(warning triangle)로 노출, 미귀속 행은 알릴 이름 자체가 없음
-            guard let model = pid.flatMap({ modelByPID[$0] }) else { return }
+            guard let model else {
+                if session != nil, totalTokens > 0 {
+                    rejectedMetadataRows += 1
+                }
+                return
+            }
             let tokenBreakdown = TokenBreakdown(input: inputNoCache, cacheRead: cacheRead, output: output)
             guard let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown) else {
                 if totalTokens > 0 {
@@ -115,7 +142,20 @@ struct GrokLogUsageScanner: Sendable {
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        return accumulator.build(source: "grok", reportNumericFailures: reportNumericFailures)
+        if rejectedMetadataRows > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "grok",
+                localContext: "source=grok; unattributed_session_rows=\(rejectedMetadataRows)"
+            )
+        }
+        return accumulator.build(
+            source: "grok", reportNumericFailures: reportNumericFailures, rejectedMetadataRows: rejectedMetadataRows
+        )
+    }
+
+    private struct SessionKey: Hashable {
+        let pid: Int
+        let sid: String
     }
 
     /// 같은 파일의 손상 행 수 증가만 보고; 정상 window로 돌아오면 복구 기록.
@@ -135,7 +175,7 @@ struct GrokLogUsageScanner: Sendable {
     }
 
     /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
-    /// Grok CLI는 여러 이벤트 shape로 active model을 알림 — 모두 `pid` 기준.
+    /// 세션 정보는 호출부에서 판별; 여기서는 모델 필드만 해석.
     private static func modelID(msg: String, ctx: [String: Any]) -> String? {
         let raw: Any?
         switch msg {
@@ -144,9 +184,9 @@ struct GrokLogUsageScanner: Sendable {
         case "model catalog: notifying clients":
             raw = ctx["current_model_id"]
         case "backend_search: model switch":
-            raw = ctx["model"] ?? ctx["current_model_id"] ?? ctx["model_id"]
+            raw = ctx["new_model"] ?? ctx["model"] ?? ctx["current_model_id"] ?? ctx["model_id"]
         case "subagent model resolved":
-            raw = ctx["model_id"] ?? ctx["model"]
+            raw = ctx["child_model"] ?? ctx["model_id"] ?? ctx["model"]
         default:
             return nil
         }
