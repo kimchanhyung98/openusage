@@ -258,3 +258,6 @@
 "macOS couldn't prepare the authorization request." = "macOS couldn't prepare the authorization request.";
 "macOS rejected the authorization request." = "macOS rejected the authorization request.";
 "macOS wouldn't update Launch at Login. Check System Settings → Login Items." = "macOS wouldn't update Launch at Login. Check System Settings → Login Items.";
+"Kimi Code usage history could not be read. Check the local session files and try again." = "Kimi Code usage history could not be read. Check the local session files and try again.";
+"Some Kimi Code usage records are invalid. Token totals may be incomplete." = "Some Kimi Code usage records are invalid. Token totals may be incomplete.";
+"Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only." = "Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only.";
