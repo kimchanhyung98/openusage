@@ -328,14 +328,35 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertTrue(snapshot.warning?.contains("model names") == true)
+        XCTAssertTrue(snapshot.warning?.contains("could not be linked to a model") == true)
         XCTAssertEqual(snapshot.warningPresentation, [
             LocalizedMessage("Some local usage records contain invalid numbers. Usage history may be incomplete."),
-            LocalizedMessage("Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.")
+            LocalizedMessage("Some local usage records could not be linked to a model. Usage history may be incomplete.")
         ])
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(values(snapshot.lines, "Today"))
+    }
+
+    func testUnscopedAmbiguousUsageWarnsWithoutPublishingEmptyHistory() async {
+        let scanner = GrokLogUsageScanner(
+            files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
+            {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"pid":1,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+            {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+            """]),
+            environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/home/test") }
+        )
+        let snapshot = await makeProvider(
+            httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner
+        ).refresh()
+        XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
+        XCTAssertEqual(snapshot.warningPresentation, [
+            LocalizedMessage("Some local usage records could not be linked to a model. Usage history may be incomplete.")
+        ])
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(snapshot.errorCategory)
     }
 
     /// happy-path 기본 route — 캡처된 weekly credits config + plan 이름

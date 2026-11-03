@@ -75,6 +75,60 @@ final class GrokLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(usage.rejectedMetadataRows, 0)
     }
 
+    func testProcessModelChangeUpdatesInheritedButNotExplicitSessionModels() {
+        let log = """
+        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"sid":"explicit","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"inherited","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"pid":7,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"inherited","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T11:00:00Z","pid":7,"sid":"explicit","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 3_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 7)
+        let models = usage.modelUsage?.daily.first?.models ?? []
+        XCTAssertEqual(models.first { $0.model == "grok-build" }?.totalTokens, 2_000_000)
+        XCTAssertEqual(models.first { $0.model == "grok-composer-2.5-fast" }?.totalTokens, 1_000_000)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+    }
+
+    func testAmbiguousProcessWithoutSessionIDWarnsAndPreservesHistory() {
+        let diagnostics = DiagnosticEventRecorder()
+        let log = """
+        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-05-31T09:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertTrue(usage.series.daily.isEmpty)
+        XCTAssertEqual(usage.rejectedMetadataRows, 1)
+        XCTAssertNotNil(usage.metadataWarning)
+        XCTAssertNil(usage.usageHistory)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "grok")
+        ])
+    }
+
+    func testProcessSwitchBeforeUnscopedChildPreservesLatestParentModel() {
+        let log = """
+        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-05-31T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1}}
+        {"pid":7,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-build"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 1_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 3)
+        XCTAssertEqual(usage.modelUsage?.daily.first?.models.map(\.model), ["grok-composer-2.5-fast"])
+        XCTAssertEqual(usage.rejectedMetadataRows, 1)
+    }
+
     func testSameSessionIDInDifferentProcessesIsIndependent() {
         let log = """
         {"pid":7,"sid":"session","msg":"model changed","ctx":{"model":"grok-build"}}
