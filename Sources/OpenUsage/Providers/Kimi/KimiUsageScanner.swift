@@ -229,8 +229,15 @@ actor KimiUsageScanner {
                   let usage = object["usage"] as? [String: Any],
                   let input = count(usage["inputOther"]),
                   let output = count(usage["output"]),
-                  let cacheRead = count(usage["inputCacheRead"]),
-                  let cacheWrite = count(usage["inputCacheCreation"]),
+                  let cacheWrite = count(usage["inputCacheCreation"])
+            else {
+                result.invalidRows += 1
+                continue
+            }
+            // OpenAI 계열의 캐시 읽기 생략 시 inputOther는 전체 입력. 캐시 과금 구분은 미확정.
+            let cacheReadUnknown = usage["inputCacheRead"] == nil
+                && (scopedRequest?.protocolName == "openai" || scopedRequest?.protocolName == "openai_responses")
+            guard let cacheRead = cacheReadUnknown ? 0 : count(usage["inputCacheRead"]),
                   let tokens = UsageLogNumbers.sum(input, output, cacheRead, cacheWrite)
             else {
                 result.invalidRows += 1
@@ -242,7 +249,7 @@ actor KimiUsageScanner {
             result.records.append(Record(
                 timestamp: Date(timeIntervalSince1970: Double(milliseconds) / 1_000),
                 tokens: tokens,
-                pricingInput: scopedRequest.map { PricingInput(
+                pricingInput: cacheReadUnknown ? nil : scopedRequest.map { PricingInput(
                     model: $0.model, protocolName: $0.protocolName, thinkingEffort: $0.thinkingEffort,
                     tokens: TokenBreakdown(input: input, cacheWrite5m: cacheWrite, cacheRead: cacheRead, output: output)
                 ) }
