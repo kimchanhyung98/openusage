@@ -96,6 +96,30 @@ final class OpenCodeForkUsageTests: XCTestCase {
         assertTotals(scan, cost: 3, tokens: 2400)
     }
 
+    func testIdenticalMessagesKeepTheirMultiplicityAcrossForksAndSourceDeletion() async throws {
+        let db = try ForkDatabase(now: now)
+        try db.session("original", secondsAgo: 7200)
+        try db.session("fork", secondsAgo: 600)
+        try db.session("partial-fork", secondsAgo: 300)
+        try db.message("source-a", session: "original")
+        try db.message("source-b", session: "original")
+        try db.message("copy-a", session: "fork", completed: false)
+        try db.message("copy-b", session: "fork")
+        try db.message("partial-copy", session: "partial-fork")
+        assertTotals(try await db.scan(), cost: 3, tokens: 2400)
+
+        try db.sqlite.execute(path: db.path, sql: "DELETE FROM message WHERE id = 'source-a';")
+        assertTotals(try await db.scan(), cost: 3, tokens: 2400)
+
+        try db.sqlite.execute(path: db.path, sql: "DELETE FROM message WHERE session_id = 'original';")
+        try db.sqlite.execute(path: db.path, sql: "DELETE FROM session WHERE id = 'original';")
+        let scan = try await db.scan()
+        assertTotals(scan, cost: 3, tokens: 2400)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 3)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 3)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 3)
+    }
+
     func testEqualCostAndTimeDoNotMergeDifferentUsage() async throws {
         let db = try ForkDatabase(now: now)
         try db.session("fork", secondsAgo: 600)
