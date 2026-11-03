@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class DevinProvider: ProviderRuntime {
+    let retainsDedicatedSpendOnScanFailure = true
     let provider = Provider(
         id: "devin",
         displayName: "Devin",
@@ -55,7 +56,9 @@ final class DevinProvider: ProviderRuntime {
         snapshot.refreshedAt = refreshedAt
         do {
             if let scan = try await usageScanner.scan(now: refreshedAt, pricing: await pricing()) {
-                snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                if !scan.series.daily.isEmpty || scan.invalidRows == 0 {
+                    snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                }
                 for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
                     AppDiagnostics.record(

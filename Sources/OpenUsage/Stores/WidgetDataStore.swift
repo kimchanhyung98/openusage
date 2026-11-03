@@ -699,6 +699,13 @@ final class WidgetDataStore {
             )
             AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
         }
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil,
+           let previous = localSnapshots[providerID],
+           Calendar.current.isDate(previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
+           let lines = previous.totalSpendLines {
+            degraded = true
+            snapshot.totalSpendLines = lines
+        }
         localSnapshots[providerID] = snapshot
         // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
         cache.store(snapshot, producedByIdentityKey: providerIdentityKeys[providerID])
