@@ -211,7 +211,7 @@ struct OpenCodeUsageScanner: Sendable {
             SELECT m.id, m.session_id, m.time_created, m.data, s.project_id,
                    CASE WHEN m.time_created < s.time_created THEN 1 ELSE 0 END AS inherited,
                    json_remove(m.data,'$.id','$.sessionID','$.parentID',
-                               '$.time.completed','$.finish','$.error') AS fingerprint
+                               '$.time.completed','$.finish','$.error','$.structured') AS fingerprint
             FROM message m LEFT JOIN session s ON s.id = m.session_id
             WHERE m.time_created >= \(cutoffMs)
               AND json_valid(m.data)
