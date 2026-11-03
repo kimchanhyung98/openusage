@@ -38,7 +38,7 @@ jobs:
       - name: 게시된 피드 기준값 기록
         run: |
           git fetch --no-tags --depth=1 origin gh-pages
-          bash script/site_feed_snapshot.sh FETCH_HEAD > "$RUNNER_TEMP/site-feeds-before"
+          bash script/site_feed_snapshot.sh --allow-legacy-domain FETCH_HEAD > "$RUNNER_TEMP/site-feeds-before"
 
       - uses: actions/setup-node@v7
         with:
@@ -62,7 +62,7 @@ jobs:
           publish_branch: gh-pages
           publish_dir: .build/site-preview
           keep_files: true
-          # 기존 피드와 같은 사용자 지정 도메인 유지.
+          # 새 사이트 도메인을 CNAME에 기록.
           cname: egasu.chanhyung.kim
 
       - name: 게시 전후 피드 불변 확인
