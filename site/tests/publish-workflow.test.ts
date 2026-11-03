@@ -72,6 +72,37 @@ test('피드 두 개와 도메인을 보존하는 사이트 갱신 허용', () =
   } finally { fixture.cleanup(); }
 });
 
+test('기존 도메인에서 egasu 도메인으로 첫 사이트 게시 허용', () => {
+  const fixture = publicationFixture();
+  try {
+    writeFileSync(join(fixture.published, 'CNAME'), 'openusage.chanhyung.kim\n');
+    fixture.commit();
+    const before = fixture.run(snapshot);
+    assert.equal(before.status, 0, before.stderr);
+    writeFileSync(join(fixture.published, 'CNAME'), 'egasu.chanhyung.kim\n');
+    fixture.commit();
+    const after = fixture.run(verify);
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
+      fixture.git(fixture.published, 'rev-parse', 'HEAD'));
+  } finally { fixture.cleanup(); }
+});
+
+test('첫 사이트 게시 후 기존 도메인이 남으면 거부', () => {
+  const fixture = publicationFixture();
+  try {
+    writeFileSync(join(fixture.published, 'CNAME'), 'openusage.chanhyung.kim\n');
+    fixture.commit();
+    assert.equal(fixture.run(snapshot).status, 0);
+    writeFileSync(join(fixture.published, 'index.html'), '<title>Landing page</title>');
+    fixture.commit();
+    const after = fixture.run(verify);
+    assert.notEqual(after.status, 0);
+    assert.match(after.stderr, /CNAME does not match/);
+    assert.equal(existsSync(join(fixture.temp, 'revision.txt')), false);
+  } finally { fixture.cleanup(); }
+});
+
 for (const file of ['appcast.xml', 'pricing_supplement.json', 'CNAME']) {
   test(`${file} 누락 시 게시 전 실패`, () => {
     const fixture = publicationFixture();
