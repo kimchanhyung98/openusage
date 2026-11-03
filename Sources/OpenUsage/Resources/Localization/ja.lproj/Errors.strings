@@ -109,6 +109,7 @@
 "Kimi quota data is unavailable for this account." = "このアカウントの Kimi 割り当て量データを取得できません。";
 "Kimi returned an invalid token refresh response." = "Kimi から無効なトークン更新の応答が返されました。";
 "Kimi session expired. Run `kimi` to log in again." = "Kimi のセッションの有効期限が切れました。`kimi` を実行してログインし直してください。";
+"Kiro CLI usage history could not be read. Check the local session files and try again." = "Kiro CLI の使用履歴を読み取れませんでした。ローカルのセッションファイルを確認して、もう一度お試しください。";
 "Kiro credentials are invalid. Run `kiro-cli login` and try again." = "Kiro の認証情報が無効です。`kiro-cli login` を実行して、もう一度お試しください。";
 "Kiro credentials could not be read. Check the CLI database permissions." = "Kiro の認証情報を読み取れませんでした。CLI データベースのアクセス権を確認してください。";
 "Kiro credit usage is unavailable for this account." = "このアカウントの Kiro クレジット使用量を取得できません。";
@@ -170,6 +171,8 @@
 "Soft limit at %@%% used" = "ソフトリミット：使用量%@%%";
 "Soft limit reached at %@%% used" = "使用量%@%%でソフトリミットに達しました";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "一部の Antigravity モデルの価格を確認できないため、その使用量は合計から除外されています。";
+"Some Kiro CLI turns have no saved response history. Affected periods show cost only." = "一部の Kiro CLI ターンには保存された応答履歴がありません。該当する期間は費用のみ表示します。";
+"Some Kiro CLI usage records are invalid. Totals may be incomplete." = "一部の Kiro CLI 使用記録が無効です。合計に含まれない使用量がある可能性があります。";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "一部の OpenRouter 統計を取得できません。他の使用量データは引き続き表示されます。";
 "Some local usage has unsupported pricing details and was excluded." = "一部のローカル使用記録は価格情報に対応していないため、集計から除外されました。";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
