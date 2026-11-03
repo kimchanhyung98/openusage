@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared Runtime Home을 건드리지 않고 공식 provider sign-in을 완료하는 앱 소유 home — `~/Library/Application Support/OpenUsage/AccountSignIn/<family>/<profile-id>/`.
-/// 경로는 불변 profile id에서 파생, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
+/// 경로는 profile 또는 로그인 시도의 불변 id에서 파생, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
 /// 내부 `FileManager` delegate 미사용 — credential read task로 안전하게 전달 가능.
 struct AccountSignInWorkspace: @unchecked Sendable {
     enum WorkspaceError: LocalizedError {
@@ -74,6 +74,12 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         }
         try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         return directory
+    }
+
+    /// Codex 로그인은 기존 인증을 폐기하므로, 저장·전환용 사본과 분리된 빈 작업 공간 사용.
+    func prepareReauthentication(family: String, profileID: String) throws -> (profileID: String, directory: URL) {
+        let signInProfileID = family == "codex" ? UUID().uuidString : profileID
+        return (signInProfileID, try prepare(family: family, profileID: signInProfileID))
     }
 
     private func assertNoSymlinkComponents(family: String, profileID: String) throws {
