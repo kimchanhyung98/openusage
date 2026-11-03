@@ -14,7 +14,7 @@ actor CodexLogUsageScanner {
     /// 같은 계정의 managed home — 기본 카드의 추가 history root로 병합.
     private let additionalRoots: [URL]
 
-    /// Turn 1개의 token usage — `token_count` line에서 정규화 (delta 적용 완료).
+    /// 응답 원장 또는 기존 누적 이벤트에서 정규화한 요청별 토큰.
     /// Fast·Ultrafast는 turn 실행 시점의 service tier — session 자체 log에서 추적, tier metadata 없으면 standard.
     struct Event: Codable, Sendable, Equatable {
         var timestamp: Date
@@ -28,11 +28,13 @@ actor CodexLogUsageScanner {
         var isUltrafast: Bool = false
         /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
+        var invalidMetadata = false
         var pricingModel: String? = nil
+        var usageRecordID: String? = nil
     }
 
-    /// Ultrafast tier 보존 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 11
+    /// 원장 없는 누적 증가분 복원 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 13
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -138,325 +140,6 @@ actor CodexLogUsageScanner {
         return files
     }
 
-    // MARK: - File parsing
-
-    /// Rollout 파일 1개 파싱 — `turn_context`로 현재 model, `thread_settings_applied`로 service tier 추적, 각 `token_count`(`last_token_usage` 우선, 없으면 누적 `total_token_usage`와의 delta)를 event로 정규화.
-    /// Child session의 replay된 parent history는 첫 live `task_started`까지 skip. tier 기록이 없는 session은 standard.
-    /// Tier는 session 자체 log에서만 추적 — 현재 `config.toml` 참조 시 toggle이 전체 history를 소급 재산정.
-    static func parseFile(_ data: Data) -> [Event] {
-        let turnContextMarker = Data(#""type":"turn_context""#.utf8)
-        let tokenCountMarker = Data(#""type":"token_count""#.utf8)
-        let sessionMetaMarker = Data(#""type":"session_meta""#.utf8)
-        let taskStartedMarker = Data(#""type":"task_started""#.utf8)
-        let threadSettingsMarker = Data(#""type":"thread_settings_applied""#.utf8)
-
-        var events: [Event] = []
-        var previousTotals: RawUsage?
-        var replayBaselineUnknown = false
-        var currentModel: String?
-        var currentTierIsFast = false
-        var currentTierIsUltrafast = false
-        var sawSessionMeta = false
-        // child session의 replay된 parent history 구간 동안 non-nil.
-        var replayGate: ChildReplayGate?
-
-        for line in JSONLScanning.lines(in: data) {
-            let isTurnContext = line.range(of: turnContextMarker) != nil
-            let isSessionMeta = !sawSessionMeta && line.range(of: sessionMetaMarker) != nil
-            let isTaskStarted = replayGate != nil && line.range(of: taskStartedMarker) != nil
-            let isThreadSettings = line.range(of: threadSettingsMarker) != nil
-            guard isTurnContext || isSessionMeta || isTaskStarted || isThreadSettings
-                || line.range(of: tokenCountMarker) != nil
-            else { continue }
-            guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
-
-            let type = object["type"] as? String
-            let payload = object["payload"] as? [String: Any]
-
-            if type == "turn_context" {
-                if let model = payload.flatMap(modelName(in:)) {
-                    currentModel = model
-                }
-                continue
-            }
-            // 파일 자신의 (첫) session_meta만 인정 — child 파일은 자기 것 직후에 parent의 session_meta도 replay.
-            if type == "session_meta", !sawSessionMeta {
-                sawSessionMeta = true
-                if let payload, isChildSessionMeta(payload) {
-                    previousTotals = nil
-                    replayBaselineUnknown = true
-                    if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                       let created = OpenUsageISO8601.date(from: timestampRaw) {
-                        replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
-                    } else {
-                        // 생성 timestamp가 없어도 child — replay 억제 유지.
-                        replayGate = .untilSelfTimedTaskStarted
-                    }
-                }
-                continue
-            }
-            if isThreadSettings, type == "event_msg",
-               payload?["type"] as? String == "thread_settings_applied" {
-                if let tier = serviceTier(in: payload) {
-                    currentTierIsFast = tier == "fast" || tier == "priority"
-                    currentTierIsUltrafast = tier == "ultrafast"
-                }
-                continue
-            }
-            guard type == "event_msg", let payload else { continue }
-
-            // 첫 live task_started가 child 자신의 turn 시작 — replay된 task_started는 parent의 더 오래된 started_at 유지.
-            if payload["type"] as? String == "task_started" {
-                if let gate = replayGate,
-                   let startedAt = payload["started_at"] as? NSNumber,
-                   gate.isCleared(byStartedAt: startedAt.doubleValue, lineTimestamp: object["timestamp"] as? String) {
-                    replayGate = nil
-                }
-                continue
-            }
-            guard payload["type"] as? String == "token_count",
-                  let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                  let timestamp = OpenUsageISO8601.date(from: timestampRaw)
-            else { continue }
-
-            let info = payload["info"] as? [String: Any]
-            let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
-            // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
-            if replayGate == nil, let totals, !totals.invalid,
-               let previous = previousTotals, totals.equalCounts(previous) {
-                continue
-            }
-            if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
-                currentModel = parsedModel
-            }
-
-            // replay된 parent history — delta baseline만 seed, usage 미방출.
-            if replayGate != nil {
-                previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
-                replayBaselineUnknown = previousTotals == nil
-                continue
-            }
-
-            var usage: RawUsage
-            // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
-            if let totals, totals.invalid {
-                usage = totals
-            } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
-                usage = last
-            } else if let totals {
-                usage = totals.subtracting(previousTotals)
-                // 부모 재생의 기준이 끊겼으면 첫 live 누적값은 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
-                if replayBaselineUnknown { usage.invalid = true }
-            } else {
-                continue
-            }
-            // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
-            if let totals, !totals.invalid {
-                previousTotals = totals
-                replayBaselineUnknown = false
-            }
-            guard !usage.invalid else {
-                events.append(Event(
-                    timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
-                    total: 0, invalidNumericValues: true
-                ))
-                continue
-            }
-            guard usage.input > 0 || usage.cached > 0 || usage.output > 0 || usage.reasoning > 0 else { continue }
-
-            let model = resolveModel(
-                parsed: nil,
-                currentModel: &currentModel
-            )
-
-            events.append(
-                Event(
-                    timestamp: timestamp,
-                    model: model,
-                    input: usage.input,
-                    cached: min(usage.cached, usage.input),
-                    output: usage.output,
-                    reasoning: usage.reasoning,
-                    total: usage.total,
-                    isFast: currentTierIsFast,
-                    isUltrafast: currentTierIsUltrafast,
-                    pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
-                ))
-        }
-        UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
-        return events
-    }
-
-    /// `thread_settings_applied` payload의 `service_tier` — `thread_settings` 우선, top-level 표기 허용 (예: `"default"`, `"fast"`, `"priority"`).
-    private static func serviceTier(in payload: [String: Any]?) -> String? {
-        guard let payload else { return nil }
-        let settings = payload["thread_settings"] as? [String: Any]
-        for value in [settings?["service_tier"], payload["service_tier"]] {
-            if let text = (value as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    /// `token_count` usage object의 token 필드 — ccusage가 허용하는 구식 표기(`prompt_tokens`, `completion_tokens`, `cache_read_input_tokens`, …) 수용.
-    struct RawUsage: Sendable {
-        var input: Int
-        var cached: Int
-        var output: Int
-        var reasoning: Int
-        var total: Int
-
-        /// 숫자 손상·재생 기준 불확실 — 집계에서 제외하고 경고로 노출.
-        var invalid = false
-
-        init(json: [String: Any]) {
-            // 먼저 등장한 key가 손상이면 다음 key로 넘어가지 않고 행 자체를 거부.
-            func count(_ keys: String...) -> Int? {
-                for key in keys where json[key] != nil {
-                    return UsageLogNumbers.count(json[key])
-                }
-                return 0
-            }
-            guard let input = count("input_tokens", "prompt_tokens", "input"),
-                  let cached = count("cached_input_tokens", "cache_read_input_tokens", "cached_tokens"),
-                  let output = count("output_tokens", "completion_tokens", "output"),
-                  let reasoning = count("reasoning_output_tokens", "reasoning_tokens"),
-                  let reported = count("total_tokens"),
-                  let recomputed = UsageLogNumbers.sum(input, output, reasoning)
-            else {
-                self.init(input: 0, cached: 0, output: 0, reasoning: 0, total: 0, invalid: true)
-                return
-            }
-            self.init(
-                input: input, cached: cached, output: output, reasoning: reasoning,
-                total: (reported > 0 || recomputed == 0) ? reported : recomputed
-            )
-        }
-
-        private init(input: Int, cached: Int, output: Int, reasoning: Int, total: Int, invalid: Bool = false) {
-            self.input = input
-            self.cached = cached
-            self.output = output
-            self.reasoning = reasoning
-            self.total = total
-            self.invalid = invalid
-        }
-
-        /// `other`와 token count 동일 — Codex가 재방출한 불변 누적 snapshot 판정.
-        func equalCounts(_ other: RawUsage) -> Bool {
-            input == other.input && cached == other.cached && output == other.output
-                && reasoning == other.reasoning && total == other.total
-        }
-
-        /// 누적 totals에서 turn delta 복원 (`last_token_usage` 부재 시 사용).
-        /// 양쪽 모두 검증된 비음수라 차이는 overflow 불가 — 손상 표시만 전파.
-        func subtracting(_ previous: RawUsage?) -> RawUsage {
-            RawUsage(
-                input: max(0, input - (previous?.input ?? 0)),
-                cached: max(0, cached - (previous?.cached ?? 0)),
-                output: max(0, output - (previous?.output ?? 0)),
-                reasoning: max(0, reasoning - (previous?.reasoning ?? 0)),
-                total: max(0, total - (previous?.total ?? 0)),
-                invalid: invalid || previous?.invalid == true
-            )
-        }
-    }
-
-    private static func modelName(in json: [String: Any]) -> String? {
-        for value in [json["model"], json["model_name"], (json["metadata"] as? [String: Any])?["model"]] {
-            if let text = (value as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    /// Child session의 replay된 parent history를 첫 live turn까지 gate하는 방식.
-    private enum ChildReplayGate {
-        /// `task_started.started_at`이 child 생성 epoch 이상이면 해제.
-        case untilStartedAt(TimeInterval)
-        /// 생성 timestamp가 판독 불가한 child용 — `started_at`이 해당 `task_started` line 자신의 wall-clock 초 이상이면 해제 (replay turn은 parent의 더 오래된 `started_at` 유지).
-        case untilSelfTimedTaskStarted
-
-        func isCleared(byStartedAt startedAt: TimeInterval, lineTimestamp: String?) -> Bool {
-            switch self {
-            case .untilStartedAt(let gate):
-                return startedAt >= gate
-            case .untilSelfTimedTaskStarted:
-                guard let raw = lineTimestamp?.trimmingCharacters(in: .whitespaces),
-                      let lineDate = OpenUsageISO8601.date(from: raw)
-                else { return false }
-                return startedAt >= lineDate.timeIntervalSince1970.rounded(.down)
-            }
-        }
-    }
-
-    /// 파일을 child session(subagent spawn 또는 fork)으로 표시하는 session_meta payload — 선행 `token_count` line들은 parent history replay.
-    /// JSON `null`은 `NSNull`(Swift `nil` 아님) — null·blank 문자열은 absent 취급, `forked_from_id: null`인 root session의 child 오분류 방지.
-    static func isChildSessionMeta(_ payload: [String: Any]) -> Bool {
-        if hasNonNullValue(payload["forked_from_id"]) { return true }
-        if hasNonNullValue(payload["parent_thread_id"]) { return true }
-        if payload["thread_source"] as? String == "subagent" { return true }
-        if let source = payload["source"] as? [String: Any], hasNonNullValue(source["subagent"]) {
-            return true
-        }
-        return false
-    }
-
-    /// JSONSerialization이 실제 값을 반환했는지 여부 — missing·`null`·blank text 제외.
-    private static func hasNonNullValue(_ value: Any?) -> Bool {
-        switch value {
-        case nil, is NSNull:
-            return false
-        case let text as String:
-            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        default:
-            return true
-        }
-    }
-
-    /// ccusage의 model resolution — line의 명시적 model이 현재 model 갱신, 없으면 추적 중인 model, metadata 전무 시 `gpt-5` fallback.
-    static func resolveModel(
-        parsed: String?,
-        currentModel: inout String?
-    ) -> String {
-        if let parsed {
-            currentModel = parsed
-        }
-        let model: String
-        if let parsed {
-            model = parsed
-        } else if let current = currentModel {
-            model = current
-        } else {
-            currentModel = "gpt-5"
-            model = "gpt-5"
-        }
-        return model
-    }
-
-    private static let autoReviewModel = "codex-auto-review"
-
-    /// 자동 리뷰의 날짜별 추정 단가 참조표 — 실제 백엔드 모델이나 전환일의 확정 기록 아님.
-    private static let autoReviewFallbacks: [(releasedOn: String, model: String)] = [
-        ("2026-04-23", "gpt-5.5"),
-        ("2026-03-05", "gpt-5.4"),
-        ("2026-02-05", "gpt-5.3-codex"),
-        ("2025-12-11", "gpt-5.2-codex"),
-        ("2025-11-13", "gpt-5.1-codex"),
-        ("2025-09-15", "gpt-5-codex"),
-        ("2025-08-07", "gpt-5")
-    ]
-
-    static func autoReviewFallback(at timestamp: String) -> String {
-        let date = String(timestamp.prefix(10))
-        guard date.count == 10, date.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else {
-            return "gpt-5"
-        }
-        return autoReviewFallbacks.first(where: { date >= $0.releasedOn })?.model ?? "gpt-5"
-    }
-
     // MARK: - Aggregation
 
     private struct EventKey: Hashable {
@@ -479,11 +162,17 @@ actor CodexLogUsageScanner {
         events: [Event], since: Date, pricing: ModelPricing
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
+        var seenRecords: Set<String> = []
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var rejectedMetadataRows = 0
         var costEstimator = CodexUsagePricing.Resolver(pricing: pricing)
 
         for event in events where event.timestamp >= since {
+            guard !event.invalidMetadata else {
+                rejectedMetadataRows += 1
+                continue
+            }
             guard !event.invalidNumericValues else {
                 rejectedNumericRows += 1
                 continue
@@ -493,7 +182,11 @@ actor CodexLogUsageScanner {
                 isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
                 cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
             )
-            guard seen.insert(key).inserted else { continue }
+            if let recordID = event.usageRecordID {
+                guard seenRecords.insert(recordID).inserted else { continue }
+            } else {
+                guard seen.insert(key).inserted else { continue }
+            }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
             // 경고·내역은 원래 모델명 유지, 자동 리뷰의 날짜별 참조 모델은 가격 계산에만 사용.
@@ -520,7 +213,15 @@ actor CodexLogUsageScanner {
             accumulator.add(day: day, tokens: event.total, cost: eventCost, model: model)
         }
 
-        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "codex")
+        if rejectedMetadataRows > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "codex",
+                localContext: "source=codex; invalid_metadata_rows=\(rejectedMetadataRows)"
+            )
+        }
+        return accumulator.build(
+            rejectedNumericRows: rejectedNumericRows, source: "codex", rejectedMetadataRows: rejectedMetadataRows
+        )
     }
 
     /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.
