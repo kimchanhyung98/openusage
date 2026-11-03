@@ -14,6 +14,84 @@ final class CodexUsageRecordTests: XCTestCase {
         }
     }
 
+    func testReversedRecordsRemainDeduplicatedAfterTheNextBoundaryIsAppended() {
+        let events = parse([
+            context(), count(input: 1_000, totalInput: 1_000), record(response: "one", input: 1_000),
+            count(input: 200, totalInput: 1_200), record(response: "two", input: 200)
+        ])
+        XCTAssertEqual(events.map(\.input), [1_000, 200])
+        XCTAssertEqual(events.map(\.usageRecordID), ["session-1:one", "session-1:two"])
+    }
+
+    func testReversedRecordDoesNotAlsoConsumeTheFollowingUnrecordedUsage() {
+        let events = parse([
+            context(), count(input: 1_000, totalInput: 1_000), record(response: "one", input: 1_000),
+            count(input: 1_000, totalInput: 2_000)
+        ])
+        XCTAssertEqual(events.map(\.input), [1_000, 1_000])
+        XCTAssertEqual(events.map(\.usageRecordID), ["session-1:one", nil])
+    }
+
+    func testMatchingCountModelOverridesRecordAndLaterResponses() {
+        for model in ["gpt-5.4", "codex-auto-review"] {
+            let usage = CodexLogFixture.usage(input: 1_000, output: 0)
+            let count = CodexLogFixture.tokenCount(timestamp: timestamp, last: usage, totals: usage, model: model)
+            let record = record(response: "one", input: 1_000)
+            for lines in [[record, count], [count, record]] {
+                let events = parse([context()] + lines + [self.record(response: "next", input: 200)])
+                XCTAssertEqual(events.map(\.input), [1_000, 200])
+                XCTAssertEqual(events.map(\.model), [model, model])
+                XCTAssertEqual(events.map(\.pricingModel), model == "codex-auto-review" ? ["gpt-5.5", "gpt-5.5"] : [nil, nil])
+            }
+        }
+    }
+
+    func testMetadataOnlyReplayCountPreservesTheLastValidBaseline() {
+        let started = Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970)
+        for info in [nil, NSNull()] as [Any?] {
+            var payload: [String: Any] = ["type": "token_count", "rate_limits": [:]]
+            payload["info"] = info
+            let events = parse([
+                CodexLogFixture.forkSessionMeta(timestamp: timestamp), context(),
+                count(input: 100, totalInput: 100), line(type: "event_msg", payload: payload),
+                CodexLogFixture.taskStarted(timestamp: timestamp, startedAt: started),
+                CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 120, output: 0))
+            ])
+            XCTAssertEqual(events.map(\.input), [20])
+            XCTAssertFalse(events.contains { $0.invalidNumericValues })
+        }
+    }
+
+    func testVersionThirteenCacheReparsesReversedResponseRecords() async throws {
+        let content = [
+            context(), count(input: 1_000, totalInput: 1_000), record(response: "one", input: 1_000),
+            count(input: 200, totalInput: 1_200), record(response: "two", input: 200)
+        ].joined(separator: "\n")
+        let home = try CodexLogFixture.makeHome(files: ["sessions/reversed.jsonl": content])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let directory = home.appendingPathComponent("cache")
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
+        let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
+            persistence: .init(namespace: "codex", schemaVersion: 13, directory: directory, writeDebounce: .milliseconds(1))
+        )
+        let duplicated = CodexLogUsageScanner.Event(
+            timestamp: now, model: "gpt-5.2", input: 2_200, cached: 0, output: 0, reasoning: 0, total: 2_200
+        )
+        _ = await old.items(from: files, since: .distantPast, cacheIdentity: "fixture") { _ in [duplicated] }
+        await old.waitForPendingWritesForTesting()
+
+        let persistence = JSONLScanCachePersistence(
+            namespace: "codex", schemaVersion: CodexLogUsageScanner.cacheSchemaVersion,
+            directory: directory, writeDebounce: .milliseconds(1)
+        )
+        let rebuilt = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence: persistence)
+        let scanner = CodexLogUsageScanner(incrementalScanner: rebuilt, cacheIdentityOverride: "fixture", rootsOverride: [home])
+        let scan = await scanner.scan(now: now, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 1_200)
+        await rebuilt.waitForPendingWritesForTesting()
+    }
+
     func testCompactionConsumptionSurvivesContextRecalculation() {
         let events = parse([
             context(), record(response: "normal", input: 1_000), count(input: 1_000, totalInput: 1_000),
