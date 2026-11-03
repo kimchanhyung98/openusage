@@ -150,6 +150,67 @@ final class CodexUsageRecordTests: XCTestCase {
         XCTAssertEqual(events.map(\.input), [1_000, 500])
     }
 
+    func testLastOnlyUsageBreaksCumulativeDeltaBaseline() {
+        let events = parse([
+            context(), count(input: 100, totalInput: 100),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 20, output: 0)),
+            count(input: 30, totalInput: 150), count(input: 30, totalInput: 200)
+        ])
+        XCTAssertEqual(events.map(\.input), [100, 20, 30, 50])
+        XCTAssertFalse(events.contains { $0.invalidNumericValues })
+    }
+
+    func testTotalsOnlyAfterLastOnlyUsageWarnsThenRestoresBaseline() {
+        let events = parse([
+            context(), count(input: 100, totalInput: 100),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 20, output: 0)),
+            CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 150, output: 0)),
+            count(input: 30, totalInput: 200)
+        ])
+        XCTAssertEqual(events.map(\.input), [100, 20, 0, 50])
+        XCTAssertEqual(events.map(\.invalidNumericValues), [false, false, true, false])
+    }
+
+    func testEmptyLastOnlyUsageKeepsTheCumulativeBaseline() {
+        let events = parse([
+            context(), count(input: 100, totalInput: 100),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 0, output: 0)),
+            count(input: 100, totalInput: 150)
+        ])
+        XCTAssertEqual(events.map(\.input), [100, 50])
+        XCTAssertFalse(events.contains { $0.invalidNumericValues })
+    }
+
+    func testVersionFifteenCacheReparsesLastOnlyUsage() async throws {
+        let content = [
+            context(), count(input: 100, totalInput: 100),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 20, output: 0)),
+            count(input: 30, totalInput: 150)
+        ].joined(separator: "\n")
+        let home = try CodexLogFixture.makeHome(files: ["sessions/last-only.jsonl": content])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let directory = home.appendingPathComponent("cache")
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
+        let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
+            persistence: .init(namespace: "codex", schemaVersion: 15, directory: directory, writeDebounce: .milliseconds(1))
+        )
+        let duplicated = CodexLogUsageScanner.Event(
+            timestamp: now, model: "gpt-5.2", input: 170, cached: 0, output: 0, reasoning: 0, total: 170
+        )
+        _ = await old.items(from: files, since: .distantPast, cacheIdentity: "fixture") { _ in [duplicated] }
+        await old.waitForPendingWritesForTesting()
+
+        let rebuilt = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
+            persistence: .init(namespace: "codex", schemaVersion: CodexLogUsageScanner.cacheSchemaVersion,
+                               directory: directory, writeDebounce: .milliseconds(1))
+        )
+        let scanner = CodexLogUsageScanner(incrementalScanner: rebuilt, cacheIdentityOverride: "fixture", rootsOverride: [home])
+        let scan = await scanner.scan(now: now, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 150)
+        await rebuilt.waitForPendingWritesForTesting()
+    }
+
     func testIncompleteWithoutResponseIDSurvivesRecordedResponseInSameTurn() {
         let events = parse([
             context(), record(response: "normal", input: 1_000), count(input: 1_000, totalInput: 1_000),
@@ -280,6 +341,32 @@ final class CodexUsageRecordTests: XCTestCase {
         let second = parse([context(), record(response: "two", input: 500)])
         let scan = CodexLogUsageScanner.aggregate(events: first + copy + second, since: .distantPast, pricing: TestPricing.bundled)
         XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_000)
+    }
+
+    func testDifferentLengthCopiesDeduplicateLegacyAgainstRecordsInEitherOrder() {
+        let older = parse([context(), count(input: 500, totalInput: 500)])
+        let newer = parse([context(), count(input: 500, totalInput: 500), record(response: "one", input: 500)])
+        let distinct = parse([context(), record(response: "two", input: 500)])
+        for events in [older + newer + distinct, newer + distinct + older] {
+            let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+            XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_000)
+            let expected = CodexLogUsageScanner.aggregate(events: newer + distinct, since: .distantPast, pricing: TestPricing.bundled)
+            XCTAssertEqual(scan.series.daily.first?.costUSD, expected.series.daily.first?.costUSD)
+        }
+    }
+
+    func testRejectedRecordCannotHideAValidLegacyCopy() throws {
+        let legacy = try XCTUnwrap(parse([context(), count(input: 500, totalInput: 500)]).first)
+        for invalidMetadata in [false, true] {
+            var rejected = legacy
+            rejected.usageRecordID = "session-1:rejected"
+            rejected.invalidMetadata = invalidMetadata
+            rejected.invalidNumericValues = !invalidMetadata
+            let scan = CodexLogUsageScanner.aggregate(events: [rejected, legacy], since: .distantPast, pricing: TestPricing.bundled)
+            XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 500)
+            XCTAssertEqual(scan.rejectedMetadataRows, invalidMetadata ? 1 : 0)
+            XCTAssertEqual(scan.rejectedNumericRows, invalidMetadata ? 0 : 1)
+        }
     }
 
     func testForkReplayExcludesParentRecordsBeforeLiveTurn() {
