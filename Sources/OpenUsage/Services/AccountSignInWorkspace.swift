@@ -53,7 +53,6 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         try validate(family)
         try validate(profileID)
         if let attemptID { try validate(attemptID) }
-        try assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
         let directory = baseDirectory
             .appendingPathComponent(family, isDirectory: true)
             .appendingPathComponent(profileID, isDirectory: true)
@@ -65,6 +64,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     @discardableResult
     func prepare(family: String, profileID: String, attemptID: String? = nil) throws -> URL {
         let directory = try directory(family: family, profileID: profileID, attemptID: attemptID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
@@ -85,7 +85,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         return (attemptID, try prepare(family: family, profileID: profileID, attemptID: attemptID))
     }
 
-    private func assertNoSymlinkComponents(family: String, profileID: String, attemptID: String? = nil) throws {
+    func assertNoSymlinkComponents(family: String, profileID: String, attemptID: String? = nil) throws {
         let familyDirectory = baseDirectory.appendingPathComponent(family, isDirectory: true)
         let profileDirectory = familyDirectory.appendingPathComponent(profileID, isDirectory: true)
         var directories = rootDirectoriesToValidate + [familyDirectory, profileDirectory]
@@ -109,6 +109,7 @@ struct AccountSignInWorkspace: @unchecked Sendable {
     /// 지정한 계정 또는 로그인 시도의 작업 공간만 삭제 — Shared Runtime Home·역사적 `~/.claude-*`/`~/.codex-*` 디렉터리는 범위 밖.
     func remove(family: String, profileID: String, attemptID: String? = nil) throws {
         let directory = try directory(family: family, profileID: profileID, attemptID: attemptID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
     }

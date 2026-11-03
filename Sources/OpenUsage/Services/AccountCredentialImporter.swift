@@ -85,6 +85,18 @@ struct AccountCredentialImporter {
     /// profile의 Sign-In Workspace에서 완료된 공식 로그인 — 사용 가능한 credential 없으면 `nil`.
     func readWorkspaceCredential(family: String, profileID: String, attemptID: String? = nil) throws -> ImportedCredential? {
         let home = try workspace.directory(family: family, profileID: profileID, attemptID: attemptID).path
+        try workspace.assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
+        if family == "codex" {
+            let authURL = URL(fileURLWithPath: home).appendingPathComponent("auth.json")
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: authURL.path)
+                guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                    throw ImportError.verificationFailed(family: family)
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                return nil
+            }
+        }
         guard let entry = try switcher.readAuthentication(family: family, home: home) else {
             return nil
         }
