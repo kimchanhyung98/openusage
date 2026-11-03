@@ -83,8 +83,8 @@ struct AccountCredentialImporter {
     }
 
     /// profile의 Sign-In Workspace에서 완료된 공식 로그인 — 사용 가능한 credential 없으면 `nil`.
-    func readWorkspaceCredential(family: String, profileID: String) throws -> ImportedCredential? {
-        let home = try workspace.directory(family: family, profileID: profileID).path
+    func readWorkspaceCredential(family: String, profileID: String, attemptID: String? = nil) throws -> ImportedCredential? {
+        let home = try workspace.directory(family: family, profileID: profileID, attemptID: attemptID).path
         guard let entry = try switcher.readAuthentication(family: family, home: home) else {
             return nil
         }
@@ -340,7 +340,7 @@ struct AccountCredentialImporter {
         profileID: String,
         in store: AccountProfilesStore,
         isActive: Bool,
-        signInProfileID: String? = nil
+        signInAttemptID: String? = nil
     ) throws -> AccountProfile {
         if store.profile(id: profileID)?.family == "claude", try switcher.switchJournal.load() != nil {
             throw AccountIdentityReplacementError.pendingTransaction
@@ -352,7 +352,7 @@ struct AccountCredentialImporter {
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
         guard let credential = try readWorkspaceCredential(
-            family: profile.family, profileID: signInProfileID ?? profile.id
+            family: profile.family, profileID: profile.id, attemptID: signInAttemptID
         ) else {
             throw ImportError.noSignIn(family: profile.family)
         }
@@ -366,7 +366,7 @@ struct AccountCredentialImporter {
         )
         do {
             try switcher.saveSnapshot(credential.entry, for: profile)
-            if let signInProfileID, signInProfileID != profile.id {
+            if signInAttemptID != nil {
                 try switcher.writeWorkspaceAuthentication(credential.entry, for: profile)
             }
             if isActive {

@@ -370,10 +370,10 @@ struct AccountProfileManagementSheet: View {
                 let workspace = AccountSignInWorkspace()
                 let signIn = try workspace.prepareReauthentication(family: profile.family, profileID: profile.id)
                 defer {
-                    if signIn.profileID != profile.id {
+                    if let attemptID = signIn.attemptID {
                         do {
-                            try AccountCredentialImporter().removeSignInWorkspace(
-                                family: profile.family, profileID: signIn.profileID
+                            try workspace.remove(
+                                family: profile.family, profileID: profile.id, attemptID: attemptID
                             )
                         } catch {
                             AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family,
@@ -396,7 +396,7 @@ struct AccountProfileManagementSheet: View {
                     profileID: profile.id,
                     in: store,
                     isActive: store.preferredProfileID(family: profile.family) == profile.id,
-                    signInProfileID: signIn.profileID
+                    signInAttemptID: signIn.attemptID
                 )
                 AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
                 onChanged()
