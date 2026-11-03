@@ -5,7 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 7
+    static let cacheSchemaVersion = 8
 
     enum CostEstimate: Sendable {
         case priced(Double)
@@ -42,12 +42,12 @@ actor PiUsageScanner {
         self.scanner = incrementalScanner ?? Self.sharedScanner
     }
 
-    /// 메시지·독립 사용량·압축 기록 하나. timestamp와 카드 귀속을 캐시에 보존.
+    /// 사용량 기록 하나. timestamp와 카드 귀속을 캐시에 보존.
     struct Entry: Codable, Sendable, Equatable {
         var id: String?
-        /// 시각이 손상된 압축 사용량은 날짜를 만들지 않고 경고만 보존.
+        /// 시각이 손상된 미귀속 사용량은 날짜를 만들지 않고 경고만 보존.
         var timestamp: Date?
-        /// 모델 없는 압축은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
+        /// 모델 없는 사용량은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
         var cardID: String
         var model: String
         /// pi 자신의 `usage.cost.total` — > 0이면 그대로 사용, nil/0은 엔진 가격 산정으로 fallthrough.
@@ -92,7 +92,7 @@ actor PiUsageScanner {
 
     // MARK: - Parsing
 
-    /// 메시지·독립 사용량의 명시적 모델만 사용. 실행 모델이 없는 압축은 불완전 이력으로 보존.
+    /// 메시지·독립 사용량의 명시적 모델만 사용. 실행 모델이 없는 요약·도구 사용량은 경고로 보존.
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage""#.utf8)
         var entries: [Entry] = []
@@ -127,7 +127,11 @@ actor PiUsageScanner {
         var invalidMetadata = false
         switch object["type"] as? String {
         case "message":
-            guard let message = object["message"] as? [String: Any], message["role"] as? String == "assistant",
+            guard let message = object["message"] as? [String: Any] else { return nil }
+            if message["role"] as? String == "toolResult" {
+                return unattributedUsageEntry(object, usage: message["usage"])
+            }
+            guard message["role"] as? String == "assistant",
                   let recordedProvider = message["provider"] as? String else { return nil }
             payload = message
             provider = recordedProvider
@@ -138,14 +142,8 @@ actor PiUsageScanner {
             provider = recordedProvider
             model = object["model"] as? String ?? ""
             invalidMetadata = model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case "compaction":
-            guard object["usage"] != nil else { return nil }
-            return Entry(
-                id: object["id"] as? String,
-                timestamp: (object["timestamp"] as? String).flatMap(OpenUsageISO8601.date(from:)),
-                cardID: "", model: "", carriedCost: nil, tokens: TokenBreakdown(), reportedTotalTokens: 0,
-                invalidMetadata: true
-            )
+        case "compaction", "branch_summary":
+            return unattributedUsageEntry(object, usage: object["usage"])
         default:
             return nil
         }
@@ -197,21 +195,38 @@ actor PiUsageScanner {
         return entry
     }
 
+    private static func unattributedUsageEntry(_ object: [String: Any], usage: Any?) -> Entry? {
+        guard usage != nil else { return nil }
+        return Entry(
+            id: object["id"] as? String,
+            timestamp: (object["timestamp"] as? String).flatMap(OpenUsageISO8601.date(from:)),
+            cardID: "", model: "", carriedCost: nil, tokens: TokenBreakdown(), reportedTotalTokens: 0,
+            invalidMetadata: true
+        )
+    }
+
     // MARK: - Dedup and aggregation
 
-    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 정상 숫자 사본 중 첫 등장 유지. id 없는 line은 항상 유지.
+    private struct EntryIdentity: Hashable {
+        let id: String
+        let timestamp: Date?
+        let cardID: String
+    }
+
+    /// 짧은 ID는 세션 안에서만 고유하므로 시각·카드도 같은 사본만 제거. 정상 사본 우선, ID 없는 기록은 유지.
     static func dedup(_ entries: [Entry]) -> [Entry] {
-        var indices: [String: Int] = [:]
+        var indices: [EntryIdentity: Int] = [:]
         var out: [Entry] = []
         out.reserveCapacity(entries.count)
         for entry in entries {
             if let id = entry.id {
-                if let index = indices[id] {
+                let identity = EntryIdentity(id: id, timestamp: entry.timestamp, cardID: entry.cardID)
+                if let index = indices[identity] {
                     if (out[index].invalidNumericValues || out[index].invalidMetadata)
                         && !entry.invalidNumericValues && !entry.invalidMetadata { out[index] = entry }
                     continue
                 }
-                indices[id] = out.count
+                indices[identity] = out.count
             }
             out.append(entry)
         }
