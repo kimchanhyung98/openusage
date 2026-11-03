@@ -10,6 +10,8 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var lines: [MetricLine]
     /// 카드의 키별 사용액과 분리된 계정 전체 기간 합계 — 지원 provider만 사용.
     var totalSpendLines: [MetricLine]?
+    /// 전용 기간 통계의 기준 시각 — 한도 조회 시각과 별도 보존.
+    var totalSpendRefreshedAt: Date? = nil
     var refreshedAt: Date
     /// spend row 구성용 raw 정규화 일별 history — 항상 이 Mac 소유.
     /// peer history는 in-memory 렌더 뷰에서만 결합, cache 미기록.
@@ -37,7 +39,7 @@ struct ProviderSnapshot: Hashable, Sendable, Codable {
     var codexResetClaimBinding: CodexResetClaimBinding?
 
     private enum CodingKeys: String, CodingKey {
-        case providerID, displayName, plan, lines, totalSpendLines, refreshedAt, usageHistory, warning
+        case providerID, displayName, plan, lines, totalSpendLines, totalSpendRefreshedAt, refreshedAt, usageHistory, warning
         case errorCategory, authenticationIssue, isDegraded, liveQuotaObservedAt
         case quotaObservedAt, usageRetryAfter, warningPresentation, metricPresentations
     }

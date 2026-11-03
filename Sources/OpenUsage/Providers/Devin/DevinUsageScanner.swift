@@ -82,12 +82,12 @@ actor DevinUsageScanner {
     }
 
     func scan(now: Date, pricing: ModelPricing) throws -> Result? {
+        try Task.checkCancellation()
+        var parsed = Parsed()
+        var foundStore = false
+        let directory = directory
+        let database = directory.appendingPathComponent("sessions.db")
         do {
-            try Task.checkCancellation()
-            var parsed = Parsed()
-            var foundStore = false
-            let directory = directory
-            let database = directory.appendingPathComponent("sessions.db")
             if try Self.exists(database) {
                 foundStore = true
                 guard let json = try sqlite.queryValue(path: database.path, sql: Self.dataSQL),
@@ -112,6 +112,15 @@ actor DevinUsageScanner {
                                 fallbackID: "\(session):\(node)", fallbackDate: row[2], to: &parsed)
                 }
             }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            foundStore = true
+            parsed.invalidRows += 1
+            AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
+                                  localContext: "SQLite history")
+        }
+        do {
             let sessions = directory.appendingPathComponent("sessions", isDirectory: true)
             if try Self.exists(sessions) {
                 foundStore = true
@@ -137,13 +146,16 @@ actor DevinUsageScanner {
                     }
                 }
             }
-            guard foundStore else { return nil }
-            return Self.aggregate(parsed, now: now, pricing: pricing)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw DevinHistoryError.unreadable
+            foundStore = true
+            parsed.invalidRows += 1
+            AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
+                                  localContext: "file history")
         }
+        guard foundStore else { return nil }
+        return Self.aggregate(parsed, now: now, pricing: pricing)
     }
 
     static func parseLog(_ data: Data, sessionID: String) throws -> Parsed {
