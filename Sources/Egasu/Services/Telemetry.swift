@@ -11,10 +11,15 @@ enum TelemetryConfig {
     private static let bakedToken = "phc_tRD4fSrpb2bgA3xYLqCkLsZ9YSGQckuKNB5BBnRm7DCL"
 
     static var token: String {
-        let environment = ProcessInfo.processInfo.environment
-        let env = (environment["EGASU_POSTHOG_TOKEN"] ?? environment["OPENUSAGE_POSTHOG_TOKEN"])?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let env, !env.isEmpty { return env }
+        token(environment: ProcessInfo.processInfo.environment)
+    }
+
+    static func token(environment: [String: String]) -> String {
+        for key in ["EGASU_POSTHOG_TOKEN", "OPENUSAGE_POSTHOG_TOKEN"] {
+            if let token = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty {
+                return token
+            }
+        }
         if buildChannel == "development" { return placeholderToken }
         return bakedToken
     }

@@ -62,7 +62,10 @@ import posixpath, re, sys, xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit, urlunsplit
 NS = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-PREFIX = "https://github.com/kimchanhyung98/egasu/releases/download/"
+PREFIXES = (
+    "https://github.com/kimchanhyung98/egasu/releases/download/",
+    "https://github.com/kimchanhyung98/openusage/releases/download/",
+)
 root = ET.parse(sys.argv[1]).getroot()
 items = root.findall(".//item")
 want = len(ET.parse(sys.argv[2]).getroot().findall(".//item"))
@@ -86,7 +89,7 @@ for it in items:
     parts = urlsplit(url.replace("\\", "/"))
     normalized_path = posixpath.normpath(re.sub(r"%2e", ".", parts.path, flags=re.I))
     normalized = urlunsplit(parts._replace(path=normalized_path))
-    if ch == "" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", short) and 0 < build <= 9007199254740991 and url.startswith(PREFIX) and normalized.startswith(PREFIX):
+    if ch == "" and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", short) and 0 < build <= 9007199254740991 and any(url.startswith(prefix) and normalized.startswith(prefix) for prefix in PREFIXES):
         stable.append((build, pub, short, url))
 if not stable:
     sys.exit("FAIL appcast has no stable item")

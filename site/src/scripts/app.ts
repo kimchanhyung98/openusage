@@ -6,7 +6,10 @@ import { initFeatureTour } from './tour';
 import { initMenus, openMenu, closeMenu } from './menus';
 
 const SPARKLE_NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle';
-const DOWNLOAD_PREFIX = 'https://github.com/kimchanhyung98/egasu/releases/download/';
+const DOWNLOAD_PREFIXES = [
+  'https://github.com/kimchanhyung98/egasu/releases/download/',
+  'https://github.com/kimchanhyung98/openusage/releases/download/',
+];
 
 // hero 단어 리빌. 인라인 style 속성은 CSP가 막으므로 CSSOM으로 delay 변수 부여.
 function initHero(): void {
@@ -268,7 +271,7 @@ async function initDownload(): Promise<void> {
       })
       .filter((i) => i.channel === '' && /^\d+\.\d+\.\d+$/.test(i.short)
         && Number.isSafeInteger(i.build) && i.build > 0
-        && i.url.startsWith(DOWNLOAD_PREFIX) && new URL(i.url).href.startsWith(DOWNLOAD_PREFIX));
+        && DOWNLOAD_PREFIXES.some((prefix) => i.url.startsWith(prefix) && new URL(i.url).href.startsWith(prefix)));
     if (!items.length) throw new Error('Appcast contains no valid stable release');
     const latest = items.reduce((a, b) => (b.build > a.build || (b.build === a.build && b.pub > a.pub) ? b : a));
     links.forEach((a) => {

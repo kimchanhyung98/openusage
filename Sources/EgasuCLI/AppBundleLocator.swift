@@ -9,8 +9,10 @@ struct AppBundleLocator: Sendable {
         executableURL: URL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]),
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> AppBundleLocator {
-        if let suite = environment["EGASU_DEFAULTS_SUITE"] ?? environment["OPENUSAGE_DEFAULTS_SUITE"], !suite.isEmpty {
-            return AppBundleLocator(bundleIdentifier: suite, version: nil)
+        for key in ["EGASU_DEFAULTS_SUITE", "OPENUSAGE_DEFAULTS_SUITE"] {
+            if let suite = environment[key], !suite.isEmpty {
+                return AppBundleLocator(bundleIdentifier: suite, version: nil)
+            }
         }
 
         if let appURL = ContainingAppBundle.url(for: executableURL),
