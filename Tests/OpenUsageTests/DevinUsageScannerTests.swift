@@ -287,6 +287,58 @@ final class DevinUsageScannerTests: XCTestCase {
         XCTAssertFalse(snapshot.lines.isEmpty)
     }
 
+    func testHistoryFailuresRetainCachedTotalsUntilAConfirmedEmptyScan() async throws {
+        for corruptDatabase in [true, false] {
+            let fixture = try DevinHistoryFixture()
+            defer { fixture.remove() }
+            try fixture.insert(message(request: "one"), at: now)
+            let frozenNow = now
+            let frozenPricing = pricing
+            let provider = DevinProvider(
+                authStore: DevinAuthStore(
+                    files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
+                    sqlite: DevinHistoryAuthSQLite()
+                ),
+                usageClient: DevinUsageClient(http: FakeHTTPClient(response: HTTPResponse(
+                    statusCode: 200, headers: [:],
+                    body: Data(#"{"userStatus":{"planStatus":{"dailyQuotaRemainingPercent":80}}}"#.utf8)
+                ))),
+                usageScanner: fixture.scanner(), now: { frozenNow }, pricing: { frozenPricing }
+            )
+            let suite = "DevinUsageScannerTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { frozenNow })
+            let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
+                                        defaults: defaults, now: { frozenNow })
+            await store.refreshAll(force: true)
+            let previous = try XCTUnwrap(store.localSnapshots["devin"]?.totalSpendLines)
+            XCTAssertEqual(value(previous, "Today", .count), 185)
+
+            if corruptDatabase {
+                try Data("not-sqlite".utf8).write(to: fixture.database)
+            } else {
+                try FileManager.default.removeItem(at: fixture.database)
+                try fixture.writeLog(node(request: "one"))
+                try Data("not-json".utf8).write(to: fixture.log.deletingLastPathComponent().appendingPathComponent("meta.json"))
+            }
+            await store.refreshAll(force: true)
+            let retained = store.localSnapshots["devin"]
+            XCTAssertEqual(retained?.totalSpendLines, previous)
+            XCTAssertNotNil(retained?.warning)
+            XCTAssertNil(store.providerErrors["devin"])
+            XCTAssertEqual(cache.loadSnapshots(providerIDs: ["devin"])["devin"]?.totalSpendLines, previous)
+
+            let directory = fixture.database.deletingLastPathComponent()
+            try FileManager.default.removeItem(at: directory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try fixture.execute("CREATE TABLE message_nodes(session_id TEXT, node_id INTEGER, created_at INTEGER, chat_message TEXT);")
+            await store.refreshAll(force: true)
+            XCTAssertEqual(store.localSnapshots["devin"]?.totalSpendLines, [])
+            XCTAssertNil(store.localSnapshots["devin"]?.warning)
+        }
+    }
+
     private func node(request: String, id: Int = 1, output: Int = 50, context: Int = 135) throws -> Data {
         try line(message(request: request, output: output, context: context), id: id)
     }
