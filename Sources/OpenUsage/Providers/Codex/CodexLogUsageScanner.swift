@@ -33,8 +33,8 @@ actor CodexLogUsageScanner {
         var usageRecordID: String? = nil
     }
 
-    /// 원장 없는 누적 증가분 복원 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 13
+    /// 역순 원장·모델 귀속 수정 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 14
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(

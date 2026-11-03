@@ -18,7 +18,7 @@ extension CodexLogUsageScanner {
         let turnAbortedMarker = Data(#""type":"turn_aborted""#.utf8)
 
         var events: [Event] = []
-        var legacyScopes: [Int: (scope: String, boundary: Int)] = [:]
+        var legacyScopes: [Int: (scope: String, boundary: Int, modelOverride: String?)] = [:]
         var recordedEvents: [Int: (scope: String, boundary: Int, responseID: String)] = [:]
         var invalidScopes: Set<String> = []
         var seenRecords: Set<String> = []
@@ -166,12 +166,17 @@ extension CodexLogUsageScanner {
                let previous = previousTotals, totals.equalCounts(previous) {
                 continue
             }
-            if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
+            let modelOverride = modelName(in: payload) ?? info.flatMap(modelName(in:))
+            if let parsedModel = modelOverride {
                 currentModel = parsedModel
+                if let currentTurnID {
+                    turnContexts[currentTurnID] = (parsedModel, currentTierIsFast, currentTierIsUltrafast)
+                }
             }
 
             // replay된 parent history — delta baseline만 seed, usage 미방출.
             if replayGate != nil {
+                if payload["info"] == nil || payload["info"] is NSNull { continue }
                 previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
                 replayBaselineUnknown = previousTotals == nil
                 continue
@@ -200,7 +205,7 @@ extension CodexLogUsageScanner {
                 replayBaselineUnknown = false
             }
             guard !usage.invalid else {
-                legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary)
+                legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride)
                 events.append(Event(
                     timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
                     total: 0, invalidNumericValues: true
@@ -214,7 +219,7 @@ extension CodexLogUsageScanner {
                 currentModel: &currentModel
             )
 
-            legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary)
+            legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride)
             events.append(
                 Event(
                     timestamp: timestamp,
@@ -230,16 +235,17 @@ extension CodexLogUsageScanner {
                 ))
         }
         let recordsByBoundary = Dictionary(grouping: recordedEvents.keys.sorted()) { recordedEvents[$0]!.boundary }
-        let selected = events.enumerated().compactMap { index, event -> Event? in
-            guard let legacy = legacyScopes[index] else { return event }
-            guard !invalidScopes.contains(legacy.scope) else { return nil }
-            guard !event.invalidNumericValues else { return event }
+        var matchedRecords: Set<Int> = []
+        let retainedIndices = events.indices.filter { index in
+            let event = events[index]
+            guard let legacy = legacyScopes[index] else { return true }
+            guard !invalidScopes.contains(legacy.scope) else { return false }
+            guard !event.invalidNumericValues else { return true }
             var remaining = event
-            var candidates = recordsByBoundary[legacy.boundary] ?? []
-            if legacy.boundary + 1 == usageBoundary { candidates += recordsByBoundary[usageBoundary] ?? [] }
+            let candidates = (recordsByBoundary[legacy.boundary] ?? []) + (recordsByBoundary[legacy.boundary + 1] ?? [])
             for recordIndex in candidates {
                 let record = recordedEvents[recordIndex]!
-                guard record.scope == legacy.scope else { continue }
+                guard record.scope == legacy.scope, !matchedRecords.contains(recordIndex) else { continue }
                 // 원격 압축은 설치 뒤 누적값 재계산, 로컬 압축은 사용량 발행 뒤 설치.
                 let compactedAt = compactionBoundaries[record.responseID]
                 if let compactedAt, compactedAt <= legacy.boundary { continue }
@@ -247,30 +253,39 @@ extension CodexLogUsageScanner {
                 if compactedAt == nil, record.boundary == legacy.boundary,
                    failedBoundaries[legacy.scope] == legacy.boundary + 1 {
                     remaining.invalidMetadata = true
-                    return remaining
+                    events[index] = remaining
+                    return true
                 }
                 let usage = events[recordIndex]
-                // 뒤따르는 누적 이벤트가 없는 역순 기록은 같은 시각·사용량의 바로 앞 이벤트에만 대응.
-                let reversed = compactedAt == nil
-                    && record.boundary == usageBoundary && legacy.boundary + 1 == usageBoundary
-                    && usage.timestamp == event.timestamp && usage.model == event.model
-                    && usage.isFast == event.isFast && usage.isUltrafast == event.isUltrafast
-                    && usage.input == remaining.input && usage.cached == remaining.cached
+                let sameUsage = usage.input == remaining.input && usage.cached == remaining.cached
                     && usage.output == remaining.output && usage.reasoning == remaining.reasoning
                     && usage.total == remaining.total
+                // 역순 원장은 같은 시각·사용량의 바로 앞 이벤트에 대응하며 한 구간에서만 차감.
+                let reversed = compactedAt == nil
+                    && record.boundary == legacy.boundary + 1
+                    && usage.timestamp == event.timestamp && (usage.model == event.model || legacy.modelOverride != nil)
+                    && usage.isFast == event.isFast && usage.isUltrafast == event.isUltrafast
+                    && sameUsage
                 guard record.boundary == legacy.boundary || reversed,
                       remaining.input >= usage.input, remaining.cached >= usage.cached,
                       remaining.output >= usage.output, remaining.reasoning >= usage.reasoning,
                       remaining.total >= usage.total else { continue }
+                if sameUsage, let model = legacy.modelOverride {
+                    events[recordIndex].model = model
+                    events[recordIndex].pricingModel = model == autoReviewModel
+                        ? autoReviewFallback(at: OpenUsageISO8601.string(from: usage.timestamp)) : nil
+                }
+                matchedRecords.insert(recordIndex)
                 remaining.input -= usage.input
                 remaining.cached -= usage.cached
                 remaining.output -= usage.output
                 remaining.reasoning -= usage.reasoning
                 remaining.total -= usage.total
             }
+            events[index] = remaining
             return remaining.input > 0 || remaining.cached > 0 || remaining.output > 0 || remaining.reasoning > 0
-                ? remaining : nil
         }
+        let selected = retainedIndices.map { events[$0] }
         UsageLogNumbers.reportRejectedRows(selected.filter(\.invalidNumericValues).count, source: "codex")
         return selected
     }
