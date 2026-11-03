@@ -62,10 +62,47 @@ final class CodexUsageRecordTests: XCTestCase {
         }
     }
 
-    func testVersionThirteenCacheReparsesReversedResponseRecords() async throws {
+    func testSkippedNotificationsDoNotSeparateRecordsFromMatchingSnapshots() {
+        for reversed in [false, true] {
+            let current = count(input: 1_000, totalInput: 1_100)
+            let repeated = reversed ? current : count(input: 100, totalInput: 100)
+            let notifications = [
+                line(type: "event_msg", payload: ["type": "token_count", "rate_limits": [:]]),
+                line(type: "event_msg", payload: ["type": "token_count", "info": NSNull(), "rate_limits": [:]]),
+                repeated
+            ]
+            for notification in notifications {
+                let record = record(response: "one", input: 1_000)
+                let pair = reversed ? [current, notification, record] : [record, notification, current]
+                let events = parse([context(), count(input: 100, totalInput: 100)] + pair)
+                XCTAssertEqual(events.map(\.input), [100, 1_000])
+                XCTAssertEqual(events.map(\.usageRecordID), [nil, "session-1:one"])
+                let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+                XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_100)
+            }
+        }
+    }
+
+    func testMalformedRecordRejectsOnlyItsPendingUsageInterval() {
+        let events = parse([
+            context(), count(input: 1_000, totalInput: 1_000),
+            record(response: "bad", input: -1), count(input: 200, totalInput: 1_200),
+            record(response: "recovered", input: 300), count(input: 300, totalInput: 1_500),
+            count(input: 50, totalInput: 1_550)
+        ])
+        XCTAssertEqual(events.filter { !$0.invalidNumericValues }.map(\.input), [1_000, 300, 50])
+        let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_350)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.numericWarning)
+    }
+
+    func testVersionFourteenCacheReparsesRecordsSeparatedByNotifications() async throws {
         let content = [
             context(), count(input: 1_000, totalInput: 1_000), record(response: "one", input: 1_000),
-            count(input: 200, totalInput: 1_200), record(response: "two", input: 200)
+            count(input: 200, totalInput: 1_200),
+            line(type: "event_msg", payload: ["type": "token_count", "info": NSNull(), "rate_limits": [:]]),
+            record(response: "two", input: 200)
         ].joined(separator: "\n")
         let home = try CodexLogFixture.makeHome(files: ["sessions/reversed.jsonl": content])
         defer { try? FileManager.default.removeItem(at: home) }
@@ -73,7 +110,7 @@ final class CodexUsageRecordTests: XCTestCase {
         let directory = home.appendingPathComponent("cache")
         let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
-            persistence: .init(namespace: "codex", schemaVersion: 13, directory: directory, writeDebounce: .milliseconds(1))
+            persistence: .init(namespace: "codex", schemaVersion: 14, directory: directory, writeDebounce: .milliseconds(1))
         )
         let duplicated = CodexLogUsageScanner.Event(
             timestamp: now, model: "gpt-5.2", input: 2_200, cached: 0, output: 0, reasoning: 0, total: 2_200
@@ -198,6 +235,33 @@ final class CodexUsageRecordTests: XCTestCase {
             ])
         ])
         XCTAssertEqual(events.map(\.input), [1_000, 500])
+        XCTAssertFalse(events.contains { $0.invalidMetadata })
+    }
+
+    func testFailedRecordAfterCompletedUsageDoesNotInvalidateTheEarlierInterval() {
+        for terminal in ["task_complete", "turn_aborted"] {
+            let events = parse([
+                context(), record(response: "normal", input: 1_000), count(input: 1_000, totalInput: 1_000),
+                record(response: "failed-compact", input: 500), count(input: 1_000, totalInput: 1_000),
+                line(type: "event_msg", payload: [
+                    "type": terminal, "turn_id": "turn-1", "error": ["message": "compaction failed"]
+                ])
+            ])
+            XCTAssertEqual(events.map(\.input), [1_000, 500])
+            XCTAssertFalse(events.contains { $0.invalidMetadata })
+        }
+    }
+
+    func testMalformedPendingRecordKeepsOnlyItsOwnWarningAfterFailure() {
+        let events = parse([
+            context(), record(response: "normal", input: 1_000), count(input: 1_000, totalInput: 1_000),
+            record(response: "bad", input: -1), count(input: 1_000, totalInput: 1_000),
+            line(type: "event_msg", payload: [
+                "type": "task_complete", "turn_id": "turn-1", "error": ["message": "response failed"]
+            ])
+        ])
+        XCTAssertEqual(events.filter { !$0.invalidNumericValues }.map(\.input), [1_000])
+        XCTAssertEqual(events.filter(\.invalidNumericValues).count, 1)
         XCTAssertFalse(events.contains { $0.invalidMetadata })
     }
 
