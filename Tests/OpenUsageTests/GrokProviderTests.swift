@@ -212,9 +212,9 @@ final class GrokProviderTests: XCTestCase {
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 오늘 grok-build 장문 입력 1M × $2 = $2, 어제 composer-2.5-fast 출력 1M × $15 = $15.
         let log = """
-        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -241,7 +241,7 @@ final class GrokProviderTests: XCTestCase {
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // fixture: 06-17에만 inference row, 06-18(today)은 없음
         let log = """
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -263,9 +263,9 @@ final class GrokProviderTests: XCTestCase {
         let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 픽스처: 06-18 입력 1M, 06-17 출력 1M
         let log = """
-        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -289,7 +289,7 @@ final class GrokProviderTests: XCTestCase {
     func testInvalidOnlyLocalHistoryWarnsWithoutClearingHistoryOrFailingWeeklyMeter() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
-            {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
             {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1e300}}
             """]),
             environment: FakeEnvironment(),
@@ -341,7 +341,7 @@ final class GrokProviderTests: XCTestCase {
     func testUnscopedAmbiguousUsageWarnsWithoutPublishingEmptyHistory() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
-            {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
             {"pid":1,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
             {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
             """]),

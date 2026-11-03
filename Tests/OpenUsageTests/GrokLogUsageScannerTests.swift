@@ -12,7 +12,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
             ("xai/grok-4.6-high-fast", 16.0)
         ] {
             let log = """
-            {"pid":1,"msg":"model changed","ctx":{"model":"\(model)"}}
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"\(model)"}}
             {"ts":"2026-06-10T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":1000000}}
             """
             let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
@@ -29,7 +29,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
         // fixture: pid 100은 grok-build, pid 200은 grok-composer-2.5-fast — token row는 각 process의 현재 model로 가격 산정
         let log = """
         {"ts":"2026-06-10T09:00:00.000Z","pid":100,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
-        {"ts":"2026-06-10T09:00:00.000Z","pid":200,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-10T09:00:00.000Z","pid":200,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-10T10:00:00.000Z","pid":100,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         {"ts":"2026-06-10T11:00:00.000Z","pid":200,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
@@ -46,9 +46,9 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testTracksMidProcessModelSwitch() {
         let log = """
-        {"ts":"2026-06-12T08:00:00.000Z","pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-12T08:00:00.000Z","pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-12T09:00:00.000Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-12T10:00:00.000Z","pid":7,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T10:00:00.000Z","pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-12T11:00:00.000Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
         """
 
@@ -58,9 +58,77 @@ final class GrokLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(usage.series.daily.first?.costUSD ?? 0, 5.0, accuracy: 0.0001)
     }
 
+    func testModelRequestDoesNotChangeAttributionUntilApplied() {
+        let log = """
+        {"pid":7,"sid":"parent","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"pid":7,"sid":"parent","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"pid":7,"sid":"parent","msg":"backend_search: model switch","ctx":{"new_model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T11:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 3_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 7)
+        let models = usage.modelUsage?.daily.first?.models ?? []
+        XCTAssertEqual(models.first { $0.model == "grok-build" }?.totalTokens, 2_000_000)
+        XCTAssertEqual(models.first { $0.model == "grok-composer-2.5-fast" }?.totalTokens, 1_000_000)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+    }
+
+    func testProcessRestartClearsAmbiguityOnlyForReusedPID() {
+        let log = """
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+        {"pid":8,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"pid":8,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"process resource limits","ctx":{"nofile":[1024,4096]}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T11:00:00Z","pid":8,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 2_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 5)
+        XCTAssertEqual(usage.rejectedMetadataRows, 1)
+    }
+
+    func testProcessRestartClearsResumedSessionModelAndPreservesOtherPID() {
+        let log = """
+        {"pid":7,"sid":"same","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
+        {"pid":8,"sid":"same","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
+        {"pid":7,"msg":"process resource limits"}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"same","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"ts":"2026-06-12T10:00:00Z","pid":8,"sid":"same","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(usage.series.daily.first?.totalTokens, 2_000_000)
+        XCTAssertEqual(usage.series.daily.first?.costUSD, 5)
+        XCTAssertEqual(usage.modelUsage?.daily.first?.models.count, 2)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+    }
+
+    func testProcessRestartClearsPreviousDefaultAndInheritedSession() {
+        let log = """
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"ts":"2026-05-31T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1}}
+        {"pid":7,"msg":"process resource limits"}
+        {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-build"}}
+        {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertTrue(usage.series.daily.isEmpty)
+        XCTAssertNil(usage.usageHistory)
+        XCTAssertEqual(usage.rejectedMetadataRows, 2)
+    }
+
     func testSessionsSharingProcessKeepTheirOwnModels() {
         let log = """
-        {"pid":7,"sid":"parent","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"sid":"parent","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
         {"pid":7,"sid":"child","msg":"backend_search: model switch","ctx":{"new_model":"grok-composer-2.5-fast"}}
         {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"unknown-default"}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":1000000}}
@@ -77,10 +145,10 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testProcessModelChangeUpdatesInheritedButNotExplicitSessionModels() {
         let log = """
-        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
-        {"pid":7,"sid":"explicit","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"pid":7,"sid":"explicit","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"inherited","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
-        {"pid":7,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"inherited","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
         {"ts":"2026-06-12T11:00:00Z","pid":7,"sid":"explicit","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
         """
@@ -96,7 +164,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
     func testAmbiguousProcessWithoutSessionIDWarnsAndPreservesHistory() {
         let diagnostics = DiagnosticEventRecorder()
         let log = """
-        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
         {"ts":"2026-05-31T09:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
@@ -114,9 +182,9 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testProcessSwitchBeforeUnscopedChildPreservesLatestParentModel() {
         let log = """
-        {"pid":7,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-05-31T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1}}
-        {"pid":7,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"pid":7,"msg":"subagent model resolved","ctx":{"child_model":"grok-build"}}
         {"pid":7,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
@@ -131,8 +199,8 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testSameSessionIDInDifferentProcessesIsIndependent() {
         let log = """
-        {"pid":7,"sid":"session","msg":"model changed","ctx":{"model":"grok-build"}}
-        {"pid":8,"sid":"session","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":7,"sid":"session","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
+        {"pid":8,"sid":"session","msg":"backend_search: model switch","ctx":{"new_model":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
         {"ts":"2026-06-12T10:00:00Z","pid":8,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
         """
@@ -160,7 +228,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testScopedChildModelIsUsedWhenSessionIsKnown() {
         let log = """
-        {"pid":7,"sid":"parent","msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":7,"sid":"parent","msg":"backend_search: model switch","ctx":{"new_model":"grok-build"}}
         {"pid":7,"sid":"child","msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
         {"ts":"2026-06-12T10:00:00Z","pid":7,"sid":"parent","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000}}
@@ -173,7 +241,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
     func testUsesCachedReadRateForCachedPromptTokens() {
         // 1M 입력 중 800k는 캐시 읽기 — 캐시를 포함한 요청 전체에 장문 단가 적용.
         let log = """
-        {"ts":"2026-06-12T08:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-12T08:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-12T09:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":800000,"completion_tokens":0,"reasoning_tokens":0}}
         """
 
@@ -185,7 +253,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testSkipsRowsWithoutTokenFieldsAndOutsideWindow() {
         let log = """
-        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-05-30T09:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":0,"reasoning_tokens":0}}
         {"ts":"2026-06-10T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"loop_index":3,"model_elapsed_ms":10}}
         {"ts":"2026-06-10T11:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":500000,"completion_tokens":0,"reasoning_tokens":0}}
@@ -200,9 +268,9 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testUnpricedModelIsExcludedFromTotalsButWarns() {
         let log = """
-        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-unknown-model"}}
+        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-unknown-model"}}
         {"ts":"2026-06-10T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-10T11:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-10T11:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-10T12:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":500000,"completion_tokens":0,"reasoning_tokens":0}}
         """
 
@@ -217,7 +285,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
 
     func testUnpricedModelOnlyLeavesDayUnbacked() {
         let log = """
-        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-unknown-model"}}
+        {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-unknown-model"}}
         {"ts":"2026-06-10T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":0,"reasoning_tokens":0}}
         """
 
@@ -245,7 +313,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
     func testScanReadsGrokHomeOverride() async {
         let files = FakeFiles([
             "/custom/grok/logs/unified.jsonl": """
-            {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
             {"ts":"2026-06-10T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":0,"reasoning_tokens":0}}
             """
         ])
