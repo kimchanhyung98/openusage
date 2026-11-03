@@ -9,16 +9,16 @@ import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 
 test('deployment smoke requires both feeds to match the supplied deployment baseline', async (t) => {
-  const directory = mkdtempSync(join(tmpdir(), 'openusage-smoke-baseline-'));
+  const directory = mkdtempSync(join(tmpdir(), 'egasu-smoke-baseline-'));
   const appcast = `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
     <sparkle:version>992</sparkle:version><sparkle:shortVersionString>0.99.2</sparkle:shortVersionString>
-    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/v0.99.2/OpenUsage.dmg" sparkle:edSignature="original-signature"/>
+    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/v0.99.2/egasu.dmg" sparkle:edSignature="original-signature"/>
   </item></channel></rss>`;
   const pricing = '{"pricing":{"sample-model":{"input":1,"output":2}}}';
   writeFileSync(join(directory, 'appcast.xml'), appcast);
   writeFileSync(join(directory, 'pricing_supplement.json'), pricing);
   const routes = new Map([
-    ['/', ['text/html', '<title>OpenUsage</title><meta property="og:image" content="https://example.test/og.png">']],
+    ['/', ['text/html', '<title>egasu</title><meta property="og:image" content="https://example.test/og.png">']],
     ['/404.html', ['text/html', '<main data-page="404">Missing</main>']],
     ['/robots.txt', ['text/plain', 'Sitemap: https://example.test/sitemap.xml']],
     ['/sitemap.xml', ['application/xml', '<urlset/>']],
@@ -53,7 +53,7 @@ test('deployment smoke requires both feeds to match the supplied deployment base
     });
     await t.test('missing social preview metadata fails validation', async () => {
       const originalIndex = routes.get('/')!;
-      routes.set('/', ['text/html', '<title>OpenUsage</title>']);
+      routes.set('/', ['text/html', '<title>egasu</title>']);
       try {
         const result = await run(directory);
         assert.equal(result.status, 1, result.output);
@@ -97,9 +97,9 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
   const script = readFileSync(new URL('../../script/site_smoke.sh', import.meta.url), 'utf8');
   const python = script.match(/<<'PY' \|\| fail=1\n([\s\S]*?)\nPY/)?.[1];
   assert.ok(python);
-  const directory = mkdtempSync(join(tmpdir(), 'openusage-smoke-feed-'));
+  const directory = mkdtempSync(join(tmpdir(), 'egasu-smoke-feed-'));
   const prefix = 'https://github.com/kimchanhyung98/openusage/releases/download/';
-  const item = (build: string, version: string, channel = '', suffix = `v${version}/OpenUsage.dmg`) => `<item>
+  const item = (build: string, version: string, channel = '', suffix = `v${version}/egasu.dmg`) => `<item>
     <sparkle:channel>${channel}</sparkle:channel><sparkle:version>${build}</sparkle:version>
     <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
     <enclosure url="${prefix}${suffix}"/>

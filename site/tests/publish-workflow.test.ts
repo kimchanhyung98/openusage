@@ -20,7 +20,7 @@ function workflowStep(name: string, file = 'publish-site.yml') {
 }
 
 function publicationFixture() {
-  const temp = mkdtempSync(join(tmpdir(), 'openusage-publication-test-'));
+  const temp = mkdtempSync(join(tmpdir(), 'egasu-publication-test-'));
   const published = join(temp, 'published');
   const checkout = join(temp, 'checkout');
   mkdirSync(published);
@@ -288,7 +288,7 @@ cp "$GH_ARTIFACT" "$RUNNER_TEMP/pages-publication/revision.txt"
         EVENT_NAME: 'workflow_run',
         PUBLISH_RUN_ID: '12345',
         PUBLISH_RUN_ATTEMPT: '2',
-        GITHUB_REPOSITORY: 'fixture/openusage',
+        GITHUB_REPOSITORY: 'fixture/egasu',
         GITHUB_ENV: githubEnv,
         GH_ARTIFACT: artifact,
         GH_ARGS: ghArgs,
@@ -317,7 +317,7 @@ test('후속 게시가 피드를 변경해도 성공한 실행의 커밋으로 �
     fixture.git(fixture.checkout, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
     assert.equal(readFileSync(join(fixture.checkout, 'appcast.xml'), 'utf8').trim(), verifiedFeed);
     assert.deepEqual(readFileSync(fixture.ghArgs, 'utf8').trim().split('\n'), [
-      'run', 'download', '12345', '--repo', 'fixture/openusage',
+      'run', 'download', '12345', '--repo', 'fixture/egasu',
       '--name', 'pages-publication-2', '--dir', join(fixture.temp, 'pages-publication'),
     ]);
   } finally { fixture.cleanup(); }
@@ -372,7 +372,7 @@ for (const [updatedAt, valid] of [
   [undefined, false], [true, false], [12345, false],
 ] as const) {
   test(`가격표 발행 시 updated_at ${JSON.stringify(updatedAt)} ${valid ? '허용' : '거부'}`, () => {
-    const temp = mkdtempSync(join(tmpdir(), 'openusage-pricing-validation-test-'));
+    const temp = mkdtempSync(join(tmpdir(), 'egasu-pricing-validation-test-'));
     try {
       const resources = join(temp, 'Sources/Egasu/Resources');
       mkdirSync(resources, { recursive: true });

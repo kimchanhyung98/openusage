@@ -110,9 +110,9 @@ export const settingGroups: SettingGroup[] = [
     id: 'privacy', title: 'Privacy',
     rows: [
       { id: 'hideFromScreenShare', label: 'Hide From Screen Share', control: { kind: 'toggle', on: true },
-        note: 'While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage.' },
+        note: 'While your screen is shared or recorded, the menu bar shows “egasu” instead of your usage.' },
       { id: 'shareAnonymousUsage', label: 'Share Anonymous Usage', control: { kind: 'toggle', on: false },
-        note: 'Shares anonymous usage counts and error types to help improve OpenUsage. No account details, credentials, or usage values are sent.' },
+        note: 'Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent.' },
     ],
   },
   {
@@ -128,7 +128,7 @@ export const settingGroups: SettingGroup[] = [
     rows: [
       { id: 'terminalHelper', label: 'Terminal Helper',
         control: { kind: 'action', label: 'Install…', message: 'Install the terminal helper from the Mac app.' },
-        note: 'Adds a global `openusage` command agents can use to monitor limits.' },
+        note: 'Adds a global `egasu` command agents can use to monitor limits.' },
     ],
   },
   {

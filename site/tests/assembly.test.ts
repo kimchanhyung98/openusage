@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 function assemblyFixture() {
-  const temp = mkdtempSync(join(tmpdir(), 'openusage-assembly-test-'));
+  const temp = mkdtempSync(join(tmpdir(), 'egasu-assembly-test-'));
   const root = join(temp, 'checkout');
   const output = join(temp, 'output');
   const bin = join(temp, 'bin');
@@ -79,11 +79,24 @@ test('assembly replaces only marked output and resolves build placeholders', () 
   const fixture = assemblyFixture();
   try {
     assert.equal(fixture.run().status, 0);
-    assert.equal(readFileSync(join(fixture.output, '.openusage-site-output'), 'utf8'), '1\n');
+    assert.equal(readFileSync(join(fixture.output, '.egasu-site-output'), 'utf8'), '1\n');
     assert.match(readFileSync(join(fixture.output, 'index.html'), 'utf8'), /test-build/);
     writeFileSync(join(fixture.fixture, 'index.html'), '<title>Updated</title>__BUILD__');
     assert.equal(fixture.run().status, 0);
     assert.equal(readFileSync(join(fixture.output, 'index.html'), 'utf8'), '<title>Updated</title>test-build');
+  } finally { fixture.cleanup(); }
+});
+
+test('assembly replaces output created before the egasu rename', () => {
+  const fixture = assemblyFixture();
+  try {
+    mkdirSync(fixture.output);
+    writeFileSync(join(fixture.output, '.openusage-site-output'), '1\n');
+    writeFileSync(join(fixture.output, 'index.html'), '<title>Previous preview</title>');
+    const result = fixture.run();
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(readFileSync(join(fixture.output, '.egasu-site-output'), 'utf8'), '1\n');
+    assert.match(readFileSync(join(fixture.output, 'index.html'), 'utf8'), /test-build/);
   } finally { fixture.cleanup(); }
 });
 
@@ -124,7 +137,7 @@ test('assembly allows native provider sign-in copy while still rejecting site en
     writeFileSync(join(fixture.fixture, 'index.html'), copy);
     const first = fixture.run();
     assert.equal(first.status, 0, first.stderr || first.stdout);
-    writeFileSync(join(fixture.fixture, 'index.html'), '<title>The official OpenUsage site</title>');
+    writeFileSync(join(fixture.fixture, 'index.html'), '<title>The official egasu site</title>');
     assert.notEqual(fixture.run().status, 0);
     assert.equal(readFileSync(join(fixture.output, 'index.html'), 'utf8'), copy);
   } finally { fixture.cleanup(); }

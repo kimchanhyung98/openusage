@@ -279,7 +279,7 @@ async function initDownload(): Promise<void> {
       meta.hidden = false;
     }
   } catch (error) {
-    console.warn('OpenUsage release metadata unavailable; keeping the release-page link', error);
+    console.warn('egasu release metadata unavailable; keeping the release-page link', error);
   } finally {
     clearTimeout(timer);
   }

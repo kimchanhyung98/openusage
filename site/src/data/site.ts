@@ -2,7 +2,7 @@
 const repo = 'https://github.com/kimchanhyung98/openusage';
 
 export const site = {
-  brand: 'OpenUsage',
+  brand: 'egasu',
   url: 'https://openusage.chanhyung.kim',
   repo,
   githubProfile: 'https://git.chanhyung.kim',

@@ -93,17 +93,17 @@ export const previewTranslations: Record<string, { ko: string; ja: string }> = {
     ko: '새로운 공개 초기화 예측이나 초기화 예정 정보를 알립니다. 계정의 한도 초기화를 보장하지 않습니다.',
     ja: '新しい公開リセット予測やリセット予定を通知します。アカウントの上限リセットを保証するものではありません。',
   },
-  'Adds a global `openusage` command agents can use to monitor limits.': {
-    ko: '에이전트가 한도를 확인할 수 있도록 전역 `openusage` 명령을 추가합니다.',
-    ja: 'エージェントが上限を確認できるグローバルな`openusage`コマンドを追加します。',
+  'Adds a global `egasu` command agents can use to monitor limits.': {
+    ko: '에이전트가 한도를 확인할 수 있도록 전역 `egasu` 명령을 추가합니다.',
+    ja: 'エージェントが上限を確認できるグローバルな`egasu`コマンドを追加します。',
   },
   'Total Spend Period': { ko: '총 지출 기간', ja: '合計支出の期間' },
   'Switch Account': { ko: '계정 전환', ja: 'アカウントを切り替え' },
   'Account %d': { ko: '계정 %d', ja: 'アカウント%d' },
   '%@ Account %d': { ko: '%@ 계정 %d', ja: '%@ アカウント%d' },
-  'OpenUsage usage dashboard. Open Customize and Settings from Options.': {
-    ko: 'OpenUsage 사용량 대시보드. 옵션에서 커스터마이즈와 설정으로 이동.',
-    ja: 'OpenUsageの使用量ダッシュボード。オプションからカスタマイズと設定を開けます。',
+  'egasu usage dashboard. Open Customize and Settings from Options.': {
+    ko: 'egasu 사용량 대시보드. 옵션에서 커스터마이즈와 설정으로 이동.',
+    ja: 'egasuの使用量ダッシュボード。オプションからカスタマイズと設定を開けます。',
   },
   '%@ Account': { ko: '%@ 계정', ja: '%@アカウント' },
   '%@ Actions': { ko: '%@ 작업', ja: '%@の操作' },

@@ -224,7 +224,7 @@ export function initFeatureTour(): void {
     running = controller;
     void animate(selected, controller.signal).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      console.error('OpenUsage feature preview failed', error);
+      console.error('egasu feature preview failed', error);
       section.dataset.tourError = 'true';
       announcement.textContent = '미리보기를 불러오지 못했습니다. 새로고침해 주세요.';
     }).finally(() => { if (running === controller) running = undefined; });

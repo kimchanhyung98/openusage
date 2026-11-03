@@ -88,6 +88,6 @@ export const tabs: Tab[] = [
     id: 'integrations',
     name: '연동',
     description: ['CLI와 로컬 API로', '사용량을 도구와 연결하세요.'],
-    visualLabel: 'openusage 명령의 JSON 출력 예시와 curl 명령',
+    visualLabel: 'egasu 명령의 JSON 출력 예시와 curl 명령',
   },
 ];

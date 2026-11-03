@@ -4,7 +4,7 @@ test('download links select the latest stable release and exclude other channels
   const feed = stableFeed.replace('</channel>', `<item>
     <sparkle:channel>nightly</sparkle:channel><sparkle:version>9999</sparkle:version>
     <sparkle:shortVersionString>0.99.9</sparkle:shortVersionString>
-    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/nightly/OpenUsage.dmg" length="1048576"/>
+    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/nightly/egasu.dmg" length="1048576"/>
   </item></channel>`);
   await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: feed }));
   await openHome(page);
@@ -18,7 +18,7 @@ test('download links select the latest stable release and exclude other channels
 for (const invalid of [
   { label: 'a fractional build', build: '9999.5', version: '0.99.9', url: downloadURL.replace('0.99.2', '0.99.9') },
   { label: 'a prerelease without a channel', build: '9999', version: '0.99.9-rc.1', url: downloadURL.replace('0.99.2', '0.99.9-rc.1') },
-  { label: 'a URL escaping the release directory', build: '9999', version: '0.99.9', url: downloadURL.replace('v0.99.2/OpenUsage.dmg', '../../../../other/repository') },
+  { label: 'a URL escaping the release directory', build: '9999', version: '0.99.9', url: downloadURL.replace('v0.99.2/egasu.dmg', '../../../../other/repository') },
 ]) {
   test(`download links ignore ${invalid.label}`, async ({ page }) => {
     const feed = stableFeed.replace('</channel>', `<item>
@@ -52,7 +52,7 @@ for (const failure of ['http', 'xml', 'body-timeout'] as const) {
       } else {
         await page.route('**/appcast.xml', (route) => route.fulfill({ status: failure === 'http' ? 503 : 200, contentType: 'application/xml', body: '<broken' }));
       }
-      const notice = page.waitForEvent('console', (message) => message.text().includes('OpenUsage release metadata unavailable'));
+      const notice = page.waitForEvent('console', (message) => message.text().includes('egasu release metadata unavailable'));
       await openHome(page);
       if (failure === 'body-timeout') await page.clock.fastForward(5001);
       await notice;
