@@ -75,6 +75,68 @@ final class KimiUsagePricingTests: XCTestCase {
         }
     }
 
+    func testMissingOpenAICacheReadKeepsTokensWithoutAssumingZeroCacheCost() throws {
+        for protocolName in ["openai", "openai_responses"] {
+            for input in [0, 1_000_000] {
+                var row = usage(input: input, reads: 0)
+                var tokens = row["usage"] as! [String: Any]
+                tokens.removeValue(forKey: "inputCacheRead")
+                row["usage"] = tokens
+                let parsed = try parse([request(protocolName: protocolName), row])
+                let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
+
+                XCTAssertEqual(result.invalidRows, 0)
+                XCTAssertEqual(total(result, period: .today).totalTokens, Double(input + 100_000))
+                XCTAssertTrue(total(result, period: .today).projection(for: .cost).isEmpty)
+                XCTAssertTrue(total(result, period: .last30).projection(for: .costPerMtok).isEmpty)
+                XCTAssertEqual(result.warnings.count, 1)
+            }
+        }
+    }
+
+    func testMissingCacheReadForOtherProtocolsRemainsInvalid() throws {
+        for protocolName in ["anthropic", "unknown"] {
+            var row = usage()
+            var tokens = row["usage"] as! [String: Any]
+            tokens.removeValue(forKey: "inputCacheRead")
+            row["usage"] = tokens
+            let parsed = try parse([request(protocolName: protocolName), row])
+
+            XCTAssertTrue(parsed.records.isEmpty)
+            XCTAssertEqual(parsed.invalidRows, 1)
+        }
+    }
+
+    func testInvalidExplicitOpenAICacheReadIsNotTreatedAsMissing() throws {
+        for protocolName in ["openai", "openai_responses"] {
+            for value: Any in [-1, 0.5, true, "10", NSNull()] {
+                var row = usage()
+                var tokens = row["usage"] as! [String: Any]
+                tokens["inputCacheRead"] = value
+                row["usage"] = tokens
+                let parsed = try parse([request(protocolName: protocolName), row])
+
+                XCTAssertTrue(parsed.records.isEmpty)
+                XCTAssertEqual(parsed.invalidRows, 1)
+            }
+        }
+    }
+
+    func testMissingCacheReadWithoutMatchedRequestScopeRemainsInvalid() throws {
+        for field in ["kind", "usageScope"] {
+            var request = request(protocolName: "openai")
+            var row = usage()
+            var tokens = row["usage"] as! [String: Any]
+            tokens.removeValue(forKey: "inputCacheRead")
+            row["usage"] = tokens
+            if field == "kind" { request.removeValue(forKey: field) } else { row.removeValue(forKey: field) }
+            let parsed = try parse([request, row])
+
+            XCTAssertTrue(parsed.records.isEmpty)
+            XCTAssertEqual(parsed.invalidRows, 1)
+        }
+    }
+
     func testUnpricedYesterdayDoesNotHideTodayCostButDisablesWholeThirtyDayCost() throws {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
         let parsed = try parse([
