@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared Runtime Home을 건드리지 않고 공식 provider sign-in을 완료하는 앱 소유 home — `~/Library/Application Support/OpenUsage/AccountSignIn/<family>/<profile-id>/`.
-/// 경로는 불변 profile id에서 파생, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
+/// 계정 경로 아래 로그인 시도별 작업 공간 배치, 편집 가능 필드로 노출 금지. 공식 로그인·re-login·identity 검증 전용 — 일반 CLI 세션 금지.
 /// 내부 `FileManager` delegate 미사용 — credential read task로 안전하게 전달 가능.
 struct AccountSignInWorkspace: @unchecked Sendable {
     enum WorkspaceError: LocalizedError {
@@ -49,19 +49,22 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         }
     }
 
-    func directory(family: String, profileID: String) throws -> URL {
+    func directory(family: String, profileID: String, attemptID: String? = nil) throws -> URL {
         try validate(family)
         try validate(profileID)
-        return baseDirectory
+        if let attemptID { try validate(attemptID) }
+        let directory = baseDirectory
             .appendingPathComponent(family, isDirectory: true)
             .appendingPathComponent(profileID, isDirectory: true)
+        guard let attemptID else { return directory }
+        return directory.appendingPathComponent(attemptID, isDirectory: true)
     }
 
     /// 사용자 전용 workspace 생성(전 단계 `0700`) — symlink가 앱 소유 root를 탈출하는 경로는 거부.
     @discardableResult
-    func prepare(family: String, profileID: String) throws -> URL {
-        let directory = try directory(family: family, profileID: profileID)
-        try assertNoSymlinkComponents(family: family, profileID: profileID)
+    func prepare(family: String, profileID: String, attemptID: String? = nil) throws -> URL {
+        let directory = try directory(family: family, profileID: profileID, attemptID: attemptID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true,
@@ -76,10 +79,20 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         return directory
     }
 
-    private func assertNoSymlinkComponents(family: String, profileID: String) throws {
+    /// Codex 로그인은 기존 인증을 폐기하므로, 저장·전환용 사본과 분리된 빈 작업 공간 사용.
+    func prepareReauthentication(family: String, profileID: String) throws -> (attemptID: String?, directory: URL) {
+        let attemptID = family == "codex" ? UUID().uuidString : nil
+        return (attemptID, try prepare(family: family, profileID: profileID, attemptID: attemptID))
+    }
+
+    func assertNoSymlinkComponents(family: String, profileID: String, attemptID: String? = nil) throws {
         let familyDirectory = baseDirectory.appendingPathComponent(family, isDirectory: true)
         let profileDirectory = familyDirectory.appendingPathComponent(profileID, isDirectory: true)
-        for current in rootDirectoriesToValidate + [familyDirectory, profileDirectory] {
+        var directories = rootDirectoriesToValidate + [familyDirectory, profileDirectory]
+        if let attemptID {
+            directories.append(profileDirectory.appendingPathComponent(attemptID, isDirectory: true))
+        }
+        for current in directories {
             do {
                 let attributes = try fileManager.attributesOfItem(atPath: current.path)
                 guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
@@ -93,10 +106,10 @@ struct AccountSignInWorkspace: @unchecked Sendable {
         }
     }
 
-    /// 이 profile의 workspace만 삭제 — Shared Runtime Home·역사적 `~/.claude-*`/`~/.codex-*` 디렉터리는 범위 밖.
-    func remove(family: String, profileID: String) throws {
-        let directory = try directory(family: family, profileID: profileID)
-        try assertNoSymlinkComponents(family: family, profileID: profileID)
+    /// 지정한 계정 또는 로그인 시도의 작업 공간만 삭제 — Shared Runtime Home·역사적 `~/.claude-*`/`~/.codex-*` 디렉터리는 범위 밖.
+    func remove(family: String, profileID: String, attemptID: String? = nil) throws {
+        let directory = try directory(family: family, profileID: profileID, attemptID: attemptID)
+        try assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
         guard fileManager.fileExists(atPath: directory.path) else { return }
         try fileManager.removeItem(at: directory)
     }

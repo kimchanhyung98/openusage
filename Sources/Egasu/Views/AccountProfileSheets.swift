@@ -350,7 +350,7 @@ struct AccountProfileManagementSheet: View {
         }
     }
 
-    /// profile 자신의 Sign-In Workspace에서 공식 re-login. 검증된 credential은 이 계정명의 provider binding 교체.
+    /// 공식 재로그인 결과로 이 계정명의 provider binding 교체. Codex는 시도별 독립 작업 공간 사용.
     /// active profile의 re-sign-in은 Shared Runtime Home도 갱신.
     private func signInAgain() {
         guard !container.accountSwitch.isSwitching else { return }
@@ -368,9 +368,23 @@ struct AccountProfileManagementSheet: View {
                 }
                 try Task.checkCancellation()
                 let workspace = AccountSignInWorkspace()
-                let home = try workspace.prepare(family: profile.family, profileID: profile.id).path
+                let signIn = try workspace.prepareReauthentication(family: profile.family, profileID: profile.id)
+                defer {
+                    if let attemptID = signIn.attemptID {
+                        do {
+                            try workspace.remove(
+                                family: profile.family, profileID: profile.id, attemptID: attemptID
+                            )
+                        } catch {
+                            AppDiagnostics.failure(.accountSignIn, error: error, providerID: profile.family,
+                                                   localContext: "Sign-in workspace cleanup failed")
+                            actionError = UserFacingErrors.message(error)
+                        }
+                    }
+                }
+                AppLog.info(.auth, "account re-sign-in started \(profile.family) profile \(profile.id.prefix(8))")
                 let launcher = AccountSignInLauncher()
-                let code = try await launcher.runLogin(family: profile.family, home: home)
+                let code = try await launcher.runLogin(family: profile.family, home: signIn.directory.path)
                 try Task.checkCancellation()
                 guard code == 0 else {
                     actionError = L10n.accounts("The %@ sign-in did not complete. The saved account is unchanged.", familyTitle)
@@ -381,7 +395,8 @@ struct AccountProfileManagementSheet: View {
                 try AccountCredentialImporter().completeReSignIn(
                     profileID: profile.id,
                     in: store,
-                    isActive: store.preferredProfileID(family: profile.family) == profile.id
+                    isActive: store.preferredProfileID(family: profile.family) == profile.id,
+                    signInAttemptID: signIn.attemptID
                 )
                 AppDiagnostics.record(.accountSignIn, result: .success, providerID: profile.family)
                 onChanged()

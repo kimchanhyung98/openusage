@@ -207,6 +207,31 @@ final class AccountCredentialImporterTests: XCTestCase {
         XCTAssertEqual(credential.entry.credential, claudeCredential(token: "token-w"))
     }
 
+    func testWorkspaceCleanupDeletesScopedKeychainBeforeRejectingASymlinkedDirectory() throws {
+        let fixture = try makeFixture()
+        let workspaceHome = try fixture.workspace.prepare(family: "claude", profileID: "profile-w")
+        let service = ClaudeAuthStore.scopedKeychainServiceName(
+            forConfigDirLiteral: workspaceHome.path, environment: FakeEnvironment([:])
+        )
+        fixture.keychain.currentUserValues[service] = claudeCredential(token: "workspace-token")
+        fixture.keychain.currentUserValues["unrelated-service"] = "keep"
+        let outside = fixture.home.appendingPathComponent("outside")
+        let protectedFile = outside.appendingPathComponent(".credentials.json")
+        try write("keep", to: protectedFile)
+        try FileManager.default.removeItem(at: workspaceHome)
+        try FileManager.default.createSymbolicLink(at: workspaceHome, withDestinationURL: outside)
+
+        XCTAssertThrowsError(try fixture.importer.removeSignInWorkspace(family: "claude", profileID: "profile-w")) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+        }
+
+        XCTAssertNil(fixture.keychain.currentUserValues[service])
+        XCTAssertEqual(fixture.keychain.currentUserValues["unrelated-service"], "keep")
+        XCTAssertEqual(try String(contentsOf: protectedFile, encoding: .utf8), "keep")
+    }
+
     func testRemovalKeepsTheSnapshotAndProfileWhenWorkspaceDeletionFails() throws {
         let fixture = try makeFixture()
         let credential = AccountCredentialImporter.ImportedCredential(

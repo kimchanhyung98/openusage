@@ -2,6 +2,26 @@ import XCTest
 @testable import Egasu
 
 final class AccountSignInLauncherTests: XCTestCase {
+    func testCancellationBeforeLaunchTerminatesTheLoginChild() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cli = root.appendingPathComponent("codex")
+        try Data("#!/bin/sh\nexec /bin/sleep 2\n".utf8).write(to: cli)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: cli.path)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await AccountSignInLauncher().runLogin(
+                family: "codex", home: root.path, baseEnvironment: ["PATH": root.path],
+                usesLoginShellPATH: false
+            )
+        }
+
+        let code = try await task.value
+
+        XCTAssertEqual(code, 128 + SIGTERM)
+    }
+
     func testLoginArgumentsMatchTheInstalledCLIs() {
         XCTAssertEqual(AccountSignInLauncher.loginArguments(family: "claude"), ["auth", "login"])
         XCTAssertEqual(
