@@ -181,6 +181,115 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(priced.series.daily.first?.costUSD), 0.002, accuracy: 1e-9)
     }
 
+    func testStandaloneUsageRequiresNonemptyModelEvenWithCarriedCost() throws {
+        for (provider, cardID, otherCardID) in [("anthropic", "claude", "codex"), ("openai-codex", "codex", "claude")] {
+            for model in [nil, NSNull(), "", " \t", 42] as [Any?] {
+                var object: [String: Any] = [
+                    "type": "usage", "id": "usage", "timestamp": "2026-07-12T10:00:00Z", "provider": provider,
+                    "usage": ["input": 100, "totalTokens": 100, "cost": ["total": 0.5]]
+                ]
+                object["model"] = model
+                let entry = try XCTUnwrap(PiUsageScanner.parseLine(JSONSerialization.data(withJSONObject: object)))
+                XCTAssertTrue(entry.invalidMetadata)
+                XCTAssertEqual(entry.cardID, cardID)
+                let scan = PiUsageScanner.aggregate(entries: [entry], cardID: cardID, since: .distantPast, pricing: .empty)
+                XCTAssertTrue(scan.series.daily.isEmpty)
+                XCTAssertEqual(scan.rejectedMetadataRows, 1)
+                XCTAssertNil(scan.usageHistory)
+                let other = PiUsageScanner.aggregate(entries: [entry], cardID: otherCardID, since: .distantPast, pricing: .empty)
+                XCTAssertEqual(other.rejectedMetadataRows, 0)
+            }
+        }
+    }
+
+    func testMalformedCompactionUsageKeepsWarningsWithoutInventingDates() {
+        let entries = parseRecords([
+            #"{"type":"compaction","id":"missing-time","usage":{"input":100}}"#,
+            #"{"type":"compaction","id":"bad-time","timestamp":"invalid","usage":{"input":100}}"#,
+            #"{"type":"compaction","id":"null-time","timestamp":null,"usage":{"input":100}}"#,
+            #"{"type":"compaction","id":"null-usage","timestamp":"2026-07-12T10:00:00Z","usage":null}"#,
+            #"{"type":"compaction","id":"bad-usage","timestamp":"2026-07-12T10:00:00Z","usage":"invalid"}"#,
+            #"{"type":"compaction","id":"old","timestamp":"2025-07-12T10:00:00Z","usage":"invalid"}"#
+        ])
+        XCTAssertEqual(entries.count, 6)
+        XCTAssertTrue(entries.prefix(3).allSatisfy { $0.timestamp == nil })
+        for cardID in ["claude", "codex"] {
+            let scan = PiUsageScanner.aggregate(
+                entries: PiUsageScanner.dedup(entries + entries), cardID: cardID,
+                since: d("2026-07-01T00:00:00Z"), pricing: .empty
+            )
+            XCTAssertEqual(scan.rejectedMetadataRows, 5)
+            XCTAssertEqual(scan.rejectedNumericRows, 0)
+            XCTAssertNil(scan.usageHistory)
+            XCTAssertTrue(scan.series.daily.isEmpty)
+        }
+    }
+
+    func testCompactionWithoutOptionalUsageIsIgnored() {
+        let entries = parseRecords([
+            #"{"type":"compaction","id":"manual","timestamp":"2026-07-12T10:00:00Z","summary":"fixture","fromHook":true}"#,
+            #"{"type":"compaction","id":"old-format","timestamp":"2026-07-12T10:00:00Z","summary":"fixture"}"#
+        ])
+        XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testUsageCandidatesWithWhitespaceStillParse() {
+        let message = String(decoding: line(), as: UTF8.self).replacingOccurrences(of: "\":", with: "\": ")
+        let entries = parseRecords([
+            #"{"type": "usage", "id": "standalone", "timestamp": "2026-07-12T10:00:00Z", "provider": "anthropic", "model": "claude-opus-4-8", "usage": {"input": 100, "totalTokens": 100, "cost": {"total": 0.5}}}"#,
+            message
+        ])
+        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 250)
+        XCTAssertEqual(scan.series.daily.first?.costUSD, 1)
+    }
+
+    func testVersionSixCacheReparsesAndPreservesMetadataWarnings() async throws {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+        let data = Data("""
+        {"type":"usage","id":"usage","timestamp":"2026-07-12T10:00:00Z","provider":"anthropic","usage":{"input":100,"totalTokens":100,"cost":{"total":0.5}}}
+        {"type":"compaction","id":"compaction","usage":{"input":100}}
+        """.utf8)
+        let fileURL = base.appendingPathComponent("session.jsonl")
+        try data.write(to: fileURL)
+        let mtime = try XCTUnwrap(fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        let file = JSONLScanning.DiscoveredFile(path: fileURL.path, size: data.count, mtime: mtime)
+        let directory = base.appendingPathComponent("cache")
+        let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: .init(
+            namespace: "pi", schemaVersion: 6, directory: directory, writeDebounce: .milliseconds(1)
+        ))
+        _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in [] })
+        await old.waitForPendingWritesForTesting()
+        let persistence = JSONLScanCachePersistence(
+            namespace: "pi", schemaVersion: PiUsageScanner.cacheSchemaVersion,
+            directory: directory, writeDebounce: .milliseconds(1)
+        )
+        let fresh = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: persistence)
+        let parsed = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: PiUsageScanner.parseFile)
+        let cached = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in
+            XCTFail("Unchanged file should use memory cache")
+            return []
+        })
+        await fresh.waitForPendingWritesForTesting()
+        let relaunched = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: persistence)
+        let restored = await relaunched.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in
+            XCTFail("Unchanged file should use disk cache")
+            return []
+        })
+        for entries in [parsed, cached, restored] {
+            XCTAssertEqual(entries?.count, 2)
+            for (cardID, rejected) in [("claude", 2), ("codex", 1)] {
+                let scan = PiUsageScanner.aggregate(
+                    entries: try XCTUnwrap(entries), cardID: cardID, since: .distantPast, pricing: .empty
+                )
+                XCTAssertEqual(scan.rejectedMetadataRows, rejected)
+                XCTAssertNil(scan.usageHistory)
+            }
+        }
+    }
+
     private func parseRecords(_ lines: [String]) -> [PiUsageScanner.Entry] {
         PiUsageScanner.parseFile(Data((lines.joined(separator: "\n") + "\n").utf8))
     }
