@@ -144,12 +144,43 @@ final class CodexReSignInIsolationTests: XCTestCase {
         }
         XCTAssertThrowsError(try importer.completeReSignIn(
             profileID: ad.id, in: store, isActive: true, signInAttemptID: attemptID
-        ))
+        )) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+        }
         XCTAssertEqual(try String(contentsOf: protectedFile, encoding: .utf8), outsideCredential.credential)
         XCTAssertEqual(store.profile(id: ad.id)?.identityKey, ad.identityKey)
         XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
         XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
         XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id)?.entry, original)
+    }
+
+    func testAttemptCredentialFileCannotLinkToAnotherAccountsAuthentication() throws {
+        let original = entry(token: "saved-admin", account: "admin-account")
+        let ad = try addProfile(label: "ad", entry: original)
+        try switcher.applySharedAuthentication(original, family: "codex")
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
+        let outside = root.appendingPathComponent("outside-auth.json")
+        let outsideCredential = entry(token: "outside-token", account: "outside-account")
+        try Data(outsideCredential.credential.utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(
+            at: signIn.directory.appendingPathComponent("auth.json"), withDestinationURL: outside
+        )
+
+        XCTAssertThrowsError(try importer.completeReSignIn(
+            profileID: ad.id, in: store, isActive: true, signInAttemptID: signIn.attemptID
+        )) { error in
+            XCTAssertEqual(
+                error as? AccountCredentialImporter.ImportError,
+                .verificationFailed(family: "codex")
+            )
+        }
+
+        XCTAssertEqual(store.profile(id: ad.id)?.identityKey, ad.identityKey)
+        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
+        XCTAssertEqual(try String(contentsOf: outside, encoding: .utf8), outsideCredential.credential)
     }
 
     private func addProfile(label: String, entry: AccountCredentialVault.Entry) throws -> AccountProfile {
