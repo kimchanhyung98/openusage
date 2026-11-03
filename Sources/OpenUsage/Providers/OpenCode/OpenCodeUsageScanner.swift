@@ -205,19 +205,33 @@ struct OpenCodeUsageScanner: Sendable {
     private static let providerFilter = "(" + hostedProviderIDs.map { "'\($0)'" }.joined(separator: ",") + ")"
 
     static func dataSQL(cutoffMs: Int) -> String {
+        // Fork가 복사한 동일 소비는 완료 시각·종료 상태가 달라져도 한 건. 새 요청은 세션 생성 이후이므로 보존.
         """
+        WITH hosted AS (
+            SELECT m.id, m.time_created, m.data, s.project_id,
+                   CASE WHEN m.time_created < s.time_created THEN 1 ELSE 0 END AS inherited,
+                   json_remove(m.data,'$.id','$.sessionID','$.parentID',
+                               '$.time.completed','$.finish','$.error') AS fingerprint
+            FROM message m LEFT JOIN session s ON s.id = m.session_id
+            WHERE m.time_created >= \(cutoffMs)
+              AND json_valid(m.data)
+              AND json_extract(m.data,'$.role') = 'assistant'
+              AND json_extract(m.data,'$.providerID') IN \(providerFilter)
+              AND json_type(m.data,'$.cost') IN ('integer','real')
+        ), ranked AS (
+            SELECT *,
+                   MIN(inherited) OVER (PARTITION BY project_id, time_created, fingerprint) AS only_copies,
+                   ROW_NUMBER() OVER (PARTITION BY project_id, time_created, fingerprint ORDER BY id) AS copy_rank
+            FROM hosted
+        )
         SELECT json_group_array(json_array(
                  time_created,
                  json_extract(data,'$.cost'),
                  COALESCE(json_extract(data,'$.tokens.total'),0),
                  json_extract(data,'$.modelID'),
                  json_extract(data,'$.providerID')))
-        FROM message
-        WHERE time_created >= \(cutoffMs)
-          AND json_valid(data)
-          AND json_extract(data,'$.role') = 'assistant'
-          AND json_extract(data,'$.providerID') IN \(providerFilter)
-          AND json_type(data,'$.cost') IN ('integer','real');
+        FROM ranked
+        WHERE inherited = 0 OR (only_copies = 1 AND copy_rank = 1);
         """
     }
 
