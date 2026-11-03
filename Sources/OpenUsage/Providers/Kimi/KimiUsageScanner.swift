@@ -165,8 +165,11 @@ actor KimiUsageScanner {
         var result = ParsedFile()
         typealias Request = (alias: String, model: String, protocolName: String?, thinkingEffort: String?)
         var requests: [String: [String: Request]] = [:]
-        // append 중인 마지막 불완전 행은 다음 스캔에서 처리. 완료된 잘못된 행은 경고 대상.
-        let complete = data.last == 0x0A ? data : data.prefix(upTo: data.lastIndex(of: 0x0A).map { $0 + 1 } ?? 0)
+        // 마지막 JSON이 완전하면 줄바꿈 없이도 처리. append 중인 불완전 행만 다음 스캔으로 보류.
+        let tailStart = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+        let tail = data.suffix(from: tailStart)
+        let completeTail = tail.isEmpty || (try? JSONSerialization.jsonObject(with: tail, options: .fragmentsAllowed)) != nil
+        let complete = completeTail ? data : data.prefix(upTo: tailStart)
         for line in JSONLScanning.lines(in: complete) {
             try Task.checkCancellation()
             guard let object = ProviderParse.jsonObject(line), let type = object["type"] as? String else {
