@@ -282,7 +282,10 @@ final class ZAICostTests: XCTestCase {
             ["modelCode": "cached_input", "totalTokensUsage": [200_000]],
             ["modelCode": "cachedInput", "totalTokensUsage": [200_000]]
         ])
-        for detail in [duplicateAxis, duplicateModels, duplicateBuckets] {
+        let mismatchedBuckets = detailResponse(axis: ["00:00:00"], rows: [todayModel,
+            ["modelCode": "cached_input", "totalTokensUsage": [400_000]]
+        ])
+        for detail in [duplicateAxis, duplicateModels, duplicateBuckets, mismatchedBuckets] {
             let runtime = makeProvider(http: ZAICostHTTP(today: detail))
             let snapshot = await runtime.refresh()
             assertTokenOnly(snapshot, runtime: runtime, period: .today, expected: 3_000_000)
