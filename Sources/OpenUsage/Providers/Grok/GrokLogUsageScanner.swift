@@ -67,8 +67,8 @@ struct GrokLogUsageScanner: Sendable {
         var rejectedMetadataRows = 0
 
         text.enumerateLines { line, _ in
-            // JSON parse 전 저비용 pre-filter — token 행은 "inference_done", 모든 model 이벤트의 `msg`는 "model" 포함
-            guard line.contains("inference_done") || line.contains("model") else { return }
+            guard line.contains("inference_done") || line.contains("model")
+                    || line.contains("process resource limits") else { return }
             guard let data = line.data(using: .utf8),
                   let object = ProviderParse.jsonObject(data),
                   let msg = object["msg"] as? String
@@ -78,6 +78,15 @@ struct GrokLogUsageScanner: Sendable {
             let pid = UsageLogNumbers.count(object["pid"]).flatMap { $0 > 0 ? $0 : nil }
             let sid = (object["sid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let session = pid.flatMap { pid in sid.map { SessionKey(pid: pid, sid: $0) } }
+
+            // 시작 이벤트는 프로세스당 한 번 기록. PID 재사용 시 이전 실행의 모델 상태만 제거.
+            if msg == "process resource limits", let pid {
+                modelByPID.removeValue(forKey: pid)
+                modelBySession = modelBySession.filter { $0.key.pid != pid }
+                inheritedSessions = inheritedSessions.filter { $0.pid != pid }
+                ambiguousPIDs.remove(pid)
+                return
+            }
 
             // 공식 child_model 이벤트에는 sid가 없음. 이후 기본 모델 갱신과 미확인 세션의 기본값 사용 중단.
             if msg == "subagent model resolved", sid == nil {
@@ -179,13 +188,11 @@ struct GrokLogUsageScanner: Sendable {
         }
     }
 
-    /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
+    /// 실제 모델 적용 이벤트의 model id. 검증 전 요청인 `model changed`는 제외.
     /// 세션 정보는 호출부에서 판별; 여기서는 모델 필드만 해석.
     private static func modelID(msg: String, ctx: [String: Any]) -> String? {
         let raw: Any?
         switch msg {
-        case "model changed":
-            raw = ctx["model"]
         case "model catalog: notifying clients":
             raw = ctx["current_model_id"]
         case "backend_search: model switch":
