@@ -46,6 +46,29 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, fixture.previous.lines)
     }
 
+    func testQuotaSuccessPreservesMissingLocalTotalsAndClearsConfirmedEmptyHistory() async {
+        let fixture = makeFixture(cached: true)
+        let refreshedQuota: [MetricLine] = [.progress(label: "Credits", used: 30, limit: 100, format: .percent)]
+        fixture.runtime.snapshot = ProviderSnapshot.make(
+            provider: fixture.runtime.provider, plan: "Pro+", lines: refreshedQuota, refreshedAt: now
+        )
+
+        await fixture.store.refreshAll(force: true)
+
+        let retained = fixture.store.localSnapshots[fixture.runtime.provider.id]
+        XCTAssertEqual(retained?.lines, refreshedQuota)
+        XCTAssertEqual(retained?.plan, "Pro+")
+        XCTAssertEqual(retained?.refreshedAt, now)
+        XCTAssertEqual(total(fixture).slices.first?.amountUSD, 1)
+        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]?.totalSpendLines,
+                       fixture.previous.totalSpendLines)
+
+        fixture.runtime.snapshot.totalSpendLines = []
+        await fixture.store.refreshAll(force: true)
+        XCTAssertTrue(total(fixture).slices.isEmpty)
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, refreshedQuota)
+    }
+
     private struct Fixture {
         var runtime: DedicatedSpendRuntime
         var store: WidgetDataStore

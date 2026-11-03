@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class KiroUsageScannerTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_793_577_600)
+    private let now = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 12))!
 
     func testSavedCreditAndTextHistoryFeedsExistingPeriods() throws {
         let result = try result(history())
@@ -220,6 +220,21 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertEqual(empty?.totalSpendLines(now: now), [])
     }
 
+    func testUnreadableSessionDoesNotDiscardOtherHistory() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        let valid = try fixture.write(history(), session: "valid")
+        let unreadable = valid.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("unreadable/messages.jsonl")
+        try FileManager.default.createDirectory(at: unreadable, withIntermediateDirectories: true)
+
+        let usage = try await fixture.scanner.scan(now: now)
+
+        XCTAssertEqual(usage?.daily.first?.tokens, 5)
+        XCTAssertEqual(usage?.daily.first?.costUSD, 0.1)
+        XCTAssertEqual(usage?.invalidRows, 1)
+    }
+
     func testProviderFeedsDashboardAndKeepsCreditsSeparate() async throws {
         let fixture = try KiroHistoryFixture()
         defer { fixture.remove() }
@@ -233,6 +248,8 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertEqual(total.slices.first?.tokenCount, 5)
         XCTAssertEqual(total.slices.first?.amountUSD, 0.1)
         XCTAssertTrue(total.slices.first?.estimated == true)
+        XCTAssertTrue(total.projection(for: .tokens).isEstimated)
+        XCTAssertTrue(total.projection(for: .tokens).slices.first?.estimated == true)
         XCTAssertNil(snapshot.errorCategory)
     }
 

@@ -133,6 +133,25 @@ final class TotalSpendAggregatorTests: XCTestCase {
         XCTAssertEqual(rates.centerValue, 20, accuracy: 0.0001)
     }
 
+    func testEstimatedTokensDoNotMarkMeasuredCostAsEstimated() {
+        let estimatedTokens = MetricLine.values(label: "Today", values: [
+            MetricValue(number: 2, kind: .dollars),
+            MetricValue(number: 500_000, kind: .count, label: "tokens", estimated: true)
+        ])
+        let snapshots = [
+            "claude": snapshot(claude, lines: [estimatedTokens]),
+            "cursor": snapshot(cursor, lines: [spendLine("Today", dollars: 4, tokens: 1_000_000)])
+        ]
+        let total = TotalSpendAggregator.total(for: .today, providers: [claude, cursor], snapshots: snapshots)
+
+        XCTAssertFalse(total.projection(for: .cost).isEstimated)
+        XCTAssertTrue(total.projection(for: .tokens).isEstimated)
+        XCTAssertTrue(total.projection(for: .costPerMtok).isEstimated)
+        XCTAssertEqual(total.projection(for: .tokens).centerValue, 1_500_000)
+        XCTAssertEqual(total.projection(for: .tokens).slices.map(\.estimated), [false, true])
+        XCTAssertTrue(total.projection(for: .cost).slices.allSatisfy { !$0.estimated })
+    }
+
     func testCostPerMtokExcludesIncompleteProvidersFromBlend() {
         let snapshots = [
             "claude": snapshot(claude, lines: [spendLine("Today", dollars: 10, tokens: 1_000_000)]),
