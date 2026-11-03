@@ -4,7 +4,7 @@
 
 ## 로컬 빌드 실행
 
-아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app` 또는 이전 `dist/OpenUsage.app` 프로세스만 종료.
+아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app`, 이전 `dist/Egasu.app` 또는 `dist/OpenUsage.app` 프로세스만 종료.
 `/Applications` 등 다른 경로에서 실행 중인 앱은 종료하지 않음.
 리포지토리 루트에서 필요한 명령 하나 실행:
 
@@ -23,6 +23,7 @@
 업데이트 동작은 서명·공증된 릴리스 빌드로 테스트.
 개발 빌드의 익명 분석 기본값은 꺼짐이며 내장 운영 프로젝트 토큰은 무시.
 개발 분석을 검증할 때는 별도 테스트 프로젝트의 토큰을 `EGASU_POSTHOG_TOKEN`으로 지정.
+값이 없거나 공백뿐이면 이전 `OPENUSAGE_POSTHOG_TOKEN`의 비어 있지 않은 값 사용.
 
 ## Worktree 검사
 

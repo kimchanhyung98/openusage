@@ -3,7 +3,7 @@ import Foundation
 /// private iCloud container에 저장되는 Mac 1대의 presentation 무관 usage history.
 struct UsageHistoryDocument: Hashable, Sendable, Codable, Identifiable {
     /// v2: account 카드(`claude@ab12cd34`)와 `identities` map 추가 — peer 간 카드 id 대신 ACCOUNT 기준 history 매칭.
-    /// v1 문서는 계속 판독 가능(identities 없음 → legacy same-card-id merge), v1 reader는 v2 문서를 "update egasu" 메시지로 거부.
+    /// v1 문서는 계속 판독 가능(identities 없음 → legacy same-card-id merge), v1 reader는 v2 문서를 "update OpenUsage" 메시지로 거부.
     static let currentSchema = "openusage.history.v2"
     static let legacySchemaV1 = "openusage.history.v1"
 

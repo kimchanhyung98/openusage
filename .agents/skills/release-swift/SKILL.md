@@ -78,16 +78,26 @@ Never leave a release blank.
 
 ### 7. Verify (never leave a draft)
 
+검증할 태그의 소스로 산출물 이름 결정. 이름 변경 전 태그는 `OpenUsage-<version>.dmg` 유지.
+`{feed_url}`은 해당 릴리스 번들의 `SUFeedURL`로 설정. 태그의 `script/release.sh` 기본값과 빌드 시 `FEED_URL` 재정의 여부 확인.
+`v0.8.1`~`v0.14.3`의 기본 주소는 `https://openusage.chanhyung.kim/appcast.xml`, 이름 변경 후 기본 주소는 `https://egasu.chanhyung.kim/appcast.xml`.
+
 ```sh
-gh release view v{version} --json isDraft,isPrerelease,assets,body \
+tag="v{version}"
+git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null || exit 1
+app_name=OpenUsage
+if git cat-file -e "refs/tags/$tag:Sources/Egasu" 2>/dev/null; then app_name=egasu; fi
+asset_name="$app_name-${tag#v}.dmg"
+feed_url="{feed_url}"
+gh release view "$tag" --json isDraft,isPrerelease,assets,body \
   --jq '{isDraft, isPrerelease, assets:[.assets[].name], bodyLen:(.body|length)}'
-git fetch origin gh-pages && git show origin/gh-pages:appcast.xml | grep -F "egasu-{version}.dmg"
-curl -s "https://egasu.chanhyung.kim/appcast.xml" | grep -F "egasu-{version}.dmg"
+git fetch origin gh-pages && git show origin/gh-pages:appcast.xml | grep -F "$asset_name"
+curl -fsSL "$feed_url" | grep -F "$asset_name"
 ```
 
 The second check matters: publishing is two hops — Release (or pricing-supplement) pushes `appcast.xml` to the **`gh-pages` branch**, then **`.github/workflows/deploy-pages.yml` on `main`** deploys that branch to the live site (Pages source is "GitHub Actions", not legacy branch deploy). Auto deploy runs on `workflow_run` after Release completes; GitHub sometimes returns **"Deployment failed, try again later"** even though `gh-pages` is already correct. If the branch has the version but the live URL does not after ~10 minutes, check `gh run list --workflow=deploy-pages.yml` and re-run **`gh workflow run deploy-pages.yml --ref main`** (must use `main` — the workflow file is not on `gh-pages`). Sparkle clients only see the live URL.
 
-Require `isDraft=false`, `isPrerelease=true` for beta or `false` for stable, an `egasu-<version>.dmg` asset, `bodyLen>0`, and the version present in the appcast. If a draft was left behind, migrate its notes/assets onto the published release, then delete it — but only once a separate PUBLISHED release for the tag already exists:
+Require `isDraft=false`, `isPrerelease=true` for beta or `false` for stable, the selected `$asset_name` asset, `bodyLen>0`, and the version present in the appcast. If a draft was left behind, migrate its notes/assets onto the published release, then delete it — but only once a separate PUBLISHED release for the tag already exists:
 
 ```sh
 tag="v{version}"
