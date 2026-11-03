@@ -12,12 +12,18 @@ enum ProviderRefreshContext {
 protocol ProviderRuntime: AnyObject {
     var provider: Provider { get }
     var widgetDescriptors: [WidgetDescriptor] { get }
+    /// 스캔 실패의 nil 통계는 같은 조회일의 이전 값 유지. 확인된 빈 배열은 그대로 반영.
+    var retainsDedicatedSpendOnScanFailure: Bool { get }
 
     func refresh() async -> ProviderSnapshot
 
     /// 이 provider의 credential이 기기에 이미 있는지 — 저렴한 로컬 전용 probe(file·keychain·SQLite, 네트워크 금지).
     /// fresh install 첫 launch에 `FirstRunSeeder`가 1회 사용. `refresh()`가 읽는 credential source를 그대로 미러링, blocking 로드는 `loadOffMainActor` 경유.
     func hasLocalCredentials() async -> Bool
+}
+
+extension ProviderRuntime {
+    var retainsDedicatedSpendOnScanFailure: Bool { false }
 }
 
 /// blocking `Sendable` credential 로드를 MainActor 밖에서 실행.

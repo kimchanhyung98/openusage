@@ -699,8 +699,10 @@ final class WidgetDataStore {
             )
             AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
         }
-        if provider.provider.usesDedicatedSpendLines, snapshot.totalSpendLines == nil,
-           let lines = localSnapshots[providerID]?.totalSpendLines {
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil,
+           let previous = localSnapshots[providerID],
+           Calendar.current.isDate(previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
+           let lines = previous.totalSpendLines {
             degraded = true
             snapshot.totalSpendLines = lines
         }

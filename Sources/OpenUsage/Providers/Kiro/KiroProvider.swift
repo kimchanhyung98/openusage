@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class KiroProvider: ProviderRuntime {
+    let retainsDedicatedSpendOnScanFailure = true
     let provider = Provider(
         id: "kiro",
         displayName: "Kiro",
