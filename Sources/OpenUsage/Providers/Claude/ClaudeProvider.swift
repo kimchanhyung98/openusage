@@ -285,8 +285,11 @@ final class ClaudeProvider: ProviderRuntime {
             let note = piScan == nil
                 ? "From your Claude usage history (estimated)"
                 : "From your Claude usage history and pi (estimated)"
-            warning = [warning, scan.numericWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            let metadataWarning = scan.rejectedMetadataRows > 0
+                ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
+            warning = [warning, scan.numericWarning, metadataWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
             if let numericWarning = scan.numericWarning { warningPresentation.append(.init(numericWarning)) }
+            if let metadataWarning { warningPresentation.append(.init(metadataWarning)) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(
