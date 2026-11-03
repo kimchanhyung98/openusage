@@ -86,10 +86,63 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         XCTAssertTrue(total(fixture).slices.isEmpty)
     }
 
+    func testTodaySpendCollectedDuringQuotaFailureSurvivesLaterScanFailure() async {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let fixture = makeFixture(cached: true, previousDate: yesterday)
+        fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: lines(cost: 2, tokens: 200))
+        await fixture.store.refreshAll(force: true)
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.refreshedAt, yesterday)
+        let reloadedCache = ProviderSnapshotCache(userDefaults: fixture.defaults, storageKey: "snapshots")
+        let cached = reloadedCache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]
+        XCTAssertEqual(cached?.totalSpendRefreshedAt, now)
+        XCTAssertEqual(cached?.refreshedAt, yesterday)
+        XCTAssertNil(reloadedCache.snapshot(providerID: fixture.runtime.provider.id))
+
+        fixture.runtime.snapshot = ProviderSnapshot.make(
+            provider: fixture.runtime.provider, plan: "Pro", lines: fixture.previous.lines,
+            refreshedAt: now, warning: "History unavailable"
+        )
+        await fixture.store.refreshAll(force: true)
+
+        XCTAssertEqual(total(fixture).slices.first?.tokenCount, 200)
+        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]?.totalSpendLines,
+                       lines(cost: 2, tokens: 200))
+    }
+
+    func testQuotaAndScanFailureDoNotKeepPreviousDayTodayTotals() async {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let fixture = makeFixture(cached: true, previousDate: yesterday)
+        fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: nil)
+        await fixture.store.refreshAll(force: true)
+
+        XCTAssertTrue(total(fixture).slices.isEmpty)
+        XCTAssertNil(fixture.cache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]?.totalSpendLines)
+        XCTAssertNil(fixture.store.localSnapshots[fixture.runtime.provider.id]?.totalSpendRefreshedAt)
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.refreshedAt, yesterday)
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, fixture.previous.lines)
+    }
+
+    func testMissingStoreWarnsOnlyWhenPreviousTotalsAreRetained() async {
+        for cached in [true, false] {
+            let fixture = makeFixture(cached: cached)
+            fixture.runtime.snapshot = ProviderSnapshot.make(
+                provider: fixture.runtime.provider, plan: "Pro", lines: fixture.previous.lines, refreshedAt: now
+            )
+            await fixture.store.refreshAll(force: true)
+
+            let snapshot = fixture.store.localSnapshots[fixture.runtime.provider.id]
+            XCTAssertEqual(snapshot?.warning != nil, cached)
+            XCTAssertEqual(snapshot?.isDegraded == true, cached)
+            XCTAssertEqual(total(fixture).slices.first?.tokenCount, cached ? 100 : nil)
+            if cached { XCTAssertNotNil(snapshot?.warningPresentation) }
+        }
+    }
+
     private struct Fixture {
         var runtime: DedicatedSpendRuntime
         var store: WidgetDataStore
         var cache: ProviderSnapshotCache
+        var defaults: UserDefaults
         var previous: ProviderSnapshot
     }
 
@@ -109,7 +162,7 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         if cached { cache.store(previous) }
         let store = WidgetDataStore(registry: .from([runtime]), providers: [runtime], cache: cache,
                                     defaults: defaults, now: { now })
-        return Fixture(runtime: runtime, store: store, cache: cache, previous: previous)
+        return Fixture(runtime: runtime, store: store, cache: cache, defaults: defaults, previous: previous)
     }
 
     private func total(_ fixture: Fixture) -> TotalSpend {
@@ -123,6 +176,7 @@ final class DedicatedSpendRefreshTests: XCTestCase {
 
     private func failure(_ provider: Provider, spend: [MetricLine]?) -> ProviderSnapshot {
         var snapshot = ProviderSnapshot.error(provider: provider, message: "Quota unavailable", category: .network)
+        snapshot.refreshedAt = now
         snapshot.totalSpendLines = spend
         return snapshot
     }

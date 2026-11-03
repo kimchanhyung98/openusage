@@ -35,11 +35,13 @@ final class DevinUsageScannerTests: XCTestCase {
     }
 
     func testPartialRecordsAcrossNodesKeepLargestRequest() throws {
-        let data = try node(request: "shared", id: 1, output: 10) + node(request: "shared", id: 2, output: 50)
-        let result = DevinUsageScanner.aggregate(
-            try DevinUsageScanner.parseLog(data, sessionID: "session"), now: now, pricing: pricing
-        )
-        XCTAssertEqual(result.series.daily.first?.totalTokens, 185)
+        for outputs in [[10, 50], [50, 10]] {
+            let data = try node(request: "shared", id: 1, output: outputs[0]) + node(request: "shared", id: 2, output: outputs[1])
+            let result = DevinUsageScanner.aggregate(
+                try DevinUsageScanner.parseLog(data, sessionID: "session"), now: now, pricing: pricing
+            )
+            XCTAssertEqual(result.series.daily.first?.totalTokens, 185)
+        }
     }
 
     func testMessageIDFallbackDeduplicatesCopiesWithoutCollapsingDistinctMessages() throws {
@@ -129,6 +131,32 @@ final class DevinUsageScannerTests: XCTestCase {
         defer { fixture.remove() }
         let empty = try await fixture.scanner().scan(now: now, pricing: pricing)
         XCTAssertEqual(empty?.totalSpendLines(now: now), [])
+    }
+
+    func testUnreadableDatabaseKeepsValidFileHistoryAndWarns() async throws {
+        let fixture = try DevinHistoryFixture()
+        defer { fixture.remove() }
+        try fixture.writeLog(node(request: "file"))
+        try Data("invalid sqlite".utf8).write(to: fixture.database)
+
+        let result = try await fixture.scanner().scan(now: now, pricing: pricing)
+
+        XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
+        XCTAssertEqual(result?.invalidRows, 1)
+        XCTAssertFalse(result?.warnings.isEmpty ?? true)
+    }
+
+    func testUnreadableFileStoreKeepsValidDatabaseHistoryAndWarns() async throws {
+        let fixture = try DevinHistoryFixture()
+        defer { fixture.remove() }
+        try fixture.insert(message(request: "database"), at: now)
+        try Data("not a directory".utf8).write(to: fixture.database.deletingLastPathComponent().appendingPathComponent("sessions"))
+
+        let result = try await fixture.scanner().scan(now: now, pricing: pricing)
+
+        XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
+        XCTAssertEqual(result?.invalidRows, 1)
+        XCTAssertFalse(result?.warnings.isEmpty ?? true)
     }
 
     func testConfiguredPathsFollowCLIStorageRoot() async {
