@@ -40,14 +40,18 @@ final class AccountReSignInTests: XCTestCase {
         defer { cleanup() }
         let profile = try store.add(family: "codex", label: "alpha", identityKey: "acct-a", id: "profile-a")
         try switcher.saveSnapshot(codexEntry(token: "old-token", accountID: "acct-a"), for: profile)
-        let workspaceDir = try workspace.prepare(family: "codex", profileID: profile.id)
+        let signIn = try workspace.prepareReauthentication(family: "codex", profileID: profile.id)
         try Data(codexAuth(token: "fresh-token", accountID: "acct-a").utf8)
-            .write(to: workspaceDir.appendingPathComponent("auth.json"))
+            .write(to: signIn.directory.appendingPathComponent("auth.json"))
 
-        try importer.completeReSignIn(profileID: profile.id, in: store, isActive: true)
+        try importer.completeReSignIn(
+            profileID: profile.id, in: store, isActive: true, signInProfileID: signIn.profileID
+        )
+        try importer.removeSignInWorkspace(family: "codex", profileID: signIn.profileID)
 
         let snapshot = try XCTUnwrap(switcher.loadSnapshot(for: profile))
         XCTAssertEqual(CodexAuthStore.parseAuth(snapshot.credential)?.tokens?.accessToken, "fresh-token")
+        XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: profile.id)?.entry, snapshot)
         let sharedAuth = try String(
             contentsOf: root.appendingPathComponent(".codex/auth.json"),
             encoding: .utf8
