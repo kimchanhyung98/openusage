@@ -119,8 +119,10 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 사이트 게시 대상만 바뀐 `main` push는 게시 내부 검증 한 번으로 처리.
 그 밖의 앱 소스·배포 workflow 변경과 PR은 독립 `Site CI`에서 검증하며, 두 변경 범위가 섞인 push는 양쪽에서 검증 가능.
 가격표 자동·수동 게시 작업은 `main`에서만 실행하며 다른 브랜치·태그의 수동 게시 작업은 건너뜀.
-게시 전후 `appcast.xml`·`pricing_supplement.json`·`CNAME`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
-필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·도메인 불일치·`gh-pages/.github` 존재 시 게시 전 실패.
+게시 전후 `appcast.xml`·`pricing_supplement.json`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
+게시 전에는 기존 `openusage.chanhyung.kim` 또는 새 `egasu.chanhyung.kim` 도메인 허용.
+게시 후에는 새 도메인만 허용.
+필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·허용하지 않은 도메인·`gh-pages/.github` 존재 시 게시 전 실패.
 Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
 `Deploy Pages`는 성공한 실행의 해당 산출물을 받아 그 커밋만 배포하므로, 대기 중 다른 게시가 시작돼도 배포 내용 고정.
 자동 배포에서 산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
@@ -155,7 +157,7 @@ WITH_FEED=1 ./script/site_assemble.sh /tmp/site-preview "$(git rev-parse --short
   새 조립 결과는 `.egasu-site-output` 표식 사용.
 - 소스·상위 폴더·심볼릭 링크 출력과 무관한 기존 폴더는 거부. 빌드·검증 실패 시 이전 결과 보존.
 - `WITH_FEED=1`은 라이브 `appcast.xml`·`pricing_supplement.json`을 미리보기용으로만 복사. 배포 경로는 이 파일들을 절대 쓰지 않음.
-- `site_feed_snapshot.sh`: 게시 ref의 필수 파일이 일반 파일인지 확인하고 도메인 검사 후 blob ID 출력. publisher에서 게시 전후 결과 비교.
+- `site_feed_snapshot.sh`: 게시 ref의 필수 파일이 일반 파일인지 확인하고 도메인 검사 후 피드 두 개의 blob ID 출력. publisher에서 게시 전후 결과 비교.
 - `site_smoke.sh`: 배포 후 검증. 두 번째 인자로 해당 배포에 포함된 feed 두 개의 사본 폴더를 필수 지정. 응답이 기준 사본과 바이트 단위로 같은지, appcast에 유효한 정식 릴리스가 있는지, 링크·자산이 응답하는지 확인.
 - 링크·자산 URL은 한 항목씩 그대로 요청. 로컬 파일명에 따른 와일드카드 확장 방지.
 - 피드 불일치나 기준 누락은 실패. 캐시 전파가 끝난 뒤 같은 기준으로 다시 실행. 검사 중 새 릴리스가 생겨도 기준은 바뀌지 않으며 원격 브랜치를 조회하지 않음.
