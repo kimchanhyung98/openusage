@@ -56,7 +56,7 @@ DMG_PATH="$DIST_DIR/$DMG_NAME"
 # posthog-cli의 `dsym upload --directory`와 Sparkle 모두 단일 경로가 아닌 bundle 디렉터리를 요구.
 DSYM_DIR="$DIST_DIR/dSYMs"
 APP_DSYM="$DSYM_DIR/$APP_NAME.app.dSYM"
-ENTITLEMENTS_TEMPLATE="$ROOT_DIR/script/OpenUsage.release.entitlements.plist"
+ENTITLEMENTS_TEMPLATE="$ROOT_DIR/script/Egasu.release.entitlements.plist"
 ENTITLEMENTS="$DIST_DIR/OpenUsage.release.resolved.entitlements.plist"
 
 # 공증 여부를 사전 결정. CI는 항상 공증 인증 정보 제공.

@@ -5,10 +5,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'Sources/OpenUsage/**'
-      - '!Sources/OpenUsage/Resources/ProviderIcons/**'
-      - '!Sources/OpenUsage/Resources/Localization/ko.lproj/*.strings'
-      - '!Sources/OpenUsage/Resources/Localization/ja.lproj/*.strings'
+      - 'Sources/Egasu/**'
+      - '!Sources/Egasu/Resources/ProviderIcons/**'
+      - '!Sources/Egasu/Resources/Localization/ko.lproj/*.strings'
+      - '!Sources/Egasu/Resources/Localization/ja.lproj/*.strings'
       - '.github/workflows/site.yml'
       - '.github/workflows/deploy-pages.yml'
       - '.github/workflows/release.yml'
@@ -18,7 +18,7 @@ on:
     paths:
       - 'site/**'
       - 'script/site_*.sh'
-      - 'Sources/OpenUsage/**'
+      - 'Sources/Egasu/**'
       - '.github/workflows/site.yml'
       - '.github/workflows/publish-site.yml'
       - '.github/workflows/deploy-pages.yml'

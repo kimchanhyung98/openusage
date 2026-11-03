@@ -4,7 +4,7 @@
 // openusage.svg(앱 아이콘 글리프)는 상표 결정 전까지 sprite에 넣지 않음(providers.ts에 없음).
 import { providers } from '../data/providers';
 
-const files = import.meta.glob('../../../Sources/OpenUsage/Resources/ProviderIcons/*.svg', {
+const files = import.meta.glob('../../../Sources/Egasu/Resources/ProviderIcons/*.svg', {
   query: '?raw',
   import: 'default',
   eager: true,

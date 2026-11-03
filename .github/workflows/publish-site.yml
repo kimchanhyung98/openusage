@@ -8,9 +8,9 @@ on:
     paths:
       - 'site/**'
       - 'script/site_*.sh'
-      - 'Sources/OpenUsage/Resources/ProviderIcons/**'
-      - 'Sources/OpenUsage/Resources/Localization/ko.lproj/*.strings'
-      - 'Sources/OpenUsage/Resources/Localization/ja.lproj/*.strings'
+      - 'Sources/Egasu/Resources/ProviderIcons/**'
+      - 'Sources/Egasu/Resources/Localization/ko.lproj/*.strings'
+      - 'Sources/Egasu/Resources/Localization/ja.lproj/*.strings'
       - '.github/workflows/publish-site.yml'
   workflow_dispatch:
 

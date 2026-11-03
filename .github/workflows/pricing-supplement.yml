@@ -11,7 +11,7 @@ on:
   push:
     branches: [main]
     paths:
-      - Sources/OpenUsage/Resources/pricing_supplement.json
+      - Sources/Egasu/Resources/pricing_supplement.json
       - .github/workflows/pricing-supplement.yml
   workflow_dispatch:
 
@@ -35,7 +35,7 @@ jobs:
           python3 - << 'PY'
           import json, math, re, sys
           from datetime import datetime
-          with open("Sources/OpenUsage/Resources/pricing_supplement.json") as f:
+          with open("Sources/Egasu/Resources/pricing_supplement.json") as f:
               supplement = json.load(f)
           problems = []
           updated_at = supplement.get("updated_at")
@@ -106,7 +106,7 @@ jobs:
       - name: Pages 디렉터리 조립
         run: |
           mkdir -p public
-          cp Sources/OpenUsage/Resources/pricing_supplement.json public/pricing_supplement.json
+          cp Sources/Egasu/Resources/pricing_supplement.json public/pricing_supplement.json
 
       - name: GitHub Pages에 가격표 게시
         uses: peaceiris/actions-gh-pages@v4

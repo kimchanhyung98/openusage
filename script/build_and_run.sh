@@ -53,8 +53,8 @@ APP_BINARY="$APP_MACOS/$TARGET_NAME"
 CLI_BINARY="$APP_HELPERS/openusage"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="${TARGET_NAME}_${TARGET_NAME}.bundle"
-ENTITLEMENTS="$ROOT_DIR/script/OpenUsage.dev.entitlements.plist"
-SIGN_ENTITLEMENTS="$ROOT_DIR/script/OpenUsage.local.entitlements.plist"
+ENTITLEMENTS="$ROOT_DIR/script/Egasu.dev.entitlements.plist"
+SIGN_ENTITLEMENTS="$ROOT_DIR/script/Egasu.local.entitlements.plist"
 
 pkill -x "$TARGET_NAME" >/dev/null 2>&1 || true
 
@@ -93,7 +93,7 @@ vtool -set-build-version macos "$MIN_SYSTEM_VERSION" 26.0 -replace -output "$APP
 mv "$APP_BINARY.tmp" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 # 빌드에서 생성된 모든 SwiftPM resource bundle을 표준 앱 경로인 Contents/Resources에 배치.
-# 앱 전용 OpenUsage_OpenUsage.bundle에 provider SVG와 model manifest 포함.
+# 앱 전용 Egasu_Egasu.bundle에 provider SVG와 model manifest 포함.
 # Bundle.openUsageResources는 Support/ResourceBundle.swift에서 해당 경로를 사용해 로드.
 shopt -s nullglob
 for bundle in "$BUILD_DIR"/*.bundle; do

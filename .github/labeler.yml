@@ -1,6 +1,6 @@
 provider:
   - changed-files:
-      - any-glob-to-any-file: "Sources/OpenUsage/Providers/**"
+      - any-glob-to-any-file: "Sources/Egasu/Providers/**"
 
 tests:
   - changed-files:

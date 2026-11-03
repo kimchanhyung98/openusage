@@ -361,7 +361,7 @@ test('가격표 게시 작업은 main ref에서만 실행', () => {
   assert.match(workflow, /\n  workflow_dispatch:/);
 });
 
-const supplement = JSON.parse(readFileSync(new URL('../../Sources/OpenUsage/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
+const supplement = JSON.parse(readFileSync(new URL('../../Sources/Egasu/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
 for (const [updatedAt, valid] of [
   [supplement.updated_at, true], ['2024-02-29T23:59:59Z', true],
   ['2026-09-13', false], ['2026-09-13T00:00:00+00:00', false],
@@ -374,7 +374,7 @@ for (const [updatedAt, valid] of [
   test(`가격표 발행 시 updated_at ${JSON.stringify(updatedAt)} ${valid ? '허용' : '거부'}`, () => {
     const temp = mkdtempSync(join(tmpdir(), 'openusage-pricing-validation-test-'));
     try {
-      const resources = join(temp, 'Sources/OpenUsage/Resources');
+      const resources = join(temp, 'Sources/Egasu/Resources');
       mkdirSync(resources, { recursive: true });
       writeFileSync(join(resources, 'pricing_supplement.json'), JSON.stringify({ ...supplement, updated_at: updatedAt }));
       const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', workflowStep('가격표 JSON 검증', 'pricing-supplement.yml')], {
@@ -402,16 +402,16 @@ test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 �
     return patterns;
   }
   const filters = [paths('publish-site.yml', 'push'), paths('site.yml', 'push'), paths('site.yml', 'pull_request')];
-  const ko = 'Sources/OpenUsage/Resources/Localization/ko.lproj/Settings.strings';
+  const ko = 'Sources/Egasu/Resources/Localization/ko.lproj/Settings.strings';
   const cases: Array<[string[], boolean[]]> = [
     [['site/src/scripts/localization.ts'], [true, false, true]],
     [['script/site_assemble.sh'], [true, false, true]],
-    [['Sources/OpenUsage/Resources/ProviderIcons/codex.svg'], [true, false, true]],
+    [['Sources/Egasu/Resources/ProviderIcons/codex.svg'], [true, false, true]],
     [[ko], [true, false, true]],
-    [['Sources/OpenUsage/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
-    [[ko, 'Sources/OpenUsage/Stores/WidgetDataStore.swift'], [true, true, true]],
-    [['Sources/OpenUsage/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
-    [['Sources/OpenUsage/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
+    [['Sources/Egasu/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
+    [[ko, 'Sources/Egasu/Stores/WidgetDataStore.swift'], [true, true, true]],
+    [['Sources/Egasu/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
+    [['Sources/Egasu/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
     [['.github/workflows/publish-site.yml'], [true, false, true]],
     [['.github/workflows/site.yml'], [false, true, true]],
     [['docs/settings.md'], [false, false, false]],
