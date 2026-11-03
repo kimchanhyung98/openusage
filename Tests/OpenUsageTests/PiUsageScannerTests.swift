@@ -227,10 +227,36 @@ final class PiUsageScannerTests: XCTestCase {
 
     func testCompactionWithoutOptionalUsageIsIgnored() {
         let entries = parseRecords([
-            #"{"type":"compaction","id":"manual","timestamp":"2026-07-12T10:00:00Z","summary":"fixture","fromHook":true}"#,
-            #"{"type":"compaction","id":"old-format","timestamp":"2026-07-12T10:00:00Z","summary":"fixture"}"#
+            #"{"type":"compaction","id":"manual","timestamp":"2026-07-12T10:00:00Z","summary":"usage","fromHook":true}"#,
+            #"{"type":"compaction","id":"old-format","timestamp":"2026-07-12T10:00:00Z","summary":"usage"}"#
         ])
         XCTAssertTrue(entries.isEmpty)
+    }
+
+    func testUnattributedSummaryAndToolUsageWarnWithoutInventingDates() {
+        let entries = parseRecords([
+            #"{"type":"branch_summary","id":"branch","timestamp":"2026-07-12T10:00:00Z","fromId":"a","summary":"fixture","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#,
+            #"{"type":"branch_summary","id":"branch-missing-time","usage":null}"#,
+            #"{"type":"branch_summary","id":"branch-old","timestamp":"2025-07-12T10:00:00Z","usage":{}}"#,
+            #"{"type":"message","id":"tool","timestamp":"2026-07-12T10:00:00Z","message":{"role":"toolResult","toolCallId":"call","toolName":"nested","content":[],"isError":false,"usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}}"#,
+            #"{"type":"message","id":"tool-bad-time","timestamp":"invalid","message":{"role":"toolResult","usage":null}}"#,
+            #"{"type":"message","id":"tool-old","timestamp":"2025-07-12T10:00:00Z","message":{"role":"toolResult","usage":{}}}"#,
+            #"{"type":"branch_summary","id":"branch-empty","summary":"usage"}"#,
+            #"{"type":"message","id":"tool-empty","message":{"role":"toolResult","content":[{"type":"text","text":"usage"}]}}"#
+        ])
+        XCTAssertEqual(entries.count, 6)
+        let deduplicated = PiUsageScanner.dedup(entries + entries)
+        XCTAssertEqual(deduplicated.count, 6)
+        XCTAssertEqual(deduplicated.filter { $0.timestamp == nil }.count, 2)
+        for cardID in ["claude", "codex"] {
+            let scan = PiUsageScanner.aggregate(
+                entries: deduplicated, cardID: cardID, since: d("2026-07-01T00:00:00Z"), pricing: .empty
+            )
+            XCTAssertEqual(scan.rejectedMetadataRows, 4)
+            XCTAssertEqual(scan.rejectedNumericRows, 0)
+            XCTAssertNotNil(scan.metadataWarning)
+            XCTAssertNil(scan.usageHistory)
+        }
     }
 
     func testUsageCandidatesWithWhitespaceStillParse() {
@@ -244,13 +270,15 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD, 1)
     }
 
-    func testVersionSixCacheReparsesAndPreservesMetadataWarnings() async throws {
+    func testVersionSevenCacheReparsesAndPreservesMetadataWarnings() async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
         let data = Data("""
         {"type":"usage","id":"usage","timestamp":"2026-07-12T10:00:00Z","provider":"anthropic","usage":{"input":100,"totalTokens":100,"cost":{"total":0.5}}}
         {"type":"compaction","id":"compaction","usage":{"input":100}}
+        {"type":"branch_summary","id":"branch","usage":{"input":100}}
+        {"type":"message","id":"tool","message":{"role":"toolResult","usage":{"input":100}}}
         """.utf8)
         let fileURL = base.appendingPathComponent("session.jsonl")
         try data.write(to: fileURL)
@@ -258,7 +286,7 @@ final class PiUsageScannerTests: XCTestCase {
         let file = JSONLScanning.DiscoveredFile(path: fileURL.path, size: data.count, mtime: mtime)
         let directory = base.appendingPathComponent("cache")
         let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: .init(
-            namespace: "pi", schemaVersion: 6, directory: directory, writeDebounce: .milliseconds(1)
+            namespace: "pi", schemaVersion: 7, directory: directory, writeDebounce: .milliseconds(1)
         ))
         _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in [] })
         await old.waitForPendingWritesForTesting()
@@ -279,8 +307,8 @@ final class PiUsageScannerTests: XCTestCase {
             return []
         })
         for entries in [parsed, cached, restored] {
-            XCTAssertEqual(entries?.count, 2)
-            for (cardID, rejected) in [("claude", 2), ("codex", 1)] {
+            XCTAssertEqual(entries?.count, 4)
+            for (cardID, rejected) in [("claude", 4), ("codex", 3)] {
                 let scan = PiUsageScanner.aggregate(
                     entries: try XCTUnwrap(entries), cardID: cardID, since: .distantPast, pricing: .empty
                 )
@@ -361,6 +389,40 @@ final class PiUsageScannerTests: XCTestCase {
         let entries = [PiUsageScanner.parseLine(line(id: "dup"))!, PiUsageScanner.parseLine(line(id: "dup"))!]
         let scan = PiUsageScanner.aggregate(entries: PiUsageScanner.dedup(entries), cardID: "claude", since: .distantPast, pricing: .empty)
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.5, accuracy: 0.0001)
+    }
+
+    func testDedupPreservesIndependentRecordsWithSameShortID() {
+        let originals = [
+            line(id: "deadbeef"),
+            line(id: "deadbeef", ts: "2026-07-13T10:00:00Z"),
+            line(id: "deadbeef", provider: "openai-codex", model: "gpt-5")
+        ].flatMap(PiUsageScanner.parseFile)
+        for entries in [originals + originals, Array(originals.reversed()) + originals] {
+            let unique = PiUsageScanner.dedup(entries)
+            XCTAssertEqual(unique.count, 3)
+            let claude = PiUsageScanner.aggregate(entries: unique, cardID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(claude.series.daily.count, 2)
+            XCTAssertEqual(claude.series.daily.reduce(0) { $0 + $1.totalTokens }, 300)
+            let codex = PiUsageScanner.aggregate(entries: unique, cardID: "codex", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(codex.series.daily.first?.totalTokens, 150)
+            XCTAssertEqual(codex.series.daily.first?.costUSD, 0.5)
+        }
+        var unidentified = originals[0]
+        unidentified.id = nil
+        XCTAssertEqual(PiUsageScanner.dedup([unidentified, unidentified]).count, 2)
+    }
+
+    func testDedupPrefersValidMetadataCopyWithSameIdentity() {
+        let records = parseRecords([
+            #"{"type":"usage","id":"same","timestamp":"2026-07-12T10:00:00Z","provider":"anthropic","usage":{"input":100,"totalTokens":100,"cost":{"total":0.5}}}"#,
+            #"{"type":"usage","id":"same","timestamp":"2026-07-12T10:00:00Z","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":100,"totalTokens":100,"cost":{"total":0.5}}}"#
+        ])
+        for entries in [records, Array(records.reversed())] {
+            let unique = PiUsageScanner.dedup(entries)
+            XCTAssertEqual(unique.count, 1)
+            XCTAssertEqual(unique.first?.model, "claude-opus-4-8")
+            XCTAssertEqual(unique.first?.invalidMetadata, false)
+        }
     }
 
     func testFiltersToRequestedCard() {
