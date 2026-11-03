@@ -20,11 +20,12 @@ final class PiUsageScannerTests: XCTestCase {
         id: String = "m1", ts: String = "2026-07-12T10:00:00.000Z", provider: String = "anthropic",
         model: String = "claude-opus-4-8", input: Int = 100, output: Int = 50,
         cacheRead: Int = 0, cacheWrite: Int = 0, cacheWrite1h: Int = 0, total: Int = 150,
-        cost: String? = "0.5", costObject: String? = nil
+        cost: String? = "0.5", costObject: String? = nil, responseModel: String? = nil
     ) -> Data {
         let costJSON = costObject.map { ",\"cost\":\($0)" } ?? cost.map { ",\"cost\":{\"total\":\($0)}" } ?? ""
+        let responseModelJSON = responseModel.map { ",\"responseModel\":\"\($0)\"" } ?? ""
         let json = """
-        {"type":"message","id":"\(id)","timestamp":"\(ts)","message":{"role":"assistant","provider":"\(provider)","model":"\(model)","usage":{"input":\(input),"output":\(output),"cacheRead":\(cacheRead),"cacheWrite":\(cacheWrite),"cacheWrite1h":\(cacheWrite1h),"totalTokens":\(total)\(costJSON)}}}
+        {"type":"message","id":"\(id)","timestamp":"\(ts)","message":{"role":"assistant","provider":"\(provider)","model":"\(model)"\(responseModelJSON),"usage":{"input":\(input),"output":\(output),"cacheRead":\(cacheRead),"cacheWrite":\(cacheWrite),"cacheWrite1h":\(cacheWrite1h),"totalTokens":\(total)\(costJSON)}}}
         """
         return Data(json.utf8)
     }
@@ -39,6 +40,19 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(entry?.reportedTotalTokens, 150)
         XCTAssertEqual(entry?.tokens.input, 100)
         XCTAssertEqual(entry?.tokens.output, 50)
+    }
+
+    func testResponseModelReceivesCarriedCostWithoutChangingTotals() throws {
+        let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(
+            model: "claude-fable-5", responseModel: "claude-opus-4-8"
+        )))
+        XCTAssertEqual(entry.model, "claude-opus-4-8")
+        let scan = PiUsageScanner.aggregate(
+            entries: PiUsageScanner.dedup([entry, entry]), cardID: "claude", since: .distantPast, pricing: .empty
+        )
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models.map(\.model), ["claude-opus-4-8"])
     }
 
     func testSplitsCacheWriteBucketsBy1hPortion() {
@@ -270,7 +284,7 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD, 1)
     }
 
-    func testVersionSevenCacheReparsesAndPreservesMetadataWarnings() async throws {
+    func testVersionEightCacheReparsesResponseModelAndPreservesMetadataWarnings() async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -279,6 +293,7 @@ final class PiUsageScannerTests: XCTestCase {
         {"type":"compaction","id":"compaction","usage":{"input":100}}
         {"type":"branch_summary","id":"branch","usage":{"input":100}}
         {"type":"message","id":"tool","message":{"role":"toolResult","usage":{"input":100}}}
+        {"type":"message","id":"response","timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-fable-5","responseModel":"claude-opus-4-8","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.5}}}}
         """.utf8)
         let fileURL = base.appendingPathComponent("session.jsonl")
         try data.write(to: fileURL)
@@ -286,9 +301,13 @@ final class PiUsageScannerTests: XCTestCase {
         let file = JSONLScanning.DiscoveredFile(path: fileURL.path, size: data.count, mtime: mtime)
         let directory = base.appendingPathComponent("cache")
         let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: .init(
-            namespace: "pi", schemaVersion: 7, directory: directory, writeDebounce: .milliseconds(1)
+            namespace: "pi", schemaVersion: 8, directory: directory, writeDebounce: .milliseconds(1)
         ))
-        _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in [] })
+        _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { data in
+            var entries = PiUsageScanner.parseFile(data)
+            entries[entries.count - 1].model = "claude-fable-5"
+            return entries
+        })
         await old.waitForPendingWritesForTesting()
         let persistence = JSONLScanCachePersistence(
             namespace: "pi", schemaVersion: PiUsageScanner.cacheSchemaVersion,
@@ -307,13 +326,19 @@ final class PiUsageScannerTests: XCTestCase {
             return []
         })
         for entries in [parsed, cached, restored] {
-            XCTAssertEqual(entries?.count, 4)
+            XCTAssertEqual(entries?.count, 5)
             for (cardID, rejected) in [("claude", 4), ("codex", 3)] {
                 let scan = PiUsageScanner.aggregate(
                     entries: try XCTUnwrap(entries), cardID: cardID, since: .distantPast, pricing: .empty
                 )
                 XCTAssertEqual(scan.rejectedMetadataRows, rejected)
-                XCTAssertNil(scan.usageHistory)
+                if cardID == "claude" {
+                    XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+                    XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+                    XCTAssertEqual(scan.modelUsage?.daily.first?.models.map(\.model), ["claude-opus-4-8"])
+                } else {
+                    XCTAssertNil(scan.usageHistory)
+                }
             }
         }
     }
@@ -335,7 +360,9 @@ final class PiUsageScannerTests: XCTestCase {
 
     func testZeroCarriedCostFallsThroughToPricing() {
         // log가 $0이면 engine이 산정 — input 100 @ $10/M + output 50 @ $20/M = $0.002
-        let entry = PiUsageScanner.parseLine(line(provider: "cursor", model: "composer-2.5", cost: "0"))!
+        let entry = PiUsageScanner.parseLine(line(
+            provider: "cursor", model: "requested-model", cost: "0", responseModel: "composer-2.5"
+        ))!
         let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
         XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.002, accuracy: 0.00001)
     }
