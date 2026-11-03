@@ -5,7 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 8
+    static let cacheSchemaVersion = 9
 
     enum CostEstimate: Sendable {
         case priced(Double)
@@ -47,7 +47,7 @@ actor PiUsageScanner {
         var id: String?
         /// 시각이 손상된 미귀속 사용량은 날짜를 만들지 않고 경고만 보존.
         var timestamp: Date?
-        /// 모델 없는 사용량은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
+        /// 귀속 불가 압축·요약·도구 사용량은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
         var cardID: String
         var model: String
         /// pi 자신의 `usage.cost.total` — > 0이면 그대로 사용, nil/0은 엔진 가격 산정으로 fallthrough.
@@ -135,7 +135,7 @@ actor PiUsageScanner {
                   let recordedProvider = message["provider"] as? String else { return nil }
             payload = message
             provider = recordedProvider
-            model = message["model"] as? String ?? ""
+            model = message["responseModel"] as? String ?? message["model"] as? String ?? ""
         case "usage":
             guard let recordedProvider = object["provider"] as? String else { return nil }
             payload = object
