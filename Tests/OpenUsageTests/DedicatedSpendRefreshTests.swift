@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class DedicatedSpendRefreshTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_793_577_600)
+    private let now = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 12))!
 
     func testQuotaFailureUpdatesDedicatedTotalsAndRetainsQuotaAndPlan() async {
         let fixture = makeFixture(cached: true)
@@ -69,6 +69,36 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, refreshedQuota)
     }
 
+    func testSuccessfulQuotaRetainsOnlyOptedInSameDayTotals() async {
+        for retainsSpend in [true, false] {
+            let fixture = makeFixture(cached: true, retainsSpend: retainsSpend)
+            fixture.runtime.snapshot = ProviderSnapshot.make(
+                provider: fixture.runtime.provider, plan: "New plan",
+                lines: [.progress(label: "Credits", used: 40, limit: 100, format: .percent)],
+                refreshedAt: now, warning: "History unavailable"
+            )
+            await fixture.store.refreshAll(force: true)
+            let snapshot = fixture.store.localSnapshots[fixture.runtime.provider.id]
+            XCTAssertEqual(snapshot?.totalSpendLines, retainsSpend ? fixture.previous.totalSpendLines : nil)
+            XCTAssertEqual(snapshot?.plan, "New plan")
+            XCTAssertEqual(snapshot?.refreshedAt, now)
+            XCTAssertEqual(snapshot?.warning, "History unavailable")
+            XCTAssertNil(fixture.store.providerErrors[fixture.runtime.provider.id])
+        }
+    }
+
+    func testSuccessfulQuotaDoesNotRelabelPreviousDayTotals() async {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let fixture = makeFixture(cached: true, previousDate: yesterday)
+        fixture.runtime.snapshot = ProviderSnapshot.make(
+            provider: fixture.runtime.provider, plan: "Pro", lines: fixture.previous.lines,
+            refreshedAt: now, warning: "History unavailable"
+        )
+        await fixture.store.refreshAll(force: true)
+        XCTAssertNil(fixture.store.localSnapshots[fixture.runtime.provider.id]?.totalSpendLines)
+        XCTAssertTrue(total(fixture).slices.isEmpty)
+    }
+
     private struct Fixture {
         var runtime: DedicatedSpendRuntime
         var store: WidgetDataStore
@@ -76,7 +106,7 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         var previous: ProviderSnapshot
     }
 
-    private func makeFixture(cached: Bool) -> Fixture {
+    private func makeFixture(cached: Bool, retainsSpend: Bool = true, previousDate: Date? = nil) -> Fixture {
         let suite = "DedicatedSpendRefreshTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
@@ -84,9 +114,9 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         let previous = ProviderSnapshot.make(
             provider: provider, plan: "Pro",
             lines: [.progress(label: "Credits", used: 25, limit: 100, format: .percent)],
-            totalSpendLines: lines(cost: 1, tokens: 100), refreshedAt: now.addingTimeInterval(-600)
+            totalSpendLines: lines(cost: 1, tokens: 100), refreshedAt: previousDate ?? now.addingTimeInterval(-600)
         )
-        let runtime = DedicatedSpendRuntime(provider: provider, snapshot: previous)
+        let runtime = DedicatedSpendRuntime(provider: provider, snapshot: previous, retainsSpend: retainsSpend)
         let now = now
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { now })
         if cached { cache.store(previous) }
@@ -116,10 +146,12 @@ private final class DedicatedSpendRuntime: ProviderRuntime {
     let provider: Provider
     let widgetDescriptors: [WidgetDescriptor]
     var snapshot: ProviderSnapshot
+    let retainsDedicatedSpendOnScanFailure: Bool
 
-    init(provider: Provider, snapshot: ProviderSnapshot) {
+    init(provider: Provider, snapshot: ProviderSnapshot, retainsSpend: Bool) {
         self.provider = provider
         self.snapshot = snapshot
+        retainsDedicatedSpendOnScanFailure = retainsSpend
         widgetDescriptors = [.percent(id: "\(provider.id).quota", provider: provider, title: "Credits")]
     }
 
