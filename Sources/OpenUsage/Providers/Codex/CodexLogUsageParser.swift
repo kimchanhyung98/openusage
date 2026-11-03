@@ -20,7 +20,7 @@ extension CodexLogUsageScanner {
         var events: [Event] = []
         var legacyScopes: [Int: (scope: String, boundary: Int, modelOverride: String?)] = [:]
         var recordedEvents: [Int: (scope: String, boundary: Int, responseID: String)] = [:]
-        var invalidScopes: Set<String> = []
+        var invalidBoundaries: [String: Set<Int>] = [:]
         var seenRecords: Set<String> = []
         var compactionBoundaries: [String: Int] = [:]
         var failedBoundaries: [String: Int] = [:]
@@ -113,7 +113,7 @@ extension CodexLogUsageScanner {
                 guard let sessionID, let responseID, turnID != nil,
                       raw?["input_tokens"] != nil, raw?["output_tokens"] != nil,
                       raw?["total_tokens"] != nil, !usage.invalid else {
-                    invalidScopes.insert(scope)
+                    invalidBoundaries[scope, default: []].insert(usageBoundary)
                     events.append(Event(timestamp: timestamp, model: "", input: 0, cached: 0, output: 0,
                                         reasoning: 0, total: 0, invalidNumericValues: true))
                     continue
@@ -156,9 +156,6 @@ extension CodexLogUsageScanner {
                   let timestamp = OpenUsageISO8601.date(from: timestampRaw)
             else { continue }
 
-            let boundary = usageBoundary
-            usageBoundary += 1
-
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
             // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
@@ -199,6 +196,8 @@ extension CodexLogUsageScanner {
             } else {
                 continue
             }
+            let boundary = usageBoundary
+            usageBoundary += 1
             // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
             if let totals, !totals.invalid {
                 previousTotals = totals
@@ -239,10 +238,13 @@ extension CodexLogUsageScanner {
         let retainedIndices = events.indices.filter { index in
             let event = events[index]
             guard let legacy = legacyScopes[index] else { return true }
-            guard !invalidScopes.contains(legacy.scope) else { return false }
+            guard invalidBoundaries[legacy.scope]?.contains(legacy.boundary) != true else { return false }
             guard !event.invalidNumericValues else { return true }
             var remaining = event
-            let candidates = (recordsByBoundary[legacy.boundary] ?? []) + (recordsByBoundary[legacy.boundary + 1] ?? [])
+            let nextRecords = recordsByBoundary[legacy.boundary + 1] ?? []
+            let hasPendingRecord = invalidBoundaries[legacy.scope]?.contains(legacy.boundary + 1) == true
+                || nextRecords.contains { recordedEvents[$0]!.scope == legacy.scope }
+            let candidates = (recordsByBoundary[legacy.boundary] ?? []) + nextRecords
             for recordIndex in candidates {
                 let record = recordedEvents[recordIndex]!
                 guard record.scope == legacy.scope, !matchedRecords.contains(recordIndex) else { continue }
@@ -251,7 +253,7 @@ extension CodexLogUsageScanner {
                 if let compactedAt, compactedAt <= legacy.boundary { continue }
                 // 실패한 압축 원장은 설치 마커가 없어 같은 구간의 중단 응답과 대응 확정 불가.
                 if compactedAt == nil, record.boundary == legacy.boundary,
-                   failedBoundaries[legacy.scope] == legacy.boundary + 1 {
+                   failedBoundaries[legacy.scope] == legacy.boundary + 1, !hasPendingRecord {
                     remaining.invalidMetadata = true
                     events[index] = remaining
                     return true
