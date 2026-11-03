@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class DevinUsageScannerTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_793_577_600)
+    private let now = Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 12))!
     private let rates = ModelRates(inputPerMillion: 2, outputPerMillion: 10,
                                    cacheWritePerMillion: 2.5, cacheReadPerMillion: 0.2)
 
@@ -143,6 +143,86 @@ final class DevinUsageScannerTests: XCTestCase {
         XCTAssertEqual(overridePath, "/fixture-home/history/cli")
     }
 
+    func testShellHistoryPathIsResolvedWhenTheScanRunsOffMain() async throws {
+        let fixture = try DevinHistoryFixture()
+        defer { fixture.remove() }
+        try fixture.insert(message(request: "one"), at: now)
+        let runner = DevinHistoryShellRunner(stdout: [
+            "__OPENUSAGE_ENV_BEGIN__", "DEVIN_SESSIONS_DIR=\(fixture.root.path)", "__OPENUSAGE_ENV_END__"
+        ].joined(separator: "\0"))
+        let environment = ProcessEnvironmentReader(
+            processEnvironment: [:], shellEnvironment: LoginShellEnvironment(runner: runner), launchSnapshot: { nil }
+        )
+        let scanner = DevinUsageScanner(environment: environment, homeDirectory: fixture.root)
+        let result = try await scanner.scan(now: now, pricing: pricing)
+        XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
+    }
+
+    func testNullCacheCountersKeepOrdinaryRequestTokens() throws {
+        var item = message(request: "one")
+        var metadata = item["metadata"] as! [String: Any]
+        var metrics = metadata["metrics"] as! [String: Any]
+        metrics["cache_read_tokens"] = NSNull()
+        metrics["cache_creation_tokens"] = NSNull()
+        metadata["metrics"] = metrics
+        item["metadata"] = metadata
+        let parsed = try DevinUsageScanner.parseLog(line(item), sessionID: "fixture")
+        XCTAssertEqual(parsed.records.first?.tokens.totalTokens, 150)
+        XCTAssertEqual(parsed.invalidRows, 0)
+    }
+
+    func testMalformedAssistantMetadataWarnsButAbsentUsageDoesNot() throws {
+        let items: [[String: Any]] = [
+            ["role": "assistant"], ["role": "assistant", "metadata": NSNull()],
+            ["role": "assistant", "metadata": [:]],
+            ["role": "assistant", "metadata": ["metrics": NSNull()]],
+            ["role": "assistant", "metadata": "invalid"],
+            ["role": "assistant", "metadata": ["metrics": "invalid"]]
+        ]
+        var data = try node(request: "valid")
+        for (index, item) in items.enumerated() { data += try line(item, id: index + 2) }
+        let parsed = try DevinUsageScanner.parseLog(data, sessionID: "fixture")
+        XCTAssertEqual(parsed.records.count, 1)
+        XCTAssertEqual(parsed.invalidRows, 2)
+    }
+
+    func testSQLiteCorruptRowsDoNotDiscardValidHistory() async throws {
+        let fixture = try DevinHistoryFixture()
+        defer { fixture.remove() }
+        try fixture.insert(message(request: "valid"), at: now)
+        try fixture.insert(["role": "assistant", "metadata": "invalid"], at: now)
+        try fixture.insert(["role": "assistant", "metadata": ["metrics": "invalid"]], at: now)
+        try fixture.insert(["role": "assistant", "metadata": ["metrics": NSNull()]], at: now)
+        try fixture.insert(["role": "assistant"], at: now)
+        try fixture.execute("INSERT INTO message_nodes VALUES('bad',2,0,'not-json');")
+        let result = try await fixture.scanner().scan(now: now, pricing: pricing)
+        XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
+        XCTAssertEqual(result?.invalidRows, 3)
+    }
+
+    func testDamagedSessionsPreserveOtherFilesAndDatabaseRecords() async throws {
+        let fixture = try DevinHistoryFixture()
+        defer { fixture.remove() }
+        try fixture.insert(message(request: "database"), at: now)
+        try fixture.writeLog(node(request: "file"))
+        let metadata: [String?] = [nil, "not-json", #"{"v":2,"id":"old"}"#, #"{"v":1,"id":"directory-log"}"#]
+        for (index, meta) in metadata.enumerated() {
+            let session = fixture.log.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("bad-\(index)")
+            try FileManager.default.createDirectory(at: session, withIntermediateDirectories: true)
+            if let meta { try Data(meta.utf8).write(to: session.appendingPathComponent("meta.json")) }
+            let log = session.appendingPathComponent("log.jsonl")
+            if index == 3 {
+                try FileManager.default.createDirectory(at: log, withIntermediateDirectories: true)
+            } else {
+                try node(request: "bad-\(index)").write(to: log)
+            }
+        }
+        let result = try await fixture.scanner().scan(now: now, pricing: pricing)
+        XCTAssertEqual(result?.series.daily.first?.totalTokens, 370)
+        XCTAssertEqual(result?.invalidRows, 4)
+        XCTAssertFalse(result?.warnings.isEmpty ?? true)
+    }
+
     func testProviderFeedsDashboardWithoutChangingQuotaRows() async throws {
         let fixture = try DevinHistoryFixture()
         defer { fixture.remove() }
@@ -173,13 +253,16 @@ final class DevinUsageScannerTests: XCTestCase {
         try fixture.insert(message(request: "one"), at: now)
         let frozenNow = now
         let frozenPricing = pricing
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: 500, headers: [:], body: Data()))
         let provider = DevinProvider(
-            authStore: DevinAuthStore(files: FakeFiles(), sqlite: DevinHistoryAuthSQLite()),
-            usageClient: DevinUsageClient(http: FakeHTTPClient(response: HTTPResponse(statusCode: 500, headers: [:], body: Data()))), usageScanner: fixture.scanner(),
+            authStore: DevinAuthStore(files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
+                                      sqlite: DevinHistoryAuthSQLite()),
+            usageClient: DevinUsageClient(http: http), usageScanner: fixture.scanner(),
             now: { frozenNow }, pricing: { frozenPricing }
         )
         let snapshot = await provider.refresh()
-        XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
+        XCTAssertEqual(http.requests.count, 1)
+        XCTAssertEqual(snapshot.errorCategory, DevinUsageError.quotaUnavailable.errorCategory)
         XCTAssertEqual(value(snapshot.totalSpendLines ?? [], "Today", .count), 185)
     }
 
@@ -259,13 +342,21 @@ private struct DevinHistoryFixture {
 
     func remove() { try? FileManager.default.removeItem(at: root) }
 
-    private func execute(_ sql: String) throws {
+    func execute(_ sql: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
         process.arguments = [database.path, sql]
         try process.run()
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw DevinHistoryError.unreadable }
+    }
+}
+
+private struct DevinHistoryShellRunner: ProcessRunning {
+    let stdout: String
+
+    func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+        ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
     }
 }
 
