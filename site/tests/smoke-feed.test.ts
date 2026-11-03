@@ -99,13 +99,15 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
   assert.ok(python);
   const directory = mkdtempSync(join(tmpdir(), 'egasu-smoke-feed-'));
   const prefix = 'https://github.com/kimchanhyung98/egasu/releases/download/';
-  const item = (build: string, version: string, channel = '', suffix = `v${version}/egasu.dmg`) => `<item>
+  const item = (build: string, version: string, channel = '', suffix = `v${version}/egasu.dmg`, repo = prefix) => `<item>
     <sparkle:channel>${channel}</sparkle:channel><sparkle:version>${build}</sparkle:version>
     <sparkle:shortVersionString>${version}</sparkle:shortVersionString>
-    <enclosure url="${prefix}${suffix}"/>
+    <enclosure url="${repo}${suffix}"/>
   </item>`;
   const stable = item('992', '0.99.2');
-  const invalid = [item('9999', '0.99.9', 'nightly'), item('9999', '0.99.9-rc.1'), item('9999.5', '0.99.9'), item('9999', '0.99.9', '', '../../../../other/repository')];
+  const oldPrefix = 'https://github.com/kimchanhyung98/openusage/releases/download/';
+  const oldStable = item('1422', '0.14.3', '', 'v0.14.3/OpenUsage-0.14.3.dmg', oldPrefix);
+  const invalid = [item('9999', '0.99.9', 'nightly'), item('9999', '0.99.9-rc.1'), item('9999.5', '0.99.9'), item('9999', '0.99.9', '', '../../../../other/repository'), item('9999', '0.99.9', '', '../../../../other/repository', oldPrefix)];
   try {
     const feed = join(directory, 'appcast.xml');
     writeFileSync(feed, `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${stable}${invalid.join('')}</channel></rss>`);
@@ -113,5 +115,14 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /stable 1/);
     assert.match(result.stdout, /0\.99\.2 \(build 992\)/);
+    writeFileSync(feed, `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${oldStable}</channel></rss>`);
+    const oldResult = spawnSync('python3', ['-', feed, feed], { input: python, encoding: 'utf8', timeout: 5000 });
+    assert.equal(oldResult.status, 0, oldResult.stderr);
+    assert.match(oldResult.stdout, /0\.14\.3 \(build 1422\)/);
+    writeFileSync(feed, `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>${stable}${oldStable}</channel></rss>`);
+    const mixedResult = spawnSync('python3', ['-', feed, feed], { input: python, encoding: 'utf8', timeout: 5000 });
+    assert.equal(mixedResult.status, 0, mixedResult.stderr);
+    assert.match(mixedResult.stdout, /stable 2/);
+    assert.match(mixedResult.stdout, /0\.14\.3 \(build 1422\)/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

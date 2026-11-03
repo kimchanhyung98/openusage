@@ -66,4 +66,22 @@ final class AppBundleLocatorTests: XCTestCase {
 
         XCTAssertEqual(located.bundleIdentifier, "com.example.new")
     }
+
+    func testEmptyNewEnvironmentFallsBackToLegacySuite() {
+        let located = AppBundleLocator.locate(
+            executableURL: URL(fileURLWithPath: "/tmp/egasu"),
+            environment: ["EGASU_DEFAULTS_SUITE": "", "OPENUSAGE_DEFAULTS_SUITE": "com.example.legacy"]
+        )
+
+        XCTAssertEqual(located.bundleIdentifier, "com.example.legacy")
+    }
+
+    func testEmptyEnvironmentOverridesUseProductionSuite() {
+        let located = AppBundleLocator.locate(
+            executableURL: URL(fileURLWithPath: "/tmp/egasu"),
+            environment: ["EGASU_DEFAULTS_SUITE": "", "OPENUSAGE_DEFAULTS_SUITE": ""]
+        )
+
+        XCTAssertEqual(located.bundleIdentifier, "com.kimchanhyung98.openusage")
+    }
 }

@@ -1,5 +1,26 @@
 import { test, expect, openHome, stableFeed, downloadURL } from './fixtures';
 
+const oldDownloadURL = 'https://github.com/kimchanhyung98/openusage/releases/download/v0.14.3/OpenUsage-0.14.3.dmg';
+const oldItem = `<item>
+  <sparkle:version>1422</sparkle:version><sparkle:shortVersionString>0.14.3</sparkle:shortVersionString>
+  <enclosure url="${oldDownloadURL}" length="1048576"/>
+</item>`;
+
+test('download links accept releases preserved from before the rename', async ({ page }) => {
+  const feed = stableFeed.replace(/<item>[\s\S]*?<\/item>/, oldItem);
+  await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: feed }));
+  await openHome(page);
+  await expect(page.locator('[data-download]').first()).toHaveAttribute('href', oldDownloadURL);
+  await expect(page.locator('[data-download-meta]')).toHaveText('v0.14.3');
+});
+
+test('download links select the newest release across both repository names', async ({ page }) => {
+  const feed = stableFeed.replace('</channel>', `${oldItem}</channel>`);
+  await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: feed }));
+  await openHome(page);
+  await expect(page.locator('[data-download]').first()).toHaveAttribute('href', oldDownloadURL);
+});
+
 test('download links select the latest stable release and exclude other channels', async ({ page }) => {
   const feed = stableFeed.replace('</channel>', `<item>
     <sparkle:channel>nightly</sparkle:channel><sparkle:version>9999</sparkle:version>
@@ -19,6 +40,7 @@ for (const invalid of [
   { label: 'a fractional build', build: '9999.5', version: '0.99.9', url: downloadURL.replace('0.99.2', '0.99.9') },
   { label: 'a prerelease without a channel', build: '9999', version: '0.99.9-rc.1', url: downloadURL.replace('0.99.2', '0.99.9-rc.1') },
   { label: 'a URL escaping the release directory', build: '9999', version: '0.99.9', url: downloadURL.replace('v0.99.2/egasu.dmg', '../../../../other/repository') },
+  { label: 'an old URL escaping the release directory', build: '9999', version: '0.99.9', url: oldDownloadURL.replace('v0.14.3/OpenUsage-0.14.3.dmg', '../../../../other/repository') },
 ]) {
   test(`download links ignore ${invalid.label}`, async ({ page }) => {
     const feed = stableFeed.replace('</channel>', `<item>
