@@ -45,9 +45,9 @@ final class AccountReSignInTests: XCTestCase {
             .write(to: signIn.directory.appendingPathComponent("auth.json"))
 
         try importer.completeReSignIn(
-            profileID: profile.id, in: store, isActive: true, signInProfileID: signIn.profileID
+            profileID: profile.id, in: store, isActive: true, signInAttemptID: signIn.attemptID
         )
-        try importer.removeSignInWorkspace(family: "codex", profileID: signIn.profileID)
+        try workspace.remove(family: "codex", profileID: profile.id, attemptID: signIn.attemptID)
 
         let snapshot = try XCTUnwrap(switcher.loadSnapshot(for: profile))
         XCTAssertEqual(CodexAuthStore.parseAuth(snapshot.credential)?.tokens?.accessToken, "fresh-token")
