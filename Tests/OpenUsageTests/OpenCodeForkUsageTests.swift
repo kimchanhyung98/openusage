@@ -64,6 +64,29 @@ final class OpenCodeForkUsageTests: XCTestCase {
         assertTotals(try await db.scan(), cost: 1.5, tokens: 1200)
     }
 
+    func testStructuredOutputAddedAfterForkDoesNotDuplicateUsage() async throws {
+        let db = try ForkDatabase(now: now)
+        try db.session("original", secondsAgo: 7200)
+        try db.session("before", secondsAgo: 600)
+        try db.session("after", secondsAgo: 300)
+        try db.message("source", session: "original")
+        try db.message("before-copy", session: "before")
+        try db.message("after-copy", session: "after")
+        try db.sqlite.execute(path: db.path, sql: """
+            UPDATE message SET data = json_set(data, '$.structured', json('{"answer":"ok"}'))
+            WHERE id IN ('source', 'after-copy');
+            """)
+        assertTotals(try await db.scan(), cost: 1.5, tokens: 1200)
+
+        try db.sqlite.execute(path: db.path, sql: "DELETE FROM message WHERE session_id = 'original';")
+        try db.sqlite.execute(path: db.path, sql: "DELETE FROM session WHERE id = 'original';")
+        let scan = try await db.scan()
+        assertTotals(scan, cost: 1.5, tokens: 1200)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 1.5)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 1.5)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1.5)
+    }
+
     func testIdenticalIndependentRequestsAreNotDeduplicated() async throws {
         let db = try ForkDatabase(now: now)
         try db.session("first", secondsAgo: 7200)
