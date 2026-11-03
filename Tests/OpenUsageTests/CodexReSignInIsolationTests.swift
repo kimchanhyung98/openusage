@@ -121,19 +121,34 @@ final class CodexReSignInIsolationTests: XCTestCase {
     func testAttemptPathsRejectTraversalAndSymlinks() throws {
         let original = entry(token: "saved-admin", account: "admin-account")
         let ad = try addProfile(label: "ad", entry: original)
+        try switcher.applySharedAuthentication(original, family: "codex")
         XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: ad.id, attemptID: "../outside"))
         let signIn = try workspace.prepareReauthentication(family: "codex", profileID: ad.id)
         let attemptID = try XCTUnwrap(signIn.attemptID)
         let outside = root.appendingPathComponent("outside")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         let protectedFile = outside.appendingPathComponent("auth.json")
-        try Data("keep".utf8).write(to: protectedFile)
+        let outsideCredential = entry(token: "outside-token", account: "outside-account")
+        try Data(outsideCredential.credential.utf8).write(to: protectedFile)
         try FileManager.default.removeItem(at: signIn.directory)
         try FileManager.default.createSymbolicLink(at: signIn.directory, withDestinationURL: outside)
 
         XCTAssertThrowsError(try workspace.prepare(family: "codex", profileID: ad.id, attemptID: attemptID))
         XCTAssertThrowsError(try workspace.remove(family: "codex", profileID: ad.id, attemptID: attemptID))
-        XCTAssertEqual(try String(contentsOf: protectedFile, encoding: .utf8), "keep")
+        XCTAssertThrowsError(try importer.readWorkspaceCredential(
+            family: "codex", profileID: ad.id, attemptID: attemptID
+        )) { error in
+            guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent = error else {
+                return XCTFail("expected symlinkedComponent, got \(error)")
+            }
+        }
+        XCTAssertThrowsError(try importer.completeReSignIn(
+            profileID: ad.id, in: store, isActive: true, signInAttemptID: attemptID
+        ))
+        XCTAssertEqual(try String(contentsOf: protectedFile, encoding: .utf8), outsideCredential.credential)
+        XCTAssertEqual(store.profile(id: ad.id)?.identityKey, ad.identityKey)
+        XCTAssertEqual(try switcher.loadSnapshot(for: ad), original)
+        XCTAssertEqual(try switcher.readSharedAuthentication(family: "codex"), original)
         XCTAssertEqual(try importer.readWorkspaceCredential(family: "codex", profileID: ad.id)?.entry, original)
     }
 
