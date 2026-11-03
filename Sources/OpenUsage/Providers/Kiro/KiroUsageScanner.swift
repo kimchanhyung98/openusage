@@ -81,14 +81,29 @@ actor KiroUsageScanner {
             guard try Self.exists(directory) else { return nil }
             var parsed = Parsed()
             var scanned: Set<String> = []
-            for workspace in try Self.folders(in: directory) {
-                for session in try Self.folders(in: workspace) {
-                    try Task.checkCancellation()
-                    let log = session.appendingPathComponent("messages.jsonl").resolvingSymlinksInPath()
-                    guard try Self.exists(log), scanned.insert(log.path).inserted else { continue }
-                    let file = try Self.parse(try Data(contentsOf: log))
-                    parsed.records += file.records
-                    parsed.invalidRows += file.invalidRows
+            for workspace in try Self.entries(in: directory) {
+                try Task.checkCancellation()
+                do {
+                    guard try workspace.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                    for session in try Self.entries(in: workspace) {
+                        try Task.checkCancellation()
+                        do {
+                            guard try session.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                            let log = session.appendingPathComponent("messages.jsonl").resolvingSymlinksInPath()
+                            guard try Self.exists(log), scanned.insert(log.path).inserted else { continue }
+                            let file = try Self.parse(try Data(contentsOf: log))
+                            parsed.records += file.records
+                            parsed.invalidRows += file.invalidRows
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch {
+                            parsed.invalidRows += 1
+                        }
+                    }
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    parsed.invalidRows += 1
                 }
             }
             return Self.aggregate(parsed, now: now)
@@ -293,10 +308,9 @@ actor KiroUsageScanner {
         return total
     }
 
-    private static func folders(in directory: URL) throws -> [URL] {
+    private static func entries(in directory: URL) throws -> [URL] {
         try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isDirectoryKey],
                                                     options: [.skipsHiddenFiles])
-            .filter { try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
             .sorted { $0.path < $1.path }
     }
 
