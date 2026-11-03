@@ -29,7 +29,7 @@ extension CodexLogUsageScanner {
         var contextSequence = 0
         var turnContexts: [String: (model: String?, fast: Bool, ultrafast: Bool)] = [:]
         var previousTotals: RawUsage?
-        var replayBaselineUnknown = false
+        var cumulativeBaselineUnknown = false
         var currentModel: String?
         var currentTierIsFast = false
         var currentTierIsUltrafast = false
@@ -77,7 +77,7 @@ extension CodexLogUsageScanner {
                 sawSessionMeta = true
                 if let payload, isChildSessionMeta(payload) {
                     previousTotals = nil
-                    replayBaselineUnknown = true
+                    cumulativeBaselineUnknown = true
                     if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
                        let created = OpenUsageISO8601.date(from: timestampRaw) {
                         replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
@@ -175,7 +175,7 @@ extension CodexLogUsageScanner {
             if replayGate != nil {
                 if payload["info"] == nil || payload["info"] is NSNull { continue }
                 previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
-                replayBaselineUnknown = previousTotals == nil
+                cumulativeBaselineUnknown = previousTotals == nil
                 continue
             }
 
@@ -191,8 +191,8 @@ extension CodexLogUsageScanner {
                 }
             } else if let totals {
                 usage = totals.subtracting(previousTotals)
-                // 부모 재생의 기준이 끊겼으면 첫 live 누적값은 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
-                if replayBaselineUnknown { usage.invalid = true }
+                // 누적 기준이 끊겼으면 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
+                if cumulativeBaselineUnknown { usage.invalid = true }
             } else {
                 continue
             }
@@ -201,7 +201,7 @@ extension CodexLogUsageScanner {
             // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
             if let totals, !totals.invalid {
                 previousTotals = totals
-                replayBaselineUnknown = false
+                cumulativeBaselineUnknown = false
             }
             guard !usage.invalid else {
                 legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride)
@@ -212,6 +212,10 @@ extension CodexLogUsageScanner {
                 continue
             }
             guard usage.input > 0 || usage.cached > 0 || usage.output > 0 || usage.reasoning > 0 else { continue }
+            if totals == nil {
+                previousTotals = nil
+                cumulativeBaselineUnknown = true
+            }
 
             let model = resolveModel(
                 parsed: nil,

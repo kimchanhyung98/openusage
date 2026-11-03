@@ -33,8 +33,8 @@ actor CodexLogUsageScanner {
         var usageRecordID: String? = nil
     }
 
-    /// 한도 알림·손상 원장 구간 처리 수정 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 15
+    /// 개별 요청만 기록된 구간의 누적 기준 수정 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 16
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -163,6 +163,15 @@ actor CodexLogUsageScanner {
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
         var seenRecords: Set<String> = []
+        let recordedKeys = Set(events.lazy.filter {
+            $0.usageRecordID != nil && !$0.invalidNumericValues && !$0.invalidMetadata && $0.timestamp >= since
+        }.map { event in
+            EventKey(
+                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel,
+                isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
+                cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
+            )
+        })
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
         var rejectedMetadataRows = 0
@@ -185,7 +194,7 @@ actor CodexLogUsageScanner {
             if let recordID = event.usageRecordID {
                 guard seenRecords.insert(recordID).inserted else { continue }
             } else {
-                guard seen.insert(key).inserted else { continue }
+                guard !recordedKeys.contains(key), seen.insert(key).inserted else { continue }
             }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
