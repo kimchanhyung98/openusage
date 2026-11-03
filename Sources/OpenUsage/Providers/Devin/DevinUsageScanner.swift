@@ -53,8 +53,9 @@ actor DevinUsageScanner {
         }
     }
 
-    let directory: URL
     private let sqlite: any SQLiteAccessing
+    private let environment: any EnvironmentReading
+    private let homeDirectory: URL
 
     init(
         sqlite: any SQLiteAccessing = SQLiteCLIAccessor(),
@@ -62,6 +63,11 @@ actor DevinUsageScanner {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
         self.sqlite = sqlite
+        self.environment = environment
+        self.homeDirectory = homeDirectory
+    }
+
+    var directory: URL {
         func configured(_ key: String) -> URL? {
             guard let path = environment.value(for: key)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !path.isEmpty else { return nil }
@@ -72,7 +78,7 @@ actor DevinUsageScanner {
         let root = configured("DEVIN_SESSIONS_DIR")
             ?? (configured("XDG_DATA_HOME") ?? homeDirectory.appendingPathComponent(".local/share"))
                 .appendingPathComponent("devin")
-        directory = root.appendingPathComponent("cli", isDirectory: true)
+        return root.appendingPathComponent("cli", isDirectory: true)
     }
 
     func scan(now: Date, pricing: ModelPricing) throws -> Result? {
@@ -80,6 +86,7 @@ actor DevinUsageScanner {
             try Task.checkCancellation()
             var parsed = Parsed()
             var foundStore = false
+            let directory = directory
             let database = directory.appendingPathComponent("sessions.db")
             if try Self.exists(database) {
                 foundStore = true
@@ -90,11 +97,17 @@ actor DevinUsageScanner {
                 for row in rows {
                     try Task.checkCancellation()
                     guard row.count == 5, let session = row[0] as? String,
-                          let node = UsageLogNumbers.count(row[1]), let metadata = row[4] as? [String: Any]
+                          let node = UsageLogNumbers.count(row[1])
                     else {
                         parsed.invalidRows += 1
                         continue
                     }
+                    if row[4] is NSNull { continue }
+                    guard let metadata = row[4] as? [String: Any] else {
+                        parsed.invalidRows += 1
+                        continue
+                    }
+                    if metadata["metrics"] == nil || metadata["metrics"] is NSNull { continue }
                     Self.append(metadata: metadata, messageID: row[3] as? String,
                                 fallbackID: "\(session):\(node)", fallbackDate: row[2], to: &parsed)
                 }
@@ -105,16 +118,23 @@ actor DevinUsageScanner {
                 var scanned: Set<String> = []
                 for session in try FileManager.default.contentsOfDirectory(
                     at: sessions, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-                ) where try session.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+                ) {
                     try Task.checkCancellation()
-                    let log = session.appendingPathComponent("log.jsonl").resolvingSymlinksInPath()
-                    guard try Self.exists(log), scanned.insert(log.path).inserted else { continue }
-                    guard let meta = ProviderParse.jsonObject(try Data(contentsOf: session.appendingPathComponent("meta.json"))),
-                          UsageLogNumbers.count(meta["v"]) == 1, let id = meta["id"] as? String
-                    else { throw DevinHistoryError.unreadable }
-                    let file = try Self.parseLog(try Data(contentsOf: log), sessionID: id)
-                    parsed.records += file.records
-                    parsed.invalidRows += file.invalidRows
+                    do {
+                        guard try session.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                        let log = session.appendingPathComponent("log.jsonl").resolvingSymlinksInPath()
+                        guard try Self.exists(log), scanned.insert(log.path).inserted else { continue }
+                        guard let meta = ProviderParse.jsonObject(try Data(contentsOf: session.appendingPathComponent("meta.json"))),
+                              UsageLogNumbers.count(meta["v"]) == 1, let id = meta["id"] as? String
+                        else { throw DevinHistoryError.unreadable }
+                        let file = try Self.parseLog(try Data(contentsOf: log), sessionID: id)
+                        parsed.records += file.records
+                        parsed.invalidRows += file.invalidRows
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        parsed.invalidRows += 1
+                    }
                 }
             }
             guard foundStore else { return nil }
@@ -145,11 +165,17 @@ actor DevinUsageScanner {
             nodes[id] = (node, object["at"])
         }
         for (id, value) in nodes.sorted(by: { $0.key < $1.key }) {
-            guard let message = value.node["message"] as? [String: Any],
-                  message["role"] as? String == "assistant",
-                  let metadata = message["metadata"] as? [String: Any],
-                  metadata["metrics"] is [String: Any]
-            else { continue }
+            guard let message = value.node["message"] as? [String: Any] else {
+                parsed.invalidRows += 1
+                continue
+            }
+            guard message["role"] as? String == "assistant" else { continue }
+            if message["metadata"] == nil || message["metadata"] is NSNull { continue }
+            guard let metadata = message["metadata"] as? [String: Any] else {
+                parsed.invalidRows += 1
+                continue
+            }
+            if metadata["metrics"] == nil || metadata["metrics"] is NSNull { continue }
             append(metadata: metadata, messageID: message["message_id"] as? String,
                    fallbackID: "\(sessionID):\(id)", fallbackDate: value.date, to: &parsed)
         }
@@ -168,8 +194,8 @@ actor DevinUsageScanner {
         guard let timestamp, let metrics = metadata["metrics"] as? [String: Any],
               let input = UsageLogNumbers.count(metrics["input_tokens"]),
               let output = UsageLogNumbers.count(metrics["output_tokens"]),
-              let read = UsageLogNumbers.count(metrics["cache_read_tokens"], missing: 0),
-              let write = UsageLogNumbers.count(metrics["cache_creation_tokens"], missing: 0),
+              let read = UsageLogNumbers.count(metrics["cache_read_tokens"] is NSNull ? nil : metrics["cache_read_tokens"], missing: 0),
+              let write = UsageLogNumbers.count(metrics["cache_creation_tokens"] is NSNull ? nil : metrics["cache_creation_tokens"], missing: 0),
               UsageLogNumbers.sum(input, output, read, write) != nil
         else {
             parsed.invalidRows += 1
@@ -234,11 +260,11 @@ actor DevinUsageScanner {
 
     /// 대화 본문 대신 집계에 필요한 메타데이터만 조회. 읽기 전용 accessor 사용.
     static let dataSQL = """
-        SELECT json_group_array(json_array(
+        SELECT json_group_array(CASE WHEN json_valid(chat_message) THEN json_array(
             session_id, node_id, created_at,
             json_extract(chat_message, '$.message_id'), json_extract(chat_message, '$.metadata')
-        )) FROM message_nodes
-        WHERE json_extract(chat_message, '$.role') = 'assistant'
-          AND json_type(chat_message, '$.metadata.metrics') = 'object';
+        ) ELSE json_array(NULL) END) FROM message_nodes
+        WHERE CASE WHEN json_valid(chat_message)
+            THEN json_extract(chat_message, '$.role') = 'assistant' ELSE 1 END;
         """
 }

@@ -58,7 +58,10 @@ final class DevinProvider: ProviderRuntime {
                 snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
                 for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
-                    AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding, providerID: provider.id)
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded,
+                        category: scan.invalidRows > 0 ? .decoding : .other, providerID: provider.id
+                    )
                 }
             }
         } catch is CancellationError {
