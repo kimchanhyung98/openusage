@@ -42,9 +42,17 @@ enum ZAIDetailMapper {
         })
         var seenModels = Set<String>()
         var seenBuckets = Set<String>()
+        var bucketTotals: [String: [Int]] = [:]
+        var cachedTotals = Array(repeating: 0, count: axisDays.count)
+        var inputTotals = cachedTotals
+        var outputTotals = cachedTotals
         for model in usage.modelDataList {
             if let bucket = aggregateBucket(model) {
                 guard seenBuckets.insert(bucket).inserted else { throw ZAIUsageError.invalidResponse }
+                if let totals = model.totalTokensUsage ?? model.tokensUsage {
+                    guard totals.count == axisDays.count else { throw ZAIUsageError.invalidResponse }
+                    bucketTotals[bucket] = totals.map(\.value)
+                }
                 continue
             }
             let resolved = try resolvedModel(model, pricing: pricing)
@@ -64,6 +72,9 @@ enum ZAIDetailMapper {
                 }
                 var day = days[axisDays[index]]!
                 day.tokens = nextTokens
+                cachedTotals[index] += cached[index].value
+                inputTotals[index] += input[index].value
+                outputTotals[index] += output[index].value
                 if tokens > 0 {
                     if let rates = resolved.rates,
                        cached[index].value == 0 || rates.cacheReadIsExplicit,
@@ -87,6 +98,11 @@ enum ZAIDetailMapper {
             for key in window.days {
                 days[key]?.tokensComplete = false
                 days[key]?.costUSD = nil
+            }
+        } else {
+            let modelTotals = ["cached": cachedTotals, "uncached": inputTotals, "output": outputTotals]
+            for (bucket, totals) in bucketTotals where totals != modelTotals[bucket] {
+                throw ZAIUsageError.invalidResponse
             }
         }
         return Parsed(days: days)
