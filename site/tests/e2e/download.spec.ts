@@ -4,7 +4,7 @@ test('download links select the latest stable release and exclude other channels
   const feed = stableFeed.replace('</channel>', `<item>
     <sparkle:channel>nightly</sparkle:channel><sparkle:version>9999</sparkle:version>
     <sparkle:shortVersionString>0.99.9</sparkle:shortVersionString>
-    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/nightly/egasu.dmg" length="1048576"/>
+    <enclosure url="https://github.com/kimchanhyung98/egasu/releases/download/nightly/egasu.dmg" length="1048576"/>
   </item></channel>`);
   await page.route('**/appcast.xml', (route) => route.fulfill({ contentType: 'application/xml', body: feed }));
   await openHome(page);
@@ -57,7 +57,7 @@ for (const failure of ['http', 'xml', 'body-timeout'] as const) {
       if (failure === 'body-timeout') await page.clock.fastForward(5001);
       await notice;
       for (const link of await page.locator('[data-download]').all()) {
-        await expect(link).toHaveAttribute('href', 'https://github.com/kimchanhyung98/openusage/releases/latest');
+        await expect(link).toHaveAttribute('href', 'https://github.com/kimchanhyung98/egasu/releases/latest');
       }
       await expect(page.locator('[data-download-meta]')).toBeHidden();
     });

@@ -63,7 +63,7 @@ jobs:
           publish_dir: .build/site-preview
           keep_files: true
           # 기존 피드와 같은 사용자 지정 도메인 유지.
-          cname: openusage.chanhyung.kim
+          cname: egasu.chanhyung.kim
 
       - name: 게시 전후 피드 불변 확인
         run: |

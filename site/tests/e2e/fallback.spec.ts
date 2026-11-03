@@ -13,6 +13,6 @@ test('the page remains readable and downloadable with JavaScript disabled', asyn
   const downloads = page.locator('[data-download]');
   expect(await downloads.count()).toBeGreaterThan(0);
   for (const link of await downloads.all()) {
-    await expect(link).toHaveAttribute('href', 'https://github.com/kimchanhyung98/openusage/releases/latest');
+    await expect(link).toHaveAttribute('href', 'https://github.com/kimchanhyung98/egasu/releases/latest');
   }
 });

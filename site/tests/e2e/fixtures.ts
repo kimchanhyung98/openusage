@@ -1,6 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test';
 
-export const downloadURL = 'https://github.com/kimchanhyung98/openusage/releases/download/v0.99.2/egasu.dmg';
+export const downloadURL = 'https://github.com/kimchanhyung98/egasu/releases/download/v0.99.2/egasu.dmg';
 export const stableFeed = `<?xml version="1.0"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
   <sparkle:version>992</sparkle:version><sparkle:shortVersionString>0.99.2</sparkle:shortVersionString>

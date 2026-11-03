@@ -42,7 +42,7 @@ function publicationFixture() {
   git(checkout, 'remote', 'add', 'origin', published);
   writeFileSync(join(published, 'appcast.xml'), '<rss><channel/></rss>\n');
   writeFileSync(join(published, 'pricing_supplement.json'), '{"pricing":{}}\n');
-  writeFileSync(join(published, 'CNAME'), 'openusage.chanhyung.kim\n');
+  writeFileSync(join(published, 'CNAME'), 'egasu.chanhyung.kim\n');
   commit();
   return {
     temp, published, checkout, commit, git,

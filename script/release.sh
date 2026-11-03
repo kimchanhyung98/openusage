@@ -41,7 +41,7 @@ VERSION="$(egasu_release_version "$ROOT_DIR" "$EGASU_TAG")"
 # Sparkle은 이 문자열이 아닌 아래 단조 증가 commit 수인 CFBundleVersion으로 빌드 비교.
 # Developer ID 공증은 숫자 형식을 요구하지 않음(Sparkle 문서의 beta short version 예: "2.0b1").
 BUILD="${EGASU_BUILD:-${OPENUSAGE_BUILD:-$(git rev-list --count HEAD)}}"
-FEED_URL="${FEED_URL:-https://openusage.chanhyung.kim/appcast.xml}"
+FEED_URL="${FEED_URL:-https://egasu.chanhyung.kim/appcast.xml}"
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 
 DIST_DIR="$ROOT_DIR/dist"

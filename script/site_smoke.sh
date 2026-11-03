@@ -3,7 +3,7 @@
 # 사용: script/site_smoke.sh [base_url] <feed_baseline_dir>
 # 기준 폴더는 검증할 배포에 포함된 appcast.xml과 pricing_supplement.json 사본.
 set -euo pipefail
-BASE="${1:-https://openusage.chanhyung.kim}"
+BASE="${1:-https://egasu.chanhyung.kim}"
 BASELINE_DIR="${2:-}"
 CURL=(curl -sS --max-time 20)
 fail=0
@@ -62,7 +62,7 @@ import posixpath, re, sys, xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlsplit, urlunsplit
 NS = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-PREFIX = "https://github.com/kimchanhyung98/openusage/releases/download/"
+PREFIX = "https://github.com/kimchanhyung98/egasu/releases/download/"
 root = ET.parse(sys.argv[1]).getroot()
 items = root.findall(".//item")
 want = len(ET.parse(sys.argv[2]).getroot().findall(".//item"))

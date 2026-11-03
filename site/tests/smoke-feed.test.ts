@@ -12,7 +12,7 @@ test('deployment smoke requires both feeds to match the supplied deployment base
   const directory = mkdtempSync(join(tmpdir(), 'egasu-smoke-baseline-'));
   const appcast = `<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><item>
     <sparkle:version>992</sparkle:version><sparkle:shortVersionString>0.99.2</sparkle:shortVersionString>
-    <enclosure url="https://github.com/kimchanhyung98/openusage/releases/download/v0.99.2/egasu.dmg" sparkle:edSignature="original-signature"/>
+    <enclosure url="https://github.com/kimchanhyung98/egasu/releases/download/v0.99.2/egasu.dmg" sparkle:edSignature="original-signature"/>
   </item></channel></rss>`;
   const pricing = '{"pricing":{"sample-model":{"input":1,"output":2}}}';
   writeFileSync(join(directory, 'appcast.xml'), appcast);
@@ -98,7 +98,7 @@ test('smoke selects stable builds with the same channel, version, and URL bounda
   const python = script.match(/<<'PY' \|\| fail=1\n([\s\S]*?)\nPY/)?.[1];
   assert.ok(python);
   const directory = mkdtempSync(join(tmpdir(), 'egasu-smoke-feed-'));
-  const prefix = 'https://github.com/kimchanhyung98/openusage/releases/download/';
+  const prefix = 'https://github.com/kimchanhyung98/egasu/releases/download/';
   const item = (build: string, version: string, channel = '', suffix = `v${version}/egasu.dmg`) => `<item>
     <sparkle:channel>${channel}</sparkle:channel><sparkle:version>${build}</sparkle:version>
     <sparkle:shortVersionString>${version}</sparkle:shortVersionString>

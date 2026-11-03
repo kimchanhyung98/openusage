@@ -19,7 +19,7 @@ final class ModelPricingSupplementStoreTests: XCTestCase {
 
     func testDefaultSupplementBelongsToFork() {
         XCTAssertEqual(ModelPricingStore.defaultSourceURLs[.supplement]?.absoluteString,
-                       "https://openusage.chanhyung.kim/pricing_supplement.json")
+                       "https://egasu.chanhyung.kim/pricing_supplement.json")
     }
 
     func testSourceChangeDiscardsCacheETagAndFreshTTL() async throws {

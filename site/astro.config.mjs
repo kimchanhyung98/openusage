@@ -3,7 +3,7 @@ import { defineConfig } from 'astro/config';
 
 // 정적 출력 전용. 배포 시 gh-pages의 feed 파일을 보존하는 별도 조립 필요.
 export default defineConfig({
-  site: 'https://openusage.chanhyung.kim',
+  site: 'https://egasu.chanhyung.kim',
   trailingSlash: 'ignore',
   // 기존 인라인 요소 사이 공백 유지.
   compressHTML: true,

@@ -57,7 +57,7 @@ actor ModelPricingStore {
     static let defaultSourceURLs: [SourceID: URL] = [
         .litellm: URL(string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")!,
         .modelsDev: URL(string: "https://models.dev/api.json")!,
-        .supplement: URL(string: "https://openusage.chanhyung.kim/pricing_supplement.json")!
+        .supplement: URL(string: "https://egasu.chanhyung.kim/pricing_supplement.json")!
     ]
 
     private static var defaultCacheDirectory: URL {

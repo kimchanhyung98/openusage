@@ -24,7 +24,7 @@ enum AboutPanel {
         let credits = NSMutableAttributedString(string: text, attributes: base)
         for (label, url) in [
             ("kimchanhyung98", "https://github.com/kimchanhyung98"),
-            ("GitHub", "https://github.com/kimchanhyung98/openusage"),
+            ("GitHub", "https://github.com/kimchanhyung98/egasu"),
         ] {
             credits.addAttribute(.link, value: url, range: (text as NSString).range(of: label))
         }

@@ -6,7 +6,7 @@ import { initFeatureTour } from './tour';
 import { initMenus, openMenu, closeMenu } from './menus';
 
 const SPARKLE_NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle';
-const DOWNLOAD_PREFIX = 'https://github.com/kimchanhyung98/openusage/releases/download/';
+const DOWNLOAD_PREFIX = 'https://github.com/kimchanhyung98/egasu/releases/download/';
 
 // hero 단어 리빌. 인라인 style 속성은 CSP가 막으므로 CSSOM으로 delay 변수 부여.
 function initHero(): void {

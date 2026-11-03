@@ -55,7 +55,7 @@ DNS·HTTPS·기존 피드 제공은 별도 인프라 단계이며, 앱 코드 �
 
 ## 업데이트 출처
 
-업데이트 빌드는 egasu의 GitHub 릴리스에 게시되고, 사용 가능한 버전 목록("appcast")은 `https://openusage.chanhyung.kim/appcast.xml`에서 제공.
+업데이트 빌드는 egasu의 GitHub 릴리스에 게시되고, 사용 가능한 버전 목록("appcast")은 `https://egasu.chanhyung.kim/appcast.xml`에서 제공.
 공식 릴리스의 앱과 DMG는 Developer ID로 코드 서명한 뒤 Apple 공증을 받음.
 공증은 코드 서명과 별도 절차이며, 공증 결과를 앱과 DMG에 첨부.
 업데이트 다운로드에는 Sparkle용 EdDSA 서명도 추가하고, Sparkle이 설치 전에 검증.

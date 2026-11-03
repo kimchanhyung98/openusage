@@ -116,7 +116,7 @@ jobs:
           publish_dir: ./public
           keep_files: true
           # 사용자 지정 도메인에서 피드를 제공하므로 gh-pages에 CNAME 유지.
-          cname: openusage.chanhyung.kim
+          cname: egasu.chanhyung.kim
 
       - name: 게시된 Pages 커밋 기록
         run: |

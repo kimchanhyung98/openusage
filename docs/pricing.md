@@ -1,13 +1,13 @@
 # 모델 가격
 
-OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Grok).
+egasu가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Grok).
 OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
 
 ## 가격의 출처
 
 가격은 세 출처를 계층으로 쌓아 쓰며, 같은 모델이 둘 이상에 있으면 상위 계층이 우선:
 
-1. **OpenUsage 가격 보충 파일** — 이 포크에서 관리하고 `openusage.chanhyung.kim`에 게시하는 작은 JSON 파일.
+1. **egasu 가격 보충 파일** — 이 포크에서 관리하고 `egasu.chanhyung.kim`에 게시하는 작은 JSON 파일.
    공개 카탈로그에 없는 모델, 공식 문서와 다른 기존 단가의 보정, Fast 배율, 장문 구간, 모델 별칭을 담당.
 2. **LiteLLM** — 커뮤니티가 관리하는 `model_prices_and_context_window.json`으로, API 가격이 매겨진 모델 대부분을 포함.
 3. **models.dev** — LiteLLM이 놓친 모델(예: 갓 출시된 모델이나 일부 틈새 모델)을 채우는 보완 출처.
@@ -122,7 +122,7 @@ GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까�
 
 ## 개인정보 보호
 
-가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, `openusage.chanhyung.kim`).
+가격 새로 고침은 공개 가격 목록 세 개를 가져옴(`raw.githubusercontent.com`, `models.dev`, `egasu.chanhyung.kim`).
 가격 조회 요청에는 사용량이나 로그 데이터를 포함하지 않음.
 [iCloud 사용량 동기화](/docs/icloud-sync.md)는 별도 설정에 따라 동작.
 
@@ -132,7 +132,7 @@ GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까�
 [GitHub Actions 대기열](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)의 `queue: max`와 `cancel-in-progress: false`를 세 게시 workflow에 함께 적용해, 새 사이트 게시가 대기 중인 가격표나 릴리스를 취소하지 않도록 보존.
 대기는 최대 100개이며 도착 순서가 배포 버전 순서를 보장하지는 않으므로, 게시·후속 Pages 배포의 실패 및 취소 여부 확인 필요.
 
-- **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/OpenUsage/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
+- **보충 파일 변경**(새 모델, 가격 수정, 새 별칭): `Sources/Egasu/Resources/pricing_supplement.json`을 편집하고, Cursor 전용 항목은 [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md), OpenAI 항목은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 동기화한 뒤 `updated_at` 갱신.
   신규 Fast 배율은 `fast_multipliers_exact`에 등록하고, 구버전의 넓은 이름 매칭을 사용하는 `fast_multipliers`는 유지.
   장문·공급 경로별 처리가 필요한 값과 새 단가는 `pricing_v2`·`alias_rules_v2`에 등록.
   기존 `pricing`·`alias_rules`는 구버전 앱이 계속 읽으므로 호환성을 확인하지 않고 변경하지 않음.

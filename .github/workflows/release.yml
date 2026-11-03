@@ -1,8 +1,8 @@
 name: Release
 
-# 배포할 버전에 태그 지정: `git tag v0.10.0 && git push origin v0.10.0`.
-# pre-release 접미사 태그(예: v0.10.0-beta.1)는 Early Access channel에 배포.
-# 일반 태그(v0.10.0)는 전체 사용자에게 배포.
+# 배포할 버전에 태그 지정: `git tag v1.0.0 && git push origin v1.0.0`.
+# pre-release 접미사 태그(예: v1.0.0-beta.1)는 Early Access channel에 배포.
+# 일반 태그(v1.0.0)는 전체 사용자에게 배포.
 # 최초 secret·Pages 설정은 .agents/skills/release-swift/의 release-swift skill 참고.
 on:
   push:
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "빌드할 태그(예: v0.10.0)"
+        description: "빌드할 태그(예: v1.0.0)"
         required: true
         type: string
 
@@ -64,10 +64,14 @@ jobs:
           git merge-base --is-ancestor "$TAG_COMMIT" refs/remotes/origin/main \
             || { echo "Release tag must point to a commit reachable from origin/main: $TAG" >&2; exit 1; }
           VERSION="${TAG#v}"
+          APP_NAME=egasu
+          # 이름 변경 전 태그를 재빌드하면 당시 산출물 이름 유지.
+          [ -d Sources/Egasu ] || APP_NAME=OpenUsage
           if [[ "$TAG" == *-* ]]; then CHANNEL=beta; PRERELEASE=true; else CHANNEL=stable; PRERELEASE=false; fi
           {
             echo "tag=$TAG"
             echo "version=$VERSION"
+            echo "app_name=$APP_NAME"
             echo "channel=$CHANNEL"
             echo "prerelease=$PRERELEASE"
           } >> "$GITHUB_OUTPUT"
@@ -99,8 +103,8 @@ jobs:
         env:
           ICLOUD_PROFILE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_ICLOUD_PROFILE }}
         run: |
-          printf '%s' "$ICLOUD_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/openusage-icloud.provisionprofile"
-          echo "ICLOUD_PROVISIONING_PROFILE=$RUNNER_TEMP/openusage-icloud.provisionprofile" >> "$GITHUB_ENV"
+          printf '%s' "$ICLOUD_PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/egasu-icloud.provisionprofile"
+          echo "ICLOUD_PROVISIONING_PROFILE=$RUNNER_TEMP/egasu-icloud.provisionprofile" >> "$GITHUB_ENV"
 
       - name: 기존 appcast 이어받기
         run: |
@@ -140,9 +144,9 @@ jobs:
           NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARY_APP_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          EGASU_TAG: ${{ steps.meta.outputs.tag }}
+          # 이름 변경 전 태그의 release.sh가 읽는 환경 변수도 전달.
           OPENUSAGE_TAG: ${{ steps.meta.outputs.tag }}
-          # OPENUSAGE_TAG 도입 전 태그를 workflow_dispatch로 재빌드할 때 당시 release.sh 요구 사항을
-          # 충족하도록 유도한 버전도 전달. 현재 release.sh에서는 무시.
           OPENUSAGE_VERSION: ${{ steps.meta.outputs.version }}
         run: ./script/release.sh
 
@@ -173,14 +177,14 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: OpenUsage ${{ steps.meta.outputs.version }}
+          name: ${{ steps.meta.outputs.app_name }} ${{ steps.meta.outputs.version }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
-          files: dist/OpenUsage-${{ steps.meta.outputs.version }}.dmg
+          files: dist/${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
           generate_release_notes: true
 
       - name: Sparkle로 appcast 생성
         env:
-          DMG: OpenUsage-${{ steps.meta.outputs.version }}.dmg
+          DMG: ${{ steps.meta.outputs.app_name }}-${{ steps.meta.outputs.version }}.dmg
           CHANNEL: ${{ steps.meta.outputs.channel }}
           # 태그별 GitHub Release asset base URL.
           # generate_appcast는 feed/의 새 DMG에만 prefix를 적용하고 기존 항목은 이전 태그 URL 유지.
@@ -234,7 +238,7 @@ jobs:
           # keep_files가 없으면 appcast 배포 시 해당 파일이 branch에서 삭제됨.
           keep_files: true
           # custom domain에서 feed를 제공하므로 gh-pages에 CNAME 유지.
-          cname: openusage.chanhyung.kim
+          cname: egasu.chanhyung.kim
 
       - name: 게시된 Pages 커밋 기록
         run: |

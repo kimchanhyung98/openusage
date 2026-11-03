@@ -22,7 +22,7 @@ for file in appcast.xml pricing_supplement.json CNAME; do
   git rev-parse --verify "$REF:$file"
 done
 
-if [ "$(git show "$REF:CNAME")" != openusage.chanhyung.kim ]; then
+if [ "$(git show "$REF:CNAME")" != egasu.chanhyung.kim ]; then
   echo "error: published CNAME does not match the landing page domain" >&2
   exit 1
 fi

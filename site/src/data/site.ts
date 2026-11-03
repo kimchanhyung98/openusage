@@ -1,9 +1,9 @@
 // 사이트 전역 상수. 브랜드 이름은 여기 한 곳에서만 관리.
-const repo = 'https://github.com/kimchanhyung98/openusage';
+const repo = 'https://github.com/kimchanhyung98/egasu';
 
 export const site = {
   brand: 'egasu',
-  url: 'https://openusage.chanhyung.kim',
+  url: 'https://egasu.chanhyung.kim',
   repo,
   githubProfile: 'https://git.chanhyung.kim',
   linkedin: 'https://linkedin.chanhyung.kim/',

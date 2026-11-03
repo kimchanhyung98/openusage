@@ -117,7 +117,7 @@ PY
 # 6. 로컬 미리보기 전용: 라이브 feed 사본. 단언 뒤에 복사하므로 위 검사 대상이 아님.
 if [ "${WITH_FEED:-0}" = "1" ]; then
   for f in appcast.xml pricing_supplement.json; do
-    curl -sSf --max-time 20 "https://openusage.chanhyung.kim/$f" -o "$OUT/$f"
+    curl -sSf --max-time 20 "https://egasu.chanhyung.kim/$f" -o "$OUT/$f"
   done
   echo "copied live appcast.xml and pricing_supplement.json into $OUT (preview only)"
 fi
