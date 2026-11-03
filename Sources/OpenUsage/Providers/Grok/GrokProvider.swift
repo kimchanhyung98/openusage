@@ -98,8 +98,11 @@ final class GrokProvider: ProviderRuntime {
         var warning: String?
         var warningPresentation: [LocalizedMessage] = []
         if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
-            warning = [scan.numericWarning, scan.metadataWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
-            warningPresentation = [scan.numericWarning, scan.metadataWarning].compactMap { $0 }.map { .init($0) }
+            let attributionWarning = scan.rejectedMetadataRows > 0
+                ? "Some local usage records could not be linked to a model. Usage history may be incomplete." : nil
+            let warnings = [scan.numericWarning, attributionWarning].compactMap { $0 }
+            warning = warnings.joined(separator: " ").nilIfEmpty
+            warningPresentation = warnings.map { .init($0) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

@@ -61,6 +61,7 @@ struct GrokLogUsageScanner: Sendable {
     ) -> LogUsageScan {
         var modelByPID: [Int: String] = [:]
         var modelBySession: [SessionKey: String] = [:]
+        var inheritedSessions: Set<SessionKey> = []
         var ambiguousPIDs: Set<Int> = []
         var accumulator = DailyUsageAccumulator()
         var rejectedMetadataRows = 0
@@ -78,7 +79,7 @@ struct GrokLogUsageScanner: Sendable {
             let sid = (object["sid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let session = pid.flatMap { pid in sid.map { SessionKey(pid: pid, sid: $0) } }
 
-            // 공식 child_model 이벤트에는 sid가 없음. 이후 미확인 세션을 부모 기본 모델로 가격 산정 금지.
+            // 공식 child_model 이벤트에는 sid가 없음. 이후 기본 모델 갱신과 미확인 세션의 기본값 사용 중단.
             if msg == "subagent model resolved", sid == nil {
                 if let pid { ambiguousPIDs.insert(pid) }
                 return
@@ -87,7 +88,7 @@ struct GrokLogUsageScanner: Sendable {
             if let model = modelID(msg: msg, ctx: ctx) {
                 if let session {
                     modelBySession[session] = model
-                } else if let pid {
+                } else if let pid, !ambiguousPIDs.contains(pid) {
                     modelByPID[pid] = model
                 }
                 return
@@ -96,10 +97,14 @@ struct GrokLogUsageScanner: Sendable {
             guard msg == "shell.turn.inference_done" else { return }
             let model: String?
             if let session {
-                if modelBySession[session] == nil, !ambiguousPIDs.contains(session.pid) {
-                    modelBySession[session] = modelByPID[session.pid]
+                if let sessionModel = modelBySession[session] {
+                    model = sessionModel
+                } else if inheritedSessions.contains(session) || !ambiguousPIDs.contains(session.pid) {
+                    model = modelByPID[session.pid]
+                    if model != nil { inheritedSessions.insert(session) }
+                } else {
+                    model = nil
                 }
-                model = modelBySession[session]
             } else {
                 model = pid.flatMap { ambiguousPIDs.contains($0) ? nil : modelByPID[$0] }
             }
@@ -127,7 +132,7 @@ struct GrokLogUsageScanner: Sendable {
 
             // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
             guard let model else {
-                if session != nil, totalTokens > 0 {
+                if totalTokens > 0, session != nil || pid.map({ ambiguousPIDs.contains($0) }) == true {
                     rejectedMetadataRows += 1
                 }
                 return
