@@ -16,18 +16,22 @@ Devin이 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 �
 
 이 Mac에 저장된 Devin CLI 요청 이력을 Today·Yesterday·Last 30 Days의 Cost·Tokens·Cost/MTok에 반영.
 기본 저장소는 `~/.local/share/devin/cli/sessions.db`이며, 파일 저장 모드의 `cli/sessions/<session>/log.jsonl`도 지원.
-`DEVIN_SESSIONS_DIR` 또는 `XDG_DATA_HOME` 설정이 있으면 해당 경로 사용.
+`DEVIN_SESSIONS_DIR`이 있으면 `$DEVIN_SESSIONS_DIR/cli` 사용.
+그 외에는 `$XDG_DATA_HOME/devin/cli` 사용하며, `XDG_DATA_HOME`도 없으면 기본 경로 사용.
+앱의 셸 환경 캡처가 끝나기 전에 경로를 고정하지 않고 로컬 이력 조회 시 확인.
 SQLite와 세션 파일은 읽기 전용이며 인증 정보·대화 본문을 별도 저장하지 않음.
 
 - 입력·캐시 읽기·캐시 쓰기·출력 토큰을 요청별로 합산.
   현재 컨텍스트 크기는 누적 사용량에 더하지 않음.
+  캐시 토큰 값의 누락·`null`은 0으로 처리.
 - 요청 ID로 재개·복제·저장소 이동 과정의 중복 기록 제거.
   요청 ID가 없으면 메시지 ID, 두 ID가 모두 없으면 세션·노드 ID 사용.
 - 비용은 요청에 기록된 모델과 공통 API 단가로 산정한 추정치.
   캐시 쓰기 유효기간을 담지 않은 기록에는 공통 가격의 기본 캐시 쓰기 단가 적용.
   구독료·ACU 청구액·Extra Balance와 별개이며, 할당량이나 잔액을 차감해 비용으로 만들지 않음.
 - 모델이나 단가를 확인할 수 없는 기록이 있으면 해당 기간은 토큰만 표시.
-  손상된 기록은 제외하고 카드에 경고 표시.
+  손상된 행·세션은 제외하고 읽을 수 있는 나머지 이력과 카드 경고 유지.
+  사용량 메타데이터가 없는 정상 assistant 기록은 집계 대상에서 제외.
 - 로컬 자정 기준 날짜 사용.
   Last 30 Days는 기존 통계와 같이 오늘 및 이전 30일 포함.
 
