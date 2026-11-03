@@ -79,6 +79,7 @@
 "Custom Kimi API or OAuth hosts are not supported." = "Custom Kimi API or OAuth hosts are not supported.";
 "Device names can’t contain control characters." = "Device names can’t contain control characters.";
 "Device names must be 120 UTF-8 bytes or fewer." = "Device names must be 120 UTF-8 bytes or fewer.";
+"Devin CLI usage history could not be read. Check the local session files and try again." = "Devin CLI usage history could not be read. Check the local session files and try again.";
 "Devin quota data unavailable. Try again later." = "Devin quota data unavailable. Try again later.";
 "Enter a device name." = "Enter a device name.";
 "Enterprise usage data unavailable. Try again later." = "Enterprise usage data unavailable. Try again later.";
@@ -170,6 +171,8 @@
 "Soft limit at %@%% used" = "Soft limit at %@%% used";
 "Soft limit reached at %@%% used" = "Soft limit reached at %@%% used";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "Some Antigravity models have no price. Their usage is excluded from totals.";
+"Some Devin CLI usage has no known model price. Affected periods show tokens only." = "Some Devin CLI usage has no known model price. Affected periods show tokens only.";
+"Some Devin CLI usage records are invalid. Totals may be incomplete." = "Some Devin CLI usage records are invalid. Totals may be incomplete.";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "Some OpenRouter statistics are unavailable. Other usage data is still available.";
 "Some local usage has unsupported pricing details and was excluded." = "Some local usage has unsupported pricing details and was excluded.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";

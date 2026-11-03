@@ -79,6 +79,7 @@
 "Custom Kimi API or OAuth hosts are not supported." = "사용자 지정 Kimi API 또는 OAuth 호스트는 지원하지 않습니다.";
 "Device names can’t contain control characters." = "기기 이름에는 제어 문자를 포함할 수 없습니다.";
 "Device names must be 120 UTF-8 bytes or fewer." = "기기 이름은 UTF-8 기준 120바이트 이하여야 합니다.";
+"Devin CLI usage history could not be read. Check the local session files and try again." = "Devin CLI 사용 이력을 읽을 수 없습니다. 로컬 세션 파일을 확인한 뒤 다시 시도하세요.";
 "Devin quota data unavailable. Try again later." = "Devin 할당량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
 "Enter a device name." = "기기 이름을 입력하세요.";
 "Enterprise usage data unavailable. Try again later." = "Enterprise 사용량 데이터를 확인할 수 없습니다. 잠시 후 다시 시도하세요.";
@@ -170,6 +171,8 @@
 "Soft limit at %@%% used" = "소프트 한도: 사용량 %@%%";
 "Soft limit reached at %@%% used" = "사용량 %@%%에서 소프트 한도에 도달했습니다";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "일부 Antigravity 모델의 가격을 확인할 수 없어 해당 사용량을 합계에서 제외했습니다.";
+"Some Devin CLI usage has no known model price. Affected periods show tokens only." = "일부 Devin CLI 사용량의 모델 가격을 확인할 수 없습니다. 해당 기간에는 토큰만 표시됩니다.";
+"Some Devin CLI usage records are invalid. Totals may be incomplete." = "일부 Devin CLI 사용 기록이 올바르지 않습니다. 합계에 누락이 있을 수 있습니다.";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "일부 OpenRouter 통계를 확인할 수 없습니다. 다른 사용량 데이터는 계속 표시됩니다.";
 "Some local usage has unsupported pricing details and was excluded." = "일부 로컬 사용 기록의 가격 정보를 지원하지 않아 집계에서 제외했습니다.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "일부 로컬 사용 기록에 잘못된 숫자가 있습니다. 사용 내역이 누락될 수 있습니다.";

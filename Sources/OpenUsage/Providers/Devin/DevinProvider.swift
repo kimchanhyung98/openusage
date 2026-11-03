@@ -8,21 +8,28 @@ final class DevinProvider: ProviderRuntime {
         icon: .providerMark("devin"),
         links: [
             .init(label: "Dashboard", url: "https://app.devin.ai/settings/plans")
-        ]
+        ],
+        usesDedicatedSpendLines: true
     )
 
     let authStore: DevinAuthStore
     let usageClient: DevinUsageClient
+    let usageScanner: DevinUsageScanner
     let now: @Sendable () -> Date
+    let pricing: @Sendable () async -> ModelPricing
 
     init(
         authStore: DevinAuthStore = DevinAuthStore(),
         usageClient: DevinUsageClient = DevinUsageClient(),
-        now: @escaping @Sendable () -> Date = Date.init
+        usageScanner: DevinUsageScanner = DevinUsageScanner(),
+        now: @escaping @Sendable () -> Date = Date.init,
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
+        self.usageScanner = usageScanner
         self.now = now
+        self.pricing = pricing
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
@@ -43,6 +50,33 @@ final class DevinProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        var snapshot = await quotaSnapshot()
+        let refreshedAt = now()
+        snapshot.refreshedAt = refreshedAt
+        do {
+            if let scan = try await usageScanner.scan(now: refreshedAt, pricing: await pricing()) {
+                snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
+                if !scan.warnings.isEmpty {
+                    AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding, providerID: provider.id)
+                }
+            }
+        } catch is CancellationError {
+            return snapshot
+        } catch {
+            AppDiagnostics.record(.historyScan, result: .failure, providerID: provider.id, error: error)
+            appendWarning(error.localizedDescription, to: &snapshot)
+        }
+        return snapshot
+    }
+
+    private func appendWarning(_ message: String, to snapshot: inout ProviderSnapshot) {
+        snapshot.warning = [snapshot.warning, message].compactMap { $0 }.joined(separator: " ")
+        snapshot.warningPresentation = (snapshot.warningPresentation ?? []) + [.init(message)]
+        snapshot.isDegraded = true
+    }
+
+    private func quotaSnapshot() async -> ProviderSnapshot {
         var sawAPIKey = false
         var sawAuthFailure = false
         let credentials = await loadOffMainActor { [authStore] in authStore.loadCredentialsFile() }
