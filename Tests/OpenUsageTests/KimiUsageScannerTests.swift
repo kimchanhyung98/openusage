@@ -86,6 +86,22 @@ final class KimiUsageScannerTests: XCTestCase {
         XCTAssertEqual(parsed.invalidRows, 0)
     }
 
+    func testCompleteFinalUsageWithoutNewlineIsCounted() throws {
+        var data = try wire([request(), usage()])
+        data.removeLast()
+        let parsed = try KimiUsageScanner.parse(data)
+        XCTAssertEqual(parsed.records.count, 1)
+        XCTAssertEqual(parsed.invalidRows, 0)
+    }
+
+    func testCompleteInvalidFinalRecordWithoutNewlineWarns() throws {
+        var data = try wire([request(), usage()])
+        data.append(Data(#"{"type":"usage.record","model":"kimi-code/default"}"#.utf8))
+        let parsed = try KimiUsageScanner.parse(data)
+        XCTAssertEqual(parsed.records.count, 1)
+        XCTAssertEqual(parsed.invalidRows, 1)
+    }
+
     func testInvalidNumbersAndMissingTimestampAreExcluded() throws {
         var rows = [request()]
         for value: Any in [-1, 0.5, true, "10"] {
