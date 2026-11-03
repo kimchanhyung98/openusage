@@ -5,7 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 6
+    static let cacheSchemaVersion = 7
 
     enum CostEstimate: Sendable {
         case priced(Double)
@@ -45,7 +45,8 @@ actor PiUsageScanner {
     /// 메시지·독립 사용량·압축 기록 하나. timestamp와 카드 귀속을 캐시에 보존.
     struct Entry: Codable, Sendable, Equatable {
         var id: String?
-        var timestamp: Date
+        /// 시각이 손상된 압축 사용량은 날짜를 만들지 않고 경고만 보존.
+        var timestamp: Date?
         /// 모델 없는 압축은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
         var cardID: String
         var model: String
@@ -93,7 +94,12 @@ actor PiUsageScanner {
 
     /// 메시지·독립 사용량의 명시적 모델만 사용. 실행 모델이 없는 압축은 불완전 이력으로 보존.
     static func parseFile(_ data: Data) -> [Entry] {
-        let entries = JSONLScanning.lines(in: data).compactMap(parseLine)
+        let marker = Data(#""usage""#.utf8)
+        var entries: [Entry] = []
+        for line in JSONLScanning.lines(in: data) {
+            guard line.range(of: marker) != nil, let entry = parseLine(line) else { continue }
+            entries.append(entry)
+        }
         reportRejectedEntries(entries)
         return entries
     }
@@ -109,7 +115,7 @@ actor PiUsageScanner {
         if rejected > 0 {
             AppDiagnostics.record(
                 .historyScan, result: .degraded, category: .decoding, providerID: "pi",
-                localContext: "source=pi; unattributed_compaction_rows=\(rejected)"
+                localContext: "source=pi; rejected_metadata_rows=\(rejected)"
             )
         }
     }
@@ -131,17 +137,21 @@ actor PiUsageScanner {
             payload = object
             provider = recordedProvider
             model = object["model"] as? String ?? ""
+            invalidMetadata = model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case "compaction":
-            payload = object
-            provider = ""
-            model = ""
-            invalidMetadata = true
+            guard object["usage"] != nil else { return nil }
+            return Entry(
+                id: object["id"] as? String,
+                timestamp: (object["timestamp"] as? String).flatMap(OpenUsageISO8601.date(from:)),
+                cardID: "", model: "", carriedCost: nil, tokens: TokenBreakdown(), reportedTotalTokens: 0,
+                invalidMetadata: true
+            )
         default:
             return nil
         }
         guard let timestampRaw = object["timestamp"] as? String,
               let timestamp = OpenUsageISO8601.date(from: timestampRaw),
-              let cardID = invalidMetadata ? "" : PiProviderMapping.cardID(forPiProvider: provider),
+              let cardID = PiProviderMapping.cardID(forPiProvider: provider),
               let usage = payload["usage"] as? [String: Any]
         else { return nil }
 
@@ -220,9 +230,9 @@ actor PiUsageScanner {
         var rejectedNumericRows = 0
         var rejectedMetadataRows = 0
         var unsupportedPricingRows = 0
-        for entry in entries where entry.timestamp >= since
-            && (entry.cardID == cardID || (entry.invalidMetadata && entry.cardID.isEmpty)) {
-            guard !entry.invalidMetadata else {
+        for entry in entries where entry.cardID == cardID || (entry.invalidMetadata && entry.cardID.isEmpty) {
+            if let timestamp = entry.timestamp, timestamp < since { continue }
+            guard !entry.invalidMetadata, let timestamp = entry.timestamp else {
                 rejectedMetadataRows += 1
                 continue
             }
@@ -230,7 +240,7 @@ actor PiUsageScanner {
                 rejectedNumericRows += 1
                 continue
             }
-            let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
+            let day = DailyUsageAccumulator.dayKey(from: timestamp)
             let trimmedModel = entry.model.nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
 
