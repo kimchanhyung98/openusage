@@ -320,7 +320,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
 
     private func captureLogs(_ operation: () async -> ProviderSnapshot) async throws -> (ProviderSnapshot, String) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("RefreshDiagnosticTests.\(UUID())")
-        let sink = LogFile(directory: directory, fileName: "OpenUsage.log")
+        let sink = LogFile(directory: directory, fileName: "egasu.log")
         sink.open()
         let originalSink = AppLog.sink
         AppLog.sink = sink
@@ -331,7 +331,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         let snapshot = await operation()
-        return (snapshot, try String(contentsOf: directory.appendingPathComponent("OpenUsage.log"), encoding: .utf8))
+        return (snapshot, try String(contentsOf: directory.appendingPathComponent("egasu.log"), encoding: .utf8))
     }
 }
 

@@ -5,10 +5,10 @@ import XCTest
 @MainActor
 final class LocalizationRenderingTests: XCTestCase {
     func testDashboardAndShareCardsRenderAllLanguagesAcrossDensitiesAndAppearances() throws {
-        let suite = "OpenUsageTests.Localization.Rendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.Localization.Rendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_LOCALIZATION_SCREENSHOTS"]
+        let export = ProcessInfo.processInfo.environment["EGASU_LOCALIZATION_SCREENSHOTS"]
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
         if let export {
             try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true)

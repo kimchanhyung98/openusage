@@ -148,7 +148,7 @@ final class SoftLimitSettingsStoreTests: XCTestCase {
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.SoftLimit.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.SoftLimit.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

@@ -73,7 +73,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = snapshot.lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
-        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+        XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
         XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
     }
 
@@ -95,7 +95,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = snapshot.lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
-        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+        XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
         XCTAssertEqual(summaryHosts(routing), [productionHost, dailyHost])
         assertNoLegacyRequests(routing)
     }
@@ -110,7 +110,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
-        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+        XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
     }
 
     func testMalformedProductionFractionKeepsResetTimeWhenDailySuppliesFraction() throws {
@@ -123,7 +123,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
-        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+        XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
     }
 
     func testSummaryMergeKeepsFirstValidResetTime() throws {
@@ -141,7 +141,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
         guard case .progress(_, _, _, _, let resetsAt, _, _)? = lines.first else {
             return XCTFail("Expected a Gemini session progress line")
         }
-        XCTAssertEqual(resetsAt, OpenUsageISO8601.date(from: "2026-10-20T09:00:00Z"))
+        XCTAssertEqual(resetsAt, EgasuISO8601.date(from: "2026-10-20T09:00:00Z"))
     }
 
     func testResetTimesWithoutAnyValidFractionDoNotCreateLine() throws {

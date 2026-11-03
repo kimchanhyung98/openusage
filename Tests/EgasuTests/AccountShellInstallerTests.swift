@@ -116,7 +116,7 @@ final class AccountShellInstallerTests: XCTestCase {
 
     private func makeHome() throws -> URL {
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountShellInstaller.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountShellInstaller.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: home) }
         return home

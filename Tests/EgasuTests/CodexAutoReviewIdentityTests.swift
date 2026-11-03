@@ -130,7 +130,7 @@ final class CodexAutoReviewIdentityTests: XCTestCase {
             incrementalScanner: rebuilt, cacheIdentityOverride: "account-a", rootsOverride: [home]
         )
         let scan = await scanner.scan(
-            now: OpenUsageISO8601.date(from: "2026-05-13T08:00:00Z")!, pricing: pricing()
+            now: EgasuISO8601.date(from: "2026-05-13T08:00:00Z")!, pricing: pricing()
         )
         XCTAssertEqual(scan?.modelUsage?.daily.first?.models.first?.model, "codex-auto-review")
         await rebuilt.waitForPendingWritesForTesting()

@@ -266,7 +266,7 @@ actor ClaudeLogUsageScanner {
 
     private static func parseEntries(_ object: [String: Any]) -> [Entry] {
         guard let timestampRaw = object["timestamp"] as? String,
-              let timestamp = OpenUsageISO8601.date(from: timestampRaw),
+              let timestamp = EgasuISO8601.date(from: timestampRaw),
               let message = object["message"] as? [String: Any],
               let usage = message["usage"] as? [String: Any],
               let parsedUsage = tokenBreakdown(from: usage),

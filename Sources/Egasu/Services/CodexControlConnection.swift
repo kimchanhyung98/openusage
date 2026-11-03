@@ -75,14 +75,14 @@ final class CodexControlConnection: CodexControlRequesting {
                 if case .waiting = state { self?.close() }
             }
         }
-        transport.start(queue: DispatchQueue(label: "com.openusage.soft-limit.codex"))
+        transport.start(queue: DispatchQueue(label: "com.egasu.soft-limit.codex"))
         write(codec.handshake)
         receiveNext()
     }
 
     func initialize() async throws {
         _ = try await request("initialize", params: .object([
-            "clientInfo": .object(["name": .string("openusage_soft_limit"), "version": .string("1")]),
+            "clientInfo": .object(["name": .string("egasu_soft_limit"), "version": .string("1")]),
             "capabilities": .object(["experimentalApi": .bool(true)])
         ]))
         try send(.object(["method": .string("initialized"), "params": .object([:])]))

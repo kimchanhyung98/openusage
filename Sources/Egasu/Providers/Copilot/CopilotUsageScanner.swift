@@ -107,7 +107,7 @@ struct CopilotUsageScanner: Sendable {
             try Task.checkCancellation()
             guard row.count == 5 else { throw CopilotHistoryError.malformedData }
             guard let rawDate = row[0] as? String,
-                  let timestamp = OpenUsageISO8601.date(from: rawDate)
+                  let timestamp = EgasuISO8601.date(from: rawDate)
             else {
                 rejectedMetadataRows += 1
                 continue

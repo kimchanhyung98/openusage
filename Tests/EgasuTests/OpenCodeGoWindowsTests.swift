@@ -7,7 +7,7 @@ final class OpenCodeGoWindowsTests: XCTestCase {
         calendar.timeZone = TimeZone(identifier: "UTC")!
         return calendar
     }()
-    private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
+    private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Double { d(iso).timeIntervalSince1970 * 1000 }
 
     func testSessionRolling5Hours() {

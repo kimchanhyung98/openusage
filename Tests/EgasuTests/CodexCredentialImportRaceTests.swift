@@ -6,9 +6,9 @@ import XCTest
 final class CodexCredentialImportRaceTests: XCTestCase {
     func testDefaultImportWaitsForRefreshBeforeReadingSharedCredentials() throws {
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.CodexImportRace.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuTests.CodexImportRace.\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
-        let suiteName = "OpenUsageTests.CodexImportRace.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.CodexImportRace.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let authFile = home.appendingPathComponent(".codex/auth.json")

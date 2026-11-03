@@ -345,7 +345,7 @@ final class SoftLimitWidgetDataStoreTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.SoftLimit.WidgetDataStore.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.SoftLimit.WidgetDataStore.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

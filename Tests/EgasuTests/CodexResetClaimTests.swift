@@ -24,9 +24,9 @@ final class CodexResetClaimTests: XCTestCase {
         Data("""
         {"credits": [
             {"id": "RateLimitResetCredit_other", "status": "available",
-             "expires_at": "\(OpenUsageISO8601.string(from: expiry.addingTimeInterval(999_999)))"},
+             "expires_at": "\(EgasuISO8601.string(from: expiry.addingTimeInterval(999_999)))"},
             {"id": "RateLimitResetCredit_target", "status": "\(status)",
-             "expires_at": "\(OpenUsageISO8601.string(from: expiry))"}
+             "expires_at": "\(EgasuISO8601.string(from: expiry))"}
         ], "available_count": 2}
         """.utf8)
     }

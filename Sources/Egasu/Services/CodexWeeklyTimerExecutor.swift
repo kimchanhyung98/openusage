@@ -77,7 +77,7 @@ final class CodexWeeklyTimerExecutor: CodexWeeklyTimerExecuting {
         do {
             try CodexWeeklyTimerWorkspace.cleanAbandonedWorkspaces(baseDirectory: baseDirectory)
         } catch {
-            startupFailureDescription = "Codex weekly timer temporary credentials from a previous session could not be removed. Restart OpenUsage to retry."
+            startupFailureDescription = "Codex weekly timer temporary credentials from a previous session could not be removed. Restart egasu to retry."
             AppDiagnostics.failure(.weeklyTimer, error: error, providerID: "codex",
                                    localContext: "Could not remove abandoned timer credentials")
         }

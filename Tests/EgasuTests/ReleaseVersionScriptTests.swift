@@ -4,6 +4,8 @@ import XCTest
 final class ReleaseVersionScriptTests: XCTestCase {
     func testReleaseTagBecomesBundleVersion() throws {
         XCTAssertEqual(try version(for: "v0.9.5"), "0.9.5")
+        XCTAssertEqual(try version(for: "v1.0.0"), "1.0.0")
+        XCTAssertEqual(try version(for: "v1.0.0-beta.1"), "1.0.0-beta.1")
         XCTAssertEqual(try version(for: "v12.34.56-beta.1"), "12.34.56-beta.1")
     }
 
@@ -57,14 +59,14 @@ final class ReleaseVersionScriptTests: XCTestCase {
         let target = try makeRepository(tag: "v9.9.9", environment: hookEnvironment)
 
         XCTAssertEqual(try callFunction(
-            "openusage_development_version",
+            "egasu_development_version",
             arguments: [target.path],
             workingDirectory: outside,
             environment: hookEnvironment
         ), "9.9.9-dev")
         XCTAssertEqual(try runGit(
             ["log", "-1", "--format=%an|%ae|%cn|%ce"], in: target, environment: cleanEnvironment
-        ), "OpenUsage Test|test@example.com|OpenUsage Test|test@example.com")
+        ), "egasu Test|test@example.com|egasu Test|test@example.com")
         XCTAssertEqual(try runGit(["symbolic-ref", "HEAD"], in: outside, environment: cleanEnvironment), originalBranch)
         XCTAssertEqual(try runGit(["show-ref"], in: outside, environment: cleanEnvironment), originalRefs)
         XCTAssertEqual(try Data(contentsOf: index), originalIndex)
@@ -96,7 +98,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         try runGit(["add", "Makefile", ".husky/pre-commit"], in: worktree)
 
         try runGit([
-            "-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+            "-c", "user.name=egasu Test", "-c", "user.email=test@example.com",
             "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "check foreign repository"
         ], in: worktree, environment: environment)
 
@@ -110,7 +112,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         let stagedFiles = try runGit(["ls-files", "--stage"], in: worktree)
 
         XCTAssertThrowsError(try runGit([
-            "-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+            "-c", "user.name=egasu Test", "-c", "user.email=test@example.com",
             "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "reject failed check"
         ], in: worktree, environment: environment))
         XCTAssertEqual(try runGit(["rev-parse", "HEAD"], in: worktree), checkedHead)
@@ -155,7 +157,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         let repository = try makeRepository(tag: "v0.9.5")
         try runGit(["update-ref", "refs/remotes/origin/main", "HEAD"], in: repository)
         XCTAssertEqual(try verifiedReleaseVersion("v0.9.5", in: repository), "0.9.5")
-        try runGit(["-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+        try runGit(["-c", "user.name=egasu Test", "-c", "user.email=test@example.com",
                     "tag", "-a", "v0.9.6-beta.1", "-m", "beta"], in: repository)
         XCTAssertEqual(try verifiedReleaseVersion("v0.9.6-beta.1", in: repository), "0.9.6-beta.1")
         try runGit(["branch", "v0.9.7"], in: repository)
@@ -164,7 +166,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
                 return XCTFail("expected a missing tag failure, got \(error)")
             }
         }
-        try runGit(["-c", "user.name=OpenUsage Test", "-c", "user.email=test@example.com",
+        try runGit(["-c", "user.name=egasu Test", "-c", "user.email=test@example.com",
                     "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "unmerged"], in: repository)
         XCTAssertThrowsError(try verifiedReleaseVersion("v0.9.5", in: repository)) { error in
             guard case VersionScriptError.scriptFailure(status: 2, stderr: _) = error else {
@@ -208,11 +210,11 @@ final class ReleaseVersionScriptTests: XCTestCase {
     // MARK: - Script invocation
 
     private func version(for tag: String) throws -> String {
-        try callFunction("openusage_version_from_tag", arguments: [tag])
+        try callFunction("egasu_version_from_tag", arguments: [tag])
     }
 
     private func verifiedReleaseVersion(_ tag: String, in repository: URL) throws -> String {
-        try callFunction("openusage_release_version", arguments: [repository.path, tag])
+        try callFunction("egasu_release_version", arguments: [repository.path, tag])
     }
 
     private func developmentVersion(
@@ -220,7 +222,7 @@ final class ReleaseVersionScriptTests: XCTestCase {
         workingDirectory: URL? = nil
     ) throws -> String {
         try callFunction(
-            "openusage_development_version",
+            "egasu_development_version",
             arguments: [repositoryDirectory.path],
             workingDirectory: workingDirectory
         )
@@ -280,13 +282,13 @@ final class ReleaseVersionScriptTests: XCTestCase {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-version-\(UUID().uuidString)")
+            .appendingPathComponent("egasu-version-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
 
         try runGit(["init", "--quiet"], in: directory, environment: environment)
         try runGit([
-            "-c", "user.name=OpenUsage Test",
+            "-c", "user.name=egasu Test",
             "-c", "user.email=test@example.com",
             "-c", "commit.gpgsign=false",
             "commit", "--allow-empty", "--quiet", "--message", "seed"

@@ -58,7 +58,7 @@ struct AccountAddSheet: View {
 
             Text(
                 isFirstAccount
-                    ? L10n.accounts("If you're already signed in, OpenUsage imports that account without another login. Otherwise the official %@ sign-in opens in your browser.", familyTitle)
+                    ? L10n.accounts("If you're already signed in, egasu imports that account without another login. Otherwise the official %@ sign-in opens in your browser.", familyTitle)
                     : L10n.accounts("The official %@ sign-in opens in your browser. Your current account and terminal sessions stay unchanged.", familyTitle)
             )
             .font(.caption)
@@ -319,7 +319,7 @@ struct AccountProfileManagementSheet: View {
             .disabled(isSigningIn || container.accountSwitch.isSwitching)
             Button(L10n.accounts("Cancel"), role: .cancel) {}
         } message: {
-            Text(L10n.accounts("OpenUsage deletes its saved Keychain authentication and sign-in workspace for this account. Your Claude and Codex settings, sessions, and the current terminal login stay in place."))
+            Text(L10n.accounts("egasu deletes its saved Keychain authentication and sign-in workspace for this account. Your Claude and Codex settings, sessions, and the current terminal login stay in place."))
         }
         .onDisappear {
             signInTask?.cancel()

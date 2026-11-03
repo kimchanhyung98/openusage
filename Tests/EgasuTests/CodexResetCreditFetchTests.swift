@@ -9,7 +9,7 @@ final class CodexResetCreditFetchTests: XCTestCase {
 
     func testInvalidJSONMarksRefreshDegradedAndPreservesUsageBodyCount() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ResetCreditLogTests.\(UUID())")
-        let sink = LogFile(directory: directory, fileName: "OpenUsage.log")
+        let sink = LogFile(directory: directory, fileName: "egasu.log")
         sink.open()
         let originalSink = AppLog.sink
         AppLog.sink = sink
@@ -22,7 +22,7 @@ final class CodexResetCreditFetchTests: XCTestCase {
 
         await assertDegradedFallback(resetCreditsBody: "not-json")
 
-        let logs = try String(contentsOf: directory.appendingPathComponent("OpenUsage.log"), encoding: .utf8)
+        let logs = try String(contentsOf: directory.appendingPathComponent("egasu.log"), encoding: .utf8)
         let warnings = logs.split(separator: "\n").filter { $0.contains("[WARN]") || $0.contains("[ERROR]") }
         XCTAssertEqual(warnings.count, 1, logs)
         XCTAssertTrue(warnings.first?.contains("[WARN]") == true, logs)

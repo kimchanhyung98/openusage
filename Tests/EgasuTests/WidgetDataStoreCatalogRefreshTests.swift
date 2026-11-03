@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class WidgetDataStoreCatalogRefreshTests: XCTestCase {
     func testUnrelatedCatalogChangeSchedulesImmediateRefreshForDiscardedClaudeSnapshot() async throws {
-        let suite = "OpenUsageTests.CatalogRefresh.\(UUID().uuidString)"
+        let suite = "EgasuTests.CatalogRefresh.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let start = Date(timeIntervalSince1970: 1_800_000_000)
@@ -48,7 +48,7 @@ final class WidgetDataStoreCatalogRefreshTests: XCTestCase {
     }
 
     func testCatalogReplacementPreservesKnownAccountRefreshSchedule() async throws {
-        let suite = "OpenUsageTests.CatalogRefresh.Known.\(UUID().uuidString)"
+        let suite = "EgasuTests.CatalogRefresh.Known.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let start = Date(timeIntervalSince1970: 1_800_000_000)
@@ -80,7 +80,7 @@ final class WidgetDataStoreCatalogRefreshTests: XCTestCase {
     }
 
     func testDiscardedClaudeSnapshotReloadsWithoutBypassingSavedRateLimit() async throws {
-        let suite = "OpenUsageTests.CatalogRefresh.Cooldown.\(UUID().uuidString)"
+        let suite = "EgasuTests.CatalogRefresh.Cooldown.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let start = Date(timeIntervalSince1970: 1_800_000_000)

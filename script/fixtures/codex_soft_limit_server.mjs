@@ -4,7 +4,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 const [fixtureHome, socketPath, readyPath] = process.argv.slice(2);
-if (!fixtureHome?.startsWith("/tmp/openusage-soft-limit-e2e-") || !socketPath?.startsWith(`${fixtureHome}/`)) {
+if (!fixtureHome?.startsWith("/tmp/egasu-soft-limit-e2e-") || !socketPath?.startsWith(`${fixtureHome}/`)) {
   throw new Error("A dedicated Soft Limit fixture directory is required");
 }
 
@@ -84,7 +84,7 @@ trust_level = "trusted"
 ${fs.realpathSync(fixtureHome) !== fixtureHome ? `[projects."${fixtureHome}"]\ntrust_level = "trusted"` : ""}
 `;
 fs.writeFileSync(path.join(fixtureHome, "config.toml"), config, { flag: "wx", mode: 0o600 });
-fs.writeFileSync(path.join(fixtureHome, "auth.json"), JSON.stringify({ OPENAI_API_KEY: "sk-openusage-local-fixture" }), { flag: "wx", mode: 0o600 });
+fs.writeFileSync(path.join(fixtureHome, "auth.json"), JSON.stringify({ OPENAI_API_KEY: "sk-egasu-local-fixture" }), { flag: "wx", mode: 0o600 });
 const server = spawn("codex", ["app-server", "--strict-config", "--listen", `unix://${socketPath}`], {
   cwd: fixtureHome,
   env: { PATH: process.env.PATH, CODEX_HOME: fixtureHome, LANG: "en_US.UTF-8", CODEX_INTERNAL_APP_SERVER_REMOTE_CONTROL_DISABLED: "1" },

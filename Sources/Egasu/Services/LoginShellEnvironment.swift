@@ -7,8 +7,8 @@ final class LoginShellEnvironment: @unchecked Sendable {
     static let shared = LoginShellEnvironment()
 
     /// `env` 출력을 감싸는 sentinel token — login shell의 banner/MOTD를 변수로 오파싱하지 않고 폐기.
-    private static let beginMarker = "__OPENUSAGE_ENV_BEGIN__"
-    private static let endMarker = "__OPENUSAGE_ENV_END__"
+    private static let beginMarker = "__EGASU_ENV_BEGIN__"
+    private static let endMarker = "__EGASU_ENV_END__"
     /// shell spawn 시간 제한 — 느리거나 hang된 profile의 provider refresh 무한 정지 방지.
     private static let captureTimeout: TimeInterval = 5
 

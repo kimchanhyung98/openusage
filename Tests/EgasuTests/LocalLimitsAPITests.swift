@@ -2,8 +2,8 @@ import XCTest
 @testable import Egasu
 
 final class LocalLimitsAPITests: XCTestCase {
-    private let fetchedAt = OpenUsageISO8601.date(from: "2026-07-13T01:39:30.000Z")!
-    private let generatedAt = OpenUsageISO8601.date(from: "2026-07-13T01:40:00.000Z")!
+    private let fetchedAt = EgasuISO8601.date(from: "2026-07-13T01:39:30.000Z")!
+    private let generatedAt = EgasuISO8601.date(from: "2026-07-13T01:40:00.000Z")!
 
     private func json(_ data: Data?) throws -> [String: Any] {
         try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(data)) as? [String: Any])
@@ -23,8 +23,8 @@ final class LocalLimitsAPITests: XCTestCase {
             return try XCTUnwrap((root["providers"] as? [String: Any])?["claude@work"] as? [String: Any])
         }
         let fresh = try encoded()
-        XCTAssertEqual(fresh["fetchedAt"] as? String, OpenUsageISO8601.string(from: fetchedAt))
-        XCTAssertEqual(fresh["expiresAt"] as? String, OpenUsageISO8601.string(from: fetchedAt.addingTimeInterval(900)))
+        XCTAssertEqual(fresh["fetchedAt"] as? String, EgasuISO8601.string(from: fetchedAt))
+        XCTAssertEqual(fresh["expiresAt"] as? String, EgasuISO8601.string(from: fetchedAt.addingTimeInterval(900)))
         XCTAssertEqual(fresh["stale"] as? Bool, false)
         state.generatedAt = fetchedAt.addingTimeInterval(900)
         XCTAssertEqual(try encoded()["stale"] as? Bool, true)
@@ -49,7 +49,7 @@ final class LocalLimitsAPITests: XCTestCase {
             lines: [
                 .progress(
                     label: "Session", used: 42, limit: 100, format: .percent,
-                    resetsAt: OpenUsageISO8601.date(from: "2026-07-13T06:00:00.000Z"),
+                    resetsAt: EgasuISO8601.date(from: "2026-07-13T06:00:00.000Z"),
                     periodDurationMs: 18_000_000,
                     colorHex: "#ff0000"
                 ),

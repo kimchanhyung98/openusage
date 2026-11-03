@@ -37,7 +37,7 @@ final class CodexSoftLimitTerminalFixtureTests: XCTestCase {
         _ script: String,
         verify: (Process, URL) async throws -> Void
     ) async throws {
-        let directory = URL(fileURLWithPath: "/tmp/openusage-soft-limit-e2e-\(UUID().uuidString)")
+        let directory = URL(fileURLWithPath: "/tmp/egasu-soft-limit-e2e-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer {
             do { try FileManager.default.removeItem(at: directory) }

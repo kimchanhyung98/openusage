@@ -17,7 +17,7 @@ async function waitFor(check, message) {
 }
 
 async function startFixture(t) {
-  const directory = `/tmp/openusage-soft-limit-e2e-${crypto.randomUUID()}`;
+  const directory = `/tmp/egasu-soft-limit-e2e-${crypto.randomUUID()}`;
   fs.mkdirSync(`${directory}/bin`, { recursive: true, mode: 0o700 });
   fs.writeFileSync(`${directory}/bin/codex`, `#!/usr/bin/env node
 const fs = require("node:fs");

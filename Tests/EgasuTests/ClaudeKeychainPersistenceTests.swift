@@ -13,7 +13,7 @@ final class ClaudeKeychainPersistenceTests: XCTestCase {
     }
 
     func testLegacyTokenRotationsPreserveCLIApproval() throws {
-        try verifyTokenRotations(account: "OpenUsage Legacy Fixture", forCurrentUser: false)
+        try verifyTokenRotations(account: "egasu Legacy Fixture", forCurrentUser: false)
     }
 
     func testSharedWriterPreservesQuotedUnicodeAndNewlinesWithoutSecretArguments() throws {
@@ -194,7 +194,7 @@ private final class SharedCredentialFixture {
         // 이 위치에서 생성해야 운영 login Keychain과 같은 partition ACL을 갖는 형식 사용.
         path =
             FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Keychains/OpenUsageTests.Shared.\(UUID().uuidString).keychain").path
+            .appendingPathComponent("Library/Keychains/EgasuTests.Shared.\(UUID().uuidString).keychain").path
         let fixturePath = path
         let password = UUID().uuidString
         var created: SecKeychain?

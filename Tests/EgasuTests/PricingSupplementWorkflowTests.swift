@@ -78,7 +78,7 @@ final class PricingSupplementWorkflowTests: XCTestCase {
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map { String($0.dropFirst(10)) }.joined(separator: "\n")
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-pricing-workflow-\(UUID().uuidString)")
+            .appendingPathComponent("egasu-pricing-workflow-\(UUID().uuidString)")
         let resource = directory.appendingPathComponent(Self.resourcePath)
         try FileManager.default.createDirectory(at: resource.deletingLastPathComponent(), withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }

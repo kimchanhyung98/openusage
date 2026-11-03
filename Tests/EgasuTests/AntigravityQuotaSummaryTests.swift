@@ -44,8 +44,8 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
         guard let lines = bare else { return XCTFail("full summary did not parse") }
         XCTAssertEqual(lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
         XCTAssertEqual(lines.map { used($0) }, [25, 10, 60, 0])
-        XCTAssertEqual(resetsAt(lines[0]), OpenUsageISO8601.date(from: "2026-07-02T16:00:00Z"))
-        XCTAssertEqual(resetsAt(lines[2]), OpenUsageISO8601.date(from: "2026-07-02T15:30:00Z"))
+        XCTAssertEqual(resetsAt(lines[0]), EgasuISO8601.date(from: "2026-07-02T16:00:00Z"))
+        XCTAssertEqual(resetsAt(lines[2]), EgasuISO8601.date(from: "2026-07-02T15:30:00Z"))
         XCTAssertEqual(lines.map { periodMs($0) }, [
             MetricPeriod.sessionMs, MetricPeriod.weekMs, MetricPeriod.sessionMs, MetricPeriod.weekMs
         ])

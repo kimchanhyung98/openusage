@@ -10,7 +10,7 @@ final class LocalUsageServer {
     private static let headLimit = 8192
 
     private let state: @MainActor () -> LocalUsageAPI.State
-    private let queue = DispatchQueue(label: "openusage.local-api")
+    private let queue = DispatchQueue(label: "egasu.local-api")
     private var listener: NWListener?
     private var activeConnections = 0
 

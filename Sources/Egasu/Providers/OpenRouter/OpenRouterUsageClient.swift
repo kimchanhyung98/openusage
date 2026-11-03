@@ -28,8 +28,8 @@ struct OpenRouterUsageClient: Sendable {
         let body: [String: Any] = [
             "metrics": ["total_usage", "tokens_total"],
             "time_range": [
-                "start": OpenUsageISO8601.string(from: start),
-                "end": OpenUsageISO8601.string(from: end)
+                "start": EgasuISO8601.string(from: start),
+                "end": EgasuISO8601.string(from: end)
             ],
             "limit": 10
         ]

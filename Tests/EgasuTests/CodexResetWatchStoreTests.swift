@@ -25,7 +25,7 @@ final class CodexResetWatchStoreTests: XCTestCase {
         XCTAssertEqual(request.url.absoluteString, "https://codex-resets.com/api/v1/status")
         XCTAssertEqual(request.timeout, 8)
         XCTAssertEqual(request.headers["Accept"], "application/json")
-        XCTAssertEqual(request.headers["User-Agent"], "OpenUsage")
+        XCTAssertEqual(request.headers["User-Agent"], "egasu")
         XCTAssertNil(request.body)
 
         let headerNames = Set(request.headers.keys.map { $0.lowercased() })
@@ -40,7 +40,7 @@ final class CodexResetWatchStoreTests: XCTestCase {
             Data(#"{"data":{"active_watch":null}}"#.utf8),
             Data("""
             {"data":{"active_watch":{"reset_chance_percent":null,
-            "expires_at":"\(OpenUsageISO8601.string(from: deadline))"}}}
+            "expires_at":"\(EgasuISO8601.string(from: deadline))"}}}
             """.utf8)
         ]
 
@@ -418,7 +418,7 @@ final class CodexResetWatchStoreTests: XCTestCase {
     }
 
     private static func activeBody(chanceJSON: String, deadline: Date) -> Data {
-        activeBody(chanceJSON: chanceJSON, deadlineJSON: OpenUsageISO8601.string(from: deadline))
+        activeBody(chanceJSON: chanceJSON, deadlineJSON: EgasuISO8601.string(from: deadline))
     }
 
     private static func activeBody(chanceJSON: String, deadlineJSON: String) -> Data {

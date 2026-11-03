@@ -1352,7 +1352,7 @@ final class LayoutStoreTests: XCTestCase {
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.LayoutStore.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.LayoutStore.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults

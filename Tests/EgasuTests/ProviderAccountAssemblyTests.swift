@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class ProviderAccountAssemblyTests: XCTestCase {
     private func makeScratchDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.ProviderAccountAssembly.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ProviderAccountAssembly.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

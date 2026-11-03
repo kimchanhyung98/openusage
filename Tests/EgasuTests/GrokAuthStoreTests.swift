@@ -3,7 +3,7 @@ import XCTest
 
 final class GrokAuthStoreTests: XCTestCase {
     func testReadsTokenExpiryFromJWT() {
-        let store = GrokAuthStore(now: { OpenUsageISO8601.date(from: "2026-02-02T00:00:00.000Z")! })
+        let store = GrokAuthStore(now: { EgasuISO8601.date(from: "2026-02-02T00:00:00.000Z")! })
         let token = makeJWT(exp: 1_770_000_000)
 
         let expiry = store.tokenExpiresAt(token)
@@ -28,7 +28,7 @@ final class GrokAuthStoreTests: XCTestCase {
         // 손상된 auth.json을 in-memory state로 조용히 재작성 금지(타 계정 entry 유실) — save()는 throw 후 file 보존
         let validJSON = #"{"https://auth.x.ai::client":{"key":"token","refresh_token":"refresh","expires_at":"2026-07-01T00:00:00.000Z"}}"#
         let files = FakeFiles([GrokAuthStore.authPath: validJSON])
-        let store = GrokAuthStore(files: files, now: { OpenUsageISO8601.date(from: "2026-02-02T00:00:00.000Z")! })
+        let store = GrokAuthStore(files: files, now: { EgasuISO8601.date(from: "2026-02-02T00:00:00.000Z")! })
         var state = try XCTUnwrap(store.loadAuthCandidates().first)
         state.entry.key = "rotated-token"
 

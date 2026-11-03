@@ -1,6 +1,6 @@
 import Foundation
 
-/// pi session 로그에서 OpenUsage 카드 하나의 일별 token/cost series 구축 — pi 안에서 발생한 usage(pi로 구동한 Claude sub 등)를 해당 카드의 Usage Trend·spend 타일에 native source와 함께 합산.
+/// pi session 로그에서 egasu 카드 하나의 일별 token/cost series 구축 — pi 안에서 발생한 usage(pi로 구동한 Claude sub 등)를 해당 카드의 Usage Trend·spend 타일에 native source와 함께 합산.
 /// cost 규칙은 Claude·Codex 로그 scanner와 동일한 `carried cost, else price` — pi의 per-message `usage.cost.total`이 있으면 그대로, `$0`(미산정 구독 usage)이면 공유 엔진으로 가격 산정. usage shape이 Claude Code와 달라 자체 parser 보유.
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
@@ -89,7 +89,7 @@ actor PiUsageScanner {
 
     // MARK: - Parsing
 
-    /// session 파일 하나의 매핑된 assistant usage line 전부 파싱. OpenUsage가 추적하지 않는 pi provider의 line은 여기서 drop — 집계에 도달하지 않음.
+    /// session 파일 하나의 매핑된 assistant usage line 전부 파싱. egasu가 추적하지 않는 pi provider의 line은 여기서 drop — 집계에 도달하지 않음.
     static func parseFile(_ data: Data) -> [Entry] {
         let marker = Data(#""usage":{"#.utf8)
         var entries: [Entry] = []
@@ -105,7 +105,7 @@ actor PiUsageScanner {
         guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               object["type"] as? String == "message",
               let timestampRaw = object["timestamp"] as? String,
-              let timestamp = OpenUsageISO8601.date(from: timestampRaw),
+              let timestamp = EgasuISO8601.date(from: timestampRaw),
               let message = object["message"] as? [String: Any],
               message["role"] as? String == "assistant",
               let providerID = message["provider"] as? String,

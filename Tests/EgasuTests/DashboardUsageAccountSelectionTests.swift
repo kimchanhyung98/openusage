@@ -3,7 +3,7 @@ import XCTest
 
 final class DashboardUsageAccountSelectionTests: XCTestCase {
     func testEachAccountFamilyKeepsItsOwnDashboardSelection() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -16,7 +16,7 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
     }
 
     func testUnknownFamilyDoesNotStoreASelection() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -27,7 +27,7 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
     }
 
     func testAccountSwitchReplacesAStaleAmbientCardWithTheSharedRuntime() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -49,7 +49,7 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
     }
 
     func testSelectingALiveAccountKeepsThatProfileWhenItBecomesASnapshot() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
@@ -95,7 +95,7 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
     }
 
     func testLiveAccountSelectionSurvivesReloadingPreferences() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         DashboardUsageAccountSelection.select("codex", for: "codex", profileID: "account-2", defaults: defaults)
@@ -109,7 +109,7 @@ final class DashboardUsageAccountSelectionTests: XCTestCase {
     }
 
     func testAccountSwitchWithoutASharedRuntimeLeavesTheSelectionUntouched() {
-        let suiteName = "OpenUsageTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.DashboardUsageAccountSelection.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let previous = AccountUsageCardPlanner.cardID(family: "codex", profileID: "account-1")

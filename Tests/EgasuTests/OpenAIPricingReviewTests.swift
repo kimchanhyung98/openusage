@@ -351,7 +351,7 @@ final class OpenAIPricingReviewTests: XCTestCase {
 
     private func event(model: String) throws -> CodexLogUsageScanner.Event {
         CodexLogUsageScanner.Event(
-            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-30T00:00:00Z")),
+            timestamp: try XCTUnwrap(EgasuISO8601.date(from: "2026-09-30T00:00:00Z")),
             model: model, input: 1_000, cached: 0, output: 100, reasoning: 0, total: 1_100)
     }
 }

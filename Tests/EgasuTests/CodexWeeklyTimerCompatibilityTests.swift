@@ -131,7 +131,7 @@ private struct CompatibilityFixture {
     }
 
     init(preflight: String, message: String = "exit 93") throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.TimerCompatibility.\(UUID().uuidString)")
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.TimerCompatibility.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         executable = root.appendingPathComponent("fake-codex")
         let source = """

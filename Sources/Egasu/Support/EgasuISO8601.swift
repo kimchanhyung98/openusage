@@ -2,7 +2,7 @@ import Foundation
 
 /// 여러 provider와 local API가 공유하는 ISO-8601 날짜 파싱/포맷.
 /// provider별 timestamp 변형(공백 구분, " UTC" suffix, 가변 fractional 자릿수)을 파싱 전 정규화.
-enum OpenUsageISO8601 {
+enum EgasuISO8601 {
     static func string(from date: Date) -> String {
         formatter(fractionalSeconds: true).string(from: date)
     }

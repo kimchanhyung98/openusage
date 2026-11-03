@@ -2,12 +2,12 @@ import XCTest
 @testable import Egasu
 
 final class OpenCodeUsageScannerTests: XCTestCase {
-    private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
+    private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
     private func row(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, _ provider: String) -> String {
         "[\(epochMs(iso)),\(cost),\(tokens),\"\(model)\",\"\(provider)\"]"
     }
-    private let now = OpenUsageISO8601.date(from: "2026-07-12T12:00:00.000Z")!
+    private let now = EgasuISO8601.date(from: "2026-07-12T12:00:00.000Z")!
 
     private var db1: String {
         "[" + [

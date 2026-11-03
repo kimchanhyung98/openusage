@@ -71,7 +71,7 @@ final class ICloudReadDiagnosticsTests: XCTestCase {
     }
 
     private func makeSync(fileStore: HistoryStore) -> ICloudUsageSyncStore {
-        let suite = "OpenUsageTests.ICloudReadDiagnostics.\(UUID().uuidString)"
+        let suite = "EgasuTests.ICloudReadDiagnostics.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
         let dataStore = WidgetDataStore(

@@ -127,7 +127,7 @@ enum LocalUsageAPI {
             try container.encode(snapshot.displayName, forKey: .displayName)
             try container.encode(snapshot.plan, forKey: .plan)
             try container.encode(snapshot.lines.map(WireLine.init), forKey: .lines)
-            try container.encode(OpenUsageISO8601.string(from: snapshot.refreshedAt), forKey: .fetchedAt)
+            try container.encode(EgasuISO8601.string(from: snapshot.refreshedAt), forKey: .fetchedAt)
         }
     }
 
@@ -171,14 +171,14 @@ enum LocalUsageAPI {
                 try container.encode(color, forKey: .color)
                 try container.encodeNil(forKey: .subtitle)
                 // 가장 이른 expiry(Codex reset credits)를 ISO-8601로 노출 — progress row와 동일한 `resetsAt` 필드.
-                try container.encodeIfPresent(expiriesAt.min().map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
+                try container.encodeIfPresent(expiriesAt.min().map(EgasuISO8601.string(from:)), forKey: .resetsAt)
             case .progress(let label, let used, let limit, let format, let resetsAt, let periodDurationMs, let color):
                 try container.encode("progress", forKey: .type)
                 try container.encode(label, forKey: .label)
                 try container.encode(used, forKey: .used)
                 try container.encode(limit, forKey: .limit)
                 try container.encode(format, forKey: .format)      // {"kind": ...} (+ counts는 "suffix")
-                try container.encodeIfPresent(resetsAt.map(OpenUsageISO8601.string(from:)), forKey: .resetsAt)
+                try container.encodeIfPresent(resetsAt.map(EgasuISO8601.string(from:)), forKey: .resetsAt)
                 try container.encodeIfPresent(periodDurationMs, forKey: .periodDurationMs)
                 try container.encode(color, forKey: .color)
             case .badge(let label, let text, let color, let subtitle):

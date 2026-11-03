@@ -5,7 +5,7 @@ import XCTest
 extension XCTestCase {
     func isolatedClaudeUsageStore(onContention: @escaping @Sendable () -> Void = {}) -> ClaudeUsageStateStore {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.ClaudeUsage.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.ClaudeUsage.\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return ClaudeUsageStateStore(directory: directory, onContention: onContention)
     }

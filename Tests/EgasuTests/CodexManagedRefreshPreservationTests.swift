@@ -192,8 +192,8 @@ private struct ManagedRefreshFixture: Sendable {
 
     init(freshToken: Bool = false) throws {
         home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.ManagedRefresh.\(UUID().uuidString)", isDirectory: true)
-        let refreshedAt = freshToken ? OpenUsageISO8601.string(from: Date()) : "2020-01-01T00:00:00Z"
+            .appendingPathComponent("EgasuTests.ManagedRefresh.\(UUID().uuidString)", isDirectory: true)
+        let refreshedAt = freshToken ? EgasuISO8601.string(from: Date()) : "2020-01-01T00:00:00Z"
         original = #"{"auth_mode":"chatgpt","root_sentinel":{"keep":true},"tokens":{"access_token":"old-a","refresh_token":"refresh-a","id_token":"e30.eyJzdWIiOiJ1c2VyLWEifQ.sig","account_id":"account-a","token_sentinel":[1,2]},"last_refresh":"\#(refreshedAt)"}"#
         try LocalTextFileAccessor().writeText(authFile.path, original)
         try vault.save(.init(credential: original, claudeOAuthAccount: nil), profile: profileA)

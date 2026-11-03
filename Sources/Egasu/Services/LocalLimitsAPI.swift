@@ -21,7 +21,7 @@ enum LocalLimitsAPI {
         }
         return encode(WireEnvelope(
             schema: schema,
-            generatedAt: OpenUsageISO8601.string(from: state.generatedAt),
+            generatedAt: EgasuISO8601.string(from: state.generatedAt),
             providers: providers,
             errors: errors
         ))
@@ -61,9 +61,9 @@ enum LocalLimitsAPI {
         init(snapshot: ProviderSnapshot, descriptors: [WidgetDescriptor], generatedAt: Date) {
             displayName = snapshot.displayName
             plan = snapshot.plan
-            fetchedAt = OpenUsageISO8601.string(from: snapshot.freshnessDate)
+            fetchedAt = EgasuISO8601.string(from: snapshot.freshnessDate)
             let expiry = snapshot.freshnessDate.addingTimeInterval(RefreshSetting.interval(for: snapshot.providerID))
-            expiresAt = OpenUsageISO8601.string(from: expiry)
+            expiresAt = EgasuISO8601.string(from: expiry)
             stale = generatedAt >= expiry || (snapshot.usageRetryAfter != nil && snapshot.quotaObservedAt == nil)
 
             var resources: [String: WireResource] = [:]
@@ -122,7 +122,7 @@ enum LocalLimitsAPI {
                 } else {
                     used = metric.number
                 }
-                expiresAt = expiries.isEmpty ? nil : expiries.sorted().map(OpenUsageISO8601.string(from:))
+                expiresAt = expiries.isEmpty ? nil : expiries.sorted().map(EgasuISO8601.string(from:))
                 estimated = resource.estimated || metric.estimated ? true : nil
 
             default:
@@ -158,7 +158,7 @@ enum LocalLimitsAPI {
             limit = boundedLimit
             remaining = max(0, boundedLimit - boundedUsed)
             utilization = boundedLimit > 0 ? boundedUsed / boundedLimit : nil
-            resetsAt = reset.map(OpenUsageISO8601.string(from:))
+            resetsAt = reset.map(EgasuISO8601.string(from:))
             windowSeconds = periodMs.map { Double($0) / 1_000 }
             estimated = resource.estimated ? true : nil
         }

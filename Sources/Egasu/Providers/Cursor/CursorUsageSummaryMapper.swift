@@ -3,8 +3,8 @@ import Foundation
 /// Cursor Enterprise/team dashboard가 쓰는 두 REST payload 결합. request endpoint는 포함 request allowance, usage-summary는 구조화 percentage·user 단위 on-demand spend·정확한 billing-cycle 경계 — 어느 한쪽만으로는 불충분.
 enum CursorUsageSummaryMapper {
     static func hasUsableSummaryPayload(_ summary: [String: Any]) -> Bool {
-        let start = (summary["billingCycleStart"] as? String).flatMap(OpenUsageISO8601.date(from:))
-        let end = (summary["billingCycleEnd"] as? String).flatMap(OpenUsageISO8601.date(from:))
+        let start = (summary["billingCycleStart"] as? String).flatMap(EgasuISO8601.date(from:))
+        let end = (summary["billingCycleEnd"] as? String).flatMap(EgasuISO8601.date(from:))
         if let start, let end, end > start {
             return true
         }
@@ -26,7 +26,7 @@ enum CursorUsageSummaryMapper {
            let limit = ProviderParse.number(requests["maxRequestUsage"]), limit > 0 {
             return true
         }
-        return (usage["startOfMonth"] as? String).flatMap(OpenUsageISO8601.date(from:)) != nil
+        return (usage["startOfMonth"] as? String).flatMap(EgasuISO8601.date(from:)) != nil
     }
 
     static func map(
@@ -217,8 +217,8 @@ enum CursorUsageSummaryMapper {
         summary: [String: Any]?,
         requestUsage: [String: Any]?
     ) -> BillingCycle {
-        let start = (summary?["billingCycleStart"] as? String).flatMap(OpenUsageISO8601.date(from:))
-        let end = (summary?["billingCycleEnd"] as? String).flatMap(OpenUsageISO8601.date(from:))
+        let start = (summary?["billingCycleStart"] as? String).flatMap(EgasuISO8601.date(from:))
+        let end = (summary?["billingCycleEnd"] as? String).flatMap(EgasuISO8601.date(from:))
         if let start, let end, end > start {
             return BillingCycle(
                 resetsAt: end,
@@ -226,7 +226,7 @@ enum CursorUsageSummaryMapper {
             )
         }
 
-        let requestStart = (requestUsage?["startOfMonth"] as? String).flatMap(OpenUsageISO8601.date(from:))
+        let requestStart = (requestUsage?["startOfMonth"] as? String).flatMap(EgasuISO8601.date(from:))
         return BillingCycle(
             resetsAt: requestStart?.addingTimeInterval(TimeInterval(CursorUsageMapper.billingPeriodMs) / 1000),
             periodDurationMs: CursorUsageMapper.billingPeriodMs

@@ -15,7 +15,7 @@ final class KeychainAccessorTests: XCTestCase {
         let runner = RecordingRunner()
         let accessor: any KeychainAccessing = SecurityKeychainAccessor(processRunner: runner)
 
-        let exists = accessor.genericPasswordExists(service: "OpenUsageTests.Missing.\(UUID().uuidString)")
+        let exists = accessor.genericPasswordExists(service: "EgasuTests.Missing.\(UUID().uuidString)")
 
         XCTAssertNotEqual(exists, true)
         XCTAssertTrue(runner.calls.isEmpty, "Existence probes must use the metadata-only implementation")
@@ -393,7 +393,7 @@ private final class TemporaryKeychain {
 
     init() throws {
         path = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.Keychain.\(UUID().uuidString).keychain-db")
+            .appendingPathComponent("EgasuTests.Keychain.\(UUID().uuidString).keychain-db")
             .path
         let password = Data(UUID().uuidString.utf8)
         var reference: SecKeychain?

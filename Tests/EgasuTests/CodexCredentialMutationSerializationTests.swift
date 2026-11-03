@@ -5,7 +5,7 @@ import XCTest
 final class CodexCredentialMutationSerializationTests: XCTestCase {
     func testSharedAccountSwitchCannotInterleaveWithRefreshWriteback() throws {
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.CodexMutation.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuTests.CodexMutation.\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let codexHome = home.appendingPathComponent(".codex", isDirectory: true)
         let authFile = codexHome.appendingPathComponent("auth.json")

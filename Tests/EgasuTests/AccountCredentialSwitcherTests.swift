@@ -122,7 +122,7 @@ final class AccountCredentialSwitcherTests: XCTestCase {
             .init(credential: claudeCredential(token: "token-a-old"), claudeOAuthAccount: claudeAccount("a")),
             profile: personal
         )
-        // OpenUsage 외부에서 shared home이 제3의 account로 로그인된 상태
+        // egasu 외부에서 shared home이 제3의 account로 로그인된 상태
         try seedClaudeSharedHome(fixture, token: "token-c", account: claudeAccount("c"))
         try fixture.vault.save(
             .init(credential: claudeCredential(token: "token-b"), claudeOAuthAccount: claudeAccount("b")),
@@ -307,13 +307,13 @@ final class AccountCredentialSwitcherTests: XCTestCase {
 
     private func makeFixture() throws -> Fixture {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountCredentialSwitcher.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountCredentialSwitcher.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let home = root.resolvingSymlinksInPath().standardizedFileURL
         let keychain = CountingKeychain()
         let workspace = AccountSignInWorkspace(
-            baseDirectory: home.appendingPathComponent("AppSupport/OpenUsage/AccountSignIn")
+            baseDirectory: home.appendingPathComponent("AppSupport/egasu/AccountSignIn")
         )
         let switcher = AccountCredentialSwitcher(
             keychain: keychain,

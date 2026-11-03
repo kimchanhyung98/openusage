@@ -23,7 +23,7 @@ enum CodexResetWatchVotes {
         now: @Sendable () -> Date = Date.init
     ) async -> Result {
         var request = HTTPRequest(method: "GET", url: endpoint, timeout: 4)
-        request.headers = ["Accept": "application/json", "User-Agent": "OpenUsage", "Cache-Control": "no-cache"]
+        request.headers = ["Accept": "application/json", "User-Agent": "egasu", "Cache-Control": "no-cache"]
         var retryNotBefore: Date?
         do {
             let response = try await http.send(request)

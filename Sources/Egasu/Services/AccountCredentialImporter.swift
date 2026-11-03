@@ -174,9 +174,9 @@ struct AccountCredentialImporter {
         var errorDescription: String? {
             switch self {
             case .workspace:
-                "OpenUsage couldn't delete this account's sign-in workspace. The account and its saved authentication were not removed — try again."
+                "egasu couldn't delete this account's sign-in workspace. The account and its saved authentication were not removed — try again."
             case .snapshot:
-                "OpenUsage couldn't delete the saved Keychain authentication. The account remains registered and ready, so you can try removing it again."
+                "egasu couldn't delete the saved Keychain authentication. The account remains registered and ready, so you can try removing it again."
             }
         }
     }

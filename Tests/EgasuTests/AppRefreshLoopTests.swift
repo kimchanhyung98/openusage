@@ -240,7 +240,7 @@ final class AppRefreshLoopTests: XCTestCase {
 
     @MainActor
     private final class Fixture {
-        let suite = "OpenUsageTests.RefreshLoop.\(UUID().uuidString)"
+        let suite = "EgasuTests.RefreshLoop.\(UUID().uuidString)"
         let defaults: UserDefaults
         let runtime = Runtime()
         let dataStore: WidgetDataStore

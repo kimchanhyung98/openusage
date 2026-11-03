@@ -75,7 +75,7 @@ final class CodexCredentialPreservationTests: XCTestCase {
     }
 
     func testUnauthorizedRetryCannotOverwriteANewLogin() async {
-        let fresh = Self.original.replacingOccurrences(of: "2020-01-01T00:00:00Z", with: OpenUsageISO8601.string(from: Date()))
+        let fresh = Self.original.replacingOccurrences(of: "2020-01-01T00:00:00Z", with: EgasuISO8601.string(from: Date()))
         let files = FakeFiles([Self.path: fresh])
         let http = PreservationHTTP(rejectFirstUsage: true) { files.files[Self.path] = Self.replacement }
         let provider = makeProvider(store: CodexAuthStore(

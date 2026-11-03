@@ -30,7 +30,7 @@ final class AppRelauncherTests: XCTestCase {
         L10n.withLanguage(.korean) { relauncher.restart() }
         XCTAssertFalse(terminated)
         XCTAssertFalse(relauncher.isRestarting)
-        XCTAssertEqual(relauncher.errorMessage, "OpenUsage를 다시 시작하지 못했습니다. 앱을 종료한 뒤 다시 열어 언어 변경을 적용하세요.")
+        XCTAssertEqual(relauncher.errorMessage, "egasu를 다시 시작하지 못했습니다. 앱을 종료한 뒤 다시 열어 언어 변경을 적용하세요.")
         XCTAssertEqual(diagnostics.events.map(\.operation), [.appRestart])
         XCTAssertEqual(diagnostics.events.map(\.result), [.failure])
 
@@ -97,7 +97,7 @@ final class AppRelauncherTests: XCTestCase {
             try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: alert.path)
             let helper = L10n.withLanguage(.korean) {
                 AppRelauncher.makeRelaunchProcess(
-                    bundleURL: directory.appendingPathComponent("OpenUsage.app"),
+                    bundleURL: directory.appendingPathComponent("egasu.app"),
                     processIdentifier: oldApp.processIdentifier, openExecutable: opener, alertExecutable: alert
                 )
             }
@@ -116,7 +116,7 @@ final class AppRelauncherTests: XCTestCase {
             XCTAssertEqual(helper.terminationStatus, 42)
             let arguments = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             XCTAssertTrue(arguments.hasPrefix("-e\non run argv\n"), arguments)
-            XCTAssertTrue(arguments.hasSuffix("OpenUsage를 다시 시작하지 못했습니다. 앱을 다시 열어 언어 변경을 적용하세요.\n확인\n"), arguments)
+            XCTAssertTrue(arguments.hasSuffix("egasu를 다시 시작하지 못했습니다. 앱을 다시 열어 언어 변경을 적용하세요.\n확인\n"), arguments)
             XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("injected").path))
         }
     }

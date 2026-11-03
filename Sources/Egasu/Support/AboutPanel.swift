@@ -1,6 +1,6 @@
 import AppKit
 
-/// Footer 메뉴 "About OpenUsage" 항목용 표준 macOS About 패널 표시.
+/// Footer 메뉴 "About egasu" 항목용 표준 macOS About 패널 표시.
 /// menu-bar accessory 특성상 앱을 먼저 activate하지 않으면 패널이 전면 앱 뒤에 열림.
 enum AboutPanel {
     @MainActor

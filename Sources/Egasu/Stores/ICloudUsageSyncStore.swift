@@ -60,7 +60,7 @@ enum ICloudUsageSyncError: Error, LocalizedError {
     }
 }
 
-/// OpenUsage iCloud Documents container의 app 전용 영역에 대한 coordinated 접근
+/// egasu iCloud Documents container의 app 전용 영역에 대한 coordinated 접근
 actor ICloudUsageHistoryFileStore: UsageHistoryFileStoring {
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -416,12 +416,12 @@ final class ICloudUsageSyncStore {
     }
 
     private func reportDeletion(_ error: Error) {
-        deletionError = L10n.errors("OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. It will try again automatically.")
+        deletionError = L10n.errors("egasu couldn’t remove this Mac’s synced usage history from iCloud. It will try again automatically.")
         AppDiagnostics.failure(.iCloudDelete, error: error)
     }
 
     private func reportInvalidDeletionRequest() {
-        deletionError = L10n.errors("OpenUsage couldn’t read the saved iCloud history deletion request.")
+        deletionError = L10n.errors("egasu couldn’t read the saved iCloud history deletion request.")
         AppDiagnostics.record(
             .iCloudDelete, result: .failure, category: .decoding,
             localContext: "iCloud history deletion request has an invalid device identifier"
@@ -450,7 +450,7 @@ final class ICloudUsageSyncStore {
         } catch {
             let id = saved ?? UUID().uuidString.lowercased()
             defaults.set(id, forKey: deviceIDKey)
-            let message = L10n.errors("OpenUsage couldn’t save this Mac’s sync identity in Keychain. Sync may create a duplicate device if app preferences are reset.")
+            let message = L10n.errors("egasu couldn’t save this Mac’s sync identity in Keychain. Sync may create a duplicate device if app preferences are reset.")
             AppDiagnostics.failure(.iCloudIdentity, error: error)
             return (id, message)
         }

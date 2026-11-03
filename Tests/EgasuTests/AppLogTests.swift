@@ -9,8 +9,8 @@ final class AppLogTests: XCTestCase {
 
     override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AppLog.\(UUID().uuidString)", isDirectory: true)
-        sink = LogFile(directory: tempDir, fileName: "OpenUsage.log")
+            .appendingPathComponent("EgasuTests.AppLog.\(UUID().uuidString)", isDirectory: true)
+        sink = LogFile(directory: tempDir, fileName: "egasu.log")
         sink.open()
         originalSink = AppLog.sink
         AppLog.sink = sink
@@ -25,7 +25,7 @@ final class AppLogTests: XCTestCase {
     }
 
     private func fileContents() throws -> String {
-        try String(contentsOf: tempDir.appendingPathComponent("OpenUsage.log"), encoding: .utf8)
+        try String(contentsOf: tempDir.appendingPathComponent("egasu.log"), encoding: .utf8)
     }
 
     func testInfoFloorSuppressesDebugButKeepsInfoAndError() throws {
@@ -133,7 +133,7 @@ final class AppLogTests: XCTestCase {
             descriptors: [],
             snapshot: ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
         )
-        let defaultsName = "OpenUsageTests.AppLog.slow.\(UUID().uuidString)"
+        let defaultsName = "EgasuTests.AppLog.slow.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
         defer { defaults.removePersistentDomain(forName: defaultsName) }
         var ticks = [100.0, 112.5]

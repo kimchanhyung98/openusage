@@ -9,10 +9,10 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
     private let issue = ProviderServiceIssue(severity: .partial, componentName: "Claude Code", checkedAt: .distantPast)
 
     func testAccountPickerRendersOnlyWithTwoAvailableCards() throws {
-        let suite = "OpenUsageTests.AvailableAccountPicker.\(UUID().uuidString)"
+        let suite = "EgasuTests.AvailableAccountPicker.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         let options = [
             AccountUsageOption(id: "codex", title: "Account 1"),
@@ -53,10 +53,10 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
     }
 
     func testShortAccountLabelsKeepTheChevronCloseToTheText() throws {
-        let suite = "OpenUsageTests.AccountSpacing.\(UUID().uuidString)"
+        let suite = "EgasuTests.AccountSpacing.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         var measurements: [String] = []
         for title in ["Account 1", "Account 2"] {
@@ -113,10 +113,10 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
     }
 
     func testHeaderRendersExpectedIssuePixelsAtPanelWidthAcrossAppearancesAndDensities() throws {
-        let suite = "OpenUsageTests.StatusHeader.\(UUID().uuidString)"
+        let suite = "EgasuTests.StatusHeader.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
         for density in DensitySetting.allCases {
@@ -174,10 +174,10 @@ final class ProviderSectionHeaderRenderingTests: XCTestCase {
     }
 
     func testSeparateAccountTitlesKeepIssueIndicatorsVisibleAcrossAppearancesAndDensities() throws {
-        let suite = "OpenUsageTests.SeparateStatusHeader.\(UUID().uuidString)"
+        let suite = "EgasuTests.SeparateStatusHeader.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_STATUS_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
         for density in DensitySetting.allCases {

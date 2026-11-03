@@ -49,7 +49,7 @@ final class CodexAuthStoreTests: XCTestCase {
         // `exp` 디코딩 불가 ⇒ 8일 `last_refresh` 규칙으로 fallback; 9일 경과 ⇒ refresh
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let store = CodexAuthStore(now: { now })
-        let nineDaysAgo = OpenUsageISO8601.string(from: now.addingTimeInterval(-9 * 24 * 60 * 60))
+        let nineDaysAgo = EgasuISO8601.string(from: now.addingTimeInterval(-9 * 24 * 60 * 60))
         let auth = CodexAuth(
             tokens: CodexTokens(accessToken: "token"),
             lastRefresh: nineDaysAgo
@@ -520,7 +520,7 @@ final class CodexUsageMapperTests: XCTestCase {
         let mapped = try CodexUsageMapper.mapUsageResponse(
             usage,
             resetCredits: resetCredits,
-            now: OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+            now: EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         )
 
         guard case .values(_, let vals, _, let expiriesAt, _, _) = mapped.lines.first(where: { $0.label == "Rate Limit Resets" }) else {
@@ -528,8 +528,8 @@ final class CodexUsageMapperTests: XCTestCase {
         }
         XCTAssertEqual(vals, [MetricValue(number: 2, kind: .count, label: "available")])
         XCTAssertEqual(expiriesAt, [
-            OpenUsageISO8601.date(from: "2026-02-20T17:30:00.000Z")!,
-            OpenUsageISO8601.date(from: "2026-02-20T19:00:00.000Z")!
+            EgasuISO8601.date(from: "2026-02-20T17:30:00.000Z")!,
+            EgasuISO8601.date(from: "2026-02-20T19:00:00.000Z")!
         ])
     }
 
@@ -550,7 +550,7 @@ final class CodexUsageMapperTests: XCTestCase {
         let mapped = try CodexUsageMapper.mapUsageResponse(
             usage,
             resetCredits: resetCredits,
-            now: OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+            now: EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         )
 
         guard case .values(_, _, _, let expiriesAt, _, _) = mapped.lines.first(where: { $0.label == "Rate Limit Resets" }) else {
@@ -558,8 +558,8 @@ final class CodexUsageMapperTests: XCTestCase {
         }
         // status 없는 credit 2건 유지(정렬), "consumed"는 제외
         XCTAssertEqual(expiriesAt, [
-            OpenUsageISO8601.date(from: "2026-02-20T17:30:00.000Z")!,
-            OpenUsageISO8601.date(from: "2026-02-20T19:00:00.000Z")!
+            EgasuISO8601.date(from: "2026-02-20T17:30:00.000Z")!,
+            EgasuISO8601.date(from: "2026-02-20T19:00:00.000Z")!
         ])
     }
 
@@ -651,10 +651,10 @@ final class CodexProviderTests: XCTestCase {
         let home = try CodexLogFixture.makeHome(files: [
             "sessions/rollout-1.jsonl": [
                 CodexLogFixture.turnContext(
-                    timestamp: OpenUsageISO8601.string(from: turnStart), model: "gpt-5.2"
+                    timestamp: EgasuISO8601.string(from: turnStart), model: "gpt-5.2"
                 ),
                 CodexLogFixture.tokenCount(
-                    timestamp: OpenUsageISO8601.string(from: turnStart.addingTimeInterval(60)),
+                    timestamp: EgasuISO8601.string(from: turnStart.addingTimeInterval(60)),
                     last: CodexLogFixture.usage(input: 100, output: 50)
                 )
             ].joined(separator: "\n")

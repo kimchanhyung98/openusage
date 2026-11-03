@@ -49,7 +49,7 @@ public enum AccountProfileError: Error, Equatable {
 }
 
 extension AccountProfileError {
-    /// 사용자 노출 한 줄 메시지 — Settings sheet와 `openusage account` CLI 공용.
+    /// 사용자 노출 한 줄 메시지 — Settings sheet와 `egasu account` CLI 공용.
     public var userMessage: String {
         switch self {
         case .unknownFamily(let family):
@@ -63,11 +63,11 @@ extension AccountProfileError {
         case .profileNotFound(let reference):
             return "No account matches '\(reference)'."
         case .ambiguousReference(let reference):
-            return "'\(reference)' matches multiple accounts. Use its id from 'openusage account list --json'."
+            return "'\(reference)' matches multiple accounts. Use its id from 'egasu account list --json'."
         case .removeSelectedProfile:
             return "This account is currently selected. Select another account before removing it."
         case .registryUnreadable:
-            return "OpenUsage couldn't read the saved account list. It was left unchanged. Restart OpenUsage and check the log before trying again."
+            return "egasu couldn't read the saved account list. It was left unchanged. Restart egasu and check the log before trying again."
         }
     }
 }
@@ -94,7 +94,7 @@ enum AccountIdentityReplacementError: LocalizedError {
 }
 
 /// managed account registry(`openusage.accountProfiles.v2`) — 공유 defaults domain이라 앱과 read-only
-/// `openusage account` CLI가 같은 상태 공유(CLI는 launch마다 fresh read, 앱은 panel open 시 `reloadFromDefaults()`).
+/// `egasu account` CLI가 같은 상태 공유(CLI는 launch마다 fresh read, 앱은 panel open 시 `reloadFromDefaults()`).
 /// profile metadata만 보유 — credential은 각 profile의 Keychain snapshot, 카드 identity는 `ProviderAccountsStore`.
 @MainActor
 @Observable

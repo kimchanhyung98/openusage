@@ -31,7 +31,7 @@ final class AccountReconciliationErrorTests: XCTestCase {
     func testReconciliationFailureTranslatesOnlyItsDisplayedMessage() throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
-        let raw = "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        let raw = "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
         XCTAssertEqual(
             AppContainer.externalClaudeReconciliationMessage(for: AccountIdentityReplacementError.invalidTransaction),
             raw
@@ -132,7 +132,7 @@ final class AccountReconciliationErrorTests: XCTestCase {
 
     @MainActor
     private struct Fixture {
-        let suite = "OpenUsageTests.AccountReconciliationError.\(UUID().uuidString)"
+        let suite = "EgasuTests.AccountReconciliationError.\(UUID().uuidString)"
         let defaults: UserDefaults
         let store: WidgetDataStore
         let coordinator = AccountSwitchCoordinator()

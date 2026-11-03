@@ -180,7 +180,7 @@ enum ClaudeUsageMapper {
     private static func resetDate(_ value: Any?) -> Date? {
         if let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !text.isEmpty,
-           let date = OpenUsageISO8601.date(from: text) {
+           let date = EgasuISO8601.date(from: text) {
             return date
         }
         guard let number = ProviderParse.number(value), number.isFinite else {

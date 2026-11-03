@@ -20,9 +20,9 @@ struct ShareCardChrome<Content: View>: View {
 
     private var watermarkFooter: some View {
         HStack(spacing: 6) {
-            ProviderIcon(source: .providerMark("openusage"), inset: 0)
+            ProviderIcon(source: .providerMark("egasu"), inset: 0)
                 .frame(width: 14, height: 14)
-            Text(L10n.dashboard("Monitor Your AI Subscriptions with OpenUsage"))
+            Text(L10n.dashboard("Monitor Your AI Subscriptions with egasu"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }

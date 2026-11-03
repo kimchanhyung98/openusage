@@ -26,8 +26,8 @@ final class CommandLineToolInstaller {
 
     init(
         sourcePath: String = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/openusage").path,
-        destinationPath: String = "/usr/local/bin/openusage",
+            .appendingPathComponent("Contents/Helpers/egasu").path,
+        destinationPath: String = "/usr/local/bin/egasu",
         fileManager: FileManager = .default,
         performPrivileged: (@MainActor (Operation, String, String) -> OperationResult)? = nil
     ) {
@@ -60,11 +60,11 @@ final class CommandLineToolInstaller {
         refreshStatus()
         guard status != .installed else { return }
         guard status != .conflict else {
-            errorMessage = L10n.errors("%@ already exists and wasn't installed by OpenUsage.", destinationPath)
+            errorMessage = L10n.errors("%@ already exists and wasn't installed by egasu.", destinationPath)
             return
         }
         guard fileManager.isExecutableFile(atPath: sourcePath) else {
-            errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall OpenUsage and try again.")
+            errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall egasu and try again.")
             AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
                                   localContext: "Bundled terminal helper is missing or not executable")
             return

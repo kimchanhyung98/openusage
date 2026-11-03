@@ -5,7 +5,7 @@ import XCTest
 enum TestPricing {
     static let bundled: ModelPricing = {
         func resource(_ name: String) -> Data {
-            guard let url = Bundle.openUsageResources.url(forResource: name, withExtension: "json"),
+            guard let url = Bundle.egasuResources.url(forResource: name, withExtension: "json"),
                   let data = try? Data(contentsOf: url) else {
                 fatalError("bundled resource \(name).json missing")
             }
@@ -24,7 +24,7 @@ enum ClaudeLogFixture {
     /// `projects/`에 files(상대 경로 → JSONL 내용)를 담은 임시 config dir
     static func makeHome(files: [String: String] = [:]) throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-claude-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-claude-\(UUID().uuidString)", isDirectory: true)
         try write(files: files, toProjectsOf: root)
         return root
     }
@@ -35,7 +35,7 @@ enum ClaudeLogFixture {
         coworkSessions: [String: [String: String]] = [:]
     ) throws -> URL {
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-claude-home-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-claude-home-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         if !claudeFiles.isEmpty {
             try write(files: claudeFiles, toProjectsOf: home.appendingPathComponent(".claude"))
@@ -65,7 +65,7 @@ enum ClaudeLogFixture {
     static func scanner(home: URL?) -> ClaudeLogUsageScanner {
         ClaudeLogUsageScanner(
             environment: FakeEnvironment(home.map { ["CLAUDE_CONFIG_DIR": $0.path] } ?? [:]),
-            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("openusage-no-claude-home") },
+            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("egasu-no-claude-home") },
             incrementalScanner: IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>()
         )
     }
@@ -116,7 +116,7 @@ enum CodexLogFixture {
     /// `sessions/`(또는 다른 top-level dir)에 files(상대 경로 → JSONL 내용)를 담은 임시 Codex home
     static func makeHome(files: [String: String] = [:]) throws -> URL {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-codex-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-codex-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("sessions"), withIntermediateDirectories: true
         )
@@ -132,7 +132,7 @@ enum CodexLogFixture {
     static func scanner(home: URL?) -> CodexLogUsageScanner {
         CodexLogUsageScanner(
             environment: FakeEnvironment(home.map { ["CODEX_HOME": $0.path] } ?? [:]),
-            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("openusage-no-codex-home") },
+            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("egasu-no-codex-home") },
             incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>()
         )
     }

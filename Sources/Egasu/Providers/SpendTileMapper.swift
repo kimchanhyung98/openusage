@@ -110,7 +110,7 @@ enum SpendTileMapper {
             return value
         }
 
-        if let date = OpenUsageISO8601.date(from: value) {
+        if let date = EgasuISO8601.date(from: value) {
             return dayKey(from: date)
         }
 

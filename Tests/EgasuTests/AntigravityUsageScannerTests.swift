@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class AntigravityUsageScannerTests: XCTestCase {
-    private let now = OpenUsageISO8601.date(from: "2026-10-30T12:00:00Z")!
+    private let now = EgasuISO8601.date(from: "2026-10-30T12:00:00Z")!
 
     private func pricing(input: Double = 10) -> ModelPricing {
         ModelPricing(

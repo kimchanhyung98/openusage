@@ -14,12 +14,12 @@ final class KimiUsageMapperTests: XCTestCase {
         XCTAssertEqual(session.limit, 100)
         XCTAssertEqual(session.format, .percent)
         XCTAssertEqual(session.periodDurationMs, 18_000_000)
-        XCTAssertEqual(session.resetsAt, OpenUsageISO8601.date(from: "2026-08-02T08:00:00Z"))
+        XCTAssertEqual(session.resetsAt, EgasuISO8601.date(from: "2026-08-02T08:00:00Z"))
 
         let weekly = try XCTUnwrap(kimiProgress(mapped.lines, "Weekly"))
         XCTAssertEqual(weekly.used, 60, accuracy: 0.001)
         XCTAssertEqual(weekly.periodDurationMs, 604_800_000)
-        XCTAssertEqual(weekly.resetsAt, OpenUsageISO8601.date(from: "2026-08-09T00:00:00Z"))
+        XCTAssertEqual(weekly.resetsAt, EgasuISO8601.date(from: "2026-08-09T00:00:00Z"))
     }
 
     func testClassifiesSessionByDurationRatherThanArrayPosition() throws {
@@ -61,7 +61,7 @@ final class KimiUsageMapperTests: XCTestCase {
         XCTAssertEqual(kimiProgress(mapped.lines, "Weekly")?.used ?? -1, 75, accuracy: 0.001)
         XCTAssertEqual(
             kimiProgress(mapped.lines, "Session")?.resetsAt,
-            OpenUsageISO8601.date(from: "2026-08-02T08:00:00.123Z")
+            EgasuISO8601.date(from: "2026-08-02T08:00:00.123Z")
         )
     }
 

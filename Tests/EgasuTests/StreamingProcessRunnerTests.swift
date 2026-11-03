@@ -20,21 +20,21 @@ final class StreamingProcessRunnerTests: XCTestCase {
     func testUsesOnlyTheExplicitEnvironment() async throws {
         let request = makeRequest(
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            environment: ["OPENUSAGE_ONLY": "present"]
+            environment: ["EGASU_ONLY": "present"]
         )
 
         let result = try await StreamingProcessRunner().run(request)
         let lines = Set(result.output.split(whereSeparator: \.isNewline).map(String.init))
 
         XCTAssertEqual(result.exitCode, 0)
-        XCTAssertTrue(lines.contains("OPENUSAGE_ONLY=present"))
+        XCTAssertTrue(lines.contains("EGASU_ONLY=present"))
         XCTAssertFalse(lines.contains { $0.hasPrefix("HOME=") })
         XCTAssertFalse(lines.contains { $0.hasPrefix("PATH=") })
     }
 
     func testUsesWorkingDirectoryAndNullStandardInput() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.StreamingRunner.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuTests.StreamingRunner.\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -334,8 +334,8 @@ final class StreamingProcessRunnerTests: XCTestCase {
 
     func testLogsOnlyExecutableNameArgumentCountAndExit() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.StreamingRunnerLog.\(UUID().uuidString)", isDirectory: true)
-        let sink = LogFile(directory: directory, fileName: "OpenUsage.log")
+            .appendingPathComponent("EgasuTests.StreamingRunnerLog.\(UUID().uuidString)", isDirectory: true)
+        let sink = LogFile(directory: directory, fileName: "egasu.log")
         sink.open()
         let originalSink = AppLog.sink
         AppLog.sink = sink
@@ -356,7 +356,7 @@ final class StreamingProcessRunnerTests: XCTestCase {
 
         _ = try await StreamingProcessRunner().run(request)
         let log = try String(
-            contentsOf: directory.appendingPathComponent("OpenUsage.log"),
+            contentsOf: directory.appendingPathComponent("egasu.log"),
             encoding: .utf8
         )
 

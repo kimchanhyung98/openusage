@@ -11,7 +11,7 @@ final class ProviderCatalogTests: XCTestCase {
     }
 
     private func makeScratchDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.ProviderCatalog.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ProviderCatalog.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

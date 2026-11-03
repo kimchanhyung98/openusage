@@ -2,7 +2,7 @@ import XCTest
 @testable import Egasu
 
 final class PiUsageScannerTests: XCTestCase {
-    private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
+    private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
 
     /// carried-$0 fall-through 검증용 fixture pricing (composer input $10/M)
     private let pricing = ModelPricing(

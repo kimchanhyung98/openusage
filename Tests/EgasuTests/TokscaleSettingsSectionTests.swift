@@ -5,10 +5,10 @@ import XCTest
 @MainActor
 final class TokscaleSettingsSectionTests: XCTestCase {
     func testDeviceNameSheetUsesPlaceholderAndRestoresSavedNames() throws {
-        let suite = "OpenUsageTests.Tokscale.DeviceNameRendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.Tokscale.DeviceNameRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
         func assertRenderedName(_ store: TokscaleSyncStore, expected: String, variant: String) throws {
@@ -54,10 +54,10 @@ final class TokscaleSettingsSectionTests: XCTestCase {
     }
 
     func testFinishedAndFailedResultsRenderAndCollapseAcrossAppearancesAndDensities() async throws {
-        let suite = "OpenUsageTests.Tokscale.ResultRendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.Tokscale.ResultRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
         for result in renderedResults {
@@ -113,7 +113,7 @@ final class TokscaleSettingsSectionTests: XCTestCase {
                 throw XCTSkip("This test host does not expose accessibility children for a standalone SwiftUI button.")
             }
         }
-        let suite = "OpenUsageTests.Tokscale.DoneButton.\(UUID().uuidString)"
+        let suite = "EgasuTests.Tokscale.DoneButton.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
 
@@ -196,11 +196,11 @@ final class TokscaleSettingsSectionTests: XCTestCase {
     }
 
     func testSyncButtonInheritsDefaultSettingsControlSize() throws {
-        let suite = "OpenUsageTests.Tokscale.ButtonRendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.Tokscale.ButtonRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = TokscaleSyncStore(defaults: defaults)
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         var cardHeights: [CGFloat] = []
         var buttonHeights: [CGFloat] = []
@@ -271,11 +271,11 @@ final class TokscaleSettingsSectionTests: XCTestCase {
     }
 
     func testRenderingCompactCardAtPanelWidthDoesNotStartWork() throws {
-        let suite = "OpenUsageTests.Tokscale.SettingsRendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.Tokscale.SettingsRendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = TokscaleSyncStore(defaults: defaults)
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
+        let export = ProcessInfo.processInfo.environment["EGASU_TOKSCALE_RENDER_DIR"].map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
         let deviceNames: [String?] = [nil, String(repeating: "w", count: TokscaleDeviceName.maximumUTF8ByteCount)]
         var defaultHeights: [String: CGFloat] = [:]

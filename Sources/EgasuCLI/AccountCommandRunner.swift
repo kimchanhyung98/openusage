@@ -1,7 +1,7 @@
 import Foundation
 import Egasu
 
-/// 공유 profile registry에 대한 read-only `openusage account` 명령 실행 — 앱과 같은 UserDefaults domain이라 Settings 전환과 항상 일치.
+/// 공유 profile registry에 대한 read-only `egasu account` 명령 실행 — 앱과 같은 UserDefaults domain이라 Settings 전환과 항상 일치.
 /// CLI는 credential·Keychain·shell setup에 접근 금지.
 @MainActor
 struct AccountCommandRunner {
@@ -62,7 +62,7 @@ struct AccountCommandRunner {
             }
         }
         if !printedAny {
-            print("No managed accounts. Add one in OpenUsage Settings.")
+            print("No managed accounts. Add one in egasu Settings.")
         }
         return 0
     }

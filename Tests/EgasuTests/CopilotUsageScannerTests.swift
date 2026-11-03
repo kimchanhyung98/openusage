@@ -4,7 +4,7 @@ import XCTest
 @testable import Egasu
 
 final class CopilotUsageScannerTests: XCTestCase {
-    private let now = OpenUsageISO8601.date(from: "2026-10-30T16:00:00Z")!
+    private let now = EgasuISO8601.date(from: "2026-10-30T16:00:00Z")!
 
     func testReadsCommittedWALUsageWithoutChangingDatabaseOrDoubleCountingTokenSubsets() async throws {
         let database = try CopilotScannerDatabase(wal: true)
@@ -105,10 +105,10 @@ final class CopilotUsageScannerTests: XCTestCase {
         defer { database.remove() }
         let calendar = Calendar.current
         let since = try XCTUnwrap(calendar.date(byAdding: .day, value: -30, to: calendar.startOfDay(for: now)))
-        try database.insert(date: OpenUsageISO8601.string(from: since), input: "40", output: "10")
-        try database.insert(date: OpenUsageISO8601.string(from: since.addingTimeInterval(-1)), input: "'bad-old-number'")
-        try database.insert(date: OpenUsageISO8601.string(from: now.addingTimeInterval(-60)), input: "90", output: "10")
-        try database.insert(date: OpenUsageISO8601.string(from: now.addingTimeInterval(1)), input: "9999")
+        try database.insert(date: EgasuISO8601.string(from: since), input: "40", output: "10")
+        try database.insert(date: EgasuISO8601.string(from: since.addingTimeInterval(-1)), input: "'bad-old-number'")
+        try database.insert(date: EgasuISO8601.string(from: now.addingTimeInterval(-60)), input: "90", output: "10")
+        try database.insert(date: EgasuISO8601.string(from: now.addingTimeInterval(1)), input: "9999")
         try database.insert(date: "invalid-date")
         try database.insert(date: nil)
 

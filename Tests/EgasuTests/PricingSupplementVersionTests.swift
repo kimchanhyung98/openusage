@@ -58,7 +58,7 @@ final class PricingSupplementVersionTests: XCTestCase {
     }
 
     func testBundledLegacyFeedKeepsCursorRatesWhileModernFeedUsesAPIRates() throws {
-        let url = try XCTUnwrap(Bundle.openUsageResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json"))
         let data = try Data(contentsOf: url)
         let legacy = try JSONDecoder().decode(LegacySupplement.self, from: data)
         XCTAssertEqual(legacy.pricing["grok-4.5"]?.cacheReadPerMillion, 0.5)

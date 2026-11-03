@@ -8,7 +8,7 @@ enum L10n {
     static var locale: Locale { language.locale }
 
     private static let bundles: [LanguageSetting: Bundle] = {
-        let resources = Bundle.openUsageResources
+        let resources = Bundle.egasuResources
         return Dictionary(uniqueKeysWithValues: LanguageSetting.allCases.compactMap { language in
             guard let url = resources.url(forResource: language.rawValue, withExtension: "lproj"),
                   let bundle = Bundle(url: url) else {

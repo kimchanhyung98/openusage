@@ -24,7 +24,7 @@ final class CodexResetClaimRouterTests: XCTestCase {
         Data("""
         {"credits": [
             {"id": "RateLimitResetCredit_target", "status": "available",
-             "expires_at": "\(OpenUsageISO8601.string(from: expiry))"}
+             "expires_at": "\(EgasuISO8601.string(from: expiry))"}
         ], "available_count": 1}
         """.utf8)
     }

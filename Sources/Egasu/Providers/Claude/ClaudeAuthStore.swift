@@ -126,7 +126,7 @@ enum ClaudeAuthError: Error, LocalizedError, Equatable {
         case .desktopPermissionRequired:
             return "Claude Desktop login found. Refresh once and choose Always Allow to connect it."
         case .desktopTokenExpired:
-            return "Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage."
+            return "Claude Desktop login is stale. Open Claude Desktop, then refresh egasu."
         case .desktopCredentialsUnavailable:
             return "Claude Desktop login couldn't be read. Open Claude Desktop, then try again."
         case .sessionExpired:

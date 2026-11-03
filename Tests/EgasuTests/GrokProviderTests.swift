@@ -22,7 +22,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testRefreshesExpiredTokenPersistsAuthAndFetchesUsage() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-02T00:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-02T00:00:00.000Z")!
         let files = FakeFiles([
             GrokAuthStore.authPath: """
             {
@@ -82,7 +82,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testRetriesCreditsOnceAfterAuthError() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-02T00:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-02T00:00:00.000Z")!
         let files = FakeFiles([
             GrokAuthStore.authPath: """
             {
@@ -141,7 +141,7 @@ final class GrokProviderTests: XCTestCase {
                 XCTAssertNil(request.body)
                 XCTAssertEqual(request.headers["Authorization"], "Bearer token")
                 XCTAssertEqual(request.headers["X-XAI-Token-Auth"], GrokUsageClient.tokenAuthHeader)
-                XCTAssertEqual(request.headers["User-Agent"], "OpenUsage")
+                XCTAssertEqual(request.headers["User-Agent"], "egasu")
                 return HTTPResponse(statusCode: 200, headers: [:], body: GrokCreditsFixtures.capturedResponseBody)
             }
             return Self.defaultRoutes(request)
@@ -209,7 +209,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testRefreshAppendsLocalSpendTilesFromLog() async {
-        let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 오늘 grok-build 장문 입력 1M × $2 = $2, 어제 composer-2.5-fast 출력 1M × $15 = $15.
         let log = """
         {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
@@ -238,7 +238,7 @@ final class GrokProviderTests: XCTestCase {
 
     func testPeriodWithoutUsageLeavesTileUnbacked() async {
         // "Today 0" 회귀 방지 — 오늘 usage 없으면 "$0.00 · 0 tokens" 조작 대신 backing line 없는 "No data"
-        let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // fixture: 06-17에만 inference row, 06-18(today)은 없음
         let log = """
         {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
@@ -260,7 +260,7 @@ final class GrokProviderTests: XCTestCase {
     }
 
     func testRefreshAppendsUsageTrendFromLog() async {
-        let now = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 픽스처: 06-18 입력 1M, 06-17 출력 1M
         let log = """
         {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
@@ -327,7 +327,7 @@ final class GrokProviderTests: XCTestCase {
     private func makeProvider(
         httpClient: RecordingHTTPClient,
         scanner: GrokLogUsageScanner? = nil,
-        now: Date = OpenUsageISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        now: Date = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
     ) -> GrokProvider {
         let files = FakeFiles([
             GrokAuthStore.authPath: #"{"https://auth.x.ai::client":{"key":"token","refresh_token":"refresh","expires_at":"2026-07-01T00:00:00.000Z"}}"#

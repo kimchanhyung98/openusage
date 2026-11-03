@@ -221,7 +221,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     // MARK: - Child-session replay (subagents and forks)
 
     private var childCreationEpoch: Int {
-        Int(OpenUsageISO8601.date(from: "2026-05-12T08:03:00.000Z")!.timeIntervalSince1970)
+        Int(EgasuISO8601.date(from: "2026-05-12T08:03:00.000Z")!.timeIntervalSince1970)
     }
 
     func testSubagentReplayLinesAreSkippedButSeedTheDeltaBaseline() {
@@ -468,7 +468,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         output: Int = 50, reasoning: Int = 0, isFast: Bool = false
     ) -> CodexLogUsageScanner.Event {
         CodexLogUsageScanner.Event(
-            timestamp: OpenUsageISO8601.date(from: timestamp)!,
+            timestamp: EgasuISO8601.date(from: timestamp)!,
             model: model, input: input, cached: cached, output: output, reasoning: reasoning,
             total: input + output, isFast: isFast
         )
@@ -778,7 +778,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     func testAggregateFiltersEventsBeforeSince() {
         let scan = CodexLogUsageScanner.aggregate(
             events: [makeEvent("2026-01-01T08:00:00.000Z"), makeEvent("2026-05-12T08:00:00.000Z")],
-            since: OpenUsageISO8601.date(from: "2026-05-01T00:00:00.000Z")!,
+            since: EgasuISO8601.date(from: "2026-05-01T00:00:00.000Z")!,
             pricing: fixedRates()
         )
 
@@ -826,7 +826,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
         let day = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-3600))
         // link 경로가 target보다 긴 픽스처: symlink 미해석 strip이면 dedup key가 전부 ""가 되어 첫 파일만 남는 회귀
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-codex-symlink-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-codex-symlink-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         let real = base.appendingPathComponent("r", isDirectory: true)
         for (relativePath, content) in [
@@ -896,7 +896,7 @@ final class CodexLogUsageScannerTests: XCTestCase {
     }
 
     func testParityAgainstRealLocalLogs() async throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["OPENUSAGE_CODEX_PARITY"] == "1")
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["EGASU_CODEX_PARITY"] == "1")
         let scanner = CodexLogUsageScanner()
         let result = await scanner.scan(pricing: TestPricing.bundled)
         let scan = try XCTUnwrap(result)

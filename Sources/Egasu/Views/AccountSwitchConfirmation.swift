@@ -45,11 +45,11 @@ private struct AccountSwitchConfirmation: ViewModifier {
             } message: { profile in
                 if let shell = AccountShellInstaller.defaultShell() {
                     Text(L10n.accounts(
-                        "New %@ sessions will use %@. OpenUsage keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the %@ terminal setup. Open a new terminal window to use it.",
+                        "New %@ sessions will use %@. egasu keeps your settings, memory, and sessions in place, replaces only the saved sign-in, and updates the %@ terminal setup. Open a new terminal window to use it.",
                         profile.family, profile.label, shell.title
                     ))
                 } else {
-                    Text(L10n.accounts("OpenUsage couldn't detect your login shell, so terminal setup can't be applied automatically."))
+                    Text(L10n.accounts("egasu couldn't detect your login shell, so terminal setup can't be applied automatically."))
                 }
             }
     }
@@ -57,7 +57,7 @@ private struct AccountSwitchConfirmation: ViewModifier {
     private func switchTo(_ profile: AccountProfile) {
         guard !container.accountSwitch.isSwitching else { return }
         guard let shell = AccountShellInstaller.defaultShell() else {
-            error = L10n.accounts("Couldn't detect your login shell, so OpenUsage couldn't apply the account switch automatically.")
+            error = L10n.accounts("Couldn't detect your login shell, so egasu couldn't apply the account switch automatically.")
             AppDiagnostics.record(.accountSwitch, result: .failure, category: .notAvailable, providerID: profile.family,
                                   localContext: "Login shell could not be detected; account switch not applied")
             return

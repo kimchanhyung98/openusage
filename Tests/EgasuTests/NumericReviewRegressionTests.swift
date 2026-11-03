@@ -91,7 +91,7 @@ final class NumericReviewRegressionTests: XCTestCase {
     }
 
     func testOldMalformedGrokModelEventsDoNotPreventAnAuthoritativeEmptyWindow() throws {
-        let since = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-12T00:00:00Z"))
+        let since = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-12T00:00:00Z"))
         let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"grok-build"}}"#
         let empty = GrokLogUsageScanner.parse(old, since: since, pricing: TestPricing.bundled)
         XCTAssertEqual(empty.rejectedNumericRows, 0)

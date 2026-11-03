@@ -126,7 +126,7 @@ final class AccountCardPresentationStore {
             updateErrorMessage()
             return true
         } catch {
-            errorMessage = L10n.errors("OpenUsage couldn't save the account display settings. Try again and check the app log.")
+            errorMessage = L10n.errors("egasu couldn't save the account display settings. Try again and check the app log.")
             AppLog.error(.config, "failed to encode account-card presentation: \(error.localizedDescription)")
             return false
         }
@@ -142,7 +142,7 @@ final class AccountCardPresentationStore {
 
     private func updateErrorMessage() {
         if hasUnreadableSettings {
-            errorMessage = L10n.errors("OpenUsage couldn't read the saved account display settings. They were left unchanged. Restart OpenUsage and check the log before trying again.")
+            errorMessage = L10n.errors("egasu couldn't read the saved account display settings. They were left unchanged. Restart egasu and check the log before trying again.")
             return
         }
         errorMessage = hasUnsupportedMode

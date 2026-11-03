@@ -3,14 +3,14 @@ import XCTest
 
 final class LocalUsageAPITests: XCTestCase {
     private func makeState() -> LocalUsageAPI.State {
-        let refreshedAt = OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
+        let refreshedAt = EgasuISO8601.date(from: "2026-03-26T11:16:29.000Z")!
         let claude = ProviderSnapshot(
             providerID: "claude",
             displayName: "Claude",
             plan: "Pro",
             lines: [
                 .progress(label: "Session", used: 42, limit: 100, format: .percent,
-                          resetsAt: OpenUsageISO8601.date(from: "2026-03-26T13:00:00.161Z"),
+                          resetsAt: EgasuISO8601.date(from: "2026-03-26T13:00:00.161Z"),
                           periodDurationMs: 18_000_000),
                 .values(label: "Today", values: [
                     MetricValue(number: 5.17, kind: .dollars),
@@ -96,7 +96,7 @@ final class LocalUsageAPITests: XCTestCase {
     func testFamilyTokenMatchesEveryCardOfTheFamily() throws {
         // 매칭은 단순 문자열 비교 — 정확한 card id 또는 family id로 해당 family 전체 지칭
         var state = makeState()
-        let refreshedAt = OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
+        let refreshedAt = EgasuISO8601.date(from: "2026-03-26T11:16:29.000Z")!
         state.knownIDs.insert("claude@ab12cd34")
         state.snapshots["claude@ab12cd34"] = ProviderSnapshot(
             providerID: "claude@ab12cd34",
@@ -134,7 +134,7 @@ final class LocalUsageAPITests: XCTestCase {
             providerID: "claude@ab12cd34",
             displayName: "Claude",
             lines: [.progress(label: "Session", used: 7, limit: 100, format: .percent)],
-            refreshedAt: OpenUsageISO8601.date(from: "2026-03-26T11:16:29.000Z")!
+            refreshedAt: EgasuISO8601.date(from: "2026-03-26T11:16:29.000Z")!
         )
         let resolved = state.resolvingDisplayNames(["claude@ab12cd34": "Claude — acme@example.com"])
         let server = LocalUsageServer(state: { resolved })

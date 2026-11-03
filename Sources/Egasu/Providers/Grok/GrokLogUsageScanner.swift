@@ -81,7 +81,7 @@ struct GrokLogUsageScanner: Sendable {
 
             guard msg == "shell.turn.inference_done",
                   ctx["prompt_tokens"] != nil,
-                  let timestamp = (object["ts"] as? String).flatMap(OpenUsageISO8601.date(from:)),
+                  let timestamp = (object["ts"] as? String).flatMap(EgasuISO8601.date(from:)),
                   timestamp >= since
             else { return }
 

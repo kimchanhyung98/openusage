@@ -1,7 +1,7 @@
 import Foundation
 
 /// Settings 계정 badge·전환 토글 뒤의 로컬 준비 상태 점검.
-/// Ready = OpenUsage Keychain snapshot이 profile identity를 증명하는 사용 가능 credential 보유.
+/// Ready = egasu Keychain snapshot이 profile identity를 증명하는 사용 가능 credential 보유.
 /// 선택된 Claude profile은 일반 터미널과 같은 Shared Runtime Home도 같은 identity로 로그인된 상태여야 함.
 /// provider 네트워크 호출 없음. 선택된 Claude만 Shared Runtime Home의 공식 CLI 인증을 추가 확인.
 struct AccountSignInProbe: Sendable {

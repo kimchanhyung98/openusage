@@ -436,7 +436,7 @@ final class CodexProvider: ProviderRuntime {
         if let idToken = response.idToken {
             authState.auth.tokens?.idToken = idToken
         }
-        authState.auth.lastRefresh = OpenUsageISO8601.string(from: now())
+        authState.auth.lastRefresh = EgasuISO8601.string(from: now())
         try validateTimerIdentity(authState.auth, expectedAccountKey: expectedAccountKey)
         if expectedAccountKey != nil {
             authState = try await saveTimerAuth(authState, replacing: original)

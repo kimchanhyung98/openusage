@@ -34,7 +34,7 @@ struct AccountCredentialSwitcher: @unchecked Sendable {
             case .switchRecoveryRequired:
                 "Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use."
             case .selectionSaveFailed:
-                "OpenUsage couldn't save the selected account. The recovery record was kept. Try again."
+                "egasu couldn't save the selected account. The recovery record was kept. Try again."
             }
         }
     }

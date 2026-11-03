@@ -133,7 +133,7 @@ final class TelemetrySDKIntegrationTests: XCTestCase {
         sink.capture("$exception", [
             "$exception_list": [["type": "Fatal error", "value": "OPAQUE_PRIVATE_VALUE",
                 "stacktrace": ["frames": frames]]],
-            "$debug_images": [["debug_id": uuid, "image_addr": "0x1000", "code_file": "/Users/private/OpenUsage"]],
+            "$debug_images": [["debug_id": uuid, "image_addr": "0x1000", "code_file": "/Users/private/egasu"]],
             "$exception_steps": [["message": "OPAQUE_PRIVATE_VALUE"]],
         ])
         sink.flush()

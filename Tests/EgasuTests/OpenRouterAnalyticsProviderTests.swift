@@ -369,13 +369,13 @@ private func requestedRange(_ request: HTTPRequest) throws -> DateInterval {
     let body = try XCTUnwrap(request.body)
     let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
     let range = try XCTUnwrap(object["time_range"] as? [String: String])
-    let start = try XCTUnwrap(range["start"].flatMap(OpenUsageISO8601.date(from:)))
-    let end = try XCTUnwrap(range["end"].flatMap(OpenUsageISO8601.date(from:)))
+    let start = try XCTUnwrap(range["start"].flatMap(EgasuISO8601.date(from:)))
+    let end = try XCTUnwrap(range["end"].flatMap(EgasuISO8601.date(from:)))
     return DateInterval(start: start, end: end)
 }
 
 private func fixtureDate(_ value: String) -> Date {
-    OpenUsageISO8601.date(from: value)!
+    EgasuISO8601.date(from: value)!
 }
 
 private func metric(_ lines: [MetricLine], label: String, kind: MetricKind) -> Double? {

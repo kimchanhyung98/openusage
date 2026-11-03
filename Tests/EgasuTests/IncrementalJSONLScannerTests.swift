@@ -317,7 +317,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
 
     func testLimitsConcurrentParsesAndKeepsFileOrder() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScannerTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScannerTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -344,7 +344,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
 
     func testUnreadableFileWarnsOnceUntilItRecoversEvenWhenMissingAfterDiscovery() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScannerWarnings-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScannerWarnings-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -425,7 +425,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
 
     func testScanningAnotherBatchDoesNotForgetAnUnreadableFile() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScannerWarningBatches-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScannerWarningBatches-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
@@ -453,7 +453,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
     func testJsonlFilesFollowsSymlinkedRoot() throws {
         // symlink된 log dir root에서 `FileManager.enumerator`가 빈 결과 — discovery가 symlink를 resolve해야 함
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScannerSymlink-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScannerSymlink-\(UUID().uuidString)", isDirectory: true)
         let real = base.appendingPathComponent("real", isDirectory: true)
         try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -470,7 +470,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         let warnings = WarningRecorder()
         let scanner = IncrementalJSONLScanner<Int>(readFailureWarning: warnings.record)
         let file = JSONLScanning.DiscoveredFile(
-            path: "/tmp/openusage-missing-\(UUID().uuidString).jsonl",
+            path: "/tmp/egasu-missing-\(UUID().uuidString).jsonl",
             size: 0,
             mtime: Date()
         )
@@ -482,7 +482,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
 
     private func makeDirectory(_ suffix: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScanner\(suffix)-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScanner\(suffix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

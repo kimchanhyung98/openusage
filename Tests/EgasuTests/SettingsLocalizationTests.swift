@@ -44,11 +44,11 @@ final class SettingsLocalizationTests: XCTestCase {
     }
 
     func testSettingsFormatStringsPreserveUserProvidedValues() {
-        let path = "/Users/테스트 user/bin/openusage"
+        let path = "/Users/테스트 user/bin/egasu"
         L10n.withLanguage(.korean) {
             XCTAssertEqual(
-                L10n.settings("%@ already exists and wasn't installed by OpenUsage.", path),
-                "\(path) 경로가 이미 있으며, OpenUsage가 설치한 항목이 아닙니다."
+                L10n.settings("%@ already exists and wasn't installed by egasu.", path),
+                "\(path) 경로가 이미 있으며, egasu가 설치한 항목이 아닙니다."
             )
             XCTAssertEqual(L10n.settings("%d/%d bytes", 12, 64), "12/64바이트")
             XCTAssertEqual(L10n.settings("%dm ago", 3), "3분 전")

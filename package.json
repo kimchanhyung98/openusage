@@ -1,8 +1,8 @@
 {
-  "name": "openusage",
+  "name": "egasu",
   "version": "1.0.0",
   "private": true,
-  "description": "OpenUsage development hooks",
+  "description": "egasu development hooks",
   "author": "kimchanhyung98",
   "scripts": {
     "prepare": "husky"

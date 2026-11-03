@@ -6,7 +6,7 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
     private let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
 
     func testRetryAfterAcceptsSecondsAndHTTPDateAndRejectsInvalidValues() {
-        let now = OpenUsageISO8601.date(from: "2026-10-12T00:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-10-12T00:00:00.000Z")!
         for (value, expected) in [("7200", 7200), ("Mon, 12 Oct 2026 02:00:00 GMT", 7200)] {
             let response = HTTPResponse(statusCode: 429, headers: ["retry-after": value], body: Data())
             XCTAssertEqual(ClaudeUsageMapper.parseRetryAfterSeconds(response, now: now), expected)

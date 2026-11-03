@@ -92,11 +92,11 @@ final class AccountSignInWorkspaceTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.appendingPathComponent("claude/profile-1").path))
     }
 
-    func testPrepareRefusesASymlinkedDefaultOpenUsageDirectory() throws {
+    func testPrepareRefusesASymlinkedLegacyStorageDirectory() throws {
         let applicationSupport = try makeApplicationSupport()
         let outside = try makeOutside()
-        let openUsage = applicationSupport.appendingPathComponent("OpenUsage")
-        try FileManager.default.createSymbolicLink(at: openUsage, withDestinationURL: outside)
+        let egasu = applicationSupport.appendingPathComponent("OpenUsage")
+        try FileManager.default.createSymbolicLink(at: egasu, withDestinationURL: outside)
         let fileManager = ApplicationSupportFileManager(applicationSupport: applicationSupport)
         let workspace = AccountSignInWorkspace(fileManager: fileManager)
 
@@ -104,7 +104,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
             guard case AccountSignInWorkspace.WorkspaceError.symlinkedComponent(let path) = error else {
                 return XCTFail("expected symlinkedComponent, got \(error)")
             }
-            XCTAssertEqual(path, openUsage.path)
+            XCTAssertEqual(path, egasu.path)
         }
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: outside.appendingPathComponent("AccountSignIn/claude/profile-1").path)
@@ -114,9 +114,9 @@ final class AccountSignInWorkspaceTests: XCTestCase {
     func testPrepareRefusesASymlinkedDefaultAccountSignInDirectory() throws {
         let applicationSupport = try makeApplicationSupport()
         let outside = try makeOutside()
-        let openUsage = applicationSupport.appendingPathComponent("OpenUsage")
-        try FileManager.default.createDirectory(at: openUsage, withIntermediateDirectories: true)
-        let accountSignIn = openUsage.appendingPathComponent("AccountSignIn")
+        let egasu = applicationSupport.appendingPathComponent("OpenUsage")
+        try FileManager.default.createDirectory(at: egasu, withIntermediateDirectories: true)
+        let accountSignIn = egasu.appendingPathComponent("AccountSignIn")
         try FileManager.default.createSymbolicLink(at: accountSignIn, withDestinationURL: outside)
         let fileManager = ApplicationSupportFileManager(applicationSupport: applicationSupport)
         let workspace = AccountSignInWorkspace(fileManager: fileManager)
@@ -240,7 +240,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
         let family = base.appendingPathComponent("claude")
         let profile = family.appendingPathComponent("profile-1")
         let missingTarget = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.missing.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountSignInWorkspace.missing.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: family, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: profile, withDestinationURL: missingTarget)
         let workspace = AccountSignInWorkspace(baseDirectory: base)
@@ -274,7 +274,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
 
     private func makeBase() throws -> URL {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.\(UUID().uuidString)/AccountSignIn")
+            .appendingPathComponent("EgasuTests.AccountSignInWorkspace.\(UUID().uuidString)/AccountSignIn")
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: base.deletingLastPathComponent()) }
         return base
@@ -282,7 +282,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
 
     private func makeOutside() throws -> URL {
         let outside = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.outside.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountSignInWorkspace.outside.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
         return outside
@@ -290,7 +290,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
 
     private func makeApplicationSupport() throws -> URL {
         let applicationSupport = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.application-support.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountSignInWorkspace.application-support.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: applicationSupport, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: applicationSupport) }
         return applicationSupport
@@ -298,7 +298,7 @@ final class AccountSignInWorkspaceTests: XCTestCase {
 
     private func makeSymlinkedBase(to destination: URL) throws -> URL {
         let parent = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountSignInWorkspace.root.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountSignInWorkspace.root.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
         let base = parent.appendingPathComponent("AccountSignIn")
         try FileManager.default.createSymbolicLink(at: base, withDestinationURL: destination)

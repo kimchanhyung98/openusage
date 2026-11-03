@@ -5,7 +5,7 @@ import XCTest
 final class CodexInactiveRefreshSwitchTests: XCTestCase {
     func testSwitchAwayMustNotOverwriteRotationFromFormerInactiveRuntime() async throws {
         let home = URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("OpenUsageInactiveRefreshSwitch.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuInactiveRefreshSwitch.\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let originalLogSink = AppLog.sink
         AppLog.sink = LogFile(directory: home.appendingPathComponent("logs"), fileName: "fixture.log")

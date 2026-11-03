@@ -150,7 +150,7 @@ final class OpenAIPricingTests: XCTestCase {
     }
 
     func testNewCodexModelsHonorRefreshedFastMultipliers() throws {
-        let url = try XCTUnwrap(Bundle.openUsageResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json"))
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         var multipliers = try XCTUnwrap(object["fast_multipliers_exact"] as? [String: Double])
         let models = ["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]
@@ -293,7 +293,7 @@ final class OpenAIPricingTests: XCTestCase {
             persistence:
                 .init(namespace: "codex", schemaVersion: 10, directory: directory, writeDebounce: .milliseconds(1)))
         let oldEvent = CodexLogUsageScanner.Event(
-            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)), model: "gpt-6-astra",
+            timestamp: try XCTUnwrap(EgasuISO8601.date(from: timestamp)), model: "gpt-6-astra",
             input: 1_000, cached: 0, output: 100, reasoning: 0, total: 1_100
         )
         _ = await old.items(from: files, since: .distantPast, cacheIdentity: "ultrafast") { _ in [oldEvent] }

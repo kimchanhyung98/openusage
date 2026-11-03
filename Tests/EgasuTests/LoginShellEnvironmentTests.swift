@@ -2,8 +2,8 @@ import XCTest
 @testable import Egasu
 
 final class LoginShellEnvironmentTests: XCTestCase {
-    private let begin = "__OPENUSAGE_ENV_BEGIN__"
-    private let end = "__OPENUSAGE_ENV_END__"
+    private let begin = "__EGASU_ENV_BEGIN__"
+    private let end = "__EGASU_ENV_END__"
 
     func testParsesKeysBetweenMarkers() {
         let output = [begin, "OPENROUTER_API_KEY=sk-or-v1-abc", "PATH=/usr/bin:/bin", end]

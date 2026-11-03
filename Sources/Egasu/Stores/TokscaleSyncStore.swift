@@ -367,17 +367,17 @@ final class TokscaleSyncStore {
     private static func message(for failure: TokscaleSyncFailure, exitCode: Int32?) -> String {
         switch failure {
         case .bunCheck:
-            L10n.errors("OpenUsage couldn’t check for Bun. Try again.")
+            L10n.errors("egasu couldn’t check for Bun. Try again.")
         case .bunInstallation:
-            L10n.errors("OpenUsage couldn’t install or verify Bun. Install it manually and try again.")
+            L10n.errors("egasu couldn’t install or verify Bun. Install it manually and try again.")
         case .bunxMissing:
             L10n.errors("Bun is installed, but bunx couldn’t be found. Repair the Bun installation and try again.")
         case .submit:
             exitCode.map { L10n.errors("Tokscale finished with status %@. Review the command output and try again.", String($0)) }
-                ?? L10n.errors("OpenUsage couldn’t run Tokscale. Try again.")
+                ?? L10n.errors("egasu couldn’t run Tokscale. Try again.")
         case .login:
             exitCode.map { L10n.errors("Tokscale login finished with status %@. Review the command output and try again.", String($0)) }
-                ?? L10n.errors("OpenUsage couldn’t run Tokscale login. Try again.")
+                ?? L10n.errors("egasu couldn’t run Tokscale login. Try again.")
         }
     }
 

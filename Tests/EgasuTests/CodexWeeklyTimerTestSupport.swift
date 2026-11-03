@@ -222,7 +222,7 @@ extension CodexWeeklyTimerRouterTests {
         private var clients: [String: TimerHTTPClient] = [:]
 
         init() throws {
-            root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.RouterTests.\(UUID().uuidString)")
+            root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.RouterTests.\(UUID().uuidString)")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             store = CodexWeeklyTimerAttemptStore(fileURL: root.appendingPathComponent("attempts.json"))
             clock = ObservationClock(now)

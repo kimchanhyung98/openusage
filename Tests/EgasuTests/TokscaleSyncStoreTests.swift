@@ -351,7 +351,7 @@ final class TokscaleSyncStoreTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.TokscaleSyncStore.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.TokscaleSyncStore.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

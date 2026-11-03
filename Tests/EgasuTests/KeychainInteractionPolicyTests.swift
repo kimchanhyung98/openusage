@@ -85,7 +85,7 @@ final class KeychainInteractionPolicyTests: XCTestCase {
         try NativeKeychainAccess.acquire()
         defer { NativeKeychainAccess.release() }
         DispatchQueue.global().async {
-            XCTAssertNil(SecurityKeychainAccessor().genericPasswordExists(service: "OpenUsageTests.PendingProbe"))
+            XCTAssertNil(SecurityKeychainAccessor().genericPasswordExists(service: "EgasuTests.PendingProbe"))
             finished.fulfill()
         }
         wait(for: [finished], timeout: 1)
@@ -171,7 +171,7 @@ private final class PolicyKeychainFixture: @unchecked Sendable {
 
     init() throws {
         path = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Keychains/OpenUsageTests.Policy.\(UUID().uuidString).keychain").path
+            .appendingPathComponent("Library/Keychains/EgasuTests.Policy.\(UUID().uuidString).keychain").path
         let fixturePath = path
         let password = UUID().uuidString
         var created: SecKeychain?

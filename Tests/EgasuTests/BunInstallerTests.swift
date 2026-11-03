@@ -509,7 +509,7 @@ final class BunInstallerTests: XCTestCase {
 
     private func makeFixture() throws -> BunFixture {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsage-BunInstallerTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-BunInstallerTests-\(UUID().uuidString)", isDirectory: true)
         let home = root.appendingPathComponent("home", isDirectory: true)
         let temporary = root.appendingPathComponent("temporary", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)

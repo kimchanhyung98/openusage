@@ -48,7 +48,7 @@ final class JSONLScannerCancellationTests: XCTestCase {
         let now = Date()
         let home = try ClaudeLogFixture.makeHome(files: [
             "project/session.jsonl": ClaudeLogFixture.usageLine(
-                timestamp: OpenUsageISO8601.string(from: now),
+                timestamp: EgasuISO8601.string(from: now),
                 input: 10,
                 output: 5,
                 costUSD: 0.25
@@ -156,7 +156,7 @@ final class JSONLScannerCancellationTests: XCTestCase {
 
     private func makeDirectory(_ suffix: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageScannerCancellation\(suffix)-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuScannerCancellation\(suffix)-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

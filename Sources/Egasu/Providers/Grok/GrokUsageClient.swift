@@ -88,7 +88,7 @@ struct GrokUsageClient: Sendable {
             "Authorization": "Bearer \(accessToken.trimmingCharacters(in: .whitespacesAndNewlines))",
             "X-XAI-Token-Auth": Self.tokenAuthHeader,
             "Accept": "application/json",
-            "User-Agent": "OpenUsage"
+            "User-Agent": "egasu"
         ]
     }
 }

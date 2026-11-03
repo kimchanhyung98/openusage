@@ -40,7 +40,7 @@ final class TelemetryPrivacyTests: XCTestCase {
                 ]]],
                 "mechanism": ["type": "nsexception", "handled": false, "data": "OPAQUE_PRIVATE_VALUE"],
             ]],
-            "$debug_images": [["debug_id": uuid, "image_addr": "0x1000", "code_file": "/Users/private/OpenUsage", "arch": "arm64"]],
+            "$debug_images": [["debug_id": uuid, "image_addr": "0x1000", "code_file": "/Users/private/egasu", "arch": "arm64"]],
         ]))
         let encoded = String(decoding: try JSONSerialization.data(withJSONObject: properties), as: UTF8.self)
         XCTAssertTrue(encoded.contains(uuid))

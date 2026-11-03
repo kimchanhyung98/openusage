@@ -34,7 +34,7 @@ final class AppRelauncher {
             AppLog.info(.lifecycle, "Restart requested to apply the language change")
             terminate()
         } catch {
-            errorMessage = L10n.settings("Couldn't restart OpenUsage. Quit and reopen the app to apply the language change.")
+            errorMessage = L10n.settings("Couldn't restart egasu. Quit and reopen the app to apply the language change.")
             AppDiagnostics.failure(.appRestart, error: error)
         }
     }
@@ -54,16 +54,16 @@ final class AppRelauncher {
             "$3" -n "$2"
             status=$?
             if [ "$status" -ne 0 ]; then
-                /usr/bin/logger -p user.err -t OpenUsage "Restart failed (open exit $status)"
+                /usr/bin/logger -p user.err -t egasu "Restart failed (open exit $status)"
                 "$4" -e 'on run argv
                     activate
-                    display alert "OpenUsage" message (item 1 of argv) as critical buttons {item 2 of argv} default button 1
-                end run' -- "$5" "$6" || /usr/bin/logger -p user.err -t OpenUsage "Restart failure alert failed (exit $?)"
+                    display alert "egasu" message (item 1 of argv) as critical buttons {item 2 of argv} default button 1
+                end run' -- "$5" "$6" || /usr/bin/logger -p user.err -t egasu "Restart failure alert failed (exit $?)"
             fi
             exit "$status"
             """,
-            "openusage-relaunch", String(processIdentifier), bundleURL.path, openExecutable.path, alertExecutable.path,
-            L10n.settings("Couldn't restart OpenUsage. Reopen the app to apply the language change."),
+            "egasu-relaunch", String(processIdentifier), bundleURL.path, openExecutable.path, alertExecutable.path,
+            L10n.settings("Couldn't restart egasu. Reopen the app to apply the language change."),
             L10n.dashboard("OK"),
         ]
         process.standardInput = FileHandle.nullDevice

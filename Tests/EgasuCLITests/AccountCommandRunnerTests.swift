@@ -10,7 +10,7 @@ final class AccountCommandRunnerTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        suiteName = "OpenUsageTests.AccountRunner.\(UUID().uuidString)"
+        suiteName = "EgasuTests.AccountRunner.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { [defaults, suiteName] in
@@ -123,7 +123,7 @@ final class AccountCommandRunnerTests: XCTestCase {
         let result = try captureStandardOutput { try runner.run(.list(family: nil, json: false)) }
 
         XCTAssertEqual(result.code, 0)
-        XCTAssertEqual(result.output, "No managed accounts. Add one in OpenUsage Settings.\n")
+        XCTAssertEqual(result.output, "No managed accounts. Add one in egasu Settings.\n")
     }
 
     func testUnreadableRegistryFailsInsteadOfPrintingAnEmptyList() {

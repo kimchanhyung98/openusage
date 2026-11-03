@@ -5,7 +5,7 @@ import os
 /// 독립 기록기·프로세스의 append와 rotation을 동일 lock 파일로 직렬화.
 /// `@unchecked Sendable`: 인스턴스 상태는 `NSLock`, 공유 파일은 `flock`으로 보호.
 final class LogFile: @unchecked Sendable {
-    static let shared = LogFile(directory: defaultDirectory(), fileName: "OpenUsage.log")
+    static let shared = LogFile(directory: defaultDirectory(), fileName: "egasu.log")
     static let url: URL = shared.fileURL
     static let defaultMaxBytes = 10_000_000
 
@@ -14,7 +14,7 @@ final class LogFile: @unchecked Sendable {
     private let lockURL: URL
     private let directory: URL
     private let maxBytes: Int
-    private let fallbackLogger = Logger(subsystem: "OpenUsage", category: "logfile")
+    private let fallbackLogger = Logger(subsystem: "egasu", category: "logfile")
     private let lock = NSLock()
     private var lockFD: Int32 = -1
     private var disabled = false
@@ -37,7 +37,7 @@ final class LogFile: @unchecked Sendable {
     static func defaultDirectory() -> URL {
         let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        return library.appendingPathComponent("Logs/OpenUsage", isDirectory: true)
+        return library.appendingPathComponent("Logs/egasu", isDirectory: true)
     }
 
     func open() {

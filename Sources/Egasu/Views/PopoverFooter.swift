@@ -52,7 +52,7 @@ struct PopoverFooter: View {
 
     private var footerIdentity: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("OpenUsage \(AppInfo.version)")
+            Text("egasu \(AppInfo.version)")
             if layout.pinLimitNotice != nil {
                 Text(L10n.customize("Up to %lld stars per provider", LayoutStore.maxPinsPerProvider))
                     .foregroundStyle(Theme.notice)

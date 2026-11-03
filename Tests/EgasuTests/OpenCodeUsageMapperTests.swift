@@ -3,7 +3,7 @@ import XCTest
 
 final class OpenCodeUsageMapperTests: XCTestCase {
     func testMeterLinesCarryCapsFormatsResetsAndPeriods() {
-        let reset = OpenUsageISO8601.date(from: "2026-07-12T13:30:00.000Z")!
+        let reset = EgasuISO8601.date(from: "2026-07-12T13:30:00.000Z")!
         let windows = OpenCodeGoWindows(
             sessionSpend: 6.0, sessionResetsAt: reset,
             weeklySpend: 12.0, weeklyResetsAt: reset,

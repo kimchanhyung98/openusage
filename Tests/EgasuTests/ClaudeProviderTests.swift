@@ -294,7 +294,7 @@ final class ClaudeUsageMapperTests: XCTestCase {
         )
 
         let resetsAt = try XCTUnwrap(progress(mapped.lines, "Session")?.resetsAt)
-        XCTAssertEqual(OpenUsageISO8601.string(from: resetsAt), "2099-06-01T12:00:00.123Z")
+        XCTAssertEqual(EgasuISO8601.string(from: resetsAt), "2099-06-01T12:00:00.123Z")
     }
 
     func testMapsResetsAtFromUnixEpochNumber() throws {
@@ -350,7 +350,7 @@ final class ClaudeUsageMapperTests: XCTestCase {
 @MainActor
 final class ClaudeProviderTests: XCTestCase {
     func testRefreshFetchesLiveUsageAndScansConfigDirLogs() async throws {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let httpClient = FakeHTTPClient(response: HTTPResponse(
             statusCode: 200,
             headers: [:],
@@ -391,7 +391,7 @@ final class ClaudeProviderTests: XCTestCase {
 
     func testInferenceOnlyScopeSurfacesReloginWarningAndSkipsUsageCallButKeepsSpendTiles() async throws {
         // `user:profile` scope 없는 credential: soft warning 표시 + usage 호출 skip, 로컬 spend 타일은 유지
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let httpClient = FakeHTTPClient(response: HTTPResponse(
             statusCode: 200,
             headers: [:],
@@ -434,7 +434,7 @@ final class ClaudeProviderTests: XCTestCase {
     }
 
     func testLiveClaudeUsageReportsResetFields() async throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["OPENUSAGE_LIVE_CLAUDE"] == "1")
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["EGASU_LIVE_CLAUDE"] == "1")
 
         let store = ClaudeAuthStore()
         guard let state = store.loadCredentialCandidates().first else {
@@ -466,7 +466,7 @@ final class ClaudeProviderTests: XCTestCase {
     }
 
     func testRetriesOnceAfter401AndPersistsRefreshedCredentials() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
@@ -514,7 +514,7 @@ final class ClaudeProviderTests: XCTestCase {
     }
 
     func testFallsBackToVerifiedFileAfterKeychainAuthenticationFailure() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fresh-access","refreshToken":"fresh-refresh","expiresAt":4070908800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
@@ -572,7 +572,7 @@ final class ClaudeProviderTests: XCTestCase {
     }
 
     func testSurfacesAuthErrorWhenTheIdentifiedCredentialIsExpired() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"file-stale","refreshToken":"file-refresh","expiresAt":4070908800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#
@@ -631,7 +631,7 @@ final class ClaudeProviderTests: XCTestCase {
     }
 
     func testRateLimitedResponseMapsToRetryBadgeNotError() async {
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let httpClient = FakeHTTPClient(response: HTTPResponse(
             statusCode: 429,
             headers: ["retry-after": "600"],
@@ -667,7 +667,7 @@ final class ClaudeProviderTests: XCTestCase {
 
     func testRateLimitServesLastGoodUsageThenBacksOff() async {
         // live fetch 성공 후 429: 캐시된 바 + staleness note 유지, cooldown 동안 live 호출 skip
-        let t0 = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let t0 = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let clock = TestClock(t0)
         let usageCalls = CallCounter()
         let httpClient = RoutingHTTPClient { request in
@@ -731,7 +731,7 @@ final class ClaudeProviderTests: XCTestCase {
 
     func testRefreshSurfacesRequestFailureForNonOAuthRefreshErrorBody() async {
         // refresh가 non-OAuth 400(HTML proxy/WAF 페이지)을 반환하면 "token expired"가 아닌 request failure로 보고
-        let now = OpenUsageISO8601.date(from: "2026-02-20T16:00:00.000Z")!
+        let now = EgasuISO8601.date(from: "2026-02-20T16:00:00.000Z")!
         let files = FakeFiles([
             "/tmp/claude/.claude.json": claudeUsageTestIdentity(),
             "/tmp/claude/.credentials.json": #"{"claudeAiOauth":{"accessToken":"stale-token","refreshToken":"refresh-1","expiresAt":4102444800000,"subscriptionType":"pro","scopes":["user:profile"]}}"#

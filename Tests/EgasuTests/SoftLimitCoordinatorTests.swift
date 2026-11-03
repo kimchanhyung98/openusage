@@ -253,7 +253,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
                 provider: .init(id: "codex", displayName: "Codex", icon: .providerMark("codex")),
                 descriptors: [metric], snapshot: snapshot("codex", used: 95)
             )
-            let suite = "OpenUsageTests.SoftLimitBoundary.\(UUID().uuidString)"
+            let suite = "EgasuTests.SoftLimitBoundary.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defer { defaults.removePersistentDomain(forName: suite) }
             let store = WidgetDataStore(
@@ -297,7 +297,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
         let adapter = RecordingSoftLimitAdapter("codex", operations: ["first"])
         let coordinator = makeCoordinator([adapter])
         let runtime = DeadlineRuntime(snapshot: snapshot("codex", used: 95), descriptor: descriptor("codex"))
-        let suite = "OpenUsageTests.SoftLimitDeadline.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimitDeadline.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = WidgetDataStore(
@@ -345,7 +345,7 @@ final class SoftLimitCoordinatorTests: XCTestCase {
     }
 
     private func makeSettings() -> SoftLimitSettingsStore {
-        let suite = "OpenUsageTests.SoftLimitCoordinator.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimitCoordinator.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let settings = SoftLimitSettingsStore(defaults: defaults)

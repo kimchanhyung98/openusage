@@ -18,7 +18,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     )
 
     private func localDay(_ iso: String) -> String {
-        let date = OpenUsageISO8601.date(from: iso)!
+        let date = EgasuISO8601.date(from: iso)!
         let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", components.year!, components.month!, components.day!)
     }
@@ -196,7 +196,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         hasSpeed: Bool = false
     ) -> Entry {
         Entry(
-            timestamp: OpenUsageISO8601.date(from: "2026-02-20T12:00:00.000Z")!,
+            timestamp: EgasuISO8601.date(from: "2026-02-20T12:00:00.000Z")!,
             tokens: TokenBreakdown(cacheRead: cacheRead, output: output),
             messageID: messageID,
             requestID: requestID,
@@ -366,9 +366,9 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testAggregateFiltersEntriesBeforeSince() {
-        let since = OpenUsageISO8601.date(from: "2026-02-01T00:00:00.000Z")!
+        let since = EgasuISO8601.date(from: "2026-02-01T00:00:00.000Z")!
         var old = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
-        old.timestamp = OpenUsageISO8601.date(from: "2026-01-15T12:00:00.000Z")!
+        old.timestamp = EgasuISO8601.date(from: "2026-01-15T12:00:00.000Z")!
         old.tokens = TokenBreakdown(input: 100, output: 100)
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [old], since: since, pricing: pricing)
@@ -380,7 +380,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
     func testScanReadsFixtureHomeAndRescanPicksUpNewLines() async throws {
         let now = Date()
-        let timestamp = OpenUsageISO8601.string(from: now)
+        let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/session-1.jsonl": ClaudeLogFixture.usageLine(
                 timestamp: timestamp, input: 100, output: 50, costUSD: 0.25,
@@ -410,7 +410,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
     func testScanDeduplicatesReplaysAcrossFiles() async throws {
         let now = Date()
-        let timestamp = OpenUsageISO8601.string(from: now)
+        let timestamp = EgasuISO8601.string(from: now)
         // 같은 message가 sidechain 세션 파일에서 새 request id로 replay — parent token만 집계
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/parent.jsonl": ClaudeLogFixture.usageLine(
@@ -435,7 +435,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         let now = Date()
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/old.jsonl": ClaudeLogFixture.usageLine(
-                timestamp: OpenUsageISO8601.string(from: now.addingTimeInterval(-90 * 86_400)),
+                timestamp: EgasuISO8601.string(from: now.addingTimeInterval(-90 * 86_400)),
                 input: 100, output: 50, costUSD: 0.25
             )
         ])
@@ -457,7 +457,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
     }
 
     func testParityAgainstRealLocalLogs() async throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["OPENUSAGE_CLAUDE_PARITY"] == "1")
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["EGASU_CLAUDE_PARITY"] == "1")
         let scanner = ClaudeLogUsageScanner()
         let result = await scanner.scan(now: Date(), pricing: TestPricing.bundled)
         let scan = try XCTUnwrap(result)
@@ -473,7 +473,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
     func testScanSumsTerminalAndCoworkLogs() async throws {
         let now = Date()
-        let timestamp = OpenUsageISO8601.string(from: now)
+        let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeUserHome(
             claudeFiles: [
                 "project-a/terminal.jsonl": ClaudeLogFixture.usageLine(
@@ -510,7 +510,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         let home = try ClaudeLogFixture.makeUserHome(coworkSessions: [
             "group-1/sub-1/local_a": [
                 "workspace/session.jsonl": ClaudeLogFixture.usageLine(
-                    timestamp: OpenUsageISO8601.string(from: now), input: 10, output: 5, costUSD: 0.05
+                    timestamp: EgasuISO8601.string(from: now), input: 10, output: 5, costUSD: 0.05
                 )
             ]
         ])
@@ -524,7 +524,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
     func testScanDeduplicatesReplaysAcrossTerminalAndCoworkLogs() async throws {
         let now = Date()
-        let timestamp = OpenUsageISO8601.string(from: now)
+        let timestamp = EgasuISO8601.string(from: now)
         let home = try ClaudeLogFixture.makeUserHome(
             claudeFiles: [
                 "project-a/parent.jsonl": ClaudeLogFixture.usageLine(
@@ -554,13 +554,13 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         let now = Date()
         let home = try ClaudeLogFixture.makeHome(files: [
             "project-a/session.jsonl": ClaudeLogFixture.usageLine(
-                timestamp: OpenUsageISO8601.string(from: now), input: 10, output: 5, costUSD: 0.01
+                timestamp: EgasuISO8601.string(from: now), input: 10, output: 5, costUSD: 0.01
             )
         ])
         // `CLAUDE_CONFIG_DIR`가 `projects/` dir 자체를 가리키는 것도 허용 (ccusage와 동일)
         let scanner = ClaudeLogUsageScanner(
             environment: FakeEnvironment(["CLAUDE_CONFIG_DIR": home.appendingPathComponent("projects").path]),
-            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("openusage-no-claude-home") },
+            homeDirectory: { FileManager.default.temporaryDirectory.appendingPathComponent("egasu-no-claude-home") },
             incrementalScanner: IncrementalJSONLScanner<Entry>()
         )
 
@@ -572,7 +572,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
     func testScanFollowsSymlinkedProjectsDir() async throws {
         let now = Date()
-        let timestamp = OpenUsageISO8601.string(from: now)
+        let timestamp = EgasuISO8601.string(from: now)
         // `~/.claude/projects`가 외부 폴더로의 symlink인 레이아웃 — enumeration이 비어 spend 타일이 과소 집계되던 회귀
         let real = try ClaudeLogFixture.makeHome(files: [
             "project-a/session.jsonl": ClaudeLogFixture.usageLine(
@@ -580,7 +580,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
             )
         ])
         let home = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-claude-symlink-home-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-claude-symlink-home-\(UUID().uuidString)", isDirectory: true)
         let configDir = home.appendingPathComponent(".claude", isDirectory: true)
         try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(

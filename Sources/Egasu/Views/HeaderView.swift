@@ -80,10 +80,10 @@ struct HeaderView: View {
         Divider()
 
         Button { AboutPanel.present() } label: {
-            Label(L10n.dashboard("About OpenUsage"), systemImage: "info.circle")
+            Label(L10n.dashboard("About egasu"), systemImage: "info.circle")
         }
         Button(role: .destructive) { NSApplication.shared.terminate(nil) } label: {
-            Label(L10n.dashboard("Quit OpenUsage"), systemImage: "power")
+            Label(L10n.dashboard("Quit egasu"), systemImage: "power")
         }
         .keyboardShortcut("q") // ⌘Q — 다른 소유자 없음, 항목 등록 안전
     }

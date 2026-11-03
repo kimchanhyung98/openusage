@@ -115,7 +115,7 @@ final class UserFacingErrorsTests: XCTestCase {
 
     func testAccountSelectionSaveFailureExplainsThatTheRecoveryRecordWasKept() {
         let error = AccountCredentialSwitcher.Error.selectionSaveFailed
-        let diagnostic = "OpenUsage couldn't save the selected account. The recovery record was kept. Try again."
+        let diagnostic = "egasu couldn't save the selected account. The recovery record was kept. Try again."
         for (language, expected) in [
             (LanguageSetting.english, diagnostic),
             (.korean, "선택한 계정을 저장하지 못했습니다. 복구 기록은 유지했습니다. 다시 시도하세요."),

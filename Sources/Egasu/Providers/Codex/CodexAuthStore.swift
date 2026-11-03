@@ -368,7 +368,7 @@ struct CodexAuthStore: Sendable {
             return expiresAt.timeIntervalSince(now()) <= Self.accessTokenRefreshWindow
         }
         guard let lastRefresh = auth.lastRefresh,
-              let date = OpenUsageISO8601.date(from: lastRefresh)
+              let date = EgasuISO8601.date(from: lastRefresh)
         else {
             return false
         }

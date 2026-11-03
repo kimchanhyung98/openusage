@@ -86,7 +86,7 @@
 "Not available" = "利用不可";
 "Not started" = "未開始";
 "On-demand" = "追加使用量";
-"OpenUsage, usage hidden while the screen is shared" = "OpenUsage、画面共有中は使用量を非表示";
+"egasu, usage hidden while the screen is shared" = "egasu、画面共有中は使用量を非表示";
 "Org Credits" = "組織のクレジット";
 "Org Spend" = "組織の支出";
 "Other" = "その他";

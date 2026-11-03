@@ -264,7 +264,7 @@ final class AntigravityProviderTests: XCTestCase {
         let token = AntigravityAuthStore.extractToken(fromKeychainRaw: wrapped)
         XCTAssertEqual(token?.accessToken, "ya29.test")
         XCTAssertEqual(token?.refreshToken, "1//refresh")
-        XCTAssertEqual(token?.expiry, OpenUsageISO8601.date(from: "2099-01-01T00:00:00Z"))
+        XCTAssertEqual(token?.expiry, EgasuISO8601.date(from: "2099-01-01T00:00:00Z"))
     }
 
     func testExtractTokenFromRawJSONAndBearerAndPlain() {

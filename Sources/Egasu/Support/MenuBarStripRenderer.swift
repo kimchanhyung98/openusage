@@ -101,7 +101,7 @@ enum MenuBarStripRenderer {
             size: NSSize(width: CGFloat(cgImage.width) / renderer.scale, height: CGFloat(cgImage.height) / renderer.scale)
         )
         image.isTemplate = true
-        image.accessibilityDescription = L10n.metrics("OpenUsage, usage hidden while the screen is shared")
+        image.accessibilityDescription = L10n.metrics("egasu, usage hidden while the screen is shared")
         return image
     }()
 
@@ -109,7 +109,7 @@ enum MenuBarStripRenderer {
     static let fallbackIcon: NSImage = {
         let image = NSImage(
             systemSymbolName: "gauge.with.dots.needle.bottom.50percent",
-            accessibilityDescription: "OpenUsage"
+            accessibilityDescription: "egasu"
         ) ?? NSImage()
         image.isTemplate = true
         return image
@@ -122,12 +122,12 @@ private struct MenuBarPrivacyLabel: View {
     var body: some View {
         HStack(spacing: 5) {
             // `MenuBarIcon`과 같은 mark·inset, strip의 glyph box 크기에 맞춰 provider-glyph 스케일 유지.
-            if let mark = ProviderMarks.mark(for: "openusage") {
+            if let mark = ProviderMarks.mark(for: "egasu") {
                 ProviderIconShape(pathData: mark.path, inset: 0.08)
                     .fill(Color.black)
                     .frame(width: 16, height: 16)
             }
-            Text("OpenUsage")
+            Text("egasu")
                 .font(.system(size: 12, weight: .bold))
         }
         .foregroundStyle(.black)
@@ -189,7 +189,7 @@ private struct MenuBarTextStrip: View {
     }
 }
 
-/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 OpenUsage tray bar의 1:1 port.
+/// compact 정사각형에 최대 4개의 가로 usage bar 렌더 — 원본 egasu tray bar의 1:1 port.
 /// track 0.16 / fill 1.0 / remainder 0.24 opacity, near-full 양자화로 97% bar도 보이는 꼬리 유지.
 private struct MenuBarBars: View {
     let fractions: [Double]

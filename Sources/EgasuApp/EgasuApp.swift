@@ -2,15 +2,15 @@ import Egasu
 import SwiftUI
 
 @main
-enum OpenUsageMain {
+enum EgasuMain {
     @MainActor
     static func main() {
         AppDelegate.configureLanguageForLaunch()
-        OpenUsageApp.main()
+        EgasuApp.main()
     }
 }
 
-struct OpenUsageApp: App {
+struct EgasuApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {

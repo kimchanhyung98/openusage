@@ -2,7 +2,7 @@ import XCTest
 @testable import Egasu
 
 final class GrokLogUsageScannerTests: XCTestCase {
-    private let since = OpenUsageISO8601.date(from: "2026-06-01T00:00:00.000Z")!
+    private let since = EgasuISO8601.date(from: "2026-06-01T00:00:00.000Z")!
 
     func testProviderQualifiedGrok46AliasesKeepUsagePriced() throws {
         // 일반 요청은 200k 초과 장문 단가(입력 4 + 출력 12), Fast는 명시 단가(입력 4 + 출력 12) 적용.
@@ -143,7 +143,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
             homeDirectory: { URL(fileURLWithPath: "/home/ignored") }
         )
 
-        let usage = await scanner.scan(daysBack: 30, now: OpenUsageISO8601.date(from: "2026-06-18T00:00:00.000Z")!, pricing: TestPricing.bundled)
+        let usage = await scanner.scan(daysBack: 30, now: EgasuISO8601.date(from: "2026-06-18T00:00:00.000Z")!, pricing: TestPricing.bundled)
 
         XCTAssertEqual(usage?.series.daily.first?.totalTokens, 1_000_000)
     }

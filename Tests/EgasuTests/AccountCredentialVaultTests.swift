@@ -104,7 +104,7 @@ private final class AccountVaultKeychainFixture {
     init() throws {
         // 운영 login Keychain과 같은 partition ACL 형식에서 토큰 갱신 후 접근 검증.
         path = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Keychains/OpenUsageTests.Vault.\(UUID().uuidString).keychain").path
+            .appendingPathComponent("Library/Keychains/EgasuTests.Vault.\(UUID().uuidString).keychain").path
         let fixturePath = path
         let password = UUID().uuidString
         var created: SecKeychain?

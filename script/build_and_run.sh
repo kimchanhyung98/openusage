@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# OpenUsage 빌드 후 dist/에 서명된 .app 번들 준비 및 해당 위치에서 실행 — /Applications 설치 없음.
+# egasu 빌드 후 dist/에 서명된 .app 번들 준비 및 해당 위치에서 실행 — /Applications 설치 없음.
 # 개발 빌드 특성:
 #   - 안정적인 Apple Development ID로 서명해 재빌드 후에도 키체인·권한 허용 유지
 #     (macOS는 설치 위치가 아닌 서명 ID와 bundle ID를 기준으로 권한 관리)
@@ -14,7 +14,7 @@ set -euo pipefail
 # 환경 변수:
 #   CODESIGN_IDENTITY            서명 ID 재정의(정확한 이름 또는 hash)
 #   CONFIG                       "release"(기본값) 또는 "debug"
-#   OPENUSAGE_DEV_VERSION        로컬 개발 번들 버전 재정의. 릴리스 버전과 구분하도록 `-dev` 접미사 유지
+#   EGASU_DEV_VERSION            로컬 개발 번들 버전 재정의. 릴리스 버전과 구분하도록 `-dev` 접미사 유지
 #   ICLOUD_PROVISIONING_PROFILE  개발용 provisioning profile 재정의.
 #                                미지정 시 일치하는 최신 설치 profile 자동 선택
 
@@ -29,18 +29,19 @@ if ! git -C "$ROOT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   exit 1
 fi
 
-TARGET_NAME="OpenUsage"                 # SwiftPM target 및 binary 이름
-APP_DISPLAY="OpenUsage"                 # 사용자 노출 앱 이름
+TARGET_NAME="egasu"                     # SwiftPM target 및 binary 이름
+APP_DISPLAY="egasu"                     # 사용자 노출 앱 이름
 BUNDLE_ID="${BUNDLE_ID:-com.kimchanhyung98.openusage.dev}"
 ICLOUD_CONTAINER_ID="${ICLOUD_CONTAINER_ID:-iCloud.${BUNDLE_ID}}"
 MIN_SYSTEM_VERSION="15.0"
 # 로컬 번들은 가장 가까운 릴리스 태그 사용. 테스트용 재정의 값도 동일한 태그 검증 적용.
 # 로컬 번들이 릴리스 버전을 나타내지 않도록 -dev 접미사 항상 유지.
-if [ -n "${OPENUSAGE_DEV_VERSION:-}" ]; then
-  DEV_VERSION_OVERRIDE="${OPENUSAGE_DEV_VERSION#v}"
-  APP_VERSION="$(openusage_version_from_tag "v${DEV_VERSION_OVERRIDE%-dev}")-dev"
+EGASU_DEV_VERSION="${EGASU_DEV_VERSION:-${OPENUSAGE_DEV_VERSION:-}}"
+if [ -n "$EGASU_DEV_VERSION" ]; then
+  DEV_VERSION_OVERRIDE="${EGASU_DEV_VERSION#v}"
+  APP_VERSION="$(egasu_version_from_tag "v${DEV_VERSION_OVERRIDE%-dev}")-dev"
 else
-  APP_VERSION="$(openusage_development_version "$ROOT_DIR")"
+  APP_VERSION="$(egasu_development_version "$ROOT_DIR")"
 fi
 APP_BUILD="$(git -C "$ROOT_DIR" rev-list --count HEAD)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -50,19 +51,29 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$TARGET_NAME"
-CLI_BINARY="$APP_HELPERS/openusage"
+CLI_BINARY="$APP_HELPERS/egasu"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
-RESOURCE_BUNDLE_NAME="${TARGET_NAME}_${TARGET_NAME}.bundle"
 ENTITLEMENTS="$ROOT_DIR/script/Egasu.dev.entitlements.plist"
 SIGN_ENTITLEMENTS="$ROOT_DIR/script/Egasu.local.entitlements.plist"
 
-pkill -x "$TARGET_NAME" >/dev/null 2>&1 || true
+# 이름 변경 전후의 이 checkout 개발 앱만 종료. 설치된 운영 앱은 별도 경로에서 계속 실행.
+python3 - "$APP_BINARY" "$DIST_DIR/Egasu.app/Contents/MacOS/Egasu" "$DIST_DIR/OpenUsage.app/Contents/MacOS/OpenUsage" <<'PY'
+import os, signal, subprocess, sys
+executables = set(sys.argv[1:])
+for line in subprocess.check_output(["/bin/ps", "-axo", "pid=,comm="], text=True).splitlines():
+    pid, executable = line.strip().split(None, 1)
+    if executable in executables:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+PY
 
 echo "==> swift build ($CONFIG)"
 swift build -c "$CONFIG"
 BUILD_DIR="$(swift build -c "$CONFIG" --show-bin-path)"
 BUILD_BINARY="$BUILD_DIR/$TARGET_NAME"
-BUILD_CLI_BINARY="$BUILD_DIR/openusage-cli"
+BUILD_CLI_BINARY="$BUILD_DIR/egasu-cli"
 
 if [ ! -x "$BUILD_BINARY" ]; then
   echo "missing built binary: $BUILD_BINARY" >&2
@@ -78,6 +89,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$BUILD_CLI_BINARY" "$CLI_BINARY"
+ln -s egasu "$APP_HELPERS/openusage"
 chmod +x "$APP_BINARY"
 chmod +x "$CLI_BINARY"
 # 일회성 CLI는 updater를 초기화하지 않지만 공유 모듈이 Sparkle과 link됨.
@@ -94,9 +106,10 @@ mv "$APP_BINARY.tmp" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 # 빌드에서 생성된 모든 SwiftPM resource bundle을 표준 앱 경로인 Contents/Resources에 배치.
 # 앱 전용 Egasu_Egasu.bundle에 provider SVG와 model manifest 포함.
-# Bundle.openUsageResources는 Support/ResourceBundle.swift에서 해당 경로를 사용해 로드.
+# Bundle.egasuResources는 Support/ResourceBundle.swift에서 해당 경로를 사용해 로드.
 shopt -s nullglob
 for bundle in "$BUILD_DIR"/*.bundle; do
+  [ "$(basename "$bundle")" = "OpenUsage_OpenUsage.bundle" ] && continue
   cp -R "$bundle" "$APP_RESOURCES/$(basename "$bundle")"
 done
 shopt -u nullglob
@@ -167,7 +180,7 @@ cat >"$INFO_PLIST" <<PLIST
       <key>NSUbiquitousContainerIsDocumentScopePublic</key>
       <false/>
       <key>NSUbiquitousContainerName</key>
-      <string>OpenUsage</string>
+      <string>egasu</string>
       <key>NSUbiquitousContainerSupportedFolderLevels</key>
       <string>None</string>
     </dict>
@@ -189,7 +202,7 @@ fi
 if [ -n "${ICLOUD_PROVISIONING_PROFILE:-}" ]; then
   echo "==> using iCloud provisioning profile: $ICLOUD_PROVISIONING_PROFILE"
   cp "$ICLOUD_PROVISIONING_PROFILE" "$APP_CONTENTS/embedded.provisionprofile"
-  SIGN_ENTITLEMENTS="$DIST_DIR/OpenUsage.dev.resolved.entitlements.plist"
+  SIGN_ENTITLEMENTS="$DIST_DIR/egasu.dev.resolved.entitlements.plist"
   "$ROOT_DIR/script/render_icloud_entitlements.sh" \
     "$ENTITLEMENTS" "$ICLOUD_PROVISIONING_PROFILE" "$SIGN_ENTITLEMENTS" \
     "$ICLOUD_CONTAINER_ID"

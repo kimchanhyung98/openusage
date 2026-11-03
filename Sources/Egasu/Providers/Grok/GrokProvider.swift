@@ -180,7 +180,7 @@ final class GrokProvider: ProviderRuntime {
         }
 
         let expiresAt = refreshExpiryDate(response: decoded, accessToken: accessToken)
-        state.entry.expiresAt = OpenUsageISO8601.string(from: expiresAt)
+        state.entry.expiresAt = EgasuISO8601.string(from: expiresAt)
         // 원본 변경·재확인 실패는 중단 — 실제 쓰기 실패만 로그 후 갱신 token을 이번 세션에서 일시 사용.
         do {
             state = try authStore.save(state)

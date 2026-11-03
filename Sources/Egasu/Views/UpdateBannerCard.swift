@@ -11,7 +11,7 @@ struct UpdateBannerCard: View {
         DismissableHintCard(
             systemImage: "arrow.down.circle",
             title: L10n.dashboard("Update Available"),
-            message: L10n.dashboard("OpenUsage %@ is ready to download.", version),
+            message: L10n.dashboard("egasu %@ is ready to download.", version),
             buttonTitle: L10n.dashboard("Install Update"),
             action: { updater.installAvailableUpdate() },
             onDismiss: { withAnimation(Motion.spring) { updater.dismissAvailableUpdate() } }

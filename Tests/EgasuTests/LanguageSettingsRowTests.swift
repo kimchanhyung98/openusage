@@ -14,7 +14,7 @@ final class LanguageSettingsRowTests: XCTestCase {
         let text = try await recognizedText(selection: .english, activeLanguage: .english)
         XCTAssertTrue(text.contains("Language"), text)
         XCTAssertFalse(text.contains("Restart Now"), text)
-        XCTAssertFalse(text.contains("Restart OpenUsage"), text)
+        XCTAssertFalse(text.contains("Restart egasu"), text)
     }
 
     func testRestartButtonRendersInEveryLanguageAndDensity() async throws {
@@ -56,7 +56,7 @@ final class LanguageSettingsRowTests: XCTestCase {
             hosting.layoutSubtreeIfNeeded()
             let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
             hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
-            if let path = ProcessInfo.processInfo.environment["OPENUSAGE_LANGUAGE_RESTART_SCREENSHOTS"] {
+            if let path = ProcessInfo.processInfo.environment["EGASU_LANGUAGE_RESTART_SCREENSHOTS"] {
                 let directory = URL(fileURLWithPath: path)
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
                 let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))

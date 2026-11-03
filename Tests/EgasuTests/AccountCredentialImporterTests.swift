@@ -254,16 +254,16 @@ final class AccountCredentialImporterTests: XCTestCase {
 
     private func makeFixture() throws -> Fixture {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.AccountCredentialImporter.\(UUID().uuidString)")
+            .appendingPathComponent("EgasuTests.AccountCredentialImporter.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: root) }
         let home = root.resolvingSymlinksInPath().standardizedFileURL
-        let suiteName = "OpenUsageTests.AccountCredentialImporter.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.AccountCredentialImporter.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
         let keychain = ServiceKeychain()
         let workspace = AccountSignInWorkspace(
-            baseDirectory: home.appendingPathComponent("AppSupport/OpenUsage/AccountSignIn")
+            baseDirectory: home.appendingPathComponent("AppSupport/egasu/AccountSignIn")
         )
         let importer = AccountCredentialImporter(
             keychain: keychain,

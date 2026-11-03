@@ -5,7 +5,7 @@ import XCTest
 final class JSONLScanCacheStoreTests: XCTestCase {
     func testWriterMergesDisjointPathUpdatesFromSeparateSnapshots() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheWriterTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheWriterTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let persistence = JSONLScanCachePersistence(
@@ -66,7 +66,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testWriterRejectsAStaleUpsertAfterTheSourceChanges() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheStaleSourceTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheStaleSourceTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let persistence = JSONLScanCachePersistence(
@@ -92,7 +92,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testStaleRemovalDoesNotDeleteANewerPathUpdate() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheRemovalMergeTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheRemovalMergeTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let persistence = JSONLScanCachePersistence(
@@ -140,7 +140,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testLoadingAnOldIdentityTouchesItBeforeStalePruning() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheLoadTouchTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheLoadTouchTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let persistence = JSONLScanCachePersistence(
@@ -182,7 +182,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testFreshScannerCanPersistAfterAnotherScannerHasWrittenRepeatedly() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheGenerationTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheGenerationTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let sourceURL = base.appendingPathComponent("usage.jsonl")
@@ -240,7 +240,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testFlushPendingWritesBypassesTheDebounceForOneShotProcesses() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheFlushTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheFlushTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let file = try writeSource(
@@ -278,7 +278,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testFlushRetriesDirtyWriteAfterDebouncedFailure() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheFlushRetryTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheFlushRetryTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let file = try writeSource(
@@ -321,7 +321,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testParseLimitIsSharedAcrossDifferentIdentities() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCachePermitTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCachePermitTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let now = Date()
@@ -357,7 +357,7 @@ final class JSONLScanCacheStoreTests: XCTestCase {
 
     func testStaleLocalEvictionCannotRemoveANewerExternalRecord() async throws {
         let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageCacheExternalUpdateTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuCacheExternalUpdateTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: base) }
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         let persistence = JSONLScanCachePersistence(

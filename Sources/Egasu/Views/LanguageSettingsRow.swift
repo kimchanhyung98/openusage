@@ -28,7 +28,7 @@ struct LanguageSettingsRow: View {
             .padding(.vertical, density.controlRowPadding)
 
             if selection != activeLanguage {
-                Text(L10n.settings("Restart OpenUsage to apply the language change."))
+                Text(L10n.settings("Restart egasu to apply the language change."))
                     .font(.caption)
                     .foregroundStyle(Theme.notice)
                     .padding(.horizontal, 12)

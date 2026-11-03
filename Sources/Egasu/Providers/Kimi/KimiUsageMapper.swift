@@ -81,7 +81,7 @@ enum KimiUsageMapper {
         }
         guard used >= 0 else { throw KimiUsageError.invalidResponse }
 
-        let reset = (detail["resetTime"] as? String).flatMap(OpenUsageISO8601.date(from:))
+        let reset = (detail["resetTime"] as? String).flatMap(EgasuISO8601.date(from:))
         return .progress(
             label: label,
             used: used / limit * 100,

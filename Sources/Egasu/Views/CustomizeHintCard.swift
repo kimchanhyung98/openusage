@@ -10,7 +10,7 @@ struct CustomizeHintCard: View {
     var body: some View {
         DismissableHintCard(
             systemImage: "slider.horizontal.3",
-            title: L10n.customize("Welcome to OpenUsage"),
+            title: L10n.customize("Welcome to egasu"),
             message: L10n.customize("We set you up with the AI tools found on your Mac. Add or hide providers any time."),
             buttonTitle: L10n.customize("Open Customize"),
             action: { withAnimation(Motion.modeSwitch) { layout.screen = .customize } },

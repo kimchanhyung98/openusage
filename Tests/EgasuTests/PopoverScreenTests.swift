@@ -39,7 +39,7 @@ final class PopoverScreenTests: XCTestCase {
     }
 
     private func makeStore(_ name: String) -> LayoutStore {
-        let suiteName = "OpenUsageTests.PopoverScreen.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.PopoverScreen.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return LayoutStore(registry: .mock, defaults: defaults, storageKey: "layout")

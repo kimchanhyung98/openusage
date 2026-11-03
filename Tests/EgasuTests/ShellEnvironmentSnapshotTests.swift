@@ -34,11 +34,11 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
 
     func testCurrentCapturesOnlyDeclaredKeys() {
         let stdout = [
-            "__OPENUSAGE_ENV_BEGIN__",
+            "__EGASU_ENV_BEGIN__",
             "CLAUDE_CONFIG_DIR=~/.claude-work",
             "OPENROUTER_API_KEY=sk-or-secret",
             "PATH=/usr/bin",
-            "__OPENUSAGE_ENV_END__",
+            "__EGASU_ENV_END__",
         ].joined(separator: "\0")
         let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(shellEnvironment.ensureCapturedForTesting())
@@ -51,14 +51,14 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
 
     func testShellSnapshotCapturesAllKimiIdentityKeys() {
         let stdout = [
-            "__OPENUSAGE_ENV_BEGIN__",
+            "__EGASU_ENV_BEGIN__",
             "KIMI_CODE_HOME=/tmp/kimi-home",
             "KIMI_CODE_BASE_URL=https://api.kimi.example",
             "KIMI_CODE_OAUTH_HOST=https://code-auth.kimi.example",
             "KIMI_OAUTH_HOST=https://auth.kimi.example",
             "KIMI_DISABLE_OAUTH_LOCK=1",
             "PATH=/usr/bin",
-            "__OPENUSAGE_ENV_END__",
+            "__EGASU_ENV_END__",
         ].joined(separator: "\0")
         let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(shellEnvironment.ensureCapturedForTesting())
@@ -86,7 +86,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         )
         let store = ShellEnvironmentSnapshotStore(defaults: defaults)
         let stdout = [
-            "__OPENUSAGE_ENV_BEGIN__", "KIMI_CODE_HOME=/tmp/kimi-live", "PATH=/usr/bin", "__OPENUSAGE_ENV_END__",
+            "__EGASU_ENV_BEGIN__", "KIMI_CODE_HOME=/tmp/kimi-live", "PATH=/usr/bin", "__EGASU_ENV_END__",
         ].joined(separator: "\0")
         let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(shellEnvironment.ensureCapturedForTesting())
@@ -123,7 +123,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
         let defaults = makeScratchDefaults()
         let store = ShellEnvironmentSnapshotStore(defaults: defaults)
         let stdout = [
-            "__OPENUSAGE_ENV_BEGIN__", "CODEX_HOME=/tmp/codex-home", "PATH=/usr/bin", "__OPENUSAGE_ENV_END__",
+            "__EGASU_ENV_BEGIN__", "CODEX_HOME=/tmp/codex-home", "PATH=/usr/bin", "__EGASU_ENV_END__",
         ].joined(separator: "\0")
         let shellEnvironment = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
 
@@ -173,7 +173,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
 
     func testReaderPinsIdentityKeysToTheSnapshotEvenAfterTheCaptureLands() {
         let stdout = [
-            "__OPENUSAGE_ENV_BEGIN__", "CODEX_HOME=/tmp/changed", "MY_API_KEY=sk-live", "PATH=/usr/bin", "__OPENUSAGE_ENV_END__",
+            "__EGASU_ENV_BEGIN__", "CODEX_HOME=/tmp/changed", "MY_API_KEY=sk-live", "PATH=/usr/bin", "__EGASU_ENV_END__",
         ].joined(separator: "\0")
         let warm = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(warm.ensureCapturedForTesting())
@@ -189,7 +189,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
     }
 
     func testReaderFallsToTheLiveCaptureWhenNoSnapshotExists() {
-        let stdout = ["__OPENUSAGE_ENV_BEGIN__", "CODEX_HOME=/tmp/live", "__OPENUSAGE_ENV_END__"].joined(separator: "\0")
+        let stdout = ["__EGASU_ENV_BEGIN__", "CODEX_HOME=/tmp/live", "__EGASU_ENV_END__"].joined(separator: "\0")
         let warm = LoginShellEnvironment(runner: FixedRunner(stdout: stdout))
         XCTAssertTrue(warm.ensureCapturedForTesting())
         let reader = ProcessEnvironmentReader(
@@ -202,7 +202,7 @@ final class ShellEnvironmentSnapshotTests: XCTestCase {
     }
 
     private func makeScratchDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.ShellEnvironmentSnapshot.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ShellEnvironmentSnapshot.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

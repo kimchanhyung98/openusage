@@ -1,6 +1,6 @@
 import Foundation
 
-/// OpenUsage 자체 pricing feed — 공개 catalog에 없는 model, catalog이 생략한 fast multiplier, log/CSV slug → canonical key alias 규칙.
+/// egasu 자체 pricing feed — 공개 catalog에 없는 model, catalog이 생략한 fast multiplier, log/CSV slug → canonical key alias 규칙.
 /// `pricing_supplement.json`으로 bundled, gh-pages에서 refresh — 앱 release 없이 entry 갱신.
 struct PricingSupplement: Sendable {
     /// supplement가 직접 가격 매기는 model — 최우선 source.

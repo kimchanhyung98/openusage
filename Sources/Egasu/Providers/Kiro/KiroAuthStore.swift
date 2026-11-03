@@ -31,7 +31,7 @@ struct KiroAuthStore: Sendable {
         guard let object = Self.jsonObject(tokenJSON),
               let accessToken = Self.string(object["access_token"]),
               let expiryText = Self.string(object["expires_at"]),
-              let expiresAt = OpenUsageISO8601.date(from: expiryText)
+              let expiresAt = EgasuISO8601.date(from: expiryText)
         else {
             throw KiroAuthError.credentialsInvalid
         }

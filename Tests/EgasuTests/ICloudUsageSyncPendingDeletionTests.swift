@@ -18,7 +18,7 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
         try await waitUntil { sync.serviceError != nil }
         XCTAssertEqual(
             sync.serviceError,
-            "OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. It will try again automatically."
+            "egasu couldn’t remove this Mac’s synced usage history from iCloud. It will try again automatically."
         )
         XCTAssertFalse(defaults.bool(forKey: "openusage.icloudSync.enabled.v1"))
         XCTAssertEqual(
@@ -117,7 +117,7 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
         XCTAssertFalse(sync.displayedDocuments.contains { $0.deviceID == previousDeviceID })
         XCTAssertEqual(
             sync.serviceError,
-            "OpenUsage couldn’t remove this Mac’s synced usage history from iCloud. "
+            "egasu couldn’t remove this Mac’s synced usage history from iCloud. "
                 + "It will try again automatically."
         )
         XCTAssertEqual(
@@ -151,7 +151,7 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
     }
 
     func testDisabledLaunchDeletesPreviousThenCurrentDeviceWithOnePendingSlot() async throws {
-        let suite = "OpenUsageTests.ICloudSync.pending-deletion-handoff.\(UUID().uuidString)"
+        let suite = "EgasuTests.ICloudSync.pending-deletion-handoff.\(UUID().uuidString)"
         let defaults = RecordingPendingDeletionDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let previousDeviceID = UUID().uuidString.lowercased()
@@ -244,7 +244,7 @@ final class ICloudUsageSyncPendingDeletionTests: XCTestCase {
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {
-        let suite = "OpenUsageTests.ICloudSync.\(name).\(UUID().uuidString)"
+        let suite = "EgasuTests.ICloudSync.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         return defaults

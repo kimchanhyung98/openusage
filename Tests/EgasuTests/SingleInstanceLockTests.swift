@@ -45,8 +45,8 @@ final class SingleInstanceLockTests: XCTestCase {
 
     private func makeLockURL() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-lock-\(UUID().uuidString)", isDirectory: true)
-            .appendingPathComponent("OpenUsage.lock")
+            .appendingPathComponent("egasu-lock-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu.lock")
     }
 
     private func assertAlreadyRunning(

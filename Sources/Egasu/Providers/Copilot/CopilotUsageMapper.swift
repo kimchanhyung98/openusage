@@ -150,16 +150,16 @@ enum CopilotUsageMapper {
         return raw.titleCased(separator: { $0 == "_" || $0 == " " || $0 == "-" }, lowercasingTail: true)
     }
 
-    /// reset timestamp 파싱. 유료 tier는 ISO-8601 datetime(`quota_reset_date`, 소수점 초 포함 가능) — 공유 `OpenUsageISO8601` normalizer 처리. 무료 tier는 bare `yyyy-MM-dd`(`limited_user_reset_date`) — 여기 남은 유일한 Copilot 전용 fallback.
+    /// reset timestamp 파싱. 유료 tier는 ISO-8601 datetime(`quota_reset_date`, 소수점 초 포함 가능) — 공유 `EgasuISO8601` normalizer 처리. 무료 tier는 bare `yyyy-MM-dd`(`limited_user_reset_date`) — 여기 남은 유일한 Copilot 전용 fallback.
     private static func parseResetDate(_ value: Any?) -> Date? {
         guard let raw = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return nil
         }
-        if let date = OpenUsageISO8601.date(from: raw) { return date }
+        if let date = EgasuISO8601.date(from: raw) { return date }
         return dayOnlyFormatter.date(from: raw)
     }
 
-    /// `nonisolated(unsafe)`는 안전: `DateFormatter`는 macOS 10.9+에서 thread-safe 문서화, 생성 후 불변 (`CursorUsageCSV`/`OpenUsageISO8601`과 동일 패턴).
+    /// `nonisolated(unsafe)`는 안전: `DateFormatter`는 macOS 10.9+에서 thread-safe 문서화, 생성 후 불변 (`CursorUsageCSV`/`EgasuISO8601`과 동일 패턴).
     private nonisolated(unsafe) static let dayOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)

@@ -66,7 +66,7 @@ actor ModelPricingStore {
     }
 
     private static func bundledResourceData(_ resourceName: String) -> Data? {
-        guard let url = Bundle.openUsageResources.url(forResource: resourceName, withExtension: "json") else {
+        guard let url = Bundle.egasuResources.url(forResource: resourceName, withExtension: "json") else {
             return nil
         }
         return try? Data(contentsOf: url)

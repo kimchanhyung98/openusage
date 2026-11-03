@@ -1,7 +1,7 @@
 import Foundation
 import Egasu
 
-/// `openusage account …` 명령 문법 — CLI는 registry의 read-only view, 계정 추가·제거·재로그인·전환은 OpenUsage Settings 담당.
+/// `egasu account …` 명령 문법 — CLI는 registry의 read-only view, 계정 추가·제거·재로그인·전환은 egasu Settings 담당.
 /// credential read·복사 금지, Sign-In Workspace에서 세션 시작하는 명령 없음.
 enum AccountCommand: Equatable, Sendable {
     case list(family: String?, json: Bool)
@@ -29,7 +29,7 @@ enum AccountCommand: Equatable, Sendable {
             return .list(family: family, json: json)
 
         case "current":
-            guard rest.count <= 1 else { throw CLIError.usage("Usage: openusage account current [claude|codex]") }
+            guard rest.count <= 1 else { throw CLIError.usage("Usage: egasu account current [claude|codex]") }
             return .current(family: try rest.first.map(validateFamily))
 
         default:

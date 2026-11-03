@@ -58,7 +58,7 @@ enum AntigravityUsageMapper {
                 continue
             }
             if resetTimes[id] == nil {
-                resetTimes[id] = bucket.resetTime.flatMap { OpenUsageISO8601.date(from: $0) }
+                resetTimes[id] = bucket.resetTime.flatMap { EgasuISO8601.date(from: $0) }
             }
             guard pooled[id] == nil else { continue } // 중복 bucket ID — 첫 유효 비율 유지.
             guard let fraction = bucket.remainingFraction, fraction.isFinite else {
@@ -144,7 +144,7 @@ enum AntigravityUsageMapper {
                 label: id,
                 modelID: id,
                 remainingFraction: bucket.remainingFraction ?? 0,
-                resetTime: bucket.resetTime.flatMap { OpenUsageISO8601.date(from: $0) }
+                resetTime: bucket.resetTime.flatMap { EgasuISO8601.date(from: $0) }
             )
         }
     }
@@ -253,7 +253,7 @@ enum AntigravityUsageMapper {
             label: label,
             modelID: modelID,
             remainingFraction: quota?.remainingFraction ?? 0,
-            resetTime: quota?.resetTime.flatMap { OpenUsageISO8601.date(from: $0) }
+            resetTime: quota?.resetTime.flatMap { EgasuISO8601.date(from: $0) }
         )
     }
 }

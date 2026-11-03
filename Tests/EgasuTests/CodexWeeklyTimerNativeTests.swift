@@ -5,11 +5,11 @@ import XCTest
 final class CodexWeeklyTimerNativeTests: XCTestCase {
     func testInstalledCLIValidatesIsolationBeforeAnyMessageLaunch() async throws {
         let environment = ProcessInfo.processInfo.environment
-        guard environment["OPENUSAGE_RUN_CODEX_TIMER_TEST"] == "1" else {
+        guard environment["EGASU_RUN_CODEX_TIMER_TEST"] == "1" else {
             throw XCTSkip("Opt-in native weekly timer fixture requires an explicit Codex CLI executable")
         }
-        let executable = URL(fileURLWithPath: try XCTUnwrap(environment["OPENUSAGE_CODEX_TEST_EXECUTABLE"]))
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.TimerNative.\(UUID().uuidString)")
+        let executable = URL(fileURLWithPath: try XCTUnwrap(environment["EGASU_CODEX_TEST_EXECUTABLE"]))
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.TimerNative.\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let executor = CodexWeeklyTimerExecutor(executableResolver: { executable }, baseDirectory: directory)
         let auth = CodexAuth(tokens: CodexTokens(
@@ -25,7 +25,7 @@ final class CodexWeeklyTimerNativeTests: XCTestCase {
         XCTAssertFalse(result.launched)
         XCTAssertFalse(result.completed)
         XCTAssertNil(result.updatedAuth)
-        if environment["OPENUSAGE_CODEX_TIMER_EXPECT_UNSUPPORTED"] == "1" {
+        if environment["EGASU_CODEX_TIMER_EXPECT_UNSUPPORTED"] == "1" {
             XCTAssertFalse(reachedLaunchCheck)
             XCTAssertEqual(result.failureDescription,
                            "This Codex CLI could not prepare an isolated weekly timer message. Update Codex and try again.")

@@ -69,7 +69,7 @@ struct SettingsScreen: View {
                 }
                 row(L10n.settings("Global Shortcut")) {
                     ShortcutRecorderField(name: .togglePopover)
-                        .hoverTooltip(L10n.settings("Open OpenUsage from anywhere"))
+                        .hoverTooltip(L10n.settings("Open egasu from anywhere"))
                 }
                 LanguageSettingsRow(selection: $language)
             }
@@ -153,7 +153,7 @@ struct SettingsScreen: View {
                     Toggle("", isOn: $privacy.hideUsageWhileScreenSharing)
                         .settingsSwitchStyle()
                 }
-                Text(L10n.settings("While your screen is shared or recorded, the menu bar shows “OpenUsage” instead of your usage."))
+                Text(L10n.settings("While your screen is shared or recorded, the menu bar shows “egasu” instead of your usage."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -166,7 +166,7 @@ struct SettingsScreen: View {
                     ))
                     .settingsSwitchStyle()
                 }
-                Text(L10n.settings("Shares anonymous usage counts and error types to help improve OpenUsage. No account details, credentials, or usage values are sent."))
+                Text(L10n.settings("Shares anonymous usage counts and error types to help improve egasu. No account details, credentials, or usage values are sent."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -231,8 +231,8 @@ struct SettingsScreen: View {
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .hoverTooltip(notificationsAuth == .denied
-                            ? L10n.settings("Notifications are turned off for OpenUsage. Enable them in System Settings.")
-                            : L10n.settings("OpenUsage needs permission to send alerts."))
+                            ? L10n.settings("Notifications are turned off for egasu. Enable them in System Settings.")
+                            : L10n.settings("egasu needs permission to send alerts."))
                 }
             }
             .padding(.horizontal, 8)
@@ -333,14 +333,14 @@ struct SettingsScreen: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Text(L10n.settings("Adds a global openusage command agents can use to monitor limits."))
+            Text(L10n.settings("Adds a global egasu command agents can use to monitor limits."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if commandLineTool.status == .conflict {
-                inlineNotice(L10n.settings("%@ already exists and wasn't installed by OpenUsage.", commandLineTool.destinationPath))
+                inlineNotice(L10n.settings("%@ already exists and wasn't installed by egasu.", commandLineTool.destinationPath))
             } else if let errorMessage = commandLineTool.errorMessage {
                 inlineNotice(errorMessage)
             }

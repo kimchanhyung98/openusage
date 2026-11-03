@@ -1,7 +1,7 @@
 import AppKit
 import Darwin
 
-/// 런치 시 OpenUsage 중복 실행 거부 (#635) — 재부팅 시 세션 복원과 `SMAppService` login item이 독립 트리거로 동시 발화 가능.
+/// 런치 시 egasu 중복 실행 거부 (#635) — 재부팅 시 세션 복원과 `SMAppService` login item이 독립 트리거로 동시 발화 가능.
 /// 판정 로직은 live-workspace 질의와 분리 — 두 번째 process 없이 단위 테스트 가능.
 @MainActor
 enum SingleInstanceGuard {

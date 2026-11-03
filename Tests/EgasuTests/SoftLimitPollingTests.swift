@@ -213,7 +213,7 @@ final class SoftLimitPollingTests: XCTestCase {
 
     @MainActor
     private final class Fixture {
-        let suite = "OpenUsageTests.SoftLimitPolling.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimitPolling.\(UUID().uuidString)"
         let defaults: UserDefaults
         let settings: SoftLimitSettingsStore
         let sleeper = Sleeper()

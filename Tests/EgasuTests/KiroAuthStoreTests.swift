@@ -23,7 +23,7 @@ final class KiroAuthStoreTests: XCTestCase {
         let auth = try XCTUnwrap(KiroAuthStore(sqlite: sqlite).loadAuth())
 
         XCTAssertEqual(auth.accessToken, "access-token")
-        XCTAssertEqual(auth.expiresAt, OpenUsageISO8601.date(from: "2099-01-02T03:04:05.000Z"))
+        XCTAssertEqual(auth.expiresAt, EgasuISO8601.date(from: "2099-01-02T03:04:05.000Z"))
         XCTAssertEqual(auth.profileArn, "arn:aws:codewhisperer:us-east-1:123456789012:profile/ABC")
     }
 

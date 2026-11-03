@@ -32,7 +32,7 @@ final class LocalizationResourceTests: XCTestCase {
     }
 
     private func strings(table: String, language: LanguageSetting) throws -> [String: String] {
-        let url = try XCTUnwrap(Bundle.openUsageResources.url(forResource: table, withExtension: "strings", subdirectory: nil, localization: language.rawValue))
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: table, withExtension: "strings", subdirectory: nil, localization: language.rawValue))
         let value = try PropertyListSerialization.propertyList(from: Data(contentsOf: url), options: [], format: nil)
         return try XCTUnwrap(value as? [String: String])
     }

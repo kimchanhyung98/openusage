@@ -1,6 +1,6 @@
 import Foundation
 
-/// OpenUsage가 렌더링하는 Grok credits config 조각 — shared-pool 사용 percent와 적용 period.
+/// egasu가 렌더링하는 Grok credits config 조각 — shared-pool 사용 percent와 적용 period.
 /// `GET /v1/billing?format=credits`(proto-JSON) 응답에서 decode.
 struct GrokCreditsConfig: Equatable, Sendable {
     /// `USAGE_PERIOD_TYPE_*` enum 이름 (`GrokCreditsConfigDecoder.weeklyPeriodType` 참고).
@@ -73,6 +73,6 @@ enum GrokCreditsConfigDecoder {
         guard let raw = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return nil
         }
-        return OpenUsageISO8601.date(from: raw)
+        return EgasuISO8601.date(from: raw)
     }
 }

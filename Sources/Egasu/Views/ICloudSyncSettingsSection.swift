@@ -14,7 +14,7 @@ struct ICloudSyncSettingsSection: View {
                     .imageScale(.small)
                     .foregroundStyle(.secondary)
                     .hoverTooltip(
-                        L10n.settings("OpenUsage calculates costs and tokens for Claude, Codex, and other providers from files stored on each Mac. Account limits, credentials, and logs are never shared.")
+                        L10n.settings("egasu calculates costs and tokens for Claude, Codex, and other providers from files stored on each Mac. Account limits, credentials, and logs are never shared.")
                     )
             }
             .padding(.horizontal, 8)

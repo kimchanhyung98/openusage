@@ -340,7 +340,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
 
     @MainActor
     private final class Fixture {
-        let suite = "OpenUsageTests.SplitCadence.\(UUID().uuidString)"
+        let suite = "EgasuTests.SplitCadence.\(UUID().uuidString)"
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         var time: Date
         let defaults: UserDefaults

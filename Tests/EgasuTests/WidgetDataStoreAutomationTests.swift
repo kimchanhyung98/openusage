@@ -65,7 +65,7 @@ final class WidgetDataStoreAutomationTests: XCTestCase {
 
     @MainActor
     private final class Fixture {
-        let suite = "OpenUsageTests.Automation.\(UUID().uuidString)"
+        let suite = "EgasuTests.Automation.\(UUID().uuidString)"
         let defaults: UserDefaults
         let runtime: CountingProviderRuntime
         let store: WidgetDataStore

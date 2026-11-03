@@ -414,7 +414,7 @@ private struct Fixture {
     var messageStartedURL: URL { executable.appendingPathExtension("started") }
 
     init(script: String = "exit 1") throws {
-        root = FileManager.default.temporaryDirectory.appendingPathComponent("OpenUsage.TimerExecutorTests.\(UUID().uuidString)")
+        root = FileManager.default.temporaryDirectory.appendingPathComponent("egasu.TimerExecutorTests.\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         executable = root.appendingPathComponent("fake-codex")
         let source = """

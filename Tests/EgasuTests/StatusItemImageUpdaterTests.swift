@@ -93,7 +93,7 @@ final class StatusItemImageUpdaterTests: XCTestCase {
         capture: CaptureFlag,
         enabled: Bool = true
     ) -> MenuBarPrivacyStore {
-        let suiteName = "OpenUsageTests.StatusItemImageUpdater.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.StatusItemImageUpdater.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defaults.set(enabled, forKey: MenuBarPrivacyStore.key)

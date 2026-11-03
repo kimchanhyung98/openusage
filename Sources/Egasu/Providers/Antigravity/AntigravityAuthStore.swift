@@ -115,7 +115,7 @@ struct AntigravityAuthStore: Sendable {
         }
     }
 
-    /// OpenUsage의 파생 token만 제거 — Antigravity의 Keychain 항목은 절대 수정하지 않음.
+    /// egasu의 파생 token만 제거 — Antigravity의 Keychain 항목은 절대 수정하지 않음.
     func discardCachedToken() {
         do {
             try files.remove(Self.cachePath)
@@ -173,7 +173,7 @@ struct AntigravityAuthStore: Sendable {
         let source = (object["token"] as? [String: Any]) ?? object
         let access = firstString(source, ["access_token", "accessToken", "token", "id_token", "idToken", "bearerToken", "auth_token", "authToken"])
         let refresh = firstString(source, ["refresh_token", "refreshToken"])
-        let expiry = firstString(source, ["expiry", "expires_at", "expiresAt"]).flatMap { OpenUsageISO8601.date(from: $0) }
+        let expiry = firstString(source, ["expiry", "expires_at", "expiresAt"]).flatMap { EgasuISO8601.date(from: $0) }
 
         if access == nil, refresh == nil {
             for key in ["tokens", "oauth", "oauth2", "credentials", "auth"] {

@@ -200,7 +200,7 @@ enum CursorUsageMapper {
            let limit = ProviderParse.number(gpt4["maxRequestUsage"]),
            limit > 0 {
             let used = ProviderParse.number(gpt4["numRequests"]) ?? 0
-            let cycleStart = (usage?["startOfMonth"] as? String).flatMap(OpenUsageISO8601.date(from:))
+            let cycleStart = (usage?["startOfMonth"] as? String).flatMap(EgasuISO8601.date(from:))
             lines.append(.progress(
                 label: "Requests",
                 used: used,

@@ -3,7 +3,7 @@ import Foundation
 import Egasu
 
 @main
-struct OpenUsageCLI {
+struct EgasuCLI {
     static func main() async {
         do {
             let arguments = try CLIArguments.parse(Array(CommandLine.arguments.dropFirst()))
@@ -14,7 +14,7 @@ struct OpenUsageCLI {
 
             let app = AppBundleLocator.locate()
             if arguments.showVersion {
-                print(app.version.map { "openusage \($0)" } ?? "openusage (development build)")
+                print(app.version.map { "egasu \($0)" } ?? "egasu (development build)")
                 return
             }
 
@@ -36,9 +36,9 @@ struct OpenUsageCLI {
                 exit(4)
             }
         } catch CLIError.usage(let message) {
-            fail("\(message)\nRun 'openusage --help' for usage.", code: 2)
+            fail("\(message)\nRun 'egasu --help' for usage.", code: 2)
         } catch CLIError.appDefaultsUnavailable {
-            fail("Could not open the OpenUsage settings domain.", code: 4)
+            fail("Could not open the egasu settings domain.", code: 4)
         } catch let error as AccountProfileError {
             switch error {
             case .registryUnreadable:
@@ -54,7 +54,7 @@ struct OpenUsageCLI {
     }
 
     private static func writeError(_ message: String) {
-        FileHandle.standardError.write(Data("openusage: \(message)\n".utf8))
+        FileHandle.standardError.write(Data("egasu: \(message)\n".utf8))
     }
 
     private static func fail(_ message: String, code: Int32) -> Never {
@@ -63,17 +63,17 @@ struct OpenUsageCLI {
     }
 
     private static let help = """
-    Usage: openusage [provider] [--force]
-           openusage account <command> ...
+    Usage: egasu [provider] [--force]
+           egasu account <command> ...
 
-    Read limits through OpenUsage's shared cache (5 minutes; Claude: 15 minutes) and exit. Output is always JSON.
+    Read limits through egasu's shared cache (5 minutes; Claude: 15 minutes) and exit. Output is always JSON.
 
     Options:
       --force      Skip fresh cache; Claude rate-limit waits still apply
       -v, --version
       -h, --help
 
-    Account commands (read-only; manage and switch accounts in OpenUsage Settings):
+    Account commands (read-only; manage and switch accounts in egasu Settings):
       account list [claude|codex] [--json]
       account current [claude|codex]
     """

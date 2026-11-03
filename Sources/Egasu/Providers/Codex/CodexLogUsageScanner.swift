@@ -186,7 +186,7 @@ actor CodexLogUsageScanner {
                     previousTotals = nil
                     replayBaselineUnknown = true
                     if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                       let created = OpenUsageISO8601.date(from: timestampRaw) {
+                       let created = EgasuISO8601.date(from: timestampRaw) {
                         replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
                     } else {
                         // 생성 timestamp가 없어도 child — replay 억제 유지.
@@ -216,7 +216,7 @@ actor CodexLogUsageScanner {
             }
             guard payload["type"] as? String == "token_count",
                   let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                  let timestamp = OpenUsageISO8601.date(from: timestampRaw)
+                  let timestamp = EgasuISO8601.date(from: timestampRaw)
             else { continue }
 
             let info = payload["info"] as? [String: Any]
@@ -385,7 +385,7 @@ actor CodexLogUsageScanner {
                 return startedAt >= gate
             case .untilSelfTimedTaskStarted:
                 guard let raw = lineTimestamp?.trimmingCharacters(in: .whitespaces),
-                      let lineDate = OpenUsageISO8601.date(from: raw)
+                      let lineDate = EgasuISO8601.date(from: raw)
                 else { return false }
                 return startedAt >= lineDate.timeIntervalSince1970.rounded(.down)
             }

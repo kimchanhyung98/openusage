@@ -133,7 +133,7 @@ actor CodexResetWatchStore {
         var request = HTTPRequest(method: "GET", url: endpoint, timeout: 8)
         request.headers = [
             "Accept": "application/json",
-            "User-Agent": "OpenUsage"
+            "User-Agent": "egasu"
         ]
         if representation != nil, let etag {
             request.headers["If-None-Match"] = etag
@@ -256,7 +256,7 @@ actor CodexResetWatchStore {
         if let scheduled = payload.data.scheduledReset {
             let scheduledFor: Date?
             if let rawDate = scheduled.scheduledFor {
-                guard let date = OpenUsageISO8601.date(from: rawDate) else { throw FetchError.invalidDeadline }
+                guard let date = EgasuISO8601.date(from: rawDate) else { throw FetchError.invalidDeadline }
                 scheduledFor = date
             } else {
                 scheduledFor = nil
@@ -273,13 +273,13 @@ actor CodexResetWatchStore {
             return .absent
         }
         guard (0...100).contains(chance) else { throw FetchError.invalidChance }
-        guard let deadline = OpenUsageISO8601.date(from: activeWatch.expiresAt) else {
+        guard let deadline = EgasuISO8601.date(from: activeWatch.expiresAt) else {
             throw FetchError.invalidDeadline
         }
         guard deadline > date else { return .absent }
         let episodeID = activeWatch.source.flatMap { CodexResetWatchVotes.episodeID(from: $0.url) }
-        let observedAt = activeWatch.observedAt.flatMap(OpenUsageISO8601.date(from:))
-        let observationID = observedAt.map { "watch-observed:\(OpenUsageISO8601.string(from: $0))" }
+        let observedAt = activeWatch.observedAt.flatMap(EgasuISO8601.date(from:))
+        let observationID = observedAt.map { "watch-observed:\(EgasuISO8601.string(from: $0))" }
         return .watch(CodexResetWatch(
             chancePercent: Double(chance), deadline: deadline,
             episodeID: episodeID,

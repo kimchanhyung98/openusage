@@ -45,7 +45,7 @@ final class PricingSupplementCompatibilityTests: XCTestCase {
     }
 
     func testBundledNewMultipliersUseTheOptionalFieldAndKeepLegacyFeedKeysUnchanged() throws {
-        let url = try XCTUnwrap(Bundle.openUsageResources.url(forResource: "pricing_supplement", withExtension: "json"))
+        let url = try XCTUnwrap(Bundle.egasuResources.url(forResource: "pricing_supplement", withExtension: "json"))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
         let legacy = try XCTUnwrap(object["fast_multipliers"] as? [String: Double])
         let exact = try XCTUnwrap(object["fast_multipliers_exact"] as? [String: Double])

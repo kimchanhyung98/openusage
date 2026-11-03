@@ -132,7 +132,7 @@ final class QuotaNotificationEvaluator {
     }
 
     private static func dateDescription(_ date: Date?) -> String {
-        date.map { OpenUsageISO8601.string(from: $0) } ?? "nil"
+        date.map { EgasuISO8601.string(from: $0) } ?? "nil"
     }
 
     private static func percentDescription(_ value: Double) -> String {

@@ -20,7 +20,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
             .init(namespace: "codex", schemaVersion: 9, directory: directory, writeDebounce: .milliseconds(1)))
         let wrongModel = CodexLogUsageScanner.Event(
-            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)), model: "gpt-5.4",
+            timestamp: try XCTUnwrap(EgasuISO8601.date(from: timestamp)), model: "gpt-5.4",
             input: 20, cached: 0, output: 0, reasoning: 0, total: 20
         )
         _ = await old.items(from: files, since: .distantPast, cacheIdentity: "stale-model") { _ in [wrongModel] }
@@ -103,7 +103,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
         let directory = home.appendingPathComponent("cache")
-        let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
+        let now = try XCTUnwrap(EgasuISO8601.date(from: timestamp))
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
             persistence: .init(namespace: "codex", schemaVersion: oldVersion, directory: directory, writeDebounce: .milliseconds(1))
         )
@@ -272,7 +272,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence:
             .init(namespace: "codex", schemaVersion: 8, directory: directory, writeDebounce: .milliseconds(1)))
         let wrongModel = CodexLogUsageScanner.Event(
-            timestamp: try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)), model: "gpt-5",
+            timestamp: try XCTUnwrap(EgasuISO8601.date(from: timestamp)), model: "gpt-5",
             input: 100, cached: 0, output: 0, reasoning: 0, total: 100
         )
         _ = await old.items(from: files, since: .distantPast, cacheIdentity: "model-account") { _ in [wrongModel] }
@@ -287,7 +287,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
     private func truncatedReplay(meta: String, lastOnly: Bool = false) -> String {
         var lines = [meta, CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4"),
                      CodexLogFixture.taskStarted(timestamp: timestamp,
-                         startedAt: Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970))]
+                         startedAt: Int(EgasuISO8601.date(from: timestamp)!.timeIntervalSince1970))]
         if lastOnly {
             lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 10, output: 0)))
         }
@@ -311,7 +311,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
             lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, totals: CodexLogFixture.usage(input: 180, output: 0)))
         }
         lines.append(CodexLogFixture.taskStarted(
-            timestamp: timestamp, startedAt: Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970)
+            timestamp: timestamp, startedAt: Int(EgasuISO8601.date(from: timestamp)!.timeIntervalSince1970)
         ))
         if liveLastOnly {
             lines.append(CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 10, output: 0)))
@@ -323,7 +323,7 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
     }
 
     private func rollout(meta: String, corrupt: [String: Int], last: [String: Int]? = nil, recoveredReplay: [String: Int]? = nil) -> String {
-        let epoch = Int(OpenUsageISO8601.date(from: timestamp)!.timeIntervalSince1970)
+        let epoch = Int(EgasuISO8601.date(from: timestamp)!.timeIntervalSince1970)
         var lines = [
             meta,
             CodexLogFixture.turnContext(timestamp: timestamp, model: "gpt-5.4"),

@@ -1,11 +1,11 @@
 ---
-description: Always kill and relaunch the local OpenUsage dev build after app changes or when asked
+description: Always kill and relaunch the local egasu dev build after app changes or when asked
 alwaysApply: true
 ---
 
-# OpenUsage Dev Launch Workflow
+# egasu Dev Launch Workflow
 
-**Always** kill any running OpenUsage instance and build/launch a fresh local dev build when:
+**Always** kill any running egasu instance and build/launch a fresh local dev build when:
 
 - You change app UI, widgets, providers, or anything that affects the running binary
 - The user asks to run, restart, or verify the app
@@ -21,5 +21,5 @@ Use the project script:
 
 This script stops the existing process, builds the app, stages and signs a bundle under `dist/`, launches
 it in place (nothing is installed to `/Applications`), and verifies the process is running. The dev build
-uses its own bundle id and ships no update feed, so it never disturbs a released OpenUsage and never checks
+uses its own bundle id and ships no update feed, so it never disturbs a released egasu and never checks
 for updates.

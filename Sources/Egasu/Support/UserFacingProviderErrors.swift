@@ -8,7 +8,7 @@ extension ClaudeAuthError: UserPresentableError {
         case .desktopPermissionRequired:
             .init("Claude Desktop login found. Refresh once and choose Always Allow to connect it.")
         case .desktopTokenExpired:
-            .init("Claude Desktop login is stale. Open Claude Desktop, then refresh OpenUsage.")
+            .init("Claude Desktop login is stale. Open Claude Desktop, then refresh egasu.")
         case .desktopCredentialsUnavailable:
             .init("Claude Desktop login couldn't be read. Open Claude Desktop, then try again.")
         case .sessionExpired:

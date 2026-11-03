@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// menu bar용 template `NSImage`로 OpenUsage 브랜드 gauge mark 렌더링.
+/// menu bar용 template `NSImage`로 egasu 브랜드 gauge mark 렌더링.
 /// provider 타일과 같은 SVG→`ProviderIconShape` 파이프라인 재사용 — asset catalog나 두 번째 SVG parser 불필요.
 @MainActor
 enum MenuBarIcon {
@@ -12,7 +12,7 @@ enum MenuBarIcon {
     static let image: NSImage? = render()
 
     private static func render() -> NSImage? {
-        guard let mark = ProviderMarks.mark(for: "openusage") else { return nil }
+        guard let mark = ProviderMarks.mark(for: "egasu") else { return nil }
         let renderer = ImageRenderer(
             // provider 기본값보다 작은 inset — 원본 viewBox에 이미 ~8% 여백이 있어 기존 menu-bar 크기 유지.
             content: ProviderIconShape(pathData: mark.path, inset: 0.08)

@@ -5,10 +5,10 @@ import Darwin
 @MainActor
 final class CodexSoftLimitNativeTests: XCTestCase {
     func testNativeAppServerCancelsTwoTurnsAndPreservesServerAndConversations() async throws {
-        guard ProcessInfo.processInfo.environment["OPENUSAGE_RUN_CODEX_CONTROL_TEST"] == "1" else {
+        guard ProcessInfo.processInfo.environment["EGASU_RUN_CODEX_CONTROL_TEST"] == "1" else {
             throw XCTSkip("Opt-in native Codex fixture requires the installed Codex CLI and Node.js")
         }
-        let directory = URL(fileURLWithPath: "/tmp/openusage-soft-limit-e2e-\(UUID().uuidString.prefix(8))")
+        let directory = URL(fileURLWithPath: "/tmp/egasu-soft-limit-e2e-\(UUID().uuidString.prefix(8))")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer {
             do { try FileManager.default.removeItem(at: directory) }
@@ -85,7 +85,7 @@ final class CodexSoftLimitNativeTests: XCTestCase {
         XCTAssertTrue(Set(tasks.map(\.sessionID)).isSuperset(of: threadIDs))
         threadIDs = tasks.map(\.sessionID)
         let terminalPID = try XCTUnwrap(Int32(String(contentsOf: terminalReady, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)))
-        let suite = "OpenUsageTests.SoftLimit.Native.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimit.Native.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SoftLimitSettingsStore(defaults: defaults)

@@ -209,7 +209,7 @@ final class AccountSwitchCoordinatorTests: XCTestCase {
     }
 
     func testRealStoreKeepsSwitchReservedUntilCancelledProviderWorkActuallyFinishes() async throws {
-        let suite = "OpenUsageTests.AccountSwitchCoordinator.\(UUID().uuidString)"
+        let suite = "EgasuTests.AccountSwitchCoordinator.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let runtime = Runtime()
@@ -290,7 +290,7 @@ final class AccountSwitchCoordinatorTests: XCTestCase {
     }
 
     func testQueuedAccountRefreshKeepsSwitchWaitingWhileProviderStoreIsIdle() async throws {
-        let suite = "OpenUsageTests.AccountSwitchRetry.\(UUID().uuidString)"
+        let suite = "EgasuTests.AccountSwitchRetry.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let runtime = Runtime()

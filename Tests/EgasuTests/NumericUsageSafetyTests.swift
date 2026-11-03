@@ -279,7 +279,7 @@ final class NumericUsageSafetyTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 250)
     }
 
-    private var date: Date { OpenUsageISO8601.date(from: "2026-09-12T10:00:00Z")! }
+    private var date: Date { EgasuISO8601.date(from: "2026-09-12T10:00:00Z")! }
 
     private func claudeLine(_ usage: [String: String], id: String) -> String {
         let fields = usage.sorted { $0.key < $1.key }.map { "\"\($0.key)\":\($0.value)" }.joined(separator: ",")

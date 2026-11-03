@@ -71,7 +71,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
         }
         layout.setMetricEnabled("codex.resetWatch", true)
         layout.expandedMetricIDs = ["codex.resetWatch"]
-        let suite = "OpenUsageTests.ResetWatchShare.\(UUID().uuidString)"
+        let suite = "EgasuTests.ResetWatchShare.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let dataStore = WidgetDataStore(
@@ -81,7 +81,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
             defaults: defaults
         )
         dataStore.setCodexResetWatch(.init(chancePercent: 75, deadline: .distantFuture, communityYesPercent: 60))
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_RESET_WATCH_RENDER_DIR"]
+        let export = ProcessInfo.processInfo.environment["EGASU_RESET_WATCH_RENDER_DIR"]
             .map { URL(fileURLWithPath: $0) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
@@ -314,7 +314,7 @@ final class AccountCardHistoryPresentationTests: XCTestCase {
     }
 
     private func makeLayout() -> LayoutStore {
-        let suite = "OpenUsageTests.AccountCardHistoryPresentation.\(UUID().uuidString)"
+        let suite = "EgasuTests.AccountCardHistoryPresentation.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let providers = ["claude", "claude@profile-work", "codex", "codex@profile-account-2", "codex@profile-account-3"]

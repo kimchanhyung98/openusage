@@ -234,7 +234,7 @@ struct TokscaleDeviceNameSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(L10n.settings("Without an OpenUsage override, Tokscale can use TOKSCALE_DEVICE_NAME from your environment or the name stored for its stable device."))
+            Text(L10n.settings("Without an egasu override, Tokscale can use TOKSCALE_DEVICE_NAME from your environment or the name stored for its stable device."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -264,7 +264,7 @@ struct TokscaleDeviceNameSheet: View {
 
             HStack {
                 if store.deviceName != nil {
-                    Button(L10n.settings("Remove OpenUsage Override")) {
+                    Button(L10n.settings("Remove egasu Override")) {
                         store.clearDeviceName()
                         dismiss()
                     }

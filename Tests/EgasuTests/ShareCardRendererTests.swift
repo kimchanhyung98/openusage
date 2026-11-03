@@ -87,7 +87,7 @@ final class ShareCardRendererTests: XCTestCase {
     }
 
     func testRendersSoftLimitAndResetWatchInBothDensitiesAndDisplayModes() throws {
-        let suite = "OpenUsageTests.SoftLimit.Rendering.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimit.Rendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let provider = CodexProvider().provider
@@ -137,7 +137,7 @@ final class ShareCardRendererTests: XCTestCase {
     }
 
     func testSoftLimitMarkerRendersYellowWithoutChangingItsWidth() throws {
-        let suite = "OpenUsageTests.SoftLimit.YellowMarker.\(UUID().uuidString)"
+        let suite = "EgasuTests.SoftLimit.YellowMarker.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         for density in DensitySetting.allCases {
@@ -229,7 +229,7 @@ final class ShareCardRendererTests: XCTestCase {
 
     func testCopyToPasteboardWritesPNGAndReturnsTrueForValidImage() throws {
         let image = try XCTUnwrap(ShareCardRenderer.image(for: sampleCard()))
-        let pasteboard = NSPasteboard(name: .init("OpenUsageTests.ShareCard.\(UUID().uuidString)"))
+        let pasteboard = NSPasteboard(name: .init("EgasuTests.ShareCard.\(UUID().uuidString)"))
         guard ShareCardRenderer.copyToPasteboard(image, pasteboard: pasteboard) else {
             throw XCTSkip("The macOS pasteboard service is unavailable in this test host.")
         }

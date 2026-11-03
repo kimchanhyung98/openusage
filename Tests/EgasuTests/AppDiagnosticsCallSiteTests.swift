@@ -182,7 +182,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let claudeHome = directory.appendingPathComponent("claude")
         let codexHome = directory.appendingPathComponent("codex")
         let piHome = directory.appendingPathComponent("pi").resolvingSymlinksInPath()
-        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-14T00:00:00Z"))
         let claudeCache = try await seedNumericCache(
             data: Data(#"{"timestamp":"2026-09-12T10:00:00Z","message":{"model":"PRIVATE_MODEL","usage":{"input_tokens":-1,"output_tokens":0}}}"#.utf8),
             path: claudeHome.appendingPathComponent("projects/session.jsonl"), namespace: "claude",
@@ -236,7 +236,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let bad = #"{"ts":"2026-09-12T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":-1}}"#
         let files = FakeFiles([path: bad])
         let scanner = GrokLogUsageScanner(files: files, environment: FakeEnvironment(["GROK_HOME": "/grok"]))
-        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-14T00:00:00Z"))
+        let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-14T00:00:00Z"))
         for _ in 0..<2 {
             let scan = await scanner.scan(now: now, pricing: .empty)
             XCTAssertEqual(scan?.rejectedNumericRows, 1)

@@ -72,7 +72,7 @@ struct SoftLimitSettingsSection: View {
                         Text("codex app-server daemon start\ncodex --remote unix://")
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
-                        Text(L10n.settings("Existing independent CLI, app, and IDE sessions are not connected automatically. OpenUsage does not restart them."))
+                        Text(L10n.settings("Existing independent CLI, app, and IDE sessions are not connected automatically. egasu does not restart them."))
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)

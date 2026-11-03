@@ -11,7 +11,7 @@ final class CodexResetWatchResultTests: XCTestCase {
             #"{"data":{"active_watch":{"reset_chance_percent":null,"expires_at":"2099-01-01T00:00:00Z"}}}"#,
             #"{"data":{"active_watch":{"reset_chance_percent":75,"expires_at":"2026-01-01T00:00:00Z"}}}"#
         ]
-        let suiteName = "OpenUsageTests.ResetWatchResult.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ResetWatchResult.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
@@ -154,7 +154,7 @@ final class CodexResetWatchResultTests: XCTestCase {
     }
 
     func testDashboardShowsFailureForEmptyAndCachedForecastsAndClearsOnSuccess() {
-        let suiteName = "OpenUsageTests.ResetWatchResult.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ResetWatchResult.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))

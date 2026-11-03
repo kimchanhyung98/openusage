@@ -317,7 +317,7 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         let http = RoutingHTTPClient { request in
             if request.url == CodexUsageClient.resetCreditsURL {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data("""
-                {"credits":[{"id":"RateLimitResetCredit_test","status":"available","expires_at":"\(OpenUsageISO8601.string(from: expiry))"}],"available_count":1}
+                {"credits":[{"id":"RateLimitResetCredit_test","status":"available","expires_at":"\(EgasuISO8601.string(from: expiry))"}],"available_count":1}
                 """.utf8))
             }
             XCTAssertEqual(request.url, CodexUsageClient.consumeResetCreditURL)

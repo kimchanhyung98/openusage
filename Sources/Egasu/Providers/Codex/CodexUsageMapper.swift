@@ -290,7 +290,7 @@ enum CodexUsageMapper {
     }
 
     private static func parseExpiry(_ value: Any?) -> Date? {
-        if let string = value as? String, let date = OpenUsageISO8601.date(from: string) {
+        if let string = value as? String, let date = EgasuISO8601.date(from: string) {
             return date
         }
         if let seconds = ProviderParse.number(value) {

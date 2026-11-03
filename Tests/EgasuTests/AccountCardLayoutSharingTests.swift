@@ -397,7 +397,7 @@ final class AccountCardLayoutSharingTests: XCTestCase {
     }
 
     private func makeDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.AccountCardLayout.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.AccountCardLayout.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults

@@ -224,7 +224,7 @@ final class CursorPreservationSQLite: SQLiteAccessing, @unchecked Sendable {
 
     init() throws {
         directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OpenUsageTests.CursorPreservation.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuTests.CursorPreservation.\(UUID().uuidString)", isDirectory: true)
         databasePath = directory.appendingPathComponent("state.vscdb").path
         let runner = CursorPreservationProcessRecorder()
         self.runner = runner

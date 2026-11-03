@@ -188,7 +188,7 @@ final class TokscaleCommandRunnerTests: XCTestCase {
         }
     }
 
-    func testSubmitLeavesAmbientDeviceNameForTokscaleToValidateWhenOpenUsageHasNoOverride() async throws {
+    func testSubmitLeavesAmbientDeviceNameForTokscaleToValidateWhenEgasuHasNoOverride() async throws {
         let processRunner = RecordingTokscaleProcessRunner(
             result: StreamingProcessResult(exitCode: 0, output: "finished")
         )

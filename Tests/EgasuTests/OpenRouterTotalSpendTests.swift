@@ -233,7 +233,7 @@ final class OpenRouterTotalSpendTests: XCTestCase {
     }
 
     private func makeDefaults() -> (UserDefaults, String) {
-        let suite = "OpenUsageTests.OpenRouterTotalSpend.\(UUID().uuidString)"
+        let suite = "EgasuTests.OpenRouterTotalSpend.\(UUID().uuidString)"
         return (UserDefaults(suiteName: suite)!, suite)
     }
 }

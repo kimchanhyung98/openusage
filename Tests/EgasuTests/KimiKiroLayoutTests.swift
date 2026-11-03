@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class KimiKiroLayoutTests: XCTestCase {
     func testFreshDefaultsMatchOwnerApprovedPlacement() {
-        let suiteName = "OpenUsageTests.KimiKiroLayout.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.KimiKiroLayout.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         defer { defaults.removePersistentDomain(forName: suiteName) }

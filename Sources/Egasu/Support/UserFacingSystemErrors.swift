@@ -130,7 +130,7 @@ extension UsageHistoryDocumentError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .unsupportedSchema:
-            .init("This Mac wrote a newer usage-history format. Update OpenUsage.")
+            .init("This Mac wrote a newer usage-history format. Update egasu.")
         case .invalidDevice:
             .init("The synced Mac identity is invalid.")
         case .invalidProvider:
@@ -202,9 +202,9 @@ extension AccountSignInWorkspace.WorkspaceError: UserPresentableError {
         case .invalidComponent(let component):
             .init("Invalid sign-in workspace component: %@", [String(component)])
         case .outsideOwnedRoot(let path):
-            .init("The sign-in workspace resolved outside OpenUsage's owned directory: %@", [String(path)])
+            .init("The sign-in workspace resolved outside egasu's owned directory: %@", [String(path)])
         case .symlinkedComponent(let path):
-            .init("OpenUsage can't use a symbolic link in its sign-in workspace: %@", [String(path)])
+            .init("egasu can't use a symbolic link in its sign-in workspace: %@", [String(path)])
         }
     }
 }
@@ -229,7 +229,7 @@ extension AccountCredentialSwitcher.Error: UserPresentableError {
         case .switchRecoveryRequired:
             .init("Claude account switch recovery is required. Open Settings → Accounts → Manage Claude Account, then choose the Use Claude option for the account you want to use.")
         case .selectionSaveFailed:
-            .init("OpenUsage couldn't save the selected account. The recovery record was kept. Try again.")
+            .init("egasu couldn't save the selected account. The recovery record was kept. Try again.")
         }
     }
 }
@@ -248,11 +248,11 @@ extension AccountProfileError: UserPresentableError {
         case .profileNotFound(let reference):
             .init("No account matches '%@'.", [String(reference)])
         case .ambiguousReference(let reference):
-            .init("'%@' matches multiple accounts. Use its id from 'openusage account list --json'.", [String(reference)])
+            .init("'%@' matches multiple accounts. Use its id from 'egasu account list --json'.", [String(reference)])
         case .removeSelectedProfile:
             .init("This account is currently selected. Select another account before removing it.")
         case .registryUnreadable:
-            .init("OpenUsage couldn't read the saved account list. It was left unchanged. Restart OpenUsage and check the log before trying again.")
+            .init("egasu couldn't read the saved account list. It was left unchanged. Restart egasu and check the log before trying again.")
         }
     }
 }
@@ -274,9 +274,9 @@ extension AccountCredentialImporter.RemovalError: UserPresentableError {
     var presentationMessage: LocalizedMessage {
         switch self {
         case .workspace:
-            .init("OpenUsage couldn't delete this account's sign-in workspace. The account and its saved authentication were not removed — try again.")
+            .init("egasu couldn't delete this account's sign-in workspace. The account and its saved authentication were not removed — try again.")
         case .snapshot:
-            .init("OpenUsage couldn't delete the saved Keychain authentication. The account remains registered and ready, so you can try removing it again.")
+            .init("egasu couldn't delete the saved Keychain authentication. The account remains registered and ready, so you can try removing it again.")
         }
     }
 }

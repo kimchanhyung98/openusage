@@ -272,7 +272,7 @@ final class CodexScheduledResetTests: XCTestCase {
     }
 
     func testScheduleDisplaysTimeAnd99PercentOnDashboardAndMenuBar() async throws {
-        let suiteName = "OpenUsageTests.ScheduledReset.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ScheduledReset.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
@@ -321,7 +321,7 @@ final class CodexScheduledResetTests: XCTestCase {
     }
 
     func testScheduledLabelsWrapAtDashboardWidthInsteadOfTruncating() throws {
-        let suiteName = "OpenUsageTests.ScheduledResetLayout.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.ScheduledResetLayout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
@@ -354,7 +354,7 @@ final class CodexScheduledResetTests: XCTestCase {
                 throw XCTSkip("This test host does not expose accessibility children for a standalone SwiftUI button.")
             }
         }
-        let suite = "OpenUsageTests.ForecastTimeToggle.\(UUID().uuidString)"
+        let suite = "EgasuTests.ForecastTimeToggle.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let provider = Provider(id: "codex", displayName: "Codex", icon: .providerMark("codex"))
@@ -395,13 +395,13 @@ final class CodexScheduledResetTests: XCTestCase {
     }
 
     func testClickableScheduledTimeKeepsStaticLayoutInBothModesAndAllLanguages() throws {
-        let suite = "OpenUsageTests.ForecastTimeLayout.\(UUID().uuidString)"
+        let suite = "EgasuTests.ForecastTimeLayout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(DensitySetting.regular.rawValue, forKey: DensitySetting.key)
         var data = WidgetData(title: "Reset Watch", icon: .providerMark("codex"), kind: .percent, used: 99, limit: 100)
         data.forecast = .init(deadline: Date().addingTimeInterval(5 * 24 * 3600), isScheduled: true)
-        let export = ProcessInfo.processInfo.environment["OPENUSAGE_RESET_DISPLAY_SCREENSHOTS"]
+        let export = ProcessInfo.processInfo.environment["EGASU_RESET_DISPLAY_SCREENSHOTS"]
             .map { URL(fileURLWithPath: $0, isDirectory: true) }
         if let export { try FileManager.default.createDirectory(at: export, withIntermediateDirectories: true) }
 
@@ -460,7 +460,7 @@ final class CodexScheduledResetTests: XCTestCase {
         idJSON: String = #""123""#,
         headers: [String: String] = [:]
     ) -> HTTPResponse {
-        let dateJSON = scheduledFor.map { "\"\(OpenUsageISO8601.string(from: $0))\"" } ?? "null"
+        let dateJSON = scheduledFor.map { "\"\(EgasuISO8601.string(from: $0))\"" } ?? "null"
         return HTTPResponse(
             statusCode: 200, headers: headers,
             body: Data(

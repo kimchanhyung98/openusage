@@ -423,7 +423,7 @@ final class CodexUsagePricingTests: XCTestCase {
             environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": directory.path]),
             incrementalScanner: IncrementalJSONLScanner<PiUsageScanner.Entry>(logTag: LogTag.plugin("pi"))
         )
-        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-13T00:00:00Z"))
+        let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-13T00:00:00Z"))
         let generic = await scanner.scan(cardID: "codex", now: now, pricing: pricing)
         let codex = await scanner.scan(cardID: "codex", now: now, pricing: pricing, costEstimator: CodexUsagePricing.estimatePi)
         XCTAssertEqual(try XCTUnwrap(generic?.series.daily.first?.costUSD), 1.4, accuracy: 1e-9)

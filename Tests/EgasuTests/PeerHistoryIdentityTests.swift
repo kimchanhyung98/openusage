@@ -396,7 +396,7 @@ final class PeerHistoryIdentityTests: XCTestCase {
     }
 
     private func makeScratchDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.PeerIdentity.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.PeerIdentity.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }

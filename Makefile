@@ -2,7 +2,7 @@
 
 .DEFAULT_GOAL := help
 
-NPM_CACHE ?= /tmp/openusage-npm-cache
+NPM_CACHE ?= /tmp/egasu-npm-cache
 
 help: ## 사용 가능한 명령어 목록 출력
 	@awk 'BEGIN {FS = ":.*##"; printf "\n사용법:\n  make \033[36m<target>\033[0m\n\n명령어:\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)

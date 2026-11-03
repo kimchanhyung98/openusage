@@ -498,7 +498,7 @@ actor BunInstaller: BunInstalling {
         guard base.isFileURL, (base.path as NSString).isAbsolutePath else {
             throw BunInstallerError.temporaryWorkspaceFailed
         }
-        var template = Array(base.appendingPathComponent("OpenUsage-BunInstaller.XXXXXX").path.utf8CString)
+        var template = Array(base.appendingPathComponent("egasu-BunInstaller.XXXXXX").path.utf8CString)
         let path = template.withUnsafeMutableBufferPointer { buffer -> String? in
             guard let address = buffer.baseAddress, let created = Darwin.mkdtemp(address) else { return nil }
             return String(cString: created)

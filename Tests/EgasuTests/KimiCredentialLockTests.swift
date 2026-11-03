@@ -231,7 +231,7 @@ final class KimiCredentialLockTests: XCTestCase {
 
     private func makeFixture() throws -> (root: URL, target: URL, lockURL: URL) {
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("openusage-kimi-lock-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("egasu-kimi-lock-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         let target = root.appendingPathComponent("oauth/kimi-code")
         return (root, target, URL(fileURLWithPath: target.path + ".lock"))

@@ -14,9 +14,9 @@ struct AccountSignInWorkspace: @unchecked Sendable {
             case .invalidComponent(let component):
                 "Invalid sign-in workspace component: \(component)"
             case .outsideOwnedRoot(let path):
-                "The sign-in workspace resolved outside OpenUsage's owned directory: \(path)"
+                "The sign-in workspace resolved outside egasu's owned directory: \(path)"
             case .symlinkedComponent(let path):
-                "OpenUsage can't use a symbolic link in its sign-in workspace: \(path)"
+                "egasu can't use a symbolic link in its sign-in workspace: \(path)"
             }
         }
     }
@@ -38,14 +38,14 @@ struct AccountSignInWorkspace: @unchecked Sendable {
                 in: .userDomainMask
             ).first ?? fileManager.homeDirectoryForCurrentUser
                 .appendingPathComponent("Library/Application Support")
-            let openUsageDirectory = applicationSupport
+            let egasuDirectory = applicationSupport
                 .appendingPathComponent("OpenUsage", isDirectory: true)
                 .standardizedFileURL
-            let accountSignInDirectory = openUsageDirectory
+            let accountSignInDirectory = egasuDirectory
                 .appendingPathComponent("AccountSignIn", isDirectory: true)
                 .standardizedFileURL
             self.baseDirectory = accountSignInDirectory
-            self.rootDirectoriesToValidate = [openUsageDirectory, accountSignInDirectory]
+            self.rootDirectoriesToValidate = [egasuDirectory, accountSignInDirectory]
         }
     }
 

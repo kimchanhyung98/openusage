@@ -25,7 +25,7 @@ final class CodexResetWatchVotesTests: XCTestCase {
         XCTAssertEqual(request.timeout, 4)
         XCTAssertEqual(request.headers["Cache-Control"], "no-cache")
         XCTAssertEqual(request.headers["Accept"], "application/json")
-        XCTAssertEqual(request.headers["User-Agent"], "OpenUsage")
+        XCTAssertEqual(request.headers["User-Agent"], "egasu")
         XCTAssertNil(request.body)
         XCTAssertTrue(Set(request.headers.keys.map { $0.lowercased() }).isDisjoint(with: ["authorization", "cookie", "chatgpt-account-id"]))
     }
@@ -337,7 +337,7 @@ final class CodexResetWatchVotesTests: XCTestCase {
         let observation = observedAt.map { ",\"observed_at\":\"\($0)\"" } ?? ""
         let body = """
         {"data":{"active_watch":{"reset_chance_percent":\(chance),
-        "expires_at":"\(OpenUsageISO8601.string(from: deadline ?? Self.now.addingTimeInterval(3600)))",
+        "expires_at":"\(EgasuISO8601.string(from: deadline ?? Self.now.addingTimeInterval(3600)))",
         "source":{"url":"https://x.com/thsottiaux/status/\(episode)"}\(observation)}}}
         """
         return HTTPResponse(statusCode: 200, headers: ["cache-control": cacheControl, "etag": "watch-v1"], body: Data(body.utf8))

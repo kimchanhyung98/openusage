@@ -131,7 +131,7 @@ final class FailureBackoffTests: XCTestCase {
     }
 
     private func makeUserDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.Backoff.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.Backoff.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults

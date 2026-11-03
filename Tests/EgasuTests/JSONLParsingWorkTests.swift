@@ -96,7 +96,7 @@ final class JSONLParsingWorkTests: XCTestCase {
     private func check<Item: Equatable>(
         provider: String, lines: [String], expected: [Item], parse: (Data) -> [Item]
     ) {
-        let benchmarking = ProcessInfo.processInfo.environment["OPENUSAGE_JSONL_BENCHMARK"] == "1"
+        let benchmarking = ProcessInfo.processInfo.environment["EGASU_JSONL_BENCHMARK"] == "1"
         let row = "{\"type\":\"response_item\",\"payload\":\"" + String(repeating: "x", count: 1_024) + "\"}\r\n"
         let noise = String(repeating: row, count: benchmarking ? 8_192 : 32)
         let input = Data(("\n" + noise + lines.joined(separator: "\r\n\n" + noise)).utf8)

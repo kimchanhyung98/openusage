@@ -133,7 +133,7 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
     private func makeFixture() throws -> Fixture {
         let root = FileManager.default.temporaryDirectory
             .resolvingSymlinksInPath()
-            .appendingPathComponent("OpenUsageTests.TokscaleRuntime.\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("EgasuTests.TokscaleRuntime.\(UUID().uuidString)", isDirectory: true)
         let home = root.appendingPathComponent("home", isDirectory: true)
         let bin = root.appendingPathComponent("runtime/bin", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
@@ -149,7 +149,7 @@ final class TokscaleRuntimeIntegrationTests: XCTestCase {
             )
         }
 
-        let suite = "OpenUsageTests.TokscaleRuntime.\(UUID().uuidString)"
+        let suite = "EgasuTests.TokscaleRuntime.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let installer = BunInstaller(

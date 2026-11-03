@@ -225,7 +225,7 @@ final class StatusItemController: NSObject {
             self?.openScreen(.settings)
         })
         menu.addItem(.separator())
-        menu.addItem(ClosureMenuItem(title: L10n.common("Quit OpenUsage"), systemSymbol: "power", keyEquivalent: "q") {
+        menu.addItem(ClosureMenuItem(title: L10n.common("Quit egasu"), systemSymbol: "power", keyEquivalent: "q") {
             NSApplication.shared.terminate(nil)
         })
 

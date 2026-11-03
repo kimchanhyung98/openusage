@@ -6,7 +6,7 @@ import XCTest
 final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
     private func fixture(blockedKeys: Set<String> = ["fixture-a", "fixture-b"], failedKeys: Set<String> = [],
                          environmentKey: String? = nil, control: CredentialControlProvider? = nil) -> Fixture {
-        let suite = "OpenUsageTests.CredentialRefresh.\(UUID().uuidString)"
+        let suite = "EgasuTests.CredentialRefresh.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let http = CredentialRefreshHTTP(blockedKeys: blockedKeys, failedKeys: failedKeys)

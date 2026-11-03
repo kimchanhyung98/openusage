@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class AccountCardMappingTests: XCTestCase {
     private func makeScratchDefaults() -> UserDefaults {
-        let suiteName = "OpenUsageTests.AccountCardMapping.\(UUID().uuidString)"
+        let suiteName = "EgasuTests.AccountCardMapping.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
@@ -107,7 +107,7 @@ final class AccountCardMappingTests: XCTestCase {
         let profiles = AccountProfilesStore(defaults: makeScratchDefaults())
         let work = try profiles.add(family: "claude", label: "Work", identityKey: "acct-2")
         profiles.setPreferred(family: "claude", profileID: work.id)
-        // OpenUsage 외부에서 shared home이 다른 account로 로그인된 상태
+        // egasu 외부에서 shared home이 다른 account로 로그인된 상태
         let assembly = ProviderAccountAssembly(identityKeysByCard: ["claude": "acct-9"])
 
         let mapping = AppContainer.accountProfileIDsByCardID(assembly: assembly, profiles: profiles)

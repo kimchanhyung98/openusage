@@ -185,10 +185,10 @@ struct GrokAuthStore: Sendable {
     }
 
     private func entryExpiresAt(_ entry: GrokAuthEntry) -> Date? {
-        if let expiresAt = trimmed(entry.expiresAt), let date = OpenUsageISO8601.date(from: expiresAt) {
+        if let expiresAt = trimmed(entry.expiresAt), let date = EgasuISO8601.date(from: expiresAt) {
             return date
         }
-        if let expires = trimmed(entry.expires), let date = OpenUsageISO8601.date(from: expires) {
+        if let expires = trimmed(entry.expires), let date = EgasuISO8601.date(from: expires) {
             return date
         }
         return nil

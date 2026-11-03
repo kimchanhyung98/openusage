@@ -154,7 +154,7 @@ final class OpenRouterAnalyticsPeriodTests: XCTestCase {
         return calendar
     }
 
-    private func date(_ value: String) -> Date { OpenUsageISO8601.date(from: value)! }
+    private func date(_ value: String) -> Date { EgasuISO8601.date(from: value)! }
 }
 
 final class OpenRouterAnalyticsClientTests: XCTestCase {
@@ -163,8 +163,8 @@ final class OpenRouterAnalyticsClientTests: XCTestCase {
         let http = RoutingHTTPClient { _ in
             HTTPResponse(statusCode: 200, headers: [:], body: responseBody)
         }
-        let start = OpenUsageISO8601.date(from: "2026-10-30T15:00:00Z")!
-        let end = OpenUsageISO8601.date(from: "2026-10-31T12:34:56Z")!
+        let start = EgasuISO8601.date(from: "2026-10-30T15:00:00Z")!
+        let end = EgasuISO8601.date(from: "2026-10-31T12:34:56Z")!
 
         let response = try await OpenRouterUsageClient(http: http).fetchAnalytics(apiKey: "test-key", start: start, end: end)
 
@@ -181,8 +181,8 @@ final class OpenRouterAnalyticsClientTests: XCTestCase {
         XCTAssertNil(body["granularity"])
         XCTAssertNil(body["dimensions"])
         let range = try XCTUnwrap(body["time_range"] as? [String: String])
-        XCTAssertEqual(range["start"].flatMap(OpenUsageISO8601.date), start)
-        XCTAssertEqual(range["end"].flatMap(OpenUsageISO8601.date), end)
+        XCTAssertEqual(range["start"].flatMap(EgasuISO8601.date), start)
+        XCTAssertEqual(range["end"].flatMap(EgasuISO8601.date), end)
     }
 
     func testPropagatesCancellationFromAnalyticsRequest() async {

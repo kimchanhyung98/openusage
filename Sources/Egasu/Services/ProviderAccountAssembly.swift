@@ -14,7 +14,7 @@ struct ProviderAccountAssembly: Equatable {
     var hasUnregisteredClaudeLogins: Bool = false
     /// 기본 카드와 같은 계정으로 판명된 custom config dir — 추가 spend-log root 전용, credential 소스 아님.
     var defaultClaudeExtraLogRoots: [URL] = []
-    /// 비활성 managed profile 카드 — credential은 OpenUsage 전용 Keychain snapshot 보관, 대시보드 전용(터미널 redirect 없음).
+    /// 비활성 managed profile 카드 — credential은 egasu 전용 Keychain snapshot 보관, 대시보드 전용(터미널 redirect 없음).
     var snapshotCards: [AccountUsageSnapshotCard] = []
     /// 로컬 history가 managed shared-home 합산인 bare family 카드 id.
     /// 여러 전환 계정의 세션이 로그를 공유 — history는 family 합계로 sync, 현재 선택 profile identity로 귀속 금지.

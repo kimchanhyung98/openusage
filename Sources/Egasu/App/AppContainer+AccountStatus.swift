@@ -35,7 +35,7 @@ extension AppContainer {
            error == .switchRecoveryRequired || error == .selectionSaveFailed || error == .conflictingClaudeAuthentication {
             return error.localizedDescription
         }
-        return "OpenUsage couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
+        return "egasu couldn't update the selected Claude sign-in. The saved account was left unchanged. Check the app log and try again."
     }
 
     static func applyExternalClaudeReconciliationError(

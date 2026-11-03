@@ -59,7 +59,7 @@ enum AppLog {
     private static let loggerLock = NSLock()
     private nonisolated(unsafe) static var loggers: [String: Logger] = [:]
 
-    /// file sink. 테스트에서 임시 디렉터리로 주입 가능; production은 공유 `~/Library/Logs/OpenUsage/OpenUsage.log` appender.
+    /// file sink. 테스트에서 임시 디렉터리로 주입 가능; production은 공유 `~/Library/Logs/egasu/egasu.log` appender.
     nonisolated(unsafe) static var sink: LogFile = .shared
 
     // MARK: - Lifecycle
@@ -72,7 +72,7 @@ enum AppLog {
         // `$HOME`을 `~`로 축약해 경로가 `redactLogMessage`의 `/Users/...` 마스킹을 통과하도록 함.
         let displayPath = (LogFile.url.path as NSString).abbreviatingWithTildeInPath
         info(LogTag.config.rawValue,
-             "OpenUsage v\(AppInfo.version) starting (level=\(level.rawValue), log=\(displayPath))")
+             "egasu v\(AppInfo.version) starting (level=\(level.rawValue), log=\(displayPath))")
     }
 
     /// 저장된 level을 캐시로 재적재. Settings picker `.onChange`에서 호출되어 재시작 없이 즉시 반영.
@@ -118,7 +118,7 @@ enum AppLog {
 
         logger(for: tag).log(level: level.osType, "[\(tag, privacy: .public)] \(redacted, privacy: .public)")
 
-        let timestamp = OpenUsageISO8601.string(from: Date())
+        let timestamp = EgasuISO8601.string(from: Date())
         sink.append("\(timestamp) [\(level.label)] [\(tag)] \(redacted)")
     }
 
@@ -126,7 +126,7 @@ enum AppLog {
         loggerLock.lock()
         defer { loggerLock.unlock() }
         if let existing = loggers[tag] { return existing }
-        let logger = Logger(subsystem: "OpenUsage", category: tag)
+        let logger = Logger(subsystem: "egasu", category: tag)
         loggers[tag] = logger
         return logger
     }

@@ -2,16 +2,17 @@ import Foundation
 import PostHog
 
 /// PostHog 프로젝트의 build-time 설정.
-/// project token은 client-side write-only 키 — commit 안전, `OPENUSAGE_POSTHOG_TOKEN` 환경 override 지원. host는 region 종속 — US token은 EU host에 ingest 불가.
+/// project token은 client-side write-only 키 — commit 안전, `EGASU_POSTHOG_TOKEN` 환경 override 지원. host는 region 종속 — US token은 EU host에 ingest 불가.
 enum TelemetryConfig {
     /// "실제 token 미설정" sentinel — 해석된 token이 이 값이면 sink는 inert(설정·네트워크 없음). 값 변경 금지.
     static let placeholderToken = "phc_REPLACE_ME"
 
-    /// 빌드에 포함되는 project token — commit 안전한 client write-only 키; 로컬 테스트는 `OPENUSAGE_POSTHOG_TOKEN` 사용.
+    /// 빌드에 포함되는 project token — commit 안전한 client write-only 키; 로컬 테스트는 `EGASU_POSTHOG_TOKEN` 사용.
     private static let bakedToken = "phc_tRD4fSrpb2bgA3xYLqCkLsZ9YSGQckuKNB5BBnRm7DCL"
 
     static var token: String {
-        let env = ProcessInfo.processInfo.environment["OPENUSAGE_POSTHOG_TOKEN"]?
+        let environment = ProcessInfo.processInfo.environment
+        let env = (environment["EGASU_POSTHOG_TOKEN"] ?? environment["OPENUSAGE_POSTHOG_TOKEN"])?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let env, !env.isEmpty { return env }
         if buildChannel == "development" { return placeholderToken }

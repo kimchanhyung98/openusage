@@ -36,7 +36,7 @@ final class CursorUsageSummaryMapperTests: XCTestCase {
         XCTAssertEqual(total.used, 37)
         XCTAssertEqual(total.limit, 750)
         XCTAssertEqual(total.format, .count(suffix: "requests"))
-        XCTAssertEqual(total.resetsAt, OpenUsageISO8601.date(from: "2026-08-01T00:00:00.000Z"))
+        XCTAssertEqual(total.resetsAt, EgasuISO8601.date(from: "2026-08-01T00:00:00.000Z"))
         XCTAssertEqual(total.periodDurationMs, 31 * 24 * 3_600 * 1_000)
 
         let requests = try XCTUnwrap(progress(mapped.lines, "Requests"))
@@ -157,7 +157,7 @@ final class CursorUsageSummaryMapperTests: XCTestCase {
 @MainActor
 final class CursorEnterpriseProviderTests: XCTestCase {
     func testRefreshCombinesEnterpriseMetersAndStillAppendsUsageHistory() async throws {
-        let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-07-13T12:00:00.000Z"))
+        let now = try XCTUnwrap(EgasuISO8601.date(from: "2026-07-13T12:00:00.000Z"))
         let accessToken = makeSummaryCursorJWT(sub: "google-oauth2|enterprise-user")
         let csv = """
         Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost
@@ -287,7 +287,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
     }
 
     private func isolatedDefaults(_ name: String) -> UserDefaults {
-        let suiteName = "OpenUsageTests.CursorEnterprise.\(name).\(UUID().uuidString)"
+        let suiteName = "EgasuTests.CursorEnterprise.\(name).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
