@@ -43,6 +43,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
             return
         }
+        // 이동 후에는 기존 bundle 경로에서 번역 리소스를 읽을 수 없으므로 필요한 문구를 먼저 로드.
+        let renameRelaunchFailure = L10n.errors("egasu was renamed but could not reopen. Open egasu.app to finish the update.")
+        let renameFailureTitle = L10n.errors("Couldn't Rename the App")
+        let renameFailureMessage = L10n.errors("The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged.")
+        let confirmationTitle = L10n.dashboard("OK")
+        do {
+            if try AppBundleMigration.migrateIfNeeded(scheduleRelaunch: { destination in
+                try AppRelauncher.makeRelaunchProcess(
+                    bundleURL: destination,
+                    processIdentifier: ProcessInfo.processInfo.processIdentifier,
+                    failureMessage: renameRelaunchFailure,
+                    confirmationTitle: confirmationTitle
+                ).run()
+            }) {
+                NSApp.terminate(nil)
+                return
+            }
+        } catch {
+            AppDiagnostics.failure(.appRestart, error: error, localContext: "Legacy app bundle rename failed")
+            let alert = NSAlert()
+            alert.messageText = renameFailureTitle
+            alert.informativeText = renameFailureMessage
+            alert.addButton(withTitle: confirmationTitle)
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            guard FileManager.default.fileExists(atPath: Bundle.main.bundlePath) else {
+                NSApp.terminate(nil)
+                return
+            }
+        }
         // 버전드 settings migration. UserDefaults를 읽고 쓰는 모든 코드보다 먼저 실행 필수 —
         // fresh-install 판정은 migrate 전에 캡처 (schema stamp가 도메인을 non-empty로 변경). `SettingsMigrator` 참고.
         let isFreshInstall = SettingsMigrator.isFreshInstall()

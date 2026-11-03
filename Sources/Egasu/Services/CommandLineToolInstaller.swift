@@ -137,6 +137,38 @@ final class CommandLineToolInstaller {
             """
         }
 
+        return runPrivileged(command: command)
+    }
+
+    static func replacePrivilegedLink(at url: URL, expected: String, target: String) throws {
+        switch runPrivileged(command: replacementCommand(at: url, expected: expected, target: target)) {
+        case .success: return
+        case .cancelled: throw CocoaError(.userCancelled)
+        case .failure(let message, let code):
+            throw NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileWriteNoPermission.rawValue, userInfo: [
+                NSLocalizedDescriptionKey: message,
+                NSUnderlyingErrorKey: NSError(domain: NSOSStatusErrorDomain, code: code ?? -1)
+            ])
+        }
+    }
+
+    /// 승인 대기 중 다른 프로세스가 바꾼 링크는 보존. 임시 링크를 같은 파일시스템에서 교체.
+    static func replacementCommand(at url: URL, expected: String, target: String) -> String {
+        let template = url.deletingLastPathComponent().appendingPathComponent(".egasu-link.XXXXXX").path
+        return """
+        set -e
+        [ -L \(shellQuote(url.path)) ] || exit 74
+        [ "$(/usr/bin/readlink \(shellQuote(url.path)))" = \(shellQuote(expected)) ] || exit 75
+        temporary=$(/usr/bin/mktemp -d \(shellQuote(template)))
+        trap '/bin/rm -rf "$temporary"' EXIT
+        /bin/ln -s \(shellQuote(target)) "$temporary/link"
+        [ -L \(shellQuote(url.path)) ] || exit 74
+        [ "$(/usr/bin/readlink \(shellQuote(url.path)))" = \(shellQuote(expected)) ] || exit 75
+        /bin/mv -h -f "$temporary/link" \(shellQuote(url.path))
+        """
+    }
+
+    private static func runPrivileged(command: String) -> OperationResult {
         let source = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"
         guard let script = NSAppleScript(source: source) else {
             return .failure("macOS couldn't prepare the authorization request.")

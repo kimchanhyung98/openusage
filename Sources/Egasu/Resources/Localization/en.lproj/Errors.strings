@@ -258,3 +258,7 @@
 "macOS couldn't prepare the authorization request." = "macOS couldn't prepare the authorization request.";
 "macOS rejected the authorization request." = "macOS rejected the authorization request.";
 "macOS wouldn't update Launch at Login. Check System Settings → Login Items." = "macOS wouldn't update Launch at Login. Check System Settings → Login Items.";
+
+"egasu was renamed but could not reopen. Open egasu.app to finish the update." = "egasu was renamed but could not reopen. Open egasu.app to finish the update.";
+"Couldn't Rename the App" = "Couldn't Rename the App";
+"The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged." = "The update was installed, but OpenUsage.app could not be renamed to egasu.app. Check the folder permissions and any existing egasu.app. Your accounts and settings are unchanged.";

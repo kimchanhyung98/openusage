@@ -44,7 +44,9 @@ final class AppRelauncher {
         bundleURL: URL,
         processIdentifier: Int32,
         openExecutable: URL = URL(fileURLWithPath: "/usr/bin/open"),
-        alertExecutable: URL = URL(fileURLWithPath: "/usr/bin/osascript")
+        alertExecutable: URL = URL(fileURLWithPath: "/usr/bin/osascript"),
+        failureMessage: String? = nil,
+        confirmationTitle: String? = nil
     ) -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
@@ -63,8 +65,8 @@ final class AppRelauncher {
             exit "$status"
             """,
             "egasu-relaunch", String(processIdentifier), bundleURL.path, openExecutable.path, alertExecutable.path,
-            L10n.settings("Couldn't restart egasu. Reopen the app to apply the language change."),
-            L10n.dashboard("OK"),
+            failureMessage ?? L10n.settings("Couldn't restart egasu. Reopen the app to apply the language change."),
+            confirmationTitle ?? L10n.dashboard("OK"),
         ]
         process.standardInput = FileHandle.nullDevice
         return process

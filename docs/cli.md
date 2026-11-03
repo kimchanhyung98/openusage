@@ -1,6 +1,6 @@
 # 명령줄 인터페이스
 
-OpenUsage는 에이전트와 스크립트용 1회 실행 명령 `openusage`를 제공.
+egasu는 에이전트와 스크립트용 1회 실행 명령 `egasu`를 제공.
 문서에 정의된 [`/v1/limits`](/docs/local-http-api.md#get-v1limits) JSON을 출력한 뒤 종료.
 메뉴 막대 앱을 실행하거나 백그라운드 프로세스를 남기지 않음.
 출력에는 한도와 잔액 포함.
@@ -9,9 +9,9 @@ HTTP 라우트와 같은 스키마 사용.
 CLI 출력의 `displayName`에는 Claude·Codex 계정명이 포함될 수 있으므로 연동 시 프로바이더 ID로 구분.
 
 ```sh
-openusage                 # 활성화된 모든 프로바이더, 오래된 캐시 항목만 새로 고침
-openusage codex           # 프로바이더 하나, 캐시가 오래됐을 때만 새로 고침
-openusage codex --force   # 공유 프로바이더 엔진으로 새로 고침 후 캐시·출력·종료
+egasu                 # 활성화된 모든 프로바이더, 오래된 캐시 항목만 새로 고침
+egasu codex           # 프로바이더 하나, 캐시가 오래됐을 때만 새로 고침
+egasu codex --force   # 공유 프로바이더 엔진으로 새로 고침 후 캐시·출력·종료
 ```
 
 CLI와 앱은 프로바이더 조회·인증·가격 계산·캐시 처리를 공유.
@@ -38,12 +38,18 @@ CLI는 앱이 만든 계정 인증용 Keychain 항목의 존재 여부만 확인
 
 ## `PATH`에 설치
 
-1. OpenUsage에서 **Settings → Command Line**(설정 → 명령줄) 열기.
+1. egasu에서 **Settings → Command Line**(설정 → 명령줄) 열기.
 2. **Install…**(설치…) 클릭.
 3. macOS 관리자 승인 요청 완료.
-4. 새 터미널에서 `openusage` 실행.
+4. 새 터미널에서 `egasu` 실행.
 
-설치된 심볼릭 링크는 OpenUsage 안의 서명된 헬퍼를 가리키므로, 앱을 제자리 업데이트하면 명령도 함께 갱신.
+설치된 심볼릭 링크는 egasu 안의 서명된 헬퍼를 가리키므로, 앱을 제자리 업데이트하면 명령도 함께 갱신.
+번들 내부에는 이전 `openusage` 헬퍼 이름도 유지하므로 기존 설치 경로를 유지하는 업데이트에서는 이전 명령도 계속 동작.
+OpenUsage에서 자동 업데이트한 첫 실행은 이 앱을 가리키는 기존 명령 링크도 새 앱 경로로 변경.
+링크 폴더에 쓰기 권한이 없으면 macOS 관리자 승인 요청.
+승인을 취소하거나 변경에 실패하면 기존 앱과 명령 링크 유지.
+사용자가 앱을 다른 폴더로 옮겼다면 `egasu` 명령을 새 앱에서 다시 설치.
+개발용 기본 설정 도메인은 `EGASU_DEFAULTS_SUITE`로 지정 가능하며 이전 `OPENUSAGE_DEFAULTS_SUITE`도 지원.
 
 종료 코드는 성공 `0`, 잘못된 인자나 알 수 없는 프로바이더 `2`, 새로 고침이나 로컬 읽기 실패 `4`.
 
@@ -53,8 +59,8 @@ CLI는 앱이 만든 계정 인증용 Keychain 항목의 존재 여부만 확인
 CLI는 동일한 등록 계정과 선택된 터미널 계정을 조회:
 
 ```sh
-openusage account list [claude|codex] [--json]   # 등록된 계정; *는 선택된 계정 표시
-openusage account current [claude|codex]         # 선택된 계정의 이름(스크립트용)
+egasu account list [claude|codex] [--json]   # 등록된 계정; *는 선택된 계정 표시
+egasu account current [claude|codex]         # 선택된 계정의 이름(스크립트용)
 ```
 
 도구를 생략한 `current`는 두 도구를 모두 출력.
@@ -64,10 +70,10 @@ openusage account current [claude|codex]         # 선택된 계정의 이름(�
 계정 목록은 Settings에 저장한 사용자 지정 표시 순서가 아니라 레지스트리 순서 유지.
 
 계정에는 사용자에게 보이는 폴더도, 실행 명령도 없음.
-전환은 공유 설정 홈의 인증 정보를 교체하므로, `openusage` 명령 설치 여부와 무관하게 새 터미널에서 그냥 `claude`나 `codex`를 실행하면 선택된 계정으로 동작.
+전환은 공유 설정 홈의 인증 정보를 교체하므로, `egasu` 명령 설치 여부와 무관하게 새 터미널에서 그냥 `claude`나 `codex`를 실행하면 선택된 계정으로 동작.
 
 설정에서 계정을 전환하면 먼저 확인을 요청.
-승인하면 OpenUsage가 공유 설정 홈의 인증 정보를 교체하고, 감지된 로그인 셸의 시작 파일에 작은 `claude`/`codex` 함수를 설치하거나 갱신.
+승인하면 egasu가 공유 설정 홈의 인증 정보를 교체하고, 감지된 로그인 셸의 시작 파일에 작은 `claude`/`codex` 함수를 설치하거나 갱신.
 지원하는 시작 파일은 `~/.zshrc`와 `~/.config/fish/config.fish`.
 다른 로그인 셸은 지원하지 않으며, 전환은 오류로 중단.
 이 함수는 공유 설정 홈을 `~/.claude` 또는 `~/.codex`로 고정하고 실제 `claude` 또는 `codex`를 직접 실행.
@@ -77,8 +83,8 @@ Codex에서는 `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_ACCESS_TOKEN`을 제거
 처음 설정한 뒤에는 새 터미널을 열거나, 이미 열린 터미널에서 셸 시작 파일을 다시 읽기.
 
 wrapper는 Claude의 공식 인증 명령에도 똑같이 적용.
-OpenUsage의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 OpenUsage가 관찰하는 같은 공유 홈에 기록.
-사용 가능한 프로바이더 신원을 검증한 뒤 OpenUsage가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
+egasu의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`을 실행하면, 결과가 egasu가 관찰하는 같은 공유 홈에 기록.
+사용 가능한 프로바이더 신원을 검증한 뒤 egasu가 선택 계정의 Keychain 스냅샷과 저장 신원을 자동 교체 — **Sign In Again**과 앱 재실행 불필요.
 새 로그인이 이전과 다른 프로바이더 신원이어도 계정명과 선택 상태는 유지하며, 다른 계정명을 조용히 다시 선택하지 않음.
 완료되지 않았거나 신원을 검증할 수 없는 로그인은 기존 스냅샷을 변경하지 않음.
 함수를 거치지 않은 로그인과 충돌하면 기본 로그인이 더 오래됐음을 확인할 때만 자동 정리하며, 더 새롭거나 최신성을 확인할 수 없으면 인증·저장 계정·선택 보존.

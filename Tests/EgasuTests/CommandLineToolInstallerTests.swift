@@ -184,4 +184,92 @@ final class CommandLineToolInstallerTests: XCTestCase {
             "/tmp/another-egasu"
         )
     }
+
+    func testReplacementCommandPreservesQuotedPathsAndCleansTemporaryDirectory() throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let directory = fixture.root.appendingPathComponent("bin ' $(touch injected-directory) `touch injected-backtick`")
+        let command = directory.appendingPathComponent("egasu ' $(touch injected-command)")
+        let expected = fixture.root.appendingPathComponent("OpenUsage ' $(touch injected-source).app/Contents/Helpers/openusage").path
+        let target = fixture.root.appendingPathComponent("egasu ' $(touch injected-target).app/Contents/Helpers/egasu").path
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: command.path, withDestinationPath: expected)
+
+        let result = try runReplacementCommand(at: command, expected: expected, target: target, in: fixture.root)
+
+        XCTAssertEqual(result.status, 0, result.output)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path), target)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [command.lastPathComponent])
+        for name in ["injected-directory", "injected-backtick", "injected-command", "injected-source", "injected-target"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent(name).path), name)
+        }
+    }
+
+    func testReplacementCommandPreservesChangedLink() throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let command = URL(fileURLWithPath: fixture.destination)
+        let directory = command.deletingLastPathComponent()
+        let foreignTarget = fixture.root.appendingPathComponent("other helper").path
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: command.path, withDestinationPath: foreignTarget)
+
+        let result = try runReplacementCommand(at: command, expected: fixture.source, target: "/new/helper", in: fixture.root)
+
+        XCTAssertEqual(result.status, 75, result.output)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path), foreignTarget)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [command.lastPathComponent])
+    }
+
+    func testReplacementCommandPreservesRegularFile() throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let command = URL(fileURLWithPath: fixture.destination)
+        let directory = command.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("user command".utf8).write(to: command)
+
+        let result = try runReplacementCommand(at: command, expected: fixture.source, target: "/new/helper", in: fixture.root)
+
+        XCTAssertEqual(result.status, 74, result.output)
+        XCTAssertEqual(try Data(contentsOf: command), Data("user command".utf8))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [command.lastPathComponent])
+    }
+
+    func testReplacementCommandDoesNotFollowSymlinkToDirectory() throws {
+        let fixture = try fixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let command = URL(fileURLWithPath: fixture.destination)
+        let directory = command.deletingLastPathComponent()
+        let previousTarget = fixture.root.appendingPathComponent("previous target")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: previousTarget, withIntermediateDirectories: true)
+        let marker = previousTarget.appendingPathComponent("keep")
+        try Data("preserved".utf8).write(to: marker)
+        try FileManager.default.createSymbolicLink(atPath: command.path, withDestinationPath: previousTarget.path)
+
+        let result = try runReplacementCommand(at: command, expected: previousTarget.path, target: fixture.source, in: fixture.root)
+
+        XCTAssertEqual(result.status, 0, result.output)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: command.path), fixture.source)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: previousTarget.path), ["keep"])
+        XCTAssertEqual(try Data(contentsOf: marker), Data("preserved".utf8))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), [command.lastPathComponent])
+    }
+
+    private func runReplacementCommand(
+        at url: URL, expected: String, target: String, in directory: URL
+    ) throws -> (status: Int32, output: String) {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", CommandLineToolInstaller.replacementCommand(at: url, expected: expected, target: target)]
+        process.currentDirectoryURL = directory
+        process.standardOutput = output
+        process.standardError = output
+        try process.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+    }
 }
