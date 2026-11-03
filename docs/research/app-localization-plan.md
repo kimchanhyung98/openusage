@@ -35,7 +35,7 @@ USD와 K/M/B 수치 축약, 사용량 계산, 지표 기본 배치는 기존 정
 | 위치 | 책임 |
 |---|---|
 | `LanguageSetting` | 앱 언어 선택 저장과 실행 시 언어 확정 |
-| `OpenUsageMain` | SwiftUI·AppKit 초기화 전에 언어 적용 |
+| `EgasuMain` | SwiftUI·AppKit 초기화 전에 언어 적용 |
 | `L10n` | 선택 언어의 테이블 조회와 문장 인자 포맷 |
 | `LocalizedMessage`·`UserPresentableError` | 오류·경고 원문과 번역 키·인자 분리 |
 | 화면·포맷터 | 표시 시점에 제목·문장·날짜 변환 |

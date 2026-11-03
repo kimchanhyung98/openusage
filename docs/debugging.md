@@ -4,8 +4,8 @@
 
 ## 로컬 빌드 실행
 
-아래 명령은 모두 빌드 전에 실행 중인 `OpenUsage` 프로세스 종료.
-프로세스 이름을 기준으로 종료하므로 릴리스 앱도 종료 대상.
+아래 명령은 빌드 전에 현재 checkout의 `dist/egasu.app` 또는 이전 `dist/OpenUsage.app` 프로세스만 종료.
+`/Applications` 등 다른 경로에서 실행 중인 앱은 종료하지 않음.
 리포지토리 루트에서 필요한 명령 하나 실행:
 
 ```sh
@@ -22,7 +22,7 @@
 개발 앱에는 업데이트 피드가 없으므로 업데이트 확인을 실행하지 않음.
 업데이트 동작은 서명·공증된 릴리스 빌드로 테스트.
 개발 빌드의 익명 분석 기본값은 꺼짐이며 내장 운영 프로젝트 토큰은 무시.
-개발 분석을 검증할 때는 별도 테스트 프로젝트의 토큰을 `OPENUSAGE_POSTHOG_TOKEN`으로 지정.
+개발 분석을 검증할 때는 별도 테스트 프로젝트의 토큰을 `EGASU_POSTHOG_TOKEN`으로 지정.
 
 ## Worktree 검사
 
@@ -41,28 +41,28 @@ pre-commit 훅은 `make check` 실행 전에 Git의 저장소별 환경 변수 �
 이미 실행 중인 앱에서 로그만 수집하려면 다음 명령 실행:
 
 ```sh
-log stream --info --style compact --predicate 'process == "OpenUsage"'
+log stream --info --style compact --predicate 'process == "egasu"'
 ```
 
 Debug 로그가 필요하면 먼저 **Settings → Advanced → Log Level**에서 **Debug** 선택.
 그다음 Debug 이벤트를 포함하는 명령 실행:
 
 ```sh
-log stream --level debug --style compact --predicate 'process == "OpenUsage"'
+log stream --level debug --style compact --predicate 'process == "egasu"'
 ```
 
 최근 10분의 저장된 로그를 확인하려면 다음 명령 실행:
 
 ```sh
-log show --last 10m --info --debug --predicate 'process == "OpenUsage"'
+log show --last 10m --info --debug --predicate 'process == "egasu"'
 ```
 
 앱에서 기록을 꺼 둔 레벨은 위 명령으로 복구할 수 없음.
 
 ## 로그 파일
 
-앱은 통합 로그와 별도로 `~/Library/Logs/OpenUsage/OpenUsage.log`에 파일 로그 기록.
-일반적으로 파일당 약 10 MB를 유지하며 `OpenUsage.1.log` 아카이브 하나 보관.
+앱은 통합 로그와 별도로 `~/Library/Logs/egasu/egasu.log`에 파일 로그 기록.
+일반적으로 파일당 약 10 MB를 유지하며 `egasu.1.log` 아카이브 하나 보관.
 지원 요청에 로그를 첨부하려면 다음 순서로 수집:
 
 1. **Settings → Advanced → Log Level**에서 필요한 상세 수준 선택.
@@ -89,7 +89,7 @@ log show --last 10m --info --debug --predicate 'process == "OpenUsage"'
 회귀 테스트는 가짜 인증 정보·격리된 SDK 요청·임시 파일 사용:
 
 ```sh
-CFFIXED_USER_HOME=/tmp/openusage-telemetry-tests OPENUSAGE_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
+CFFIXED_USER_HOME=/tmp/egasu-telemetry-tests EGASU_POSTHOG_TOKEN=phc_REPLACE_ME swift test --filter 'Telemetry|LogFile|WidgetDataStoreNotification|CodexResetClaimRouter'
 ```
 
 검증 범위는 SDK에 전달할 데이터의 마스킹, 공유 중지 이후 대기 이벤트, 재시작, 집계 날짜·버전, 로그 동시 기록, 계정 전환.
@@ -115,7 +115,7 @@ node --test script/fixtures/codex_soft_limit_server.test.mjs
 실제 연동 검증에는 설치된 Codex CLI, Node.js, macOS의 `/usr/bin/expect` 필요:
 
 ```sh
-OPENUSAGE_RUN_CODEX_CONTROL_TEST=1 swift test --filter CodexSoftLimitNativeTests
+EGASU_RUN_CODEX_CONTROL_TEST=1 swift test --filter CodexSoftLimitNativeTests
 ```
 
 임시 `CODEX_HOME`과 로컬 응답 서버를 사용하며, 기존 사용자 세션과 인증 정보는 사용하지 않음.

@@ -2,7 +2,7 @@
 
 > **과거 기록 / 대체됨.**
 > 2026-07-04 시점의 저장소 상태를 기록한 보고서.
-> 지출 행 호버에 표시되는 프로바이더 중립적 모델별 내역은 2026-07-04에 출시되었고 이후 계속 발전했으며, 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/OpenUsage/Providers/SpendTileMapper.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
+> 지출 행 호버에 표시되는 프로바이더 중립적 모델별 내역은 2026-07-04에 출시되었고 이후 계속 발전했으며, 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/Egasu/Providers/SpendTileMapper.swift), [`ModelUsageDetail.swift`](/Sources/Egasu/Views/ModelUsageDetail.swift) 참고.
 > 아래의 브랜치 분석과 제안은 조사 당시 기준의 기록.
 > 본문의 `main`과 PR 상태는 2026-07-04 기준이며, 현재 구현이나 PR 상태를 뜻하지 않음.
 
@@ -85,7 +85,7 @@ GitHub에서 PR을 공식적으로 닫은 기록은 없으며 리뷰 이후 정�
 
 | #740 브랜치 | 조사 당시 `main` |
 |-------------|----------------|
-| `CursorPricing`, `CursorModelManifest`, 번들 **`model_manifest.json`** | **제거됨.**<br>모든 환산을 **`Sources/OpenUsage/Pricing/`**의 `ModelPricing`, `ModelPricingStore`, LiteLLM + models.dev + **`pricing_supplement.json`**을 통해 처리 — **`docs/pricing.md`** 참고. |
+| `CursorPricing`, `CursorModelManifest`, 번들 **`model_manifest.json`** | **제거됨.**<br>모든 환산을 **`Sources/Egasu/Pricing/`**의 `ModelPricing`, `ModelPricingStore`, LiteLLM + models.dev + **`pricing_supplement.json`**을 통해 처리 — **`docs/pricing.md`** 참고. |
 | 가격 주입 없는 `CursorUsageCSV.parse(csv:)` | **`CursorUsageCSV.parse(csv:pricing:)`**; `imputedCostDollars`는 **`Double?`**(nil = 가격 미등록). |
 | 리더보드 라벨용 `CursorPricing.family(for:)` / `family_display_name` | **보충 파일에 `family_id` 없음.**<br>표시 패밀리가 아닌 **별칭 규칙 → 정규 키**로 그룹화.<br>사람이 읽을 수 있는 이름은 #740에서 추가한 매니페스트 필드가 아닌 다른 곳(슬러그 포매팅 / 카탈로그 메타데이터)에서 도출해야 함. |
 | **`CcusageRunner`**를 통한 Claude/Codex 지출; 후속 작업 **`ccusage --breakdown`** | **`CcusageRunner` 삭제됨.**<br>**`ClaudeLogUsageScanner`** / **`CodexLogUsageScanner`**에서 로컬 로그를 읽고 **`DailyUsageSeries`**만 출력(일별 버킷). |
@@ -103,7 +103,7 @@ GitHub에서 PR을 공식적으로 닫은 기록은 없으며 리뷰 이후 정�
 
 ### 가격 보충 파일(운영상 변경)
 
-- **`Sources/OpenUsage/Resources/pricing_supplement.json`**은 GitHub Pages에 게시되며 앱은 릴리스 없이 약 하루 간격으로 갱신.
+- **`Sources/Egasu/Resources/pricing_supplement.json`**은 GitHub Pages에 게시되며 앱은 릴리스 없이 약 하루 간격으로 갱신.
   패밀리 메타데이터를 위해 **`model_manifest.json`**을 확장하는 #740의 접근 방식은 폐기되었으며, 새 모델/별칭은 **보충 파일**과 **`docs/pricing.md`** 유지 관리 흐름에서 처리.
 
 ---
@@ -144,5 +144,5 @@ GitHub에서 PR을 공식적으로 닫은 기록은 없으며 리뷰 이후 정�
 - PR: https://github.com/robinebers/openusage/pull/740
 - 가격 개편: https://github.com/robinebers/openusage/pull/827 (병합)
 - 현재 가격 문서: `docs/pricing.md`
-- 공유 지출 타일: `Sources/OpenUsage/Providers/SpendTileMapper.swift`
-- Cursor CSV + 일별 집계(모델 차원은 여전히 폐기): `Sources/OpenUsage/Providers/Cursor/CursorUsageMapper.swift` (`appendSpendLines`)
+- 공유 지출 타일: `Sources/Egasu/Providers/SpendTileMapper.swift`
+- Cursor CSV + 일별 집계(모델 차원은 여전히 폐기): `Sources/Egasu/Providers/Cursor/CursorUsageMapper.swift` (`appendSpendLines`)

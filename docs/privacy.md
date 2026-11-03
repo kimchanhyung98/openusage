@@ -1,6 +1,6 @@
 # 개인정보 및 사용 데이터
 
-OpenUsage는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 데 도움이 되도록 **익명** 사용 데이터를 공유할 수 있음.
+egasu는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 데 도움이 되도록 **익명** 사용 데이터를 공유할 수 있음.
 기본값은 꺼짐이며, **Settings → Privacy → Share Anonymous Usage**(설정 → 개인정보 → 익명 사용 데이터 공유)에서 언제든 켜기 가능.
 
 ## 익명 분석에서 공유되는 항목
@@ -33,7 +33,7 @@ OpenUsage는 앱이 어떻게 쓰이는지 파악하고 문제를 잡아내는 �
 
 ## 이 Mac에 저장된 인증 정보
 
-OpenUsage는 주로 프로바이더 도구가 이미 Mac에 보관 중인 인증 정보를 읽음.
+egasu는 주로 프로바이더 도구가 이미 Mac에 보관 중인 인증 정보를 읽음.
 사용자가 제공한 API 키를 쓰거나 갱신된 인증 정보를 저장할 때는 파일을 원자적으로 교체하고 해당 macOS 계정으로 접근을 제한(소유자 읽기·쓰기만).
 
 Antigravity의 수명 짧은 갱신 토큰 캐시는 단방향 지문으로 현재 키체인 로그인에 묶이며, 갱신 인증 정보 자체는 복사하지 않음.
@@ -41,24 +41,24 @@ Antigravity의 수명 짧은 갱신 토큰 캐시는 단방향 지문으로 현�
 앱 전용 Keychain 비밀번호 저장과 계정 인증 스냅샷 조회는 macOS Security API 사용.
 기존 항목은 읽기와 같은 키체인 검색 목록에서 찾아 갱신하고, 항목이 없을 때만 기본 키체인에 생성.
 계정 이름을 지정한 저장은 검색 목록에서 처음 일치하는 항목만 갱신.
-계정 스냅샷은 저장·조회 주체를 OpenUsage로 통일해 토큰 갱신 뒤 외부 도구 조회로 인한 반복 접근 승인 방지.
+계정 스냅샷은 저장·조회 주체를 egasu로 통일해 토큰 갱신 뒤 외부 도구 조회로 인한 반복 접근 승인 방지.
 계정 스냅샷의 자동 조회·준비 상태 확인은 승인창 없이 실행하며, 접근 불가 시 오류 기록과 수동 재시도 안내.
 승인이 필요한 항목은 수동 새로 고침·계정 전환·재로그인에서 접근 승인 요청 허용.
 Claude Code와 공유하는 항목은 기존 CLI 접근 승인을 유지하도록 macOS 시스템 도구로 저장하며, 비밀 값은 명령 인자나 임시 파일 대신 표준 입력으로만 전달.
 서비스 이름만으로 여러 항목이 일치하면 임의로 갱신하지 않고 저장 실패로 처리.
 
 Claude Desktop 접근은 철저히 읽기 전용.
-OpenUsage는 Desktop의 현재 액세스 토큰을 복호화하기 위해 macOS에 `Claude Safe Storage` 키체인 항목 사용 권한을 요청할 수 있음.
+egasu는 Desktop의 현재 액세스 토큰을 복호화하기 위해 macOS에 `Claude Safe Storage` 키체인 항목 사용 권한을 요청할 수 있음.
 Desktop의 자동 교체되는 갱신 토큰은 절대 쓰지 않고, Desktop의 설정·쿠키·키체인 데이터도 절대 수정하지 않음.
 
-관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 `OpenUsage Account Authentication`으로 시작하는 서비스 이름 아래, 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
+관리형 계정 전환([**Settings → Accounts**(설정 → 계정)](/docs/settings.md))은 `egasu Account Authentication`으로 시작하는 서비스 이름 아래, 계정마다 인증 스냅샷 하나를 macOS 키체인에 보관.
 이 스냅샷 덕분에 다시 전환할 때 이전 로그인을 복원 가능.
 각 스냅샷에는 해당 계정명에 현재 저장된 인증 파일 내용이 담기며, 원본은 이 Mac의 키체인에 보관하고 iCloud·익명 분석으로 전송하지 않음.
 Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/OpenUsage/AccountSignIn/claude-switch.json`에 복구 기록 저장.
 기록에는 계정·전환 식별자, 프로바이더 신원, 인증 상태를 비교할 해시만 포함하며 토큰 원문은 저장하지 않음.
 파일은 해당 macOS 사용자만 읽고 쓸 수 있으며 iCloud·익명 분석으로 전송하지 않음.
 선택 상태 저장을 확인하면 기록 삭제; 복구를 확인하지 못한 기록은 보존.
-선택된 관리형 Claude 계정으로 일반 터미널에서 공식 CLI 로그인을 완료하면, OpenUsage가 공유 홈의 새 인증 정보를 검증하고 해당 계정의 스냅샷과 저장 프로바이더 신원을 교체.
+선택된 관리형 Claude 계정으로 일반 터미널에서 공식 CLI 로그인을 완료하면, egasu가 공유 홈의 새 인증 정보를 검증하고 해당 계정의 스냅샷과 저장 프로바이더 신원을 교체.
 검증된 프로바이더 신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 복사하지 않음.
 추가 계정의 공식 로그인은 `~/Library/Application Support/OpenUsage/AccountSignIn/<provider>/<account-id>/` 아래 앱 소유 작업 공간에서 실행.
 작업 공간 디렉터리는 `0700`, 인증 정보 파일은 `0600` 권한 사용.
@@ -66,7 +66,7 @@ Claude 계정 전환 중 앱 종료에 대비해 `~/Library/Application Support/
 어느 한쪽 삭제가 실패하면 다시 시도할 수 있도록 계정 등록은 그대로 유지.
 `~/.claude`와 `~/.codex` 데이터는 절대 이동하거나 삭제하지 않음.
 전환을 확정하면 `~/.zshrc` 또는 `~/.config/fish/config.fish`의 작은 `claude`/`codex` 함수도 갱신.
-이 함수는 `>>> OpenUsage` 주석 마커로 감싸여 있어, 표시된 블록을 삭제하면 함수도 제거.
+이 함수는 `>>> egasu` 주석 마커로 감싸여 있어, 표시된 블록을 삭제하면 함수도 제거.
 
 관리형 계정명, 현재 프로바이더 신원 연결, 선택된 계정 상태, 로그인 준비 상태, 인증 스냅샷은 이 Mac에만 있고 iCloud 동기화에 포함되지 않음.
 iCloud 대상이 되는 것은 정규화된 사용량 히스토리뿐.
@@ -108,33 +108,33 @@ Claude의 계정별 429 대기 시각·연속 제한 횟수·마지막 정상 �
 
 ## 기타 네트워크 요청
 
-OpenUsage는 프로바이더 API 조회 외에 공개 [모델 가격 목록](/docs/pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
+egasu는 프로바이더 API 조회 외에 공개 [모델 가격 목록](/docs/pricing.md)을 약 한 시간에 한 번 가져옴(`raw.githubusercontent.com`, `models.dev`, 이 프로젝트의 GitHub Pages에서).
 공개 데이터를 그대로 내려받는 요청이라 사용량·로그·계정 정보가 실리지 않으며, Share Anonymous Usage 설정과 무관하게 실행.
-지원되는 프로바이더가 활성화돼 있으면 OpenUsage가 실행 시, 해당 프로바이더 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), [GitHub Status](https://www.githubstatus.com/)에서 공개 컴포넌트 상태도 가져옴.
+지원되는 프로바이더가 활성화돼 있으면 egasu가 실행 시, 해당 프로바이더 활성화 시, 5분마다, 대시보드 수동 새로 고침 시 [Claude Status](https://status.claude.com/), [OpenAI Status](https://status.openai.com/), [Cursor Status](https://status.cursor.com/), [GitHub Status](https://www.githubstatus.com/)에서 공개 컴포넌트 상태도 가져옴.
 인증 없는 요청이며 프로바이더 인증 정보, 계정 정보, 사용량 값, 로그를 포함하지 않음.
 
-OpenUsage는 로컬 CLI 로그로 Mac에서 지출 타일을 계산하고 일반 새로 고침이나 익명 분석으로 해당 로그를 전송하지 않음.
+egasu는 로컬 CLI 로그로 Mac에서 지출 타일을 계산하고 일반 새로 고침이나 익명 분석으로 해당 로그를 전송하지 않음.
 
-Codex 프로바이더가 켜져 있고 **Reset Watch**의 대시보드 표시·메뉴 막대 별표·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, OpenUsage가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
+Codex 프로바이더가 켜져 있고 **Reset Watch**의 대시보드 표시·메뉴 막대 별표·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, egasu가 공개 [codex-resets.com API](https://codex-resets.com/api/docs)를 인증 없이 별도 15분 주기로 조회.
 인식 가능한 출처 게시물의 활성 watch로 예측할 때는 커뮤니티 투표율 계산을 위해 같은 사이트의 `/api/watch/votes` 집계도 인증 없이 조회하며 투표는 제출하지 않음.
 유효한 리셋 예정 정보가 있으면 투표 요청 없이 상태 응답만으로 예측 표시.
 Reset Watch 활성 상태에서는 수동 Refresh(⌘R)도 같은 조회를 실행하되 재시도 대기와 이미 진행 중인 요청을 고려.
 이 조회는 Codex 로그인을 사용하지 않으며 일반 구독 사용량 5분 새로 고침과 독립적으로 실행.
 대시보드 표시·메뉴 막대 별표·알림이 모두 꺼져 있거나 Codex 프로바이더를 끄면 이후 조회 중단 — 이미 진행 중인 Reset Watch 요청은 완료될 수 있음.
 두 요청 모두 Codex 토큰, 계정 ID, 사용량 값, 로컬 로그, Cookie가 실리지 않음.
-독립 서비스에는 IP 주소와 OpenUsage 사용자 에이전트 같은 일반 네트워크 메타데이터가 전달됨.
+독립 서비스에는 IP 주소와 egasu 사용자 에이전트 같은 일반 네트워크 메타데이터가 전달됨.
 이 조회는 익명 사용 데이터 공유와 별개이며 Share Anonymous Usage 설정의 제어 대상이 아님.
 Reset Watch 알림은 기본값 꺼짐이며, 지표를 표시하지 않고 알림만 켜도 위 공개 조회 실행.
 공개 이벤트의 중복 통지 방지 기록은 이 Mac에 보관하며 앱 재시작 후에도 유지.
 이 기록에는 Codex 인증 정보·계정 ID·개인 사용량을 포함하지 않고 iCloud로 동기화하지 않음.
 
-재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, OpenUsage는 파싱된 사용 이벤트를 `~/Library/Application Support/OpenUsage/log-scan-cache/`에 보관.
+재실행할 때마다 변경되지 않은 Claude, Codex, pi 로그를 다시 읽지 않도록, egasu는 파싱된 사용 이벤트를 `~/Library/Application Support/OpenUsage/log-scan-cache/`에 보관.
 이 레코드에는 로컬 합계에 필요한 사용량 메타데이터(프로바이더가 이미 기록한 이벤트별 비용 포함)가 담기지만, 원시 JSONL 줄이나 대화 텍스트는 담기지 않음.
 해당 macOS 계정에만 비공개로 남고, PostHog나 프로바이더, iCloud 어디에도 절대 전송되지 않음.
 오래된 소스 파일 레코드는 스캔 범위가 전진하면서 버려지고, 35일 동안 쓰이지 않은 식별 정보 캐시는 제거.
-OpenUsage의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산된 집계와 합계는 이 캐시에 남지 않음.
+egasu의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산된 집계와 합계는 이 캐시에 남지 않음.
 
-[iCloud 동기화](/docs/icloud-sync.md)를 직접 켜면, OpenUsage는 사용자의 Mac들이 하나의 결합 요약을 볼 수 있도록 정규화된 일일 토큰, 지출, 모델별 합계를 앱 전용 iCloud 컨테이너에 기록.
+[iCloud 동기화](/docs/icloud-sync.md)를 직접 켜면, egasu는 사용자의 Mac들이 하나의 결합 요약을 볼 수 있도록 정규화된 일일 토큰, 지출, 모델별 합계를 앱 전용 iCloud 컨테이너에 기록.
 인증 정보, 계정 한도, 프로바이더 응답, 원시 로그는 절대 기록하지 않음.
 이는 익명 사용 데이터 공유와 별개 — iCloud 동기화는 기본값이 꺼짐이고 사용자의 iCloud 계정을 쓰는 반면, 애널리틱스 토글은 PostHog 이벤트를 제어.
 
@@ -143,7 +143,7 @@ OpenUsage의 가격 엔진은 캐시를 읽은 뒤에 돌기 때문에, 계산�
 Tokscale은 iCloud 동기화·익명 분석과 별개인 공개 공유 기능.
 iCloud 동기화나 Share Anonymous Usage를 켜도 Tokscale은 실행되지 않음.
 Tokscale 상태 변경도 두 설정에 영향을 주지 않음.
-앱 실행·일반 새로 고침·백그라운드 작업·위젯 갱신·`openusage` CLI·로컬 HTTP API 요청은 Bun 설치나 Tokscale 실행을 시작하지 않음.
+앱 실행·일반 새로 고침·백그라운드 작업·위젯 갱신·`egasu` CLI·로컬 HTTP API 요청은 Bun 설치나 Tokscale 실행을 시작하지 않음.
 Settings의 **Usage Sync**에서 공개 공유임을 안내하고 공식 개인정보 처리방침 연결 제공.
 
 Settings의 명시적 **Sync**에서만 다음 명령 실행:
@@ -155,8 +155,8 @@ bunx tokscale@latest submit
 `bunx`가 선택한 Tokscale 패키지가 지원 소스를 직접 탐색해 공개 프로필 갱신을 요청.
 해당 프로필은 검색 엔진에 색인될 수 있음.
 선택적 GitHub 별표 요청을 거절하도록 `n`과 줄바꿈을 한 번 전달한 뒤 입력 종료.
-OpenUsage의 위젯·iCloud 히스토리·익명 분석 데이터를 제출용으로 변환하지 않음.
-OpenUsage에서 켠 프로바이더 목록도 Tokscale의 수집 필터로 사용하지 않음.
+egasu의 위젯·iCloud 히스토리·익명 분석 데이터를 제출용으로 변환하지 않음.
+egasu에서 켠 프로바이더 목록도 Tokscale의 수집 필터로 사용하지 않음.
 
 **외부 서비스 검토 기준은 2026-09-04, Tokscale v4.15.1.**
 당시 CLI의 제출 대상에는 토큰·비용 내역, 날짜, 클라이언트, 모델, 메시지·시간 통계, 기기 정보, 발견된 MCP 서버 이름, CLI 버전 포함 가능.
@@ -169,7 +169,7 @@ OpenUsage에서 켠 프로바이더 목록도 Tokscale의 수집 필터로 사�
 명령에는 앱과 로그인 셸에서 명시적으로 허용한 언어·네트워크·패키지 저장소·Tokscale 인증·설정·소스 경로 변수만 전달.
 AI 프로바이더 API 키·GitHub 토큰 등 무관한 인증 정보와 미등록 변수는 제외.
 실행 코드 주입 설정, Tokscale 테스트용 설정, 사용자 지정 Tokscale API 주소도 제외.
-허용한 변수에는 Tokscale 자체 토큰이나 프록시 인증 정보가 포함될 수 있으나 OpenUsage 로그에는 해당 값을 기록하지 않음.
+허용한 변수에는 Tokscale 자체 토큰이나 프록시 인증 정보가 포함될 수 있으나 egasu 로그에는 해당 값을 기록하지 않음.
 Tokscale 자체 토큰은 요청 인증에 사용.
 
 이 제한은 자식 프로세스에 전달하는 환경 변수에만 적용.
@@ -177,11 +177,11 @@ Bun과 Tokscale은 별도 샌드박스로 격리하지 않으므로 로컬 파�
 터미널에서 별도로 지정한 `HOME`은 무시하고 현재 macOS 사용자의 홈을 `HOME`과 작업 디렉터리로 사용.
 
 **Tokscale Device Name**에서 저장한 기기 이름은 공개 프로필의 표시 이름으로 사용 가능.
-OpenUsage는 이 이름을 로컬에 보관하고 제출 프로세스에만 `TOKSCALE_DEVICE_NAME`으로 전달.
+egasu는 이 이름을 로컬에 보관하고 제출 프로세스에만 `TOKSCALE_DEVICE_NAME`으로 전달.
 이 설정은 기기 ID를 변경하지 않으며, 전달한 이름의 공개 프로필 반영은 Tokscale CLI와 서버의 처리에 따름.
 이름 저장·변경만으로 네트워크 요청을 실행하지 않음.
-**Remove OpenUsage Override**는 OpenUsage에 저장한 이름만 제거하며 Tokscale의 기존 공개 이름은 삭제하지 않음.
-이후 제출에서는 OpenUsage가 이름을 덮어쓰지 않으며, 환경 변수와 저장된 기기 기록의 이름 처리는 Tokscale에서 결정.
+**Remove egasu Override**는 egasu에 저장한 이름만 제거하며 Tokscale의 기존 공개 이름은 삭제하지 않음.
+이후 제출에서는 egasu가 이름을 덮어쓰지 않으며, 환경 변수와 저장된 기기 기록의 이름 처리는 Tokscale에서 결정.
 
 ### 로그인
 
@@ -202,18 +202,18 @@ OpenUsage는 이 이름을 로컬에 보관하고 제출 프로세스에만 `TOK
 설치 프로세스에는 다운로드에 필요한 프록시·인증서 설정을 전달하며 그 밖의 로그인 셸 값은 전달하지 않음.
 조건에 맞지 않는 `BUN_INSTALL`은 수정하지 않고 수동 설치 안내 제공.
 
-Bun 설치 프로그램과 `@latest` 패키지는 OpenUsage 업데이트 없이도 바뀐 코드를 내려받아 실행할 수 있음.
+Bun 설치 프로그램과 `@latest` 패키지는 egasu 업데이트 없이도 바뀐 코드를 내려받아 실행할 수 있음.
 패키지 선택은 사용자 Bun 설정을 따르며 홈 디렉터리 아래의 일치 패키지를 우선할 수 있음.
 패키지 저장소는 신뢰하는 주소와 HTTPS 사용 권장.
 HTTP 저장소에서는 다운로드 중 패키지 변조 위험 존재.
 공식 [Tokscale Privacy Policy](https://tokscale.ai/privacy), [Bun 설치 안내](https://bun.com/docs/installation), [Bun `bunx` 문서](https://bun.com/docs/pm/bunx) 참조.
 
 설치·명령 출력에는 사용자명·브라우저 주소·승인 코드·로컬 경로·모델 이름·프로필 주소·사용량 값이 포함될 수 있음.
-OpenUsage는 크기를 제한한 출력 사본을 메모리에 두고 Settings 카드와 로그인 창에 표시.
+egasu는 크기를 제한한 출력 사본을 메모리에 두고 Settings 카드와 로그인 창에 표시.
 완료·실패 후에도 Settings 카드의 **Done**으로 닫거나 다음 명령을 시작하거나 앱을 종료할 때까지 출력 유지.
 로그인 창의 **Done**은 창만 닫으며 카드의 출력은 유지.
-명령 출력은 OpenUsage 로그·분석 이벤트·UserDefaults·파일·클립보드에 자동 기록하지 않음.
-OpenUsage 자체는 Tokscale 인증 파일을 읽거나 복사하지 않음.
+명령 출력은 egasu 로그·분석 이벤트·UserDefaults·파일·클립보드에 자동 기록하지 않음.
+egasu 자체는 Tokscale 인증 파일을 읽거나 복사하지 않음.
 Tokscale 로그아웃·연결 해제·원격 데이터 삭제 UI는 제공하지 않음.
 
 ## 익명 분석 동작 방식

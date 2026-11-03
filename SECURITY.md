@@ -2,11 +2,11 @@
 
 ## Reporting a Vulnerability
 
-If you find a security vulnerability in OpenUsage, please report it responsibly. Do not open a public issue.
+If you find a security vulnerability in egasu, please report it responsibly. Do not open a public issue.
 
 ### Preferred: GitHub Security Advisories
 
-1. Go to the [Security Advisories page](https://github.com/kimchanhyung98/openusage/security/advisories/new)
+1. Go to the [Security Advisories page](https://github.com/kimchanhyung98/egasu/security/advisories/new)
 2. Click "Report a vulnerability"
 3. Fill in the details
 
@@ -14,7 +14,7 @@ This keeps the report private until a fix is released.
 
 ### Alternative: Email
 
-Send details to [kimchanhyung98@gmail.com](mailto:kimchanhyung98@gmail.com) with the subject line "OpenUsage Security Report".
+Send details to [kimchanhyung98@gmail.com](mailto:kimchanhyung98@gmail.com) with the subject line "egasu Security Report".
 
 ## What to Include
 
@@ -33,7 +33,7 @@ Send details to [kimchanhyung98@gmail.com](mailto:kimchanhyung98@gmail.com) with
 
 The following are in scope:
 
-- The OpenUsage desktop application
+- The egasu desktop application
 - The built-in providers (credential handling, API calls)
 - The local HTTP API
 - Build and release infrastructure

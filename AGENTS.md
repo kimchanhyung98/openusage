@@ -1,6 +1,6 @@
 # AGENTS.md
 
-OpenUsage is a SwiftPM-based SwiftUI menu-bar app for macOS that shows AI provider usage widgets (Claude, Codex, Cursor, Grok, Devin, and more).
+egasu is a SwiftPM-based SwiftUI menu-bar app for macOS that shows AI provider usage widgets (Claude, Codex, Cursor, Grok, Devin, and more).
 
 This file documents the engineering conventions for the project. Read it before contributing.
 
@@ -8,7 +8,7 @@ This file documents the engineering conventions for the project. Read it before 
 
 AGENTS.md is the source of truth for agent instructions in this repository. CLAUDE.md files may only point to the nearest AGENTS.md file with `@AGENTS.md`; do not add guidance, duplicate instructions, or project rules to CLAUDE.md.
 
-> **Repository note:** This is the native Swift edition of OpenUsage. Active development happens on the `main` branch. (NOT the legacy Tauri version which now sits in the `tauri-legacy` branch)
+> **Repository note:** This is the native Swift edition of egasu. Active development happens on the `main` branch. (NOT the legacy Tauri version which now sits in the `tauri-legacy` branch)
 
 ### Jev MCP
 
@@ -33,10 +33,10 @@ Inspect the available Jev MCP tools and their descriptions, then choose and use 
 
 ## Providers
 
-Conventions for the per-provider modules under `Sources/OpenUsage/Providers/<Name>/`.
+Conventions for the per-provider modules under `Sources/Egasu/Providers/<Name>/`.
 
 - **Structure:** one folder per provider with an auth store (reads credentials already on the user's machine), a usage client (calls the provider API), and a mapper (normalizes to `MetricLine`), conforming to `ProviderRuntime` — `refresh()` plus `hasLocalCredentials()`, the local-only credential probe used by first-run detection (`FirstRunSeeder`) and by new-provider detection on the first launch after the provider ships (`NewProviderSeeder`); mirror the same local credential sources and usability filters that `refresh()` starts with, reusing the auth-store loaders instead of adding a second credential-reading path. See `docs/adding-a-provider.md` and `docs/provider-enablement.md`.
-- **Model pricing:** all spend imputation (Claude, Codex, Cursor, Grok) prices through the shared engine in `Sources/OpenUsage/Pricing/` (see `docs/pricing.md`). Cursor-native model rates and alias rules live in `Sources/OpenUsage/Resources/pricing_supplement.json` — sync new or changed models from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md) (update `updated_at`, pricing entries, and `alias_rules` for CSV model slugs); merging to `main` publishes it to gh-pages, so installed apps pick it up without a release. The bundled LiteLLM/models.dev snapshots regenerate with `script/update_pricing_snapshots.sh` (a release-time chore).
+- **Model pricing:** all spend imputation (Claude, Codex, Cursor, Grok) prices through the shared engine in `Sources/Egasu/Pricing/` (see `docs/pricing.md`). Cursor-native model rates and alias rules live in `Sources/Egasu/Resources/pricing_supplement.json` — sync new or changed models from [Cursor models & pricing](https://cursor.com/docs/models-and-pricing.md) (update `updated_at`, pricing entries, and `alias_rules` for CSV model slugs); merging to `main` publishes it to gh-pages, so installed apps pick it up without a release. The bundled LiteLLM/models.dev snapshots regenerate with `script/update_pricing_snapshots.sh` (a release-time chore).
 - **Default order:** Claude, Codex, Cursor first (the established providers, in that order), then every other provider alphabetically by display name (Antigravity, Devin, Grok, …). The order is the array order in `AppContainer`, which seeds `LayoutStore`'s default provider order (and `resetToDefault`). A new provider slots into the alphabetical tail.
 - **Metric placement defaults:** when adding or changing a metric, confirm its four defaults with the owner before choosing — never pick silently:
   1. enabled on/off (`DefaultLayout.metricIDs`),
@@ -50,9 +50,9 @@ Conventions for the per-provider modules under `Sources/OpenUsage/Providers/<Nam
 
 ## Pull Requests
 
-- This project is maintained as the `kimchanhyung98/openusage` fork (`origin`). Create PRs against this fork's `main` branch by default.
+- This project is maintained as the `kimchanhyung98/egasu` fork (`origin`). Create PRs against this fork's `main` branch by default.
 - The original repository, `robinebers/openusage` (`upstream`), is not the default PR target. Only create a PR there when the user explicitly requests an upstream contribution.
-- Always specify the repository in `gh pr` commands: `--repo kimchanhyung98/openusage` unless the user explicitly requested an upstream contribution. Do not rely on GitHub CLI's fork-parent default. Before creating a PR, verify the target repository, base branch, and head branch.
+- Always specify the repository in `gh pr` commands: `--repo kimchanhyung98/egasu` unless the user explicitly requested an upstream contribution. Do not rely on GitHub CLI's fork-parent default. Before creating a PR, verify the target repository, base branch, and head branch.
 
 Every PR description must follow this structure so reviewers can skim it quickly:
 
@@ -96,5 +96,5 @@ Always fail loudly into error logging (log file, PostHog) and show friendly erro
 ## UI
 
 - Use title case for any hardcoded copy used as a title.
-- Match the existing design language; OpenUsage has a specific look and feel.
+- Match the existing design language; egasu has a specific look and feel.
 - Only add tooltips (`hoverTooltip`) when explicitly asked to. Don't add them proactively to new controls.

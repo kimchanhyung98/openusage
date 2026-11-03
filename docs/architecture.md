@@ -1,14 +1,14 @@
 # 아키텍처
 
-코드 작업자를 위한 OpenUsage 구성 개요.
+코드 작업자를 위한 egasu 구성 개요.
 앱이 *무엇을 하는지* 알아보려면 [동작 문서](/docs/README.md)부터 참조.
 
 ## 앱의 형태
 
-OpenUsage는 공유 모듈 하나와 실행 파일 두 개로 구성된 SwiftPM 패키지.
+egasu는 공유 모듈 하나와 실행 파일 두 개로 구성된 SwiftPM 패키지.
 Xcode 프로젝트는 없음.
 메뉴 막대 앱은 AppKit 상태 항목과 패널 안에 SwiftUI 화면 표시.
-다른 실행 파일은 사용량·계정을 조회하는 `openusage` CLI.
+다른 실행 파일은 사용량·계정을 조회하는 `egasu` CLI.
 코드는 역할별로 구분:
 
 - `App/` — 앱 시작과 AppKit 브리지(메뉴 막대 항목, 패널, 앱 진입점).
@@ -32,7 +32,7 @@ Reset Watch의 캐시 스토어도 `AppContainer`에서 생성.
 `WidgetData`는 예측 메타데이터를 선택적 값 하나로 묶어 기한·조회 실패 상태 관리.
 예측이 없는 상태와 조회에 실패한 상태는 구분.
 
-`openusage` CLI도 같은 공유 모듈 사용.
+`egasu` CLI도 같은 공유 모듈 사용.
 `UsageReader`는 실행마다 계정 상태를 확인하고 `ProviderCatalog`로 프로바이더 구성.
 비활성 등록 계정의 Keychain 스냅샷 카드는 GUI 전용이므로 CLI 카탈로그에서 제외.
 CLI는 먼저 `ProviderSnapshotCache`의 저장 결과와 계정 연결을 확인.
@@ -52,7 +52,7 @@ SwiftUI·AppKit 시작 전에 프로세스 전용 언어값을 적용하며 실�
 언어 초기화는 영속 설정을 쓰지 않아 기존 첫 설치 판별 유지.
 변경한 선택은 다음 실행에서 적용하며 macOS 전체 언어 설정에는 영향 없음.
 설정의 재시작 버튼은 `AppRelauncher`를 통해 정상 종료를 요청하고, 기존 프로세스가 종료된 뒤 같은 앱 번들을 다시 실행.
-`L10n`은 `Bundle.openUsageResources`의 언어별 `.lproj`에서 화면 영역별 `.strings` 조회.
+`L10n`은 `Bundle.egasuResources`의 언어별 `.lproj`에서 화면 영역별 `.strings` 조회.
 누락된 번역은 영어 원문으로 대체하며 리소스 누락은 오류 로그에 기록.
 번역 리소스는 SwiftPM의 기본 리소스 처리 사용 — 별도 생성 단계나 빌드 엔진 지정 불필요.
 개발·배포 앱의 Info.plist에도 세 언어 선언.
@@ -104,7 +104,7 @@ Settings의 로그인·전환·제거 작업은 같은 계정 확인 처리를 �
 설정 디렉터리가 다른 계정으로 재인증되면 해당 소스 연결을 새 계정 신원으로 이동.
 이전 레코드와 기록은 보존.
 여기서 프로바이더 신원은 인증 정보에서 확인한 계정 식별 정보.
-OpenUsage에 등록한 관리형 Claude 계정은 공유 홈의 로그인과 양방향으로 조정.
+egasu에 등록한 관리형 Claude 계정은 공유 홈의 로그인과 양방향으로 조정.
 공식 Claude CLI의 새 로그인을 검증할 수 있으면 선택 레코드의 저장 인증 정보와 프로바이더 신원 교체.
 이때 레코드의 ID·계정명·선택 상태는 유지.
 프로바이더 신원은 인증 교체 시 사용량 캐시를 구분하는 값.
@@ -140,9 +140,9 @@ UI는 관찰 가능한 몇 개의 스토어에서 읽음:
   각 레코드에 안정적인 ID, 편집 가능한 계정명, 현재 저장 인증 정보에서 파생된 프로바이더 신원 포함.
   관리형 레코드는 계정명으로 구분하며 재로그인으로 저장 신원 교체 가능.
   둘 이상의 관리형 레코드에 같은 신원이 일시적으로 존재할 수도 있음.
-  `openusage account` CLI도 공유 기본 설정 도메인을 통해 같은 레코드를 읽음.
+  `egasu account` CLI도 공유 기본 설정 도메인을 통해 같은 레코드를 읽음.
   계정 인증 정보는 계정별 Keychain 스냅샷에 저장.
-  OpenUsage에서 시작한 재로그인은 Application Support 아래 앱 소유 로그인 작업 공간에서 실행.
+  egasu에서 시작한 재로그인은 Application Support 아래 앱 소유 로그인 작업 공간에서 실행.
   선택된 Claude 계정은 공유 설정 홈에서 공식 CLI로도 재인증 가능.
   새 로그인을 검증한 조정 단계가 기존 스냅샷과 저장 프로바이더 신원을 교체.
   레지스트리·Keychain 스냅샷·로그인 작업 공간·전환 트랜잭션은 계정 관리의 공통 구조.
@@ -257,7 +257,7 @@ Codex 주간 타이머는 이 실행기 사용.
 
 ## Tokscale CLI 경계
 
-OpenUsage는 외부 프로세스로 Tokscale CLI 실행.
+egasu는 외부 프로세스로 Tokscale CLI 실행.
 연동 구성 요소의 책임은 설치, 명령 실행, 작업 상태 관리, 설정 화면으로 구분.
 
 ### Bun 설치
@@ -325,15 +325,15 @@ Settings가 닫히거나 다시 생성돼도 실행 중인 프로세스와 결�
 
 설치·명령 실행은 Settings의 해당 버튼을 눌렀을 때만 시작.
 앱 시작, Settings 표시, 주기적·수동 새로 고침, 프로바이더 변경으로는 시작하지 않음.
-iCloud 알림, 위젯 갱신, `openusage` CLI, 로컬 API 요청으로도 시작하지 않음.
+iCloud 알림, 위젯 갱신, `egasu` CLI, 로컬 API 요청으로도 시작하지 않음.
 
 사용량 제출은 `bunx tokscale@latest submit` 실행.
 기기 이름을 지정한 경우 `TOKSCALE_DEVICE_NAME`으로만 전달.
 기기 이름 저장 자체는 프로세스나 네트워크 요청을 시작하지 않음.
 저장한 이름은 다음 제출에 전달하며, 공개 기기 이름의 실제 변경은 Tokscale CLI와 서버의 처리에 따름.
-**Remove OpenUsage Override**는 OpenUsage에 저장한 이름만 제거.
+**Remove egasu Override**는 egasu에 저장한 이름만 제거.
 Tokscale에 이미 공개된 이름은 삭제하지 않음.
-이후 제출에는 OpenUsage에 저장된 이름을 전달하지 않음.
+이후 제출에는 egasu에 저장된 이름을 전달하지 않음.
 남아 있는 환경 변수와 기기 기록의 처리는 Tokscale 담당.
 
 제출 종료 코드가 0이 아니고 출력에 `Not logged in.`이 포함돼 있으면 미로그인으로 분류.
@@ -350,11 +350,11 @@ Tokscale CLI가 해당 그룹 밖에서 시작한 별도 후속 작업은 Toksca
 
 ### 데이터와 출력 처리
 
-제출 데이터를 만들거나 거를 때 OpenUsage의 지표·사용 기록·iCloud 기록·계정·프로바이더 활성화 설정은 읽지 않음.
+제출 데이터를 만들거나 거를 때 egasu의 지표·사용 기록·iCloud 기록·계정·프로바이더 활성화 설정은 읽지 않음.
 따라서 `MetricLine`과 `WidgetDataStore`의 결과를 Tokscale 제출 데이터로 변환하지 않음.
 사용량 수집기, 파서, 기여도 모델, 전송 데이터 구조, Tokscale 직접 API 클라이언트, 토큰 저장소, 인증 이전 기능은 이 연동에서 구현하지 않음.
 기록 소스 탐색·인증·고정 기기 ID·`device.json`·집계·네트워크 요청은 Tokscale CLI 담당.
-OpenUsage는 Tokscale 소유의 해당 파일을 편집하지 않음.
+egasu는 Tokscale 소유의 해당 파일을 편집하지 않음.
 
 설치기와 Tokscale의 표준 출력·표준 오류를 동시에 수집.
 ANSI 제어 시퀀스와 C1 제어 문자 등을 제거한 뒤 크기가 제한된 메모리 버퍼에 보관.
@@ -369,7 +369,7 @@ Settings 카드는 보관된 출력 표시.
 로그인 창의 **Done**은 창만 닫으며 설정 카드의 출력은 유지.
 설정 카드의 결과를 닫으면 출력·오류를 비우고 카드를 대기 상태로 변경.
 기기 이름과 Tokscale 인증은 유지.
-명령의 원문 출력, 상속한 환경 변수 값, 인증 정보, 인증 코드는 OpenUsage 로그·진단 이벤트·파일·설정에 저장하지 않음.
+명령의 원문 출력, 상속한 환경 변수 값, 인증 정보, 인증 코드는 egasu 로그·진단 이벤트·파일·설정에 저장하지 않음.
 
 ## AppKit 브리지
 
@@ -382,7 +382,7 @@ Settings 카드는 보관된 출력 표시.
 
 ## 플랫폼 지원
 
-OpenUsage는 macOS 15(Sequoia) 이상에서 실행.
+egasu는 macOS 15(Sequoia) 이상에서 실행.
 최신 SDK로 빌드하면서 macOS 15도 지원.
 macOS 26(Tahoe)에서 사용하는 Liquid Glass 등 최신 UI API는 이전 버전에서 대응 기능으로 대체.
 공통 컨트롤의 버전 분기는 `Support/LiquidGlassFallbacks.swift`에서 관리.

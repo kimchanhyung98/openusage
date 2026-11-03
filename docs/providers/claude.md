@@ -13,11 +13,11 @@ Claude Code 또는 Claude Desktop의 기존 로그인으로 Claude 구독 한도
 | Extra Usage | 월간 상한에서 차감된 추가 사용 크레딧 |
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
-Claude가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+Claude가 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
 
 ## 인증 정보 출처
 
-Claude Code 또는 Claude Desktop에 로그인하면 OpenUsage가 기존 로그인 사용.
+Claude Code 또는 Claude Desktop에 로그인하면 egasu가 기존 로그인 사용.
 구독 사용량을 읽을 수 있는 출처를 우선해 다음 순서로 확인.
 
 1. Claude Code가 관리하는 macOS 키체인 항목(macOS의 기준 저장소)
@@ -45,7 +45,7 @@ Claude Code의 자동 토큰 갱신 유지.
 저장 도구의 입력 한도를 초과하면 기존 토큰을 덮어쓰지 않고 저장 오류 처리.
 
 Claude Desktop 지원은 읽기 전용.
-OpenUsage는 macOS 키체인의 `Claude Safe Storage` 항목으로 현재 유효한 액세스 토큰 복호화.
+egasu는 macOS 키체인의 `Claude Safe Storage` 항목으로 현재 유효한 액세스 토큰 복호화.
 Desktop의 계정별 로그인 캐시는 현재 활성 계정과 조직에 맞는 항목만 사용.
 사용 가능한 계정별 토큰을 이전 형식의 토큰보다 우선 선택 — 서로 다른 권한 범위의 항목에도 적용.
 현재 계정 소유가 확인된 항목을 소유자 정보 없는 이전 형식 항목보다 우선하며, V1·V2 버전이 달라도 동일하게 적용.
@@ -57,37 +57,37 @@ Desktop의 계정별 로그인 캐시는 현재 활성 계정과 조직에 맞�
 소유자 UUID가 정상인 다른 계정 항목은 선택 대상에서만 제외.
 같은 캐시 항목의 별칭이 충돌하면 삭제 마커 우선, 나머지는 정상 토큰 중 만료가 늦은 항목 선택.
 Desktop의 갱신 토큰은 읽거나 사용하지 않으며 Desktop의 설정, 쿠키, 키체인 항목도 변경하지 않음.
-이 방식으로 OpenUsage가 Claude Desktop 세션을 무효화하는 문제 방지.
+이 방식으로 egasu가 Claude Desktop 세션을 무효화하는 문제 방지.
 
-OpenUsage가 Claude Desktop 키체인 항목에 접근하기 전 macOS의 최초 1회 확인 필요.
+egasu가 Claude Desktop 키체인 항목에 접근하기 전 macOS의 최초 1회 확인 필요.
 백그라운드 새로 고침에서는 암호 대화상자를 열지 않음: 먼저 수동 새로 고침을 요청하며, **Always Allow** 선택 시 이후 새로 고침은 추가 확인 없이 진행.
-Desktop의 단기 토큰이 만료되면 Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
+Desktop의 단기 토큰이 만료되면 Claude Desktop을 열어 로그인을 갱신한 뒤 egasu 새로 고침.
 
 `CLAUDE_CODE_OAUTH_TOKEN`(대개 수명이 긴 `claude setup-token`)은 모델 실행은 가능하지만 Session과 Weekly 한도 조회는 불가능하며 셸 환경에 오래 남는 경우가 많음.
 따라서 실제 키체인 또는 파일 로그인이 있으면 실시간 미터에는 해당 로그인을 사용하고 환경 토큰은 대체 수단으로만 유지 — 환경 토큰 설정만으로 Session/Weekly 미터가 비는 문제 방지.
 환경 토큰이 *유일한* 인증 정보인 헤드리스 설정에서는 단독 사용하며 지출 타일은 계속 로컬 로그에서 로드.
 
 한 출처의 토큰이 만료되었거나 "잠김" 상태면 계정 신원을 확인할 수 있는 다른 출처만 사용.
-앱 밖에서 `claude`로 재로그인한 결과도 인증 상태를 검증한 뒤 OpenUsage 재시작 없이 다음 새로 고침에 반영.
+앱 밖에서 `claude`로 재로그인한 결과도 인증 상태를 검증한 뒤 egasu 재시작 없이 다음 새로 고침에 반영.
 선택된 관리형 Claude 계정에서는 이 감지를 다시 쓰기 경계로도 사용 — 공유 홈 로그인에서 사용 가능한 프로바이더 신원을 검증하면 해당 계정의 저장 스냅샷과 신원을 새 인증 정보로 교체하고 준비 상태 갱신.
 신원이 바뀌어도 계정명과 선택 상태는 유지하며, 완료되지 않았거나 검증할 수 없는 인증 정보는 기록하지 않음.
 다른 위치의 로그인과 충돌하면, 기본 로그인이 더 오래됐음을 확인할 수 있을 때만 자동 정리하고 그 외에는 인증과 저장 계정 보존.
 Claude Code 토큰은 자동 갱신하며, 교체된 토큰은 로그인 후보의 순서와 값이 새로 고침 시작 시점과 여전히 일치할 때만 다시 기록하므로 새로 추가된 상위 우선순위 로그인 우선.
-Claude Desktop 토큰은 OpenUsage에서 갱신하거나 기록하지 않음.
+Claude Desktop 토큰은 egasu에서 갱신하거나 기록하지 않음.
 
 ## 지출 타일
 
-Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.claude/projects/`(또는 `$CLAUDE_CONFIG_DIR`) 아래의 Claude Code 세션 로그를 직접 읽으므로 외부 도구 불필요.
+Today / Yesterday / Last 30 Days는 **로컬에서** 계산: egasu가 `~/.claude/projects/`(또는 `$CLAUDE_CONFIG_DIR`) 아래의 Claude Code 세션 로그를 직접 읽으므로 외부 도구 불필요.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 projects 폴더도 동일하게 읽음.
-[pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Claude 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Claude 사용량을 같은 타일과 추세에 합산하므로 pi를 통해 Claude 구독을 사용한 내역도 여기에 표시.
+[pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Claude 사용량도 집계: egasu가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Claude 사용량을 같은 타일과 추세에 합산하므로 pi를 통해 Claude 구독을 사용한 내역도 여기에 표시.
 pi가 기록한 메시지별 양수 비용은 그대로 사용하고, 비용이 없거나 0이면 모델 요율로 추정.
 명시된 비용이 잘못된 값이면 재추정하지 않고 해당 행 제외.
 세션 로그와 pi 로그의 잘못된 토큰 수나 정수로 표현 가능한 로컬 이력 합계 범위를 넘는 행은 제외하고, [불완전한 로컬 이력 안내](/docs/refreshing.md#가져오기에-실패한-경우) 표시.
 동일 메시지의 사본이 여러 개면 숫자가 정상인 사본을 우선 사용.
 Claude 네이티브 로그의 `costUSD`가 음수·불리언·유효하지 않은 숫자이면 해당 항목 제외 및 경고.
-Cowork(Claude 데스크톱 앱의 에이전트 모드)도 집계: `~/Library/Application Support/Claude/local-agent-mode-sessions/` 아래의 세션별 폴더에 같은 로그를 기록하며, OpenUsage가 함께 스캔하므로 데스크톱 에이전트 세션도 터미널 세션과 함께 타일에 표시.
+Cowork(Claude 데스크톱 앱의 에이전트 모드)도 집계: `~/Library/Application Support/Claude/local-agent-mode-sessions/` 아래의 세션별 폴더에 같은 로그를 기록하며, egasu가 함께 스캔하므로 데스크톱 에이전트 세션도 터미널 세션과 함께 타일에 표시.
 기록이 남는 `claude -p` 실행도 집계.
-`--no-session-persistence` 실행은 Claude가 의도적으로 OpenUsage에서 읽을 세션 로그를 남기지 않으므로 표시 불가.
+`--no-session-persistence` 실행은 Claude가 의도적으로 egasu에서 읽을 세션 로그를 남기지 않으므로 표시 불가.
 메시지 안에 기록된 Advisor 작업은 Advisor 자체 모델에서 한 번만 집계하고 부모의 주 모델 합계는 별도 유지하며 일반 반복 세부 정보는 중복 집계하지 않음.
 로그에 기록된 fast 또는 standard 속도에 따라 가격 결정, 이벤트 날짜에서 속도를 추론하지 않음.
 Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 일치.
@@ -139,11 +139,11 @@ Separate Cards 제목은 **Claude: Account 1** 같은 고정 형식 **{Provider}
 선택기와 개별 카드는 등록 계정명을 사용하며, 미등록 공유 홈 로그인은 추가하지 않음.
 등록 계정명은 두 계정이 현재 같은 프로바이더 신원을 증명해도 선택기와 개별 카드에서 각각 유지.
 
-OpenUsage가 설치한 `claude` 함수를 불러온 새 터미널을 선택된 관리형 계정의 공식 재인증 경로로 지원.
+egasu가 설치한 `claude` 함수를 불러온 새 터미널을 선택된 관리형 계정의 공식 재인증 경로로 지원.
 이 함수는 계정 전환 승인 시 설치하며, 기존 로그인을 첫 계정으로 가져오기만 한 경우에는 미설치 가능.
 함수가 없거나 zsh·fish 이외의 셸을 사용하면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
 새 터미널에서 `claude`를 실행해 `/login`을 사용하거나 `claude auth login`을 실행한 뒤, Settings에서 선택한 계정명에 저장할 유효한 Claude 로그인 완료.
-OpenUsage가 공유 `~/.claude` 로그인을 검증하고 해당 계정명의 비공개 Keychain 스냅샷과 저장 프로바이더 신원을 교체 — **Sign In Again**이나 앱 재실행 불필요.
+egasu가 공유 `~/.claude` 로그인을 검증하고 해당 계정명의 비공개 Keychain 스냅샷과 저장 프로바이더 신원을 교체 — **Sign In Again**이나 앱 재실행 불필요.
 다른 프로바이더 신원으로 로그인해도 계정명을 바꾸거나 다른 관리형 계정을 조용히 선택하지 않음.
 이미 열려 있던 터미널이나 이 함수를 거치지 않은 실행에서 다른 계정으로 로그인한 경우, 기본 로그인이 더 오래된 상태임을 확인할 때만 관리형 로그인으로 정리.
 기본 로그인이 더 새롭거나 어느 쪽이 최신인지 확인할 수 없으면 양쪽 인증·저장된 계정 정보·선택을 그대로 두고 충돌 안내.
@@ -163,12 +163,12 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 
 ## 문제 해결
 
-- **"Not logged in"** — 선택된 관리형 계정은 OpenUsage의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`으로 재로그인한 뒤 OpenUsage 새로 고침.
-  `claude auth status`에서 `loggedIn: true`가 나오고 공유 Claude 홈이 일관된 신원 하나로 해석될 때만 OpenUsage가 관리형 스냅샷을 자동 갱신.
+- **"Not logged in"** — 선택된 관리형 계정은 egasu의 `claude` 함수를 불러온 새 터미널에서 `claude` 세션의 `/login` 또는 `claude auth login`으로 재로그인한 뒤 egasu 새로 고침.
+  `claude auth status`에서 `loggedIn: true`가 나오고 공유 Claude 홈이 일관된 신원 하나로 해석될 때만 egasu가 관리형 스냅샷을 자동 갱신.
   상태 파일이 서로 다른 계정을 가리키거나, 파싱할 수 없거나, 새 Keychain 인증 정보보다 오래되고 기존 인증 정보 체인에도 속하지 않으면 기존 스냅샷 보존.
   함수가 없거나 지원하지 않는 셸을 사용하면 **Settings → Accounts → Manage Claude Account → Sign In Again** 사용.
 - **"Claude Desktop login found"** — 수동으로 새로 고침하고 macOS에서 `Claude Safe Storage` 접근을 요청할 때 **Always Allow** 선택.
-- **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 OpenUsage 새로 고침.
+- **"Claude Desktop login is stale"** — Claude Desktop을 열어 로그인을 갱신한 뒤 egasu 새로 고침.
 - **"Re-login for live usage"**(Claude 헤더의 황색 경고) — 저장된 로그인은 추론 인증이 가능하지만 `user:profile` 접근 권한이 없어 구독 한도 조회 불가(`claude setup-token`에서 발급한 추론 전용 토큰의 동작).
   `claude`를 실행해 Claude 계정으로 재로그인한 뒤 새로 고침; 그동안 지출 타일은 계속 동작.
   이 로그인 경고는 Claude Desktop의 만료되었거나 읽을 수 없는 로그인 안내보다 우선 표시.
@@ -186,7 +186,7 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
   형식 제외는 `history_scan/decoding`, 모델 가격 미확정은 `history_scan/other`로 기존 로그·동의 기반 익명 진단에 기록.
   형식 제외는 파일 재파싱 시에만 기록하므로 캐시 hit의 이벤트 부재를 정상 스캔 증거로 해석하지 않음.
   제보 근거와 검증 범위는 [로컬 사용량 누락 검토](/docs/research/claude-local-usage-diagnostics.md) 참조.
-  관리형 계정 전환 외의 경우 로그가 커스텀 위치에 있으면 `CLAUDE_CONFIG_DIR`을 설정해 Claude Code와 OpenUsage가 같은 위치 사용.
+  관리형 계정 전환 외의 경우 로그가 커스텀 위치에 있으면 `CLAUDE_CONFIG_DIR`을 설정해 Claude Code와 egasu가 같은 위치 사용.
   관리형 터미널 전환은 공유 `~/.claude` 홈 사용.
   다른 커스텀 홈에 둔 로그인은 Settings에 등록하기 전까지 아예 표시하지 않음.
 

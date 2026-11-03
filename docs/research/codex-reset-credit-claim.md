@@ -2,7 +2,7 @@
 
 Codex "reset credit" 클레임 흐름 조사 및 실계정 검증 기록(2026-07-12).
 앱 내 클레임 추가를 위한 프로토콜 참조로 시작.
-현재 OpenUsage에 [Codex 프로바이더 안내](/docs/providers/codex.md#팝오버에서-재설정-사용)의 2단계 클릭 방식과 카드별 클레임 흐름 구현 완료.
+현재 egasu에 [Codex 프로바이더 안내](/docs/providers/codex.md#팝오버에서-재설정-사용)의 2단계 클릭 방식과 카드별 클레임 흐름 구현 완료.
 아래 엔드포인트 세부 정보는 해당 구현의 프로토콜 참조로 유지.
 요금제별 규칙과 응답 예시는 2026-07-12 조사 기준.
 실계정 검증 범위는 아래에 기록한 Pro 계정의 크레딧 1개 사용으로 한정.
@@ -20,19 +20,19 @@ Free/Go 요금제는 월간 기간을 재설정하는 것으로 확인했으나,
 ## 엔드포인트
 
 둘 다 ChatGPT 백엔드 기본 URL(`https://chatgpt.com/backend-api`) 아래에 위치.
-CLI에는 Enterprise/대체 기본 URL용 `PathStyle::CodexApi` 변형(`/wham/...` 대신 `/api/codex/...`)도 있지만, OpenUsage에서는 ChatGPT 방식 사용.
+CLI에는 Enterprise/대체 기본 URL용 `PathStyle::CodexApi` 변형(`/wham/...` 대신 `/api/codex/...`)도 있지만, egasu에서는 ChatGPT 방식 사용.
 
 모든 호출의 헤더:
 
 - `Authorization: Bearer <access_token>`: 클레임 대상 카드의 인증 정보에 저장된 ChatGPT OAuth 액세스 토큰.
 - `ChatGPT-Account-Id: <account_id>`: 같은 인증 정보의 계정 ID.
-- `OpenAI-Beta: codex-1`과 `originator: Codex Desktop` — 재설정 크레딧 엔드포인트에서 요구하는 Codex 데스크톱 클라이언트 헤더이며 OpenUsage의 일반 사용량 조회에서는 전송하지 않음
+- `OpenAI-Beta: codex-1`과 `originator: Codex Desktop` — 재설정 크레딧 엔드포인트에서 요구하는 Codex 데스크톱 클라이언트 헤더이며 egasu의 일반 사용량 조회에서는 전송하지 않음
 - POST의 `Content-Type: application/json`
 
 2026-07-12 실계정 검증에서는 `~/.codex/auth.json`의 인증 정보 사용.
-현재 OpenUsage는 카드에 연결된 인증 출처를 사용하며, 비활성 관리형 계정의 클레임에는 해당 계정의 저장 스냅샷 사용.
+현재 egasu는 카드에 연결된 인증 출처를 사용하며, 비활성 관리형 계정의 클레임에는 해당 계정의 저장 스냅샷 사용.
 
-### 목록 조회(OpenUsage에 이미 구현)
+### 목록 조회(egasu에 이미 구현)
 
 `GET /wham/rate-limit-reset-credits`
 
@@ -115,12 +115,12 @@ consume 응답의 `credit` 객체에는 CLI 자체 구조체에서 무시하는 
 - 약 1초 뒤 조회 결과: 5시간 및 주간 기간 모두 전체 기간(`reset_after_seconds` = 18000 / 604800)으로 **0% 사용**, `available_count` = 3, 사용한 크레딧은 목록에서 제외.
   `additional_rate_limits` 항목의 기간별 사용량도 0%로 재설정되었지만, 모델별 리밋은 이미 0%였으므로 확증이 아닌 정황.
 
-## OpenUsage에 반영된 구현 참고 사항
+## egasu에 반영된 구현 참고 사항
 
 - 처음 클레임을 요청하면 대상 계정의 크레딧 목록을 조회한 뒤, 사용할 크레딧을 지정해 `POST …/consume` 전송.
   목록 조회와 사용 요청은 `CodexUsageClient`의 재설정 크레딧 헤더 사용.
   사용 요청 직전에 인증 출처와 계정 신원을 다시 확인.
-- OpenUsage에서 크레딧별 `redeem_request_id` UUID를 **사용자에게 클레임 UI를 표시할 때** 발급.
+- egasu에서 크레딧별 `redeem_request_id` UUID를 **사용자에게 클레임 UI를 표시할 때** 발급.
   상호작용 동안 UUID를 유지하고 재시도에도 재사용해 CLI와 같은 방식으로 중복 소모 방지.
 - 항상 명시적 `credit_id` 전달.
   사용자가 만료 임박 순서의 타임라인에서 크레딧을 선택하면, 처음 요청할 때 새 목록과 대조해 대상 ID 확정.

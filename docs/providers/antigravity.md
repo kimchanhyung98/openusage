@@ -14,9 +14,9 @@ Antigravity에는 공유 할당량 풀이 두 개 있으며, 각 풀마다 순�
 | Claude | 공유 Gemini 외 풀(Claude, GPT-OSS, …)의 순환 5시간 기간 |
 | Claude Weekly | 같은 Gemini 외 풀의 주간 기간 |
 
-Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 egasu의 프로바이더 이름 옆에 표시.
 
-Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 같은 할당량이 줄어들어 OpenUsage에서는 Pro와 Flash 미터를 따로 두지 않고 기간별로 하나만 표시.
+Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 같은 할당량이 줄어들어 egasu에서는 Pro와 Flash 미터를 따로 두지 않고 기간별로 하나만 표시.
 다른 프로바이더 행의 명명 방식에 맞춰 Session과 Weekly로 명명.
 모든 Gemini 외 모델은 두 번째 풀을 공유하며 Claude라는 이름으로 표시(Codex의 Spark 쌍과 같은 방식).
 할당량은 비율로 보고되며, 가득 찬 상태는 0% 사용을 뜻함.
@@ -42,14 +42,14 @@ Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 �
 
 ## 인증 정보 출처
 
-OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 정보를 읽음.
+egasu는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 정보를 읽음.
 
 - **로컬 언어 서버 조회** — 실행 중인 Antigravity 또는 `agy`의 언어 서버에 먼저 요청.
   현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
 - **로컬 조회 실패** — Antigravity / `agy`가 macOS 키체인에 저장한 OAuth 토큰으로 Google Cloud Code API 조회.
   앱이 종료된 경우에도 이 경로 사용.
   할당량 요약은 production 서버를 먼저 조회하고, 사용량 항목이 빠져 있으면 daily 서버에서 보충.
-  만료된 토큰은 자동 갱신(OpenUsage는 Antigravity 자체 키체인 항목에 다시 쓰지 않음).
+  만료된 토큰은 자동 갱신(egasu는 Antigravity 자체 키체인 항목에 다시 쓰지 않음).
   단기 캐시는 같은 키체인 로그인이 존재하며 읽을 수 있을 때만 재사용.
 
 로컬 조회에 실패하고 사용할 로그인 정보도 없으면 *Start Antigravity or run `agy` and try again.* 표시.
@@ -73,7 +73,7 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
 ## 내부 동작
 
 우선순위가 높은 출처부터 시도: `language_server` / `agy` 프로세스를 탐색해 로컬 언어 서버를 찾고 CSRF 토큰과 수신 포트를 읽은 뒤, 실패하면 필요할 때 Google OAuth로 갱신한 키체인 토큰을 사용해 Google Cloud Code 호출.
-OpenUsage는 갱신된 액세스 토큰의 단기 캐시를 현재 키체인 갱신 인증 정보의 단방향 지문에 연결.
+egasu는 갱신된 액세스 토큰의 단기 캐시를 현재 키체인 갱신 인증 정보의 단방향 지문에 연결.
 로그아웃, 계정 변경, 레거시 캐시, 만료되거나 손상된 항목으로는 이전 계정의 액세스 토큰 재사용 불가.
 각 출처에서 먼저 할당량 요약 엔드포인트(언어 서버의 `RetrieveUserQuotaSummary`, Cloud Code의 `v1internal:retrieveUserQuotaSummary`) 요청 — 병합된 풀과 주간 기간을 보고하는 유일한 엔드포인트.
 Cloud Code 요약은 production 서버 우선 조회.

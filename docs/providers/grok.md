@@ -26,7 +26,7 @@ Grok CLI에서 한 번 로그인(`grok login`)하면 동일한 `~/.grok/auth.jso
 
 ## 지출 타일
 
-Today / Yesterday / Last 30 Days는 Grok CLI 로그(`~/.grok/logs/unified.jsonl` 또는 `$GROK_HOME/logs/unified.jsonl`)에서 **로컬로** 계산하며, OpenUsage가 로그를 직접 읽는 방식.
+Today / Yesterday / Last 30 Days는 Grok CLI 로그(`~/.grok/logs/unified.jsonl` 또는 `$GROK_HOME/logs/unified.jsonl`)에서 **로컬로** 계산하며, egasu가 로그를 직접 읽는 방식.
 각 기간은 비용과 토큰을 함께 보여 주는 하나의 타일(`$4.08 · 1.2M tokens`)로, Claude/Codex/Cursor와 동일.
 달러 금액은 공유 [모델 가격](/docs/pricing.md)과 기록된 토큰 수로 추정한 값(ⓘ 표시).
 토큰 수는 로그의 측정값 사용.

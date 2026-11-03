@@ -2,10 +2,10 @@
 
 > **과거 기록 / 대체됨.**
 > 이 2026-06-25 연구는 같은 날 뒤이어 출시되고 이후 계속 다듬어진 조율된 콘텐츠 기반 패널 크기 조절에 앞선 내용.
-> 현재 구현은 [AppKit 브리지](/docs/architecture.md#appkit-브리지), [`DashboardView.swift`](/Sources/OpenUsage/Views/DashboardView.swift), [`PanelHeightCoordinator.swift`](/Sources/OpenUsage/Views/PanelHeightCoordinator.swift), [`PanelHeightController.swift`](/Sources/OpenUsage/App/PanelHeightController.swift) 참조.
+> 현재 구현은 [AppKit 브리지](/docs/architecture.md#appkit-브리지), [`DashboardView.swift`](/Sources/Egasu/Views/DashboardView.swift), [`PanelHeightCoordinator.swift`](/Sources/Egasu/Views/PanelHeightCoordinator.swift), [`PanelHeightController.swift`](/Sources/Egasu/App/PanelHeightController.swift) 참조.
 > 아래의 기각된 접근 방식과 제안 파일 구성은 현재 설정 지침이 아닌 과거 연구 기록으로 보존.
 > 본문의 관찰과 제안은 2026-06-25 기준이며, 제안한 동작의 검증 완료를 뜻하지 않음.
-> 현재 높이 전달은 [`PanelHeightModifier.swift`](/Sources/OpenUsage/Views/PanelHeightModifier.swift)의 비동기 메인 큐 브리지 사용.
+> 현재 높이 전달은 [`PanelHeightModifier.swift`](/Sources/Egasu/Views/PanelHeightModifier.swift)의 비동기 메인 큐 브리지 사용.
 > 아래의 동기 전달 예시는 당시 제안이며 현재 구현에 그대로 적용할 지침이 아님.
 
 **연구 보고서 — 2026-06-25**

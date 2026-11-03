@@ -2,7 +2,7 @@
 
 > **과거 기록 / 대체됨.**
 > 이 실현 가능성 보고서는 2026-07-04 시점의 구현 전 스냅샷.
-> 아래에서 제안하는 모델별 내역 데이터 경로와 지출 행 호버 패널은 같은 날 출시됐으며, 현재 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/OpenUsage/Providers/SpendTileMapper.swift), [`HoverPopoverState.swift`](/Sources/OpenUsage/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
+> 아래에서 제안하는 모델별 내역 데이터 경로와 지출 행 호버 패널은 같은 날 출시됐으며, 현재 구현은 [대시보드 행](/docs/dashboard.md#행), [`SpendTileMapper.swift`](/Sources/Egasu/Providers/SpendTileMapper.swift), [`HoverPopoverState.swift`](/Sources/Egasu/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/Egasu/Views/ModelUsageDetail.swift) 참고.
 > 본문의 기존 구현과 제안은 2026-07-04 기준.
 > 날짜를 따로 표시한 상태 업데이트는 해당 날짜 기준이며, 현재 동작은 위의 문서와 코드 참고.
 
@@ -33,7 +33,7 @@
 
 ## 현재 지출 데이터 경로
 
-공유 지출 타일 생성 위치는 `Sources/OpenUsage/Providers/SpendTileMapper.swift`.
+공유 지출 타일 생성 위치는 `Sources/Egasu/Providers/SpendTileMapper.swift`.
 
 `SpendTileMapper.appendTokenUsage(_:to:now:estimated:unknownModelsByDay:)`에서 세 개의 `.values` 행 추가:
 
@@ -41,7 +41,7 @@
 - `Yesterday`
 - `Last 30 Days`
 
-입력은 `Sources/OpenUsage/Models/DailyUsageSeries.swift`의 `DailyUsageSeries`.
+입력은 `Sources/Egasu/Models/DailyUsageSeries.swift`의 `DailyUsageSeries`.
 의도적으로 프로바이더 중립적인 이 타입의 필드는 다음뿐:
 
 - `DailyUsageEntry.date`
@@ -55,7 +55,7 @@
 
 따라서 현재 지출 행에는 총비용·토큰과 가격을 알 수 없는 모델 경고를 표시할 데이터만 존재해 모델별 합계 표시에는 부족.
 
-공유 가격 엔진 위치는 `Sources/OpenUsage/Pricing/`:
+공유 가격 엔진 위치는 `Sources/Egasu/Pricing/`:
 
 - `ModelPricing.resolve(model:)`에서 `ModelRates?` 반환.
 - `ModelPricing.estimatedCostDollars(model:tokens:)`에서 `TokenBreakdown` 가격 계산.
@@ -76,7 +76,7 @@
 
 축소 전 사용 가능한 모델별 데이터:
 
-- `Sources/OpenUsage/Providers/Cursor/CursorUsageCSV.swift`의 `CursorUsageCSVRow` 필드:
+- `Sources/Egasu/Providers/Cursor/CursorUsageCSV.swift`의 `CursorUsageCSVRow` 필드:
   - `date: Date`
   - `model: String`
   - `maxMode: Bool`
@@ -110,7 +110,7 @@
 
 축소 전 사용 가능한 모델별 데이터:
 
-- `Sources/OpenUsage/Providers/Claude/ClaudeLogUsageScanner.swift`의 `ClaudeLogUsageScanner.Entry` 필드:
+- `Sources/Egasu/Providers/Claude/ClaudeLogUsageScanner.swift`의 `ClaudeLogUsageScanner.Entry` 필드:
   - `timestamp: Date`
   - `tokens: TokenBreakdown`
   - `costUSD: Double?`
@@ -143,7 +143,7 @@
 
 축소 전 사용 가능한 모델별 데이터:
 
-- `Sources/OpenUsage/Providers/Codex/CodexLogUsageScanner.swift`의 `CodexLogUsageScanner.Event` 필드:
+- `Sources/Egasu/Providers/Codex/CodexLogUsageScanner.swift`의 `CodexLogUsageScanner.Event` 필드:
   - `timestamp: Date`
   - `model: String`
   - `input: Int`
@@ -203,7 +203,7 @@
 
 지표 식별:
 
-- `Sources/OpenUsage/Models/WidgetDescriptor+Factories.swift`의 `WidgetDescriptor.spendTiles(provider:)`에서 지출 디스크립터 세 개 선언:
+- `Sources/Egasu/Models/WidgetDescriptor+Factories.swift`의 `WidgetDescriptor.spendTiles(provider:)`에서 지출 디스크립터 세 개 선언:
   - `<provider>.today`
   - `<provider>.yesterday`
   - `<provider>.last30`
@@ -247,21 +247,21 @@
 
 `hoverTooltip`:
 
-- 구현 위치는 `Sources/OpenUsage/Views/HoverTooltip.swift`.
+- 구현 위치는 `Sources/Egasu/Views/HoverTooltip.swift`.
 - 별도의 테두리 없는 비활성 클릭 통과 `NSPanel`에 텍스트를 표시하는 View 수정자.
 - 주석에 따르면 팝오버 내부 SwiftUI 오버레이는 팝오버 윈도우와 스크롤 뷰에서 잘리므로 툴팁은 별도 패널 사용.
 - 툴팁 패널은 `.popUpMenu`보다 한 단계 위에 위치하고 key/main 상태가 되지 않으며, `StatusItemController.hidePanel()`과 `DashboardView.resetTransientState()`에서 닫힘.
 
 사용량 추세 호버:
 
-- `Sources/OpenUsage/Views/UsageSparkline.swift`의 `UsageSparkline`은 전체 행 제목이 아닌 막대 영역에만 호버 연결.
-- `Sources/OpenUsage/Views/UsageTrendDetail.swift`의 `TrendHoverState` 사용:
+- `Sources/Egasu/Views/UsageSparkline.swift`의 `UsageSparkline`은 전체 행 제목이 아닌 막대 영역에만 호버 연결.
+- `Sources/Egasu/Views/UsageTrendDetail.swift`의 `TrendHoverState` 사용:
   - 400ms 머문 뒤 표시
   - 인라인 행에서 상세 팝오버로 이동하는 동안 180ms 숨김 유예
   - 뷰 해체 시 닫기
 - SwiftUI `.popover(isPresented:arrowEdge:)`로 `UsageTrendDetail` 표시.
 - `UsageTrendDetail`에 호버한 날짜를 강조하는 자체 내부 막대 호버 상태 존재.
-- `Tests/OpenUsageTests/UsageTrendTests.swift`의 테스트에서 열기·닫기·빠른 통과 동작 검증.
+- `Tests/EgasuTests/UsageTrendTests.swift`의 테스트에서 열기·닫기·빠른 통과 동작 검증.
 
 팝오버 제약:
 

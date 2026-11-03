@@ -2,7 +2,7 @@
 
 > **과거 기록 / 대체됨.**
 > 2026-07-04에 출시된 모델 내역 호버 패널의 방향을 정한 디자인 보고서.
-> 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`HoverPopoverState.swift`](/Sources/OpenUsage/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/OpenUsage/Views/ModelUsageDetail.swift) 참고.
+> 현재 동작과 구현은 [대시보드 행](/docs/dashboard.md#행), [`HoverPopoverState.swift`](/Sources/Egasu/Views/HoverPopoverState.swift), [`ModelUsageDetail.swift`](/Sources/Egasu/Views/ModelUsageDetail.swift) 참고.
 > 아래의 참조, 줄 번호, 제안 컴포넌트 이름은 조사 당시 기준.
 > 권장안과 미결 사항은 당시 제안의 기록이며, 현재 구현의 요구 사항을 뜻하지 않음.
 
@@ -26,7 +26,7 @@
 
 ## 1. 앱의 기존 디자인 언어(구체적 목록)
 
-`Sources/OpenUsage/Views/` + `Sources/OpenUsage/Stores/DensitySetting.swift` + `Sources/OpenUsage/Support/Theme.swift` + `Sources/OpenUsage/Support/LiquidGlassFallbacks.swift`에서 확인한 내용.
+`Sources/Egasu/Views/` + `Sources/Egasu/Stores/DensitySetting.swift` + `Sources/Egasu/Support/Theme.swift` + `Sources/Egasu/Support/LiquidGlassFallbacks.swift`에서 확인한 내용.
 새 패널도 이 언어와 일치해야 함.
 
 ### 1.1 글자 크기 체계(시맨틱 스타일이 아닌 명시적 포인트 크기)
