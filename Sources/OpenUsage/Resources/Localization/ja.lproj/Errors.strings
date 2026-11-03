@@ -116,6 +116,7 @@
 "Kiro profile is unavailable. Run `kiro-cli login` and try again." = "Kiro のプロフィールを取得できません。`kiro-cli login` を実行して、もう一度お試しください。";
 "Kiro session expired. Run `kiro-cli login` and try again." = "Kiro のセッションの有効期限が切れました。`kiro-cli login` を実行して、もう一度お試しください。";
 "Limit reached. Automatic cancellation is not supported for this provider yet." = "上限に達しました。このプロバイダーの自動キャンセルはまだサポートされていません。";
+"Local usage history is unavailable. Showing the last successful totals." = "ローカルの使用履歴を読み込めません。最後に正常取得した合計を表示しています。";
 "Multiple Keychain items matched the service; no credential was changed." = "サービスに一致するキーチェーン項目が複数あったため、認証情報は変更されませんでした。";
 "No %@ sign-in was found to import." = "インポートできる%@のログイン情報が見つかりませんでした。";
 "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json." = "OpenRouter API キーがありません。OPENROUTER_API_KEY を設定するか、~/.config/openusage/openrouter.json にキーを追加してください。";

@@ -195,7 +195,7 @@ actor KiroUsageScanner {
                 }
                 // 이후 입력 컨텍스트만 되감기. 이미 소비한 턴 기록은 보존.
                 needsResponse = true
-            case "session_start", "system", "user", "tool_result", "assistant":
+            case "session_start", "system", "user", "tool_result", "assistant", "agent_note":
                 guard let content = payload["content"] as? String else {
                     parsed.invalidRows += 1
                     continue

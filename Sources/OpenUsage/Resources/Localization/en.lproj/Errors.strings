@@ -116,6 +116,7 @@
 "Kiro profile is unavailable. Run `kiro-cli login` and try again." = "Kiro profile is unavailable. Run `kiro-cli login` and try again.";
 "Kiro session expired. Run `kiro-cli login` and try again." = "Kiro session expired. Run `kiro-cli login` and try again.";
 "Limit reached. Automatic cancellation is not supported for this provider yet." = "Limit reached. Automatic cancellation is not supported for this provider yet.";
+"Local usage history is unavailable. Showing the last successful totals." = "Local usage history is unavailable. Showing the last successful totals.";
 "Multiple Keychain items matched the service; no credential was changed." = "Multiple Keychain items matched the service; no credential was changed.";
 "No %@ sign-in was found to import." = "No %@ sign-in was found to import.";
 "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json." = "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json.";
