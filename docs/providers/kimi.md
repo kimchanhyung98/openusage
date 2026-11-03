@@ -59,6 +59,8 @@ thinking 기록 누락·알 수 없는 값·변경 가능한 `kimi-for-coding` �
 [공식 캐시 계약](https://platform.kimi.ai/docs/guide/context-caching)은 5분·1시간 캐시 쓰기를 구분하지만 CLI 정규화 기록은 이 구분을 보존하지 않음.
 Anthropic 프로토콜은 `inputCacheCreation`이 0일 때만 가격 계산.
 OpenAI·Responses 프로토콜은 캐시 쓰기가 일반 입력에 포함될 수 있어 `inputOther`와 `inputCacheCreation`이 모두 0일 때만 가격 계산.
+OpenAI·Responses의 [캐시 읽기 필드가 없는 기록](https://github.com/MoonshotAI/kimi-code/blob/444c609e8e6629d43fb7fd571a8db48ce5a41570/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L188)은 `inputOther`에 전체 입력이 있으므로 Tokens만 집계.
+캐시 읽기 필드 생략을 캐시 사용량 0으로 간주하여 비용을 계산하지 않음.
 일반 사용 기록은 이 조건을 충족하지 않을 수 있으며, 이 경우 기간 전체 비용을 표시하지 않음.
 로그 계약은 Kimi Code 소스 `a2afdbc7`의 [thinking 기록](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/agent/loop/requester.ts#L736-L765), [OpenAI 토큰 변환](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L187), [정규화 저장 전 처리](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/policy/settle.ts#L30-L36)와 대조.
 
