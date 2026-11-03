@@ -130,6 +130,23 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertEqual(usage.warnings.count, 1)
     }
 
+    func testModelRouteNoteReplacesContextWithoutCountingItAsOutput() throws {
+        var data = try history(credits: 1)
+        data += try row("route", ["type": "model_route", "fromModel": "model-a", "toModel": "model-b",
+                                 "reason": "classifier", "handoffMode": "compacted"])
+        data += try row("compact", ["type": "tombstone", "kind": "summarization", "effectiveFromMessageId": "user"])
+        data += try row("note", ["type": "agent_note", "content": "saved notes!", "noteUserRequests": ["abcd"]])
+        data += try row("start-2", ["type": "turn_start", "executionId": "next"])
+        data += try row("reply-2", ["type": "assistant", "content": "abcd", "executionId": "next"])
+        data += try summary("next", credits: 1)
+
+        let parsed = try KiroUsageScanner.parse(data)
+
+        XCTAssertEqual(parsed.records.map(\.tokens), [5, 6])
+        XCTAssertEqual(parsed.records.map(\.costUSD), [0.04, 0.04])
+        XCTAssertEqual(parsed.invalidRows, 0)
+    }
+
     func testInvalidCreditsAndFinishedBadJSONWarnWhileActiveTailWaits() throws {
         var data = try history()
         for (index, bad) in [true, -1, "1", "NaN"].enumerated() {
