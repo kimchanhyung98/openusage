@@ -54,6 +54,137 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertNil(PiUsageScanner.parseLine(userLine))
     }
 
+    func testExplicitUsageRemainsWhenCompactionModelIsMissing() {
+        let entries = parseRecords([
+            #"{"type":"message","id":"m1","parentId":null,"timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":800,"output":200,"totalTokens":1000,"cost":{"total":1}}}}"#,
+            #"{"type":"compaction","id":"c1","parentId":"m1","timestamp":"2026-07-12T10:01:00Z","usage":{"input":180,"output":20,"totalTokens":200,"cost":{"total":0.2}}}"#,
+            #"{"type":"usage","kind":"cache_warm","id":"u1","parentId":"c1","timestamp":"2026-07-12T10:02:00Z","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":80,"output":20,"totalTokens":100,"cost":{"total":0.1}}}"#
+        ])
+        XCTAssertEqual(entries.count, 3)
+        let scan = PiUsageScanner.aggregate(
+            entries: PiUsageScanner.dedup(entries + entries), cardID: "claude", since: .distantPast, pricing: .empty
+        )
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 1100)
+        XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 1.1, accuracy: 1e-9)
+        XCTAssertEqual(scan.rejectedMetadataRows, 1)
+    }
+
+    func testCompactionAfterTreeNavigationDoesNotBorrowEitherBranchesModel() {
+        let entries = parseRecords([
+            #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#,
+            #"{"type":"model_change","id":"b","parentId":"a","provider":"openai-codex","modelId":"gpt-5"}"#,
+            #"{"type":"message","id":"user-a","parentId":"a","message":{"role":"user","content":"fixture"}}"#,
+            #"{"type":"compaction","id":"ca","parentId":"user-a","timestamp":"2026-07-12T10:00:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#,
+            #"{"type":"compaction","id":"cb","parentId":"b","timestamp":"2026-07-12T11:00:00Z","usage":{"input":200,"totalTokens":200,"cost":{"total":0.3}}}"#
+        ])
+        XCTAssertEqual(entries.count, 2)
+        for cardID in ["claude", "codex"] {
+            let scan = PiUsageScanner.aggregate(entries: entries, cardID: cardID, since: .distantPast, pricing: .empty)
+            XCTAssertTrue(scan.series.daily.isEmpty)
+            XCTAssertEqual(scan.rejectedMetadataRows, 2)
+            XCTAssertNotNil(scan.metadataWarning)
+        }
+    }
+
+    func testCompactionWithoutParentContextStillWarns() {
+        let entries = parseRecords([
+            #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#,
+            #"{"type":"compaction","id":"c","parentId":"missing","timestamp":"2026-07-12T10:00:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#
+        ])
+        XCTAssertEqual(entries.count, 1)
+        for cardID in ["claude", "codex"] {
+            let scan = PiUsageScanner.aggregate(entries: entries, cardID: cardID, since: .distantPast, pricing: .empty)
+            XCTAssertEqual(scan.rejectedMetadataRows, 1)
+            XCTAssertNil(scan.usageHistory)
+        }
+    }
+
+    func testCompactionCannotUsePreviousModelAfterAnUnrecordedResumeOverride() {
+        let entries = parseRecords([
+            #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#,
+            #"{"type":"message","id":"answer","parentId":"a","timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":50,"totalTokens":50,"cost":{"total":0.1}}}}"#,
+            #"{"type":"compaction","id":"c","parentId":"answer","timestamp":"2026-07-12T10:01:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#
+        ])
+        let claude = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(claude.series.daily.first?.totalTokens, 50)
+        XCTAssertEqual(claude.series.daily.first?.costUSD, 0.1)
+        XCTAssertEqual(claude.rejectedMetadataRows, 1)
+        let codex = PiUsageScanner.aggregate(entries: entries, cardID: "codex", since: .distantPast, pricing: .empty)
+        XCTAssertTrue(codex.series.daily.isEmpty)
+        XCTAssertEqual(codex.rejectedMetadataRows, 1)
+    }
+
+    func testCopiedCompactionCannotLoseItsWarningWhenOtherBranchesAreOmitted() {
+        let compact = #"{"type":"compaction","id":"c","parentId":"a","timestamp":"2026-07-12T10:00:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#
+        let selection = #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#
+        let original = parseRecords([
+            selection,
+            #"{"type":"model_change","id":"b","parentId":"a","provider":"openai-codex","modelId":"gpt-5"}"#,
+            compact
+        ])
+        let copy = parseRecords([selection, compact])
+        for entries in [original + copy, copy + original] {
+            let deduplicated = PiUsageScanner.dedup(entries)
+            XCTAssertEqual(deduplicated.count, 1)
+            for cardID in ["claude", "codex"] {
+                let scan = PiUsageScanner.aggregate(
+                    entries: deduplicated, cardID: cardID, since: .distantPast, pricing: .empty
+                )
+                XCTAssertEqual(scan.rejectedMetadataRows, 1)
+                XCTAssertTrue(scan.series.daily.isEmpty)
+            }
+        }
+    }
+
+    func testHookAndRoutedCompactionsWarnInsteadOfBorrowingSelectedModel() {
+        let entries = parseRecords([
+            #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#,
+            #"{"type":"compaction","id":"hook","parentId":"a","fromHook":true,"timestamp":"2026-07-12T10:00:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#,
+            #"{"type":"message","id":"routed","parentId":"a","timestamp":"2026-07-12T10:01:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5","usage":{"input":50,"totalTokens":50,"cost":{"total":0.1}}}}"#,
+            #"{"type":"compaction","id":"routed-compact","parentId":"routed","timestamp":"2026-07-12T10:02:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#
+        ])
+        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.rejectedMetadataRows, 2)
+        XCTAssertNotNil(scan.metadataWarning)
+        XCTAssertNil(scan.usageHistory)
+        let merged = DailyUsageAccumulator.merged([scan])
+        XCTAssertEqual(merged?.rejectedMetadataRows, 2)
+        XCTAssertNotNil(merged?.metadataWarning)
+        let codex = PiUsageScanner.aggregate(entries: entries, cardID: "codex", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(codex.series.daily.first?.totalTokens, 50)
+        XCTAssertEqual(codex.series.daily.first?.costUSD, 0.1)
+    }
+
+    func testVirtualModelMessageCannotAttributeCompaction() {
+        let entries = parseRecords([
+            #"{"type":"message","id":"virtual","parentId":null,"message":{"role":"assistant","provider":"anthropic","model":"virtual-model","api":"pi-virtual"}}"#,
+            #"{"type":"compaction","id":"c","parentId":"virtual","timestamp":"2026-07-12T10:02:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":0.2}}}"#
+        ])
+        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.rejectedMetadataRows, 1)
+        XCTAssertNil(scan.usageHistory)
+    }
+
+    func testIndependentRecordsKeepNumericValidationAndPricingFallback() throws {
+        let entries = parseRecords([
+            #"{"type":"model_change","id":"a","parentId":null,"provider":"anthropic","modelId":"claude-opus-4-8"}"#,
+            #"{"type":"usage","id":"bad-usage","timestamp":"2026-07-12T10:00:00Z","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":-1,"totalTokens":100}}"#,
+            #"{"type":"compaction","id":"bad-compaction","parentId":"a","timestamp":"2026-07-12T10:01:00Z","usage":{"input":100,"totalTokens":100,"cost":{"total":true}}}"#
+        ])
+        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertEqual(scan.rejectedMetadataRows, 1)
+        XCTAssertNil(scan.usageHistory)
+        let usage = Data(#"{"type":"usage","timestamp":"2026-07-12T10:00:00Z","provider":"cursor","model":"composer-2.5","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0}}}"#.utf8)
+        let entry = try XCTUnwrap(PiUsageScanner.parseLine(usage))
+        let priced = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
+        XCTAssertEqual(try XCTUnwrap(priced.series.daily.first?.costUSD), 0.002, accuracy: 1e-9)
+    }
+
+    private func parseRecords(_ lines: [String]) -> [PiUsageScanner.Entry] {
+        PiUsageScanner.parseFile(Data((lines.joined(separator: "\n") + "\n").utf8))
+    }
+
     // MARK: - Aggregation
 
     func testCarriedCostUsedWhenPresent() {
