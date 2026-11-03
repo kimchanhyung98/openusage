@@ -118,6 +118,9 @@ struct GrokLogUsageScanner: Sendable {
                 model = pid.flatMap { ambiguousPIDs.contains($0) ? nil : modelByPID[$0] }
             }
             guard ctx["prompt_tokens"] != nil,
+                  !["prompt_tokens", "cached_prompt_tokens", "completion_tokens", "reasoning_tokens"].allSatisfy({
+                      ctx[$0] == nil || ctx[$0] is NSNull
+                  }),
                   let timestamp = (object["ts"] as? String).flatMap(OpenUsageISO8601.date(from:)),
                   timestamp >= since
             else { return }
