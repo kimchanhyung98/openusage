@@ -256,6 +256,7 @@ final class GrokLogUsageScannerTests: XCTestCase {
         {"ts":"2026-06-10T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-05-30T09:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"completion_tokens":0,"reasoning_tokens":0}}
         {"ts":"2026-06-10T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"loop_index":3,"model_elapsed_ms":10}}
+        {"ts":"2026-06-10T10:30:00.000Z","pid":1,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":null,"cached_prompt_tokens":null,"completion_tokens":null,"reasoning_tokens":null}}
         {"ts":"2026-06-10T11:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":500000,"completion_tokens":0,"reasoning_tokens":0}}
         """
 
@@ -264,6 +265,21 @@ final class GrokLogUsageScannerTests: XCTestCase {
         // window 내 token 보유 row만 집계 — window 이전 row·token 없는 row 제외
         XCTAssertEqual(usage.series.daily.count, 1)
         XCTAssertEqual(usage.series.daily.first?.totalTokens, 500_000)
+        XCTAssertEqual(usage.rejectedNumericRows, 0)
+        XCTAssertNil(usage.numericWarning)
+    }
+
+    func testOnlyAbsentUsageKeepsAValidEmptyHistory() {
+        let log = """
+        {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"ts":"2026-06-10T10:00:00Z","pid":1,"sid":"session","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":null,"cached_prompt_tokens":null,"completion_tokens":null,"reasoning_tokens":null}}
+        """
+        let usage = GrokLogUsageScanner.parse(log, since: since, pricing: TestPricing.bundled)
+        XCTAssertTrue(usage.series.daily.isEmpty)
+        XCTAssertEqual(usage.rejectedNumericRows, 0)
+        XCTAssertEqual(usage.rejectedMetadataRows, 0)
+        XCTAssertNil(usage.numericWarning)
+        XCTAssertNotNil(usage.usageHistory)
     }
 
     func testUnpricedModelIsExcludedFromTotalsButWarns() {
