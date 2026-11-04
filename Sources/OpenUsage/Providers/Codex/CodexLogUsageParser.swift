@@ -202,6 +202,8 @@ extension CodexLogUsageScanner {
             } else {
                 continue
             }
+            if totals == nil, !usage.invalid,
+               usage.input == 0, usage.cached == 0, usage.output == 0, usage.reasoning == 0 { continue }
             let boundary = usageBoundary
             usageBoundary += 1
             // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
