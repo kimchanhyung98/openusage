@@ -59,8 +59,8 @@ struct GrokLogUsageScanner: Sendable {
     static func parse(
         _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
     ) -> LogUsageScan {
-        var modelByPID: [Int: String] = [:]
-        var modelBySession: [SessionKey: String] = [:]
+        var modelByPID: [Int: ModelContext] = [:]
+        var modelBySession: [SessionKey: ModelContext] = [:]
         var inheritedSessions: Set<SessionKey> = []
         var ambiguousPIDs: Set<Int> = []
         var accumulator = DailyUsageAccumulator()
@@ -94,7 +94,7 @@ struct GrokLogUsageScanner: Sendable {
                 return
             }
 
-            if let model = modelID(msg: msg, ctx: ctx) {
+            if let model = modelContext(msg: msg, ctx: ctx) {
                 if let session {
                     modelBySession[session] = model
                 } else if let pid, !ambiguousPIDs.contains(pid) {
@@ -104,7 +104,7 @@ struct GrokLogUsageScanner: Sendable {
             }
 
             guard msg == "shell.turn.inference_done" else { return }
-            let model: String?
+            let model: ModelContext?
             if let session {
                 if let sessionModel = modelBySession[session] {
                     model = sessionModel
@@ -130,7 +130,7 @@ struct GrokLogUsageScanner: Sendable {
                   let completion = UsageLogNumbers.count(ctx["completion_tokens"], missing: 0),
                   let reasoning = UsageLogNumbers.count(ctx["reasoning_tokens"], missing: 0),
                   let cached = UsageLogNumbers.count(ctx["cached_prompt_tokens"], missing: 0),
-                  let output = UsageLogNumbers.sum(completion, reasoning),
+                  let output = UsageLogNumbers.sum(completion, model?.outputIncludesReasoning == true ? 0 : reasoning),
                   let totalTokens = UsageLogNumbers.sum(promptTokens, output)
             else {
                 accumulator.rejectNumericRow()
@@ -143,7 +143,7 @@ struct GrokLogUsageScanner: Sendable {
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
 
             // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
-            guard let model else {
+            guard let model = model?.model else {
                 if totalTokens > 0, session != nil || pid.map({ ambiguousPIDs.contains($0) }) == true {
                     rejectedMetadataRows += 1
                 }
@@ -175,6 +175,12 @@ struct GrokLogUsageScanner: Sendable {
         let sid: String
     }
 
+    /// 모델 적용 시점의 API 계산 방식 — Responses 출력 토큰은 추론 포함.
+    private struct ModelContext {
+        let model: String
+        let outputIncludesReasoning: Bool
+    }
+
     /// 같은 파일의 손상 행 수 증가만 보고; 정상 window로 돌아오면 복구 기록.
     private actor NumericFailureReporter {
         private var rejectedRowsByPath: [String: Int] = [:]
@@ -191,9 +197,9 @@ struct GrokLogUsageScanner: Sendable {
         }
     }
 
-    /// 실제 모델 적용 이벤트의 model id. 검증 전 요청인 `model changed`는 제외.
-    /// 세션 정보는 호출부에서 판별; 여기서는 모델 필드만 해석.
-    private static func modelID(msg: String, ctx: [String: Any]) -> String? {
+    /// 실제 모델 적용 이벤트의 모델·API 계산 방식. 검증 전 요청인 `model changed`는 제외.
+    /// 세션 정보는 호출부에서 판별; 여기서는 모델·API 필드만 해석.
+    private static func modelContext(msg: String, ctx: [String: Any]) -> ModelContext? {
         let raw: Any?
         switch msg {
         case "model catalog: notifying clients":
@@ -208,7 +214,7 @@ struct GrokLogUsageScanner: Sendable {
         guard let model = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !model.isEmpty
         else { return nil }
-        return model
+        return ModelContext(model: model, outputIncludesReasoning: ctx["api_backend"] as? String == "Responses")
     }
 
 }
