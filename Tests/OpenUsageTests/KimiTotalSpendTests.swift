@@ -178,6 +178,48 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
     }
 
+    func testFirstRefreshUsesCustomHistoryFromColdLoginShell() async throws {
+        for hasDefaultHistory in [false, true] {
+            let root = try fixture()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let customHome = root.appendingPathComponent("custom")
+            try writeHistory(root: customHome)
+            if hasDefaultHistory {
+                try writeHistory(root: root.appendingPathComponent(".kimi-code"), cacheWrites: 0)
+            }
+            let shell = LoginShellEnvironment(runner: KimiHistoryShellRunner(stdout: [
+                "__OPENUSAGE_ENV_BEGIN__", "KIMI_CODE_HOME=\(customHome.path)",
+                "PATH=/usr/bin", "__OPENUSAGE_ENV_END__"
+            ].joined(separator: "\0")))
+            let environment = ProcessEnvironmentReader(
+                processEnvironment: [:], shellEnvironment: shell, launchSnapshot: { nil }
+            )
+            XCTAssertTrue(Thread.isMainThread)
+            XCTAssertNil(environment.value(for: "KIMI_CODE_HOME"))
+            let fixedNow = now
+            let provider = KimiProvider(
+                authStore: KimiAuthStore(
+                    files: FakeFiles([
+                        customHome.appendingPathComponent("credentials/kimi-code.json").path:
+                            #"{"access_token":"fake-access"}"#
+                    ]),
+                    environment: environment, homeDirectory: { root }
+                ),
+                usageClient: KimiUsageClient(http: FakeHTTPClient(response: HTTPResponse(
+                    statusCode: 200, headers: [:], body: Data(#"{"usage":{"limit":100,"used":60}}"#.utf8)
+                ))), now: { fixedNow }, pricing: { .empty }
+            )
+            XCTAssertFalse(shell.capturedSuccessfully)
+
+            let snapshot = await provider.refresh()
+
+            XCTAssertTrue(shell.capturedSuccessfully)
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertNotNil(snapshot.line(label: "Weekly"))
+            XCTAssertEqual(tokens(snapshot), 190, "default history present: \(hasDefaultHistory)")
+        }
+    }
+
     func testCapabilityRespectsEnablementEvenWhenAllQuotaRowsAreHidden() throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -246,5 +288,13 @@ final class KimiTotalSpendTests: XCTestCase {
 
         """
         try Data((text + suffix).utf8).write(to: path)
+    }
+}
+
+private struct KimiHistoryShellRunner: ProcessRunning {
+    let stdout: String
+
+    func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+        ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
     }
 }
