@@ -628,7 +628,7 @@ final class WidgetDataStore {
         if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
            let previous = localSnapshots[providerID],
            Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
-           let lines = previous.totalSpendLines, !lines.isEmpty {
+           previous.totalSpendLines != nil {
             let warning = "Local usage history is unavailable. Showing the last successful totals."
             snapshot.warning = warning
             snapshot.warningPresentation = [.init(warning)]

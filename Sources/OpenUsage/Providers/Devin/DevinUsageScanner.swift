@@ -146,8 +146,12 @@ actor DevinUsageScanner {
                         parsed.invalidRows += file.invalidRows
                     } catch is CancellationError {
                         throw CancellationError()
-                    } catch {
+                    } catch is DevinHistoryError {
                         parsed.invalidRows += 1
+                    } catch {
+                        parsed.unreadableStores += 1
+                        AppDiagnostics.record(.historyScan, result: .degraded, category: .storage,
+                                              providerID: "devin", error: error, localContext: "file history session")
                     }
                 }
             }
