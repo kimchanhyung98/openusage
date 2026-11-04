@@ -123,10 +123,14 @@ final class DedicatedSpendRefreshTests: XCTestCase {
             provider: fixture.runtime.provider, plan: "Pro", lines: fixture.previous.lines,
             refreshedAt: now, warning: "History unavailable"
         )
-        await fixture.store.refreshAll(force: true)
+        let now = now
+        let restartedStore = WidgetDataStore(registry: .from([fixture.runtime]), providers: [fixture.runtime],
+                                             cache: reloadedCache, defaults: fixture.defaults, now: { now })
+        await restartedStore.refreshAll(force: true)
 
-        XCTAssertEqual(total(fixture).slices.first?.tokenCount, 200)
-        XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]?.totalSpendLines,
+        XCTAssertEqual(TotalSpendAggregator.total(for: .today, providers: [fixture.runtime.provider],
+                                                  snapshots: restartedStore.snapshots).slices.first?.tokenCount, 200)
+        XCTAssertEqual(reloadedCache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id]?.totalSpendLines,
                        lines(cost: 2, tokens: 200))
     }
 
@@ -156,6 +160,35 @@ final class DedicatedSpendRefreshTests: XCTestCase {
             XCTAssertEqual(snapshot?.isDegraded == true, cached)
             XCTAssertEqual(total(fixture).slices.first?.tokenCount, cached ? 100 : nil)
             if cached { XCTAssertNotNil(snapshot?.warningPresentation) }
+        }
+    }
+
+    func testMissingStoreWarnsWhenEmptyPriorTotalsAreRetained() async {
+        for quotaFails in [false, true] {
+            let fixture = makeFixture(cached: false)
+            fixture.runtime.snapshot = ProviderSnapshot.make(
+                provider: fixture.runtime.provider, plan: "Pro", lines: fixture.previous.lines,
+                totalSpendLines: [], refreshedAt: now.addingTimeInterval(-1)
+            )
+            await fixture.store.refreshAll(force: true)
+            fixture.runtime.snapshot = quotaFails
+                ? failure(fixture.runtime.provider, spend: nil)
+                : ProviderSnapshot.make(provider: fixture.runtime.provider, plan: "Pro",
+                                        lines: fixture.previous.lines, refreshedAt: now)
+
+            await fixture.store.refreshAll(force: true)
+
+            let snapshot = fixture.store.localSnapshots[fixture.runtime.provider.id]
+            let warning = "Local usage history is unavailable. Showing the last successful totals."
+            XCTAssertEqual(snapshot?.totalSpendLines, [])
+            XCTAssertEqual(snapshot?.warning, warning)
+            XCTAssertEqual(snapshot?.warningPresentation, [.init(warning)])
+            XCTAssertTrue(snapshot?.isDegraded == true)
+            XCTAssertTrue(total(fixture).slices.isEmpty)
+            if quotaFails {
+                XCTAssertEqual(fixture.store.refreshResults[fixture.runtime.provider.id]?.failure?.warningPresentations,
+                               [.init(warning)])
+            }
         }
     }
 
