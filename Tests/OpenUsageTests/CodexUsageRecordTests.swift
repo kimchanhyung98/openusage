@@ -30,6 +30,8 @@ final class CodexUsageRecordTests: XCTestCase {
         ])
         XCTAssertEqual(events.map(\.input), [1_000, 1_000])
         XCTAssertEqual(events.map(\.usageRecordID), ["session-1:one", nil])
+        let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 2_000)
     }
 
     func testMatchingCountModelOverridesRecordAndLaterResponses() {
