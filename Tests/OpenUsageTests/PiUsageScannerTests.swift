@@ -43,16 +43,19 @@ final class PiUsageScannerTests: XCTestCase {
     }
 
     func testResponseModelReceivesCarriedCostWithoutChangingTotals() throws {
-        let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(
-            model: "claude-fable-5", responseModel: "claude-opus-4-8"
-        )))
-        XCTAssertEqual(entry.model, "claude-opus-4-8")
-        let scan = PiUsageScanner.aggregate(
-            entries: PiUsageScanner.dedup([entry, entry]), cardID: "claude", since: .distantPast, pricing: .empty
-        )
-        XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
-        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
-        XCTAssertEqual(scan.modelUsage?.daily.first?.models.map(\.model), ["claude-opus-4-8"])
+        for responseModel in ["claude-opus-4-8", "", "   "] {
+            let expectedModel = responseModel == "claude-opus-4-8" ? responseModel : "claude-fable-5"
+            let entry = try XCTUnwrap(PiUsageScanner.parseLine(line(
+                model: "claude-fable-5", responseModel: responseModel
+            )))
+            XCTAssertEqual(entry.model, expectedModel)
+            let scan = PiUsageScanner.aggregate(
+                entries: PiUsageScanner.dedup([entry, entry]), cardID: "claude", since: .distantPast, pricing: .empty
+            )
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+            XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+            XCTAssertEqual(scan.modelUsage?.daily.first?.models.map(\.model), [expectedModel])
+        }
     }
 
     func testSplitsCacheWriteBucketsBy1hPortion() {
@@ -284,7 +287,7 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.costUSD, 1)
     }
 
-    func testVersionEightCacheReparsesResponseModelAndPreservesMetadataWarnings() async throws {
+    func testVersionNineCacheReparsesBlankResponseModelAndPreservesMetadataWarnings() async throws {
         let base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: base) }
@@ -293,7 +296,7 @@ final class PiUsageScannerTests: XCTestCase {
         {"type":"compaction","id":"compaction","usage":{"input":100}}
         {"type":"branch_summary","id":"branch","usage":{"input":100}}
         {"type":"message","id":"tool","message":{"role":"toolResult","usage":{"input":100}}}
-        {"type":"message","id":"response","timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-fable-5","responseModel":"claude-opus-4-8","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.5}}}}
+        {"type":"message","id":"response","timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","responseModel":"   ","usage":{"input":100,"output":50,"totalTokens":150,"cost":{"total":0.5}}}}
         """.utf8)
         let fileURL = base.appendingPathComponent("session.jsonl")
         try data.write(to: fileURL)
@@ -301,11 +304,11 @@ final class PiUsageScannerTests: XCTestCase {
         let file = JSONLScanning.DiscoveredFile(path: fileURL.path, size: data.count, mtime: mtime)
         let directory = base.appendingPathComponent("cache")
         let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: .init(
-            namespace: "pi", schemaVersion: 8, directory: directory, writeDebounce: .milliseconds(1)
+            namespace: "pi", schemaVersion: 9, directory: directory, writeDebounce: .milliseconds(1)
         ))
         _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { data in
             var entries = PiUsageScanner.parseFile(data)
-            entries[entries.count - 1].model = "claude-fable-5"
+            entries[entries.count - 1].model = ""
             return entries
         })
         await old.waitForPendingWritesForTesting()
@@ -360,11 +363,15 @@ final class PiUsageScannerTests: XCTestCase {
 
     func testZeroCarriedCostFallsThroughToPricing() {
         // log가 $0이면 engine이 산정 — input 100 @ $10/M + output 50 @ $20/M = $0.002
-        let entry = PiUsageScanner.parseLine(line(
-            provider: "cursor", model: "requested-model", cost: "0", responseModel: "composer-2.5"
-        ))!
-        let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
-        XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.002, accuracy: 0.00001)
+        for responseModel in ["composer-2.5", "", "   "] {
+            let requestedModel = responseModel == "composer-2.5" ? "requested-model" : "composer-2.5"
+            let entry = PiUsageScanner.parseLine(line(
+                provider: "cursor", model: requestedModel, cost: "0", responseModel: responseModel
+            ))!
+            let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
+            XCTAssertEqual(scan.series.daily.first?.costUSD ?? 0, 0.002, accuracy: 0.00001)
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+        }
     }
 
     func testInvalidExplicitCarriedCostRejectsRowInsteadOfEstimating() throws {
@@ -406,8 +413,10 @@ final class PiUsageScannerTests: XCTestCase {
     }
 
     func testUnpriceableZeroCostBecomesUnknownModel() {
-        let entry = PiUsageScanner.parseLine(line(provider: "cursor", model: "mystery-model", cost: "0"))!
-        let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: .empty)
+        let entry = PiUsageScanner.parseLine(line(
+            provider: "cursor", model: "composer-2.5", cost: "0", responseModel: "mystery-model"
+        ))!
+        let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "cursor", since: .distantPast, pricing: pricing)
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertEqual(scan.unknownModelsByDay["2026-07-12"], ["mystery-model"])
     }
