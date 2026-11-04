@@ -625,6 +625,16 @@ final class WidgetDataStore {
         if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines != nil {
             snapshot.totalSpendRefreshedAt = snapshot.refreshedAt
         }
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
+           let previous = localSnapshots[providerID],
+           Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
+           let lines = previous.totalSpendLines, !lines.isEmpty {
+            let warning = "Local usage history is unavailable. Showing the last successful totals."
+            snapshot.warning = warning
+            snapshot.warningPresentation = [.init(warning)]
+            snapshot.isDegraded = true
+            AppLog.warn(.refresh, "\(providerID) local history unavailable; retained same-day totals")
+        }
         if let message = Self.errorMessage(in: snapshot) {
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
                 message: [message, snapshot.warning].compactMap { $0 }.joined(separator: " "),
@@ -717,12 +727,6 @@ final class WidgetDataStore {
             snapshot.totalSpendLines = lines
             snapshot.totalSpendRefreshedAt = previous.totalSpendRefreshedAt ?? previous.refreshedAt
             snapshot.isDegraded = true
-            if snapshot.warning == nil, !lines.isEmpty {
-                let warning = "Local usage history is unavailable. Showing the last successful totals."
-                snapshot.warning = warning
-                snapshot.warningPresentation = [.init(warning)]
-                AppLog.warn(.refresh, "\(providerID) local history unavailable; retained same-day totals")
-            }
         }
         localSnapshots[providerID] = snapshot
         // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).
