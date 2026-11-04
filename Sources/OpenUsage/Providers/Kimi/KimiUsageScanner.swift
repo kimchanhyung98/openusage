@@ -80,20 +80,16 @@ actor KimiUsageScanner {
         var modified: Date
     }
 
-    private let directory: URL
+    private let environment: EnvironmentReading
+    private let homeDirectory: URL
     private var cache: [String: (stamp: Stamp, parsed: ParsedFile)] = [:]
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
-        let raw = environment.value(for: "KIMI_CODE_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let root = raw.flatMap { $0.isEmpty ? nil : $0 }.map { path in
-            if path == "~" { return homeDirectory }
-            if path.hasPrefix("~/") { return homeDirectory.appendingPathComponent(String(path.dropFirst(2))) }
-            return URL(fileURLWithPath: path, isDirectory: true)
-        } ?? homeDirectory.appendingPathComponent(".kimi-code", isDirectory: true)
-        directory = root.appendingPathComponent("sessions", isDirectory: true)
+        self.environment = environment
+        self.homeDirectory = homeDirectory
     }
 
     func scan(now: Date, pricing: ModelPricing = .empty) throws -> Result? {
@@ -132,6 +128,13 @@ actor KimiUsageScanner {
 
     /// 알려진 session/agent 경로만 탐색. 백업·내보내기·구형 Python 로그는 집계하지 않음.
     private func wireFiles() throws -> [String] {
+        let raw = environment.value(for: "KIMI_CODE_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let root = raw.flatMap { $0.isEmpty ? nil : $0 }.map { path in
+            if path == "~" { return homeDirectory }
+            if path.hasPrefix("~/") { return homeDirectory.appendingPathComponent(String(path.dropFirst(2))) }
+            return URL(fileURLWithPath: path, isDirectory: true)
+        } ?? homeDirectory.appendingPathComponent(".kimi-code", isDirectory: true)
+        let directory = root.appendingPathComponent("sessions", isDirectory: true)
         let manager = FileManager.default
         func directories(_ root: URL) throws -> [URL] {
             try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
