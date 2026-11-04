@@ -5,7 +5,12 @@ enum KimiHistoryError: Error, LocalizedError, CategorizedError, UserPresentableE
     case unsupportedFormat
 
     var errorDescription: String? {
-        "Kimi Code usage history could not be read. Check the local session files and try again."
+        switch self {
+        case .unreadable:
+            "Kimi Code usage history could not be read. Check the local session files and try again."
+        case .unsupportedFormat:
+            "Kimi Code usage history uses an unsupported format. Check for an OpenUsage update."
+        }
     }
 
     var errorCategory: ErrorCategory {
@@ -173,6 +178,7 @@ actor KimiUsageScanner {
         for line in JSONLScanning.lines(in: complete) {
             try Task.checkCancellation()
             guard let object = ProviderParse.jsonObject(line), let type = object["type"] as? String else {
+                requests.removeAll()
                 result.invalidRows += 1
                 continue
             }
@@ -189,7 +195,11 @@ actor KimiUsageScanner {
                 continue
             }
             if type == "llm.request" {
-                guard let agent = object["agentId"] as? String else { continue }
+                guard let agent = object["agentId"] as? String else {
+                    requests.removeAll()
+                    result.invalidRows += 1
+                    continue
+                }
                 let scope: String? = switch object["kind"] as? String {
                 case "loop": "turn"
                 case "compaction": "session"

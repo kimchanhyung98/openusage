@@ -83,7 +83,7 @@ final class KimiProvider: ProviderRuntime {
             AppDiagnostics.record(
                 .historyScan, result: .failure, providerID: provider.id, error: error
             )
-            appendWarning(KimiHistoryError.unreadable.localizedDescription, to: &snapshot)
+            appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
         }
         return snapshot
     }

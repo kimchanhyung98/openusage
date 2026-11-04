@@ -259,5 +259,6 @@
 "macOS rejected the authorization request." = "macOSが認証リクエストを拒否しました。";
 "macOS wouldn't update Launch at Login. Check System Settings → Login Items." = "macOSでログイン時の起動設定を変更できませんでした。システム設定 → ログイン項目を確認してください。";
 "Kimi Code usage history could not be read. Check the local session files and try again." = "Kimi Code の使用履歴を読み取れませんでした。ローカルのセッションファイルを確認して再試行してください。";
+"Kimi Code usage history uses an unsupported format. Check for an OpenUsage update." = "Kimi Code の使用履歴の形式はサポートされていません。OpenUsage の更新を確認してください。";
 "Some Kimi Code usage records are invalid. Token totals may be incomplete." = "一部の Kimi Code 使用記録が無効です。トークン合計が不完全な可能性があります。";
 "Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only." = "一部の Kimi Code 記録で実際のモデルまたはキャッシュ料金を確認できません。該当期間はトークンのみ表示します。";
