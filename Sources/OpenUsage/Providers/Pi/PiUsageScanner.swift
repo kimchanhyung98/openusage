@@ -5,7 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 9
+    static let cacheSchemaVersion = 10
 
     enum CostEstimate: Sendable {
         case priced(Double)
@@ -135,7 +135,8 @@ actor PiUsageScanner {
                   let recordedProvider = message["provider"] as? String else { return nil }
             payload = message
             provider = recordedProvider
-            model = message["responseModel"] as? String ?? message["model"] as? String ?? ""
+            model = (message["responseModel"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? message["model"] as? String ?? ""
         case "usage":
             guard let recordedProvider = object["provider"] as? String else { return nil }
             payload = object
