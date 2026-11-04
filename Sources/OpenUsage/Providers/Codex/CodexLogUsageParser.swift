@@ -255,6 +255,7 @@ extension CodexLogUsageScanner {
             }) else { return false }
             guard !event.invalidNumericValues else { return true }
             var remaining = event
+            var consumedRecords: [Int] = []
             let nextRecords = recordsByBoundary[legacy.boundary + 1] ?? []
             let hasPendingRecord = invalidBoundaries[legacy.scope]?.contains(legacy.boundary + 1) == true
                 || nextRecords.contains { recordedEvents[$0]!.scope == legacy.scope }
@@ -304,12 +305,19 @@ extension CodexLogUsageScanner {
                         ? autoReviewFallback(at: OpenUsageISO8601.string(from: usage.timestamp)) : nil
                 }
                 matchedRecords.insert(recordIndex)
+                consumedRecords.append(recordIndex)
                 remaining.input -= usage.input
                 remaining.cached -= usage.cached
                 remaining.output -= usage.output
                 remaining.reasoning -= usage.reasoning
                 remaining.total -= usage.total
             }
+            let reconciliation = LegacyReconciliation(
+                snapshot: LegacySnapshot(scope: legacy.scope, boundary: legacy.boundary, usage: EventKey(event)),
+                recordIDs: Set(consumedRecords.compactMap { events[$0].usageRecordID })
+            )
+            remaining.reconciliation = reconciliation
+            for recordIndex in consumedRecords { events[recordIndex].reconciliation = reconciliation }
             events[index] = remaining
             return remaining.input > 0 || remaining.cached > 0 || remaining.output > 0 || remaining.reasoning > 0
         }

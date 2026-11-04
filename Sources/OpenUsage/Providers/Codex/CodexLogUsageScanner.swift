@@ -31,10 +31,11 @@ actor CodexLogUsageScanner {
         var invalidMetadata = false
         var pricingModel: String? = nil
         var usageRecordID: String? = nil
+        var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// 빈 개별 사용량 알림의 원장 대응 수정 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 18
+    /// 누적 이벤트의 대조 출처 보존 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 19
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -142,7 +143,19 @@ actor CodexLogUsageScanner {
 
     // MARK: - Aggregation
 
-    private struct EventKey: Hashable {
+    struct LegacySnapshot: Codable, Sendable, Hashable {
+        var scope: String
+        var boundary: Int
+        var usage: EventKey
+    }
+
+    /// 완전 대조되어 잔여량이 없어져도 대응 원장에 원본 구간과 최종 차감 내역 보존.
+    struct LegacyReconciliation: Codable, Sendable, Equatable {
+        var snapshot: LegacySnapshot
+        var recordIDs: Set<String>
+    }
+
+    struct EventKey: Codable, Sendable, Hashable {
         var timestamp: Date
         var model: String
         var pricingModel: String?
@@ -153,6 +166,19 @@ actor CodexLogUsageScanner {
         var output: Int
         var reasoning: Int
         var total: Int
+
+        init(_ event: Event) {
+            timestamp = event.timestamp
+            model = event.model
+            pricingModel = event.pricingModel
+            isFast = event.isFast
+            isUltrafast = event.isUltrafast
+            input = event.input
+            cached = event.cached
+            output = event.output
+            reasoning = event.reasoning
+            total = event.total
+        }
     }
 
     /// Event를 local calendar day로 bucket — 파일 간 동일 event(복사된 session log)는 1회 집계, cost는 per-event codex 계산 (`cost` 참고).
@@ -162,16 +188,15 @@ actor CodexLogUsageScanner {
         events: [Event], since: Date, pricing: ModelPricing
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
+        var seenSnapshots: Set<LegacySnapshot> = []
         var seenRecords: Set<String> = []
-        let recordedKeys = Set(events.lazy.filter {
-            $0.usageRecordID != nil && !$0.invalidNumericValues && !$0.invalidMetadata && $0.timestamp >= since
-        }.map { event in
-            EventKey(
-                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel,
-                isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
-                cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
-            )
-        })
+        var coverage: [LegacySnapshot: Set<Set<String>>] = [:]
+        // 원장 사본의 중복 제거·기간 필터 전에 더 완전한 대조 증거 수집.
+        for event in events where !event.invalidNumericValues && !event.invalidMetadata {
+            if let reconciliation = event.reconciliation {
+                coverage[reconciliation.snapshot, default: []].insert(reconciliation.recordIDs)
+            }
+        }
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
         var rejectedMetadataRows = 0
@@ -186,15 +211,15 @@ actor CodexLogUsageScanner {
                 rejectedNumericRows += 1
                 continue
             }
-            let key = EventKey(
-                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel,
-                isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
-                cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
-            )
             if let recordID = event.usageRecordID {
                 guard seenRecords.insert(recordID).inserted else { continue }
+            } else if let reconciliation = event.reconciliation {
+                let replaced = coverage[reconciliation.snapshot, default: []].contains {
+                    $0.isStrictSuperset(of: reconciliation.recordIDs)
+                }
+                guard !replaced, seenSnapshots.insert(reconciliation.snapshot).inserted else { continue }
             } else {
-                guard !recordedKeys.contains(key), seen.insert(key).inserted else { continue }
+                guard seen.insert(EventKey(event)).inserted else { continue }
             }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
