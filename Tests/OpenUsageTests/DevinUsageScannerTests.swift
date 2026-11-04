@@ -247,8 +247,12 @@ final class DevinUsageScannerTests: XCTestCase {
         }
         let result = try await fixture.scanner().scan(now: now, pricing: pricing)
         XCTAssertEqual(result?.series.daily.first?.totalTokens, 370)
-        XCTAssertEqual(result?.invalidRows, 4)
-        XCTAssertFalse(result?.warnings.isEmpty ?? true)
+        XCTAssertEqual(result?.invalidRows, 2)
+        XCTAssertEqual(result?.unreadableStores, 2)
+        XCTAssertEqual(result?.warnings, [
+            "Some Devin CLI usage history could not be read. Totals may be incomplete.",
+            "Some Devin CLI usage records are invalid. Totals may be incomplete."
+        ])
     }
 
     func testProviderFeedsDashboardWithoutChangingQuotaRows() async throws {
@@ -313,6 +317,8 @@ final class DevinUsageScannerTests: XCTestCase {
         XCTAssertTrue(snapshot.isDegraded == true)
         XCTAssertEqual(snapshot.warningPresentation?.count, 1)
         XCTAssertEqual(snapshot.warning, "Some Devin CLI usage history could not be read. Totals may be incomplete.")
+        XCTAssertEqual(L10n.withLanguage(.english) { snapshot.localizedWarning },
+                       "Some Devin CLI usage history could not be read. Totals may be incomplete.")
         XCTAssertNil(snapshot.totalSpendLines)
         XCTAssertFalse(snapshot.lines.isEmpty)
         XCTAssertEqual(diagnostics.events.last?.category, .storage)
