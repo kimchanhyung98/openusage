@@ -56,14 +56,22 @@ final class DevinProvider: ProviderRuntime {
         snapshot.refreshedAt = refreshedAt
         do {
             if let scan = try await usageScanner.scan(now: refreshedAt, pricing: await pricing()) {
-                if !scan.series.daily.isEmpty || scan.invalidRows == 0 {
+                if !scan.series.daily.isEmpty || (scan.invalidRows == 0 && scan.unreadableStores == 0) {
                     snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
                 }
                 for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
+                    let category: ErrorCategory
+                    if scan.unreadableStores > 0 {
+                        category = .storage
+                    } else if scan.invalidRows > 0 {
+                        category = .decoding
+                    } else {
+                        category = .other
+                    }
                     AppDiagnostics.record(
                         .historyScan, result: .degraded,
-                        category: scan.invalidRows > 0 ? .decoding : .other, providerID: provider.id
+                        category: category, providerID: provider.id
                     )
                 }
             }

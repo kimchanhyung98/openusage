@@ -23,14 +23,19 @@ actor DevinUsageScanner {
     struct Parsed: Sendable {
         var records: [Record] = []
         var invalidRows = 0
+        var unreadableStores = 0
     }
 
     struct Result: Sendable {
         var series: DailyUsageSeries
         var invalidRows: Int
+        var unreadableStores = 0
 
         var warnings: [String] {
             var values: [String] = []
+            if unreadableStores > 0 {
+                values.append("Some Devin CLI usage history could not be read. Totals may be incomplete.")
+            }
             if invalidRows > 0 {
                 values.append("Some Devin CLI usage records are invalid. Totals may be incomplete.")
             }
@@ -116,7 +121,7 @@ actor DevinUsageScanner {
             throw CancellationError()
         } catch {
             foundStore = true
-            parsed.invalidRows += 1
+            parsed.unreadableStores += 1
             AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
                                   localContext: "SQLite history")
         }
@@ -150,7 +155,7 @@ actor DevinUsageScanner {
             throw CancellationError()
         } catch {
             foundStore = true
-            parsed.invalidRows += 1
+            parsed.unreadableStores += 1
             AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
                                   localContext: "file history")
         }
@@ -258,7 +263,7 @@ actor DevinUsageScanner {
         }
         return Result(series: DailyUsageSeries(daily: totals.map { day, value in
             DailyUsageEntry(date: day, totalTokens: value.tokens, costUSD: value.unpriced ? nil : value.cost)
-        }.sorted { $0.date > $1.date }), invalidRows: invalidRows)
+        }.sorted { $0.date > $1.date }), invalidRows: invalidRows, unreadableStores: parsed.unreadableStores)
     }
 
     private static func exists(_ url: URL) throws -> Bool {
