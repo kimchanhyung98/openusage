@@ -69,6 +69,7 @@ final class CodexUsageRecordTests: XCTestCase {
             let notifications = [
                 line(type: "event_msg", payload: ["type": "token_count", "rate_limits": [:]]),
                 line(type: "event_msg", payload: ["type": "token_count", "info": NSNull(), "rate_limits": [:]]),
+                CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 0, output: 0)),
                 repeated
             ]
             for notification in notifications {
@@ -179,6 +180,36 @@ final class CodexUsageRecordTests: XCTestCase {
         ])
         XCTAssertEqual(events.map(\.input), [100, 50])
         XCTAssertFalse(events.contains { $0.invalidNumericValues })
+    }
+
+    func testVersionSeventeenCacheReparsesRecordsSeparatedByEmptyLastUsage() async throws {
+        let content = [
+            context(), count(input: 100, totalInput: 100), record(response: "pending", input: 500),
+            CodexLogFixture.tokenCount(timestamp: timestamp, last: CodexLogFixture.usage(input: 0, output: 0)),
+            count(input: 500, totalInput: 600)
+        ].joined(separator: "\n")
+        let home = try CodexLogFixture.makeHome(files: ["sessions/empty-last.jsonl": content])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let directory = home.appendingPathComponent("cache")
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp))
+        let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
+            persistence: .init(namespace: "codex", schemaVersion: 17, directory: directory, writeDebounce: .milliseconds(1))
+        )
+        let duplicated = CodexLogUsageScanner.Event(
+            timestamp: now, model: "gpt-5.2", input: 1_100, cached: 0, output: 0, reasoning: 0, total: 1_100
+        )
+        _ = await old.items(from: files, since: .distantPast, cacheIdentity: "fixture") { _ in [duplicated] }
+        await old.waitForPendingWritesForTesting()
+
+        let rebuilt = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
+            persistence: .init(namespace: "codex", schemaVersion: CodexLogUsageScanner.cacheSchemaVersion,
+                               directory: directory, writeDebounce: .milliseconds(1))
+        )
+        let scanner = CodexLogUsageScanner(incrementalScanner: rebuilt, cacheIdentityOverride: "fixture", rootsOverride: [home])
+        let scan = await scanner.scan(now: now, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 600)
+        await rebuilt.waitForPendingWritesForTesting()
     }
 
     func testVersionSixteenCacheReparsesPendingCrossTurnRecords() async throws {

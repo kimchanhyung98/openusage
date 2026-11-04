@@ -21,6 +21,19 @@ final class CodexCrossTurnUsageTests: XCTestCase {
         }
     }
 
+    func testEmptyLastOnlyNotificationPreservesPendingCrossTurnRecords() {
+        let events = parse([
+            context("first"), count(last: 100, total: 100), record("first", input: 500),
+            count(last: 0, total: nil), context("second", model: "gpt-5.4"),
+            record("second", input: 200, at: nextTimestamp), count(last: 200, total: 800, at: nextTimestamp)
+        ])
+        XCTAssertEqual(events.map(\.input), [100, 500, 200])
+        XCTAssertEqual(events.map(\.model), ["gpt-5.2", "gpt-5.2", "gpt-5.4"])
+        XCTAssertFalse(events.contains { $0.invalidMetadata || $0.invalidNumericValues })
+        let scan = CodexLogUsageScanner.aggregate(events: events, since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 800)
+    }
+
     func testAbortedPendingRecordKeepsLedgersAndWarnsAboutAmbiguousDelta() {
         for terminal in ["turn_aborted", "task_complete"] {
             for hasError in [false, true] where terminal == "turn_aborted" || hasError {
