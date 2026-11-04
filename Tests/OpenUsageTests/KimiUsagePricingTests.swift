@@ -190,6 +190,45 @@ final class KimiUsagePricingTests: XCTestCase {
         XCTAssertTrue(result.warnings.isEmpty)
     }
 
+    func testUnattributableCompletedRowsClearRequestsAndRecoverOnTheNextRequest() throws {
+        var missingAgent = request(effort: "off")
+        missingAgent.removeValue(forKey: "agentId")
+        var missingType = request(effort: "off")
+        missingType.removeValue(forKey: "type")
+        let requestRow = try JSONSerialization.data(withJSONObject: request())
+        let usageRow = try JSONSerialization.data(withJSONObject: usage())
+        let malformedRows = try [missingAgent, missingType].map { try JSONSerialization.data(withJSONObject: $0) }
+            + [Data(#"{"type":"llm.request""#.utf8)]
+        for malformed in malformedRows {
+            var data = Data(#"{"type":"metadata","protocol_version":"1.5"}"#.utf8)
+            data.append(0x0A)
+            for row in [requestRow, usageRow, malformed, usageRow, requestRow, usageRow] {
+                data.append(row)
+                data.append(0x0A)
+            }
+            let result = KimiUsageScanner.aggregate([try KimiUsageScanner.parse(data)], now: now, pricing: pricing)
+
+            XCTAssertEqual(total(result, period: .today).totalTokens, 6_200_000)
+            XCTAssertEqual(total(result, period: .today).totalUSD, 2.8, accuracy: 0.000_001)
+            XCTAssertEqual(result.invalidRows, 2)
+        }
+    }
+
+    func testMissingModelAliasClearsOnlyTheAffectedRequestScope() throws {
+        var compaction = request(model: "k3.1-pro")
+        compaction["kind"] = "compaction"
+        var compactionUsage = usage(model: "k3.1-pro")
+        compactionUsage["usageScope"] = "session"
+        var malformed = request()
+        malformed.removeValue(forKey: "modelAlias")
+        let parsed = try parse([request(effort: "off"), compaction, malformed, usage(), compactionUsage])
+        let result = KimiUsageScanner.aggregate([parsed], now: now, pricing: pricing)
+
+        XCTAssertEqual(total(result, period: .today).totalTokens, 3_100_000)
+        XCTAssertEqual(total(result, period: .today).totalUSD, 4, accuracy: 0.000_001)
+        XCTAssertEqual(result.invalidRows, 1)
+    }
+
     func testMissingOrUnknownRequestScopeKeepsTokensWithoutAssumingRequestAssociation() throws {
         for field in ["kind", "usageScope"] {
             for value in [nil, "unknown"] as [String?] {

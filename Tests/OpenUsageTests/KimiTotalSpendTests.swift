@@ -142,6 +142,21 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertEqual(snapshot.isDegraded, true)
     }
 
+    func testUnsupportedHistoryFormatPreservesQuotaAndExplainsTheWarning() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeHistory(root: root, version: "2.0")
+        let snapshot = await makeProvider(root: root).refresh()
+        let message = "Kimi Code usage history uses an unsupported format. Check for an OpenUsage update."
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertNil(snapshot.totalSpendLines)
+        XCTAssertEqual(snapshot.warning, message)
+        XCTAssertEqual(snapshot.warningPresentation, [LocalizedMessage(message)])
+        XCTAssertEqual(snapshot.isDegraded, true)
+    }
+
     func testMalformedHistoryWarnsAndKeepsValidTokens() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -218,14 +233,14 @@ final class KimiTotalSpendTests: XCTestCase {
 
     private func writeHistory(
         root: URL, suffix: String = "", protocolName: String = "openai", effort: String? = nil, cacheWrites: Int = 40,
-        date: Date? = nil
+        date: Date? = nil, version: String = "1.5"
     ) throws {
         let path = root.appendingPathComponent("sessions/workspace/session/agents/main/wire.jsonl")
         try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
         let thinking = effort.map { ",\"thinkingEffort\":\"\($0)\"" } ?? ""
         let timestamp = Int((date ?? now).timeIntervalSince1970 * 1_000)
         let text = """
-        {"type":"metadata","protocol_version":"1.5","created_at":\(timestamp)}
+        {"type":"metadata","protocol_version":"\(version)","created_at":\(timestamp)}
         {"type":"llm.request","agentId":"main","kind":"loop","provider":"\(protocolName)","modelAlias":"kimi-code/k3","model":"k3"\(thinking)}
         {"type":"usage.record","agentId":"main","model":"kimi-code/k3","usageScope":"turn","time":\(timestamp),"usage":{"inputOther":100,"output":20,"inputCacheRead":30,"inputCacheCreation":\(cacheWrites)}}
 
