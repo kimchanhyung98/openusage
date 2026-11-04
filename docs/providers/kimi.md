@@ -28,6 +28,7 @@ Kimi API 종량제와 Kimi Code 구독은 별도 상품이며 [공식 가격 안
 
 이력 경로는 `$KIMI_CODE_HOME/sessions/<workspaceId>/<sessionId>/agents/<agentId>/wire.jsonl`.
 홈 미설정 시 `~/.kimi-code` 사용.
+로그인 셸에만 설정한 홈도 환경 캡처 후 조회하여 인증과 이력에 같은 홈 적용.
 [공식 데이터 위치](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/docs/en/configuration/data-locations.md) 기준으로 main·subagent 기록 모두 확인.
 요청별 `usage.record`의 일반 입력·캐시 읽기·캐시 쓰기·출력 토큰을 각각 한 번 합산.
 `time`의 밀리초 시각을 Mac의 로컬 날짜로 나누고 오늘과 이전 30일 포함.
