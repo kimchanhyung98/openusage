@@ -150,8 +150,8 @@ actor DevinUsageScanner {
                         parsed.invalidRows += 1
                     } catch {
                         parsed.unreadableStores += 1
-                        AppDiagnostics.record(.historyScan, result: .degraded, category: .storage,
-                                              providerID: "devin", error: error, localContext: "file history session")
+                        AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
+                                              localContext: "file history session")
                     }
                 }
             }
