@@ -18,12 +18,13 @@ extension CodexLogUsageScanner {
         let turnAbortedMarker = Data(#""type":"turn_aborted""#.utf8)
 
         var events: [Event] = []
-        var legacyScopes: [Int: (scope: String, boundary: Int, modelOverride: String?)] = [:]
+        var legacyScopes: [Int: (scope: String, boundary: Int, modelOverride: String?, isCumulativeDelta: Bool)] = [:]
         var recordedEvents: [Int: (scope: String, boundary: Int, responseID: String)] = [:]
         var invalidBoundaries: [String: Set<Int>] = [:]
         var seenRecords: Set<String> = []
         var compactionBoundaries: [String: Int] = [:]
         var failedBoundaries: [String: Int] = [:]
+        var abortedBoundaries: [String: Int] = [:]
         var usageBoundary = 0
         var currentTurnID: String?
         var contextSequence = 0
@@ -135,9 +136,11 @@ extension CodexLogUsageScanner {
             }
             guard type == "event_msg", let payload else { continue }
             if ["task_complete", "turn_aborted"].contains(payload["type"] as? String ?? ""),
-               payload["error"] is [String: Any], replayGate == nil {
+               replayGate == nil {
                 let turnID = (payload["turn_id"] as? String)?.nilIfEmpty ?? currentTurnID
-                failedBoundaries[turnID.map { "turn:" + $0 } ?? "context:\(contextSequence)"] = usageBoundary
+                let scope = turnID.map { "turn:" + $0 } ?? "context:\(contextSequence)"
+                if payload["error"] is [String: Any] { failedBoundaries[scope] = usageBoundary }
+                if payload["type"] as? String == "turn_aborted" { abortedBoundaries[scope] = usageBoundary }
                 continue
             }
 
@@ -180,17 +183,20 @@ extension CodexLogUsageScanner {
             }
 
             var usage: RawUsage
+            var isCumulativeDelta = false
             // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
             if let totals, totals.invalid {
                 usage = totals
             } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
                 if !last.invalid, let totals, let previousTotals, totals.isAtLeast(previousTotals) {
                     usage = totals.subtracting(previousTotals)
+                    isCumulativeDelta = true
                 } else {
                     usage = last
                 }
             } else if let totals {
                 usage = totals.subtracting(previousTotals)
+                isCumulativeDelta = previousTotals.map { totals.isAtLeast($0) } ?? false
                 // 누적 기준이 끊겼으면 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
                 if cumulativeBaselineUnknown { usage.invalid = true }
             } else {
@@ -204,7 +210,7 @@ extension CodexLogUsageScanner {
                 cumulativeBaselineUnknown = false
             }
             guard !usage.invalid else {
-                legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride)
+                legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride, isCumulativeDelta)
                 events.append(Event(
                     timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
                     total: 0, invalidNumericValues: true
@@ -222,7 +228,7 @@ extension CodexLogUsageScanner {
                 currentModel: &currentModel
             )
 
-            legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride)
+            legacyScopes[events.count] = (currentTurnID.map { "turn:" + $0 } ?? "context:\(contextSequence)", boundary, modelOverride, isCumulativeDelta)
             events.append(
                 Event(
                     timestamp: timestamp,
@@ -242,21 +248,35 @@ extension CodexLogUsageScanner {
         let retainedIndices = events.indices.filter { index in
             let event = events[index]
             guard let legacy = legacyScopes[index] else { return true }
-            guard invalidBoundaries[legacy.scope]?.contains(legacy.boundary) != true else { return false }
+            guard !invalidBoundaries.contains(where: { scope, boundaries in
+                (legacy.isCumulativeDelta || scope == legacy.scope) && boundaries.contains(legacy.boundary)
+            }) else { return false }
             guard !event.invalidNumericValues else { return true }
             var remaining = event
             let nextRecords = recordsByBoundary[legacy.boundary + 1] ?? []
             let hasPendingRecord = invalidBoundaries[legacy.scope]?.contains(legacy.boundary + 1) == true
                 || nextRecords.contains { recordedEvents[$0]!.scope == legacy.scope }
-            let candidates = (recordsByBoundary[legacy.boundary] ?? []) + nextRecords
+            let currentRecords = recordsByBoundary[legacy.boundary] ?? []
+            if legacy.isCumulativeDelta, currentRecords.contains(where: { recordIndex in
+                let record = recordedEvents[recordIndex]!
+                return record.scope != legacy.scope && !matchedRecords.contains(recordIndex)
+                    && compactionBoundaries[record.responseID] == nil
+                    && (abortedBoundaries[record.scope] == legacy.boundary || failedBoundaries[record.scope] == legacy.boundary)
+            }) {
+                events[index].invalidMetadata = true
+                return true
+            }
+            let candidates = currentRecords + nextRecords
             for recordIndex in candidates {
                 let record = recordedEvents[recordIndex]!
-                guard record.scope == legacy.scope, !matchedRecords.contains(recordIndex) else { continue }
+                let sameScope = record.scope == legacy.scope
+                guard sameScope || (legacy.isCumulativeDelta && record.boundary == legacy.boundary),
+                      !matchedRecords.contains(recordIndex) else { continue }
                 // 원격 압축은 설치 뒤 누적값 재계산, 로컬 압축은 사용량 발행 뒤 설치.
                 let compactedAt = compactionBoundaries[record.responseID]
                 if let compactedAt, compactedAt <= legacy.boundary { continue }
                 // 실패한 압축 원장은 설치 마커가 없어 같은 구간의 중단 응답과 대응 확정 불가.
-                if compactedAt == nil, record.boundary == legacy.boundary,
+                if compactedAt == nil, sameScope, record.boundary == legacy.boundary,
                    failedBoundaries[legacy.scope] == legacy.boundary + 1, !hasPendingRecord {
                     remaining.invalidMetadata = true
                     events[index] = remaining
@@ -276,7 +296,7 @@ extension CodexLogUsageScanner {
                       remaining.input >= usage.input, remaining.cached >= usage.cached,
                       remaining.output >= usage.output, remaining.reasoning >= usage.reasoning,
                       remaining.total >= usage.total else { continue }
-                if sameUsage, let model = legacy.modelOverride {
+                if sameUsage, sameScope, let model = legacy.modelOverride {
                     events[recordIndex].model = model
                     events[recordIndex].pricingModel = model == autoReviewModel
                         ? autoReviewFallback(at: OpenUsageISO8601.string(from: usage.timestamp)) : nil

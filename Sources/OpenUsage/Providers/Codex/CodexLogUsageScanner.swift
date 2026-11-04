@@ -33,8 +33,8 @@ actor CodexLogUsageScanner {
         var usageRecordID: String? = nil
     }
 
-    /// 개별 요청만 기록된 구간의 누적 기준 수정 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 16
+    /// 턴 사이 미대조 원장 처리 수정 — 이전 집계 캐시 재파싱.
+    static let cacheSchemaVersion = 17
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
