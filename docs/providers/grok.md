@@ -32,7 +32,7 @@ Today / Yesterday / Last 30 Days는 Grok CLI 로그(`~/.grok/logs/unified.jsonl`
 토큰 수는 로그의 측정값 사용.
 모델 적용 기록의 `api_backend`가 `Responses`이면 출력 토큰에 포함된 추론 토큰은 다시 더하지 않음.
 `ChatCompletions`와 backend가 기록되지 않은 로그는 기존 출력·추론 토큰 합산 유지.
-초기 기본 모델은 backend 기록이 없어 Responses 중복을 보정하지 못할 수 있음.
+프로세스 기본 모델(`model catalog` 기록)은 backend 기록이 없어 Responses 중복을 보정하지 못할 수 있음.
 모델명만으로 API 경로를 추정하지 않음.
 같은 프로세스 안에서도 세션별 모델 변경을 구분해 비용 계산.
 모델 변경 요청만으로는 갱신하지 않고 실제 모델 적용 기록 사용.
