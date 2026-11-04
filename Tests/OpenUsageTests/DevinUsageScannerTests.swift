@@ -159,6 +159,32 @@ final class DevinUsageScannerTests: XCTestCase {
         XCTAssertEqual(result?.warnings, ["Some Devin CLI usage history could not be read. Totals may be incomplete."])
     }
 
+    func testSessionFilePermissionFailuresKeepTheirDiagnosticCategoryAndValidHistory() async throws {
+        for fileName in ["meta.json", "log.jsonl"] {
+            let fixture = try DevinHistoryFixture()
+            defer { fixture.remove() }
+            try fixture.insert(message(request: "database"), at: now)
+            try fixture.writeLog(node(request: "file"))
+            let restrictedFile = fixture.log.deletingLastPathComponent().appendingPathComponent(fileName)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: restrictedFile.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: restrictedFile.path) }
+            XCTAssertThrowsError(try Data(contentsOf: restrictedFile)) { error in
+                XCTAssertEqual((error as? CocoaError)?.code, .fileReadNoPermission)
+            }
+            let diagnostics = DiagnosticEventRecorder()
+
+            let result = try await fixture.scanner().scan(now: now, pricing: pricing)
+
+            XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
+            XCTAssertEqual(result?.invalidRows, 0)
+            XCTAssertEqual(result?.unreadableStores, 1)
+            XCTAssertEqual(result?.warnings, ["Some Devin CLI usage history could not be read. Totals may be incomplete."])
+            XCTAssertEqual(diagnostics.events, [
+                DiagnosticEvent(.historyScan, result: .degraded, category: .permission, providerID: "devin")
+            ])
+        }
+    }
+
     func testConfiguredPathsFollowCLIStorageRoot() async {
         let home = URL(fileURLWithPath: "/fixture-home", isDirectory: true)
         let xdg = DevinUsageScanner(environment: FakeEnvironment(["XDG_DATA_HOME": "/fixture-data"]), homeDirectory: home)
