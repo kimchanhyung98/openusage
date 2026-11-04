@@ -81,7 +81,7 @@ Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.cl
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 projects 폴더도 동일하게 읽음.
 [pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Claude 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Claude 사용량을 같은 타일과 추세에 합산하므로 pi를 통해 Claude 구독을 사용한 내역도 여기에 표시.
 pi가 기록한 메시지별 양수 비용은 그대로 사용하고, 비용이 없거나 0이면 모델 요율로 추정.
-응답 메시지에 실제 응답 모델(`responseModel`)이 있으면 모델별 집계와 가격 추정에 우선 사용하고, 없으면 요청 모델 사용.
+응답 메시지에 실제 응답 모델(`responseModel`)이 있으면 모델별 집계와 가격 추정에 우선 사용하고, 없거나 공백뿐이면 요청 모델 사용.
 캐시 예열 등 모델이 명시된 독립 사용량 기록도 합산.
 독립 사용량의 모델이 없거나 비어 있으면 비용이 기록돼 있어도 제외하고 해당 provider 카드에 경고 표시.
 대화 압축·분기 요약·도구 실행 사용량에는 실행 provider·모델이 없어 합계에서 제외.
