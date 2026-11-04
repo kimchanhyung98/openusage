@@ -49,11 +49,19 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: nil)
         await fixture.store.refreshAll(force: true)
         XCTAssertEqual(total(fixture).slices.first?.amountUSD, 1)
+        let warning = "Local usage history is unavailable. Showing the last successful totals."
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warning, warning)
+        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warningPresentation, [.init(warning)])
+        let refreshFailure = fixture.store.refreshResults[fixture.runtime.provider.id]?.failure
+        XCTAssertTrue(refreshFailure?.message.contains(warning) == true)
+        XCTAssertEqual(refreshFailure?.warningPresentations, [.init(warning)])
 
         fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: [])
         await fixture.store.refreshAll(force: true)
         XCTAssertTrue(total(fixture).slices.isEmpty)
         XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, fixture.previous.lines)
+        XCTAssertNil(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warning)
+        XCTAssertEqual(fixture.store.refreshResults[fixture.runtime.provider.id]?.failure?.warningPresentations, [])
     }
 
     func testSuccessfulQuotaRetainsOnlyOptedInSameDayTotals() async {

@@ -142,8 +142,8 @@ final class DevinUsageScannerTests: XCTestCase {
         let result = try await fixture.scanner().scan(now: now, pricing: pricing)
 
         XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
-        XCTAssertEqual(result?.invalidRows, 1)
-        XCTAssertFalse(result?.warnings.isEmpty ?? true)
+        XCTAssertEqual(result?.invalidRows, 0)
+        XCTAssertEqual(result?.warnings, ["Some Devin CLI usage history could not be read. Totals may be incomplete."])
     }
 
     func testUnreadableFileStoreKeepsValidDatabaseHistoryAndWarns() async throws {
@@ -155,8 +155,8 @@ final class DevinUsageScannerTests: XCTestCase {
         let result = try await fixture.scanner().scan(now: now, pricing: pricing)
 
         XCTAssertEqual(result?.series.daily.first?.totalTokens, 185)
-        XCTAssertEqual(result?.invalidRows, 1)
-        XCTAssertFalse(result?.warnings.isEmpty ?? true)
+        XCTAssertEqual(result?.invalidRows, 0)
+        XCTAssertEqual(result?.warnings, ["Some Devin CLI usage history could not be read. Totals may be incomplete."])
     }
 
     func testConfiguredPathsFollowCLIStorageRoot() async {
@@ -295,6 +295,7 @@ final class DevinUsageScannerTests: XCTestCase {
     }
 
     func testUnreadableHistoryKeepsQuotaAndAddsLocalizedWarning() async throws {
+        let diagnostics = DiagnosticEventRecorder()
         let fixture = try DevinHistoryFixture()
         defer { fixture.remove() }
         try Data("not-sqlite".utf8).write(to: fixture.database)
@@ -311,8 +312,11 @@ final class DevinUsageScannerTests: XCTestCase {
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.isDegraded == true)
         XCTAssertEqual(snapshot.warningPresentation?.count, 1)
+        XCTAssertEqual(snapshot.warning, "Some Devin CLI usage history could not be read. Totals may be incomplete.")
         XCTAssertNil(snapshot.totalSpendLines)
         XCTAssertFalse(snapshot.lines.isEmpty)
+        XCTAssertEqual(diagnostics.events.last?.category, .storage)
+        XCTAssertFalse(diagnostics.events.contains { $0.category == .decoding })
     }
 
     func testHistoryFailuresRetainCachedTotalsUntilAConfirmedEmptyScan() async throws {
