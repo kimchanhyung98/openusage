@@ -185,6 +185,7 @@
 "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." = "Some local usage records are incomplete or inconsistent. Usage history may be incomplete.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
 "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.";
+"Some local usage records could not be linked to a model. Usage history may be incomplete." = "Some local usage records could not be linked to a model. Usage history may be incomplete.";
 "Some synced usage data couldn’t be read. Check the log for details." = "Some synced usage data couldn’t be read. Check the log for details.";
 "Start Antigravity or run `agy` and try again." = "Start Antigravity or run `agy` and try again.";
 "Switching to %@ could not be verified. Check the selected account and try again." = "Switching to %@ could not be verified. Check the selected account and try again.";

@@ -69,11 +69,11 @@ final class NumericUsageSafetyTests: XCTestCase {
         let largeA = "9007199254740992"
         let largeB = "9007199254740993"
         let log = """
-        {"pid":\(largeA),"msg":"model changed","ctx":{"model":"grok-build"}}
-        {"pid":"\(largeB)","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":\(largeA),"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"pid":"\(largeB)","msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         \(grokUsage(["prompt_tokens": "100"], pid: largeA))
         \(grokUsage(["prompt_tokens": "200"], pid: "\"\(largeB)\""))
-        {"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"PRIVATE_MODEL"}}
+        {"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"PRIVATE_MODEL"}}
         \(grokUsage(["prompt_tokens": "300"], pid: "1e300"))
         \(grokUsage(["prompt_tokens": "300"], pid: "0"))
         \(grokUsage(["prompt_tokens": "300"], pid: "true"))
@@ -332,7 +332,7 @@ final class NumericUsageSafetyTests: XCTestCase {
     private func grokScan(_ usage: String, includeValid: Bool = true) -> LogUsageScan {
         let valid = includeValid ? grokUsage(["prompt_tokens": "100", "completion_tokens": "50"]) : ""
         return GrokLogUsageScanner.parse("""
-        {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         \(valid)
         \(usage)
         """, since: .distantPast, pricing: TestPricing.bundled)

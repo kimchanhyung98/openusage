@@ -249,7 +249,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         files.files[path] = bad
         _ = await scanner.scan(now: now, pricing: .empty)
         XCTAssertEqual(capture.events.count, 1, "The same damage must remain deduplicated after reappearance")
-        files.files[path] = bad + "\n" + #"{"msg":"model changed","pid":1,"ctx":{"model":"grok-build"}}"#
+        files.files[path] = bad + "\n" + #"{"msg":"model catalog: notifying clients","pid":1,"ctx":{"current_model_id":"grok-build"}}"#
         _ = await scanner.scan(now: now, pricing: .empty)
         XCTAssertEqual(capture.events.count, 1)
         files.files[path] = bad + "\n" + bad
