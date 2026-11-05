@@ -3,6 +3,8 @@ import Foundation
 struct ZAIUsageClient: Sendable {
     static let subscriptionURL = URL(string: "https://api.z.ai/api/biz/subscription/list")!
     static let quotaURL = URL(string: "https://api.z.ai/api/monitor/usage/quota/limit")!
+    static let activityURL = URL(string: "https://api.z.ai/api/monitor/credit-usage/activity")!
+    static let detailURL = URL(string: "https://api.z.ai/api/monitor/credit-usage/usage-detail")!
 
     var http: any HTTPClient
 
@@ -20,12 +22,33 @@ struct ZAIUsageClient: Sendable {
         try await get(Self.quotaURL, apiKey: apiKey)
     }
 
+    func fetchActivity(apiKey: String, window: ZAIActivityWindow) async throws -> HTTPResponse {
+        var components = URLComponents(url: Self.activityURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "type", value: "1"),
+            URLQueryItem(name: "startTime", value: window.startTime),
+            URLQueryItem(name: "endTime", value: window.endTime)
+        ]
+        return try await get(components.url!, apiKey: apiKey)
+    }
+
+    func fetchDetails(apiKey: String, window: ZAIDetailWindow) async throws -> HTTPResponse {
+        var components = URLComponents(url: Self.detailURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "type", value: "1"),
+            URLQueryItem(name: "usageType", value: "MODEL"),
+            URLQueryItem(name: "startTime", value: window.startTime),
+            URLQueryItem(name: "endTime", value: window.endTime)
+        ]
+        return try await get(components.url!, apiKey: apiKey)
+    }
+
     private func get(_ url: URL, apiKey: String) async throws -> HTTPResponse {
         try await http.send(HTTPRequest(
             method: "GET",
             url: url,
             headers: [
-                "Authorization": "Bearer \(apiKey)",
+                "Authorization": apiKey,
                 "Accept": "application/json"
             ],
             timeout: 15
