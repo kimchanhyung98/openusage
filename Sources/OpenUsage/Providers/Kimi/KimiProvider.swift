@@ -6,24 +6,33 @@ final class KimiProvider: ProviderRuntime {
         id: "kimi",
         displayName: "Kimi",
         icon: .providerMark("kimi"),
-        links: []
+        links: [],
+        usesDedicatedSpendLines: true
     )
 
     let authStore: KimiAuthStore
     let usageClient: KimiUsageClient
     let credentialLock: KimiCredentialLock
+    let usageScanner: KimiUsageScanner
     let now: @Sendable () -> Date
+    let pricing: @Sendable () async -> ModelPricing
 
     init(
         authStore: KimiAuthStore = KimiAuthStore(),
         usageClient: KimiUsageClient = KimiUsageClient(),
         credentialLock: KimiCredentialLock = KimiCredentialLock(),
-        now: @escaping @Sendable () -> Date = Date.init
+        usageScanner: KimiUsageScanner? = nil,
+        now: @escaping @Sendable () -> Date = Date.init,
+        pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.credentialLock = credentialLock
+        self.usageScanner = usageScanner ?? KimiUsageScanner(
+            environment: authStore.environment, homeDirectory: authStore.homeDirectory()
+        )
         self.now = now
+        self.pricing = pricing
     }
 
     var widgetDescriptors: [WidgetDescriptor] {
@@ -51,6 +60,41 @@ final class KimiProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        var snapshot = await quotaSnapshot()
+        guard snapshot.errorCategory == nil else { return snapshot }
+        let refreshedAt = snapshot.refreshedAt
+        do {
+            try Task.checkCancellation()
+            if let scan = try await usageScanner.scan(now: refreshedAt, pricing: await pricing()) {
+                snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                for warning in scan.warnings {
+                    appendWarning(warning, to: &snapshot)
+                }
+                if scan.invalidRows > 0 {
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
+                        localContext: "invalid Kimi Code usage records=\(scan.invalidRows)"
+                    )
+                }
+            }
+        } catch is CancellationError {
+            return ProviderSnapshot.error(provider: provider, error: CancellationError())
+        } catch {
+            AppDiagnostics.record(
+                .historyScan, result: .failure, providerID: provider.id, error: error
+            )
+            appendWarning((error as? KimiHistoryError ?? .unreadable).localizedDescription, to: &snapshot)
+        }
+        return snapshot
+    }
+
+    private func appendWarning(_ message: String, to snapshot: inout ProviderSnapshot) {
+        snapshot.warning = [snapshot.warning, message].compactMap { $0 }.joined(separator: " ")
+        snapshot.warningPresentation = (snapshot.warningPresentation ?? []) + [.init(message)]
+        snapshot.isDegraded = true
+    }
+
+    private func quotaSnapshot() async -> ProviderSnapshot {
         do {
             guard var document = try await loadOffMainActor({ [authStore] in
                 try authStore.loadCredentialDocument()
