@@ -110,6 +110,7 @@
 "Kimi quota data is unavailable for this account." = "このアカウントの Kimi 割り当て量データを取得できません。";
 "Kimi returned an invalid token refresh response." = "Kimi から無効なトークン更新の応答が返されました。";
 "Kimi session expired. Run `kimi` to log in again." = "Kimi のセッションの有効期限が切れました。`kimi` を実行してログインし直してください。";
+"Kiro CLI usage history could not be read. Check the local session files and try again." = "Kiro CLI の使用履歴を読み取れませんでした。ローカルのセッションファイルを確認して、もう一度お試しください。";
 "Kiro credentials are invalid. Run `kiro-cli login` and try again." = "Kiro の認証情報が無効です。`kiro-cli login` を実行して、もう一度お試しください。";
 "Kiro credentials could not be read. Check the CLI database permissions." = "Kiro の認証情報を読み取れませんでした。CLI データベースのアクセス権を確認してください。";
 "Kiro credit usage is unavailable for this account." = "このアカウントの Kiro クレジット使用量を取得できません。";
@@ -175,6 +176,8 @@
 "Some Devin CLI usage has no known model price. Affected periods show tokens only." = "一部のDevin CLI使用量のモデル料金を確認できません。該当期間はトークンのみ表示されます。";
 "Some Devin CLI usage records are invalid. Totals may be incomplete." = "一部のDevin CLI使用記録が無効です。合計に不足がある可能性があります。";
 "Some Devin CLI usage history could not be read. Totals may be incomplete." = "一部のDevin CLI使用履歴を読み取れませんでした。合計に不足がある可能性があります。";
+"Some Kiro CLI turns have no saved response history. Affected periods show cost only." = "一部の Kiro CLI ターンには保存された応答履歴がありません。該当する期間は費用のみ表示します。";
+"Some Kiro CLI usage records are invalid. Totals may be incomplete." = "一部の Kiro CLI 使用記録が無効です。合計に含まれない使用量がある可能性があります。";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "一部の OpenRouter 統計を取得できません。他の使用量データは引き続き表示されます。";
 "Z.ai token statistics are unavailable. Quota data is still available." = "Z.ai のトークン統計を取得できません。使用枠のデータは引き続き表示されます。";
 "Some Z.ai cost estimates are unavailable. Other usage data is still available." = "一部の Z.ai 推定コストを取得できません。他の使用量データは引き続き表示されます。";

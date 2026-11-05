@@ -110,6 +110,7 @@
 "Kimi quota data is unavailable for this account." = "Kimi quota data is unavailable for this account.";
 "Kimi returned an invalid token refresh response." = "Kimi returned an invalid token refresh response.";
 "Kimi session expired. Run `kimi` to log in again." = "Kimi session expired. Run `kimi` to log in again.";
+"Kiro CLI usage history could not be read. Check the local session files and try again." = "Kiro CLI usage history could not be read. Check the local session files and try again.";
 "Kiro credentials are invalid. Run `kiro-cli login` and try again." = "Kiro credentials are invalid. Run `kiro-cli login` and try again.";
 "Kiro credentials could not be read. Check the CLI database permissions." = "Kiro credentials could not be read. Check the CLI database permissions.";
 "Kiro credit usage is unavailable for this account." = "Kiro credit usage is unavailable for this account.";
@@ -175,6 +176,8 @@
 "Some Devin CLI usage has no known model price. Affected periods show tokens only." = "Some Devin CLI usage has no known model price. Affected periods show tokens only.";
 "Some Devin CLI usage records are invalid. Totals may be incomplete." = "Some Devin CLI usage records are invalid. Totals may be incomplete.";
 "Some Devin CLI usage history could not be read. Totals may be incomplete." = "Some Devin CLI usage history could not be read. Totals may be incomplete.";
+"Some Kiro CLI turns have no saved response history. Affected periods show cost only." = "Some Kiro CLI turns have no saved response history. Affected periods show cost only.";
+"Some Kiro CLI usage records are invalid. Totals may be incomplete." = "Some Kiro CLI usage records are invalid. Totals may be incomplete.";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "Some OpenRouter statistics are unavailable. Other usage data is still available.";
 "Z.ai token statistics are unavailable. Quota data is still available." = "Z.ai token statistics are unavailable. Quota data is still available.";
 "Some Z.ai cost estimates are unavailable. Other usage data is still available." = "Some Z.ai cost estimates are unavailable. Other usage data is still available.";

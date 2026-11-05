@@ -2,6 +2,8 @@
 
 OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Devin, Grok, Kimi, Z.ai).
 OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
+Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크레딧 단가를 적용.
+실제 청구액과 다른 환산 추정치이며, 계산 범위는 [Kiro](/docs/providers/kiro.md#상단-통계-지원-범위) 참조.
 
 ## 가격의 출처
 
