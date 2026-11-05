@@ -176,7 +176,10 @@
 "Some Devin CLI usage records are invalid. Totals may be incomplete." = "一部のDevin CLI使用記録が無効です。合計に不足がある可能性があります。";
 "Some Devin CLI usage history could not be read. Totals may be incomplete." = "一部のDevin CLI使用履歴を読み取れませんでした。合計に不足がある可能性があります。";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "一部の OpenRouter 統計を取得できません。他の使用量データは引き続き表示されます。";
+"Z.ai token statistics are unavailable. Quota data is still available." = "Z.ai のトークン統計を取得できません。使用枠のデータは引き続き表示されます。";
+"Some Z.ai cost estimates are unavailable. Other usage data is still available." = "一部の Z.ai 推定コストを取得できません。他の使用量データは引き続き表示されます。";
 "Some local usage has unsupported pricing details and was excluded." = "一部のローカル使用記録は価格情報に対応していないため、集計から除外されました。";
+"Some local usage records are incomplete or inconsistent. Usage history may be incomplete." = "一部のローカル使用記録が不完全であるか、整合していません。使用履歴が不完全な可能性があります。";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "一部のローカル使用記録に無効な数値が含まれています。使用履歴が不完全な可能性があります。";
 "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "一部のローカル使用記録の日時またはモデル名が無効です。使用履歴が不完全な可能性があります。";
 "Some synced usage data couldn’t be read. Check the log for details." = "同期された使用量データの一部を読み取れませんでした。詳細はログを確認してください。";
@@ -263,3 +266,7 @@
 "macOS couldn't prepare the authorization request." = "macOSで認証リクエストを準備できませんでした。";
 "macOS rejected the authorization request." = "macOSが認証リクエストを拒否しました。";
 "macOS wouldn't update Launch at Login. Check System Settings → Login Items." = "macOSでログイン時の起動設定を変更できませんでした。システム設定 → ログイン項目を確認してください。";
+"Kimi Code usage history could not be read. Check the local session files and try again." = "Kimi Code の使用履歴を読み取れませんでした。ローカルのセッションファイルを確認して再試行してください。";
+"Kimi Code usage history uses an unsupported format. Check for an OpenUsage update." = "Kimi Code の使用履歴の形式はサポートされていません。OpenUsage の更新を確認してください。";
+"Some Kimi Code usage records are invalid. Token totals may be incomplete." = "一部の Kimi Code 使用記録が無効です。トークン合計が不完全な可能性があります。";
+"Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only." = "一部の Kimi Code 記録で実際のモデルまたはキャッシュ料金を確認できません。該当期間はトークンのみ表示します。";

@@ -1,6 +1,6 @@
 # 모델 가격
 
-OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Devin, Grok).
+OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Devin, Grok, Kimi, Z.ai).
 OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
 
 ## 가격의 출처
@@ -69,9 +69,13 @@ GPT-5.4 Mini는 일반·Fast 모두 프로바이더 접두사·대소문자·날
 어떤 출처로도 가격을 매길 수 없는 모델은 지출 수치에서 아예 제외 — 그 토큰은 그날 타일, Usage Trend, 모델별 내역에 포함되지 않으며, 일부를 빠뜨린 달러 금액 옆에 전체 토큰 수를 붙이면 오해를 부르기 때문.
 대신 해당 타일의 경고 삼각형이 가격 미확정 모델을 나열하므로, 수치가 불완전하다는 사실과 그 원인 모델을 파악 가능.
 별도 지출 타일이 없는 Antigravity는 프로바이더 헤더에 가격 미확정으로 일부 사용량이 제외됐다는 경고 표시.
-Devin은 가격 미확정 요청이 있는 기간의 비용만 생략하고 토큰 합계 유지.
+그날 *아무것도* 가격을 매길 수 없었다면 "No data"(데이터 없음)로 표시.
+Devin은 예외로 가격 미확정 요청이 있는 기간의 비용만 생략하고 토큰 합계 유지.
 수집 범위와 가격 조건은 [Devin](/docs/providers/devin.md#상단-통계-지원-범위) 참조.
-Devin을 제외한 위 프로바이더는 그날 *아무것도* 가격을 매길 수 없었다면 "No data"(데이터 없음)로 표시.
+Kimi는 예외로 전체 Tokens를 유지하고, 가격을 확인할 수 없는 요청이 있으면 해당 기간의 Cost·Cost/MTok 전체 생략.
+Kimi의 모델·캐시 조건은 [Kimi 공급자 문서](/docs/providers/kimi.md) 참조.
+Z.ai는 예외로, 확인된 전체 활동 토큰을 유지하고 모델 분해·가격이 불완전한 기간의 비용을 표시하지 않음.
+완전한 기간은 같은 상세 응답의 비용·토큰을 함께 사용하며 [Z.ai 통계 범위](/docs/providers/zai.md) 참조.
 
 ## 추정치에 포함되는 것
 
