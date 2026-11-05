@@ -622,6 +622,19 @@ final class WidgetDataStore {
         }
         let unresolvedClaudeIdentity = ProviderAccountID.family(of: providerID) == "claude"
             && providerIdentityKeys[providerID] == nil
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines != nil {
+            snapshot.totalSpendRefreshedAt = snapshot.refreshedAt
+        }
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
+           let previous = localSnapshots[providerID],
+           Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
+           previous.totalSpendLines != nil {
+            let warning = "Local usage history is unavailable. Showing the last successful totals."
+            snapshot.warning = warning
+            snapshot.warningPresentation = [.init(warning)]
+            snapshot.isDegraded = true
+            AppLog.warn(.refresh, "\(providerID) local history unavailable; retained same-day totals")
+        }
         if let message = Self.errorMessage(in: snapshot) {
             refreshResults[providerID] = .failed(ProviderRefreshFailure(
                 message: [message, snapshot.warning].compactMap { $0 }.joined(separator: " "),
@@ -635,22 +648,35 @@ final class WidgetDataStore {
                 let removedHistory = localSnapshots.removeValue(forKey: providerID)?.usageHistory != nil
                 rebuildRenderedSnapshots()
                 if removedHistory, notifyHistoryChange { onLocalHistoryChanged?() }
-            } else if let history = snapshot.usageHistory,
-                      let descriptor = registry.historyDescriptorsByProvider[providerID] {
+            } else if (snapshot.usageHistory != nil && registry.historyDescriptorsByProvider[providerID] != nil)
+                      || (provider.provider.usesDedicatedSpendLines && snapshot.totalSpendLines != nil)
+                      || (provider.retainsDedicatedSpendOnScanFailure && localSnapshots[providerID]?.totalSpendLines != nil) {
                 // 한도 실패와 독립된 로컬 이력만 갱신. 기존 한도·플랜·조회 시각은 그대로 보존.
                 var retained = localSnapshots[providerID] ?? ProviderSnapshot.make(
                     provider: provider.provider, plan: nil, lines: [], refreshedAt: snapshot.refreshedAt
                 )
-                retained.usageHistory = history
+                if provider.provider.usesDedicatedSpendLines, let lines = snapshot.totalSpendLines {
+                    retained.totalSpendLines = lines
+                    retained.totalSpendRefreshedAt = snapshot.totalSpendRefreshedAt
+                } else if provider.retainsDedicatedSpendOnScanFailure,
+                          !Calendar.current.isDate(retained.totalSpendRefreshedAt ?? retained.refreshedAt,
+                                                   inSameDayAs: snapshot.refreshedAt) {
+                    retained.totalSpendLines = nil
+                    retained.totalSpendRefreshedAt = nil
+                }
                 retained.warning = snapshot.warning
                 retained.warningPresentation = snapshot.warningPresentation
                 retained.authenticationIssue = snapshot.authenticationIssue
                 retained.isDegraded = true
                 retained.liveQuotaObservedAt = nil
                 retained.codexResetClaimBinding = nil
-                retained = UsageHistorySnapshotRenderer.render(
-                    local: retained, history: history, descriptor: descriptor, now: now(), combined: false
-                )
+                if let history = snapshot.usageHistory,
+                   let descriptor = registry.historyDescriptorsByProvider[providerID] {
+                    retained.usageHistory = history
+                    retained = UsageHistorySnapshotRenderer.render(
+                        local: retained, history: history, descriptor: descriptor, now: now(), combined: false
+                    )
+                }
                 localSnapshots[providerID] = retained
                 // 정상 캐시 없는 이력 전용 값은 CLI의 persisted freshness에서 한도 성공으로 오인하지 않도록 미저장.
                 if !staleAccountStamp, cache.loadSnapshots(providerIDs: [providerID])[providerID] != nil {
@@ -659,7 +685,7 @@ final class WidgetDataStore {
                     )
                 }
                 rebuildRenderedSnapshots()
-                if notifyHistoryChange { onLocalHistoryChanged?() }
+                if snapshot.usageHistory != nil, notifyHistoryChange { onLocalHistoryChanged?() }
             }
             // 실패 negative-cache — wake 연발의 tight-loop 재probe 차단.
             failureRetryAfter[providerID] = now().addingTimeInterval(Self.failureRetryBackoff)
@@ -692,6 +718,15 @@ final class WidgetDataStore {
                 combined: false
             )
             AppLog.debug(.refresh, "preserved last-good history for \(providerID) after scan miss")
+        }
+        if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil,
+           let previous = localSnapshots[providerID],
+           Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
+           let lines = previous.totalSpendLines {
+            degraded = true
+            snapshot.totalSpendLines = lines
+            snapshot.totalSpendRefreshedAt = previous.totalSpendRefreshedAt ?? previous.refreshedAt
+            snapshot.isDegraded = true
         }
         localSnapshots[providerID] = snapshot
         // launch에 해석된 account identity로 write를 stamp — 비계정 provider·identity 미해석 카드는 nil(no stamp).

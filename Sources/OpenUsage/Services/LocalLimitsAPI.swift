@@ -10,11 +10,13 @@ enum LocalLimitsAPI {
         for providerID in providerIDs {
             guard let snapshot = state.snapshots[providerID] else { continue }
             let descriptors = state.limitDescriptors[providerID] ?? []
-            providers[providerID] = WireProvider(
+            let value = WireProvider(
                 snapshot: snapshot,
                 descriptors: descriptors,
                 generatedAt: state.generatedAt
             )
+            guard state.errors[providerID] == nil || !value.resources.isEmpty else { continue }
+            providers[providerID] = value
         }
         let errors = providerIDs.compactMap { providerID in
             state.errors[providerID].map { WireError(providerID: providerID, message: $0) }

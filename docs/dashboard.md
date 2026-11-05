@@ -47,7 +47,7 @@ VoiceOver에서 Usage Issue 값으로 경고 상세 내용 제공.
 
 ## 총 지출
 
-활성화된 프로바이더 중 하나라도 기간별 비용·토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Grok, Kimi, OpenCode, OpenRouter, Z.ai) 프로바이더 섹션 위에 카드 표시.
+활성화된 프로바이더 중 하나라도 기간별 비용·토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Devin, Grok, Kimi, OpenCode, OpenRouter, Z.ai) 프로바이더 섹션 위에 카드 표시.
 제목이 **Cost**(비용), **Cost/MTok**, **Tokens**(토큰)를 고르는 풀다운 메뉴(기본값은 Cost, 선택은 재시작 후에도 유지).
 캡슐형 전환 버튼으로 기간을 **Today**(오늘), **Yesterday**(어제), **30 Days**(30일) 사이에서 전환.
 링, 중앙 합계, 순위 범례 모두 선택한 지표를 따름:
@@ -78,6 +78,10 @@ Copilot은 로컬 CLI 요청 기록의 날짜별 토큰·크레딧 환산 비용
 Copilot의 월간 할당량과 조직 전체 비용은 합산 대상에서 제외.
 CLI 기록이 없는 기간은 값 미표시.
 집계 범위는 [Copilot](/docs/providers/copilot.md#상단-비용토큰-통계) 참조.
+Devin은 로컬 CLI 요청의 토큰과 공통 모델 가격으로 추정한 비용을 합계에 반영.
+모델 가격을 확인할 수 없는 요청이 있는 기간은 토큰만 표시.
+할당량 조회가 실패해도 새로 읽은 로컬 통계는 갱신하며 기존 한도·요금제·조회 시각은 보존.
+집계 범위는 [Devin](/docs/providers/devin.md#상단-통계-지원-범위) 참조.
 헤더의 공유 아이콘(또는 카드 우클릭)으로 링의 브랜드 PNG를 클립보드에 복사 — 프로바이더 카드 공유와 동일.
 헤더에는 합계에 들어가는 프로바이더 이름을 알려 주는 작은 ⓘ도 있음.
 여러 계정이 있어도 같은 프로바이더 이름은 안내문에 한 번만 표시.
