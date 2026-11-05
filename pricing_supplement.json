@@ -1,6 +1,6 @@
 {
   "$comment": "OpenUsage 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-10-28T09:01:39Z",
+  "updated_at": "2026-11-02T01:33:12Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -58,6 +58,13 @@
       "cache_write_per_million": 1.4,
       "cache_read_per_million": 0.26,
       "output_per_million": 4.4
+    },
+    "zai/glm-4.5": {
+      "$comment": "Z.ai 직영 공식 캐시 입력 단가. 공개 카탈로그의 오래된 0.06 대신 0.11 적용.",
+      "input_per_million": 0.6,
+      "cache_write_per_million": 0.6,
+      "cache_read_per_million": 0.11,
+      "output_per_million": 2.2
     },
     "gpt-6-astra": {
       "$comment": "OpenAI 공식 요율. 번들 공개 카탈로그에 없는 모델.",
@@ -473,6 +480,30 @@
       "cache_write_per_million": 1.5,
       "cache_read_per_million": 0.15,
       "output_per_million": 7.5
+    },
+    "zai/glm-4.5-air": {
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.2,
+      "cache_read_per_million": 0.03,
+      "output_per_million": 1.1
+    },
+    "zai/glm-4.5-airx": {
+      "input_per_million": 1.1,
+      "cache_write_per_million": 1.1,
+      "cache_read_per_million": 0.22,
+      "output_per_million": 4.5
+    },
+    "zai/glm-4.5-x": {
+      "input_per_million": 2.2,
+      "cache_write_per_million": 2.2,
+      "cache_read_per_million": 0.45,
+      "output_per_million": 8.9
+    },
+    "zai/glm-4.5v": {
+      "input_per_million": 0.6,
+      "cache_write_per_million": 0.6,
+      "cache_read_per_million": 0.11,
+      "output_per_million": 1.8
     },
     "glm-5.2": {
       "$comment": "Z.ai 직영 단가. 제3자 호스팅 카탈로그 값보다 우선.",
