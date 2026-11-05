@@ -83,8 +83,20 @@ struct AccountCredentialImporter {
     }
 
     /// profile의 Sign-In Workspace에서 완료된 공식 로그인 — 사용 가능한 credential 없으면 `nil`.
-    func readWorkspaceCredential(family: String, profileID: String) throws -> ImportedCredential? {
-        let home = try workspace.directory(family: family, profileID: profileID).path
+    func readWorkspaceCredential(family: String, profileID: String, attemptID: String? = nil) throws -> ImportedCredential? {
+        let home = try workspace.directory(family: family, profileID: profileID, attemptID: attemptID).path
+        try workspace.assertNoSymlinkComponents(family: family, profileID: profileID, attemptID: attemptID)
+        if family == "codex" {
+            let authURL = URL(fileURLWithPath: home).appendingPathComponent("auth.json")
+            do {
+                let attributes = try fileManager.attributesOfItem(atPath: authURL.path)
+                guard attributes[.type] as? FileAttributeType == .typeRegular else {
+                    throw ImportError.verificationFailed(family: family)
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                return nil
+            }
+        }
         guard let entry = try switcher.readAuthentication(family: family, home: home) else {
             return nil
         }
@@ -333,13 +345,14 @@ struct AccountCredentialImporter {
         }
     }
 
-    /// profile workspace에서 실행된 Sign In Again 완결 — 검증된 credential이 해당 이름의 현재 provider binding 교체.
+    /// 완료된 로그인 작업 공간의 인증으로 해당 계정명의 provider binding 교체.
     /// stable profile id·label·선택 상태 유지. 활성 profile이면 Shared Runtime Home도 같은 트랜잭션에서 갱신.
     @discardableResult
     func completeReSignIn(
         profileID: String,
         in store: AccountProfilesStore,
-        isActive: Bool
+        isActive: Bool,
+        signInAttemptID: String? = nil
     ) throws -> AccountProfile {
         if store.profile(id: profileID)?.family == "claude", try switcher.switchJournal.load() != nil {
             throw AccountIdentityReplacementError.pendingTransaction
@@ -350,7 +363,9 @@ struct AccountCredentialImporter {
         }
         AccountCredentialMutationLock.acquire(family: profile.family)
         defer { AccountCredentialMutationLock.release(family: profile.family) }
-        guard let credential = try readWorkspaceCredential(family: profile.family, profileID: profile.id) else {
+        guard let credential = try readWorkspaceCredential(
+            family: profile.family, profileID: profile.id, attemptID: signInAttemptID
+        ) else {
             throw ImportError.noSignIn(family: profile.family)
         }
 
@@ -363,6 +378,9 @@ struct AccountCredentialImporter {
         )
         do {
             try switcher.saveSnapshot(credential.entry, for: profile)
+            if signInAttemptID != nil {
+                try switcher.writeWorkspaceAuthentication(credential.entry, for: profile)
+            }
             if isActive {
                 try switcher.applySharedAuthentication(credential.entry, family: profile.family)
                 guard let applied = try switcher.readSharedAuthentication(family: profile.family),
@@ -371,7 +389,9 @@ struct AccountCredentialImporter {
                     throw ImportError.verificationFailed(family: profile.family)
                 }
             }
-            return try store.commitIdentityReplacement(transaction)
+            let updated = try store.commitIdentityReplacement(transaction)
+            AppLog.info(.auth, "account re-sign-in saved \(profile.family) profile \(profile.id.prefix(8)) identity_changed=\(profile.identityKey != credential.identityKey)")
+            return updated
         } catch {
             let restored = rollbackCredentialTransaction(
                 profile: profile,

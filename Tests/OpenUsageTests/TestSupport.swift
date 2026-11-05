@@ -406,7 +406,9 @@ final class TogglingProviderRuntime: ProviderRuntime {
 
 /// handler로 요청을 routing하고 전 요청 기록 — 401 → token refresh → retry 같은 multi-request flow용
 final class RoutingHTTPClient: HTTPClient, @unchecked Sendable {
-    var requests: [HTTPRequest] = []
+    private let lock = NSLock()
+    private var recordedRequests: [HTTPRequest] = []
+    var requests: [HTTPRequest] { lock.withLock { recordedRequests } }
     private let handler: @Sendable (HTTPRequest) async throws -> HTTPResponse
 
     init(handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse) {
@@ -414,7 +416,7 @@ final class RoutingHTTPClient: HTTPClient, @unchecked Sendable {
     }
 
     func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-        requests.append(request)
+        lock.withLock { recordedRequests.append(request) }
         return try await handler(request)
     }
 }

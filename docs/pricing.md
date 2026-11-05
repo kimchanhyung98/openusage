@@ -1,6 +1,6 @@
 # 모델 가격
 
-OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Grok, Kimi).
+OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Grok, Kimi, Z.ai).
 OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
 
 ## 가격의 출처
@@ -72,6 +72,8 @@ GPT-5.4 Mini는 일반·Fast 모두 프로바이더 접두사·대소문자·날
 그날 *아무것도* 가격을 매길 수 없었다면 "No data"(데이터 없음)로 표시.
 Kimi는 예외로 전체 Tokens를 유지하고, 가격을 확인할 수 없는 요청이 있으면 해당 기간의 Cost·Cost/MTok 전체 생략.
 Kimi의 모델·캐시 조건은 [Kimi 공급자 문서](/docs/providers/kimi.md) 참조.
+Z.ai는 예외로, 확인된 전체 활동 토큰을 유지하고 모델 분해·가격이 불완전한 기간의 비용을 표시하지 않음.
+완전한 기간은 같은 상세 응답의 비용·토큰을 함께 사용하며 [Z.ai 통계 범위](/docs/providers/zai.md) 참조.
 
 ## 추정치에 포함되는 것
 
