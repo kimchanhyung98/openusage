@@ -47,7 +47,7 @@ VoiceOver에서 Usage Issue 값으로 경고 상세 내용 제공.
 
 ## 총 지출
 
-활성화된 프로바이더 중 하나라도 기간별 지출을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Grok, OpenCode, OpenRouter) 프로바이더 섹션 위에 카드 표시.
+활성화된 프로바이더 중 하나라도 기간별 지출 또는 토큰을 추적하면(Claude, Codex, Cursor, Antigravity, Copilot, Grok, OpenCode, OpenRouter, Z.ai) 프로바이더 섹션 위에 카드 표시.
 제목이 **Cost**(비용), **Cost/MTok**, **Tokens**(토큰)를 고르는 풀다운 메뉴(기본값은 Cost, 선택은 재시작 후에도 유지).
 캡슐형 전환 버튼으로 기간을 **Today**(오늘), **Yesterday**(어제), **30 Days**(30일) 사이에서 전환.
 링, 중앙 합계, 순위 범례 모두 선택한 지표를 따름:
@@ -65,6 +65,9 @@ Cost 모드는 숫자에 `$` 유지.
 OpenRouter는 관리 키로 조회한 계정 전체의 기간별 비용·토큰을 합계에 포함.
 비용만 있는 기간은 Cost에만 포함하며, 일반 키의 키별 기간 사용액은 상단 통계에서 제외.
 집계 범위와 연결 방법은 [OpenRouter](/docs/providers/openrouter.md#상단-비용토큰-통계) 참조.
+Z.ai는 개인 GLM Coding Plan의 일별 토큰을 Tokens에 포함.
+모델별 토큰 분해와 정확한 가격이 확인된 기간은 같은 상세 응답으로 Cost·Cost/MTok도 추정.
+불완전한 기간은 비용 없이 기존 토큰만 유지하며, 범위와 연결 방법은 [Z.ai](/docs/providers/zai.md) 참조.
 Antigravity는 로컬 대화 이력의 모델별 토큰과 공통 가격으로 계산한 추정 비용을 같은 링에 반영.
 가격을 확인할 수 없는 모델의 토큰과 비용은 합계에서 제외하고 프로바이더 헤더에 경고 표시.
 해당 Mac의 패밀리 합계이며 현재 로그인 계정별 비용으로 분해하지 않음.

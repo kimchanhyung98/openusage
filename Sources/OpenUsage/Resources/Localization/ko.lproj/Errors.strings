@@ -171,6 +171,8 @@
 "Soft limit reached at %@%% used" = "사용량 %@%%에서 소프트 한도에 도달했습니다";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "일부 Antigravity 모델의 가격을 확인할 수 없어 해당 사용량을 합계에서 제외했습니다.";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "일부 OpenRouter 통계를 확인할 수 없습니다. 다른 사용량 데이터는 계속 표시됩니다.";
+"Z.ai token statistics are unavailable. Quota data is still available." = "Z.ai 토큰 통계를 확인할 수 없습니다. 할당량 데이터는 계속 표시됩니다.";
+"Some Z.ai cost estimates are unavailable. Other usage data is still available." = "일부 Z.ai 추정 비용을 확인할 수 없습니다. 다른 사용량 데이터는 계속 표시됩니다.";
 "Some local usage has unsupported pricing details and was excluded." = "일부 로컬 사용 기록의 가격 정보를 지원하지 않아 집계에서 제외했습니다.";
 "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." = "일부 로컬 사용량 기록이 불완전하거나 서로 일치하지 않습니다. 사용량 내역이 누락될 수 있습니다.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "일부 로컬 사용 기록에 잘못된 숫자가 있습니다. 사용 내역이 누락될 수 있습니다.";
