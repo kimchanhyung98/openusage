@@ -134,7 +134,8 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                   {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":98}
                 ]}}
                 """#.utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -177,7 +178,8 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                     )
                 }
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"data":[]}"#.utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()

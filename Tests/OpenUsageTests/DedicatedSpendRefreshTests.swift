@@ -22,7 +22,7 @@ final class DedicatedSpendRefreshTests: XCTestCase {
                        lines(cost: 2, tokens: 200))
     }
 
-    func testFirstQuotaFailureCanDisplayLocalTotalsWithoutCachingQuotaSuccess() async {
+    func testFirstQuotaFailureCanDisplayLocalTotalsWithoutCachingQuotaSuccess() async throws {
         let fixture = makeFixture(cached: false)
         fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: lines(cost: 2, tokens: 200))
 
@@ -32,6 +32,16 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.lines, [])
         XCTAssertNotNil(fixture.store.providerErrors[fixture.runtime.provider.id])
         XCTAssertNil(fixture.cache.loadSnapshots(providerIDs: [fixture.runtime.provider.id])[fixture.runtime.provider.id])
+        let state = LocalUsageAPI.State(
+            enabledOrderedIDs: [fixture.runtime.provider.id], knownIDs: [fixture.runtime.provider.id],
+            snapshots: fixture.store.snapshots, limitDescriptors: fixture.store.limitDescriptorsByProvider,
+            errors: fixture.store.providerErrors, generatedAt: now
+        )
+        let response = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: LocalLimitsAPI.encode(providerIDs: state.enabledOrderedIDs, state: state)
+        ) as? [String: Any])
+        XCTAssertEqual((response["providers"] as? [String: Any])?.count, 0)
+        XCTAssertEqual((response["errors"] as? [[String: Any]])?.count, 1)
     }
 
     func testMissingScanPreservesPriorTotalsAndConfirmedEmptyScanClearsThem() async {

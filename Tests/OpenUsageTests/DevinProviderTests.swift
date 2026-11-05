@@ -136,7 +136,9 @@ final class DevinProviderTests: XCTestCase {
                 sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#)
             ),
             usageClient: DevinUsageClient(http: httpClient),
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+            usageScanner: isolatedUsageScanner(),
+            now: { Date(timeIntervalSince1970: 1_800_000_000) },
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -167,7 +169,9 @@ final class DevinProviderTests: XCTestCase {
                 ]),
                 sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#)
             ),
-            usageClient: DevinUsageClient(http: httpClient)
+            usageClient: DevinUsageClient(http: httpClient),
+            usageScanner: isolatedUsageScanner(),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -182,7 +186,9 @@ final class DevinProviderTests: XCTestCase {
     func testRefreshReturnsLoginHintWithoutAuth() async {
         let provider = DevinProvider(
             authStore: DevinAuthStore(files: FakeFiles(), sqlite: FakeSQLite()),
-            usageClient: DevinUsageClient(http: QueueHTTPClient())
+            usageClient: DevinUsageClient(http: QueueHTTPClient()),
+            usageScanner: isolatedUsageScanner(),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -191,6 +197,11 @@ final class DevinProviderTests: XCTestCase {
         XCTAssertEqual(errorText(snapshot.lines), DevinAuthError.notLoggedIn.localizedDescription)
         // 회귀 방지: message-only factory 사용으로 errorCategory가 nil이 되어 `other`로 분류되던 문제
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
+    }
+
+    private func isolatedUsageScanner() -> DevinUsageScanner {
+        DevinUsageScanner(environment: FakeEnvironment([:]),
+                          homeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
     }
 
     private func errorText(_ lines: [MetricLine]) -> String? {
