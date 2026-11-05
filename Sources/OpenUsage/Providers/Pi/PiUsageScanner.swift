@@ -5,7 +5,7 @@ import Foundation
 /// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
 actor PiUsageScanner {
     static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 4
+    static let cacheSchemaVersion = 10
 
     enum CostEstimate: Sendable {
         case priced(Double)
@@ -42,10 +42,12 @@ actor PiUsageScanner {
         self.scanner = incrementalScanner ?? Self.sharedScanner
     }
 
-    /// 파싱된 assistant-message usage line 하나. raw timestamp 유지로 window가 이동해도 cached parse 유효, `cardID`는 parse 시 해석해 집계가 저렴한 filter.
+    /// 사용량 기록 하나. timestamp와 카드 귀속을 캐시에 보존.
     struct Entry: Codable, Sendable, Equatable {
         var id: String?
-        var timestamp: Date
+        /// 시각이 손상된 미귀속 사용량은 날짜를 만들지 않고 경고만 보존.
+        var timestamp: Date?
+        /// 귀속 불가 압축·요약·도구 사용량은 빈 카드 ID로 보존하여 pi 사용량을 읽는 모든 카드에 경고.
         var cardID: String
         var model: String
         /// pi 자신의 `usage.cost.total` — > 0이면 그대로 사용, nil/0은 엔진 가격 산정으로 fallthrough.
@@ -56,6 +58,7 @@ actor PiUsageScanner {
         var reportedTotalTokens: Int
         /// 손상된 행도 날짜·카드와 함께 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
+        var invalidMetadata = false
     }
 
     /// 카드 하나에 대해 최근 `daysBack`일의 pi 로그 스캔. sessions 디렉토리에 로그 파일이 전혀 없으면 nil — pi usage 없는 provider는 아무것도 합산하지 않음.
@@ -78,7 +81,7 @@ actor PiUsageScanner {
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
-            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "pi") },
+            onDiskCacheHit: Self.reportRejectedEntries,
             parse: Self.parseFile
         ), !Task.isCancelled else { return nil }
         return Self.aggregate(
@@ -89,39 +92,78 @@ actor PiUsageScanner {
 
     // MARK: - Parsing
 
-    /// session 파일 하나의 매핑된 assistant usage line 전부 파싱. OpenUsage가 추적하지 않는 pi provider의 line은 여기서 drop — 집계에 도달하지 않음.
+    /// 메시지·독립 사용량의 명시적 모델만 사용. 실행 모델이 없는 요약·도구 사용량은 경고로 보존.
     static func parseFile(_ data: Data) -> [Entry] {
-        let marker = Data(#""usage":{"#.utf8)
+        let marker = Data(#""usage""#.utf8)
         var entries: [Entry] = []
         for line in JSONLScanning.lines(in: data) {
-            guard line.range(of: marker) != nil, let entry = parseLine(Data(line)) else { continue }
+            guard line.range(of: marker) != nil, let entry = parseLine(line) else { continue }
             entries.append(entry)
         }
-        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "pi")
+        reportRejectedEntries(entries)
         return entries
     }
 
     static func parseLine(_ data: Data) -> Entry? {
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              object["type"] as? String == "message",
-              let timestampRaw = object["timestamp"] as? String,
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        return parseObject(object)
+    }
+
+    private static func reportRejectedEntries(_ entries: [Entry]) {
+        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "pi")
+        let rejected = entries.filter(\.invalidMetadata).count
+        if rejected > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "pi",
+                localContext: "source=pi; rejected_metadata_rows=\(rejected)"
+            )
+        }
+    }
+
+    private static func parseObject(_ object: [String: Any]) -> Entry? {
+        let payload: [String: Any]
+        let provider: String
+        let model: String
+        var invalidMetadata = false
+        switch object["type"] as? String {
+        case "message":
+            guard let message = object["message"] as? [String: Any] else { return nil }
+            if message["role"] as? String == "toolResult" {
+                return unattributedUsageEntry(object, usage: message["usage"])
+            }
+            guard message["role"] as? String == "assistant",
+                  let recordedProvider = message["provider"] as? String else { return nil }
+            payload = message
+            provider = recordedProvider
+            model = (message["responseModel"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                ?? message["model"] as? String ?? ""
+        case "usage":
+            guard let recordedProvider = object["provider"] as? String else { return nil }
+            payload = object
+            provider = recordedProvider
+            model = object["model"] as? String ?? ""
+            invalidMetadata = model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case "compaction", "branch_summary":
+            return unattributedUsageEntry(object, usage: object["usage"])
+        default:
+            return nil
+        }
+        guard let timestampRaw = object["timestamp"] as? String,
               let timestamp = OpenUsageISO8601.date(from: timestampRaw),
-              let message = object["message"] as? [String: Any],
-              message["role"] as? String == "assistant",
-              let providerID = message["provider"] as? String,
-              let cardID = PiProviderMapping.cardID(forPiProvider: providerID),
-              let usage = message["usage"] as? [String: Any]
+              let cardID = PiProviderMapping.cardID(forPiProvider: provider),
+              let usage = payload["usage"] as? [String: Any]
         else { return nil }
 
         var entry = Entry(
             id: object["id"] as? String,
             timestamp: timestamp,
             cardID: cardID,
-            model: (message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            model: model.trimmingCharacters(in: .whitespacesAndNewlines),
             carriedCost: nil,
             tokens: TokenBreakdown(),
             reportedTotalTokens: 0,
-            invalidNumericValues: true
+            invalidNumericValues: true,
+            invalidMetadata: invalidMetadata
         )
         guard let cacheWrite = UsageLogNumbers.count(usage["cacheWrite"], missing: 0),
               let cacheWrite1h = UsageLogNumbers.count(usage["cacheWrite1h"], missing: 0),
@@ -154,20 +196,38 @@ actor PiUsageScanner {
         return entry
     }
 
+    private static func unattributedUsageEntry(_ object: [String: Any], usage: Any?) -> Entry? {
+        guard usage != nil else { return nil }
+        return Entry(
+            id: object["id"] as? String,
+            timestamp: (object["timestamp"] as? String).flatMap(OpenUsageISO8601.date(from:)),
+            cardID: "", model: "", carriedCost: nil, tokens: TokenBreakdown(), reportedTotalTokens: 0,
+            invalidMetadata: true
+        )
+    }
+
     // MARK: - Dedup and aggregation
 
-    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 정상 숫자 사본 중 첫 등장 유지. id 없는 line은 항상 유지.
+    private struct EntryIdentity: Hashable {
+        let id: String
+        let timestamp: Date?
+        let cardID: String
+    }
+
+    /// 짧은 ID는 세션 안에서만 고유하므로 시각·카드도 같은 사본만 제거. 정상 사본 우선, ID 없는 기록은 유지.
     static func dedup(_ entries: [Entry]) -> [Entry] {
-        var indices: [String: Int] = [:]
+        var indices: [EntryIdentity: Int] = [:]
         var out: [Entry] = []
         out.reserveCapacity(entries.count)
         for entry in entries {
             if let id = entry.id {
-                if let index = indices[id] {
-                    if out[index].invalidNumericValues && !entry.invalidNumericValues { out[index] = entry }
+                let identity = EntryIdentity(id: id, timestamp: entry.timestamp, cardID: entry.cardID)
+                if let index = indices[identity] {
+                    if (out[index].invalidNumericValues || out[index].invalidMetadata)
+                        && !entry.invalidNumericValues && !entry.invalidMetadata { out[index] = entry }
                     continue
                 }
-                indices[id] = out.count
+                indices[identity] = out.count
             }
             out.append(entry)
         }
@@ -184,13 +244,19 @@ actor PiUsageScanner {
         }
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var rejectedMetadataRows = 0
         var unsupportedPricingRows = 0
-        for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
+        for entry in entries where entry.cardID == cardID || (entry.invalidMetadata && entry.cardID.isEmpty) {
+            if let timestamp = entry.timestamp, timestamp < since { continue }
+            guard !entry.invalidMetadata, let timestamp = entry.timestamp else {
+                rejectedMetadataRows += 1
+                continue
+            }
             guard !entry.invalidNumericValues else {
                 rejectedNumericRows += 1
                 continue
             }
-            let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
+            let day = DailyUsageAccumulator.dayKey(from: timestamp)
             let trimmedModel = entry.model.nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
 
@@ -213,7 +279,8 @@ actor PiUsageScanner {
             accumulator.add(day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName)
         }
         return accumulator.build(
-            rejectedNumericRows: rejectedNumericRows, source: "pi", unsupportedPricingRows: unsupportedPricingRows
+            rejectedNumericRows: rejectedNumericRows, source: "pi", unsupportedPricingRows: unsupportedPricingRows,
+            rejectedMetadataRows: rejectedMetadataRows
         )
     }
 }
