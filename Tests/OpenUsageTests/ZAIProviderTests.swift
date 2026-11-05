@@ -356,13 +356,20 @@ final class ZAIProviderTests: XCTestCase {
         let provider = ZAIProvider(
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
-                XCTAssertEqual(request.headers["Authorization"], "Bearer zai-test")
+                if request.url.path == ZAIUsageClient.activityURL.path {
+                    XCTAssertEqual(request.headers["Authorization"], "zai-test")
+                    return jsonResponse(#"{"code":200,"success":true,"data":{"series":[]}}"#)
+                }
+                XCTAssertEqual(request.headers["Authorization"], "zai-test")
+                if request.url.path == ZAIUsageClient.detailURL.path {
+                    return jsonResponse(#"{"data":{"modelUsage":{"xTime":[],"modelDataList":[]}}}"#)
+                }
                 if request.url == ZAIUsageClient.quotaURL {
                     return jsonResponse(quotaBothLimitsJSON)
                 }
                 return jsonResponse(subscriptionJSON)
             }),
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }, pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -381,7 +388,8 @@ final class ZAIProviderTests: XCTestCase {
                     return jsonResponse(quotaBothLimitsJSON)
                 }
                 return HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -398,7 +406,8 @@ final class ZAIProviderTests: XCTestCase {
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { _ in
                 XCTFail("should not hit the network without a key")
                 return jsonResponse("{}")
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -412,7 +421,8 @@ final class ZAIProviderTests: XCTestCase {
             authStore: makeAuthStore(key: "zai-bad"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { _ in
                 HTTPResponse(statusCode: 401, headers: [:], body: Data("{}".utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -428,7 +438,8 @@ final class ZAIProviderTests: XCTestCase {
                     return HTTPResponse(statusCode: 500, headers: [:], body: Data("{}".utf8))
                 }
                 return jsonResponse(subscriptionJSON)
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -441,7 +452,8 @@ final class ZAIProviderTests: XCTestCase {
             authStore: makeAuthStore(key: "zai-test"),
             usageClient: ZAIUsageClient(http: RoutingHTTPClient { _ in
                 throw ZAIUsageError.connectionFailed
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -457,7 +469,8 @@ final class ZAIProviderTests: XCTestCase {
                     return jsonResponse(#"{"code":500,"msg":"当前用户不存在coding plan","success":false}"#)
                 }
                 return jsonResponse(subscriptionJSON)
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -474,7 +487,7 @@ final class ZAIProviderTests: XCTestCase {
         let files = FakeFiles()
         let provider = ZAIProvider(
             authStore: ZAIAuthStore(files: files, environment: FakeEnvironment(["ZAI_API_KEY": "zai-env"])),
-            usageClient: ZAIUsageClient(http: RoutingHTTPClient { _ in jsonResponse("{}") })
+            usageClient: ZAIUsageClient(http: RoutingHTTPClient { _ in jsonResponse("{}") }), pricing: { .empty }
         )
 
         XCTAssertEqual(provider.apiKeyStatus, .fromEnvironment)
@@ -489,7 +502,7 @@ final class ZAIProviderTests: XCTestCase {
     }
 
     func testProviderIdentityAndLinks() {
-        let provider = ZAIProvider()
+        let provider = ZAIProvider(pricing: { .empty })
         XCTAssertEqual(provider.provider.id, "zai")
         XCTAssertEqual(provider.provider.displayName, "Z.ai")
         XCTAssertEqual(provider.provider.visibleLinks.count, 2)

@@ -79,6 +79,7 @@
 "Custom Kimi API or OAuth hosts are not supported." = "Custom Kimi API or OAuth hosts are not supported.";
 "Device names can’t contain control characters." = "Device names can’t contain control characters.";
 "Device names must be 120 UTF-8 bytes or fewer." = "Device names must be 120 UTF-8 bytes or fewer.";
+"Devin CLI usage history could not be read. Check the local session files and try again." = "Devin CLI usage history could not be read. Check the local session files and try again.";
 "Devin quota data unavailable. Try again later." = "Devin quota data unavailable. Try again later.";
 "Enter a device name." = "Enter a device name.";
 "Enterprise usage data unavailable. Try again later." = "Enterprise usage data unavailable. Try again later.";
@@ -109,12 +110,14 @@
 "Kimi quota data is unavailable for this account." = "Kimi quota data is unavailable for this account.";
 "Kimi returned an invalid token refresh response." = "Kimi returned an invalid token refresh response.";
 "Kimi session expired. Run `kimi` to log in again." = "Kimi session expired. Run `kimi` to log in again.";
+"Kiro CLI usage history could not be read. Check the local session files and try again." = "Kiro CLI usage history could not be read. Check the local session files and try again.";
 "Kiro credentials are invalid. Run `kiro-cli login` and try again." = "Kiro credentials are invalid. Run `kiro-cli login` and try again.";
 "Kiro credentials could not be read. Check the CLI database permissions." = "Kiro credentials could not be read. Check the CLI database permissions.";
 "Kiro credit usage is unavailable for this account." = "Kiro credit usage is unavailable for this account.";
 "Kiro profile is unavailable. Run `kiro-cli login` and try again." = "Kiro profile is unavailable. Run `kiro-cli login` and try again.";
 "Kiro session expired. Run `kiro-cli login` and try again." = "Kiro session expired. Run `kiro-cli login` and try again.";
 "Limit reached. Automatic cancellation is not supported for this provider yet." = "Limit reached. Automatic cancellation is not supported for this provider yet.";
+"Local usage history is unavailable. Showing the last successful totals." = "Local usage history is unavailable. Showing the last successful totals.";
 "Multiple Keychain items matched the service; no credential was changed." = "Multiple Keychain items matched the service; no credential was changed.";
 "No %@ sign-in was found to import." = "No %@ sign-in was found to import.";
 "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json." = "No OpenRouter API key. Set OPENROUTER_API_KEY or add it to ~/.config/openusage/openrouter.json.";
@@ -170,8 +173,16 @@
 "Soft limit at %@%% used" = "Soft limit at %@%% used";
 "Soft limit reached at %@%% used" = "Soft limit reached at %@%% used";
 "Some Antigravity models have no price. Their usage is excluded from totals." = "Some Antigravity models have no price. Their usage is excluded from totals.";
+"Some Devin CLI usage has no known model price. Affected periods show tokens only." = "Some Devin CLI usage has no known model price. Affected periods show tokens only.";
+"Some Devin CLI usage records are invalid. Totals may be incomplete." = "Some Devin CLI usage records are invalid. Totals may be incomplete.";
+"Some Devin CLI usage history could not be read. Totals may be incomplete." = "Some Devin CLI usage history could not be read. Totals may be incomplete.";
+"Some Kiro CLI turns have no saved response history. Affected periods show cost only." = "Some Kiro CLI turns have no saved response history. Affected periods show cost only.";
+"Some Kiro CLI usage records are invalid. Totals may be incomplete." = "Some Kiro CLI usage records are invalid. Totals may be incomplete.";
 "Some OpenRouter statistics are unavailable. Other usage data is still available." = "Some OpenRouter statistics are unavailable. Other usage data is still available.";
+"Z.ai token statistics are unavailable. Quota data is still available." = "Z.ai token statistics are unavailable. Quota data is still available.";
+"Some Z.ai cost estimates are unavailable. Other usage data is still available." = "Some Z.ai cost estimates are unavailable. Other usage data is still available.";
 "Some local usage has unsupported pricing details and was excluded." = "Some local usage has unsupported pricing details and was excluded.";
+"Some local usage records are incomplete or inconsistent. Usage history may be incomplete." = "Some local usage records are incomplete or inconsistent. Usage history may be incomplete.";
 "Some local usage records contain invalid numbers. Usage history may be incomplete." = "Some local usage records contain invalid numbers. Usage history may be incomplete.";
 "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete." = "Some local usage records contain invalid timestamps or model names. Usage history may be incomplete.";
 "Some synced usage data couldn’t be read. Check the log for details." = "Some synced usage data couldn’t be read. Check the log for details.";
@@ -258,3 +269,7 @@
 "macOS couldn't prepare the authorization request." = "macOS couldn't prepare the authorization request.";
 "macOS rejected the authorization request." = "macOS rejected the authorization request.";
 "macOS wouldn't update Launch at Login. Check System Settings → Login Items." = "macOS wouldn't update Launch at Login. Check System Settings → Login Items.";
+"Kimi Code usage history could not be read. Check the local session files and try again." = "Kimi Code usage history could not be read. Check the local session files and try again.";
+"Kimi Code usage history uses an unsupported format. Check for an OpenUsage update." = "Kimi Code usage history uses an unsupported format. Check for an OpenUsage update.";
+"Some Kimi Code usage records are invalid. Token totals may be incomplete." = "Some Kimi Code usage records are invalid. Token totals may be incomplete.";
+"Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only." = "Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only.";

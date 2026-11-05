@@ -306,8 +306,12 @@ final class CodexProvider: ProviderRuntime {
             let note = piScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and pi (estimated)"
-            warning = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
-            warningPresentation = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.map { .init($0) }
+            let metadataWarning = scan.rejectedMetadataRows > 0
+                ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
+            warning = [scan.numericWarning, metadataWarning, scan.pricingWarning]
+                .compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            warningPresentation = [scan.numericWarning, metadataWarning, scan.pricingWarning]
+                .compactMap { $0 }.map { .init($0) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

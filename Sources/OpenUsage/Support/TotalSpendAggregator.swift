@@ -47,17 +47,9 @@ enum TotalSpendMetric: String, CaseIterable, Identifiable, Sendable {
         case .tokens: L10n.metrics("No token data for this period")
         }
     }
-
-    /// 달러 기반 모드는 기여자의 spend가 imputed일 때 local-estimate 노트 상속 가능.
-    var usesDollarEstimateNote: Bool {
-        switch self {
-        case .cost, .costPerMtok: true
-        case .tokens: false
-        }
-    }
 }
 
-/// period 총계에 대한 provider 한 곳의 기여 — 같은 spend line의 달러·token과 달러의 local estimate 여부.
+/// period 총계에 대한 provider 한 곳의 기여 — 같은 spend line의 달러·token과 각각의 추정 여부.
 struct TotalSpendSlice: Identifiable, Equatable {
     let provider: Provider
     /// 집계 호출자가 단일 name resolver로 해석한 카드 제목 — legend·순위 tie-break·share-card export가 같은 live 이름 표시.
@@ -65,6 +57,7 @@ struct TotalSpendSlice: Identifiable, Equatable {
     let amountUSD: Double
     let tokenCount: Double
     let estimated: Bool
+    var tokensEstimated = false
 
     var id: String { provider.id }
 
@@ -129,32 +122,35 @@ struct TotalSpend: Equatable {
             return lhs.slice.title.localizedStandardCompare(rhs.slice.title) == .orderedAscending
         }
 
-        let projected = ranked.map {
-            TotalSpendProjectedSlice(
-                provider: $0.slice.provider,
-                title: $0.slice.title,
-                displayAmount: $0.display,
-                estimated: $0.slice.estimated
+        let projected = ranked.map { item in
+            let estimated = switch metric {
+            case .cost: item.slice.estimated
+            case .tokens: item.slice.tokensEstimated
+            case .costPerMtok: item.slice.estimated || item.slice.tokensEstimated
+            }
+            return TotalSpendProjectedSlice(
+                provider: item.slice.provider,
+                title: item.slice.title,
+                displayAmount: item.display,
+                estimated: estimated
             )
         }
 
         let center: Double
-        let estimated: Bool
         switch metric {
         case .cost:
             center = ranked.reduce(0) { $0 + $1.slice.amountUSD }
-            estimated = ranked.contains { $0.slice.estimated }
         case .tokens:
             center = ranked.reduce(0) { $0 + $1.slice.tokenCount }
-            estimated = false
         case .costPerMtok:
             let usd = ranked.reduce(0) { $0 + $1.slice.amountUSD }
             let tokens = ranked.reduce(0) { $0 + $1.slice.tokenCount }
             center = tokens > 0 ? (usd / tokens) * 1_000_000 : 0
-            estimated = ranked.contains { $0.slice.estimated }
         }
 
-        return TotalSpendProjection(metric: metric, slices: projected, centerValue: center, isEstimated: estimated)
+        return TotalSpendProjection(
+            metric: metric, slices: projected, centerValue: center, isEstimated: projected.contains(where: \.estimated)
+        )
     }
 }
 
@@ -178,9 +174,8 @@ enum TotalSpendAggregator {
 
             let dollars = values.filter { $0.kind == .dollars }
             let amount = dollars.reduce(0) { $0 + $1.number }
-            let tokens = values
-                .filter { $0.kind == .count && $0.label == "tokens" }
-                .reduce(0) { $0 + $1.number }
+            let tokenValues = values.filter { $0.kind == .count && $0.label == "tokens" }
+            let tokens = tokenValues.reduce(0) { $0 + $1.number }
             guard amount > 0 || tokens > 0 else { return nil }
 
             return TotalSpendSlice(
@@ -188,7 +183,8 @@ enum TotalSpendAggregator {
                 title: title(provider),
                 amountUSD: max(amount, 0),
                 tokenCount: max(tokens, 0),
-                estimated: dollars.contains(where: \.estimated)
+                estimated: dollars.contains(where: \.estimated),
+                tokensEstimated: tokenValues.contains(where: \.estimated)
             )
         }
         return TotalSpend(period: period, slices: slices)
