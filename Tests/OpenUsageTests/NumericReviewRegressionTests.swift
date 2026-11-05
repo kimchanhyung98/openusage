@@ -92,7 +92,7 @@ final class NumericReviewRegressionTests: XCTestCase {
 
     func testOldMalformedGrokModelEventsDoNotPreventAnAuthoritativeEmptyWindow() throws {
         let since = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-12T00:00:00Z"))
-        let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"grok-build"}}"#
+        let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}"#
         let empty = GrokLogUsageScanner.parse(old, since: since, pricing: TestPricing.bundled)
         XCTAssertEqual(empty.rejectedNumericRows, 0)
         XCTAssertNotNil(empty.usageHistory)
@@ -102,7 +102,7 @@ final class NumericReviewRegressionTests: XCTestCase {
         let rejected = GrokLogUsageScanner.parse(old + "\n" + current, since: since, pricing: TestPricing.bundled)
         XCTAssertEqual(rejected.rejectedNumericRows, 1)
         XCTAssertNil(rejected.usageHistory)
-        let known = #"{"ts":"2026-08-01T00:00:00Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}"#
+        let known = #"{"ts":"2026-08-01T00:00:00Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}"#
         let valid = current.replacingOccurrences(of: "1e300", with: "1")
         let recovered = GrokLogUsageScanner.parse(old + "\n" + known + "\n" + valid, since: since, pricing: TestPricing.bundled)
         XCTAssertEqual(recovered.series.daily.first?.totalTokens, 100)

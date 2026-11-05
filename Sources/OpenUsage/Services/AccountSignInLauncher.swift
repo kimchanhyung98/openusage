@@ -89,6 +89,9 @@ struct AccountSignInLauncher: Sendable {
                 }
                 do {
                     try process.run()
+                    if Task.isCancelled, process.isRunning {
+                        process.terminate()
+                    }
                 } catch {
                     process.terminationHandler = nil
                     continuation.resume(throwing: error)
