@@ -8,7 +8,7 @@ Grok CLI 로그인 정보를 사용해 Grok Build 크레딧 사용량 추적.
 |---|---|
 | Weekly | 공유 주간 풀 사용률(Grok 통합 결제가 적용하는 한도)과 주간 초기화 카운트다운 |
 | Extra Usage | USD 종량제 상한 상태(예: `$25.00 cap` 또는 `Disabled`) |
-| Today / Yesterday / Last 30 Days | Grok CLI 로그에서 추정한 로컬 비용과 토큰 |
+| Today / Yesterday / Last 30 Days | Grok CLI 완료 턴 원장·로그의 로컬 비용과 토큰 |
 
 Grok이 구독 등급을 반환하면 프로바이더 이름 옆에 표시.
 신규 판매 요금제는 The X Subscription의 Free·Plus·Premium·Super·Ultra와 팀·기업 계약.
@@ -32,10 +32,29 @@ xAI 계정의 구독 인증만 사용하며 API key·다른 발급자의 OIDC �
 
 ## 지출 타일
 
-Today / Yesterday / Last 30 Days는 Grok CLI 로그(`~/.grok/logs/unified.jsonl` 또는 `$GROK_HOME/logs/unified.jsonl`)에서 **로컬로** 계산하며, OpenUsage가 로그를 직접 읽는 방식.
+Today / Yesterday / Last 30 Days는 Grok 홈의 완료 턴 원장(`sessions/<작업 경로>/<세션 ID>/usage.json`)과 로그(`logs/unified.jsonl`)에서 **로컬로** 계산.
+Grok 홈은 `GROK_HOME` 또는 기본 `~/.grok`.
+계보가 없는 독립 세션은 `summary.json`으로 확인한 완료 턴 원장을 우선 사용하며, 같은 세션의 로그는 합계에서 제외.
+원장의 세션 누적 합계와 턴별 합계를 함께 더하지 않으며, 같은 턴의 추가 사용량·재개 후 갱신은 다음 스캔의 snapshot으로 교체.
+원장이 선택된 세션의 진행 중 턴은 다음 완료 턴 저장 때 반영.
+원장이 없는 세션은 기존 로그 사용.
+원장과 함께 읽는 로그에 세션 ID가 없으면 중복 여부를 확인할 수 없어 해당 행을 제외.
+fork·부모/자식 세션·subagent 메타데이터가 있거나 계보·모델별 합계를 확인하지 못하면 원장 기록을 보존하되 합계에서 제외하고 로그 fallback 사용.
+부모·자식 원장을 단순 합산하거나 상속 사용량을 추측해 차감하지 않음.
+원장 날짜는 개별 요청 시각이 아닌 `endedAt`의 로컬 날짜 기준.
+자정을 넘는 턴도 완료 날짜에 합산하며 요청별 날짜 분배는 미지원.
 각 기간은 비용과 토큰을 함께 보여 주는 하나의 타일(`$4.08 · 1.2M tokens`)로, Claude/Codex/Cursor와 동일.
-달러 금액은 공유 [모델 가격](/docs/pricing.md)과 기록된 토큰 수로 추정한 값(ⓘ 표시).
-토큰 수는 로그의 측정값 사용.
+완료 턴 원장의 양수 `costUsdTicks`는 제공자 보고 비용이며, `1e10`으로 나누어 USD로 변환.
+보고 비용 누락·0·음수·부분 비용·불완전 사용량은 정상 토큰을 유지하고 해당 날짜·기간의 비용 합계 생략.
+모델·턴·세션의 토큰 합계가 일치하고 비용 합계만 다르면 정상 토큰을 유지하며, 비용이 맞지 않는 턴 또는 세션의 비용 제외.
+불완전한 완료 턴의 안내는 `endedAt`이 조회 시작 시각부터 현재 시각까지인 턴만 포함하며 양끝 시각 포함.
+파일 읽기 실패는 턴 날짜와 별개로 실제 접근 오류로 안내.
+여러 요청이 섞인 완료 턴 합계에 요청별 모델 요율을 다시 적용하지 않음.
+로그의 달러 금액은 공유 [모델 가격](/docs/pricing.md)과 기록된 토큰 수로 추정.
+보고 비용과 추정 비용이 섞일 수 있어 비용 타일의 추정 안내(ⓘ) 유지.
+토큰 수는 원장 또는 로그의 측정값 사용.
+원장의 `inputTokens`는 cache read·write 포함이며 `totalTokens`는 input+output 사용.
+별도 `reasoningTokens`를 원장 합계에 다시 더하지 않음.
 모델 적용 기록의 `api_backend`가 `Responses`이면 출력 토큰에 포함된 추론 토큰은 다시 더하지 않음.
 `ChatCompletions`와 backend가 기록되지 않은 로그는 기존 출력·추론 토큰 합산 유지.
 프로세스 기본 모델(`model catalog` 기록)은 backend 기록이 없어 Responses 중복을 보정하지 못할 수 있음.
@@ -47,7 +66,8 @@ Today / Yesterday / Last 30 Days는 Grok CLI 로그(`~/.grok/logs/unified.jsonl`
 프로세스 기본 모델이 바뀌면 기본값을 사용하는 세션에 반영하며, 명시된 세션 모델은 유지.
 세션을 식별할 수 없는 subagent 모델 기록은 다른 세션의 모델을 변경하지 않음.
 subagent 관측 전 확인한 세션의 기본 모델은 유지하며, 이후 모호한 프로세스 기본값으로 덮지 않음.
-모델을 연결하지 못한 세션 사용량과 subagent 관측 후 세션 ID가 없는 사용량은 합계에서 제외하고 모델 연결 불가 안내 표시.
+모델을 연결하지 못한 세션 사용량과 subagent 관측 후 세션 ID가 없는 사용량은 합계에서 제외.
+모델 연결 불가 또는 불완전한 완료 턴은 로컬 이력이 불완전하거나 일치하지 않을 수 있다는 안내 표시.
 추정 비용은 결제 API가 반환한 크레딧 사용량과 별개.
 원본 로그는 이 Mac에서만 읽음.
 음수·소수·표현 범위 초과 등 잘못된 토큰 수나 프로세스 ID가 있는 사용량 행은 제외하고, [불완전한 로컬 이력 안내](/docs/refreshing.md#가져오기에-실패한-경우) 표시.
@@ -60,7 +80,7 @@ subagent 관측 전 확인한 세션의 기본 모델은 유지하며, 이후 �
 
 - **"Session expired" / 인증 오류** — `grok login`을 다시 실행한 뒤 새로 고침.
 - **Weekly에 "No data" 표시** — 계정이 아직 월간(주간이 아닌) 주기를 반환하며 Grok 통합 주간 결제로 전환되지 않은 상태.
-- **지출 타일에 "No data" 표시** — `~/.grok/logs/unified.jsonl`의 Grok CLI 로그가 필요하며, 이전 CLI 버전은 토큰 수를 기록하지 않음.
+- **지출 타일에 "No data" 표시** — Grok CLI의 완료 턴 원장 또는 `logs/unified.jsonl` 기록이 필요하며, 이전 CLI 버전은 토큰 수를 기록하지 않음.
   Grok CLI 세션을 실행해 로그를 채운 뒤 새로 고침.
 
 ## 내부 동작

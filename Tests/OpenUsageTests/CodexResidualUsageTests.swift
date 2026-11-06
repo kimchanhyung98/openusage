@@ -55,7 +55,9 @@ final class CodexResidualUsageTests: XCTestCase {
             "sessions/independent.jsonl": [context(), record("independent")].joined(separator: "\n")
         ])
         defer { try? FileManager.default.removeItem(at: home) }
-        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let files = UsageFileDiscovery.files(under: [home.appendingPathComponent("sessions")]) {
+            $0.pathExtension == "jsonl"
+        }.files
         let directory = home.appendingPathComponent("cache")
         let now = try XCTUnwrap(OpenUsageISO8601.date(from: nextTimestamp))
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(

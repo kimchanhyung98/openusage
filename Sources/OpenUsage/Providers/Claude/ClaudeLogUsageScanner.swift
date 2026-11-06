@@ -28,7 +28,7 @@ actor ClaudeLogUsageScanner {
         /// `speed` 필드 존재 여부(dedup tiebreaker) — "fast" 여부는 `tokens.isFast`.
         var hasSpeed: Bool = false
         var costUSD: Double?
-        /// 모델 없음 또는 placeholder `<synthetic>`이면 `nil`(토큰은 집계, 비용 $0).
+        /// 모델 없음 또는 placeholder `<synthetic>`이면 `nil` — 기록 비용도 없으면 토큰만 집계.
         var model: String?
         /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
@@ -36,8 +36,8 @@ actor ClaudeLogUsageScanner {
 
     /// 같은 Claude home을 읽는 카드들의 공유 actor — 첫 스캔이 캐시를 채우고 나머지는 재사용.
     /// 테스트는 격리된 메모리 전용 scanner 주입.
-    /// 공백이 있는 usage를 제외하던 이전 parse cache의 재사용 방지.
-    static let cacheSchemaVersion = 4
+    /// 도구 인자의 null·compaction 사용량을 누락하던 이전 parse cache의 재사용 방지.
+    static let cacheSchemaVersion = 5
 
     private static let sharedScanner = IncrementalJSONLScanner<Entry>(
         logTag: LogTag.plugin("claude"),
@@ -75,31 +75,29 @@ actor ClaudeLogUsageScanner {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let cacheIdentity = parseCacheIdentity()
         let roots = claudeRoots()
-        guard !roots.isEmpty else {
-            _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
-            )
-            return nil
+        let discovery = UsageFileDiscovery.files(under: roots.urls.map { $0.appendingPathComponent("projects") }) {
+            $0.pathExtension == "jsonl"
         }
-
-        let files = Self.usageFiles(under: roots)
-        guard !files.isEmpty else {
-            _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
+        let discoveryFailures = roots.failures + discovery.failures
+        if discoveryFailures > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .storage, providerID: "claude",
+                localContext: "source=claude; discovery_failures=\(discoveryFailures)"
             )
-            return nil
         }
 
         // entry는 경로 정렬 파일 순서로 연결 — dedup keep-first의 결정성 보장.
         guard let result = await scanner.scan(
-            from: files,
+            from: discovery.files,
             since: since,
             cacheIdentity: cacheIdentity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "claude") },
             parse: { data, _ in Self.parseFile(data) }
         ), !Task.isCancelled else { return nil }
+        let failures = discoveryFailures + result.failedPaths.count
+        guard !discovery.files.isEmpty || failures > 0 else { return nil }
         var scan = Self.aggregate(entries: Self.dedup(result.items), since: since, pricing: pricing)
-        scan.readFailureCount = result.failedPaths.count
+        scan.readFailureCount = failures
         return scan
     }
 
@@ -114,13 +112,9 @@ actor ClaudeLogUsageScanner {
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty
         {
-            configuredRoots = raw.split(separator: ",").compactMap { part in
-                let value = part.trimmingCharacters(in: .whitespaces)
-                guard !value.isEmpty else { return nil }
-                var url = URL(fileURLWithPath: expandHome(value))
-                if url.lastPathComponent == "projects" { url.deleteLastPathComponent() }
-                return url
-            }
+            var url = URL(fileURLWithPath: expandHome(raw))
+            if url.lastPathComponent == "projects" { url.deleteLastPathComponent() }
+            configuredRoots = [url]
         } else {
             let homeURL = homeDirectory()
             let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty
@@ -139,69 +133,68 @@ actor ClaudeLogUsageScanner {
 
     // MARK: - Root and file discovery
 
-    /// `projects/`를 실제 포함한 Claude config dir 목록(ccusage 순서) — `CLAUDE_CONFIG_DIR` 우선,
+    /// Claude config dir 후보 목록 — `CLAUDE_CONFIG_DIR` 단일 경로 우선,
     /// 없으면 `$XDG_CONFIG_HOME/claude`·`~/.claude`; Cowork 세션 sandbox는 항상 추가.
-    private func claudeRoots() -> [URL] {
+    private func claudeRoots() -> (urls: [URL], failures: Int) {
         var roots: [URL] = []
         var seen: Set<String> = []
 
-        func addIfValid(_ url: URL) {
-            guard FileManager.default.fileExists(atPath: url.appendingPathComponent("projects").path),
-                  seen.insert(url.path).inserted
-            else { return }
+        func add(_ url: URL) {
+            guard seen.insert(url.path).inserted else { return }
             roots.append(url)
         }
 
         // scoped 카드는 자기 config dir만 스캔 — env 해석·Cowork walk 없음(sandbox는 기본 로그인 소속).
         if let rootsOverride {
-            for root in rootsOverride { addIfValid(root) }
-            return roots
+            for root in rootsOverride { add(root) }
+            return (roots, 0)
         }
 
         if !pinsSharedHome,
            let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
-            for part in raw.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
-                var url = URL(fileURLWithPath: expandHome(part))
-                // `projects/` dir 자체를 상위 config dir의 alias로 수용.
-                if url.lastPathComponent == "projects", FileManager.default.fileExists(atPath: url.path) {
-                    url.deleteLastPathComponent()
-                }
-                addIfValid(url)
-            }
-            if roots.isEmpty {
-                AppLog.warn(LogTag.plugin("claude"), "CLAUDE_CONFIG_DIR is set but contains no Claude data directory with projects/: \(raw)")
-            }
+            var url = URL(fileURLWithPath: expandHome(raw))
+            // `projects/` dir 자체를 상위 config dir의 alias로 수용.
+            if url.lastPathComponent == "projects" { url.deleteLastPathComponent() }
+            add(url)
         } else {
             let home = homeDirectory()
             let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty.map { URL(fileURLWithPath: expandHome($0)) }
                 ?? home.appendingPathComponent(".config")
-            addIfValid(xdg.appendingPathComponent("claude"))
-            addIfValid(home.appendingPathComponent(".claude"))
+            add(xdg.appendingPathComponent("claude"))
+            add(home.appendingPathComponent(".claude"))
         }
 
-        for sandbox in Self.coworkClaudeDirs(home: homeDirectory()) {
-            addIfValid(sandbox)
-        }
+        let cowork = Self.coworkClaudeDirs(home: homeDirectory())
+        for sandbox in cowork.urls { add(sandbox) }
         // 같은 계정 커스텀 config dir(기본 카드 전용) — side home의 자기 spend.
         for root in additionalRoots {
-            addIfValid(root)
+            add(root)
         }
-        return roots
+        return (roots, cowork.failures)
     }
 
     /// Cowork(desktop agent mode)가 세션마다 만드는 `.claude` dir — `~/.claude`와 같은 세션 로그 보유.
     /// walk는 알려진 level로 한정 — 세션 dir 내부의 전체 sandbox home 재귀 금지.
-    private static func coworkClaudeDirs(home: URL) -> [URL] {
+    private static func coworkClaudeDirs(home: URL) -> (urls: [URL], failures: Int) {
         let base = home
             .appendingPathComponent("Library/Application Support/Claude/local-agent-mode-sessions")
 
+        var failures = 0
         func subdirectories(of url: URL) -> [URL] {
-            let contents = (try? FileManager.default.contentsOfDirectory(
-                at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-            )) ?? []
-            return contents.filter {
-                (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+            do {
+                let contents = try FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
+                )
+                return contents.filter {
+                    do { return try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
+                    catch { failures += 1; return false }
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                return []
+            } catch {
+                failures += 1
+                return []
             }
         }
 
@@ -217,189 +210,8 @@ actor ClaudeLogUsageScanner {
                 }
             }
         }
-        return dirs.sorted { $0.path < $1.path }
+        return (dirs.sorted { $0.path < $1.path }, failures)
     }
-
-    /// 각 root `projects/` 하위의 `*.jsonl` 전부, 경로 정렬 — dedup keep-first 결정성(ccusage와 동일 순서).
-    private static func usageFiles(under roots: [URL]) -> [JSONLScanning.DiscoveredFile] {
-        roots
-            .flatMap { JSONLScanning.jsonlFiles(under: $0.appendingPathComponent("projects")) }
-            .sorted { $0.path < $1.path }
-    }
-
-    // MARK: - Line parsing
-
-    /// 세션 파일 1개의 모든 usage 라인 파싱 — 날짜 window는 집계 시 적용, window 이동에도 캐시된 파싱 유효.
-    static func parseFile(_ data: Data) -> [Entry] {
-        let marker = Data(#""usage""#.utf8)
-        var entries: [Entry] = []
-        var rejected = false
-        for line in JSONLScanning.lines(in: data) {
-            guard line.range(of: marker) != nil else { continue }
-            guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] else {
-                rejected = true
-                continue
-            }
-            guard let message = object["message"] as? [String: Any],
-                  message["usage"] is [String: Any] else { continue }
-            let parsed = hasUnsupportedNullValue(object) ? [] : parseEntries(object)
-            if parsed.isEmpty { rejected = true }
-            entries.append(contentsOf: parsed)
-        }
-        if rejected {
-            AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding, providerID: "claude",
-                                  localContext: "Claude usage records were skipped because their format is unsupported")
-        }
-        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "claude")
-        return entries
-    }
-
-    /// JSONL 라인 1개를 `Entry`로 디코드 — ccusage serde 수용 범위와 동일, 손상 라인은 파일 실패 대신 skip.
-    static func parseLine(_ data: Data) -> Entry? {
-        parseEntries(data).first
-    }
-
-    /// top-level usage는 main-model entry 유지, `usage.iterations`의 advisor-message만 별도 entry —
-    /// ccusage와 동일, 일반 iteration 재집계 금지.
-    private static func parseEntries(_ data: Data) -> [Entry] {
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return [] }
-        return parseEntries(object)
-    }
-
-    private static func parseEntries(_ object: [String: Any]) -> [Entry] {
-        guard let timestampRaw = object["timestamp"] as? String,
-              let timestamp = OpenUsageISO8601.date(from: timestampRaw),
-              let message = object["message"] as? [String: Any],
-              let usage = message["usage"] as? [String: Any],
-              let parsedUsage = tokenBreakdown(from: usage),
-              isValidEntry(object, message: message)
-        else { return [] }
-
-        let model = (message["model"] as? String).flatMap { $0 == "<synthetic>" ? nil : $0 }
-        let cost = (object["costUSD"] as? NSNumber).flatMap { number -> Double? in
-            guard CFGetTypeID(number) != CFBooleanGetTypeID(),
-                  number.doubleValue.isFinite, number.doubleValue >= 0 else { return nil }
-            return number.doubleValue
-        }
-        let parent = Entry(
-            timestamp: timestamp,
-            tokens: parsedUsage.tokens,
-            messageID: message["id"] as? String,
-            requestID: object["requestId"] as? String,
-            isSidechain: object["isSidechain"] as? Bool ?? false,
-            hasSpeed: parsedUsage.hasSpeed,
-            costUSD: cost,
-            model: model,
-            invalidNumericValues: !parsedUsage.valid || (object["costUSD"] != nil && cost == nil)
-        )
-
-        guard let iterations = usage["iterations"] as? [[String: Any]] else { return [parent] }
-
-        var entries = [parent]
-        var advisorIndex = 0
-        for iteration in iterations {
-            guard iteration["type"] as? String == "advisor_message",
-                  let advisorModel = iteration["model"] as? String,
-                  !advisorModel.isEmpty,
-                  let advisorUsage = tokenBreakdown(from: iteration)
-            else { continue }
-
-            entries.append(Entry(
-                timestamp: parent.timestamp,
-                tokens: advisorUsage.tokens,
-                messageID: parent.messageID.map { "\($0):advisor:\(advisorIndex)" },
-                requestID: parent.requestID,
-                isSidechain: parent.isSidechain,
-                hasSpeed: advisorUsage.hasSpeed,
-                costUSD: nil,
-                model: advisorModel,
-                invalidNumericValues: !advisorUsage.valid
-            ))
-            advisorIndex += 1
-        }
-        return entries
-    }
-
-    /// `valid: false`는 숫자 손상 — 행을 합계에서 빼고 경고로 알리기 위해 0 토큰으로 반환.
-    /// `nil`은 usage 라인이 아니거나 미지의 `speed` 형태 — 기존처럼 조용히 skip.
-    private static func tokenBreakdown(
-        from usage: [String: Any]
-    ) -> (tokens: TokenBreakdown, hasSpeed: Bool, valid: Bool)? {
-        guard usage["input_tokens"] != nil, usage["output_tokens"] != nil else { return nil }
-
-        // 알 수 없는 `speed` 값은 미지의 로그 형태 — 라인 skip(ccusage enum 파싱과 동일).
-        let speed = usage["speed"] as? String
-        if let speed, speed != "fast", speed != "standard" { return nil }
-        let invalid = (TokenBreakdown(), speed != nil, false)
-
-        // cache write: 5m/1h 분리값 우선(1h는 input 2x 과금), 없으면 legacy 합계를 전량 5m 처리.
-        let cacheCreation = usage["cache_creation"] as? [String: Any]
-        let rawCacheWrite5m = cacheCreation == nil
-            ? usage["cache_creation_input_tokens"]
-            : cacheCreation?["ephemeral_5m_input_tokens"]
-        guard let cacheWrite5m = UsageLogNumbers.count(rawCacheWrite5m, missing: 0),
-              let cacheWrite1h = UsageLogNumbers.count(cacheCreation?["ephemeral_1h_input_tokens"], missing: 0),
-              let input = UsageLogNumbers.count(usage["input_tokens"]),
-              let cacheRead = UsageLogNumbers.count(usage["cache_read_input_tokens"], missing: 0),
-              let output = UsageLogNumbers.count(usage["output_tokens"]),
-              UsageLogNumbers.sum(input, cacheWrite5m, cacheWrite1h, cacheRead, output) != nil
-        else { return invalid }
-
-        return (TokenBreakdown(
-            input: input,
-            cacheWrite5m: cacheWrite5m,
-            cacheWrite1h: cacheWrite1h,
-            cacheRead: cacheRead,
-            output: output,
-            isFast: speed == "fast"
-        ), speed != nil, true)
-    }
-
-    /// ccusage 유효성 규칙 — semver 아닌 `version`은 외부 로그 형식, 비어 있는 id/model은 손상 라인.
-    private static func isValidEntry(_ object: [String: Any], message: [String: Any]) -> Bool {
-        if let version = object["version"] as? String, !isSemverPrefix(version) { return false }
-        for value in [object["sessionId"], object["requestId"], message["id"], message["model"]] {
-            if let text = value as? String, text.isEmpty { return false }
-        }
-        return true
-    }
-
-    /// `digits.digits.digit…` 형태 — "1.0.24"·pre-release suffix 수용, "unknown" 등 거부.
-    static func isSemverPrefix(_ value: String) -> Bool {
-        let bytes = Array(value.utf8)
-        var index = 0
-        func digits() -> Bool {
-            let start = index
-            while index < bytes.count, bytes[index].isASCIIDigit { index += 1 }
-            return index > start
-        }
-        guard digits(), index < bytes.count, bytes[index] == UInt8(ascii: ".") else { return false }
-        index += 1
-        guard digits(), index < bytes.count, bytes[index] == UInt8(ascii: ".") else { return false }
-        index += 1
-        return index < bytes.count && bytes[index].isASCIIDigit
-    }
-
-    /// 디코딩된 필드로 null 검사 — 공백 우회와 문자열 본문의 가짜 키 오인 방지.
-    static func hasUnsupportedNullField(_ line: Data.SubSequence) -> Bool {
-        guard let object = try? JSONSerialization.jsonObject(with: Data(line)) else { return false }
-        return hasUnsupportedNullValue(object)
-    }
-
-    private static func hasUnsupportedNullValue(_ value: Any) -> Bool {
-        if let object = value as? [String: Any] {
-            return object.contains { key, value in
-                (unsupportedNullableFields.contains(key) && value is NSNull) || hasUnsupportedNullValue(value)
-            }
-        }
-        if let array = value as? [Any] { return array.contains(where: hasUnsupportedNullValue) }
-        return false
-    }
-
-    private static let unsupportedNullableFields: Set<String> = [
-        "id", "cwd", "model", "speed", "costUSD", "version", "sessionId", "requestId",
-        "isApiErrorMessage", "cache_read_input_tokens", "cache_creation_input_tokens"
-    ]
 
     // MARK: - Deduplication
 
@@ -504,8 +316,4 @@ actor ClaudeLogUsageScanner {
             rejectedNumericRows: rejectedNumericRows, source: "claude", unsupportedPricingRows: unsupportedPricingRows
         )
     }
-}
-
-private extension UInt8 {
-    var isASCIIDigit: Bool { self >= UInt8(ascii: "0") && self <= UInt8(ascii: "9") }
 }

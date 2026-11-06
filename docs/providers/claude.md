@@ -83,6 +83,8 @@ Claude Desktop 토큰은 OpenUsage에서 갱신하거나 기록하지 않음.
 ## 지출 타일
 
 Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.claude/projects/`(또는 `$CLAUDE_CONFIG_DIR`) 아래의 Claude Code 세션 로그를 직접 읽으므로 외부 도구 불필요.
+`CLAUDE_CONFIG_DIR`은 단일 경로로 해석하며 경로에 포함된 쉼표도 그대로 사용.
+기본 계정 식별에도 같은 경로 사용.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 projects 폴더도 동일하게 읽음.
 [pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Claude 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Claude 사용량을 같은 타일과 추세에 합산하므로 pi를 통해 Claude 구독을 사용한 내역도 여기에 표시.
 Pi·OMP의 양수 추정 비용은 그대로 사용하고, 비용이 없거나 0이면 모델 요율로 추정.
@@ -101,10 +103,16 @@ pi 기록의 ID가 같아도 시각이나 카드가 다르면 별도 사용량�
 세션 로그와 pi 로그의 잘못된 토큰 수나 정수로 표현 가능한 로컬 이력 합계 범위를 넘는 행은 제외하고, [불완전한 로컬 이력 안내](/docs/refreshing.md#가져오기에-실패한-경우) 표시.
 동일 메시지의 사본이 여러 개면 숫자가 정상인 사본을 우선 사용.
 Claude 네이티브 로그의 `costUSD`가 음수·불리언·유효하지 않은 숫자이면 해당 항목 제외 및 경고.
-Cowork(Claude 데스크톱 앱의 에이전트 모드)도 집계: `~/Library/Application Support/Claude/local-agent-mode-sessions/` 아래의 세션별 폴더에 같은 로그를 기록하며, OpenUsage가 함께 스캔하므로 데스크톱 에이전트 세션도 터미널 세션과 함께 타일에 표시.
+Claude Desktop Code·Cowork는 로컬에 같은 사용량 JSONL이 남은 세션만 집계.
+기존 Cowork 로컬 세션은 `~/Library/Application Support/Claude/local-agent-mode-sessions/` 아래의 `.claude/projects/` 탐색.
+현재 [Cowork 클라우드 세션](https://support.claude.com/en/articles/13345190-get-started-with-claude-cowork)의 상세 토큰 이력은 미지원.
+Desktop 내부 저장 형식은 공개된 안정 계약으로 보장되지 않음.
 기록이 남는 `claude -p` 실행도 집계.
 `--no-session-persistence` 실행은 Claude가 의도적으로 OpenUsage에서 읽을 세션 로그를 남기지 않으므로 표시 불가.
 메시지 안에 기록된 Advisor 작업은 Advisor 자체 모델에서 한 번만 집계하고 부모의 주 모델 합계는 별도 유지하며 일반 반복 세부 정보는 중복 집계하지 않음.
+`usage.iterations`의 `compaction`은 부모 사용량에 포함되지 않은 압축 요청 토큰으로 별도 집계.
+압축 기록에 모델 귀속 근거가 없으므로 **Unattributed**로 묶고 비용은 미확정으로 유지.
+도구 입력·출력 안의 임의 필드는 사용량 스키마 검사에서 제외.
 로그에 기록된 fast 또는 standard 속도에 따라 가격 결정, 이벤트 날짜에서 속도를 추론하지 않음.
 Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 일치.
 각 기간은 비용과 토큰을 함께 보여 주는 단일 타일(`$4.08 · 1.2M tokens`)이며, 사용량 없는 날은 오해를 부르는 `$0.00 · 0 tokens` 대신 **No data** 표시 — 다른 모든 지출 추적 프로바이더와 같은 방식.

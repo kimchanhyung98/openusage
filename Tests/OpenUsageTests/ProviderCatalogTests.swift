@@ -17,7 +17,7 @@ final class ProviderCatalogTests: XCTestCase {
                 : "From your Codex logs (estimated)")
         }
         let grok = try XCTUnwrap(GrokProvider().widgetDescriptors.compactMap(\.historyResource).first)
-        XCTAssertEqual(grok.sourceNote, "From your Grok logs and local tools (estimated)")
+        XCTAssertEqual(grok.sourceNote, "From your Grok usage files, logs, and local tools (estimated)")
     }
 
     func testEstablishedProvidersLeadAlphabeticalTail() {

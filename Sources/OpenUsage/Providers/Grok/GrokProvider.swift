@@ -44,9 +44,9 @@ final class GrokProvider: ProviderRuntime {
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
-                    sourceNote: "From your Grok logs and local tools (estimated)"
+                    sourceNote: "From your Grok usage files, logs, and local tools (estimated)"
                 )
-            // Grok CLI 로그 기반 추정 local spend tile (GrokLogUsageScanner 참고)
+            // Grok CLI 원장·로그 기반 local spend tile (GrokLogUsageScanner 참고)
         ] + WidgetDescriptor.spendTiles(provider: provider)
     }
 
@@ -105,10 +105,10 @@ final class GrokProvider: ProviderRuntime {
         let sharedScan = await sharedUsage.scan(providerID: provider.id, now: now(), pricing: currentPricing)
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, sharedScan]) {
             let sourceNote = sharedScan == nil
-                ? "From your Grok logs (estimated)" : "From your Grok logs and local tools (estimated)"
-            let attributionWarning = scan.rejectedMetadataRows > 0
-                ? "Some local usage records could not be linked to a model. Usage history may be incomplete." : nil
-            let warnings = [scan.numericWarning, attributionWarning, scan.pricingWarning, scan.readWarning].compactMap { $0 }
+                ? "From your Grok usage files and logs (estimated)" : "From your Grok usage files, logs, and local tools (estimated)"
+            let metadataWarning = scan.rejectedMetadataRows > 0
+                ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
+            let warnings = [scan.numericWarning, metadataWarning, scan.pricingWarning, scan.readWarning].compactMap { $0 }
             warning = warnings.joined(separator: " ").nilIfEmpty
             warningPresentation = warnings.map { .init($0) }
             usageHistory = scan.usageHistory

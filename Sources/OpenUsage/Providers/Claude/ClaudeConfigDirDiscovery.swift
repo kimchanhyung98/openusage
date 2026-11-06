@@ -179,10 +179,7 @@ struct ClaudeConfigDirDiscovery {
     private func defaultClaudeConfigDirs() -> [String] {
         if let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-            let dirs = raw.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            if !dirs.isEmpty { return dirs.map(expandTilde) }
+            return [expandTilde(raw)]
         }
         let home = homeDirectory()
         let xdg = environment.value(for: "XDG_CONFIG_HOME")?.nilIfEmpty.map(expandTilde)

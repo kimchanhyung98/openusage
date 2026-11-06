@@ -6,7 +6,7 @@ final class OpenCodeProviderTests: XCTestCase {
     private func d(_ iso: String) -> Date { OpenUsageISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
     private func row(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, _ provider: String) -> String {
-        "[\(epochMs(iso)),\(cost),\(tokens),\"\(model)\",\"\(provider)\"]"
+        "[\(epochMs(iso)),\(cost),{\"total\":\(tokens)},\"\(model)\",\"\(provider)\"]"
     }
     private let authJSON = #"{"opencode-go":{"type":"api","key":"sk-test"}}"#
 
@@ -267,8 +267,24 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertTrue(has)
     }
 
-    func testSpendTilesAreNotMarkedEstimated() async {
-        // OpenCode는 per-message cost를 자체 기록 — tile에 local-estimate ⓘ 미표시
+    func testPartialDatabaseFailureIsVisibleInSnapshot() async {
+        let now = d("2026-07-12T12:00:00.000Z")
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let provider = OpenCodeProvider(
+            authStore: authStore(files: FakeFiles()),
+            usageScanner: OpenCodeUsageScanner(
+                sqlite: StubSQLite(data: ["/oc/healthy.db": db], failing: ["/oc/locked.db"]),
+                databasePaths: { ["/oc/healthy.db", "/oc/locked.db"] }
+            ),
+            sharedUsage: .init(collectors: []), now: { now }
+        )
+        let snapshot = await provider.refresh()
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.warning, "Some local usage files could not be read. Usage history may be incomplete.")
+        XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 500)
+    }
+
+    func testNativeSpendTilesAreMarkedEstimated() async {
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let provider = OpenCodeProvider(
@@ -283,7 +299,9 @@ final class OpenCodeProviderTests: XCTestCase {
         guard case .values(_, let values, _, _, _, _)? = snapshot.line(label: "Today") else {
             return XCTFail("expected a Today tile")
         }
-        XCTAssertFalse(values.contains(where: \.estimated))
+        XCTAssertTrue(values.contains(where: \.estimated))
+        let history = provider.widgetDescriptors.compactMap(\.historyResource).first
+        XCTAssertEqual(history?.estimatedCost, true)
     }
 
     func testStaleGoHistoryDoesNotShowGoPlanOrMeters() async {

@@ -177,3 +177,5 @@
 "From your Antigravity usage history and local tools (estimated)" = "Antigravity の使用履歴とローカルツールから推定";
 "From your Copilot CLI logs and local tools" = "Copilot CLI のログとローカルツールから収集";
 "From your OpenCode logs and local tools" = "OpenCode のログとローカルツールから収集";
+"From your Grok usage files and logs (estimated)" = "Grok の使用量ファイルとログに基づく値（推定）";
+"From your Grok usage files, logs, and local tools (estimated)" = "Grok の使用量ファイル、ログ、ローカルツールに基づく値（推定）";
