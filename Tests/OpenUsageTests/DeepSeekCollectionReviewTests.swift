@@ -194,12 +194,54 @@ final class DeepSeekCollectionReviewTests: XCTestCase {
         XCTAssertThrowsError(try parse([message(0, input: 100)]))
     }
 
+    func testInvalidSettlementKeepsValidAttempt() throws {
+        let attempt = event("assistant/attempt", 1, [
+            "turn": 1, "step": 1, "attemptId": "attempt",
+            "stream": [["type": "chunk", "chunk": ["type": "usage", "usage": usage(100)]]]
+        ])
+        for invalidNumber in [true, false] {
+            var settlement = message(2, input: 20)
+            if invalidNumber {
+                var payload = settlement["data"] as! [String: Any]
+                payload["usage"] = ["inputTokens": -1, "outputTokens": 10]
+                settlement["data"] = payload
+            } else {
+                settlement["time"] = "invalid"
+            }
+            let result = try parse([header(4), route(0), attempt, settlement])
+            XCTAssertEqual(result.count, 2)
+            XCTAssertEqual(result.filter { $0.issues.isEmpty }.map(\.totalTokens), [100])
+            let scan = try XCTUnwrap(UsageHistoryBuilder.scan(
+                .init(records: result), providerID: "claude", since: .distantPast, pricing: .empty
+            ))
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+            XCTAssertEqual(scan.rejectedNumericRows, invalidNumber ? 1 : 0)
+            XCTAssertEqual(scan.rejectedMetadataRows, invalidNumber ? 0 : 1)
+        }
+    }
+
+    func testUnattributedInvalidSharedRecordsDoNotWarnEveryProvider() throws {
+        let partial = try encode([header(4)]) + Data(#"{"type":"assistant/message""#.utf8)
+        let dsh = try DeepSeekSessionParser.parse(partial, path: "/fixture/session.v4.jsonl")
+        XCTAssertNil(dsh.first?.providerID)
+        for source in ["dsh", "openclaw", "hermes"] {
+            let records = source == "dsh" ? dsh : [UsageRecord(
+                sourceID: source, formatID: "fixture", kind: "incomplete", issues: [.invalidMetadata]
+            )]
+            XCTAssertNil(UsageHistoryBuilder.scan(
+                .init(records: records), providerID: "claude", since: .distantPast, pricing: .empty
+            ), source)
+        }
+    }
+
     func testUnterminatedRawTailKeepsOnlyCompleteRowsAndReportsIncompleteMetadata() throws {
         let prefix = try encode([header(4), route(0), message(1, input: 100)])
         for tail in [Data(#"{"type":"assistant/message","seq":2"#.utf8), try encode([message(2, input: 200)]).dropLast()] {
             let result = try DeepSeekSessionParser.parse(prefix + tail, path: "/fixture/session.v4.jsonl")
             XCTAssertEqual(result.filter { $0.kind == "assistant" }.map(\.totalTokens), [100])
             XCTAssertEqual(result.filter { $0.issues.contains(.invalidMetadata) }.count, 1)
+            XCTAssertEqual(result.last?.providerID, "anthropic")
+            XCTAssertNil(UsageHistoryBuilder.scan(.init(records: result), providerID: "codex", since: .distantPast, pricing: .empty))
             let scan = try XCTUnwrap(UsageHistoryBuilder.scan(.init(records: result), providerID: "claude", since: .distantPast, pricing: .empty))
             XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
             XCTAssertEqual(scan.rejectedMetadataRows, 1)

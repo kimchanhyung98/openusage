@@ -37,7 +37,8 @@ flowchart LR
 공통 모듈에 도구별 JSON 필드나 모델명 추측 규칙을 추가하지 않음.
 별도 복제 DB나 백그라운드 업로드 없음.
 파일 수집과 읽기 전용 SQLite 수집 기반 제공.
-현재 Pi·OMP 수집 입력은 JSONL 세션이며 SQLite adapter 등록과 압축 원장 연결은 별도 도구 통합 범위.
+Pi·OMP는 JSONL 세션을 읽고 OpenClaw·Hermes는 SQLite 원장도 수집.
+OpenClaw·DeepSeek·Codex는 일반 원장과 Zstandard 압축 원장을 함께 지원.
 압축 원장용 기반은 앱에 포함한 공식 `libzstd` 1.5.7 사용.
 사용자에게 별도 압축 명령 설치를 요구하지 않음.
 
@@ -145,23 +146,33 @@ DB 본체의 수정 시각만으로 캐시하지 않으며 WAL의 최신 기록�
 ## OpenClaw·Hermes·DeepSeek 원장
 
 OpenClaw는 JSONL과 SQLite transcript를 함께 읽고 동일 이벤트를 한 번만 반영.
+선택한 상태 디렉터리의 `agents`와 이전 단일 에이전트 형식의 최상위 `sessions`에서 이력 수집.
+`OPENCLAW_HOME`의 빈 값과 문자열 `undefined`·`null`은 설정 없음으로 처리.
+JSONL 파일의 마지막 행이 줄바꿈 없이 잘렸으면 완료된 앞부분을 유지하고 마지막 행은 불완전 기록으로 진단.
+잘린 행의 provider·모델은 이전 행에서 추정하지 않으며, 귀속을 확인할 수 없는 진단은 특정 카드에 연결하지 않음.
+줄바꿈 없는 마지막 행도 완전한 JSON 객체이면 반영하며, 줄바꿈으로 끝난 손상 행과 SQLite 보관 원장의 손상은 읽기 실패로 처리.
+`.zst` 파일은 완전한 압축 프레임을 검증한 뒤 같은 JSONL 규칙을 적용하며, 잘린 압축 프레임은 계속 읽기 실패로 처리.
 원본 payload가 cold archive로 이동했으면 보관 목록과 blob·파일·chunk의 길이·해시·순서를 확인한 뒤 복원.
 복원할 수 없는 원본은 불완전 기록으로 남김.
 `totalOrigin=provider-billed` 비용의 0과 양수를 제공자 보고액으로 보존.
-`usageReport.state=unavailable` 기록은 사용량 합산에서 제외.
+`usageReport.state=unavailable` 기록은 원본의 측정값과 비용을 공통 기록에 보존하되 합산에서 제외하고 불완전 이력으로 진단.
 OpenClaw의 Codex mirror는 전체 요청 원장이 아니므로 native Codex 원장과 중복 합산하지 않음.
 기본 Codex 카드만 OpenClaw 전용 Codex 홈을 조회하고 계정별 카드에는 해당 이력을 추가하지 않음.
+Codex 조회는 에이전트 목록과 전용 Codex 저장소로 제한하며 OpenClaw transcript·cold archive 트리 전체를 다시 탐색하지 않음.
 
 Hermes Agent는 모델별 세션 누적 기록을 우선하며 세션 총계와 그대로 더하지 않음.
+기본·지정 홈의 `state.db`가 심볼릭 링크여도 대상 DB 조회.
 본 호출의 확인 가능한 잔여분과 독립 보조 호출을 구분.
 `codex_thread_id`가 확인된 본 호출은 native Codex 원장과 중복 가능하므로 기록은 보존하고 합산에서 제외.
-시작·종료 시각이 같은 로컬 날짜로 확인된 세션 합계만 일별 이력에 반영.
+모델별 기록은 `first_seen`(없으면 세션 시작 시각)과 `last_seen`, 세션 합계는 `started_at`과 `ended_at`이 같은 로컬 날짜로 확인된 경우만 일별 이력에 반영.
 여러 날짜에 걸친 합계와 종료 시각이 없는 합계는 원본 보존 및 진단 처리.
 
 DeepSeek Harness는 재시도·settlement·압축 호출을 구분하고 fork의 seed 기록을 제외.
+잘못된 숫자나 시각이 있는 settlement는 정상 attempt를 덮지 않고 진단 기록으로 보존.
 v2 이상 fork는 마지막 inherited `session/end-seed`를 경계로 사용.
 요약 호출에는 명시된 provider와 모델을 사용.
 파일명과 버전을 확인하고 완전한 기록 뒤 작성 중인 꼬리는 정상 접두부와 구분.
+작성 중인 꼬리의 경고는 앞선 기록에서 provider를 확인한 카드에만 반영.
 압축 원장의 완료된 접두부도 같은 규칙으로 처리.
 
 ## 기존 provider 연결

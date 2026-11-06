@@ -8,6 +8,7 @@ enum UsageSourceCollectors {
         let hermes = configured("HERMES_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".hermes")
         let hermesProfiles = hermes.appendingPathComponent("profiles")
         let hermesPath = hermes.resolvingSymlinksInPath().path
+        let hermesPrimary = hermes.appendingPathComponent("state.db").resolvingSymlinksInPath().path
         let hermesProfilesPath = hermesProfiles.resolvingSymlinksInPath().path
         let hermesRoots = hermes.deletingLastPathComponent().lastPathComponent == "profiles"
             ? [hermes.appendingPathComponent("state.db")] : [hermes.appendingPathComponent("state.db"), hermesProfiles]
@@ -24,11 +25,12 @@ enum UsageSourceCollectors {
             UsageSQLiteCollector(sourceID: "openclaw", roots: clawRoots,
                                  includeFile: { $0.lastPathComponent == "openclaw-agent.sqlite" }, parse: OpenClawSessionParser.database),
             UsageSQLiteCollector(sourceID: "hermes", roots: hermesRoots, includeFile: { url in
+                if url.resolvingSymlinksInPath().path == hermesPrimary { return true }
                 guard url.lastPathComponent == "state.db" else { return false }
                 let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
                 return parent.path == hermesPath || parent.deletingLastPathComponent().path == hermesProfilesPath
             }, parse: HermesUsageParser.database),
-            UsageFileCollector(sourceID: "dsh", roots: [dsh.appendingPathComponent("sessions")],
+            UsageFileCollector(sourceID: "dsh", roots: [dsh.appendingPathComponent("sessions")], version: 2,
                                includeFile: DeepSeekSessionParser.isCurrentGeneration, parse: DeepSeekSessionParser.parse)
         ]
     }
@@ -36,17 +38,20 @@ enum UsageSourceCollectors {
     static func openClawRoots(environment: EnvironmentReading, home: URL) -> [URL] {
         let base = configured("OPENCLAW_HOME", environment: environment, home: home) ?? home
         if let state = configured("OPENCLAW_STATE_DIR", environment: environment, home: base) {
-            return [state.appendingPathComponent("agents")]
+            return ["agents", "sessions"].map { state.appendingPathComponent($0) }
         }
         if let profile = environment.value(for: "OPENCLAW_PROFILE")?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
            profile.lowercased() != "default", profile.range(of: "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$", options: .regularExpression) != nil {
-            return [base.appendingPathComponent(".openclaw-\(profile)/agents")]
+            return ["agents", "sessions"].map { base.appendingPathComponent(".openclaw-\(profile)/" + $0) }
         }
-        return [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].map { base.appendingPathComponent($0 + "/agents") }
+        return [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].flatMap { state in
+            ["agents", "sessions"].map { base.appendingPathComponent(state + "/" + $0) }
+        }
     }
 
     static func configured(_ key: String, environment: EnvironmentReading, home: URL) -> URL? {
         guard let value = environment.value(for: key)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else { return nil }
+        if key == "OPENCLAW_HOME", value == "undefined" || value == "null" { return nil }
         if value == "~" { return home }
         if value.hasPrefix("~/") { return home.appendingPathComponent(String(value.dropFirst(2))) }
         return URL(fileURLWithPath: value)

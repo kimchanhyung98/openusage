@@ -93,11 +93,156 @@ final class OpenClawCollectionReviewTests: XCTestCase {
         }
         for profile in [" dev ", "Work_1", String(repeating: "a", count: 64)] {
             let roots = UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(["OPENCLAW_PROFILE": profile]), home: home)
-            XCTAssertEqual(roots, [home.appendingPathComponent(".openclaw-\(profile.trimmingCharacters(in: .whitespacesAndNewlines))/agents")])
+            XCTAssertEqual(roots, ["agents", "sessions"].map {
+                home.appendingPathComponent(".openclaw-\(profile.trimmingCharacters(in: .whitespacesAndNewlines))/" + $0)
+            })
         }
         let explicit = UsageSourceCollectors.openClawRoots(environment: FakeEnvironment([
             "OPENCLAW_PROFILE": " dev ", "OPENCLAW_STATE_DIR": "/chosen/state"
         ]), home: home)
-        XCTAssertEqual(explicit, [URL(fileURLWithPath: "/chosen/state/agents")])
+        XCTAssertEqual(explicit, ["agents", "sessions"].map { URL(fileURLWithPath: "/chosen/state/" + $0) })
+    }
+
+    func testHomeSentinelsFallBackToHomeWhileStateOverrideAndOrdinaryPathsRemainValid() {
+        let home = URL(fileURLWithPath: "/fixture")
+        let defaults = UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(), home: home)
+        for value in ["undefined", "null", " undefined ", " null\n", "", " "] {
+            let environment = FakeEnvironment(["OPENCLAW_HOME": value])
+            XCTAssertEqual(UsageSourceCollectors.openClawRoots(environment: environment, home: home), defaults, value)
+        }
+        for value in ["/chosen/null", "~/chosen", "UNDEFINED"] {
+            let environment = FakeEnvironment(["OPENCLAW_HOME": value])
+            let base = UsageSourceCollectors.configured("OPENCLAW_HOME", environment: environment, home: home)
+            XCTAssertNotNil(base, value)
+            XCTAssertEqual(UsageSourceCollectors.openClawRoots(environment: environment, home: home).first,
+                           base?.appendingPathComponent(".openclaw/agents"), value)
+        }
+        let environment = FakeEnvironment(["OPENCLAW_HOME": "null", "OPENCLAW_STATE_DIR": "~/state"])
+        XCTAssertEqual(UsageSourceCollectors.openClawRoots(environment: environment, home: home),
+                       ["agents", "sessions"].map { home.appendingPathComponent("state/" + $0) })
+    }
+
+    func testLegacyTopLevelTranscriptsAreCollectedAndDeduplicatedWithPerAgentCopies() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let cases: [(environment: [String: String], state: String)] = [
+            ([:], ".openclaw"), ([:], ".clawdbot"), ([:], ".moltbot"), ([:], ".moldbot"),
+            (["OPENCLAW_PROFILE": "work"], ".openclaw-work"),
+            (["OPENCLAW_STATE_DIR": home.appendingPathComponent("custom").path], "custom"),
+            (["OPENCLAW_HOME": home.appendingPathComponent("relocated").path], "relocated/.openclaw")
+        ]
+        for entry in cases {
+            let text = OpenClawTestStore.header + "\n" + (try OpenClawTestStore.message(id: "same", cost: 0.25))
+            let state = home.appendingPathComponent(entry.state)
+            try UsageRecordFixture.write(text, to: state.appendingPathComponent("sessions/s1.jsonl"))
+            try UsageRecordFixture.write(text, to: state.appendingPathComponent("agents/main/sessions/s1.jsonl"))
+            let configured = try XCTUnwrap(UsageSourceCollectors.make(environment: FakeEnvironment(entry.environment), home: home)
+                .compactMap { $0 as? UsageFileCollector }.first { $0.sourceID == "openclaw" })
+            let collector = UsageFileCollector(
+                sourceID: "openclaw", roots: configured.roots, scanner: IncrementalJSONLScanner(),
+                includeFile: configured.includeFile, parse: OpenClawSessionParser.parse
+            )
+            let collected = await UsageCollectionCoordinator(collectors: [collector]).collect(since: .distantPast)
+            let result = try XCTUnwrap(collected)
+            XCTAssertEqual(result.records.count, 1, entry.state)
+            XCTAssertEqual(result.records.first?.totalTokens, 120, entry.state)
+            XCTAssertEqual(result.readFailureCount, 0, entry.state)
+            try FileManager.default.removeItem(at: state)
+        }
+    }
+
+    func testSQLiteFixtureFailureIncludesTheSQLiteDiagnostic() throws {
+        let store = try OpenClawTestStore()
+        XCTAssertThrowsError(try store.execute("INSERT INTO missing_fixture_table VALUES(1)")) { error in
+            XCTAssertEqual((error as NSError).domain, "OpenClawTestStore")
+            XCTAssertTrue(error.localizedDescription.contains("missing_fixture_table"))
+        }
+    }
+
+    func testIncompleteTailPreservesCompleteUsageAndRecoversOnTheNextScan() async throws {
+        let directory = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("s1.jsonl")
+        let first = try OpenClawTestStore.message(id: "first", cost: 0.25)
+        let prefix = OpenClawTestStore.header + "\n" + first + "\n"
+        try UsageRecordFixture.write(prefix + #"{"type":"message","message":"#, to: file)
+        let collector = UsageFileCollector(
+            sourceID: "openclaw", roots: [file], scanner: IncrementalJSONLScanner(),
+            includeFile: { _ in true }, parse: OpenClawSessionParser.parse
+        )
+
+        let firstCollection = await collector.collect(since: .distantPast)
+        let partial = try XCTUnwrap(firstCollection)
+        let expected = try OpenClawSessionParser.parse(Data(prefix.utf8), path: file.path)
+        XCTAssertEqual(partial.records.first, expected.first)
+        XCTAssertEqual(partial.readFailureCount, 0)
+        let diagnostic = try XCTUnwrap(partial.records.last)
+        XCTAssertEqual(diagnostic.kind, "incomplete-tail")
+        XCTAssertEqual(diagnostic.sessionID, "s1")
+        XCTAssertNil(diagnostic.providerID)
+        XCTAssertNil(diagnostic.model)
+        XCTAssertEqual(diagnostic.issues, [.invalidMetadata])
+        XCTAssertEqual(diagnostic.totalTokens, 0)
+        XCTAssertNil(diagnostic.recordedCostUSD)
+        let partialScan = try XCTUnwrap(UsageHistoryBuilder.scan(
+            partial, providerID: "claude", since: .distantPast, pricing: .empty, allowEstimates: false
+        ))
+        XCTAssertEqual(partialScan.series.daily.first?.totalTokens, 120)
+        XCTAssertEqual(partialScan.series.daily.first?.costUSD, 0.25)
+        XCTAssertNotNil(partialScan.usageHistory)
+
+        let second = try OpenClawTestStore.message(id: "second", cost: 0.5)
+        try UsageRecordFixture.write(prefix + second, to: file)
+        let secondCollection = await collector.collect(since: .distantPast)
+        let complete = try XCTUnwrap(secondCollection)
+        XCTAssertEqual(complete.records.count, 2)
+        XCTAssertTrue(complete.records.allSatisfy { $0.issues.isEmpty })
+        XCTAssertEqual(complete.records.reduce(0) { $0 + $1.totalTokens }, 240)
+        XCTAssertEqual(complete.readFailureCount, 0)
+    }
+
+    func testCompleteFinalRowDoesNotRequireANewline() throws {
+        let message = try OpenClawTestStore.message(id: "complete", cost: 0.25)
+        let text = OpenClawTestStore.header + "\n" + message
+
+        let records = try OpenClawSessionParser.parse(Data(text.utf8), path: "/fixture/s1.jsonl")
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.id, "complete")
+        XCTAssertEqual(records.first?.totalTokens, 120)
+        XCTAssertTrue(records.first?.issues.isEmpty == true)
+    }
+
+    func testNewlineTerminatedCorruptionStillFailsTheTranscript() throws {
+        let message = try OpenClawTestStore.message(id: "complete", cost: 0.25)
+        let prefix = OpenClawTestStore.header + "\n" + message + "\n"
+        let broken = #"{"type":"message","message":"# + "\n"
+        for text in [prefix + broken, prefix + broken + message] {
+            XCTAssertThrowsError(try OpenClawSessionParser.parse(Data(text.utf8), path: "/fixture/s1.jsonl"))
+        }
+    }
+
+    func testIncompleteOnlyTranscriptRetainsAnUnattributedDiagnostic() throws {
+        let records = try OpenClawSessionParser.parse(Data(#"{"type":"message"#.utf8), path: "/fixture/s1.jsonl")
+
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.kind, "incomplete-tail")
+        XCTAssertEqual(records.first?.issues, [.invalidMetadata])
+        XCTAssertNil(records.first?.providerID)
+        XCTAssertNil(records.first?.model)
+        XCTAssertEqual(records.first?.totalTokens, 0)
+        XCTAssertNil(records.first?.recordedCostUSD)
+    }
+
+    func testCompleteCompressedFrameCanContainAnIncompleteJSONLTailButTornFrameFails() throws {
+        let prefix = OpenClawTestStore.header + "\n" + (try OpenClawTestStore.message(id: "complete", cost: 0.25)) + "\n"
+        let bytes = try OpenClawTestStore.compress(Data((prefix + #"{"type":"message"#).utf8))
+
+        let records = try OpenClawSessionParser.parse(bytes, path: "/fixture/s1.jsonl.zst")
+
+        XCTAssertEqual(records.count, 2)
+        XCTAssertEqual(records.first?.totalTokens, 120)
+        XCTAssertEqual(records.last?.kind, "incomplete-tail")
+        XCTAssertThrowsError(try OpenClawSessionParser.parse(Data(bytes.dropLast()), path: "/fixture/s1.jsonl.zst"))
     }
 }

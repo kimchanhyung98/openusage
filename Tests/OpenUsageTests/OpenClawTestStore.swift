@@ -88,7 +88,14 @@ final class OpenClawTestStore {
     }
 
     func execute(_ sql: String) throws {
-        guard sqlite3_exec(handle, sql, nil, nil, nil) == SQLITE_OK else { throw CocoaError(.coderInvalidValue) }
+        var message: UnsafeMutablePointer<CChar>?
+        let status = sqlite3_exec(handle, sql, nil, nil, &message)
+        defer { sqlite3_free(message) }
+        guard status == SQLITE_OK else {
+            throw NSError(domain: "OpenClawTestStore", code: Int(status), userInfo: [
+                NSLocalizedDescriptionKey: message.map { String(cString: $0) } ?? "sqlite3_exec failed"
+            ])
+        }
     }
 
     static func message(

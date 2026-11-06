@@ -180,4 +180,19 @@ final class OpenClawColdArchiveTests: XCTestCase {
             XCTAssertThrowsError(try store.records())
         }
     }
+
+    func testVerifiedArchiveStillRejectsIncompleteFinalJSONLRow() throws {
+        let prefix = OpenClawTestStore.header + "\n" + (try OpenClawTestStore.message(id: "complete", cost: 0.25)) + "\n"
+        let transcript = Data((prefix + #"{"type":"message"#).utf8)
+        for encoding in ["identity", "zstd"] {
+            let store = try OpenClawTestStore()
+            let bytes = encoding == "zstd" ? try OpenClawTestStore.compress(transcript) : transcript
+            try store.execute("""
+            INSERT INTO session_transcript_archives VALUES('s1','g1','\(encoding)',
+              \(OpenClawTestStore.blob(bytes)),'\(OpenClawTestStore.sha256(bytes))')
+            """)
+
+            XCTAssertThrowsError(try store.records(), encoding)
+        }
+    }
 }

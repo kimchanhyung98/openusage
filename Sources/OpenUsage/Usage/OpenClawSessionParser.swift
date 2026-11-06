@@ -60,14 +60,26 @@ enum OpenClawSessionParser {
     }
 
     static func parse(_ data: Data, path: String) throws -> [UsageRecord] {
-        try parseTranscript(UsageZstandard.decodeIfNeeded(data), path: path)
+        try parseTranscript(UsageZstandard.decodeIfNeeded(data), path: path, allowIncompleteTail: true)
     }
 
-    private static func parseTranscript(_ data: Data, path: String, session: String? = nil) throws -> [UsageRecord] {
+    private static func parseTranscript(
+        _ data: Data, path: String, session: String? = nil, allowIncompleteTail: Bool = false
+    ) throws -> [UsageRecord] {
+        try Task.checkCancellation()
+        var transcript = data
+        var incompleteTail = false
+        if allowIncompleteTail, data.last != 0x0A {
+            let start = data.lastIndex(of: 0x0A).map { data.index(after: $0) } ?? data.startIndex
+            if start < data.endIndex, (try? UsageJSON.object(Data(data[start...]))) == nil {
+                transcript = Data(data[..<start])
+                incompleteTail = true
+            }
+        }
         var state = State(session: session)
         var records: [UsageRecord] = []
         var headerRead = session == nil
-        for line in JSONLScanning.lines(in: data) {
+        for line in JSONLScanning.lines(in: transcript) {
             try Task.checkCancellation()
             let object = try UsageJSON.object(line)
             if let session, !headerRead || object["type"] as? String == "session" {
@@ -79,6 +91,13 @@ enum OpenClawSessionParser {
             if let record = state.record(object, path: path) { records.append(record) }
         }
         guard headerRead else { throw CocoaError(.coderReadCorrupt) }
+        if incompleteTail {
+            records.append(UsageRecord(
+                sourceID: "openclaw", formatID: "openclaw-session", filePath: path,
+                sessionID: state.session, parentSession: state.parent, kind: "incomplete-tail",
+                issues: [.invalidMetadata]
+            ))
+        }
         return records
     }
 

@@ -257,6 +257,34 @@ final class CodexCompressedUsageTests: XCTestCase {
         XCTAssertNil(account)
     }
 
+    func testSharedDiscoveryRootsExcludeTranscriptAndOtherAgentStorageTrees() throws {
+        let root = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let agents = root.appendingPathComponent(".openclaw/agents")
+        let agent = agents.appendingPathComponent("main")
+        for path in ["sessions/cold", "workspace/deep", "agent/codex-home/sessions",
+                     "agent/codex-home/archived_sessions", "agent/cli-auth/codex/old/sessions"] {
+            try FileManager.default.createDirectory(at: agent.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
+        let legacySessions = root.appendingPathComponent(".openclaw/sessions")
+        try FileManager.default.createDirectory(at: legacySessions, withIntermediateDirectories: true)
+
+        let discovery = CodexLogUsageScanner.sharedSessionRoots(under: [agents, legacySessions])
+
+        XCTAssertEqual(Set(discovery.roots.map { $0.resolvingSymlinksInPath().path }), Set([
+            "agent/codex-home/sessions", "agent/codex-home/archived_sessions", "agent/cli-auth/codex"
+        ].map { agent.appendingPathComponent($0).resolvingSymlinksInPath().path }))
+        XCTAssertEqual(discovery.failures, 0)
+        let missing = CodexLogUsageScanner.sharedSessionRoots(under: [root.appendingPathComponent("missing/agents")])
+        XCTAssertTrue(missing.roots.isEmpty)
+        XCTAssertEqual(missing.failures, 0)
+        let invalid = root.appendingPathComponent("invalid/agents")
+        try write(Data(), "invalid/agents", under: root)
+        let failed = CodexLogUsageScanner.sharedSessionRoots(under: [invalid])
+        XCTAssertTrue(failed.roots.isEmpty)
+        XCTAssertEqual(failed.failures, 1)
+    }
+
     private func rows(input: Int, output: Int, model: String = "gpt-5.2") -> Data {
         Data(CodexLogFixture.tokenCount(
             timestamp: OpenUsageISO8601.string(from: now.addingTimeInterval(-60)),

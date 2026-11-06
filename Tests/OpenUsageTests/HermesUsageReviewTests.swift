@@ -67,6 +67,21 @@ final class HermesUsageReviewTests: XCTestCase {
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 1450)
     }
 
+    func testExcessModelReasoningKeepsUnresolvedSessionInsteadOfResidual() async throws {
+        let database = try HermesReviewDatabase()
+        try database.execute("UPDATE sessions SET reasoning_tokens=10")
+        try database.model(input: 400, output: 40)
+        try database.execute("UPDATE session_model_usage SET reasoning_tokens=15")
+        let collection = try await database.collect()
+        let original = try XCTUnwrap(collection.records.first { $0.kind == "session-total" })
+        let scan = try XCTUnwrap(UsageHistoryBuilder.scan(collection, providerID: "claude", since: .distantPast, pricing: .empty))
+        XCTAssertEqual(original.reasoningTokens, 10)
+        XCTAssertTrue(original.issues.contains(.unresolvedMirror))
+        XCTAssertNil(collection.records.first { $0.kind == "session-residual" })
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 440)
+        XCTAssertNotNil(scan.metadataWarning)
+    }
+
     func testDifferentRouteResidualStaysRawWithMetadataWarning() async throws {
         let database = try HermesReviewDatabase()
         try database.model(input: 400, output: 40)
@@ -281,6 +296,24 @@ final class HermesUsageReviewTests: XCTestCase {
         XCTAssertEqual(selectedProfile?.records.map(\.sessionID), ["profile"])
         XCTAssertEqual(defaults?.readFailureCount, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: main.file.path))
+    }
+
+    func testRootDatabaseSymlinkIsCollectedForDefaultAndConfiguredHome() async throws {
+        let directory = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = try HermesReviewDatabase(file: directory.appendingPathComponent("external/ledger"))
+        let defaultHome = directory.appendingPathComponent(".hermes")
+        let customHome = directory.appendingPathComponent("custom")
+        for home in [defaultHome, customHome] {
+            try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            try FileManager.default.createSymbolicLink(at: home.appendingPathComponent("state.db"), withDestinationURL: database.file)
+        }
+        for environment in [FakeEnvironment([:]), FakeEnvironment(["HERMES_HOME": customHome.path])] {
+            let collected = await UsageCollectionCoordinator(environment: environment, home: directory).collect(since: .distantPast)
+            let collection = try XCTUnwrap(collected)
+            XCTAssertEqual(collection.records.filter { $0.sourceID == "hermes" }.map(\.totalTokens), [1100])
+            XCTAssertEqual(collection.readFailureCount, 0)
+        }
     }
 
     func testWALUpdatesAreRereadAndBrokenSchemaIsReported() async throws {

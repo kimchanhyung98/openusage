@@ -71,8 +71,9 @@ actor CodexLogUsageScanner {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
         let sharedRoots = includeSharedHomes && rootsOverride == nil
             ? UsageSourceCollectors.openClawRoots(environment: environment, home: homeDirectory()) : []
+        let sharedSessionRoots = Self.sharedSessionRoots(under: sharedRoots)
         var sharedCompressedPaths: Set<String> = []
-        let sharedFiles = UsageFileDiscovery.files(under: sharedRoots) { url in
+        let sharedFiles = UsageFileDiscovery.files(under: sharedSessionRoots.roots) { url in
             guard Self.isSharedRolloutFile(url) else { return false }
             if url.lastPathComponent.hasSuffix(".jsonl.zst") {
                 sharedCompressedPaths.insert(url.resolvingSymlinksInPath().path)
@@ -92,7 +93,7 @@ actor CodexLogUsageScanner {
         var seenFiles: Set<String> = []
         let nativeFiles = Self.sessionFiles(homes: homes)
         let files = (nativeFiles.result.files + sharedFiles.files).filter { seenFiles.insert($0.path).inserted }
-        let discoveryFailures = nativeFiles.result.failures + sharedFiles.failures
+        let discoveryFailures = nativeFiles.result.failures + sharedFiles.failures + sharedSessionRoots.failures
         let compressedPaths = nativeFiles.compressedPaths.union(sharedCompressedPaths)
         let compressedAliases = compressedPaths.filter { !$0.hasSuffix(".jsonl.zst") }.sorted()
         if !compressedAliases.isEmpty { identity += "\ncompressed:" + compressedAliases.joined(separator: "\n") }
@@ -178,6 +179,36 @@ actor CodexLogUsageScanner {
             url.lastPathComponent.hasSuffix(".jsonl.zst")
                 && !FileManager.default.fileExists(atPath: url.deletingPathExtension().path)
         )
+    }
+
+    /// 에이전트 목록만 얕게 조회하고 Codex 전용 저장소로 재귀 탐색 범위 제한.
+    static func sharedSessionRoots(under roots: [URL]) -> (roots: [URL], failures: Int) {
+        var sessionRoots: [URL] = []
+        var failures = 0
+        for root in roots where root.lastPathComponent == "agents" {
+            guard !Task.isCancelled else { break }
+            do {
+                let agents = try FileManager.default.contentsOfDirectory(
+                    at: root, includingPropertiesForKeys: [.isDirectoryKey]
+                )
+                for agent in agents {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        guard try agent.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                    } catch {
+                        failures += 1
+                        continue
+                    }
+                    sessionRoots += ["agent/codex-home/sessions", "agent/codex-home/archived_sessions", "agent/cli-auth/codex"]
+                        .map { agent.appendingPathComponent($0) }
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                continue
+            } catch {
+                failures += 1
+            }
+        }
+        return (sessionRoots, failures)
     }
 
     private static func isSharedRolloutFile(_ url: URL) -> Bool {

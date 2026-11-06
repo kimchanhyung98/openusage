@@ -71,8 +71,11 @@ enum HermesUsageParser {
             }
             remainder[column] = total - covered
         }
-        if let total = UsageLogNumbers.count(row["reasoning_tokens"]),
-           let covered = count("reasoning_tokens", in: main), total >= covered {
+        if let total = UsageLogNumbers.count(row["reasoning_tokens"]) {
+            guard let covered = count("reasoning_tokens", in: main), total >= covered else {
+                original.issues.insert(.unresolvedMirror)
+                return original
+            }
             remainder["reasoning_tokens"] = total - covered
         } else {
             remainder.removeValue(forKey: "reasoning_tokens")

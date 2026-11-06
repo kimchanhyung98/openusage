@@ -103,7 +103,14 @@ enum DeepSeekSessionParser {
             }
             if record.timestamp == nil { record.issues.insert(.invalidMetadata) }
             if !compaction, let slot {
-                if let index = settlements[slot] { result[index] = record; continue }
+                if let index = settlements[slot] {
+                    if record.issues.contains(.invalidNumbers) || record.issues.contains(.invalidMetadata) {
+                        result.append(record)
+                    } else {
+                        result[index] = record
+                    }
+                    continue
+                }
                 settlements[slot] = result.count
             }
             result.append(record)
@@ -111,7 +118,7 @@ enum DeepSeekSessionParser {
         if decoded.incomplete || complete.count < decoded.data.count {
             result.append(UsageRecord(
                 sourceID: "dsh", formatID: "dsh-session", filePath: path, sessionID: session,
-                kind: "incomplete", issues: [.invalidMetadata]
+                kind: "incomplete", providerID: provider, issues: [.invalidMetadata]
             ))
         }
         return result

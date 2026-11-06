@@ -447,9 +447,9 @@ OpenUsage는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET htt
 
 ## 공유 도구 사용량
 
-공통 수집 대상은 Pi·Oh My Pi(OMP).
+공통 수집 대상은 Pi·Oh My Pi(OMP)·OpenClaw·Hermes Agent·DeepSeek Harness.
 도구별 경로·중복 제거·가격 규칙은 [사용량 수집](/docs/usage-collection.md) 참조.
 계정 귀속을 확인하지 못하는 기록은 계정 전용 카드에 합산하지 않음.
 공통 수집이 실행되면 읽지 못한 저장소를 경고하고 읽은 기록은 보존.
 네이티브 이력의 실패 탐지와 화면 반영은 해당 provider의 수집 경로에 따름.
-Pi·OMP의 가격 미확정 토큰은 유지하며 해당 날짜·기간의 총 Cost와 Cost/MTok 생략.
+공유 도구의 가격 미확정 토큰은 유지하며 해당 날짜·기간의 총 Cost와 Cost/MTok 생략.
