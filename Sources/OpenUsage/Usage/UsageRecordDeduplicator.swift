@@ -75,6 +75,11 @@ enum UsageRecordDeduplicator {
     }
 
     private static func prefers(_ candidate: UsageRecord, over existing: UsageRecord) -> Bool {
+        let candidateUsable = candidate.timestamp != nil
+            && candidate.issues.isDisjoint(with: [.invalidMetadata, .unresolvedMirror, .invalidNumbers])
+        let existingUsable = existing.timestamp != nil
+            && existing.issues.isDisjoint(with: [.invalidMetadata, .unresolvedMirror, .invalidNumbers])
+        if candidateUsable != existingUsable { return candidateUsable }
         if candidate.issues.count != existing.issues.count { return candidate.issues.count < existing.issues.count }
         let candidateReported = candidate.costOrigin == .reported && candidate.recordedCostUSD != nil
             && (candidate.recordedCostUSD != 0 || !candidate.zeroCostIsUnknown)

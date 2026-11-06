@@ -11,10 +11,35 @@ final class UsageCollectionCancellationTests: XCTestCase {
             withUnsafeCurrentTask { $0?.cancel() }
             return GrokLogUsageScanner.parse(log, since: .distantPast, pricing: .empty, reportNumericFailures: false)
         }.value
-        XCTAssertEqual(cancelled.rejectedMetadataRows, 1)
+        XCTAssertEqual(cancelled.rejectedMetadataRows, 0)
         XCTAssertTrue(diagnostics.events.isEmpty)
         let completed = GrokLogUsageScanner.parse(log, since: .distantPast, pricing: .empty, reportNumericFailures: false)
         XCTAssertEqual(completed.rejectedMetadataRows, 1)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "grok")
+        ])
+    }
+
+    func testGrokCancellationDuringParsingStopsAtCancelledLine() async {
+        let line = #"{"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"unattributed","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100}}"#
+        let log = Array(repeating: line, count: 8).joined(separator: "\n")
+        let diagnostics = DiagnosticEventRecorder()
+        let cancelled = await Task {
+            var visited = 0
+            let scan = GrokLogUsageScanner.parse(
+                log, since: .distantPast, pricing: .empty, reportNumericFailures: false,
+                onLine: {
+                    visited += 1
+                    if visited == 3 { withUnsafeCurrentTask { $0?.cancel() } }
+                }
+            )
+            return (scan, visited)
+        }.value
+        XCTAssertEqual(cancelled.1, 3)
+        XCTAssertEqual(cancelled.0.rejectedMetadataRows, 2)
+        XCTAssertTrue(diagnostics.events.isEmpty)
+        let completed = GrokLogUsageScanner.parse(log, since: .distantPast, pricing: .empty, reportNumericFailures: false)
+        XCTAssertEqual(completed.rejectedMetadataRows, 8)
         XCTAssertEqual(diagnostics.events, [
             DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "grok")
         ])

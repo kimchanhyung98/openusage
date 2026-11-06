@@ -80,16 +80,17 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // `refresh()`와 동일 소스(로컬 `opencode-go` auth key 또는 로컬 database의 hosted usage) — local 전용, main actor 밖 수행
-        // 읽기 불가 auth.json도 OpenCode 흔적 — provider를 활성화해 `refresh()`가 실행 가능한 에러를 노출하게 함
-        await loadOffMainActor { [authStore, usageScanner] in
+        // 읽기 불가 auth.json도 OpenCode 흔적. refresh에서 접근 오류 안내.
+        if await loadOffMainActor({ [authStore, usageScanner] in
             do {
                 if try authStore.goAPIKey() != nil { return true }
             } catch {
                 return true
             }
             return usageScanner.hasHostedUsage()
-        }
+        }) { return true }
+        let shared = await sharedUsage.scan(providerID: provider.id, now: now(), pricing: .empty, allowEstimates: false)
+        return !Task.isCancelled && shared?.usageHistory?.series.daily.isEmpty == false
     }
 
     func refresh() async -> ProviderSnapshot {

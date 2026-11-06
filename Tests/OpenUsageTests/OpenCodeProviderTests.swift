@@ -46,7 +46,8 @@ final class OpenCodeProviderTests: XCTestCase {
             usageScanner: OpenCodeUsageScanner(
                 sqlite: StubSQLite(data: ["/oc/opencode.db": "[]"]),
                 databasePaths: { ["/oc/opencode.db"] }
-            )
+            ),
+            sharedUsage: .init(collectors: [])
         )
         let has = await provider.hasLocalCredentials()
         XCTAssertFalse(has)

@@ -39,7 +39,7 @@ actor UsageCollectionCoordinator: UsageCollecting {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         guard let collection = await collect(since: since), !Task.isCancelled else { return nil }
         return UsageHistoryBuilder.scan(
-            collection, providerID: providerID, since: since, pricing: pricing,
+            collection, providerID: providerID, since: since, until: now, pricing: pricing,
             costEstimator: costEstimator, allowEstimates: allowEstimates
         )
     }

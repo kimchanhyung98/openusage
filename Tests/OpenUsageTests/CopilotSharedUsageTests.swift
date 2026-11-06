@@ -70,6 +70,75 @@ final class CopilotSharedUsageTests: XCTestCase {
         XCTAssertEqual(values.first { $0.kind == .count }?.number, 240)
     }
 
+    func testSharedOnlyLocalDetectionUsesCopilotAttributionWithoutNetwork() async throws {
+        for source in ["pi", "omp"] {
+            for providerID in ["github-copilot", "copilot", "anthropic"] {
+                var collection = sharedCollection()
+                collection.records[0].sourceID = source
+                collection.records[0].providerID = providerID
+                collection.records[0].recordedCostUSD = nil
+                let provider = try makeSharedOnlyProvider(collection: collection)
+
+                let detected = await provider.hasLocalCredentials()
+
+                XCTAssertEqual(detected, providerID != "anthropic")
+            }
+        }
+    }
+
+    func testPositiveEstimatedAndCreditEquivalentSharedCostsKeepOnlyTokens() async throws {
+        for origin in [UsageRecord.CostOrigin.estimated, .creditEquivalent] {
+            var collection = sharedCollection()
+            collection.records[0].recordedCostUSD = 9
+            collection.records[0].costOrigin = origin
+            let provider = try makeProvider(
+                sqlite: .init(payload: "[]"), collector: CopilotSharedUsageCollector(collection: collection)
+            )
+            let snapshot = await provider.refresh()
+            let history = try XCTUnwrap(snapshot.usageHistory)
+            XCTAssertEqual(history.series.daily.first?.totalTokens, 120)
+            XCTAssertNil(history.series.daily.first?.costUSD)
+            XCTAssertNil(history.modelUsage?.daily.first?.models.first?.costUSD)
+            guard case .values(_, let values, _, _, _, _) = try XCTUnwrap(snapshot.line(label: "Today")) else {
+                return XCTFail("Expected token-only usage")
+            }
+            XCTAssertFalse(values.contains { $0.kind == .dollars })
+            XCTAssertEqual(values.first { $0.kind == .count }?.number, 120)
+        }
+    }
+
+    func testEmptyRejectedAndExpiredSharedRecordsDoNotAutoEnableCopilot() async throws {
+        var invalid = sharedCollection()
+        invalid.records[0].issues = [.invalidNumbers]
+        var expired = sharedCollection()
+        expired.records[0].timestamp = now.addingTimeInterval(-40 * 86_400)
+        let empty = UsageCollection(records: [], sources: [.init(sourceID: "pi", completedStores: 1)])
+        let failed = UsageCollection(records: [], sources: [.init(sourceID: "pi", failedStores: 1)])
+        for collection in [empty, failed, invalid, expired] {
+            let provider = try makeSharedOnlyProvider(collection: collection)
+            let detected = await provider.hasLocalCredentials()
+            XCTAssertFalse(detected)
+        }
+    }
+
+    private func makeSharedOnlyProvider(collection: UsageCollection) throws -> CopilotProvider {
+        let suite = "CopilotSharedUsageTests.detection.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let http = RoutingHTTPClient { _ in
+            XCTFail("Local detection must not request quota")
+            throw URLError(.badServerResponse)
+        }
+        let now = now
+        return CopilotProvider(
+            authStore: CopilotAuthStore(files: FakeFiles(), keychain: FakeKeychain()),
+            usageClient: CopilotUsageClient(http: http),
+            usageScanner: CopilotUsageScanner(sqlite: CopilotSharedUsageSQLite(payload: nil), databasePath: { nil }),
+            sharedUsage: .init(collectors: [CopilotSharedUsageCollector(collection: collection)]),
+            defaults: defaults, now: { now }
+        )
+    }
+
     private func sharedCollection() -> UsageCollection {
         UsageCollection(records: [UsageRecord(
             sourceID: "pi", formatID: "fixture", id: "shared-request", kind: "message",

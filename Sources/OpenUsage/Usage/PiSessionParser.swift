@@ -63,6 +63,7 @@ enum PiSessionParser {
         } else {
             timestamp = envelopeTime ?? UsageJSON.date(payload["timestamp"], milliseconds: true)
         }
+        let priorityDisabled = isOMP && (payload["disabledFeatures"] as? [String])?.contains("priority") == true
         var record = UsageRecord(
             sourceID: effectiveSource, formatID: "pi-session", id: UsageJSON.string(object["id"]),
             responseID: UsageJSON.string(payload["responseId"]), kind: type,
@@ -70,7 +71,7 @@ enum PiSessionParser {
             providerID: UsageJSON.string(payload["provider"]), model: UsageJSON.string(payload["model"]),
             responseModel: UsageJSON.string(payload["responseModel"]) ?? UsageJSON.string(payload["upstreamModel"]),
             upstreamProvider: UsageJSON.string(payload["upstreamProvider"]),
-            serviceTier: UsageJSON.string(payload["serviceTier"]), costOrigin: .estimated, zeroCostIsUnknown: true
+            serviceTier: priorityDisabled ? nil : UsageJSON.string(payload["serviceTier"]), costOrigin: .estimated, zeroCostIsUnknown: true
         )
         if record.timestamp == nil || record.providerID == nil || record.effectiveModel == nil {
             record.issues.insert(.invalidMetadata)

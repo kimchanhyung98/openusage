@@ -50,7 +50,8 @@ struct UsageFileCollector: UsageCollecting {
             )
         }
         return UsageCollection(records: result.items, sources: [UsageSourceState(
-            sourceID: sourceID, providerID: providerID, completedStores: result.completedFiles,
+            sourceID: sourceID, providerID: providerID,
+            completedStores: result.completedFiles + discovery.completedEmptyRoots,
             failedStores: discovery.failures + result.failedPaths.count
         )])
     }
@@ -62,19 +63,22 @@ enum UsageFileDiscovery {
     struct Result {
         var files: [JSONLScanning.DiscoveredFile] = []
         var failures = 0
+        var completedEmptyRoots = 0
     }
 
     static func files(under roots: [URL], matching include: (URL) -> Bool) -> Result {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
         var result = Result()
         var seen: Set<String> = []
+        var hadCandidate = false
         func append(_ url: URL) {
             guard !Task.isCancelled, include(url), !Task.isCancelled else { return }
             let canonical = url.resolvingSymlinksInPath()
-            guard seen.insert(canonical.path).inserted else { return }
             do {
                 let values = try canonical.resourceValues(forKeys: keys)
                 guard values.isRegularFile == true else { return }
+                hadCandidate = true
+                guard seen.insert(canonical.path).inserted else { return }
                 result.files.append(.init(
                     path: canonical.path, size: values.fileSize ?? 0,
                     mtime: values.contentModificationDate ?? .distantPast
@@ -85,9 +89,15 @@ enum UsageFileDiscovery {
         }
         for root in Set(roots.map { $0.resolvingSymlinksInPath() }) {
             guard !Task.isCancelled else { break }
+            hadCandidate = false
+            let failuresBefore = result.failures
             do {
                 let values = try root.resourceValues(forKeys: keys)
                 guard values.isDirectory == true else { append(root); continue }
+                guard FileManager.default.isReadableFile(atPath: root.path) else {
+                    result.failures += 1
+                    continue
+                }
                 guard let enumerator = FileManager.default.enumerator(
                     at: root, includingPropertiesForKeys: Array(keys), options: [],
                     errorHandler: { _, _ in
@@ -99,6 +109,9 @@ enum UsageFileDiscovery {
                 for case let url as URL in enumerator {
                     guard !Task.isCancelled else { break }
                     append(url)
+                }
+                if !Task.isCancelled, !hadCandidate, result.failures == failuresBefore {
+                    result.completedEmptyRoots += 1
                 }
             } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                 continue

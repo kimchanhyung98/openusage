@@ -36,6 +36,27 @@ final class UsageDeduplicationReviewTests: XCTestCase {
         XCTAssertEqual(UsageRecordDeduplicator.records([first, second]).count, 2)
     }
 
+    func testUsableUnknownCostDuplicateWinsOverInvalidNumericRecord() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var usable = UsageRecord(sourceID: "omp", formatID: "pi-session", sessionID: "session", id: "entry",
+                                 kind: "message", timestamp: now, providerID: "claude", model: "fixture",
+                                 totalTokens: 100, issues: [.unsupportedPricing])
+        var invalid = usable
+        invalid.issues = [.invalidNumbers]
+        invalid.recordedCostUSD = 1
+        for input in [[usable, invalid], [invalid, usable]] {
+            let result = UsageRecordDeduplicator.records(input)
+            XCTAssertEqual(result.count, 1)
+            XCTAssertEqual(result.first?.issues, [.unsupportedPricing])
+            let scan = try XCTUnwrap(UsageHistoryBuilder.scan(.init(records: result), providerID: "claude",
+                                                              since: .distantPast, pricing: .empty))
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+            XCTAssertNil(scan.series.daily.first?.costUSD)
+        }
+        usable.issues = []
+        XCTAssertTrue(UsageRecordDeduplicator.records([invalid, usable]).first?.issues.isEmpty == true)
+    }
+
     func testSymlinkParentSessionDeduplicatesForkWithoutMergingIndependentSession() async throws {
         let directory = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

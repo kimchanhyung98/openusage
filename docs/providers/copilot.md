@@ -75,6 +75,8 @@ Mac 간 동기화를 켠 경우에만 다른 Mac의 OpenUsage가 수집한 CLI �
 로컬 기록 읽기 실패는 사용량 0으로 처리하지 않고, 마지막 정상 이력이 있으면 보존.
 할당량 조회와 로컬 기록 읽기가 함께 실패하면 두 원인을 함께 안내.
 CLI 사용 이력만 있어도 첫 실행의 로컬 감지 대상에 포함.
+로컬 인증이나 CLI 저장소가 없어도 최근 집계 기간에 유효한 공유 도구 Copilot 이력이 있으면 감지.
+다른 provider 기록이나 정상 빈 공유 파일만 있는 경우는 감지 근거에서 제외.
 
 사용량 비교는 Copilot CLI의 `/usage`에서 세션 크레딧과 모델별 토큰 확인.
 [CLI 사용량 확인](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview#context-management)과 [AI 크레딧 단가](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing) 참조.

@@ -13,6 +13,9 @@ enum PiPaths {
     ) throws -> URL {
         if let override = environment.value(for: "PI_CODING_AGENT_SESSION_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            guard override.hasPrefix("/") || override == "~" || override.hasPrefix("~/") else {
+                throw SettingsError.relativeSessionDirectory
+            }
             return resolve(override, home: homeDirectory)
         }
         let configDir = environment.value(for: "PI_CODING_AGENT_DIR")?

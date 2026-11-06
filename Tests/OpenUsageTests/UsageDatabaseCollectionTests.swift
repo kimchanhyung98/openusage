@@ -14,6 +14,30 @@ final class UsageDatabaseCollectionTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
     }
 
+    func testReadOnlyDatabaseSeesCommittedWALWhileWriterRemainsOpen() throws {
+        let writer = try UsageTestDatabase()
+        try writer.execute("CREATE TABLE usage (tokens INTEGER); INSERT INTO usage VALUES (120)")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: writer.file.path + "-wal"))
+        let first = try UsageDatabase(path: writer.file.path)
+        var tokens: [Int] = []
+        try first.rows("SELECT tokens FROM usage ORDER BY rowid") { row in
+            tokens.append(try XCTUnwrap(row["tokens"] as? NSNumber).intValue)
+        }
+        XCTAssertEqual(tokens, [120])
+        try writer.execute("INSERT INTO usage VALUES (30)")
+        tokens.removeAll()
+        try first.rows("SELECT tokens FROM usage ORDER BY rowid") { row in
+            tokens.append(try XCTUnwrap(row["tokens"] as? NSNumber).intValue)
+        }
+        XCTAssertEqual(tokens, [120], "an active reader must keep its snapshot")
+        let second = try UsageDatabase(path: writer.file.path)
+        tokens.removeAll()
+        try second.rows("SELECT tokens FROM usage ORDER BY rowid") { row in
+            tokens.append(try XCTUnwrap(row["tokens"] as? NSNumber).intValue)
+        }
+        XCTAssertEqual(tokens, [120, 30])
+    }
+
     func testZstandardFramesBoundsAndTruncation() throws {
         let first = try Self.compress(Data("first\n".utf8))
         let second = try Self.compress(Data("second\n".utf8))

@@ -2,13 +2,12 @@ import Foundation
 
 /// Pi·OMP 수집 결과를 공유하며 카드 귀속과 가격 계산을 캐시 밖에서 수행.
 actor PiUsageScanner: UsageCollecting {
-    static let cacheSchemaVersion = 12
+    static let cacheSchemaVersion = 13
 
     private let environment: EnvironmentReading
     private let home: URL
     private let piScanner: IncrementalJSONLScanner<UsageRecord>
-    private let ompCollector: UsageFileCollector?
-    private let invalidProfile: Bool
+    private let ompScanner: IncrementalJSONLScanner<UsageRecord>
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
@@ -22,15 +21,10 @@ actor PiUsageScanner: UsageCollecting {
             logTag: LogTag.plugin("pi"),
             persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: Self.cacheSchemaVersion)
         )
-        let omp = PiPaths.ompSessionsDirectory(environment: environment, homeDirectory: home)
-        invalidProfile = omp == nil
-        ompCollector = omp.map { root in
-            UsageFileCollector(
-                sourceID: "omp", roots: [root], version: Self.cacheSchemaVersion, scanner: incrementalScanner,
-                includeFile: { $0.pathExtension == "jsonl" },
-                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: "omp") }
-            )
-        }
+        ompScanner = incrementalScanner ?? IncrementalJSONLScanner(
+            logTag: LogTag.plugin("omp"),
+            persistence: JSONLScanCachePersistence(namespace: "omp", schemaVersion: Self.cacheSchemaVersion)
+        )
     }
 
     func collect(since: Date) async -> UsageCollection? {
@@ -38,17 +32,30 @@ actor PiUsageScanner: UsageCollecting {
         var result = UsageCollection(records: [])
         var collectors: [UsageFileCollector] = []
         var settingsFailure: ErrorCategory?
+        let omp = PiPaths.ompSessionsDirectory(environment: environment, homeDirectory: home)
+        let ompCollector = omp.map { root in
+            UsageFileCollector(
+                sourceID: "omp", roots: [root], version: Self.cacheSchemaVersion, scanner: ompScanner,
+                includeFile: { $0.pathExtension == "jsonl" },
+                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: "omp") }
+            )
+        }
         do {
             let pi = try PiPaths.sessionsDirectory(environment: environment, homeDirectory: home)
             let commonRoot = ompCollector?.roots.first.map {
                 $0.resolvingSymlinksInPath().path == pi.resolvingSymlinksInPath().path
             } ?? false
+            let explicitSession = environment.value(for: "PI_CODING_AGENT_SESSION_DIR")?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil
+            let explicitAgent = environment.value(for: "PI_CODING_AGENT_DIR")?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil
+            let mixed = commonRoot || explicitSession || explicitAgent
             var collector = UsageFileCollector(
                 sourceID: "pi", roots: [pi], version: Self.cacheSchemaVersion, scanner: piScanner,
                 includeFile: { $0.pathExtension == "jsonl" },
-                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: commonRoot ? "pi-omp" : "pi") }
+                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: mixed ? "pi-omp" : "pi") }
             )
-            if commonRoot { collector.cacheDiscriminator = "pi-omp" }
+            if mixed { collector.cacheDiscriminator = "pi-omp" }
             collectors.append(collector)
             if !commonRoot, let ompCollector { collectors.append(ompCollector) }
         } catch {
@@ -66,7 +73,7 @@ actor PiUsageScanner: UsageCollecting {
             AppDiagnostics.record(.historyScan, result: .degraded, category: settingsFailure,
                                   providerID: "pi", localContext: "session_settings_unavailable")
         }
-        if invalidProfile {
+        if omp == nil {
             result.sources.append(.init(sourceID: "omp", failedStores: 1))
             AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding,
                                   providerID: "omp", localContext: "invalid_profile")
@@ -77,6 +84,6 @@ actor PiUsageScanner: UsageCollecting {
 
     func flushCache() async {
         await piScanner.flushPendingWrites()
-        if let ompCollector { await ompCollector.scanner.flushPendingWrites() }
+        await ompScanner.flushPendingWrites()
     }
 }

@@ -66,14 +66,75 @@ final class OpenCodeSharedUsageTests: XCTestCase {
     }
 
     func testCancelledRefreshDoesNotPublishSharedHistory() async {
-        let provider = makeProvider(records: [record(cost: 2)], native: false)
-        let snapshot = await Task {
-            withUnsafeCurrentTask { $0?.cancel() }
-            return await provider.refresh()
-        }.value
+        let started = expectation(description: "shared collection started")
+        let collector = SuspendedOpenCodeSharedRecords(records: [record(cost: 2)]) { started.fulfill() }
+        let provider = makeProvider(records: [], native: true, sharedUsage: .init(collectors: [collector]))
+        let refresh = Task { await provider.refresh() }
+        await fulfillment(of: [started], timeout: 2)
+        refresh.cancel()
+        await collector.release()
+        let snapshot = await refresh.value
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(snapshot.line(label: "Today"))
+        XCTAssertNil(snapshot.line(label: "Session"))
         XCTAssertTrue(snapshot.lines.contains(where: \.isError))
+    }
+
+    func testSharedLocalDetectionRequiresUsableOpenCodeAttribution() async {
+        for source in ["pi", "omp"] {
+            for providerID in ["opencode", "opencode-go", "anthropic"] {
+                var usage = record(cost: 0)
+                usage.sourceID = source
+                usage.providerID = providerID
+                usage.recordedCostUSD = nil
+                let provider = makeProvider(records: [usage], native: false)
+
+                let detected = await provider.hasLocalCredentials()
+
+                XCTAssertEqual(detected, providerID != "anthropic")
+            }
+        }
+    }
+
+    func testEmptyRejectedAndExpiredSharedRecordsDoNotAutoEnableOpenCode() async {
+        var invalid = record(cost: 2)
+        invalid.issues = [.invalidMetadata]
+        var expired = record(cost: 2)
+        expired.timestamp = now.addingTimeInterval(-40 * 86_400)
+        for records in [[], [invalid], [expired]] {
+            let provider = makeProvider(records: records, native: false)
+            let detected = await provider.hasLocalCredentials()
+            XCTAssertFalse(detected)
+        }
+        let failed = makeProvider(records: [], native: false, sharedFailure: true)
+        let detected = await failed.hasLocalCredentials()
+        XCTAssertFalse(detected)
+    }
+
+    func testCompletedEmptySharedHistoryClearsPreviouslySavedSharedOnlyUsage() async throws {
+        let collector = MutableOpenCodeSharedRecords(records: [record(cost: 2)])
+        let provider = makeProvider(records: [], native: false, sharedUsage: .init(collectors: [collector]))
+        let suite = "OpenCodeSharedUsageTests.empty.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let now = now
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { now })
+        let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
+                                    defaults: defaults, now: { now })
+        let initiallyDetected = await provider.hasLocalCredentials()
+        XCTAssertTrue(initiallyDetected)
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.localSnapshots["opencode"]?.usageHistory?.series.daily.first?.totalTokens, 200)
+
+        await collector.removeRecords()
+        let detectedAfterRemoval = await provider.hasLocalCredentials()
+        XCTAssertFalse(detectedAfterRemoval)
+        await store.refreshAll(force: true)
+
+        XCTAssertNil(store.providerErrors["opencode"])
+        XCTAssertEqual(store.localSnapshots["opencode"]?.usageHistory?.series.daily, [])
+        XCTAssertEqual(cache.loadSnapshots(providerIDs: ["opencode"])["opencode"]?.usageHistory?.series.daily, [])
+        XCTAssertNil(store.localSnapshots["opencode"]?.line(label: "Session"))
     }
 
     private func record(cost: Double, origin: UsageRecord.CostOrigin = .reported) -> UsageRecord {
@@ -86,7 +147,8 @@ final class OpenCodeSharedUsageTests: XCTestCase {
 
     private func makeProvider(
         records: [UsageRecord], native: Bool, nativeFailure: Bool = false,
-        hasGoKey: Bool = false, sharedFailure: Bool = false
+        hasGoKey: Bool = false, sharedFailure: Bool = false,
+        sharedUsage: UsageCollectionCoordinator? = nil
     ) -> OpenCodeProvider {
         let now = self.now
         let timestamp = Int(now.addingTimeInterval(-3600).timeIntervalSince1970 * 1000)
@@ -101,7 +163,7 @@ final class OpenCodeSharedUsageTests: XCTestCase {
                 sqlite: SharedOpenCodeSQLite(payload: payload, shouldFail: nativeFailure),
                 databasePaths: { native ? ["/fixture/opencode.db"] : [] }
             ),
-            sharedUsage: .init(collectors: [SharedOpenCodeRecords(records: records, shouldFail: sharedFailure)]),
+            sharedUsage: sharedUsage ?? .init(collectors: [SharedOpenCodeRecords(records: records, shouldFail: sharedFailure)]),
             now: { now }
         )
     }
@@ -111,7 +173,9 @@ private struct SharedOpenCodeRecords: UsageCollecting {
     let records: [UsageRecord]
     var shouldFail = false
     func collect(since: Date) async -> UsageCollection? {
-        UsageCollection(records: records, sources: shouldFail ? [.init(sourceID: "pi", failedStores: 1)] : [])
+        UsageCollection(records: records, sources: [
+            .init(sourceID: "pi", completedStores: shouldFail ? 0 : 1, failedStores: shouldFail ? 1 : 0)
+        ])
     }
 }
 
@@ -126,3 +190,38 @@ private struct SharedOpenCodeSQLite: SQLiteAccessing {
     func execute(path: String, sql: String) throws {}
 }
 
+private actor MutableOpenCodeSharedRecords: UsageCollecting {
+    private var records: [UsageRecord]
+
+    init(records: [UsageRecord]) { self.records = records }
+
+    func removeRecords() { records.removeAll() }
+
+    func collect(since: Date) async -> UsageCollection? {
+        UsageCollection(records: records, sources: [.init(sourceID: "pi", completedStores: 1)])
+    }
+}
+
+private actor SuspendedOpenCodeSharedRecords: UsageCollecting {
+    let records: [UsageRecord]
+    let onStart: @Sendable () -> Void
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+
+    init(records: [UsageRecord], onStart: @escaping @Sendable () -> Void) {
+        self.records = records
+        self.onStart = onStart
+    }
+
+    func collect(since: Date) async -> UsageCollection? {
+        onStart()
+        if !released { await withCheckedContinuation { continuation = $0 } }
+        return UsageCollection(records: records, sources: [.init(sourceID: "pi", completedStores: 1)])
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
+}

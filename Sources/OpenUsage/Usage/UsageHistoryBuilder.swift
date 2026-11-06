@@ -15,7 +15,8 @@ enum UsageHistoryBuilder {
 
     /// 미귀속 프로바이더 기록은 원본 수집 결과에 보존하고 해당 카드의 집계에서만 제외.
     static func scan(
-        _ collection: UsageCollection, providerID: String, since: Date, pricing: ModelPricing,
+        _ collection: UsageCollection, providerID: String, since: Date, until: Date = .distantFuture,
+        pricing: ModelPricing,
         costEstimator: CostEstimator? = nil, allowEstimates: Bool = true
     ) -> LogUsageScan? {
         let sharedSources: Set<String> = ["pi", "omp"]
@@ -31,6 +32,15 @@ enum UsageHistoryBuilder {
         let estimate: CostEstimator = costEstimator ?? { record, pricing in
             if providerID == "codex" { return CodexUsagePricing.estimateRecord(record, pricing: pricing) }
             guard let tokens = record.tokens, let model = record.effectiveModel else { return .unpriced }
+            if record.sourceID == "omp", record.providerID == "anthropic", record.serviceTier == "priority",
+               let rates = pricing.resolve(model: model) {
+                let multiplier = rates.fastMultiplier > 1 ? rates.fastMultiplier : pricing.supplement.exactFastMultiplier(for: model)
+                if let multiplier, multiplier > 1 {
+                    return CostEstimate(rates.scaled(by: multiplier).costDollars(
+                        for: tokens, applyLongContextRates: record.granularity == .request
+                    ))
+                }
+            }
             return CostEstimate(pricing.estimatedCostDollars(
                 model: model, tokens: tokens, applyLongContextRates: record.granularity == .request
             ))
@@ -41,6 +51,7 @@ enum UsageHistoryBuilder {
         var unsupportedPricing = 0
         for record in records {
             guard record.overlaps(since: since) else { continue }
+            if let timestamp = record.timestamp, timestamp > until { continue }
             guard !record.issues.contains(.invalidMetadata), !record.issues.contains(.unresolvedMirror),
                   let timestamp = record.timestamp else {
                 rejectedMetadata += 1

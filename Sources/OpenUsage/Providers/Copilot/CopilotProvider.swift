@@ -61,9 +61,11 @@ final class CopilotProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        await loadOffMainActor { [authStore, usageScanner] in
+        if await loadOffMainActor({ [authStore, usageScanner] in
             usageScanner.hasLocalUsageStore() || authStore.loadToken() != nil
-        }
+        }) { return true }
+        let shared = await sharedUsage.scan(providerID: provider.id, now: now(), pricing: .empty, allowEstimates: false)
+        return !Task.isCancelled && shared?.usageHistory?.series.daily.isEmpty == false
     }
 
     func refresh() async -> ProviderSnapshot {

@@ -65,7 +65,8 @@ struct GrokLogUsageScanner: Sendable {
     /// append-only 로그에 대한 시간순 단일 pass.
     /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
     static func parse(
-        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
+        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true,
+        onLine: (() -> Void)? = nil
     ) -> LogUsageScan {
         var modelByPID: [Int: ModelContext] = [:]
         var modelBySession: [SessionKey: ModelContext] = [:]
@@ -74,7 +75,9 @@ struct GrokLogUsageScanner: Sendable {
         var accumulator = DailyUsageAccumulator()
         var rejectedMetadataRows = 0
 
-        text.enumerateLines { line, _ in
+        text.enumerateLines { line, stop in
+            onLine?()
+            guard !Task.isCancelled else { stop = true; return }
             guard line.contains("inference_done") || line.contains("model")
                     || line.contains("process resource limits") else { return }
             guard let data = line.data(using: .utf8),

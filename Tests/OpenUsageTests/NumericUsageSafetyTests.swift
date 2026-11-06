@@ -110,9 +110,10 @@ final class NumericUsageSafetyTests: XCTestCase {
     func testPiRejectsBucketSumOverflowAndScopesQualityToCardAndWindow() throws {
         let bad = try XCTUnwrap(UsageRecordFixture.piRecord(piLine(["input": String(Int.max), "cacheRead": "1"])))
         XCTAssertTrue(bad.issues.contains(.invalidNumbers))
-        let otherCard = UsageRecordFixture.history(records: [bad], providerID: "codex", since: .distantPast, pricing: .empty)
-        XCTAssertNil(otherCard.numericWarning)
-        XCTAssertNotNil(otherCard.usageHistory)
+        let otherCard = UsageHistoryBuilder.scan(
+            UsageCollection(records: [bad]), providerID: "codex", since: .distantPast, pricing: .empty
+        )
+        XCTAssertNil(otherCard)
         let older = UsageRecordFixture.history(records: [bad], providerID: "claude", since: date.addingTimeInterval(1), pricing: .empty)
         XCTAssertNil(older.numericWarning)
         let valid = try XCTUnwrap(UsageRecordFixture.piRecord(piLine(["totalTokens": "150"], id: "valid")))
