@@ -9,11 +9,13 @@ struct UsageFileCollector: UsageCollecting {
     let includeFile: @Sendable (URL) -> Bool
     let parse: Parser
     let scanner: IncrementalJSONLScanner<UsageRecord>
+    let canReuseCachedFile: (@Sendable (String) -> Bool)?
     var cacheDiscriminator: String? = nil
 
     init(
         sourceID: String, providerID: String? = nil, roots: [URL], version: Int = 1,
         scanner: IncrementalJSONLScanner<UsageRecord>? = nil,
+        canReuseCachedFile: (@Sendable (String) -> Bool)? = nil,
         includeFile: @escaping @Sendable (URL) -> Bool,
         parse: @escaping Parser
     ) {
@@ -22,6 +24,7 @@ struct UsageFileCollector: UsageCollecting {
         self.roots = roots
         self.includeFile = includeFile
         self.parse = parse
+        self.canReuseCachedFile = canReuseCachedFile
         self.scanner = scanner ?? IncrementalJSONLScanner(
             logTag: LogTag.plugin(sourceID),
             persistence: JSONLScanCachePersistence(namespace: sourceID, schemaVersion: version)
@@ -36,6 +39,7 @@ struct UsageFileCollector: UsageCollecting {
         if let cacheDiscriminator { identity += "\n" + cacheDiscriminator }
         guard let result = await scanner.scan(
             from: discovery.files, since: since, cacheIdentity: identity,
+            canReuseCachedFile: canReuseCachedFile,
             onDiskCacheHit: UsageRecordDiagnostics.report,
             parse: { data, path in
                 let records = try parse(data, path)
