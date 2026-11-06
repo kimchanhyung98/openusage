@@ -12,6 +12,7 @@
 
 Z.ai가 요금제 이름을 반환하면 프로바이더 이름 옆에 표시.
 구독 이름 조회가 실패하면 할당량 응답의 `data.level`로 요금제 표시.
+현행 Lite·Pro·Max의 월 정가·할인 표기·크레딧 한도는 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 
 상단 Tokens에는 개인 GLM Coding Plan의 일별 토큰 합계 반영.
 Today·Yesterday와 공통 Last 30 Days 기간 지원.

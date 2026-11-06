@@ -12,7 +12,7 @@
 - [설정](/docs/settings.md) — 모든 옵션과 각 옵션이 바꾸는 것
 - [새로 고침과 캐싱](/docs/refreshing.md) — 데이터가 갱신되는 시점과 가져오기 실패 시 일어나는 일
 - [iCloud 동기화](/docs/icloud-sync.md) — 여러 Mac의 지출 기록을 합치는 방식
-- [모델 가격](/docs/pricing.md) — 지출 타일이 토큰에 가격을 매기는 방식과 요율의 출처
+- [구독과 모델 가격](/docs/pricing.md) — 프로바이더별 구독 이름·가격과 토큰 비용 계산 방식
 - [업데이트](/docs/updates.md) — 자동 업데이트, 수동 확인, 베타 채널
 - [개인정보 및 사용 데이터](/docs/privacy.md) — 공유되는 익명 데이터와 끄는 방법
 

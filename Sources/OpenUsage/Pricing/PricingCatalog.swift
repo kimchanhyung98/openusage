@@ -66,11 +66,17 @@ extension PricingCatalog {
             return true
         }
         let normalizedCandidate = normalizedKey(candidate)
-        return containsKey(normalizedModel, key: normalizedCandidate)
-            || containsKey(normalizedCandidate, key: normalizedModel)
+        if containsKey(normalizedModel, key: normalizedCandidate)
+            || containsKey(normalizedCandidate, key: normalizedModel) { return true }
+        guard normalizedCandidate.contains("-v") else { return false }
+        // 등록된 공급자 후보의 날짜 뒤 revision만 제거. 미등록 요청 이름은 그대로 유지.
+        let unversioned = normalizedCandidate.replacingOccurrences(
+            of: #"(-[0-9]{8}|-[0-9]{4}-[0-9]{2}-[0-9]{2})-v[0-9]+:[0-9]+$"#,
+            with: "$1", options: .regularExpression)
+        return unversioned != normalizedCandidate && containsKey(unversioned, key: normalizedModel)
     }
 
-    /// `value` 안 `key` 탐색 — 양끝이 비영숫자 boundary이고 suffix가 숫자 version을 잇지 않는 위치만 허용.
+    /// 모델명 앞의 구분자와 뒤의 날짜만 허용 — 미등록 설명·등급을 다른 모델의 가격으로 연결하지 않음.
     static func containsKey(_ value: String, key: String) -> Bool {
         guard !key.isEmpty else { return false }
         let valueBytes = Array(value.utf8)
@@ -90,23 +96,16 @@ extension PricingCatalog {
 
     private static func suffixAllowsMatch(key: [UInt8], suffix: [UInt8]) -> Bool {
         guard let separator = suffix.first else { return true }
-        if separator.isASCIIAlphanumeric { return false }
-        return !suffixStartsWithNumericModelVersion(key: key, suffix: suffix)
-    }
-
-    /// 숫자 key의 version 연속 suffix 거부 (`claude-sonnet-4` + `-5-...`) — 8자리 날짜 suffix(`-20250514`)는 허용.
-    private static func suffixStartsWithNumericModelVersion(key: [UInt8], suffix: [UInt8]) -> Bool {
-        let dateSuffixDigits = 8
-        guard let last = key.last, last.isASCIIDigit else { return false }
-        guard let separator = suffix.first, separator == UInt8(ascii: "-") || separator == UInt8(ascii: ".") else {
+        if key.starts(with: Array("ft:".utf8)), separator == UInt8(ascii: ":") { return true }
+        guard separator == UInt8(ascii: "-") || separator == UInt8(ascii: ".") else {
             return false
         }
-        let rest = suffix.dropFirst()
-        let digitCount = rest.prefix(while: \.isASCIIDigit).count
-        guard digitCount > 0 else { return false }
-        let afterDigits = rest.dropFirst(digitCount).first
-        let isDateSuffix = digitCount == dateSuffixDigits && (afterDigits.map { !$0.isASCIIAlphanumeric } ?? true)
-        return !isDateSuffix
+        if suffix.count == 9 { return suffix.dropFirst().allSatisfy(\.isASCIIDigit) }
+        guard suffix.count == 11,
+              suffix[5] == UInt8(ascii: "-"), suffix[8] == UInt8(ascii: "-") else { return false }
+        return suffix[1..<5].allSatisfy(\.isASCIIDigit)
+            && suffix[6..<8].allSatisfy(\.isASCIIDigit)
+            && suffix[9..<11].allSatisfy(\.isASCIIDigit)
     }
 }
 

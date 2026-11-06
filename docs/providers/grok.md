@@ -11,6 +11,8 @@ Grok CLI 로그인 정보를 사용해 Grok Build 크레딧 사용량 추적.
 | Today / Yesterday / Last 30 Days | Grok CLI 로그에서 추정한 로컬 비용과 토큰 |
 
 Grok이 구독 등급을 반환하면 프로바이더 이름 옆에 표시.
+신규 판매 요금제는 The X Subscription의 Free·Plus·Premium·Super·Ultra와 팀·기업 계약.
+기존 SuperGrok 등의 표시 이름은 서버 응답 유지하며, [구독 가격과 전환 조건](/docs/pricing.md#구독-요금제) 참조.
 
 공유 주간 풀은 Grok이 통합 결제 계정에 적용하는 한도(기존 월간 크레딧 미터는 레거시로 더 이상 표시하지 않음).
 통합 결제로 전환되지 않은 계정에는 주간 풀이 없어 Weekly 타일에 "No data" 표시.

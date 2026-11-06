@@ -5,6 +5,14 @@ final class CodexUsagePricingTests: XCTestCase {
     private let pricing = TestPricing.bundled
     private let date = Date(timeIntervalSince1970: 1_789_200_000)
 
+    func testRetiredCodexMiniRemainsPriced() throws {
+        let tokens = TokenBreakdown(input: 1_000, output: 1_000)
+        let cost = try XCTUnwrap(CodexUsagePricing.estimate(
+            model: "codex-mini-latest", tokens: tokens, pricing: pricing
+        ))
+        XCTAssertEqual(cost, 0.0075, accuracy: 1e-9)
+    }
+
     func testBundledStandardRequestsMatchNativeAndPi() throws {
         let cases: [(String, Double)] = [
             ("gpt-5.6-sol", 1.98), ("gpt-6-astra", 4.95),
@@ -182,7 +190,8 @@ final class CodexUsagePricingTests: XCTestCase {
             XCTAssertEqual(pricing.resolve(model: key), fast, "Exact variant rates must remain available")
         }
         let catalog = PricingCatalog(entries: ["vendor/custom-faster": standard, "vendor/custom-fast-non-reasoning": fast])
-        XCTAssertEqual(catalog.findFuzzy("custom", excludingFastVariants: true)?.rates, standard)
+        XCTAssertNil(catalog.findFuzzy("custom", excludingFastVariants: true))
+        XCTAssertEqual(catalog.findFuzzy("custom-faster", excludingFastVariants: true)?.rates, standard)
     }
 
     func testGenuineFastNamedModelsRetainProviderFuzzyRates() throws {

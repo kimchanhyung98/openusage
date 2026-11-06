@@ -70,6 +70,81 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "grok-4.3")?.inputPerMillion, 1.25)
     }
 
+    func testHistoricalClaudeDirectRatesRemainInBundledCatalog() throws {
+        let cases: [(String, Double, Double, Double, Double)] = [
+            ("claude-3-7-sonnet-20250219", 3, 15, 3.75, 0.3),
+            ("claude-3-haiku-20240307", 0.25, 1.25, 0.3, 0.03),
+            ("claude-3-opus-20240229", 15, 75, 18.75, 1.5),
+            ("claude-4-opus-20250514", 15, 75, 18.75, 1.5),
+            ("claude-4-sonnet-20250514", 3, 15, 3.75, 0.3),
+            ("claude-opus-4-1", 15, 75, 18.75, 1.5),
+            ("claude-opus-4-1-20250805", 15, 75, 18.75, 1.5),
+            ("claude-opus-4-20250514", 15, 75, 18.75, 1.5),
+            ("claude-sonnet-4-20250514", 3, 15, 3.75, 0.3)
+        ]
+        for (name, input, output, write, read) in cases {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: name), name)
+            XCTAssertEqual(rates.inputPerMillion, input, name)
+            XCTAssertEqual(rates.outputPerMillion, output, name)
+            XCTAssertEqual(rates.cacheWritePerMillion, write, name)
+            XCTAssertEqual(rates.cacheReadPerMillion, read, name)
+            XCTAssertTrue(rates.cacheReadIsExplicit, name)
+        }
+        for name in ["claude-4-sonnet-20250514", "claude-sonnet-4-20250514"] {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: name), name)
+            XCTAssertEqual(rates.inputAbove200kPerMillion, 6, name)
+            XCTAssertEqual(rates.outputAbove200kPerMillion, 22.5, name)
+            XCTAssertEqual(rates.cacheWriteAbove200kPerMillion, 7.5, name)
+            XCTAssertEqual(rates.cacheReadAbove200kPerMillion, 0.6, name)
+        }
+        let gov = try XCTUnwrap(Self.pricing.resolve(
+            model: "bedrock/us-gov-east-1/anthropic.claude-3-7-sonnet-20250219-v1:0"
+        ))
+        XCTAssertEqual(gov.inputPerMillion, 3.6, accuracy: 1e-9)
+        XCTAssertEqual(gov.outputPerMillion, 18)
+    }
+
+    func testRetiredDirectModelRatesRemainBundled() throws {
+        let cases: [(String, Double, Double, Double, Double)] = [
+            ("codex-mini-latest", 1.5, 6.0, 1.5, 0.375),
+            ("command", 1.0, 2.0, 1.0, 0.09999999999999999),
+            ("command-light", 0.3, 0.6, 0.3, 0.03),
+            ("command-r", 0.15, 0.6, 0.15, 0.015),
+            ("command-r-plus", 2.5, 10.0, 2.5, 0.25000000000000006),
+            ("gemini-2.0-flash", 0.09999999999999999, 0.39999999999999997, 0.09999999999999999, 0.024999999999999998),
+            ("google/gemini-2.0-flash", 0.1, 0.4, 0.1, 0.025),
+            ("gemini-2.0-flash-001", 0.15, 0.6, 0.15, 0.0375),
+            ("gemini-2.0-flash-exp-image-generation", 0.0, 0.0, 0.0, 0.0),
+            ("gemini-2.0-flash-lite", 0.075, 0.3, 0.075, 0.01875),
+            ("google/gemini-2.0-flash-lite", 0.075, 0.3, 0.075, 0.01875),
+            ("gemini-2.0-flash-lite-001", 0.075, 0.3, 0.075, 0.01875),
+            ("gpt-4-0125-preview", 10.0, 30.0, 10.0, 1.0000000000000002),
+            ("gpt-4-0314", 30.0, 60.0, 30.0, 3.0),
+            ("gpt-4-turbo-preview", 10.0, 30.0, 10.0, 1.0000000000000002),
+            ("gpt-4o-audio-preview", 2.5, 10.0, 2.5, 0.25000000000000006),
+            ("gpt-4o-mini-audio-preview", 0.15, 0.6, 0.15, 0.015),
+            ("gpt-4o-mini-realtime-preview", 0.6, 2.4, 0.6, 0.3),
+            ("gpt-4o-realtime-preview", 5.0, 20.0, 5.0, 2.5),
+            ("gpt-4o-realtime-preview-2024-12-17", 5.0, 20.0, 5.0, 2.5),
+            ("gpt-4o-realtime-preview-2025-06-03", 5.0, 20.0, 5.0, 2.5),
+        ]
+        for (model, input, output, write, read) in cases {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheWritePerMillion, write, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheReadPerMillion, read, accuracy: 1e-9, model)
+        }
+        for (model, input, output) in [
+            ("vertex_ai/gemini-2.0-flash", 0.15, 0.6),
+            ("azure/eu/gpt-4o-realtime-preview-2024-12-17", 5.5, 22.0)
+        ] {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+        }
+    }
+
     func testClaudeFable5PricingAndAliases() throws {
         let pricing = Self.pricing
         let fable = try XCTUnwrap(pricing.resolve(model: "claude-fable-5-thinking"))
@@ -302,10 +377,87 @@ final class PricingBundledResourceTests: XCTestCase {
 
     func testUnverifiedNewAliasesRemainUnmatched() {
         for slug in ["gpt-6-astra-unrecognized", "gpt-7-astra", "grok-bot-default",
-                     "grok-bot-automation", "grok-bot-cua", "muse-spark-1.3-contributor",
-                     "kimi-k3-fast", "claude-fable-5.1-fast", "gemini-default"] {
+                     "grok-bot-automation", "grok-bot-cua", "claude-fable-5.1-fast", "gemini-default"] {
             XCTAssertNil(Self.pricing.supplement.canonicalName(for: slug), slug)
             XCTAssertNil(Self.pricing.resolve(model: slug), slug)
         }
+    }
+
+    func testPublishedCatalogVariantsKeepTheirOwnRates() throws {
+        for (model, base, input, output, cached) in [
+            ("kimi-k3-fast", "kimi-k3", 4.5, 22.5, 0.45),
+            ("muse-spark-1.3-contributor", "muse-spark-1.3", 0.1, 0.2, 0.002)
+        ] {
+            XCTAssertNil(Self.pricing.supplement.canonicalName(for: model), model)
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheReadPerMillion, cached, accuracy: 1e-9, model)
+            XCTAssertNotEqual(rates, Self.pricing.resolve(model: base), model)
+        }
+    }
+
+    func testRetiredOpusFastLogsKeepHistoricalPricing() throws {
+        for (base, date) in [("claude-opus-4-6", "20260205"), ("claude-opus-4-7", "20260416")] {
+            for prefix in ["", "anthropic/"] {
+                for suffix in ["", "-" + date] {
+                    let model = prefix + base + suffix
+                    XCTAssertEqual(
+                        try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: .init(input: 1_000))),
+                        0.005, accuracy: 1e-9, model)
+                    XCTAssertEqual(
+                        try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: .init(input: 1_000, isFast: true))),
+                        0.03, accuracy: 1e-9, model)
+                }
+            }
+            XCTAssertEqual(
+                try XCTUnwrap(Self.pricing.estimatedCostDollars(model: base + "-fast", tokens: .init(input: 1_000, isFast: true))),
+                0.03, accuracy: 1e-9, base)
+        }
+    }
+
+    func testQualifiedOpenAIModelsUseOfficialRatesInsteadOfResellerRates() throws {
+        let cases: [(String, Double, Double, Double)] = [
+            ("gpt-5.1-codex-max", 1.25, 10, 0.125),
+            ("gpt-5.3-codex", 1.75, 14, 0.175),
+            ("gpt-5.4-mini", 0.75, 4.5, 0.075),
+            ("gpt-5.4-nano", 0.2, 1.25, 0.02),
+            ("gpt-5.5", 5, 30, 0.5),
+            ("gpt-5-pro", 15, 120, 15),
+            ("gpt-5.2-pro", 21, 168, 21),
+            ("gpt-5.4-pro", 30, 180, 30),
+            ("gpt-5.5-pro", 30, 180, 30),
+            ("o1-pro", 150, 600, 150),
+            ("o3-pro", 20, 80, 20),
+            ("o3-pro-2025-06-10", 20, 80, 20),
+            ("o3-deep-research", 10, 40, 2.5),
+            ("o4-mini-deep-research", 2, 8, 0.5)
+        ]
+        for (model, input, output, cached) in cases {
+            let tokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000)
+            let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: "openai/" + model, tokens: tokens, pricing: Self.pricing))
+            XCTAssertEqual(cost, (input + output + cached) / 1_000, accuracy: 1e-9, model)
+        }
+    }
+
+    func testQualifiedOpenAIPricesPreserveRequestFastMultipliers() throws {
+        for (base, multiplier) in [("gpt-5.5", 2.5), ("gpt-5.1-codex-max", 2.0), ("gpt-5.3-codex", 2.0)] {
+            let model = "openai/" + base
+            let standardTokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000)
+            let fastTokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000, isFast: true)
+            let standard = try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: standardTokens))
+            XCTAssertEqual(
+                try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: fastTokens)),
+                standard * multiplier, accuracy: 1e-9, model)
+            XCTAssertEqual(
+                try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: fastTokens, pricing: Self.pricing)),
+                standard * multiplier, accuracy: 1e-9, model)
+        }
+    }
+
+    func testDatedOpus3RequestsResolveRegisteredBedrockRevisionRates() throws {
+        let rates = try XCTUnwrap(Self.pricing.resolve(model: "claude-3-opus-20240229"))
+        XCTAssertEqual(rates.inputPerMillion, 15)
+        XCTAssertEqual(rates.outputPerMillion, 75)
     }
 }

@@ -119,7 +119,7 @@ struct ClaudeUsageStateStore: Sendable {
             do {
                 guard FileManager.default.fileExists(atPath: fileURL.path) else { return Record() }
                 let data = try Data(contentsOf: fileURL)
-                let record = try JSONDecoder().decode(Record.self, from: data)
+                var record = try JSONDecoder().decode(Record.self, from: data)
                 guard record.version == 1, (0...3).contains(record.consecutiveRateLimits),
                       (record.retryAfter == nil) == (record.consecutiveRateLimits == 0),
                       record.retryAfter.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
@@ -128,6 +128,11 @@ struct ClaudeUsageStateStore: Sendable {
                       record.authenticationFailure == nil || (record.lastFailure == nil && record.completedAt != nil),
                       record.lastGood.map({ $0.quotaObservedAt != nil && $0.retryAfter == nil }) ?? true
                 else { throw StoreError.invalidRecord }
+                switch record.lastGood?.plan {
+                case "Max 5x": record.lastGood?.plan = "Max"
+                case "Max 20x": record.lastGood?.plan = "Ultra"
+                default: break
+                }
                 return record
             } catch {
                 AppLog.error(LogTag.plugin("claude"), "usage retry state read failed: \(error.localizedDescription)")

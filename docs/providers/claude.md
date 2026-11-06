@@ -14,6 +14,11 @@ Claude Code 또는 Claude Desktop의 기존 로그인으로 Claude 구독 한도
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
 Claude가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+개인 요금제는 Free·Pro·Max·Ultra이며, 구독료와 팀 요금은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
+이전 Max 5x는 Max, Max 20x는 Ultra로 표시.
+요청 제한 중 사용하는 이전 정상 응답의 저장된 이름에도 같은 표시 기준 적용.
+Ultra를 직접 반환한 응답에는 과거 사용량 배수를 덧붙이지 않음.
+한도와 리셋 시각은 요금제 이름으로 계산하지 않고 서버 응답 사용.
 
 ## 인증 정보 출처
 

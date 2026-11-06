@@ -220,12 +220,34 @@ final class ClaudeUsageMapperTests: XCTestCase {
             credentials: ClaudeOAuth(subscriptionType: "max", rateLimitTier: "claude_max_subscription_20x")
         )
 
-        XCTAssertEqual(mapped.plan, "Max 20x")
+        XCTAssertEqual(mapped.plan, "Ultra")
         XCTAssertEqual(progress(mapped.lines, "Session")?.used, 10)
         XCTAssertEqual(progress(mapped.lines, "Weekly")?.periodDurationMs, ClaudeUsageMapper.weeklyPeriodMs)
         XCTAssertEqual(progress(mapped.lines, "Sonnet")?.used, 5)
         XCTAssertEqual(progress(mapped.lines, "Extra usage spent")?.used, 5)
         XCTAssertEqual(progress(mapped.lines, "Extra usage spent")?.limit, 10)
+    }
+
+    func testFormatsCurrentPlansAndPreservesUnknownTiers() {
+        let cases: [(String?, String?, String?)] = [
+            ("max", "claude_max_subscription_5x", "Max"),
+            ("max", "claude_max_subscription_20x", "Ultra"),
+            (" MAX \n", "DEFAULT_CLAUDE_MAX_20X", "Ultra"),
+            ("ultra", "claude_max_subscription_20x", "Ultra"),
+            ("ultra", nil, "Ultra"),
+            ("max", nil, "Max"),
+            ("pro", nil, "Pro"),
+            ("team", "team_5x", "Team 5x"),
+            ("max", "claude_max_subscription_50x", "Max 50x"),
+            (nil, "claude_max_subscription_20x", nil),
+            (" \n", "claude_max_subscription_20x", nil),
+        ]
+        for (subscription, tier, expected) in cases {
+            XCTAssertEqual(
+                ClaudeUsageMapper.formatPlan(subscriptionType: subscription, rateLimitTier: tier),
+                expected
+            )
+        }
     }
 
     func testMapsFableScopedWeeklyLimitFromLimitsArray() throws {
@@ -430,7 +452,7 @@ final class ClaudeProviderTests: XCTestCase {
         XCTAssertFalse(httpClient.requests.contains { $0.url.absoluteString.hasSuffix("/api/oauth/usage") })
         // 로컬 spend 타일은 영향 없이 로드
         XCTAssertNotNil(values(snapshot.lines, "Today"))
-        XCTAssertEqual(snapshot.plan, "Max 5x")
+        XCTAssertEqual(snapshot.plan, "Max")
     }
 
     func testLiveClaudeUsageReportsResetFields() async throws {

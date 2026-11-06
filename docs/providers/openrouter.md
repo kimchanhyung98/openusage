@@ -1,5 +1,8 @@
 # OpenRouter
 
+현행 Free·Standard·Business·Enterprise의 가격과 플랫폼 수수료는 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
+API 키의 무료 여부만으로 유료 계약 등급을 구분하지 않음.
+
 계정 API 키로 [OpenRouter](https://openrouter.ai) 크레딧 잔액과 사용액 추적.
 
 ## 추적 항목

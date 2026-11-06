@@ -13,8 +13,15 @@ Kimi Code에 이미 로그인된 계정의 코딩 할당량 추적.
 구형 응답의 `limits`·`usage`도 지원.
 월간 한도만 있는 응답은 기존 Session·Weekly 지표로 표시하지 않고 할당량 확인 오류로 처리.
 `goods_version`으로 요금제 이름이나 새 지표를 추정하지 않음.
+신규 요금제는 주간 한도가 없지만 Kimi·Kimi Code가 공유하는 월간 총한도는 유지.
+Session 한도가 함께 있어도 월간 총한도는 현재 카드에 표시하지 않음.
+월간 총한도 소진 시 초기화나 업그레이드 전까지 구독 사용 중단 가능.
+Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사용 가능.
+조건과 확인 경로는 [공식 멤버십 안내](https://www.kimi.ai/help/kimi-code/benefits) 참조.
 
-요금제 레이블은 Kimi 내부 멤버십 등급에 따라 공식 글로벌 요금제명 Adagio, Moderato, Allegretto, Allegro, Vivace 중 하나를 표시.
+글로벌 신규 유료 요금제는 Plus·Pro·Max·Ultra이며, 중국에는 Kimi Code를 포함하지 않는 Go도 존재.
+지역별 가격과 연간 결제액은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
+기존 구독은 이름·갱신·한도 유지 가능하므로, 이전 멤버십 등급의 Adagio·Moderato·Allegretto·Allegro·Vivace 매핑 유지.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
 선택 사항인 booster wallet은 표시하지 않음.
 
