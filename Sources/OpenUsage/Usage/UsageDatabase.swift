@@ -93,22 +93,27 @@ struct UsageSQLiteCollector: UsageCollecting {
     let parse: @Sendable (UsageDatabase, String) throws -> [UsageRecord]
 
     func collect(since: Date) async -> UsageCollection? {
+        guard !Task.isCancelled else { return nil }
         let discovery = UsageFileDiscovery.files(under: roots, matching: includeFile)
+        guard !Task.isCancelled else { return nil }
         var records: [UsageRecord] = []
         var state = UsageSourceState(sourceID: sourceID, providerID: providerID, failedStores: discovery.failures)
         for file in discovery.files {
             guard !Task.isCancelled else { return nil }
             do {
                 let rows = try parse(UsageDatabase(path: file.path), file.path)
+                guard !Task.isCancelled else { return nil }
                 UsageRecordDiagnostics.report(rows)
                 records += rows.filter { $0.overlaps(since: since) }
                 state.completedStores += 1
             } catch is CancellationError {
                 return nil
             } catch {
+                guard !Task.isCancelled else { return nil }
                 state.failedStores += 1
             }
         }
+        guard !Task.isCancelled else { return nil }
         if state.failedStores > 0 {
             AppDiagnostics.record(
                 .historyScan, result: .degraded, category: .storage, providerID: sourceID,

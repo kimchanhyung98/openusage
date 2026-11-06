@@ -9,6 +9,7 @@ struct UsageFileCollector: UsageCollecting {
     let includeFile: @Sendable (URL) -> Bool
     let parse: Parser
     let scanner: IncrementalJSONLScanner<UsageRecord>
+    var cacheDiscriminator: String? = nil
 
     init(
         sourceID: String, providerID: String? = nil, roots: [URL], version: Int = 1,
@@ -28,14 +29,17 @@ struct UsageFileCollector: UsageCollecting {
     }
 
     func collect(since: Date) async -> UsageCollection? {
+        guard !Task.isCancelled else { return nil }
         let discovery = UsageFileDiscovery.files(under: roots, matching: includeFile)
-        let identity = roots.map { $0.resolvingSymlinksInPath().path }.sorted().joined(separator: "\n")
+        guard !Task.isCancelled else { return nil }
+        var identity = roots.map { $0.resolvingSymlinksInPath().path }.sorted().joined(separator: "\n")
+        if let cacheDiscriminator { identity += "\n" + cacheDiscriminator }
         guard let result = await scanner.scan(
             from: discovery.files, since: since, cacheIdentity: identity,
             onDiskCacheHit: UsageRecordDiagnostics.report,
             parse: { data, path in
                 let records = try parse(data, path)
-                if let records { UsageRecordDiagnostics.report(records) }
+                if !Task.isCancelled, let records { UsageRecordDiagnostics.report(records) }
                 return records
             }
         ), !Task.isCancelled else { return nil }
@@ -65,7 +69,7 @@ enum UsageFileDiscovery {
         var result = Result()
         var seen: Set<String> = []
         func append(_ url: URL) {
-            guard include(url) else { return }
+            guard !Task.isCancelled, include(url), !Task.isCancelled else { return }
             let canonical = url.resolvingSymlinksInPath()
             guard seen.insert(canonical.path).inserted else { return }
             do {
@@ -80,14 +84,22 @@ enum UsageFileDiscovery {
             }
         }
         for root in Set(roots.map { $0.resolvingSymlinksInPath() }) {
+            guard !Task.isCancelled else { break }
             do {
                 let values = try root.resourceValues(forKeys: keys)
                 guard values.isDirectory == true else { append(root); continue }
                 guard let enumerator = FileManager.default.enumerator(
                     at: root, includingPropertiesForKeys: Array(keys), options: [],
-                    errorHandler: { _, _ in result.failures += 1; return true }
+                    errorHandler: { _, _ in
+                        guard !Task.isCancelled else { return false }
+                        result.failures += 1
+                        return true
+                    }
                 ) else { result.failures += 1; continue }
-                for case let url as URL in enumerator { append(url) }
+                for case let url as URL in enumerator {
+                    guard !Task.isCancelled else { break }
+                    append(url)
+                }
             } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                 continue
             } catch {

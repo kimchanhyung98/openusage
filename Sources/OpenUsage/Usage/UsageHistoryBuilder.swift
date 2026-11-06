@@ -23,10 +23,11 @@ enum UsageHistoryBuilder {
             $0.scope == .machineLocal && (UsageProviderMapping.providerID(for: $0.providerID) == providerID
                 || ($0.providerID == nil && sharedSources.contains($0.sourceID) && $0.issues.contains(.invalidMetadata)))
         }
-        let readFailures = collection.sources.filter {
+        let sources = collection.sources.filter {
             $0.scope == .machineLocal && ($0.providerID == nil || $0.providerID == providerID)
-        }.reduce(0) { $0 + $1.failedStores }
-        guard !records.isEmpty || readFailures > 0 else { return nil }
+        }
+        let readFailures = sources.reduce(0) { $0 + $1.failedStores }
+        guard !records.isEmpty || readFailures > 0 || sources.contains(where: { $0.completedStores > 0 }) else { return nil }
         let estimate: CostEstimator = costEstimator ?? { record, pricing in
             if providerID == "codex" { return CodexUsagePricing.estimateRecord(record, pricing: pricing) }
             guard let tokens = record.tokens, let model = record.effectiveModel else { return .unpriced }
@@ -49,8 +50,7 @@ enum UsageHistoryBuilder {
                 rejectedNumbers += 1
                 continue
             }
-            let pricingIncomplete = record.issues.contains(.unsupportedPricing)
-            if pricingIncomplete { unsupportedPricing += 1 }
+            var pricingIncomplete = record.issues.contains(.unsupportedPricing)
             let cost: Double?
             if let recorded = record.recordedCostUSD, recorded > 0 || !record.zeroCostIsUnknown,
                allowEstimates || record.costOrigin == .reported {
@@ -63,9 +63,10 @@ enum UsageHistoryBuilder {
                 case .unpriced: cost = nil
                 case .unsupportedUsage:
                     cost = nil
-                    unsupportedPricing += 1
+                    pricingIncomplete = true
                 }
             }
+            if pricingIncomplete, cost == nil, record.totalTokens > 0 { unsupportedPricing += 1 }
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
             let model = record.effectiveModel ?? ModelUsageEntry.unattributedModelName
             accumulator.add(day: day, tokens: record.totalTokens, cost: cost, model: model)

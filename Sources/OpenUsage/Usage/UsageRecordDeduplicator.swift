@@ -76,6 +76,11 @@ enum UsageRecordDeduplicator {
 
     private static func prefers(_ candidate: UsageRecord, over existing: UsageRecord) -> Bool {
         if candidate.issues.count != existing.issues.count { return candidate.issues.count < existing.issues.count }
+        let candidateReported = candidate.costOrigin == .reported && candidate.recordedCostUSD != nil
+            && (candidate.recordedCostUSD != 0 || !candidate.zeroCostIsUnknown)
+        let existingReported = existing.costOrigin == .reported && existing.recordedCostUSD != nil
+            && (existing.recordedCostUSD != 0 || !existing.zeroCostIsUnknown)
+        if candidateReported != existingReported { return candidateReported }
         // OMP fork가 과거 비용만 0으로 바꾼 사본보다 원본의 기록된 비용 우선.
         let candidateHasCost = (candidate.recordedCostUSD ?? 0) > 0
         let existingHasCost = (existing.recordedCostUSD ?? 0) > 0

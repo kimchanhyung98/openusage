@@ -14,7 +14,7 @@ enum PiSessionParser {
                 object = try UsageJSON.object(line)
             } catch {
                 records.append(UsageRecord(
-                    sourceID: sourceID, formatID: "pi-session", filePath: path,
+                    sourceID: sourceID == "pi-omp" ? "pi" : sourceID, formatID: "pi-session", filePath: path,
                     sessionID: sessionID, parentSession: parent, kind: "invalid",
                     issues: [.invalidMetadata]
                 ))
@@ -48,9 +48,13 @@ enum PiSessionParser {
             return nil
         }
         guard let usageValue = payload["usage"] else { return nil }
+        let usage = usageValue as? [String: Any]
+        let ompFields = usage?["cttl"] != nil || usage?["orchestration"] != nil || usage?["reasoningTokens"] != nil
+        let isOMP = sourceID == "omp" || (sourceID == "pi-omp" && ompFields)
+        let effectiveSource = sourceID == "pi-omp" ? (isOMP ? "omp" : "pi") : sourceID
         let envelopeTime = UsageJSON.date(object["timestamp"])
         let timestamp: Date?
-        if sourceID == "omp", type == "message" {
+        if isOMP, type == "message" {
             let messageTime = (payload["timestamp"] as? NSNumber).flatMap { value -> Date? in
                 guard let number = ProviderParse.number(value), number > 0 else { return nil }
                 return UsageJSON.date(value, milliseconds: true)
@@ -60,7 +64,7 @@ enum PiSessionParser {
             timestamp = envelopeTime ?? UsageJSON.date(payload["timestamp"], milliseconds: true)
         }
         var record = UsageRecord(
-            sourceID: sourceID, formatID: "pi-session", id: UsageJSON.string(object["id"]),
+            sourceID: effectiveSource, formatID: "pi-session", id: UsageJSON.string(object["id"]),
             responseID: UsageJSON.string(payload["responseId"]), kind: type,
             timestamp: timestamp,
             providerID: UsageJSON.string(payload["provider"]), model: UsageJSON.string(payload["model"]),
@@ -75,7 +79,7 @@ enum PiSessionParser {
             record.issues.insert(.invalidMetadata)
             return record
         }
-        if sourceID == "omp" {
+        if isOMP {
             ompTokens(usage, into: &record)
         } else {
             UsageJSON.tokens(
@@ -83,10 +87,10 @@ enum PiSessionParser {
                 cacheWrite: usage["cacheWrite"], cacheWrite1h: usage["cacheWrite1h"], total: usage["totalTokens"]
             )
         }
-        if let reasoning = usage[sourceID == "omp" ? "reasoningTokens" : "reasoning"] {
+        if let reasoning = usage[isOMP ? "reasoningTokens" : "reasoning"] {
             record.reasoningTokens = UsageLogNumbers.count(reasoning)
             if record.reasoningTokens == nil { record.issues.insert(.invalidNumbers) }
-            if sourceID == "omp", let reasoning = record.reasoningTokens,
+            if isOMP, let reasoning = record.reasoningTokens,
                let output = UsageLogNumbers.count(usage["output"], missing: 0), reasoning > output {
                 record.issues.insert(.invalidNumbers)
             }
@@ -94,7 +98,7 @@ enum PiSessionParser {
         if let value = usage["cost"] {
             if let cost = value as? [String: Any] {
                 UsageJSON.cost(cost["total"], into: &record)
-                if sourceID == "pi", cost["totalFromProvider"] as? Bool == true {
+                if sourceID != "omp", cost["totalFromProvider"] as? Bool == true {
                     record.costOrigin = .reported
                     record.zeroCostIsUnknown = false
                 }

@@ -113,14 +113,22 @@ final class OpenCodeProvider: ProviderRuntime {
         }
 
         let scan: OpenCodeUsageScan?
+        var nativeScanError: Error?
         do {
             scan = try await usageScanner.scan(now: refreshedAt, hasGoKey: hasGoKey)
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: error)
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            }
+            scan = nil
+            nativeScanError = error
         }
 
         let sharedScan = await sharedUsage.scan(providerID: provider.id, now: refreshedAt, pricing: .empty, allowEstimates: false)
         guard !Task.isCancelled else { return ProviderSnapshot.error(provider: provider, error: CancellationError()) }
+        if let nativeScanError, sharedScan?.usageHistory?.series.daily.isEmpty != false {
+            return ProviderSnapshot.error(provider: provider, error: nativeScanError)
+        }
         guard let logScan = DailyUsageAccumulator.merged([scan?.logScan, sharedScan]) else {
             // 디스크에 OpenCode database가 전혀 없는 경우
             if hasGoKey {
@@ -137,7 +145,8 @@ final class OpenCodeProvider: ProviderRuntime {
         }
 
         var lines: [MetricLine] = []
-        let goWindows = scan?.goWindows ?? (hasGoKey ? OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt) : nil)
+        let goWindows = scan?.goWindows ?? (hasGoKey && nativeScanError == nil
+            ? OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt) : nil)
         if let windows = goWindows {
             lines.append(contentsOf: OpenCodeUsageMapper.meterLines(windows))
         }
@@ -159,10 +168,13 @@ final class OpenCodeProvider: ProviderRuntime {
             lines: lines,
             refreshedAt: refreshedAt,
             usageHistory: logScan.usageHistory,
-            warning: [logScan.numericWarning, logScan.metadataWarning, logScan.pricingWarning, logScan.readWarning]
+            warning: [nativeScanError?.localizedDescription, logScan.numericWarning, logScan.metadataWarning,
+                      logScan.pricingWarning, logScan.readWarning]
                 .compactMap { $0 }.joined(separator: " ").nilIfEmpty,
-            warningPresentation: [logScan.numericWarning, logScan.metadataWarning, logScan.pricingWarning, logScan.readWarning]
-                .compactMap { $0 }.map { .init($0) }
+            warningPresentation: (nativeScanError.map { [UserFacingErrors.presentation($0)] } ?? [])
+                + [logScan.numericWarning, logScan.metadataWarning, logScan.pricingWarning, logScan.readWarning]
+                    .compactMap { $0 }.map { .init($0) },
+            isDegraded: nativeScanError == nil ? nil : true
         )
     }
 }

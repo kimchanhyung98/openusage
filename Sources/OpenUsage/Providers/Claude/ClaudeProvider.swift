@@ -61,7 +61,9 @@ final class ClaudeProvider: ProviderRuntime {
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
-                    sourceNote: "From your Claude usage history (estimated)"
+                    sourceNote: includeSharedUsage
+                        ? "From your Claude usage history and local tools (estimated)"
+                        : "From your Claude usage history (estimated)"
                 ),
             .boundedDollars(id: "\(provider.id).extra", provider: provider, title: "Extra Usage", metricLabel: "Extra usage spent", limit: 100, valueWord: "spent")
                 .exportingLimit("extraUsage", unit: "usd", source: .progressOrValue(kind: .dollars)),

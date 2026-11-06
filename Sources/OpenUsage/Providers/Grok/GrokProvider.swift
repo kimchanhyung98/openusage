@@ -44,7 +44,7 @@ final class GrokProvider: ProviderRuntime {
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
-                    sourceNote: "From your Grok logs (estimated)"
+                    sourceNote: "From your Grok logs and local tools (estimated)"
                 )
             // Grok CLI 로그 기반 추정 local spend tile (GrokLogUsageScanner 참고)
         ] + WidgetDescriptor.spendTiles(provider: provider)

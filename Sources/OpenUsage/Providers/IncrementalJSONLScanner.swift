@@ -142,7 +142,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             scheduleWrite(identity: cacheIdentity)
         }
         // 전체 집계는 폐기하되 취소 전에 완료한 파일은 재사용 — 대용량 cold scan의 반복 시간 초과 방지.
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, parseResults.allSatisfy(\.readAttempted) else {
             AppLog.info(.cache, "cancelled \(persistence?.namespace ?? "local") scan; cached \(parsedPaths.count) completed files for retry")
             return nil
         }
@@ -408,11 +408,13 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                         do {
                             let parsed = try parse(data, file.path)
                             result = (index, Task.isCancelled ? nil : parsed, true, false)
+                        } catch is CancellationError {
+                            result = (index, nil, false, false)
                         } catch {
-                            result = (index, nil, true, true)
+                            result = Task.isCancelled ? (index, nil, false, false) : (index, nil, true, true)
                         }
                     } else {
-                        result = (index, nil, true, true)
+                        result = Task.isCancelled ? (index, nil, false, false) : (index, nil, true, true)
                     }
                     await permitPool.release()
                     return result
@@ -429,7 +431,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             var results = files.map { (file: $0, items: Optional<[Item]>.none, readAttempted: false, readFailed: false) }
             for await (index, items, readAttempted, readFailed) in group {
                 results[index] = (files[index], items, readAttempted, readFailed)
-                if Task.isCancelled {
+                if Task.isCancelled || group.isCancelled || !readAttempted {
                     group.cancelAll()
                     continue
                 }

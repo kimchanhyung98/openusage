@@ -38,21 +38,28 @@ struct GrokLogUsageScanner: Sendable {
     /// 로그 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        guard !Task.isCancelled else { return nil }
         let path = logPath
         guard files.exists(path) else { return nil }
         let text: String
         do {
             text = try files.readText(path)
+            guard !Task.isCancelled else { return nil }
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [])
+        } catch is CancellationError {
+            return nil
         } catch {
+            guard !Task.isCancelled else { return nil }
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
             guard !Task.isCancelled else { return nil }
             return DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
         }
+        guard !Task.isCancelled else { return nil }
         let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
                               pricing: pricing, reportNumericFailures: false)
+        guard !Task.isCancelled else { return nil }
         await numericFailureReporter.update(path: path, rejectedRows: scan.rejectedNumericRows)
-        return scan
+        return Task.isCancelled ? nil : scan
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.

@@ -36,7 +36,15 @@ enum PiPaths {
     }
 
     static func ompSessionsDirectory(environment: EnvironmentReading, homeDirectory: URL) -> URL? {
-        guard let profile = normalizedProfile(environment.value(for: "OMP_PROFILE") ?? environment.value(for: "PI_PROFILE")) else {
+        let ompProfile: String?
+        if let process = environment as? ProcessEnvironmentReader {
+            // OMP는 빈 환경 변수도 기본 프로필 선택으로 취급.
+            ompProfile = process.processEnvironment["OMP_PROFILE"]
+                ?? process.shellEnvironment.environmentSnapshot()?["OMP_PROFILE"]
+        } else {
+            ompProfile = environment.value(for: "OMP_PROFILE")
+        }
+        guard let profile = normalizedProfile(ompProfile ?? environment.value(for: "PI_PROFILE")) else {
             return nil
         }
         let config = environment.value(for: "PI_CONFIG_DIR")?.nilIfEmpty ?? ".omp"

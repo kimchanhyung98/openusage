@@ -53,7 +53,9 @@ final class CodexProvider: ProviderRuntime {
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
-                    sourceNote: "From your Codex logs (estimated)"
+                    sourceNote: includeSharedUsage
+                        ? "From your Codex logs and local tools (estimated)"
+                        : "From your Codex logs (estimated)"
                 ),
             .forecast(id: "\(provider.id).resetWatch", provider: provider, title: "Reset Watch"),
             .values(id: "\(provider.id).rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
