@@ -289,7 +289,7 @@ final class DevinUsageScannerTests: XCTestCase {
         let frozenPricing = pricing
         let provider = DevinProvider(
             authStore: DevinAuthStore(files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
-                                      sqlite: DevinHistoryAuthSQLite()),
+                                      sqlite: DevinHistoryAuthSQLite(), environment: FakeEnvironment()),
             usageClient: DevinUsageClient(http: FakeHTTPClient(response: HTTPResponse(
                 statusCode: 200, headers: [:], body: Data(#"{"userStatus":{"planStatus":{"planInfo":{"planName":"Max"},"dailyQuotaRemainingPercent":80,"weeklyQuotaRemainingPercent":60,"overageBalanceMicros":"9000000"}}}"#.utf8)
             ))),
@@ -314,7 +314,7 @@ final class DevinUsageScannerTests: XCTestCase {
         let http = FakeHTTPClient(response: HTTPResponse(statusCode: 500, headers: [:], body: Data()))
         let provider = DevinProvider(
             authStore: DevinAuthStore(files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
-                                      sqlite: DevinHistoryAuthSQLite()),
+                                      sqlite: DevinHistoryAuthSQLite(), environment: FakeEnvironment()),
             usageClient: DevinUsageClient(http: http), usageScanner: fixture.scanner(),
             now: { frozenNow }, pricing: { frozenPricing }
         )
@@ -332,7 +332,7 @@ final class DevinUsageScannerTests: XCTestCase {
         let frozenNow = now
         let provider = DevinProvider(
             authStore: DevinAuthStore(files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
-                                      sqlite: DevinHistoryAuthSQLite()),
+                                      sqlite: DevinHistoryAuthSQLite(), environment: FakeEnvironment()),
             usageClient: DevinUsageClient(http: FakeHTTPClient(response: HTTPResponse(
                 statusCode: 200, headers: [:], body: Data(#"{"userStatus":{"planStatus":{"dailyQuotaRemainingPercent":80}}}"#.utf8)
             ))),
@@ -361,7 +361,7 @@ final class DevinUsageScannerTests: XCTestCase {
             let provider = DevinProvider(
                 authStore: DevinAuthStore(
                     files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'fixture'"]),
-                    sqlite: DevinHistoryAuthSQLite()
+                    sqlite: DevinHistoryAuthSQLite(), environment: FakeEnvironment()
                 ),
                 usageClient: DevinUsageClient(http: FakeHTTPClient(response: HTTPResponse(
                     statusCode: 200, headers: [:],

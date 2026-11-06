@@ -91,7 +91,7 @@
 "Grok billing response changed." = "Grok billing response changed.";
 "Grok not logged in. Run `grok login`." = "Grok not logged in. Run `grok login`.";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "Grok sign-in changed while refreshing. Refresh again to use the current account.";
-"Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again." = "Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again.";
+"Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok sign-in could not be read. Check access to the Grok auth file and refresh again.";
 "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE.";
 "Invalid HTTP response." = "Invalid HTTP response.";
 "Invalid account name." = "Invalid account name.";

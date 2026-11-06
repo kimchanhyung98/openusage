@@ -64,7 +64,7 @@ final class OpenRouterProvider: ProviderRuntime {
 
         // 두 endpoint를 독립 fetch해 성공한 쪽만 매핑 — `/credits`는 balance, `/key`는 tier + period spend
         // OpenRouter가 key 타입별로 endpoint를 gate하므로 한쪽의 403이 다른 쪽 데이터를 지우면 안 됨
-        let credits = await load { try await usageClient.fetchCredits(apiKey: auth.apiKey) }
+        var credits = await load { try await usageClient.fetchCredits(apiKey: auth.apiKey) }
         let key = await load { try await usageClient.fetchKey(apiKey: auth.apiKey) }
 
         var lines: [MetricLine] = []
@@ -73,7 +73,9 @@ final class OpenRouterProvider: ProviderRuntime {
         var isManagementKey = false
         var hasUnavailableStatistics = false
         if case .success(let data) = credits {
-            lines += OpenRouterUsageMapper.creditsLines(from: data)
+            let mapped = OpenRouterUsageMapper.creditsLines(from: data)
+            lines += mapped
+            if mapped.isEmpty { credits = .failed(.invalidResponse) }
         }
         if case .success(let data) = key {
             isManagementKey = ProviderParse.bool(data["is_management_key"]) == true
@@ -92,6 +94,15 @@ final class OpenRouterProvider: ProviderRuntime {
                 category: key.isAuthFailure ? .http4xx : nil,
                 providerID: provider.id, error: key.failureError,
                 localContext: "key metadata unavailable; period statistics omitted"
+            )
+        }
+        if !Task.isCancelled, credits.failureError != nil || (credits.isAuthFailure && isManagementKey) {
+            hasUnavailableStatistics = true
+            AppDiagnostics.record(
+                .historyScan, result: .degraded,
+                category: credits.isAuthFailure ? .http4xx : nil,
+                providerID: provider.id, error: credits.failureError,
+                localContext: "credit balance unavailable"
             )
         }
 

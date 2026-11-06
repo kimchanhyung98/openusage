@@ -91,7 +91,7 @@
 "Grok billing response changed." = "Grok の請求情報の応答が変更されました。";
 "Grok not logged in. Run `grok login`." = "Grok にログインしていません。`grok login` を実行してください。";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "更新中に Grok のログイン情報が変更されました。現在のアカウントを使用するには、もう一度更新してください。";
-"Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again." = "Grok のログイン情報を読み取れませんでした。~/.grok/auth.json へのアクセス権を確認して、もう一度更新してください。";
+"Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok のログイン情報を読み取れませんでした。Grok 認証ファイルへのアクセス権を確認して、もう一度更新してください。";
 "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Claude OAuth URL が無効です: %@。CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE を確認してください。";
 "Invalid HTTP response." = "HTTP の応答が無効です。";
 "Invalid account name." = "アカウント名が無効です。";

@@ -56,7 +56,7 @@ final class MetricLocalizationTests: XCTestCase {
         guard case .badge(_, let canonicalText, _, _) = cached.line(label: "Pay as you go") else {
             return XCTFail("expected the original badge")
         }
-        XCTAssertEqual(canonicalText, "2500 cap")
+        XCTAssertEqual(canonicalText, "$25.00 cap")
 
         let suiteName = "MetricLocalizationTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -68,14 +68,14 @@ final class MetricLocalizationTests: XCTestCase {
         )
         store.snapshots[provider.id] = cached
         L10n.withLanguage(.korean) {
-            XCTAssertEqual(store.data(for: descriptor).valueText, "한도 2500")
-            XCTAssertEqual(store.data(for: descriptor).menuBarValue, "한도 2500")
+            XCTAssertEqual(store.data(for: descriptor).valueText, "한도 $25.00")
+            XCTAssertEqual(store.data(for: descriptor).menuBarValue, "한도 $25.00")
         }
         L10n.withLanguage(.japanese) {
-            XCTAssertEqual(store.data(for: descriptor).valueText, "上限 2500")
+            XCTAssertEqual(store.data(for: descriptor).valueText, "上限 $25.00")
         }
         L10n.withLanguage(.english) {
-            XCTAssertEqual(store.data(for: descriptor).valueText, "2500 cap")
+            XCTAssertEqual(store.data(for: descriptor).valueText, "$25.00 cap")
         }
     }
 

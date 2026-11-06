@@ -8,6 +8,8 @@ struct GrokAuthEntry: Codable, Hashable, Sendable {
     var expiresAt: String?
     var expires: String?
     var oidcClientID: String?
+    var authMode: String?
+    var oidcIssuer: String?
 
     enum CodingKeys: String, CodingKey {
         case key
@@ -17,6 +19,8 @@ struct GrokAuthEntry: Codable, Hashable, Sendable {
         case expiresAt = "expires_at"
         case expires
         case oidcClientID = "oidc_client_id"
+        case authMode = "auth_mode"
+        case oidcIssuer = "oidc_issuer"
     }
 }
 
@@ -27,6 +31,7 @@ struct GrokAuthState: Hashable, Sendable {
     var token: String
     /// 형제 entry 변경과 구분하는 원본 대상 문서 — 미모델 필드까지 포함, 메모리에서만 유지.
     var entryRevision: Data? = nil
+    var authPath: String = GrokAuthStore.authPath
 }
 
 enum GrokAuthError: Error, LocalizedError, Equatable {
@@ -47,7 +52,7 @@ enum GrokAuthError: Error, LocalizedError, Equatable {
         case .credentialsChanged:
             return "Grok sign-in changed while refreshing. Refresh again to use the current account."
         case .credentialReadFailed:
-            return "Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again."
+            return "Grok sign-in could not be read. Check access to the Grok auth file and refresh again."
         }
     }
 }
@@ -59,19 +64,23 @@ struct GrokAuthStore: Sendable {
     private static let mutationLock = NSLock()
 
     var files: TextFileAccessing
+    var environment: EnvironmentReading
     var now: @Sendable () -> Date
 
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
+        environment: EnvironmentReading = ProcessEnvironmentReader(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.files = files
+        self.environment = environment
         self.now = now
     }
 
     func loadAuthCandidates() throws -> [GrokAuthState] {
-        guard files.exists(Self.authPath),
-              let text = try? files.readText(Self.authPath),
+        let path = resolvedAuthPath
+        guard files.exists(path),
+              let text = try? files.readText(path),
               let auth = Self.parseAuth(text),
               let document = Self.parseJSONObject(text)
         else {
@@ -79,11 +88,12 @@ struct GrokAuthStore: Sendable {
         }
 
         let candidates = try auth.compactMap { entryKey, entry -> GrokAuthState? in
-            guard let token = trimmed(entry.key),
+            guard isBillingCredential(entryKey: entryKey, entry: entry),
+                  let token = trimmed(entry.key),
                   let entryObject = document[entryKey] as? [String: Any] else { return nil }
             return GrokAuthState(
                 auth: auth, entryKey: entryKey, entry: entry, token: token,
-                entryRevision: try Self.revision(of: entryObject)
+                entryRevision: try Self.revision(of: entryObject), authPath: path
             )
         }
 
@@ -101,7 +111,7 @@ struct GrokAuthStore: Sendable {
         guard let expected = state.entryRevision else { throw GrokAuthError.credentialsChanged }
         let currentText: String?
         do {
-            currentText = try files.readTextIfPresent(Self.authPath)
+            currentText = try files.readTextIfPresent(state.authPath)
         } catch {
             AppLog.error(LogTag.auth("grok"), "credential verification before saving failed: \(error.localizedDescription)")
             throw GrokAuthError.credentialReadFailed
@@ -131,7 +141,7 @@ struct GrokAuthStore: Sendable {
         guard let text = String(data: data, encoding: .utf8) else {
             throw GrokAuthError.invalidAuth
         }
-        try files.writeText(Self.authPath, text)
+        try files.writeText(state.authPath, text)
         var saved = state
         saved.auth[state.entryKey] = state.entry
         saved.entryRevision = try Self.revision(of: entryObject)
@@ -192,6 +202,21 @@ struct GrokAuthStore: Sendable {
             return date
         }
         return nil
+    }
+
+    private var resolvedAuthPath: String {
+        if let path = environment.value(for: "GROK_AUTH_PATH"), !path.isEmpty { return path }
+        if let path = environment.value(for: "GROK_HOME"), !path.isEmpty {
+            return path.trimmingTrailingSlashes + "/auth.json"
+        }
+        return Self.authPath
+    }
+
+    private func isBillingCredential(entryKey: String, entry: GrokAuthEntry) -> Bool {
+        guard entryKey != "xai::api_key" else { return false }
+        if let mode = entry.authMode, mode != "oidc", mode != "external" { return false }
+        if let issuer = entry.oidcIssuer { return issuer == "https://auth.x.ai" }
+        return entry.authMode != "external" && entryKey.hasPrefix("https://auth.x.ai::")
     }
 
     private func needsRefresh(expiresAt: Date) -> Bool {

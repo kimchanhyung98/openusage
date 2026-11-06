@@ -10,7 +10,7 @@ final class DevinAuthStoreTests: XCTestCase {
                 api_server_url = "https://server.codeium.test/"
                 """
             ]),
-            sqlite: FakeSQLite()
+            sqlite: FakeSQLite(), environment: FakeEnvironment()
         )
 
         let auth = store.loadCredentialsFile()
@@ -27,7 +27,7 @@ final class DevinAuthStoreTests: XCTestCase {
                 api_server_url = "http://server.codeium.test"
                 """
             ]),
-            sqlite: FakeSQLite()
+            sqlite: FakeSQLite(), environment: FakeEnvironment()
         )
 
         let auth = store.loadCredentialsFile()
@@ -38,13 +38,60 @@ final class DevinAuthStoreTests: XCTestCase {
 
     func testReadsAppAuthFromSQLiteState() {
         let sqlite = FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#)
-        let store = DevinAuthStore(files: FakeFiles(), sqlite: sqlite)
+        let store = DevinAuthStore(files: FakeFiles(), sqlite: sqlite, environment: FakeEnvironment())
 
         let auth = store.loadAppAuth()
 
         XCTAssertEqual(auth?.apiKey, "devin-session-token$app")
         XCTAssertEqual(sqlite.lastPath, DevinAuthStore.stateDBPath)
         XCTAssertEqual(sqlite.lastSQL?.contains("windsurfAuthStatus"), true)
+    }
+
+    func testXDGCredentialsTakePrecedenceOverPreviousDefaultCredentials() {
+        let store = DevinAuthStore(
+            files: FakeFiles([
+                DevinAuthStore.credentialsPath: "windsurf_api_key = 'previous-account'",
+                "/fixture-data/devin/credentials.toml": "windsurf_api_key = 'xdg-account'"
+            ]),
+            sqlite: FakeSQLite(),
+            environment: FakeEnvironment(["XDG_DATA_HOME": " /fixture-data/ \n", "DEVIN_SESSIONS_DIR": "/session-only"])
+        )
+
+        XCTAssertEqual(store.loadCredentialsFile()?.apiKey, "xdg-account")
+    }
+
+    func testConfiguredXDGDoesNotFallBackToPreviousDefaultCredentials() {
+        let store = DevinAuthStore(
+            files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'previous-account'"]),
+            sqlite: FakeSQLite(), environment: FakeEnvironment(["XDG_DATA_HOME": "/fixture-data"])
+        )
+
+        XCTAssertNil(store.loadCredentialsFile())
+    }
+
+    func testEmptyXDGUsesDefaultCredentials() {
+        for xdg in ["", " \n"] {
+            let store = DevinAuthStore(
+                files: FakeFiles([DevinAuthStore.credentialsPath: "windsurf_api_key = 'default-account'"]),
+                sqlite: FakeSQLite(), environment: FakeEnvironment(["XDG_DATA_HOME": xdg])
+            )
+
+            XCTAssertEqual(store.loadCredentialsFile()?.apiKey, "default-account")
+        }
+    }
+
+    func testCredentialPathIsResolvedWhenLoading() {
+        var store = DevinAuthStore(
+            files: FakeFiles([
+                DevinAuthStore.credentialsPath: "windsurf_api_key = 'default-account'",
+                "/fixture-data/devin/credentials.toml": "windsurf_api_key = 'xdg-account'"
+            ]),
+            sqlite: FakeSQLite(), environment: FakeEnvironment()
+        )
+
+        XCTAssertEqual(store.loadCredentialsFile()?.apiKey, "default-account")
+        store.environment = FakeEnvironment(["XDG_DATA_HOME": "/fixture-data"])
+        XCTAssertEqual(store.loadCredentialsFile()?.apiKey, "xdg-account")
     }
 }
 
@@ -91,6 +138,69 @@ final class DevinUsageMapperTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(dollars(mapped.lines, "Extra usage balance")), 964.22, accuracy: 0.0001)
     }
 
+    func testHiddenWeeklyQuotaDoesNotDisplayReportedRemainingValues() throws {
+        for remaining in [0, 40] {
+            var userStatus = makeUserStatus()
+            var planStatus = userStatus["planStatus"] as! [String: Any]
+            var planInfo = planStatus["planInfo"] as! [String: Any]
+            planInfo["hideWeeklyQuota"] = true
+            planStatus["planInfo"] = planInfo
+            planStatus["weeklyQuotaRemainingPercent"] = remaining
+            userStatus["planStatus"] = planStatus
+
+            let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
+
+            XCTAssertNil(progress(mapped.lines, "Weekly quota"))
+            XCTAssertEqual(progress(mapped.lines, "Daily quota")?.used, 0)
+            XCTAssertEqual(try XCTUnwrap(dollars(mapped.lines, "Extra usage balance")), 964.22, accuracy: 0.0001)
+        }
+    }
+
+    func testHiddenWeeklyQuotaDoesNotUseHiddenDailyFallback() throws {
+        var userStatus = makeUserStatus()
+        var planStatus = userStatus["planStatus"] as! [String: Any]
+        var planInfo = planStatus["planInfo"] as! [String: Any]
+        planInfo["hideDailyQuota"] = true
+        planInfo["hideWeeklyQuota"] = true
+        planStatus["planInfo"] = planInfo
+        planStatus["dailyQuotaRemainingPercent"] = 30
+        planStatus.removeValue(forKey: "weeklyQuotaRemainingPercent")
+        userStatus["planStatus"] = planStatus
+
+        let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
+
+        XCTAssertNil(progress(mapped.lines, "Daily quota"))
+        XCTAssertNil(progress(mapped.lines, "Weekly quota"))
+        XCTAssertEqual(mapped.lines.count, 1)
+        XCTAssertEqual(try XCTUnwrap(dollars(mapped.lines, "Extra usage balance")), 964.22, accuracy: 0.0001)
+    }
+
+    func testVisibleWeeklyQuotaKeepsReportedZeroRemaining() throws {
+        var userStatus = makeUserStatus()
+        var planStatus = userStatus["planStatus"] as! [String: Any]
+        var planInfo = planStatus["planInfo"] as! [String: Any]
+        planInfo["hideWeeklyQuota"] = false
+        planStatus["planInfo"] = planInfo
+        planStatus["weeklyQuotaRemainingPercent"] = 0
+        userStatus["planStatus"] = planStatus
+
+        let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
+
+        XCTAssertEqual(progress(mapped.lines, "Weekly quota")?.used, 100)
+    }
+
+    func testVisibleDailyQuotaDoesNotFillMissingWeeklyQuota() throws {
+        var userStatus = makeUserStatus()
+        var planStatus = userStatus["planStatus"] as! [String: Any]
+        planStatus.removeValue(forKey: "weeklyQuotaRemainingPercent")
+        userStatus["planStatus"] = planStatus
+
+        let mapped = try DevinUsageMapper.mapUserStatus(userStatus)
+
+        XCTAssertEqual(progress(mapped.lines, "Daily quota")?.used, 0)
+        XCTAssertNil(progress(mapped.lines, "Weekly quota"))
+    }
+
     func testThrowsQuotaUnavailableWhenNoDisplayableFieldsExist() {
         let userStatus: [String: Any] = [
             "planStatus": [
@@ -133,7 +243,8 @@ final class DevinProviderTests: XCTestCase {
                     api_server_url = "https://server.codeium.test"
                     """
                 ]),
-                sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#)
+                sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#),
+                environment: FakeEnvironment()
             ),
             usageClient: DevinUsageClient(http: httpClient),
             usageScanner: isolatedUsageScanner(),
@@ -167,7 +278,8 @@ final class DevinProviderTests: XCTestCase {
                     api_server_url = "https://server.codeium.test"
                     """
                 ]),
-                sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#)
+                sqlite: FakeSQLite(value: #"{"apiKey":"devin-session-token$app"}"#),
+                environment: FakeEnvironment()
             ),
             usageClient: DevinUsageClient(http: httpClient),
             usageScanner: isolatedUsageScanner(),
@@ -185,7 +297,7 @@ final class DevinProviderTests: XCTestCase {
 
     func testRefreshReturnsLoginHintWithoutAuth() async {
         let provider = DevinProvider(
-            authStore: DevinAuthStore(files: FakeFiles(), sqlite: FakeSQLite()),
+            authStore: DevinAuthStore(files: FakeFiles(), sqlite: FakeSQLite(), environment: FakeEnvironment()),
             usageClient: DevinUsageClient(http: QueueHTTPClient()),
             usageScanner: isolatedUsageScanner(),
             pricing: { .empty }

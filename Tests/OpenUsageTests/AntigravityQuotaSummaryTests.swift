@@ -215,14 +215,57 @@ final class AntigravityQuotaSummaryTests: XCTestCase {
     // MARK: - Provider integration: language-server transport
 
     @MainActor
-    private func makeLSProvider(routing: RoutingHTTPClient) -> AntigravityProvider {
+    private func makeLSProvider(
+        routing: RoutingHTTPClient, processRunner: ProcessRunning = FakeLSProcessRunner()
+    ) -> AntigravityProvider {
         AntigravityProvider(
             authStore: AntigravityAuthStore(keychain: FakeKeychain(nil), files: FakeFiles()),
             usageClient: AntigravityUsageClient(lsHTTP: routing, http: routing),
-            discovery: LanguageServerDiscovery(processRunner: FakeLSProcessRunner()),
+            discovery: LanguageServerDiscovery(processRunner: processRunner),
             usageScan: { _, _ in nil },
             pricing: { .empty }
         )
+    }
+
+    @MainActor
+    func testAgyHubUsesOptionalCSRFTokenAndKeepsTokenlessCLIWorking() async {
+        let groupsJSON = fullGroupsJSON
+        for argument in ["--csrf_token fixture-csrf", "--csrf_token=fixture-csrf", ""] {
+            let expectedToken = argument.isEmpty ? "" : "fixture-csrf"
+            let routing = RoutingHTTPClient { request in
+                guard request.headers["x-codeium-csrf-token"] == expectedToken else {
+                    return HTTPResponse(statusCode: 403, headers: [:], body: Data())
+                }
+                if request.url.path.hasSuffix("/RetrieveUserQuotaSummary") {
+                    return HTTPResponse(statusCode: 200, headers: [:], body: Data("{\"response\":{\(groupsJSON)}}".utf8))
+                }
+                return HTTPResponse(statusCode: 404, headers: [:], body: Data())
+            }
+            let runner = FakeLSProcessRunner(command:
+                "4276 /fixture/.gemini/bin/agy --hub --hub-port=52168 --app_data_dir=antigravity \(argument)\n"
+            )
+            let provider = makeLSProvider(routing: routing, processRunner: runner)
+
+            let snapshot = await provider.refresh()
+
+            XCTAssertNil(snapshot.errorCategory)
+            XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly", "Claude", "Claude Weekly"])
+            XCTAssertFalse(routing.requests.isEmpty)
+            XCTAssertTrue(routing.requests.allSatisfy { $0.url.host == "127.0.0.1" })
+            XCTAssertTrue(routing.requests.allSatisfy { $0.headers["x-codeium-csrf-token"] == expectedToken })
+        }
+    }
+
+    func testLanguageServerDiscoveryStillRequiresItsConfiguredCSRFToken() {
+        let runner = FakeLSProcessRunner(command:
+            "4276 /fixture/language_server --app_data_dir=antigravity\n"
+        )
+        let discovery = LanguageServerDiscovery(processRunner: runner)
+        let options = LanguageServerDiscovery.Options(
+            processName: "language_server", markers: ["antigravity"], csrfFlag: "--csrf_token", portFlag: nil
+        )
+
+        XCTAssertNil(discovery.discover(options))
     }
 
     @MainActor
@@ -312,10 +355,11 @@ private struct NoProcessRunner: ProcessRunning {
 
 /// 실행 중인 Antigravity `language_server`(pid 4276, listening port 52168) fake — 실제 subprocess 없이 LS probe 검증
 private struct FakeLSProcessRunner: ProcessRunning {
+    var command = "4276 /Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --override_ide_name antigravity --csrf_token tok --app_data_dir antigravity\n"
+
     func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
         if executable.hasSuffix("/ps") {
-            let ps = "4276 /Applications/Antigravity.app/Contents/Resources/bin/language_server --standalone --override_ide_name antigravity --csrf_token tok --app_data_dir antigravity\n"
-            return ProcessResult(exitCode: 0, stdout: ps, stderr: "")
+            return ProcessResult(exitCode: 0, stdout: command, stderr: "")
         }
         let lsof = "language_ 4276 user 6u IPv4 0x0 0t0 TCP 127.0.0.1:52168 (LISTEN)\n"
         return ProcessResult(exitCode: 0, stdout: lsof, stderr: "")

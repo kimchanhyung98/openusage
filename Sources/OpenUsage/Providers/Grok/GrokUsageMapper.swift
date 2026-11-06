@@ -28,13 +28,14 @@ enum GrokUsageMapper {
             ))
         }
         // `onDemandCap` 부재는 pay-as-you-go 없음(proto-JSON은 0 cap도 생략) — cap 0과 동일하게 Disabled badge
+        let cap = Formatters.currency(ProviderParse.centsToDollars(config.onDemandCap))
         lines.append(.badge(
             label: "Pay as you go",
-            text: config.onDemandCap > 0 ? "\(formatUnits(config.onDemandCap)) cap" : "Disabled",
+            text: config.onDemandCap > 0 ? "\(cap) cap" : "Disabled",
             colorHex: config.onDemandCap > 0 ? "#22c55e" : "#a3a3a3"
         ))
         let presentations: [String: LocalizedMessage] = config.onDemandCap > 0
-            ? ["Pay as you go": LocalizedMessage("%@ cap", [formatUnits(config.onDemandCap)], table: "Metrics")]
+            ? ["Pay as you go": LocalizedMessage("%@ cap", [cap], table: "Metrics")]
             : [:]
         return GrokMappedUsage(lines: lines, metricPresentations: presentations)
     }
@@ -50,10 +51,4 @@ enum GrokUsageMapper {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    private static func formatUnits(_ value: Double) -> String {
-        if value.rounded() == value {
-            return String(Int(value))
-        }
-        return String(value)
-    }
 }

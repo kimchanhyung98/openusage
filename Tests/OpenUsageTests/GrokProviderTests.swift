@@ -58,7 +58,7 @@ final class GrokProviderTests: XCTestCase {
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
         let provider = GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: noLogScanner(),
             now: { now },
@@ -116,7 +116,7 @@ final class GrokProviderTests: XCTestCase {
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
         let provider = GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: noLogScanner(),
             now: { now },
@@ -379,7 +379,7 @@ final class GrokProviderTests: XCTestCase {
             GrokAuthStore.authPath: #"{"https://auth.x.ai::client":{"key":"token","refresh_token":"refresh","expires_at":"2026-07-01T00:00:00.000Z"}}"#
         ])
         return GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: scanner ?? noLogScanner(),
             now: { now },
@@ -413,14 +413,14 @@ final class GrokWidgetDataStoreTests: XCTestCase {
             snapshot: ProviderSnapshot(
                 providerID: provider.id,
                 displayName: provider.displayName,
-                lines: [.badge(label: "Pay as you go", text: "2500 cap", colorHex: "#22c55e")]
+                lines: [.badge(label: "Pay as you go", text: "$25.00 cap", colorHex: "#22c55e")]
             )
         )
         let store = WidgetDataStore(registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]), providers: [runtime])
 
         await store.refreshAll()
 
-        XCTAssertEqual(store.data(for: descriptor).valueText, "2500 cap")
+        XCTAssertEqual(store.data(for: descriptor).valueText, "$25.00 cap")
     }
 }
 

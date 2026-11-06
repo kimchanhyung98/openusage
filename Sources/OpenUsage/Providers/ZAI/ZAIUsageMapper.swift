@@ -11,8 +11,12 @@ enum ZAIUsageMapper {
     /// quota + subscription payload에서 `(plan, lines)` 생성.
     /// `subscription`은 `nil` 가능(best-effort), `limits`는 1~3개 — 존재하는 것만 매핑해 web search 없는 plan도 session meter 표시.
     static func map(quotaBody: Data, subscriptionBody: Data?) throws -> (plan: String?, lines: [MetricLine]) {
-        let plan = subscriptionBody.flatMap { planName(from: $0) }
         let lines = try mapQuota(quotaBody)
+        let level = (ProviderParse.jsonObject(quotaBody)?["data"] as? [String: Any])?["level"] as? String
+        let quotaPlan = level?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty.map {
+            "GLM Coding " + $0.prefix(1).uppercased() + $0.dropFirst().lowercased()
+        }
+        let plan = subscriptionBody.flatMap { planName(from: $0) } ?? quotaPlan
         return (plan, lines)
     }
 
@@ -29,6 +33,14 @@ enum ZAIUsageMapper {
     static func mapQuota(_ body: Data) throws -> [MetricLine] {
         guard let root = ProviderParse.jsonObject(body) else {
             throw ZAIUsageError.invalidResponse
+        }
+        if let success = root["success"], !(success is NSNull) {
+            guard let success = success as? Bool, success else { throw ZAIUsageError.invalidResponse }
+        }
+        if let code = root["code"], !(code is NSNull) {
+            guard let code = ProviderParse.number(code), code == 0 || code == 200 else {
+                throw ZAIUsageError.invalidResponse
+            }
         }
         // limits 배열은 `data.limits` 하위 — legacy plugin처럼 `data` wrapper 없는 root 직접 형태도 허용
         let container: [String: Any]
