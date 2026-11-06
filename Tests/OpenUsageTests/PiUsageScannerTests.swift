@@ -207,6 +207,127 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertNil(UsageProviderMapping.providerID(for: "nvidia-nim"))
     }
 
+    func testReportedPiZeroBeatsOMPEstimatedDuplicate() throws {
+        let header = #"{"type":"session","id":"same-session"}"# + "\n"
+        let pi = Data((header + String(decoding: line(costObject: #"{"total":0,"totalFromProvider":true}"#), as: UTF8.self)).utf8)
+        let omp = Data((header + String(decoding: line(cost: "0.5"), as: UTF8.self)).utf8)
+        let reported = try XCTUnwrap(PiSessionParser.parse(pi, path: "/pi.jsonl", sourceID: "pi").first)
+        let estimated = try XCTUnwrap(PiSessionParser.parse(omp, path: "/omp.jsonl", sourceID: "omp").first)
+        XCTAssertEqual(reported.costOrigin, .reported)
+        XCTAssertFalse(reported.zeroCostIsUnknown)
+        XCTAssertEqual(estimated.costOrigin, .estimated)
+        for input in [[reported, estimated], [estimated, reported]] {
+            let deduplicated = UsageRecordDeduplicator.records(input)
+            XCTAssertEqual(deduplicated.count, 1)
+            let scan = UsageRecordFixture.history(records: deduplicated, providerID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(scan.series.daily.first?.costUSD, 0)
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 150)
+        }
+    }
+
+    func testOMPEmptyProfileWinsWithProductionEnvironmentReader() async {
+        let home = URL(fileURLWithPath: "/fixture-home")
+        let cases: [([String: String], [String], String)] = [
+            (["OMP_PROFILE": "", "PI_PROFILE": "work"], ["OMP_PROFILE=other"], ".omp/agent/sessions"),
+            (["PI_PROFILE": "work"], ["OMP_PROFILE="], ".omp/agent/sessions"),
+            (["PI_PROFILE": "work"], [], ".omp/profiles/work/agent/sessions"),
+            (["OMP_PROFILE": "named", "PI_PROFILE": "work"], [], ".omp/profiles/named/agent/sessions")
+        ]
+        for (process, shellValues, expected) in cases {
+            let output = (["__OPENUSAGE_ENV_BEGIN__"] + shellValues + ["__OPENUSAGE_ENV_END__"]).joined(separator: "\0")
+            let shell = LoginShellEnvironment(runner: OMPProfileShellRunner(stdout: output))
+            let reader = ProcessEnvironmentReader(processEnvironment: process, shellEnvironment: shell, launchSnapshot: { nil })
+            let resolved = await Task.detached {
+                PiPaths.ompSessionsDirectory(environment: reader, homeDirectory: home)
+            }.value
+            XCTAssertEqual(resolved, home.appendingPathComponent(expected))
+        }
+    }
+
+    func testChangedOrRepairedPiSettingsAreUsedBySameScanner() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let settings = home.appendingPathComponent(".pi/agent/settings.json")
+        let first = home.appendingPathComponent("first")
+        let second = home.appendingPathComponent("second")
+        try UsageRecordFixture.write("not json", to: settings)
+        try UsageRecordFixture.write(line(id: "first"), to: first.appendingPathComponent("one.jsonl"))
+        try UsageRecordFixture.write(line(id: "second"), to: second.appendingPathComponent("two.jsonl"))
+        let scanner = PiUsageScanner(environment: FakeEnvironment(), homeDirectory: { home },
+                                     incrementalScanner: IncrementalJSONLScanner<UsageRecord>())
+        let brokenResult = await scanner.collect(since: .distantPast)
+        let broken = try XCTUnwrap(brokenResult)
+        XCTAssertGreaterThan(broken.readFailureCount, 0)
+        try UsageRecordFixture.write("{\"sessionDir\":\"\(first.path)\"}", to: settings)
+        let repairedResult = await scanner.collect(since: .distantPast)
+        let repaired = try XCTUnwrap(repairedResult)
+        XCTAssertEqual(repaired.readFailureCount, 0)
+        XCTAssertEqual(repaired.records.map(\.id), ["first"])
+        try UsageRecordFixture.write("{\"sessionDir\":\"\(second.path)\"}", to: settings)
+        let changedResult = await scanner.collect(since: .distantPast)
+        let changed = try XCTUnwrap(changedResult)
+        XCTAssertEqual(changed.readFailureCount, 0)
+        XCTAssertEqual(changed.records.map(\.id), ["second"])
+    }
+
+    func testSharedRootParserDoesNotReuseNonsharedCachedInterpretation() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let agent = home.appendingPathComponent(".omp/agent")
+        let settings = agent.appendingPathComponent("settings.json")
+        let sessions = agent.appendingPathComponent("sessions")
+        let other = home.appendingPathComponent("other")
+        try UsageRecordFixture.write(line(costObject: #"{"total":0,"totalFromProvider":true}"#),
+                                     to: sessions.appendingPathComponent("pi.jsonl"))
+        try UsageRecordFixture.write("{\"sessionDir\":\"\(other.path)\"}", to: settings)
+        let scanner = PiUsageScanner(environment: FakeEnvironment(["PI_CODING_AGENT_DIR": agent.path]),
+                                     homeDirectory: { home }, incrementalScanner: IncrementalJSONLScanner<UsageRecord>())
+        let initialResult = await scanner.collect(since: .distantPast)
+        let initial = try XCTUnwrap(initialResult)
+        XCTAssertEqual(initial.records.first?.costOrigin, .estimated)
+        try UsageRecordFixture.write("{\"sessionDir\":\"\(sessions.path)\"}", to: settings)
+        for _ in 0..<2 {
+            let updatedResult = await scanner.collect(since: .distantPast)
+            let updated = try XCTUnwrap(updatedResult)
+            XCTAssertEqual(updated.records.count, 1)
+            XCTAssertEqual(updated.records.first?.costOrigin, .reported)
+            XCTAssertFalse(try XCTUnwrap(updated.records.first).zeroCostIsUnknown)
+        }
+    }
+
+    func testSharedPiAndOMPRootUsesOneCollectorAndPreservesBothFormats() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let agent = home.appendingPathComponent(".omp/agent")
+        let sessions = agent.appendingPathComponent("sessions")
+        let pi = line(id: "pi", costObject: #"{"total":0,"totalFromProvider":true}"#)
+        let omp = #"{"type":"message","id":"omp","timestamp":"2026-07-12T10:00:00.000Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":100,"output":50,"cacheWrite":100,"totalTokens":280,"reasoningTokens":7,"cttl":{"ephemeral5m":25,"ephemeral1h":75},"orchestration":{"input":30},"cost":{"total":0}}}}"#
+        try UsageRecordFixture.write(pi, to: sessions.appendingPathComponent("pi.jsonl"))
+        try UsageRecordFixture.write(omp, to: sessions.appendingPathComponent("omp.jsonl"))
+        let alias = home.appendingPathComponent("sessions-alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: sessions)
+        let scanner = PiUsageScanner(environment: FakeEnvironment([
+            "PI_CODING_AGENT_DIR": agent.path, "PI_CODING_AGENT_SESSION_DIR": alias.path + "/"
+        ]),
+                                     homeDirectory: { home }, incrementalScanner: IncrementalJSONLScanner<UsageRecord>())
+        let collectedResult = await scanner.collect(since: .distantPast)
+        let collected = try XCTUnwrap(collectedResult)
+        XCTAssertEqual(collected.records.count, 2)
+        XCTAssertEqual(collected.sources.count, 1)
+        XCTAssertEqual(collected.sources.first?.completedStores, 2)
+        let piRecord = try XCTUnwrap(collected.records.first { $0.id == "pi" })
+        XCTAssertEqual(piRecord.costOrigin, .reported)
+        XCTAssertEqual(piRecord.recordedCostUSD, 0)
+        XCTAssertFalse(piRecord.zeroCostIsUnknown)
+        let ompRecord = try XCTUnwrap(collected.records.first { $0.id == "omp" })
+        XCTAssertEqual(ompRecord.tokens?.input, 130)
+        XCTAssertEqual(ompRecord.tokens?.cacheWrite5m, 25)
+        XCTAssertEqual(ompRecord.tokens?.cacheWrite1h, 75)
+        XCTAssertEqual(ompRecord.reasoningTokens, 7)
+        XCTAssertEqual(ompRecord.costOrigin, .estimated)
+        XCTAssertTrue(ompRecord.zeroCostIsUnknown)
+    }
+
     func testOMPProfileAndXDGResolutionMatchTheActiveProfile() throws {
         let home = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -359,5 +480,13 @@ final class PiUsageScannerTests: XCTestCase {
         XCTAssertEqual(PiPaths.ompSessionsDirectory(environment: FakeEnvironment([
             "PI_PROFILE": "work", "PI_CODING_AGENT_DIR": "/custom-agent"
         ]), homeDirectory: home), home.appendingPathComponent(".omp/profiles/work/agent/sessions"))
+    }
+}
+
+private struct OMPProfileShellRunner: ProcessRunning {
+    let stdout: String
+
+    func run(executable: String, arguments: [String], environment: [String: String], timeout: TimeInterval) throws -> ProcessResult {
+        ProcessResult(exitCode: 0, stdout: stdout, stderr: "")
     }
 }

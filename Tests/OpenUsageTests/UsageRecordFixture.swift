@@ -2,11 +2,11 @@ import XCTest
 @testable import OpenUsage
 
 enum UsageRecordFixture {
-    static func piRecords(_ data: Data) -> [UsageRecord] {
-        try! PiSessionParser.parse(data, path: "/fixture/session.jsonl", sourceID: "pi")
+    static func piRecords(_ data: Data) throws -> [UsageRecord] {
+        try PiSessionParser.parse(data, path: "/fixture/session.jsonl", sourceID: "pi")
     }
 
-    static func piRecord(_ data: Data) -> UsageRecord? { piRecords(data).first }
+    static func piRecord(_ data: Data) throws -> UsageRecord? { try piRecords(data).first }
 
     static func record(
         timestamp: Date, providerID: String, model: String, cost: Double?, tokens: TokenBreakdown, total: Int

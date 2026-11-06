@@ -86,16 +86,16 @@ final class JSONLParsingWorkTests: XCTestCase {
         check(provider: "claude", lines: lines, expected: expected, parse: ClaudeLogUsageScanner.parseFile)
     }
 
-    func testPiRetainsUsageAcrossUnusedRows() {
+    func testPiRetainsUsageAcrossUnusedRows() throws {
         let lines = [#"{"type":"message","timestamp":"2026-05-12T08:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.2","usage":{"input":100,"output":20,"totalTokens":120}}}"#]
-        let expected = UsageRecordFixture.piRecords(Data(lines[0].utf8))
+        let expected = try UsageRecordFixture.piRecords(Data(lines[0].utf8))
         XCTAssertEqual(expected.count, 1)
-        check(provider: "pi", lines: lines, expected: expected, parse: UsageRecordFixture.piRecords)
+        try check(provider: "pi", lines: lines, expected: expected, parse: UsageRecordFixture.piRecords)
     }
 
     private func check<Item: Equatable>(
-        provider: String, lines: [String], expected: [Item], parse: (Data) -> [Item]
-    ) {
+        provider: String, lines: [String], expected: [Item], parse: (Data) throws -> [Item]
+    ) rethrows {
         let benchmarking = ProcessInfo.processInfo.environment["OPENUSAGE_JSONL_BENCHMARK"] == "1"
         let row = "{\"type\":\"response_item\",\"payload\":\"" + String(repeating: "x", count: 1_024) + "\"}\r\n"
         let noise = String(repeating: row, count: benchmarking ? 8_192 : 32)
@@ -103,7 +103,7 @@ final class JSONLParsingWorkTests: XCTestCase {
         for run in 0..<(benchmarking ? 3 : 1) {
             let wallStart = Date()
             let cpuStart = clock()
-            let actual = parse(input)
+            let actual = try parse(input)
             let cpuSeconds = Double(clock() - cpuStart) / Double(CLOCKS_PER_SEC)
             let wallSeconds = Date().timeIntervalSince(wallStart)
             XCTAssertEqual(actual, expected)

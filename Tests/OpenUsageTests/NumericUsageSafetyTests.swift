@@ -186,7 +186,9 @@ final class NumericUsageSafetyTests: XCTestCase {
         await old.waitForPendingWritesForTesting()
         let persistence = JSONLScanCachePersistence(namespace: "pi", schemaVersion: PiUsageScanner.cacheSchemaVersion, directory: cacheDirectory, writeDebounce: .milliseconds(1))
         let fresh = IncrementalJSONLScanner<UsageRecord>(persistence: persistence)
-        let parsed = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: UsageRecordFixture.piRecords)
+        let parsed = await fresh.scan(from: [file], since: .distantPast, cacheIdentity: "home", parse: { data, _ in
+            try UsageRecordFixture.piRecords(data)
+        })?.items
         XCTAssertEqual(parsed?.count, 1, "The old schema's empty parse must be invalidated")
         XCTAssertTrue(parsed?.first?.issues.contains(.invalidNumbers) == true)
         let cached = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in

@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class ProviderCatalogTests: XCTestCase {
+    func testExportedHistoryNamesSharedSourcesOnlyWhenEnabled() throws {
+        for includeShared in [true, false] {
+            let claude = ClaudeProvider(includeSharedUsage: includeShared)
+            let codex = CodexProvider(includeSharedUsage: includeShared)
+            let claudeHistory = try XCTUnwrap(claude.widgetDescriptors.compactMap(\.historyResource).first)
+            let codexHistory = try XCTUnwrap(codex.widgetDescriptors.compactMap(\.historyResource).first)
+            XCTAssertEqual(claudeHistory.sourceNote, includeShared
+                ? "From your Claude usage history and local tools (estimated)"
+                : "From your Claude usage history (estimated)")
+            XCTAssertEqual(codexHistory.sourceNote, includeShared
+                ? "From your Codex logs and local tools (estimated)"
+                : "From your Codex logs (estimated)")
+        }
+        let grok = try XCTUnwrap(GrokProvider().widgetDescriptors.compactMap(\.historyResource).first)
+        XCTAssertEqual(grok.sourceNote, "From your Grok logs and local tools (estimated)")
+    }
+
     func testEstablishedProvidersLeadAlphabeticalTail() {
         let names = ProviderCatalog.make().map(\.provider.displayName)
 

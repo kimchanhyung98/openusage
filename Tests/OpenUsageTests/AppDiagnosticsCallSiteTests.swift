@@ -137,7 +137,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let capture = try Capture()
         defer { capture.cleanUp() }
         let bad = #"{"type":"message","id":"PRIVATE_ID","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-123456789,"totalTokens":150}}}"#
-        let entries = UsageRecordFixture.piRecords(Data((bad + "\n" + bad).utf8))
+        let entries = try UsageRecordFixture.piRecords(Data((bad + "\n" + bad).utf8))
         UsageRecordDiagnostics.report(entries)
         for _ in 0..<2 {
             let scan = UsageRecordFixture.history(records: entries, providerID: "claude", since: .distantPast, pricing: .empty)
@@ -270,7 +270,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
 
     private func seedNumericCache<Item: Codable & Sendable>(
         data: Data, path: URL, namespace: String, schema: Int, identity: String,
-        parse: @Sendable @escaping (Data) -> [Item]?
+        parse: @Sendable @escaping (Data) throws -> [Item]?
     ) async throws -> JSONLScanCachePersistence {
         try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: path)
@@ -278,8 +278,8 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let persistence = JSONLScanCachePersistence(namespace: namespace, schemaVersion: schema,
             directory: path.deletingLastPathComponent().appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
         let scanner = IncrementalJSONLScanner<Item>(persistence: persistence)
-        _ = await scanner.items(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
-                                since: .distantPast, cacheIdentity: identity, parse: parse)
+        _ = await scanner.scan(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
+                               since: .distantPast, cacheIdentity: identity, parse: { data, _ in try parse(data) })
         await scanner.waitForPendingWritesForTesting()
         return persistence
     }

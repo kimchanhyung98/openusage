@@ -69,8 +69,10 @@ final class OMPUsageParserTests: XCTestCase {
         }
         let recorded = try record(data(usage: #"{"input":100,"output":50,"cacheWrite":100,"cttl":true,"cost":{"total":0.25}}"#))
         let history = UsageRecordFixture.history(records: [recorded], providerID: "claude", since: .distantPast, pricing: pricing)
+        XCTAssertTrue(recorded.issues.contains(.unsupportedPricing))
         XCTAssertEqual(history.series.daily.first?.costUSD, 0.25)
-        XCTAssertNotNil(history.pricingWarning)
+        XCTAssertEqual(history.unsupportedPricingRows, 0)
+        XCTAssertNil(history.pricingWarning)
         let missingTotal = try record(data(usage: #"{"input":100,"output":50,"cttl":{"ephemeral1h":75}}"#))
         XCTAssertTrue(missingTotal.issues.contains(.invalidNumbers))
     }

@@ -2,6 +2,40 @@ import XCTest
 @testable import OpenUsage
 
 final class UsageDeduplicationReviewTests: XCTestCase {
+    func testReportedZeroWinsOverEstimatedDuplicateAndOMPZeroStillYieldsToOriginal() throws {
+        var reported = UsageRecord(sourceID: "pi", formatID: "pi-session", responseID: "response",
+                                   kind: "message", providerID: "claude", totalTokens: 100, recordedCostUSD: 0)
+        var estimated = reported
+        estimated.sourceID = "omp"
+        estimated.costOrigin = .estimated
+        estimated.recordedCostUSD = 0.2
+        estimated.zeroCostIsUnknown = true
+        for input in [[reported, estimated], [estimated, reported]] {
+            let result = UsageRecordDeduplicator.records(input)
+            XCTAssertEqual(result.count, 1)
+            XCTAssertEqual(result.first?.costOrigin, .reported)
+            XCTAssertEqual(result.first?.recordedCostUSD, 0)
+        }
+        reported.costOrigin = .estimated
+        reported.zeroCostIsUnknown = true
+        for input in [[reported, estimated], [estimated, reported]] {
+            let result = UsageRecordDeduplicator.records(input)
+            XCTAssertEqual(result.count, 1)
+            XCTAssertEqual(result.first?.recordedCostUSD, 0.2)
+        }
+    }
+
+    func testSameSessionAndEntryIDsAtDifferentTimesRemainIndependent() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = UsageRecord(sourceID: "pi", formatID: "pi-session", filePath: "/a.jsonl",
+                                sessionID: "reused", id: "entry", kind: "message", timestamp: date,
+                                providerID: "claude", totalTokens: 100)
+        var second = first
+        second.filePath = "/b.jsonl"
+        second.timestamp = date.addingTimeInterval(1)
+        XCTAssertEqual(UsageRecordDeduplicator.records([first, second]).count, 2)
+    }
+
     func testSymlinkParentSessionDeduplicatesForkWithoutMergingIndependentSession() async throws {
         let directory = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
