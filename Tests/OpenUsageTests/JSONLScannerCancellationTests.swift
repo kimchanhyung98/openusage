@@ -137,6 +137,60 @@ final class JSONLScannerCancellationTests: XCTestCase {
         }
     }
 
+    func testCancelledScanClearsReadFailureForCompletedFileBeforeCacheReuse() async throws {
+        let base = try makeDirectory("ReadFailureRecovery")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let recoveredURL = base.appendingPathComponent("first.jsonl")
+        try FileManager.default.createDirectory(at: recoveredURL, withIntermediateDirectories: true)
+        let unreadable = JSONLScanning.DiscoveredFile(path: recoveredURL.path, size: 0, mtime: Date())
+        let diagnostics = DiagnosticEventRecorder()
+        let scanner = IncrementalJSONLScanner<Int>(logTag: "plugin:codex")
+        let counter = ParseCounter()
+        _ = await scanner.items(from: [unreadable], since: .distantPast, parse: counter.parse)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex")
+        ])
+
+        try FileManager.default.removeItem(at: recoveredURL)
+        let recovered = try makeIntegerFile(named: "first.jsonl", value: 1, in: base)
+        let second = try makeIntegerFile(named: "second.jsonl", value: 2, in: base)
+        let blocker = BlockingParser()
+        let task = Task {
+            await scanner.items(from: [recovered, second], since: .distantPast) { data in
+                if data == Data("2".utf8) { return blocker.parse(data) }
+                return counter.parse(data)
+            }
+        }
+        guard await waitUntil({ blocker.hasStarted }) else {
+            task.cancel()
+            blocker.unblock()
+            _ = await task.value
+            return XCTFail("the second parser did not start before the timeout")
+        }
+        task.cancel()
+        blocker.unblock()
+        let cancelled = await task.value
+        XCTAssertNil(cancelled)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "codex")
+        ])
+        let retry = await scanner.items(from: [recovered], since: .distantPast, parse: counter.parse)
+        XCTAssertEqual(retry, [1])
+        XCTAssertEqual(counter.count, 1, "the recovered file must be served from the cancellation cache")
+
+        try FileManager.default.removeItem(at: recoveredURL)
+        try FileManager.default.createDirectory(at: recoveredURL, withIntermediateDirectories: true)
+        var failedAgain = recovered
+        failedAgain.mtime.addTimeInterval(1)
+        _ = await scanner.items(from: [failedAgain], since: .distantPast, parse: counter.parse)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "codex"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "codex")
+        ])
+    }
+
     func testCancellationDuringParseReturnsNilWithoutPersistingPartialCache() async throws {
         let base = try makeDirectory("ActiveParse")
         defer { try? FileManager.default.removeItem(at: base) }

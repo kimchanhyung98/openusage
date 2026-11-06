@@ -212,7 +212,8 @@ final class BackgroundWorkQueueTests: XCTestCase {
     }
 
     private func waitForPending(_ count: Int, in queue: BackgroundWorkQueue) async {
-        for _ in 0..<1_000 where queue.pendingCount != count { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while queue.pendingCount != count, ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertEqual(queue.pendingCount, count)
     }
 

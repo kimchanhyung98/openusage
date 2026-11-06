@@ -160,6 +160,55 @@ final class FirstRunSeederTests: XCTestCase {
 
         XCTAssertEqual(gate.arrivals, ["cursor"])
         XCTAssertEqual(enablement.enabledIDs, ["claude", "codex"])
+        XCTAssertTrue(enablement.isInitialDetectionPending)
+    }
+
+    func testCancelledFirstDetectionRetriesAfterRelaunchWithoutRepeatingNewProviderDetection() async throws {
+        for changedSelection in [false, true] {
+            let defaults = makeDefaults("cancel-retry-\(changedSelection)")
+            let enablement = ProviderEnablementStore(defaults: defaults)
+            let onboardingDefaults = makeDefaults("cancel-retry-onboarding-\(changedSelection)")
+            let onboarding = OnboardingStore(defaults: onboardingDefaults)
+            let queue = BackgroundWorkQueue()
+            let acquired = await queue.acquire("test:block-first-detection")
+            let ticket = try XCTUnwrap(acquired)
+            let providers = [stub("claude", hasCredentials: false), stub("codex", hasCredentials: false),
+                             stub("cursor", hasCredentials: true)]
+            let first = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: true, providers: providers, enablement: enablement,
+                onboarding: onboarding, workQueue: queue
+            ))
+            XCTAssertTrue(enablement.isInitialDetectionPending)
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement))
+            if changedSelection { enablement.setEnabled(false, for: "codex") }
+            onboarding.dismissCustomizeHint()
+            first.cancel()
+            await first.value
+            queue.finish(ticket)
+
+            let restarted = ProviderEnablementStore(defaults: defaults)
+            let restartedOnboarding = OnboardingStore(defaults: onboardingDefaults)
+            XCTAssertTrue(restarted.isInitialDetectionPending)
+            let retry = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: false, providers: providers, enablement: restarted,
+                onboarding: restartedOnboarding, workQueue: queue
+            ))
+            let previousSelection: Set<String> = changedSelection ? ["claude"] : ["claude", "codex"]
+            XCTAssertEqual(restarted.enabledIDs, previousSelection)
+            XCTAssertFalse(restartedOnboarding.isCustomizeHintPending)
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: restarted))
+            await retry.value
+
+            let completed = ProviderEnablementStore(defaults: defaults)
+            let expected: Set<String> = changedSelection ? ["claude"] : ["cursor"]
+            XCTAssertEqual(completed.enabledIDs, expected)
+            XCTAssertFalse(completed.isInitialDetectionPending)
+            XCTAssertNil(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: false, providers: providers, enablement: completed,
+                onboarding: restartedOnboarding
+            ))
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: completed))
+        }
     }
 
     func testDetectLocalProvidersProbesInOrder() async {

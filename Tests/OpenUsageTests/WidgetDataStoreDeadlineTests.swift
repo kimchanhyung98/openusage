@@ -91,15 +91,19 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         let store = makeStore(runtimes, timeout: 60).store
         let started = expectation(description: "First refresh started")
         let releases = runtimes.map { _ in Gate() }
-        let refreshes = runtimes.indices.map { index in
+        runtimes[0].beforeRefresh = { started.fulfill(); await releases[0].wait() }
+        let firstRefresh = Task { await store.refresh(providerID: runtimes[0].provider.id, force: true) }
+        await fulfillment(of: [started], timeout: 2)
+        let remainingRefreshes = runtimes.indices.dropFirst().map { index in
             let runtime = runtimes[index]
-            runtime.beforeRefresh = {
-                if index == 0 { started.fulfill() }
-                await releases[index].wait()
-            }
+            runtime.beforeRefresh = { await releases[index].wait() }
             return Task { await store.refresh(providerID: runtime.provider.id, force: true) }
         }
-        await fulfillment(of: [started], timeout: 2)
+        let refreshes = [firstRefresh] + remainingRefreshes
+        let expectedIDs = Set(runtimes.map(\.provider.id))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while store.refreshingProviderIDs != expectedIDs, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(store.refreshingProviderIDs, expectedIDs)
         let waiting = Gate()
         let unrelatedWaiting = Gate()
         let selectedFinished = expectation(description: "Selected account wait ignores unrelated refreshes")

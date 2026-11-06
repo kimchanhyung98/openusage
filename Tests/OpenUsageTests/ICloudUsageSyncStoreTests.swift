@@ -213,6 +213,32 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         try await waitUntil { !sync.isSyncing }
     }
 
+    func testDisablingSyncSkipsReadThatWasWaitingBehindOtherWork() async throws {
+        let defaults = makeDefaults("disable-queued-read")
+        let fileStore = RecordingHistoryFileStore()
+        let queue = BackgroundWorkQueue()
+        let sync = ICloudUsageSyncStore(
+            dataStore: makeDataStore(defaults), defaults: defaults, fileStore: fileStore,
+            deviceIDStore: MemoryDeviceIDStore(), observesMetadataChanges: false, workQueue: queue
+        )
+        let acquired = await queue.acquire("test:block-before-read")
+        let ticket = try XCTUnwrap(acquired)
+        defer { queue.finish(ticket) }
+        sync.enabled = true
+        try await waitUntil { queue.pendingCount == 1 }
+
+        sync.enabled = false
+        try await waitUntil { queue.pendingCount == 2 }
+        queue.finish(ticket)
+        try await waitUntil {
+            await fileStore.deletedDeviceIDs.contains(sync.deviceID) && !sync.isSyncing
+        }
+        let loads = await fileStore.loadCount
+        XCTAssertEqual(loads, 0, "a stale queued read must not access iCloud before deletion")
+        XCTAssertTrue(sync.documents.isEmpty)
+        XCTAssertNil(sync.serviceError)
+    }
+
     func testDeviceIdentitySurvivesPreferencesResetThroughKeychainStore() {
         let expectedID = UUID().uuidString.lowercased()
         let firstDefaults = makeDefaults("identity-first")
@@ -385,6 +411,7 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     private(set) var deletedDeviceIDs: [String] = []
     private let unavailable: Bool
     private(set) var loadInFlight = false
+    private(set) var loadCount = 0
     private(set) var writeInFlight = false
     private var shouldHoldNextLoad = false
     private var shouldHoldNextWrite = false
@@ -403,6 +430,7 @@ private actor RecordingHistoryFileStore: UsageHistoryFileStoring {
     }
 
     func loadDocuments() async throws -> UsageHistoryLoadResult {
+        loadCount += 1
         if unavailable { throw ICloudUsageSyncError.unavailable }
         loadInFlight = true
         defer { loadInFlight = false }

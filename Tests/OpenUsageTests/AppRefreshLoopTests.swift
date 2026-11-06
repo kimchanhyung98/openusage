@@ -141,7 +141,8 @@ final class AppRefreshLoopTests: XCTestCase {
             dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
             enabledProviderIDs: { ["claude", "claude@work"] }, reconcileAccounts: {}
         )
-        for _ in 0..<100 where fixture.workQueue.pendingCount == 0 { await Task.yield() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while fixture.workQueue.pendingCount == 0, ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertEqual(fixture.workQueue.pendingCount, 1)
         let before = await http.requestCount
         XCTAssertEqual(before, 0)

@@ -275,7 +275,11 @@ final class WidgetDataStoreCredentialRefreshTests: XCTestCase {
         try f.runtime.saveAPIKey("fixture-b")
         let generation = f.store.credentialsDidChange(for: "openrouter")
         let changedRefresh = Task { await refreshChange(f.store, generation: generation) }
-        for _ in 0..<1_000 where !f.store.refreshingProviderIDs.contains("openrouter") { await Task.yield() }
+        let refreshDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !f.store.refreshingProviderIDs.contains("openrouter"), ContinuousClock.now < refreshDeadline {
+            await Task.yield()
+        }
+        XCTAssertTrue(f.store.refreshingProviderIDs.contains("openrouter"))
         let beforeControlCompletes = await f.http.keys
         XCTAssertTrue(beforeControlCompletes.isEmpty)
         control.gate?.resume()
