@@ -80,7 +80,7 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
 
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
-        let warning = "Some Antigravity models have no price. Their usage is excluded from totals."
+        let warning = "Some Antigravity models have no price. Cost totals may be unavailable."
         XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), L10n.errors(warning))
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
         XCTAssertEqual(snapshot.isDegraded, true)
@@ -109,7 +109,7 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
 
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
-        let warning = "Some Antigravity models have no price. Their usage is excluded from totals."
+        let warning = "Some Antigravity models have no price. Cost totals may be unavailable."
         XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), L10n.errors(warning))
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
         XCTAssertEqual(snapshot.isDegraded, true)
@@ -157,7 +157,7 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
         let warning = try XCTUnwrap(snapshot.warning)
         XCTAssertTrue(warning.contains(AntigravityError.unavailable.localizedDescription))
-        XCTAssertTrue(warning.contains("Some Antigravity models have no price. Their usage is excluded from totals."))
+        XCTAssertTrue(warning.contains("Some Antigravity models have no price. Cost totals may be unavailable."))
         XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), snapshot.localizedWarning)
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
         XCTAssertEqual(snapshot.isDegraded, true)
@@ -225,9 +225,84 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         XCTAssertNil(snapshot.line(label: "Today"))
     }
 
+    func testDefaultCollectionContinuesSharedUpdatesAfterNativeFailure() async throws {
+        let database = try AntigravityScannerDatabase()
+        defer { database.remove() }
+        try database.model(index: 0, name: "unpriced-synthetic-model")
+        try database.step(index: 1, date: fixedNow, input: 100, output: 0)
+        let shared = AntigravitySharedUsageFixture(collection: sharedUsage(tokens: 50))
+        let provider = makeProvider(
+            usageScanner: AntigravityUsageScanner(databasePaths: { [database.path] }),
+            usageCollection: UsageCollectionCoordinator(collectors: [shared])
+        )
+        let fixture = makeStore(provider)
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+        let first = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
+        XCTAssertEqual(first.usageHistory?.series.daily.first?.totalTokens, 150)
+        XCTAssertNil(first.usageHistory?.series.daily.first?.costUSD)
+
+        try database.execute("DROP TABLE gen_metadata")
+        await shared.replace(sharedUsage(tokens: 200))
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+
+        let partial = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
+        XCTAssertEqual(partial.usageHistory?.series.daily.first?.totalTokens, 200)
+        XCTAssertEqual(partial.usageHistory?.series.daily.first?.costUSD, 0.5)
+        XCTAssertTrue(try XCTUnwrap(partial.warning).contains("Some local usage files could not be read."))
+        XCTAssertEqual(partial.isDegraded, true)
+    }
+
+    func testDefaultCollectionKeepsNativeUsageOnSharedFailureAndPreservesHistoryOnTotalFailure() async throws {
+        let database = try AntigravityScannerDatabase()
+        defer { database.remove() }
+        try database.model(index: 0, name: "unpriced-synthetic-model")
+        try database.step(index: 1, date: fixedNow, input: 100, output: 0)
+        let failed = UsageCollection(records: [], sources: [
+            UsageSourceState(sourceID: "pi", providerID: "antigravity", failedStores: 1)
+        ])
+        let shared = AntigravitySharedUsageFixture(collection: failed)
+        let provider = makeProvider(
+            usageScanner: AntigravityUsageScanner(databasePaths: { [database.path] }),
+            usageCollection: UsageCollectionCoordinator(collectors: [shared])
+        )
+        let fixture = makeStore(provider)
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+        let partial = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
+        XCTAssertEqual(partial.usageHistory?.series.daily.first?.totalTokens, 100)
+        XCTAssertTrue(try XCTUnwrap(partial.warning).contains("Some local usage files could not be read."))
+
+        try database.execute("DROP TABLE gen_metadata")
+        let failedSnapshot = await provider.refresh()
+        XCTAssertNil(failedSnapshot.usageHistory)
+        XCTAssertNotNil(failedSnapshot.warning)
+        _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
+
+        let preserved = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
+        XCTAssertEqual(preserved.usageHistory, partial.usageHistory)
+        XCTAssertEqual(preserved.isDegraded, true)
+    }
+
+    func testDefaultCollectionPropagatesNativeCancellationBeforeSharedCollection() async throws {
+        let shared = AntigravitySharedUsageFixture(collection: sharedUsage(tokens: 50))
+        let provider = makeProvider(
+            usageScanner: AntigravityUsageScanner(databasePaths: { throw CancellationError() }),
+            usageCollection: UsageCollectionCoordinator(collectors: [shared])
+        )
+
+        do {
+            _ = try await provider.usageScan(fixedNow, .empty)
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+        }
+        let calls = await shared.calls
+        XCTAssertEqual(calls, 0)
+    }
+
     private func makeProvider(
-        usageScan: @escaping @Sendable (Date, ModelPricing) async throws -> LogUsageScan?,
-        quotaAvailable: Bool = true
+        usageScan: (@Sendable (Date, ModelPricing) async throws -> LogUsageScan?)? = nil,
+        quotaAvailable: Bool = true,
+        usageScanner: AntigravityUsageScanner? = nil,
+        usageCollection: UsageCollectionCoordinator? = nil
     ) -> AntigravityProvider {
         let summary = """
         {"groups":[{"buckets":[
@@ -258,9 +333,27 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
             usageClient: AntigravityUsageClient(lsHTTP: http, http: http),
             discovery: LanguageServerDiscovery(processRunner: UsageEmptyProcessRunner()),
             usageScan: usageScan,
+            usageScanner: usageScanner ?? AntigravityUsageScanner(databasePaths: { [] }),
+            usageCollection: usageCollection ?? UsageCollectionCoordinator(collectors: []),
             now: { now },
             pricing: { .empty }
         )
+    }
+
+    private func unpricedScan() -> LogUsageScan {
+        let day = DailyUsageAccumulator.dayKey(from: fixedNow)
+        var accumulator = DailyUsageAccumulator()
+        accumulator.add(day: day, tokens: 50, cost: nil, model: "unpriced-synthetic-model")
+        accumulator.addUnknownModel(day: day, model: "unpriced-synthetic-model")
+        return accumulator.build()
+    }
+
+    private func sharedUsage(tokens: Int) -> UsageCollection {
+        UsageCollection(records: [UsageRecord(
+            sourceID: "pi", formatID: "fixture", sessionID: "shared", id: "step", kind: "assistant",
+            timestamp: fixedNow, providerID: "google-antigravity", model: "shared-fixture-model",
+            tokens: TokenBreakdown(input: tokens), totalTokens: tokens, recordedCostUSD: 0.5
+        )], sources: [UsageSourceState(sourceID: "pi", providerID: "antigravity", completedStores: 1)])
     }
 
     private func usageScan() -> LogUsageScan {
@@ -308,4 +401,18 @@ private actor UsageScanSequence {
     init(_ scans: [LogUsageScan?]) { self.scans = scans }
 
     func next() -> LogUsageScan? { scans.removeFirst() }
+}
+
+private actor AntigravitySharedUsageFixture: UsageCollecting {
+    var collection: UsageCollection
+    private(set) var calls = 0
+
+    init(collection: UsageCollection) { self.collection = collection }
+
+    func replace(_ collection: UsageCollection) { self.collection = collection }
+
+    func collect(since: Date) async -> UsageCollection? {
+        calls += 1
+        return collection
+    }
 }

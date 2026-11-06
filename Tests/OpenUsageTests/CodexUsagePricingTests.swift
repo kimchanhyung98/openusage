@@ -16,12 +16,12 @@ final class CodexUsagePricingTests: XCTestCase {
                 .init(timestamp: date, model: model, input: 300_000, cached: 100_000,
                       output: 10_000, reasoning: 0, total: 310_000)
             ], since: .distantPast, pricing: pricing)
-            let pi = PiUsageScanner.aggregate(entries: [
-                .init(timestamp: date, cardID: "codex", model: model, carriedCost: 0,
+            let pi = UsageRecordFixture.history(records: [
+                UsageRecordFixture.record(timestamp: date, providerID: "codex", model: model, cost: 0,
                       tokens: .init(input: 200_000, cacheRead: 100_000, output: 10_000),
-                      reportedTotalTokens: 310_000)
-            ], cardID: "codex", since: .distantPast, pricing: pricing,
-               costEstimator: CodexUsagePricing.estimatePi)
+                      total: 310_000)
+            ], providerID: "codex", since: .distantPast, pricing: pricing,
+               costEstimator: CodexUsagePricing.estimateRecord)
             XCTAssertEqual(try XCTUnwrap(native.series.daily.first?.costUSD), expected, accuracy: 1e-9, model)
             XCTAssertEqual(pi.series, native.series, model)
             XCTAssertEqual(pi.modelUsage, native.modelUsage, model)
@@ -145,12 +145,14 @@ final class CodexUsagePricingTests: XCTestCase {
     }
 
     func testMissingPiModelStillValidatesUnsupportedWriteRetention() {
-        let entry = PiUsageScanner.Entry(timestamp: date, cardID: "codex", model: "", carriedCost: nil,
-                                        tokens: .init(cacheWrite1h: 1_000), reportedTotalTokens: 1_000)
-        let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "codex", since: .distantPast, pricing: pricing, costEstimator: CodexUsagePricing.estimatePi)
+        let entry = UsageRecordFixture.record(timestamp: date, providerID: "codex", model: "", cost: nil,
+                                        tokens: .init(cacheWrite1h: 1_000), total: 1_000)
+        let scan = UsageRecordFixture.history(records: [entry], providerID: "codex", since: .distantPast, pricing: pricing, costEstimator: CodexUsagePricing.estimateRecord)
         XCTAssertEqual(scan.unsupportedPricingRows, 1)
         XCTAssertNotNil(scan.pricingWarning)
-        XCTAssertNil(scan.usageHistory)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 1_000)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
+        XCTAssertNotNil(scan.usageHistory)
     }
 
     func testBundledSupplementPricesProviderPrefixedCodexRequests() throws {
@@ -328,24 +330,25 @@ final class CodexUsagePricingTests: XCTestCase {
     }
 
     func testUnsupportedPiWriteRetentionWarnsInsteadOfUsingAnthropicRates() {
-        let entry = PiUsageScanner.Entry(
-            timestamp: date, cardID: "codex", model: "gpt-5.6-sol", carriedCost: nil,
-            tokens: .init(cacheWrite1h: 1_000), reportedTotalTokens: 1_000
+        let entry = UsageRecordFixture.record(
+            timestamp: date, providerID: "codex", model: "gpt-5.6-sol", cost: nil,
+            tokens: .init(cacheWrite1h: 1_000), total: 1_000
         )
-        let scan = PiUsageScanner.aggregate(
-            entries: [entry], cardID: "codex", since: .distantPast, pricing: pricing,
-            costEstimator: CodexUsagePricing.estimatePi
+        let scan = UsageRecordFixture.history(
+            records: [entry], providerID: "codex", since: .distantPast, pricing: pricing,
+            costEstimator: CodexUsagePricing.estimateRecord
         )
-        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 1_000)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
         XCTAssertEqual(scan.unsupportedPricingRows, 1)
         XCTAssertNotNil(scan.pricingWarning)
-        XCTAssertNil(scan.usageHistory)
+        XCTAssertNotNil(scan.usageHistory)
         XCTAssertEqual(scan.unknownModelsByDay.values.first, ["gpt-5.6-sol"])
         var carried = entry
-        carried.carriedCost = 7
-        let priced = PiUsageScanner.aggregate(
-            entries: [carried], cardID: "codex", since: .distantPast, pricing: pricing,
-            costEstimator: CodexUsagePricing.estimatePi
+        carried.recordedCostUSD = 7
+        let priced = UsageRecordFixture.history(
+            records: [carried], providerID: "codex", since: .distantPast, pricing: pricing,
+            costEstimator: CodexUsagePricing.estimateRecord
         )
         XCTAssertEqual(priced.series.daily.first?.costUSD, 7)
         XCTAssertEqual(priced.unsupportedPricingRows, 0)
@@ -353,38 +356,39 @@ final class CodexUsagePricingTests: XCTestCase {
     }
 
     func testPiGenericEstimatorAndCardIsolationRemainUnchanged() throws {
-        let entry = PiUsageScanner.Entry(
-            timestamp: date, cardID: "claude", model: "gpt-5.6-sol", carriedCost: nil,
-            tokens: .init(input: 300_000, output: 10_000), reportedTotalTokens: 310_000
+        let entry = UsageRecordFixture.record(
+            timestamp: date, providerID: "claude", model: "gpt-5.6-sol", cost: nil,
+            tokens: .init(input: 300_000, output: 10_000), total: 310_000
         )
-        let generic = PiUsageScanner.aggregate(entries: [entry], cardID: "claude", since: .distantPast, pricing: pricing)
+        let generic = UsageRecordFixture.history(records: [entry], providerID: "claude", since: .distantPast, pricing: pricing)
         XCTAssertEqual(try XCTUnwrap(generic.series.daily.first?.costUSD), 1.4, accuracy: 1e-9)
-        let otherCard = PiUsageScanner.aggregate(
-            entries: [entry], cardID: "codex", since: .distantPast, pricing: pricing,
-            costEstimator: CodexUsagePricing.estimatePi
+        let otherCard = UsageRecordFixture.history(
+            records: [entry], providerID: "codex", since: .distantPast, pricing: pricing,
+            costEstimator: CodexUsagePricing.estimateRecord
         )
         XCTAssertTrue(otherCard.series.daily.isEmpty)
         XCTAssertNil(otherCard.pricingWarning)
     }
 
     @MainActor
-    func testUnsupportedPricingPreservesMergedWarningAndLastGoodHistory() async throws {
+    func testUnsupportedPricingPreservesTokensAndReplacesStaleCost() async throws {
         let native = CodexLogUsageScanner.aggregate(events: [
             .init(timestamp: date, model: "gpt-5.6-sol", input: 1_000, cached: 0,
                   output: 0, reasoning: 0, total: 1_000)
         ], since: .distantPast, pricing: pricing)
-        let unsupported = PiUsageScanner.aggregate(entries: [
-            .init(timestamp: date, cardID: "codex", model: "gpt-5.6-sol", carriedCost: nil,
-                  tokens: .init(cacheWrite1h: 1_000), reportedTotalTokens: 1_000)
-        ], cardID: "codex", since: .distantPast, pricing: pricing,
-           costEstimator: CodexUsagePricing.estimatePi)
+        let unsupported = UsageRecordFixture.history(records: [
+            UsageRecordFixture.record(timestamp: date, providerID: "codex", model: "gpt-5.6-sol", cost: nil,
+                  tokens: .init(cacheWrite1h: 1_000), total: 1_000)
+        ], providerID: "codex", since: .distantPast, pricing: pricing,
+           costEstimator: CodexUsagePricing.estimateRecord)
         let mixed = try XCTUnwrap(DailyUsageAccumulator.merged([native, unsupported]))
-        XCTAssertEqual(mixed.series, native.series)
+        XCTAssertEqual(mixed.series.daily.first?.totalTokens, 2_000)
+        XCTAssertNil(mixed.series.daily.first?.costUSD)
         XCTAssertEqual(mixed.unsupportedPricingRows, 1)
         XCTAssertNotNil(mixed.pricingWarning)
         XCTAssertNotNil(mixed.usageHistory)
         let rejected = try XCTUnwrap(DailyUsageAccumulator.merged([nil, unsupported]))
-        XCTAssertNil(rejected.usageHistory)
+        XCTAssertNotNil(rejected.usageHistory)
         XCTAssertNotNil(rejected.pricingWarning)
 
         let codex = CodexProvider()
@@ -408,7 +412,7 @@ final class CodexUsagePricingTests: XCTestCase {
         )
         await store.refreshAll(force: true)
         await store.refreshAll(force: true)
-        XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, native.usageHistory)
+        XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, rejected.usageHistory)
         XCTAssertEqual(store.warningMessage(for: provider.id), rejected.pricingWarning)
         XCTAssertNotNil(store.snapshots[provider.id]?.line(label: "Session"))
     }
@@ -419,13 +423,16 @@ final class CodexUsagePricingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let json = #"{"type":"message","timestamp":"2026-09-12T00:00:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{"input":300000,"output":10000,"totalTokens":310000,"cost":{"total":0}}}}"#
         try Data(json.utf8).write(to: directory.appendingPathComponent("session.jsonl"))
-        let scanner = PiUsageScanner(
+        let scanner = UsageCollectionCoordinator(collectors: [PiUsageScanner(
             environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": directory.path]),
-            incrementalScanner: IncrementalJSONLScanner<PiUsageScanner.Entry>(logTag: LogTag.plugin("pi"))
-        )
+            homeDirectory: { directory },
+            incrementalScanner: IncrementalJSONLScanner<UsageRecord>(logTag: LogTag.plugin("pi"))
+        )])
         let now = try XCTUnwrap(OpenUsageISO8601.date(from: "2026-09-13T00:00:00Z"))
-        let generic = await scanner.scan(cardID: "codex", now: now, pricing: pricing)
-        let codex = await scanner.scan(cardID: "codex", now: now, pricing: pricing, costEstimator: CodexUsagePricing.estimatePi)
+        let generic = await scanner.scan(providerID: "codex", now: now, pricing: pricing, costEstimator: { record, pricing in
+            .init(pricing.estimatedCostDollars(model: record.effectiveModel!, tokens: record.tokens!))
+        })
+        let codex = await scanner.scan(providerID: "codex", now: now, pricing: pricing, costEstimator: CodexUsagePricing.estimateRecord)
         XCTAssertEqual(try XCTUnwrap(generic?.series.daily.first?.costUSD), 1.4, accuracy: 1e-9)
         XCTAssertEqual(try XCTUnwrap(codex?.series.daily.first?.costUSD), 2.7, accuracy: 1e-9)
     }

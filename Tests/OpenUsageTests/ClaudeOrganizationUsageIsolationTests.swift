@@ -166,7 +166,7 @@ final class ClaudeOrganizationUsageIsolationTests: XCTestCase {
     ) -> ClaudeProvider {
         ClaudeProvider(
             authStore: fixture.authStore, usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: store,
-            logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+            logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
             now: now, pricing: { TestPricing.bundled }
         )
     }

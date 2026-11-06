@@ -28,7 +28,7 @@ final class ClaudeIdentityRecoveryEdgeTests: XCTestCase {
                     scope: .accountSnapshot(profileID: profile.id)
                 ),
                 usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
-                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
                 pricing: { TestPricing.bundled }
             )
 

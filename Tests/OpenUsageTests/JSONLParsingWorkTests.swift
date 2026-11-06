@@ -88,9 +88,9 @@ final class JSONLParsingWorkTests: XCTestCase {
 
     func testPiRetainsUsageAcrossUnusedRows() {
         let lines = [#"{"type":"message","timestamp":"2026-05-12T08:00:00.000Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.2","usage":{"input":100,"output":20,"totalTokens":120}}}"#]
-        let expected = PiUsageScanner.parseFile(Data(lines[0].utf8))
+        let expected = UsageRecordFixture.piRecords(Data(lines[0].utf8))
         XCTAssertEqual(expected.count, 1)
-        check(provider: "pi", lines: lines, expected: expected, parse: PiUsageScanner.parseFile)
+        check(provider: "pi", lines: lines, expected: expected, parse: UsageRecordFixture.piRecords)
     }
 
     private func check<Item: Equatable>(

@@ -41,7 +41,7 @@ final class AccountStatusTests: XCTestCase {
                 environment: FakeEnvironment([:]), keychain: keychain,
                 scope: .accountSnapshot(profileID: profile.id)
             ),
-            usageClient: CodexUsageClient(http: http), includePiUsage: false
+            usageClient: CodexUsageClient(http: http), includeSharedUsage: false
         )
         let defaults = makeDefaults()
         let store = WidgetDataStore(

@@ -346,7 +346,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "weekly-timer-tests", rootsOverride: []),
-            includePiUsage: false, now: { Self.instant }, pricing: { .empty }
+            includeSharedUsage: false, now: { Self.instant }, pricing: { .empty }
         )
     }
 
@@ -355,7 +355,7 @@ final class CodexWeeklyTimerProviderTests: XCTestCase {
             authStore: CodexAuthStore(environment: FakeEnvironment(), files: files, keychain: FakeKeychain(), now: { Self.instant }),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "weekly-timer-fallback-tests", rootsOverride: []),
-            includePiUsage: false, now: { Self.instant }, pricing: { .empty }
+            includeSharedUsage: false, now: { Self.instant }, pricing: { .empty }
         )
     }
 

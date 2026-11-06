@@ -95,7 +95,7 @@ final class AntigravityUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan?.series.daily.first?.totalTokens, 20)
     }
 
-    func testUnknownModelIsExcludedAndRecordedWithoutInventingAnAlias() async throws {
+    func testUnknownModelKeepsTokensWithoutInventingPriceOrAlias() async throws {
         let db = try AntigravityScannerDatabase()
         defer { db.remove() }
         try db.model(index: 0, name: "unpriced-synthetic-model")
@@ -104,8 +104,29 @@ final class AntigravityUsageScannerTests: XCTestCase {
         let scan = try await AntigravityUsageScanner(databasePaths: { [db.path] })
             .scan(now: now, pricing: pricing())
 
-        XCTAssertTrue(try XCTUnwrap(scan).series.daily.isEmpty)
+        XCTAssertEqual(try XCTUnwrap(scan).series.daily.first?.totalTokens, 10)
+        XCTAssertNil(scan?.series.daily.first?.costUSD)
+        XCTAssertEqual(scan?.modelUsage?.daily.first?.models.first?.totalTokens, 10)
         XCTAssertEqual(scan?.unknownModelsByDay[day(now)], ["unpriced-synthetic-model"])
+    }
+
+    func testUnpricedUsageKeepsTokensAndMakesMixedDayCostIncomplete() async throws {
+        let db = try AntigravityScannerDatabase()
+        defer { db.remove() }
+        try db.model(index: 0, name: "gemini-3.8-flash")
+        try db.model(index: 1, name: "unpriced-synthetic-model")
+        try db.step(index: 1, date: now, input: 100, output: 0)
+        try db.step(index: 2, date: now, input: 50, output: 0, metadataIndex: 1)
+
+        let scan = try await AntigravityUsageScanner(databasePaths: { [db.path] })
+            .scan(now: now, pricing: pricing())
+
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 150)
+        XCTAssertNil(scan?.series.daily.first?.costUSD)
+        let models = try XCTUnwrap(scan?.modelUsage?.daily.first?.models)
+        XCTAssertEqual(models.first { $0.model == "gemini-3.8-flash" }?.costUSD, 0.001)
+        XCTAssertEqual(models.first { $0.model == "unpriced-synthetic-model" }?.totalTokens, 50)
+        XCTAssertNil(models.first { $0.model == "unpriced-synthetic-model" }?.costUSD)
     }
 
     func testUnknownModelWithZeroTokensDoesNotWarnOrCreateUsage() async throws {
@@ -204,15 +225,47 @@ final class AntigravityUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan?.series.daily.first?.costUSD, 0)
     }
 
-    func testOneUnreadableSourceFailsTheWholeScanAndDiscoveryErrorsPropagate() async throws {
+    func testUnreadableDatabaseDoesNotDiscardReadableDatabase() async throws {
         let db = try AntigravityScannerDatabase()
         defer { db.remove() }
+        try db.model(index: 0, name: "gemini-3.8-flash")
+        try db.step(index: 1, date: now, input: 100, output: 0)
         let invalid = db.directory.appendingPathComponent("invalid.db")
         try Data([0xFF]).write(to: invalid)
-        await assertFailure(AntigravityUsageScanner(databasePaths: { [db.path, invalid.path] }))
+
+        let scan = try await AntigravityUsageScanner(databasePaths: { [db.path, invalid.path] })
+            .scan(now: now, pricing: pricing())
+
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 100)
+        XCTAssertEqual(scan?.readFailureCount, 1)
+        XCTAssertNotNil(scan?.readWarning)
+        await assertFailure(AntigravityUsageScanner(databasePaths: { [invalid.path] }))
+    }
+
+    func testDiscoveryErrorsPropagateInsteadOfReturningAnEmptyHistory() async {
         await assertFailure(AntigravityUsageScanner(databasePaths: {
             throw CocoaError(.fileReadNoPermission)
         }))
+    }
+
+    func testUnreadableDatabaseDoesNotAddItsPreviousCacheToFreshUsage() async throws {
+        let healthy = try AntigravityScannerDatabase(cascade: "healthy")
+        let failing = try AntigravityScannerDatabase(cascade: "failing")
+        defer { healthy.remove(); failing.remove() }
+        for db in [healthy, failing] {
+            try db.model(index: 0, name: "gemini-3.8-flash")
+            try db.step(index: 1, date: now, input: 100, output: 0)
+        }
+        let scanner = AntigravityUsageScanner(databasePaths: { [healthy.path, failing.path] })
+        let first = try await scanner.scan(now: now, pricing: pricing())
+        XCTAssertEqual(first?.series.daily.first?.totalTokens, 200)
+
+        try failing.execute("DROP TABLE gen_metadata")
+        try healthy.step(index: 2, date: now, input: 50, output: 0)
+        let partial = try await scanner.scan(now: now, pricing: pricing())
+
+        XCTAssertEqual(partial?.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(partial?.readFailureCount, 1)
     }
 
     func testDatabaseAndWALChangesRefreshAndPricingIsNeverCached() async throws {
@@ -279,7 +332,7 @@ final class AntigravityUsageScannerTests: XCTestCase {
 }
 
 @MainActor
-private final class AntigravityScannerDatabase {
+final class AntigravityScannerDatabase {
     let directory: URL
     nonisolated let path: String
     let cascade: String

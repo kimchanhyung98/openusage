@@ -141,7 +141,7 @@ final class CodexManagedRefreshPreservationTests: XCTestCase {
             logUsageScanner: CodexLogUsageScanner(
                 environment: FakeEnvironment(), cacheIdentityOverride: "managed-refresh", rootsOverride: []
             ),
-            includePiUsage: false, pricing: { .empty }
+            includeSharedUsage: false, pricing: { .empty }
         )
     }
 

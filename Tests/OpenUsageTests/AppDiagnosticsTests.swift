@@ -178,6 +178,7 @@ final class AppDiagnosticsTests: XCTestCase {
                 files: FakeFiles(), environment: FakeEnvironment(),
                 homeDirectory: { URL(fileURLWithPath: "/home/none") }
             ),
+            sharedUsage: .init(collectors: []),
             pricing: { TestPricing.bundled }
         )
 

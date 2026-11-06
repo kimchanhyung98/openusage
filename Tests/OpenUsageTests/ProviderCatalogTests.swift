@@ -27,7 +27,7 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(Array(ids.prefix(4)), ["claude", "codex", "codex@profile-p1", "cursor"])
         let accountRuntime = runtimes.compactMap { $0 as? CodexProvider }.first { $0.provider.id == card.id }
         XCTAssertEqual(accountRuntime?.provider.displayName, "Codex")
-        XCTAssertEqual(accountRuntime?.includePiUsage, false)
+        XCTAssertEqual(accountRuntime?.includeSharedUsage, false)
         XCTAssertEqual(
             accountRuntime?.authStore.managedSharedAuthHome,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
@@ -131,7 +131,7 @@ final class ProviderCatalogTests: XCTestCase {
         let claudeRuntimes = ProviderCatalog.make(hasUnregisteredClaudeLogins: true)
             .compactMap { $0 as? ClaudeProvider }
 
-        XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.includePiUsage })
+        XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.includeSharedUsage })
         XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.authStore.allowsDesktopFallback })
     }
 

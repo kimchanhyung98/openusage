@@ -64,7 +64,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.plan, "Go")
@@ -88,7 +88,7 @@ final class OpenCodeProviderTests: XCTestCase {
                     sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                     databasePaths: { ["/oc/opencode.db"] }
                 ),
-                now: { now }
+                sharedUsage: .init(collectors: []), now: { now }
             )
             let snapshot = await provider.refresh()
             XCTAssertNil(snapshot.errorCategory)
@@ -127,7 +127,7 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles()),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
@@ -158,7 +158,7 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.errorCategory)
@@ -181,7 +181,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(failing: ["/oc/opencode.db"]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
@@ -194,7 +194,7 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
@@ -220,7 +220,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         guard case .values(_, let values, _, _, _, _)? = snapshot.line(label: "Today") else {
@@ -239,7 +239,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db], anchor: "1700000000000"),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.plan)

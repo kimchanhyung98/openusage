@@ -117,7 +117,7 @@ final class CodexInactiveRefreshSwitchTests: XCTestCase {
                 incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
                 cacheIdentityOverride: UUID().uuidString, rootsOverride: []
             ),
-            includePiUsage: false, pricing: { .empty }
+            includeSharedUsage: false, pricing: { .empty }
         )
     }
 }
