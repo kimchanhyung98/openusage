@@ -76,6 +76,8 @@ Mac 간 동기화를 켠 경우에만 다른 Mac의 OpenUsage가 수집한 CLI �
 로컬 기록 읽기 실패는 사용량 0으로 처리하지 않고, 마지막 정상 이력이 있으면 보존.
 할당량 조회와 로컬 기록 읽기가 함께 실패하면 두 원인을 함께 안내.
 CLI 사용 이력만 있어도 첫 실행의 로컬 감지 대상에 포함.
+로컬 인증이나 CLI 저장소가 없어도 최근 집계 기간에 유효한 공유 도구 Copilot 이력이 있으면 감지.
+다른 provider 기록이나 정상 빈 공유 파일만 있는 경우는 감지 근거에서 제외.
 
 사용량 비교는 Copilot CLI의 `/usage`에서 세션 크레딧과 모델별 토큰 확인.
 [CLI 사용량 확인](https://docs.github.com/en/copilot/how-tos/copilot-cli/use-copilot-cli/overview#context-management)과 [AI 크레딧 단가](https://docs.github.com/en/copilot/concepts/billing-and-usage/individuals/billing) 참조.
@@ -140,3 +142,13 @@ Copilot이 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
 조직 관리 좌석(응답의 토큰 기반 청구 자리표시자로 식별)은 공개 REST 청구 API도 호출: `GET /user/orgs`로 조직 목록을 가져온 뒤 Copilot AI 크레딧 사용량이 나올 때까지 조직별 `GET /orgs/{org}/settings/billing/usage/summary` 호출.
 일치하는 조직을 기억해 이후 새로 고침에서는 추가 호출 한 번만 수행.
 조직 접근이 불가하거나 사용량이 더 이상 없으면 다시 탐색하며, 일시적 실패에는 기억한 조직을 유지하고 다음 새로 고침에 재시도.
+
+## 공유 도구 사용량
+
+공통 수집 대상은 Pi·Oh My Pi(OMP).
+도구별 경로·중복 제거·가격 규칙은 [사용량 수집](/docs/usage-collection.md) 참조.
+계정 귀속을 확인하지 못하는 기록은 계정 전용 카드에 합산하지 않음.
+공통 수집이 실행되면 읽지 못한 저장소를 경고하고 읽은 기록은 보존.
+네이티브 이력의 실패 탐지와 화면 반영은 해당 provider의 수집 경로에 따름.
+공유 도구 기록에는 제공자가 보고한 비용만 사용하며 단가표 추정액은 합산하지 않음.
+모델 가격을 확인하지 못해도 토큰은 보존하고 해당 기간의 총비용 생략.

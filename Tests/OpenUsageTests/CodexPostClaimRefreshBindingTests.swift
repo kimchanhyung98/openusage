@@ -193,7 +193,7 @@ final class CodexPostClaimRefreshBindingTests: XCTestCase {
         let provider = CodexProvider(
             authStore: authStore, usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: UUID().uuidString, rootsOverride: []),
-            includePiUsage: false, now: { Self.instant }, pricing: { .empty }
+            includeSharedUsage: false, now: { Self.instant }, pricing: { .empty }
         )
         let suite = "CodexPostClaimRefreshBindingTests." + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!

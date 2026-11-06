@@ -37,11 +37,11 @@ final class OpenCodeProvider: ProviderRuntime {
 
     let authStore: OpenCodeAuthStore
     let usageScanner: OpenCodeUsageScanner
+    let sharedUsage: UsageCollectionCoordinator
     let now: @Sendable () -> Date
 
-    /// hover 시 표기할 로컬 소스 이름 — 이 머신만 집계하므로 실제 계정 사용량보다 적게만 나옴.
-    /// OpenCode가 메시지별 cost를 직접 기록한 측정값이라 "(estimated)" 미표기.
-    private let sourceNote = "From your OpenCode logs"
+    /// 이 머신의 원본 기록 범위와 공유 도구의 제공자 보고 비용.
+    private let sourceNote = "From your OpenCode logs and local tools"
 
     /// auth 읽기 실패 로그의 edge-trigger — 지속적으로 읽기 불가한 `auth.json`은 5분 refresh마다가 아닌 실행당 1회만 경고.
     private var loggedAuthReadFailure = false
@@ -49,10 +49,12 @@ final class OpenCodeProvider: ProviderRuntime {
     init(
         authStore: OpenCodeAuthStore = OpenCodeAuthStore(),
         usageScanner: OpenCodeUsageScanner = OpenCodeUsageScanner(),
+        sharedUsage: UsageCollectionCoordinator = .shared,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageScanner = usageScanner
+        self.sharedUsage = sharedUsage
         self.now = now
     }
 
@@ -78,16 +80,17 @@ final class OpenCodeProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // `refresh()`와 동일 소스(로컬 `opencode-go` auth key 또는 로컬 database의 hosted usage) — local 전용, main actor 밖 수행
-        // 읽기 불가 auth.json도 OpenCode 흔적 — provider를 활성화해 `refresh()`가 실행 가능한 에러를 노출하게 함
-        await loadOffMainActor { [authStore, usageScanner] in
+        // 읽기 불가 auth.json도 OpenCode 흔적. refresh에서 접근 오류 안내.
+        if await loadOffMainActor({ [authStore, usageScanner] in
             do {
                 if try authStore.goAPIKey() != nil { return true }
             } catch {
                 return true
             }
             return usageScanner.hasHostedUsage()
-        }
+        }) { return true }
+        let shared = await sharedUsage.scan(providerID: provider.id, now: now(), pricing: .empty, allowEstimates: false)
+        return !Task.isCancelled && shared?.usageHistory?.series.daily.isEmpty == false
     }
 
     func refresh() async -> ProviderSnapshot {
@@ -111,13 +114,23 @@ final class OpenCodeProvider: ProviderRuntime {
         }
 
         let scan: OpenCodeUsageScan?
+        var nativeScanError: Error?
         do {
             scan = try await usageScanner.scan(now: refreshedAt, hasGoKey: hasGoKey)
         } catch {
-            return ProviderSnapshot.error(provider: provider, error: error)
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled {
+                return ProviderSnapshot.error(provider: provider, error: CancellationError())
+            }
+            scan = nil
+            nativeScanError = error
         }
 
-        guard let scan else {
+        let sharedScan = await sharedUsage.scan(providerID: provider.id, now: refreshedAt, pricing: .empty, allowEstimates: false)
+        guard !Task.isCancelled else { return ProviderSnapshot.error(provider: provider, error: CancellationError()) }
+        if let nativeScanError, sharedScan?.usageHistory?.series.daily.isEmpty != false {
+            return ProviderSnapshot.error(provider: provider, error: nativeScanError)
+        }
+        guard let logScan = DailyUsageAccumulator.merged([scan?.logScan, sharedScan]) else {
             // 디스크에 OpenCode database가 전혀 없는 경우
             if hasGoKey {
                 // 첫 로컬 메시지 이전의 Go 신규 로그인 — key만으로 plan 확정, "No usage data" 대신 공표 cap을 $0으로 표시
@@ -133,28 +146,37 @@ final class OpenCodeProvider: ProviderRuntime {
         }
 
         var lines: [MetricLine] = []
-        if let windows = scan.goWindows {
+        let goWindows = scan?.goWindows ?? (hasGoKey && nativeScanError == nil
+            ? OpenCodeGoWindowMath.compute(costs: [], anchorMs: nil, now: refreshedAt) : nil)
+        if let windows = goWindows {
             lines.append(contentsOf: OpenCodeUsageMapper.meterLines(windows))
         }
         SpendTileMapper.appendTokenUsage(
-            scan.logScan.series, to: &lines, now: refreshedAt,
+            logScan.series, to: &lines, now: refreshedAt,
             estimated: false,
-            unknownModelsByDay: scan.logScan.unknownModelsByDay,
-            modelUsage: scan.logScan.modelUsage,
+            unknownModelsByDay: logScan.unknownModelsByDay,
+            modelUsage: logScan.modelUsage,
             modelSourceNote: sourceNote
         )
-        SpendTileMapper.appendUsageTrend(scan.logScan.series, to: &lines, now: refreshedAt, note: sourceNote)
+        SpendTileMapper.appendUsageTrend(logScan.series, to: &lines, now: refreshedAt, note: sourceNote)
         MetricLine.appendNoDataIfNeeded(&lines)
 
         // `goWindows`는 현재 Go 신호(key 또는 최근 spend)일 때만 존재, stale anchor로는 생기지 않음 — plan badge의 정직한 근거
-        let plan: String? = scan.goWindows != nil ? "Go" : nil
+        let plan: String? = goWindows != nil ? "Go" : nil
+        let warningError: Error? = nativeScanError ?? (scan == nil && logScan.series.daily.isEmpty ? authReadError : nil)
         return ProviderSnapshot.make(
             provider: provider,
             plan: plan,
             lines: lines,
             refreshedAt: refreshedAt,
-            usageHistory: scan.logScan.usageHistory,
-            warning: scan.logScan.numericWarning
+            usageHistory: logScan.usageHistory,
+            warning: [warningError?.localizedDescription, logScan.numericWarning, logScan.metadataWarning,
+                      logScan.pricingWarning, logScan.readWarning]
+                .compactMap { $0 }.joined(separator: " ").nilIfEmpty,
+            warningPresentation: (warningError.map { [UserFacingErrors.presentation($0)] } ?? [])
+                + [logScan.numericWarning, logScan.metadataWarning, logScan.pricingWarning, logScan.readWarning]
+                    .compactMap { $0 }.map { .init($0) },
+            isDegraded: warningError == nil ? nil : true
         )
     }
 }

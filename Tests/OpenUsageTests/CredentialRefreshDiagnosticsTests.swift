@@ -269,7 +269,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
                 provider: ClaudeProvider.makeProvider(id: "claude@fixture-account"),
                 authStore: store, usageClient: ClaudeUsageClient(httpClient: http),
  usageStateStore: isolatedClaudeUsageStore(),
-                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
                 now: { now }, pricing: { TestPricing.bundled }
             )
             writtenToken = { store.loadCredentialCandidates().first?.oauth.accessToken }
@@ -282,7 +282,7 @@ final class CredentialRefreshDiagnosticsTests: XCTestCase {
             provider = CodexProvider(
                 provider: CodexProvider.makeProvider(id: "codex@fixture-account"),
                 authStore: store, usageClient: CodexUsageClient(http: http),
-                logUsageScanner: CodexLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: CodexLogFixture.scanner(home: nil), includeSharedUsage: false,
                 now: { now }, pricing: { TestPricing.bundled }
             )
             writtenToken = { store.loadAuthCandidates().first?.auth.tokens?.accessToken }

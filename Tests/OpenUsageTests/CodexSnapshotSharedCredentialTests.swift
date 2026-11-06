@@ -212,7 +212,7 @@ final class CodexSnapshotSharedCredentialTests: XCTestCase {
                 environment: FakeEnvironment(), incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
                 cacheIdentityOverride: UUID().uuidString, rootsOverride: []
             ),
-            includePiUsage: false, pricing: { .empty }
+            includeSharedUsage: false, pricing: { .empty }
         )
 
         let result = await provider.refresh()

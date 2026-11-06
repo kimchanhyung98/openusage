@@ -91,14 +91,16 @@ actor ClaudeLogUsageScanner {
         }
 
         // entry는 경로 정렬 파일 순서로 연결 — dedup keep-first의 결정성 보장.
-        guard let entries = await scanner.items(
+        guard let result = await scanner.scan(
             from: files,
             since: since,
             cacheIdentity: cacheIdentity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "claude") },
-            parse: Self.parseFile
+            parse: { data, _ in Self.parseFile(data) }
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(entries: Self.dedup(entries), since: since, pricing: pricing)
+        var scan = Self.aggregate(entries: Self.dedup(result.items), since: since, pricing: pricing)
+        scan.readFailureCount = result.failedPaths.count
+        return scan
     }
 
     /// 발견된 root 목록이 아닌 안정적 source 구성 identity — Cowork 세션 추가 시 기존 캐시 확장(cold-parse 방지),

@@ -149,7 +149,7 @@ final class CopilotUsageScannerTests: XCTestCase {
         XCTAssertEqual(mixed.usageHistory?.series.daily.first?.costUSD, 1)
     }
 
-    func testNullUsageFieldsDoNotBecomeZeroOrErasePriorHistory() async throws {
+    func testNullTokensAreRejectedWhileMissingCostPreservesValidTokens() async throws {
         let database = try CopilotScannerDatabase()
         defer { database.remove() }
         try database.insert(date: "2026-10-30T15:00:00Z", nanoAIU: "NULL")
@@ -159,11 +159,33 @@ final class CopilotUsageScannerTests: XCTestCase {
         let result = try await database.scanner.scan(now: now)
         let scan = try XCTUnwrap(result)
 
-        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
         XCTAssertEqual(scan.unsupportedPricingRows, 1)
         XCTAssertEqual(scan.rejectedNumericRows, 2)
         XCTAssertNotNil(scan.pricingWarning)
-        XCTAssertNil(scan.usageHistory)
+        XCTAssertNotNil(scan.usageHistory)
+    }
+
+    func testMissingCostPreservesTokensAndMakesPeriodCostUnavailable() throws {
+        let missingCost = try aggregateRow("100,20,null")
+        XCTAssertEqual(missingCost.series.daily.first?.totalTokens, 120)
+        XCTAssertNil(missingCost.series.daily.first?.costUSD)
+        XCTAssertEqual(missingCost.unsupportedPricingRows, 1)
+        XCTAssertEqual(missingCost.rejectedNumericRows, 0)
+        XCTAssertNotNil(missingCost.usageHistory)
+
+        let mixed = try CopilotUsageScanner.aggregate(json: """
+            [["2026-10-30T15:00:00Z","fixture-model",100,20,null],
+             ["2026-10-30T15:01:00Z","fixture-model",200,40,100000000000]]
+            """, now: now)
+        XCTAssertEqual(mixed.series.daily.first?.totalTokens, 360)
+        XCTAssertNil(mixed.series.daily.first?.costUSD)
+        XCTAssertEqual(mixed.modelUsage?.daily.first?.models.first?.totalTokens, 360)
+        XCTAssertNil(mixed.modelUsage?.daily.first?.models.first?.costUSD)
+        XCTAssertEqual(mixed.unsupportedPricingRows, 1)
+        XCTAssertNotNil(mixed.pricingWarning)
+        XCTAssertNotNil(mixed.usageHistory)
     }
 
     func testInvalidOrMissingCountsAreExcludedInsteadOfFabricatingTokensOrCost() throws {

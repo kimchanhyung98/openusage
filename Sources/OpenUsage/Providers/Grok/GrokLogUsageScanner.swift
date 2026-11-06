@@ -35,29 +35,38 @@ struct GrokLogUsageScanner: Sendable {
     }
 
     /// 로그의 최근 `daysBack`일 스캔.
-    /// 로그 부재·읽기 실패 시 `nil`(spend tile은 "No data" 렌더링), 존재하나 window 내 유효 행이 없으면 빈 `daily`.
+    /// 로그 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        guard !Task.isCancelled else { return nil }
         let path = logPath
         guard files.exists(path) else { return nil }
         let text: String
         do {
             text = try files.readText(path)
+            guard !Task.isCancelled else { return nil }
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [])
-        } catch {
-            await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
+        } catch is CancellationError {
             return nil
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
+            guard !Task.isCancelled else { return nil }
+            return DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
         }
+        guard !Task.isCancelled else { return nil }
         let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
                               pricing: pricing, reportNumericFailures: false)
+        guard !Task.isCancelled else { return nil }
         await numericFailureReporter.update(path: path, rejectedRows: scan.rejectedNumericRows)
-        return scan
+        return Task.isCancelled ? nil : scan
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.
     /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
     static func parse(
-        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
+        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true,
+        onLine: (() -> Void)? = nil
     ) -> LogUsageScan {
         var modelByPID: [Int: ModelContext] = [:]
         var modelBySession: [SessionKey: ModelContext] = [:]
@@ -66,7 +75,9 @@ struct GrokLogUsageScanner: Sendable {
         var accumulator = DailyUsageAccumulator()
         var rejectedMetadataRows = 0
 
-        text.enumerateLines { line, _ in
+        text.enumerateLines { line, stop in
+            onLine?()
+            guard !Task.isCancelled else { stop = true; return }
             guard line.contains("inference_done") || line.contains("model")
                     || line.contains("process resource limits") else { return }
             guard let data = line.data(using: .utf8),
@@ -157,7 +168,7 @@ struct GrokLogUsageScanner: Sendable {
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        if rejectedMetadataRows > 0 {
+        if !Task.isCancelled, rejectedMetadataRows > 0 {
             AppDiagnostics.record(
                 .historyScan, result: .degraded, category: .decoding, providerID: "grok",
                 localContext: "source=grok; unattributed_session_rows=\(rejectedMetadataRows)"

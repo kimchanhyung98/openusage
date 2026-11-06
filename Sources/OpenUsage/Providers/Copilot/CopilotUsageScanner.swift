@@ -125,16 +125,18 @@ struct CopilotUsageScanner: Sendable {
                 accumulator.rejectNumericRow()
                 continue
             }
-            guard !(row[4] is NSNull) else {
+            let cost: Double?
+            if row[4] is NSNull {
                 unsupportedPricingRows += 1
-                continue
+                cost = nil
+            } else {
+                guard let nanoAIU = UsageLogNumbers.count(row[4]) else {
+                    accumulator.rejectNumericRow()
+                    continue
+                }
+                // 입력에는 캐시, 출력에는 추론 토큰 포함. 10억 nano AIU = 1 AI 크레딧 = 0.01달러.
+                cost = Double(nanoAIU) / 100_000_000_000
             }
-            guard let nanoAIU = UsageLogNumbers.count(row[4]) else {
-                accumulator.rejectNumericRow()
-                continue
-            }
-            // 입력에는 캐시, 출력에는 추론 토큰 포함. 10억 nano AIU = 1 AI 크레딧 = 0.01달러.
-            let cost = Double(nanoAIU) / 100_000_000_000
             let name = model.trimmingCharacters(in: .whitespacesAndNewlines)
             accumulator.add(
                 day: day, tokens: tokens, cost: cost,

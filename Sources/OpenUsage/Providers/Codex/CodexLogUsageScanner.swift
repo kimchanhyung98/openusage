@@ -87,14 +87,16 @@ actor CodexLogUsageScanner {
             return nil
         }
 
-        guard let events = await scanner.items(
+        guard let result = await scanner.scan(
             from: files,
             since: since,
             cacheIdentity: identity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
-            parse: Self.parseFile
+            parse: { data, _ in Self.parseFile(data) }
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(events: events, since: since, pricing: pricing)
+        var scan = Self.aggregate(events: result.items, since: since, pricing: pricing)
+        scan.readFailureCount = result.failedPaths.count
+        return scan
     }
 
     // MARK: - Discovery

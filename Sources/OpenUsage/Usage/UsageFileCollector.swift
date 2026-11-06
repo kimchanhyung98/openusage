@@ -1,0 +1,140 @@
+import Foundation
+
+struct UsageFileCollector: UsageCollecting {
+    typealias Parser = @Sendable (Data, String) throws -> [UsageRecord]?
+
+    let sourceID: String
+    var providerID: String? = nil
+    let roots: [URL]
+    let includeFile: @Sendable (URL) -> Bool
+    let parse: Parser
+    let scanner: IncrementalJSONLScanner<UsageRecord>
+    var cacheDiscriminator: String? = nil
+
+    init(
+        sourceID: String, providerID: String? = nil, roots: [URL], version: Int = 1,
+        scanner: IncrementalJSONLScanner<UsageRecord>? = nil,
+        includeFile: @escaping @Sendable (URL) -> Bool,
+        parse: @escaping Parser
+    ) {
+        self.sourceID = sourceID
+        self.providerID = providerID
+        self.roots = roots
+        self.includeFile = includeFile
+        self.parse = parse
+        self.scanner = scanner ?? IncrementalJSONLScanner(
+            logTag: LogTag.plugin(sourceID),
+            persistence: JSONLScanCachePersistence(namespace: sourceID, schemaVersion: version)
+        )
+    }
+
+    func collect(since: Date) async -> UsageCollection? {
+        guard !Task.isCancelled else { return nil }
+        let discovery = UsageFileDiscovery.files(under: roots, matching: includeFile)
+        guard !Task.isCancelled else { return nil }
+        var identity = roots.map { $0.resolvingSymlinksInPath().path }.sorted().joined(separator: "\n")
+        if let cacheDiscriminator { identity += "\n" + cacheDiscriminator }
+        guard let result = await scanner.scan(
+            from: discovery.files, since: since, cacheIdentity: identity,
+            onDiskCacheHit: UsageRecordDiagnostics.report,
+            parse: { data, path in
+                let records = try parse(data, path)
+                if !Task.isCancelled, let records { UsageRecordDiagnostics.report(records) }
+                return records
+            }
+        ), !Task.isCancelled else { return nil }
+        if discovery.failures > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .storage, providerID: sourceID,
+                localContext: "source=\(sourceID); discovery_failures=\(discovery.failures)"
+            )
+        }
+        return UsageCollection(records: result.items, sources: [UsageSourceState(
+            sourceID: sourceID, providerID: providerID,
+            completedStores: result.completedFiles + discovery.completedEmptyRoots
+                + discovery.files.filter { $0.mtime < since }.count,
+            failedStores: discovery.failures + result.failedPaths.count
+        )])
+    }
+
+    func flushCache() async { await scanner.flushPendingWrites() }
+}
+
+enum UsageFileDiscovery {
+    struct Result {
+        var files: [JSONLScanning.DiscoveredFile] = []
+        var failures = 0
+        var completedEmptyRoots = 0
+    }
+
+    static func files(under roots: [URL], matching include: (URL) -> Bool) -> Result {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+        var result = Result()
+        var seen: Set<String> = []
+        var hadCandidate = false
+        func append(_ url: URL) {
+            guard !Task.isCancelled, include(url), !Task.isCancelled else { return }
+            let canonical = url.resolvingSymlinksInPath()
+            do {
+                let values = try canonical.resourceValues(forKeys: keys)
+                guard values.isRegularFile == true else { return }
+                hadCandidate = true
+                guard seen.insert(canonical.path).inserted else { return }
+                result.files.append(.init(
+                    path: canonical.path, size: values.fileSize ?? 0,
+                    mtime: values.contentModificationDate ?? .distantPast
+                ))
+            } catch {
+                result.failures += 1
+            }
+        }
+        for root in Set(roots.map { $0.resolvingSymlinksInPath() }) {
+            guard !Task.isCancelled else { break }
+            hadCandidate = false
+            let failuresBefore = result.failures
+            do {
+                let values = try root.resourceValues(forKeys: keys)
+                guard values.isDirectory == true else { append(root); continue }
+                guard FileManager.default.isReadableFile(atPath: root.path) else {
+                    result.failures += 1
+                    continue
+                }
+                guard let enumerator = FileManager.default.enumerator(
+                    at: root, includingPropertiesForKeys: Array(keys), options: [],
+                    errorHandler: { _, _ in
+                        guard !Task.isCancelled else { return false }
+                        result.failures += 1
+                        return true
+                    }
+                ) else { result.failures += 1; continue }
+                for case let url as URL in enumerator {
+                    guard !Task.isCancelled else { break }
+                    append(url)
+                }
+                if !Task.isCancelled, !hadCandidate, result.failures == failuresBefore {
+                    result.completedEmptyRoots += 1
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                continue
+            } catch {
+                result.failures += 1
+            }
+        }
+        result.files.sort { $0.path < $1.path }
+        return result
+    }
+}
+
+enum UsageRecordDiagnostics {
+    static func report(_ records: [UsageRecord]) {
+        for (source, rows) in Dictionary(grouping: records, by: \.sourceID) {
+            UsageLogNumbers.reportRejectedRows(rows.filter { $0.issues.contains(.invalidNumbers) }.count, source: source)
+            let invalid = rows.filter { !$0.issues.subtracting([.invalidNumbers]).isEmpty }.count
+            guard invalid > 0 else { continue }
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: source,
+                localContext: "source=\(source); incomplete_records=\(invalid)"
+            )
+        }
+    }
+}

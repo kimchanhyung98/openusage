@@ -165,6 +165,7 @@ final class GrokRefreshSafetyTests: XCTestCase {
             usageClient: GrokUsageClient(httpClient: http),
             logUsageScanner: GrokLogUsageScanner(files: FakeFiles(), environment: FakeEnvironment(),
                                                 homeDirectory: { URL(fileURLWithPath: "/fixture") }),
+            sharedUsage: .init(collectors: []),
             now: { Self.now }, pricing: { .empty }
         )
     }

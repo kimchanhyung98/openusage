@@ -39,14 +39,14 @@ final class NumericReviewRegressionTests: XCTestCase {
     }
 
     func testPiInvalidFirstCopyCannotHideValidUsage() throws {
-        func entry(_ input: Int) throws -> PiUsageScanner.Entry {
-            try XCTUnwrap(PiUsageScanner.parseLine(Data("""
+        func entry(_ input: Int) throws -> UsageRecord {
+            try XCTUnwrap(UsageRecordFixture.piRecord(Data("""
             {"type":"message","id":"same","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":\(input),"totalTokens":100,"cost":{"total":0.5}}}}
             """.utf8)))
         }
         let good = try entry(100), bad = try entry(-1)
         for entries in [[bad, good], [good, bad]] {
-            let scan = PiUsageScanner.aggregate(entries: PiUsageScanner.dedup(entries), cardID: "claude", since: .distantPast, pricing: .empty)
+            let scan = UsageRecordFixture.history(records: UsageRecordDeduplicator.records(entries), providerID: "claude", since: .distantPast, pricing: .empty)
             XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
             XCTAssertEqual(scan.rejectedNumericRows, 0)
         }
@@ -109,23 +109,28 @@ final class NumericReviewRegressionTests: XCTestCase {
         XCTAssertEqual(recovered.rejectedNumericRows, 0)
     }
 
-    func testCodexMergePreservesNumericAndPricingRejectionsWithoutReplacingHistory() throws {
+    func testCodexMergePreservesNumericRejectionsAndUnpricedTokens() throws {
+        let diagnostics = DiagnosticEventRecorder()
         let date = Date(timeIntervalSince1970: 1_789_200_000)
         let native = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(Data(
             #"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8
         )), since: .distantPast, pricing: TestPricing.bundled)
-        let unsupported = PiUsageScanner.aggregate(entries: [
-            .init(timestamp: date, cardID: "codex", model: "gpt-5.6-sol", carriedCost: nil,
-                  tokens: .init(cacheWrite1h: 100), reportedTotalTokens: 100)
-        ], cardID: "codex", since: .distantPast, pricing: TestPricing.bundled,
-           costEstimator: CodexUsagePricing.estimatePi)
+        let unsupported = UsageRecordFixture.history(records: [
+            UsageRecordFixture.record(timestamp: date, providerID: "codex", model: "gpt-5.6-sol", cost: nil,
+                  tokens: .init(cacheWrite1h: 100), total: 100)
+        ], providerID: "codex", since: .distantPast, pricing: TestPricing.bundled,
+           costEstimator: CodexUsagePricing.estimateRecord)
         let rejected = try XCTUnwrap(DailyUsageAccumulator.merged([native, unsupported]))
         XCTAssertEqual(rejected.rejectedNumericRows, 1)
         XCTAssertEqual(rejected.unsupportedPricingRows, 1)
+        XCTAssertTrue(diagnostics.events.contains {
+            $0.operation == .historyScan && $0.result == .degraded && $0.category == .other && $0.provider == "codex"
+        })
         XCTAssertNotNil(rejected.numericWarning)
         XCTAssertNotNil(rejected.pricingWarning)
-        XCTAssertNil(rejected.usageHistory)
-        XCTAssertTrue(rejected.series.daily.isEmpty)
+        XCTAssertNotNil(rejected.usageHistory)
+        XCTAssertEqual(rejected.series.daily.first?.totalTokens, 100)
+        XCTAssertNil(rejected.series.daily.first?.costUSD)
         XCTAssertFalse(rejected.unknownModelsByDay.isEmpty)
 
         let valid = CodexLogUsageScanner.aggregate(events: [
@@ -133,8 +138,8 @@ final class NumericReviewRegressionTests: XCTestCase {
                   output: 10_000, reasoning: 0, total: 310_000)
         ], since: .distantPast, pricing: TestPricing.bundled)
         let partial = try XCTUnwrap(DailyUsageAccumulator.merged([valid, rejected]))
-        XCTAssertEqual(partial.series, valid.series)
-        XCTAssertEqual(try XCTUnwrap(partial.series.daily.first?.costUSD), 1.98, accuracy: 1e-9)
+        XCTAssertEqual(partial.series.daily.first?.totalTokens, 310_100)
+        XCTAssertNil(partial.series.daily.first?.costUSD)
         XCTAssertEqual(partial.rejectedNumericRows, 1)
         XCTAssertEqual(partial.unsupportedPricingRows, 1)
         XCTAssertNotNil(partial.usageHistory)
@@ -147,16 +152,16 @@ final class NumericReviewRegressionTests: XCTestCase {
             #""input":100,"cacheWrite1h":100,"cost":{"total":0.5}"#
         ]
         let entries = try rows.enumerated().map { index, usage in
-            try XCTUnwrap(PiUsageScanner.parseLine(Data("""
+            try XCTUnwrap(UsageRecordFixture.piRecord(Data("""
             {"type":"message","id":"\(index)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{\(usage),"totalTokens":200}}}
             """.utf8)))
         }
-        let scan = PiUsageScanner.aggregate(entries: entries, cardID: "codex", since: .distantPast,
-            pricing: TestPricing.bundled, costEstimator: CodexUsagePricing.estimatePi)
+        let scan = UsageRecordFixture.history(records: entries, providerID: "codex", since: .distantPast,
+            pricing: TestPricing.bundled, costEstimator: CodexUsagePricing.estimateRecord)
         XCTAssertEqual(scan.rejectedNumericRows, 1)
         XCTAssertEqual(scan.unsupportedPricingRows, 1)
-        XCTAssertEqual(scan.series.daily.first?.totalTokens, 200)
-        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 400)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
         XCTAssertNotNil(scan.numericWarning)
         XCTAssertNotNil(scan.pricingWarning)
         XCTAssertNotNil(scan.usageHistory)

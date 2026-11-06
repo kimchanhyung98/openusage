@@ -127,7 +127,7 @@ final class CodexResetCreditFetchTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogFixture.scanner(home: nil),
-            includePiUsage: false,
+            includeSharedUsage: false,
             now: { Date(timeIntervalSince1970: 1_800_000_000) },
             pricing: { TestPricing.bundled }
         )

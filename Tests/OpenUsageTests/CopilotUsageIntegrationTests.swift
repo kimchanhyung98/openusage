@@ -269,7 +269,8 @@ final class CopilotUsageIntegrationTests: XCTestCase {
         let absent = CopilotProvider(
             authStore: CopilotAuthStore(files: FakeFiles(), keychain: FakeKeychain()),
             usageClient: CopilotUsageClient(http: http),
-            usageScanner: .init(databasePath: { nil })
+            usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: [])
         )
         let missing = await absent.hasLocalCredentials()
         XCTAssertFalse(missing)
@@ -410,6 +411,7 @@ final class CopilotUsageIntegrationTests: XCTestCase {
                 response: HTTPResponse(statusCode: 403, headers: [:], body: Data())
             )),
             usageScanner: CopilotUsageScanner(sqlite: sqlite, databasePath: { "/fixture/copilot/session-store.db" }),
+            sharedUsage: .init(collectors: []),
             defaults: defaults,
             now: { clock.date }
         )
