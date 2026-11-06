@@ -7,7 +7,7 @@
 기존 provider와 지표 유지.
 새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi와 Oh My Pi(OMP).
+공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI.
 기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
 
@@ -59,6 +59,10 @@ OMP 기본 저장 위치는 `~/.omp/agent/sessions`.
 적용 대상인 `XDG_DATA_HOME`과 `PI_CODING_AGENT_DIR`이 상대 경로면 OMP 세션 경로를 확인할 수 없는 상태로 표시.
 매 수집 시 저장 위치를 다시 확인하여 실행 중 생성된 XDG 데이터 디렉터리도 반영.
 유효하지 않은 프로필은 다른 프로필로 대체하지 않고 수집 오류로 구분.
+
+Gemini CLI는 `GEMINI_CLI_HOME` 또는 사용자 홈의 `.gemini/tmp`와 `.cache/.gemini/tmp` 아래 `chats` JSON·JSONL 기록 조회.
+Qwen CLI는 `QWEN_RUNTIME_DIR`, `QWEN_HOME`, 기본 `~/.qwen` 순서로 루트 선택.
+선택한 루트의 `projects` 아래 `chats` JSONL과 `resources`의 관리형 원장 리소스 조회.
 
 ## 보존 규칙
 
@@ -136,6 +140,18 @@ Claude·Codex는 발견한 native 파일의 읽기 실패 수를 공유 이력 �
 SQLite는 읽기 전용 조회 사용.
 DB 본체의 수정 시각만으로 캐시하지 않으며 WAL의 최신 기록도 같은 읽기 스냅샷에서 조회.
 대화 본문·인증 정보는 공통 기록이나 진단 로그에 저장하지 않음.
+
+## Gemini CLI와 Qwen CLI 원장
+
+Gemini CLI의 JSON 스냅샷과 JSONL에서 같은 메시지 ID가 여러 번 나오면 마지막 기록 사용.
+손상된 JSONL 행은 별도 불완전 기록으로 남기고 정상 행의 사용량 유지.
+캐시 읽기 토큰은 입력 토큰의 부분집합으로 처리.
+
+Qwen CLI는 응답 UUID와 fork 관계로 복사된 기록 구분.
+관리형 원장은 실행 엔진 메타데이터 뒤의 헤더를 확인하고 commit·리소스 길이·해시 검증.
+완료되지 않은 마지막 행은 관리형 원장의 확정된 기록으로 취급하지 않음.
+commit 해시는 JavaScript의 키 순서·숫자 직렬화 규칙으로 검증.
+잘못된 commit이나 리소스는 파일 읽기 실패로 처리.
 
 ## 기존 provider 연결
 
