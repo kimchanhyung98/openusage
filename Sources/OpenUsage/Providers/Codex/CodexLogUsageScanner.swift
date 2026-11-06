@@ -182,8 +182,7 @@ actor CodexLogUsageScanner {
     }
 
     /// Event를 local calendar day로 bucket — 파일 간 동일 event(복사된 session log)는 1회 집계, cost는 per-event codex 계산 (`cost` 참고).
-    /// Pricing 불가 event(unknown model, blank slug)는 모든 표시 합계(token·dollar·trend·model breakdown)에서 제외 — 측정값과 pricing 불가 값의 혼합 방지.
-    /// unknown model 이름은 `unknownModelsByDay`(tile의 경고 triangle)로만 노출; blank slug는 unattributed — 경고할 이름 자체가 없음.
+    /// 모델 가격이 없으면 측정 토큰을 유지하고 해당 날짜·기간의 비용을 미확정으로 처리.
     static func aggregate(
         events: [Event], since: Date, pricing: ModelPricing
     ) -> LogUsageScan {
@@ -234,15 +233,11 @@ actor CodexLogUsageScanner {
                 output: event.output, isFast: event.isFast
             )
             let pricingModel = event.pricingModel ?? model
-            guard
-                let eventCost = costEstimator.estimate(
-                    model: pricingModel, tokens: tokens, isUltrafast: event.isUltrafast
-                )
-            else {
-                if event.total > 0 {
-                    accumulator.addUnknownModel(day: day, model: event.isUltrafast ? model + " (Ultrafast)" : model)
-                }
-                continue
+            let eventCost = costEstimator.estimate(
+                model: pricingModel, tokens: tokens, isUltrafast: event.isUltrafast
+            )
+            if eventCost == nil, event.total > 0 {
+                accumulator.addUnknownModel(day: day, model: event.isUltrafast ? model + " (Ultrafast)" : model)
             }
             accumulator.add(day: day, tokens: event.total, cost: eventCost, model: model)
         }

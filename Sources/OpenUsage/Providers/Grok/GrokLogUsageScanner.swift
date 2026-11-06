@@ -150,11 +150,9 @@ struct GrokLogUsageScanner: Sendable {
                 return
             }
             let tokenBreakdown = TokenBreakdown(input: inputNoCache, cacheRead: cacheRead, output: output)
-            guard let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown) else {
-                if totalTokens > 0 {
-                    accumulator.addUnknownModel(day: day, model: model)
-                }
-                return
+            let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown)
+            if cost == nil, totalTokens > 0 {
+                accumulator.addUnknownModel(day: day, model: model)
             }
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }

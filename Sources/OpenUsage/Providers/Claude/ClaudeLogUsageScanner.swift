@@ -462,11 +462,11 @@ actor ClaudeLogUsageScanner {
     // MARK: - Aggregation
 
     /// dedup된 entry의 로컬 달력 일자 집계. cost mode "auto": 라인의 `costUSD` 우선, 없으면 `pricing` 추정.
-    /// 가격 산정 불가 entry는 모든 표시 합계에서 제외 — unknown 모델명만 `unknownModelsByDay`(경고 삼각형)로 노출.
+    /// 가격을 계산할 수 없는 기록도 토큰 유지. 불완전한 날짜·기간 비용은 생략.
     static func aggregate(entries: [Entry], since: Date, pricing: ModelPricing) -> LogUsageScan {
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
-        var pricingUnavailable = false
+        var unsupportedPricingRows = 0
 
         for entry in entries where entry.timestamp >= since {
             guard !entry.invalidNumericValues else {
@@ -474,11 +474,11 @@ actor ClaudeLogUsageScanner {
                 continue
             }
             let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
-            // pricing·unknown 경고·breakdown 키가 하나의 trimmed slug 공유 — 표기 분기 시 경고 삼각형과 hover 패널 불일치.
+            // 가격 조회·미확정 모델 목록·모델 내역에 같은 정규화 이름 사용.
             let trimmedModel = entry.model?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
 
-            let cost: Double
+            let cost: Double?
             if let carried = entry.costUSD {
                 cost = carried
             } else if let model = trimmedModel, let estimated = pricing.estimatedCostDollars(model: model, tokens: entry.tokens) {
@@ -486,19 +486,21 @@ actor ClaudeLogUsageScanner {
             } else {
                 if let model = trimmedModel, entry.tokens.totalTokens > 0 {
                     accumulator.addUnknownModel(day: day, model: model)
-                    pricingUnavailable = true
                 }
-                continue
+                if entry.tokens.totalTokens > 0 { unsupportedPricingRows += 1 }
+                cost = nil
             }
 
             accumulator.add(day: day, tokens: entry.tokens.totalTokens, cost: cost, model: modelName)
         }
 
-        if pricingUnavailable {
+        if unsupportedPricingRows > 0 {
             AppDiagnostics.record(.historyScan, result: .degraded, category: .other, providerID: "claude",
-                                  localContext: "Claude usage records were excluded because model pricing is unavailable")
+                                  localContext: "Claude usage costs are unavailable because model pricing is unresolved")
         }
-        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "claude")
+        return accumulator.build(
+            rejectedNumericRows: rejectedNumericRows, source: "claude", unsupportedPricingRows: unsupportedPricingRows
+        )
     }
 }
 
