@@ -56,7 +56,10 @@ V2는 아래 별도 형식으로 수집하며 이 Mac에 기록되지 않은 사
 [CLI V3 ACP 문서](https://kiro.dev/docs/cli/v3/acp-migration/)는 공개 프로토콜의 세션 조회·불러오기를 안내하며 내부 파일 형식을 보장하지 않음.
 CLI 내부 저장 형식 변경 시 수집기 갱신 필요.
 
-V2는 `~/.kiro/sessions/cli/*.json`의 턴 메타데이터와 CLI SQLite의 `conversations_v2` 조회.
+V2는 `KIRO_HOME`과 무관하게 `~/.kiro/sessions/cli/*.json`의 턴 메타데이터를 조회.
+SQLite의 `~/Library/Application Support/kiro-cli/data.sqlite3`와 `~/.local/share/kiro-cli/data.sqlite3`에서 `conversations_v2` 조회.
+V3 디렉터리 탐색에 실패해도 읽을 수 있는 V2 기록을 수집하고 읽기 경고 표시.
+손상된 V2 대화 행은 진단하고 같은 DB의 정상 대화는 유지.
 명시된 입력·출력·캐시 토큰은 측정값으로 보존하고 크레딧 값은 같은 단가로 환산.
 크레딧이 없는 측정 토큰은 유지하며 해당 기간 비용 생략.
 V2의 빈 계량 목록도 비용 미보고로 처리.

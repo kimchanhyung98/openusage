@@ -3,10 +3,22 @@ import Foundation
 enum DevinDesktopParser {
     static func parse(_ data: Data, path: String) throws -> [UsageRecord] {
         var result: [UsageRecord] = []
-        let session = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let session = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         for (index, line) in JSONLScanning.lines(in: data).enumerated() {
             try Task.checkCancellation()
-            let object = try UsageJSON.object(line)
+            let object: [String: Any]
+            do {
+                object = try UsageJSON.object(line)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                result.append(UsageRecord(
+                    sourceID: "devin-desktop", formatID: "devin-acp", granularity: .aggregate,
+                    filePath: path, sessionID: session, id: "event:\(index)", kind: "invalid-line",
+                    issues: [.invalidMetadata]
+                ))
+                continue
+            }
             guard let event = object["notification"] as? [String: Any], event["sessionUpdate"] as? String == "usage_update" else {
                 continue
             }

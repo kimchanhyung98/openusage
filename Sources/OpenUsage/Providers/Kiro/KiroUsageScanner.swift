@@ -108,14 +108,24 @@ actor KiroUsageScanner {
         do {
             try Task.checkCancellation()
             let directory = directory
-            let exists = try Self.exists(directory)
-            let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
-            let missingPreviousStore = !exists && lastReadableDirectory == resolvedDirectory
-            let workspaces = exists ? try Self.entries(in: directory) : []
-            if exists { lastReadableDirectory = resolvedDirectory }
-            var found = exists
-            var parsed = Parsed()
+            var workspaces: [URL] = []
+            var found = false
+            var missingPreviousStore = false
             var readFailures = 0
+            do {
+                let exists = try Self.exists(directory)
+                let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
+                missingPreviousStore = !exists && lastReadableDirectory == resolvedDirectory
+                workspaces = exists ? try Self.entries(in: directory) : []
+                if exists { lastReadableDirectory = resolvedDirectory }
+                found = exists
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                found = true
+                readFailures += 1
+            }
+            var parsed = Parsed()
             var scanned: Set<String> = []
             for workspace in workspaces {
                 try Task.checkCancellation()
@@ -336,6 +346,7 @@ actor KiroUsageScanner {
         for record in records.values.sorted(by: { $0.id < $1.id }) {
             let day = DailyUsageAccumulator.dayKey(from: record.timestamp, calendar: calendar)
             guard record.timestamp <= now, days.contains(day) else { continue }
+            guard record.costUSD != nil || (record.tokens ?? 0) > 0 else { continue }
             guard let nextTokens = UsageLogNumbers.sum(totalTokens, record.tokens ?? 0),
                   record.costUSD.map({ $0.isFinite && $0 >= 0 }) ?? true, (totalCost + (record.costUSD ?? 0)).isFinite else {
                 invalidRows += 1
@@ -345,7 +356,7 @@ actor KiroUsageScanner {
             totalCost += record.costUSD ?? 0
             var value = daily[day] ?? Day(date: day)
             value.costUSD += record.costUSD ?? 0
-            value.missingCost = value.missingCost || record.costUSD == nil
+            value.missingCost = value.missingCost || (record.costUSD == nil && (record.tokens ?? 0) > 0)
             value.tokensEstimated = value.tokensEstimated || record.tokensEstimated
             value.tokens += record.tokens ?? 0
             value.missingTokens = value.missingTokens || (record.tokens == nil && (record.costUSD ?? 0) > 0)

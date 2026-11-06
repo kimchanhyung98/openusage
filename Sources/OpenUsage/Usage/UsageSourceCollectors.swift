@@ -6,8 +6,6 @@ enum UsageSourceCollectors {
         let geminiHome = configured("GEMINI_CLI_HOME", environment: environment, home: home) ?? home
         let qwen = configured("QWEN_RUNTIME_DIR", environment: environment, home: home)
             ?? configured("QWEN_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".qwen")
-        let junieHome = environment.value(for: "JUNIE_HOME").map { URL(fileURLWithPath: $0) }
-            ?? home.appendingPathComponent(".junie")
         let data = configured("XDG_DATA_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".local/share")
         let kiloData = data.appendingPathComponent("kilo")
         let kiloOverride = environment.value(for: "KILO_DB")?.nilIfEmpty
@@ -36,9 +34,9 @@ enum UsageSourceCollectors {
                 let replacement = "kilo-" + name.dropFirst("opencode-".count)
                 return !FileManager.default.fileExists(atPath: url.deletingLastPathComponent().appendingPathComponent(replacement).path)
             }, parse: KiloUsageParser.database),
-            UsageFileCollector(sourceID: "kilocode", roots: legacyKilo,
+            UsageFileCollector(sourceID: "kilocode", roots: legacyKilo, version: 2,
                                includeFile: { $0.lastPathComponent == "ui_messages.json" }, parse: KiloUsageParser.legacy),
-            JunieUsageCollector(root: junieHome.appendingPathComponent("sessions")),
+            junieCollector(environment: environment, home: home),
             devinDesktop(home: home),
             kimiWork(home: home),
             kimiLegacy(environment: environment, home: home)
@@ -58,22 +56,29 @@ enum UsageSourceCollectors {
         )
     }
 
+    static func junieCollector(
+        environment: EnvironmentReading, home: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil
+    ) -> JunieUsageCollector {
+        let root = configured("JUNIE_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".junie")
+        return JunieUsageCollector(root: root.appendingPathComponent("sessions"), scanner: scanner)
+    }
+
     static func devinDesktop(home: URL) -> UsageFileCollector {
         UsageFileCollector(sourceID: "devin-desktop", providerID: "devin",
-                           roots: [home.appendingPathComponent("Library/Application Support/Devin/User/acp-events")], version: 2,
+                           roots: [home.appendingPathComponent("Library/Application Support/Devin/User/acp-events")], version: 3,
                            includeFile: { $0.pathExtension == "ndjson" }, parse: DevinDesktopParser.parse)
     }
 
     static func kimiWork(home: URL) -> UsageFileCollector {
         UsageFileCollector(sourceID: "kimi-work", providerID: "kimi", roots: [home.appendingPathComponent(
             "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"
-        )], version: 2, includeFile: { $0.lastPathComponent == "wire.jsonl" && $0.path.contains("/agents/") },
+        )], version: 3, includeFile: { $0.lastPathComponent == "wire.jsonl" && $0.path.contains("/agents/") },
                            parse: { data, path in try KimiSupplementParser.parse(data, path: path, work: true) })
     }
 
     static func kimiLegacy(environment: EnvironmentReading, home: URL) -> UsageFileCollector {
         let root = configured("KIMI_SHARE_DIR", environment: environment, home: home) ?? home.appendingPathComponent(".kimi")
-        return UsageFileCollector(sourceID: "kimi-cli", providerID: "kimi-cli", roots: [root.appendingPathComponent("sessions")], version: 2,
+        return UsageFileCollector(sourceID: "kimi-cli", providerID: "kimi-cli", roots: [root.appendingPathComponent("sessions")], version: 3,
                                   includeFile: { $0.lastPathComponent == "wire.jsonl" },
                                   parse: { data, path in try KimiSupplementParser.parse(data, path: path, work: false) })
     }

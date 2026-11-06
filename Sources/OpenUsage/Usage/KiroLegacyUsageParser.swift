@@ -28,8 +28,13 @@ enum KiroLegacyUsageParser {
         guard try database.tables().contains("conversations_v2") else { throw CocoaError(.coderReadCorrupt) }
         var result: [UsageRecord] = []
         try database.rows("SELECT conversation_id, value FROM conversations_v2") { row in
-            guard let raw = row["value"] as? String else { throw CocoaError(.coderReadCorrupt) }
-            let object = try UsageJSON.object(Data(raw.utf8))
+            try Task.checkCancellation()
+            guard let raw = row["value"] as? String, let object = try? UsageJSON.object(Data(raw.utf8)) else {
+                var invalid = base(path: path, session: UsageJSON.string(row["conversation_id"]), id: "invalid-row", model: nil)
+                invalid.issues.insert(.invalidMetadata)
+                result.append(invalid)
+                return
+            }
             guard let history = object["history"] as? [[String: Any]] else { return }
             let model = (object["model_info"] as? [String: Any])?["model_id"]
             for (index, turn) in history.enumerated() {

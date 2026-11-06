@@ -7,7 +7,7 @@ struct JunieUsageCollector: UsageCollecting {
 
     init(root: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil) {
         files = UsageFileCollector(
-            sourceID: "junie", roots: [root], version: 2, scanner: scanner,
+            sourceID: "junie", roots: [root], version: 3, scanner: scanner,
             includeFile: { $0.lastPathComponent == "events.jsonl" }, parse: JunieSessionParser.parse
         )
     }
@@ -22,6 +22,7 @@ struct JunieUsageCollector: UsageCollecting {
                 let parent = try JunieSessionParser.parentSession(path: path)
                 for index in indices { collection.records[index].parentSession = parent }
             } catch {
+                if Task.isCancelled { return nil }
                 for index in indices { collection.records[index].issues.insert(.invalidMetadata) }
                 collection.sources[0].failedStores += 1
                 AppDiagnostics.record(
@@ -40,9 +41,27 @@ enum JunieSessionParser {
     static func parse(_ data: Data, path: String) throws -> [UsageRecord] {
         var result: [UsageRecord] = []
         let session = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
-        for line in JSONLScanning.lines(in: data) {
+        let completeEnd = data.last == 0x0A ? data.endIndex : (data.lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex)
+        let parseData: Data
+        if completeEnd < data.endIndex, (try? UsageJSON.object(data[completeEnd..<data.endIndex])) == nil {
+            parseData = data.prefix(upTo: completeEnd)
+        } else {
+            parseData = data
+        }
+        for line in JSONLScanning.lines(in: parseData) {
             try Task.checkCancellation()
-            let object = try UsageJSON.object(line)
+            let object: [String: Any]
+            do {
+                object = try UsageJSON.object(line)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                result.append(UsageRecord(
+                    sourceID: "junie", formatID: "junie-events", filePath: path, sessionID: session,
+                    kind: "invalid-line", issues: [.invalidMetadata]
+                ))
+                continue
+            }
             guard let event = object["event"] as? [String: Any],
                   let agent = event["agentEvent"] as? [String: Any],
                   agent["kind"] as? String == "LlmResponseMetadataEvent",
@@ -57,11 +76,12 @@ enum JunieSessionParser {
                     model: UsageJSON.string(usage["model"]), costOrigin: .estimated, zeroCostIsUnknown: true
                 )
                 if date == nil { record.issues.insert(.invalidMetadata) }
-                let tokenValues: [Any?] = [
-                    usage["inputTokens"] ?? usage["input"], usage["outputTokens"] ?? usage["output"],
-                    usage["cacheInputTokens"] ?? usage["cacheReadInputTokens"] ?? usage["cacheRead"],
-                    usage["cacheCreateTokens"] ?? usage["cacheCreationInputTokens"] ?? usage["cacheWrite"]
-                ].map { $0 is NSNull ? nil : $0 }
+                let tokenAliases = [
+                    ["inputTokens", "input"], ["outputTokens", "output"],
+                    ["cacheInputTokens", "cacheReadInputTokens", "cacheRead"],
+                    ["cacheCreateTokens", "cacheCreationInputTokens", "cacheWrite"]
+                ]
+                let tokenValues = tokenAliases.map { keys in keys.compactMap { usage[$0] }.first { !($0 is NSNull) } }
                 if tokenValues.contains(where: { $0 != nil }) {
                     UsageJSON.tokens(
                         into: &record, input: tokenValues[0], output: tokenValues[1],
@@ -70,7 +90,8 @@ enum JunieSessionParser {
                 } else {
                     record.issues.insert(.invalidMetadata)
                 }
-                if let reasoning = usage["reasoningTokens"] ?? usage["reasoningOutputTokens"] ?? usage["thinkingTokens"] {
+                if let reasoning = ["reasoningTokens", "reasoningOutputTokens", "thinkingTokens"]
+                    .compactMap({ usage[$0] }).first(where: { !($0 is NSNull) }) {
                     record.reasoningTokens = UsageLogNumbers.count(reasoning)
                     if record.reasoningTokens == nil { record.issues.insert(.invalidNumbers) }
                 }

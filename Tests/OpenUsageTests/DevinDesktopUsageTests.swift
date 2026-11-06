@@ -91,6 +91,23 @@ final class DevinDesktopUsageTests: XCTestCase {
         XCTAssertFalse(scan?.warnings.isEmpty == true)
     }
 
+    func testMalformedMiddleLineKeepsDesktopObservations() throws {
+        let row = #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","used":8000}}"#
+        let data = Data((row + "\n{" + "\n" + row).utf8)
+        let records = try DevinDesktopParser.parse(data, path: "/fixture/session.ndjson")
+        XCTAssertEqual(records.count, 3)
+        XCTAssertEqual(records.filter { $0.kind == "invalid-line" && $0.issues.contains(.invalidMetadata) }.count, 1)
+        XCTAssertEqual(records.filter { $0.issues.contains(.unresolvedMirror) }.count, 2)
+    }
+
+    func testSameFilenameInDifferentDirectoriesKeepsBothDesktopObservations() throws {
+        let row = #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","used":8000}}"#
+        let first = try DevinDesktopParser.parse(Data(row.utf8), path: "/fixture/one/session.ndjson")
+        let second = try DevinDesktopParser.parse(Data(row.utf8), path: "/fixture/two/session.ndjson")
+        XCTAssertNotEqual(first.first?.sessionID, second.first?.sessionID)
+        XCTAssertEqual(UsageRecordDeduplicator.records(first + second).count, 2)
+    }
+
     func testLatestMessageCacheDoesNotClaimDevinHistory() async throws {
         let home = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: home) }

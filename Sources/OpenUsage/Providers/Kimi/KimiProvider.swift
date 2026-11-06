@@ -85,8 +85,10 @@ final class KimiProvider: ProviderRuntime {
                         localContext: "invalid Kimi Code usage records=\(scan.invalidRows)"
                     )
                 }
-                for error in scan.fileErrors {
-                    AppDiagnostics.record(.historyScan, result: .degraded, providerID: provider.id, error: error)
+                if !scan.fileErrors.isEmpty {
+                    AppDiagnostics.record(.historyScan, result: .degraded,
+                                          category: scan.fileErrors.first?.errorCategory ?? .storage,
+                                          providerID: provider.id, localContext: scan.readWarnings.joined(separator: " "))
                 }
             }
         } catch is CancellationError {

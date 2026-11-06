@@ -303,7 +303,7 @@ actor KimiUsageScanner {
             }
             // namespace는 사용자가 재설정 가능하므로 요청 API 모델명도 함께 제한.
             let model = request.model.lowercased()
-            guard canonicalModel(model) != nil || model.hasPrefix("kimi-") else { continue }
+            guard isKimiRoute(alias: alias, model: model) else { continue }
             result.records.append(Record(
                 timestamp: Date(timeIntervalSince1970: Double(milliseconds) / 1_000),
                 tokens: tokens,
@@ -320,6 +320,11 @@ actor KimiUsageScanner {
     private static func count(_ value: Any?) -> Int? {
         guard value is NSNumber else { return nil }
         return UsageLogNumbers.count(value)
+    }
+
+    static func isKimiRoute(alias: String, model: String) -> Bool {
+        let normalized = model.lowercased()
+        return alias.hasPrefix("kimi-code/") && (canonicalModel(normalized) != nil || normalized.hasPrefix("kimi-"))
     }
 
     private static func canonicalModel(_ model: String) -> String? {

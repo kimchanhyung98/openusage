@@ -164,13 +164,8 @@ actor DevinUsageScanner {
         let desktopRecords = desktop.records.filter { $0.providerID == "devin" }
         foundStore = foundStore || !desktopRecords.isEmpty || desktop.readFailureCount > 0
         parsed.unreadableStores += desktop.readFailureCount
-        for record in desktopRecords {
-            guard record.issues.isEmpty, let id = record.id, let date = record.timestamp, let tokens = record.tokens else {
-                parsed.invalidRows += 1
-                continue
-            }
-            parsed.records.append(Record(id: id, timestamp: date, model: record.effectiveModel, tokens: tokens))
-        }
+        // 요청 단위가 미확인인 ACP 관찰값은 불완전 행으로만 집계.
+        parsed.invalidRows += desktopRecords.count
         guard foundStore else { return nil }
         return Self.aggregate(parsed, now: now, pricing: pricing)
     }

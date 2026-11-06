@@ -195,6 +195,48 @@ final class JunieCollectionReviewTests: XCTestCase {
         XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .decoding)])
     }
 
+    func testJunieHomeNormalizesTildeAndBlankOverride() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try UsageRecordFixture.write(try event(["inputTokens": 10, "outputTokens": 1]),
+                                     to: home.appendingPathComponent(".junie/sessions/default/events.jsonl"))
+        try UsageRecordFixture.write(try event(["inputTokens": 20, "outputTokens": 2]),
+                                     to: home.appendingPathComponent("custom/sessions/override/events.jsonl"))
+        for (value, session) in [("  ~/custom  ", "override"), ("  ", "default")] {
+            let collector = UsageSourceCollectors.junieCollector(
+                environment: FakeEnvironment(["JUNIE_HOME": value]), home: home,
+                scanner: IncrementalJSONLScanner()
+            )
+            let result = try await collect(collector)
+            XCTAssertEqual(result.records.map(\.sessionID), [session])
+        }
+    }
+
+    func testNullPreferredAliasesUseValidFallbackAndReasoningNullIsAbsent() throws {
+        let row = try event([
+            "inputTokens": NSNull(), "input": 100,
+            "outputTokens": NSNull(), "output": 20,
+            "cacheInputTokens": NSNull(), "cacheRead": 30,
+            "cacheCreateTokens": NSNull(), "cacheWrite": 10,
+            "reasoningTokens": NSNull()
+        ])
+        let record = try XCTUnwrap(JunieSessionParser.parse(Data(row.utf8), path: "/fixture/session/events.jsonl").first)
+        XCTAssertEqual(record.totalTokens, 160)
+        XCTAssertEqual(record.tokens?.cacheRead, 30)
+        XCTAssertNil(record.reasoningTokens)
+        XCTAssertTrue(record.issues.isEmpty)
+    }
+
+    func testMalformedMiddleLineKeepsCompletedEventsAndUnfinishedTailIsDeferred() throws {
+        let first = try event(["inputTokens": 10, "outputTokens": 1])
+        let second = try event(["inputTokens": 20, "outputTokens": 2], timestamp: 1_793_494_801_000)
+        let data = Data((first + "\n{" + "\n" + second + "\n{\"kind\":").utf8)
+        let records = try JunieSessionParser.parse(data, path: "/fixture/session/events.jsonl")
+        XCTAssertEqual(records.count, 3)
+        XCTAssertEqual(records.filter { $0.kind == "invalid-line" && $0.issues.contains(.invalidMetadata) }.count, 1)
+        XCTAssertEqual(records.reduce(0) { $0 + $1.totalTokens }, 33)
+    }
+
     private func collect(_ collector: any UsageCollecting) async throws -> UsageCollection {
         let collected = await UsageCollectionCoordinator(collectors: [collector]).collect(since: .distantPast)
         return try XCTUnwrap(collected)

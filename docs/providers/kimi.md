@@ -90,11 +90,14 @@ OpenAI·Responses의 [캐시 읽기 필드가 없는 기록](https://github.com/
 지원하지 않는 wire 형식은 파일 읽기 오류와 구분하여 앱 업데이트 확인 안내.
 내보낸 파일·백업 파일은 자동 수집에서 제외.
 
-Kimi Work의 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/` 아래 `agents/*/wire.jsonl`도 수집.
+Kimi Work의 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/` 아래 `<workspaceId>/<sessionId>/agents/*/wire.jsonl`도 수집.
 [공식 Work 안내](https://www.kimi.ai/help/kimi-work/overview)는 Kimi Code 커널 사용만 확인 가능.
 위 저장 경로·wire 형식·내장 커널 버전은 공식 공개 계약으로 확인하지 못한 최선 노력 범위.
 직접 `conv-*/wire.jsonl`에 저장하는 구형 배치와 별도 프로필·사용자 지정 홈은 검증하지 않음.
 Work 사용 기록에 `agentId`·`modelAlias`가 없어도 측정 토큰 유지.
+명시된 요청의 라우팅이 Kimi가 아니면 원본만 보존하고 Kimi 카드에 합산하지 않음.
+연결된 요청의 별칭·사용량 모델이 없거나 서로 다르면 원본만 보존.
+손상된 행 등으로 명시된 요청 연결을 잃으면 구형 기록의 Kimi 귀속 규칙으로 대체하지 않음.
 일반 요청과 압축 요청의 `turn`·`session` 사용 범위를 모두 포함.
 구형 Python CLI는 `$KIMI_SHARE_DIR/sessions` 또는 `~/.kimi/sessions`의 `StatusUpdate.token_usage` 수집.
 같은 메시지의 반복 상태는 더 완전한 값 한 번만 반영하며 subagent 경로도 조회.

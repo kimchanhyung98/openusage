@@ -55,7 +55,8 @@ Devin Desktop의 이전 ACP 이벤트 캐시도 확인.
 공식 v3.11.238은 이 경로를 삭제하고 `acp-messages/*.db` 메시지 캐시 사용.
 최신 메시지 캐시의 완전한 요청별 토큰 원장은 미확인으로, 현재 Desktop 사용량 수집 범위에서 제외.
 Devin Local 실행이 CLI 원장에 남긴 요청은 기존 CLI 수집기로 집계.
-이전 ACP 기록의 provider·요청 단위가 확인되지 않으면 Devin 통계에 합산하지 않음.
+이전 ACP 기록 중 `devin-cli` 값은 요청 단위 미확인으로 Devin 통계에 합산하지 않음.
+해당 기록은 `invalidRows`로 계산하여 Devin 카드의 degraded 상태와 진단 기록에 반영.
 일반 ACP의 현재 컨텍스트 크기와 누적 비용을 요청별 입력·출력 토큰으로 변환하지 않음.
 확인되지 않은 사용량 메타데이터는 원본 collection에 보존하고 불완전 이력으로 구분.
 

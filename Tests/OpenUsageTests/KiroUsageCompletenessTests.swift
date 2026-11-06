@@ -237,6 +237,46 @@ final class KiroUsageCompletenessTests: XCTestCase {
         }
     }
 
+    func testZeroTokenNilCostDoesNotHideValidDayCost() {
+        let date = now.addingTimeInterval(-1)
+        let parsed = KiroUsageScanner.Parsed(records: [
+            .init(id: "cost", timestamp: date, costUSD: 0.5, tokens: 10),
+            .init(id: "empty", timestamp: date, costUSD: nil, tokens: 0),
+            .init(id: "zero", timestamp: date, costUSD: 0, tokens: 0)
+        ])
+        let result = KiroUsageScanner.aggregate(parsed, now: now)
+        XCTAssertEqual(result.daily.first?.costUSD, 0.5)
+        XCTAssertEqual(result.daily.first?.missingCost, false)
+        XCTAssertEqual(value(result.totalSpendLines(now: now), kind: .dollars), 0.5)
+    }
+
+    func testMalformedLegacyDatabaseRowPreservesOtherConversations() async throws {
+        let fixture = try KiroCompletenessFixture()
+        try fixture.replaceConversation(legacyConversation())
+        try fixture.addMalformedConversation()
+        let records = try KiroLegacyUsageParser.database(UsageDatabase(path: fixture.database.path), path: fixture.database.path)
+        XCTAssertEqual(records.filter { $0.issues.isEmpty }.first?.totalTokens, 15)
+        XCTAssertEqual(records.filter { $0.issues.contains(.invalidMetadata) }.count, 1)
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: fixture.home)
+        let scan = try await scanner.scan(now: now)
+        XCTAssertEqual(scan?.daily.first?.tokens, 15)
+        XCTAssertEqual(scan?.invalidRows, 1)
+        XCTAssertEqual(scan?.readFailureCount, 0)
+    }
+
+    func testV3DiscoveryFailureStillCollectsLegacyDatabase() async throws {
+        let fixture = try KiroCompletenessFixture()
+        try fixture.replaceConversation(legacyConversation())
+        let profile = fixture.home.appendingPathComponent("v3-profile")
+        try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
+        try Data("not a directory".utf8).write(to: profile.appendingPathComponent("sessions"))
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": profile.path]), homeDirectory: fixture.home)
+        let scan = try await scanner.scan(now: now)
+        XCTAssertEqual(scan?.daily.first?.tokens, 15)
+        XCTAssertEqual(scan?.readFailureCount, 1)
+        XCTAssertFalse(scan?.readWarnings.isEmpty == true)
+    }
+
     private func legacyConversation(credits: [[String: Any]] = [["unit": "credit", "value": 1]]) -> [String: Any] {
         ["model_info": ["model_id": "fixture-model"], "history": [[
             "request_metadata": ["request_start_timestamp_ms": (now.timeIntervalSince1970 - 1) * 1_000,
@@ -292,6 +332,10 @@ private final class KiroCompletenessFixture {
         let json = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
             .replacingOccurrences(of: "'", with: "''")
         try execute("INSERT INTO conversations_v2 VALUES ('fixture', '\(json)')")
+    }
+
+    func addMalformedConversation() throws {
+        try execute("INSERT INTO conversations_v2 VALUES ('broken', 'not-json')")
     }
 
     func writeV3(_ data: Data, profile: URL? = nil) throws {

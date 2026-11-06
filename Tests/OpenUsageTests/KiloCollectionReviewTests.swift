@@ -53,13 +53,8 @@ final class KiloCollectionReviewTests: XCTestCase {
         ])
     }
 
-    func testZeroCostAndUnverifiedForkMetadataDoNotRemoveIndependentCalls() async throws {
+    func testIndependentZeroCostCallsWithoutResponseIDsAreRetained() async throws {
         let database = try KiloReviewDatabase()
-        try database.execute("""
-        CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT,time_created INTEGER,metadata TEXT);
-        INSERT INTO session VALUES('original',NULL,1793494800000,'{}');
-        INSERT INTO session VALUES('other','original',1793494900000,'{"fork":true,"forkedFrom":"original"}');
-        """)
         try database.step("first", session: "original", cost: 0)
         try database.step("second", session: "other", cost: 0)
 
@@ -264,7 +259,7 @@ final class KiloCollectionReviewTests: XCTestCase {
 }
 
 @MainActor
-private final class KiloReviewDatabase {
+final class KiloReviewDatabase {
     let file: URL
     private let ownedDirectory: URL?
     private var handle: OpaquePointer?
