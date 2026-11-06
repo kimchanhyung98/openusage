@@ -277,3 +277,4 @@
 "Some local usage files could not be read. Usage history may be incomplete." = "Some local usage files could not be read. Usage history may be incomplete.";
 "Some local usage has unsupported pricing details. Cost totals may be unavailable." = "Some local usage has unsupported pricing details. Cost totals may be unavailable.";
 "Some Antigravity models have no price. Cost totals may be unavailable." = "Some Antigravity models have no price. Cost totals may be unavailable.";
+"Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "Some Kiro usage has no recorded credit cost. Affected periods show tokens only.";

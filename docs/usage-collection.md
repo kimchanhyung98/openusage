@@ -7,7 +7,8 @@
 기존 provider와 지표 유지.
 새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI.
+공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI, Kilo Code·CLI, Junie와 기존 제품군의 보충 기록.
+Devin·Kimi·Kiro는 기존 native 원장과 확인된 보충 기록을 병합.
 기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
 
@@ -165,6 +166,31 @@ Qwen CLI는 같은 홈·프로젝트 범위에서 응답 UUID와 fork 관계로 
 완료되지 않은 마지막 행은 관리형 원장의 확정된 기록으로 취급하지 않음.
 commit 해시는 JavaScript의 키 순서·숫자 직렬화 규칙으로 검증.
 잘못된 commit이나 리소스는 파일 읽기 실패로 처리.
+
+## 추가 도구 원장
+
+Kilo Code·Kilo CLI는 최신 공용 SQLite DB를 한 번만 읽고, legacy 확장 JSON도 지원.
+제공자를 확인할 수 없는 불완전 기록은 원본을 보존하고 특정 카드에 귀속하지 않음.
+`step-finish` 원장이 있으면 하위 에이전트 비용을 포함할 수 있는 메시지 합계보다 우선.
+`KILO_DB`는 확장자 없는 파일·심볼릭 링크를 포함한 명시 경로로 처리하며 `:memory:`는 로컬 파일 수집에서 제외.
+fork 원본 관계나 응답 식별자가 보존되지 않은 사본은 완전한 중복 제거를 보장하지 않음.
+
+Junie는 `JUNIE_HOME` 아래 events 원장과 fork 계보 메타데이터를 함께 조회.
+제공자를 확인할 수 없는 불완전 기록은 원본을 보존하고 특정 카드에 귀속하지 않음.
+prompt 문맥 ID를 전역 응답 ID로 사용하지 않으며 미확인 결제 provider는 미귀속으로 유지.
+단가표 기반 비용은 추정값으로 구분하고 추정 0을 무료 청구로 확정하지 않음.
+Junie IDE의 미확인 저장소는 수집하지 않음.
+
+Devin Desktop의 이전 ACP 캐시는 확인된 원본 값으로 보존하고 요청 사용량에는 가산하지 않음.
+최신 메시지 캐시에는 완전한 요청 원장이 저장된다는 근거가 없어 자동 수집하지 않음.
+
+Kimi Work의 wire 원장과 구형 Python CLI의 `StatusUpdate.token_usage`를 보충 수집.
+Work 원장의 캐시 읽기 정보가 없으면 확인된 토큰만 보존하고 불완전 사용량으로 구분.
+Python 원장에 모델·과금 provider가 없으면 현재 설정으로 추정하지 않고 미귀속으로 유지.
+
+Kiro V2는 CLI JSON과 SQLite의 측정 사용량을 조회.
+크레딧 미보고 기록의 토큰은 보존하고 해당 날짜·기간의 비용을 생략.
+IDE globalStorage의 별도 형식과 원격 V3 저장소는 수집하지 않음.
 
 ## 기존 provider 연결
 

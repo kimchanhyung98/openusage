@@ -59,14 +59,16 @@ final class KiroProvider: ProviderRuntime {
         snapshot.refreshedAt = refreshedAt
         do {
             if let scan = try await usageScanner.scan(now: refreshedAt) {
-                if !scan.daily.isEmpty || scan.invalidRows == 0 {
+                if !scan.daily.isEmpty || (scan.invalidRows == 0 && scan.readFailureCount == 0) {
                     snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
                 }
-                for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
+                for warning in scan.readWarnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
+                    snapshot.isDegraded = true
                     AppDiagnostics.record(
                         .historyScan, result: .degraded,
-                        category: scan.invalidRows > 0 ? .decoding : .other, providerID: provider.id
+                        category: scan.readFailureCount > 0 ? .storage : (scan.invalidRows > 0 ? .decoding : .other),
+                        providerID: provider.id, localContext: scan.warnings.joined(separator: " ")
                     )
                 }
             }

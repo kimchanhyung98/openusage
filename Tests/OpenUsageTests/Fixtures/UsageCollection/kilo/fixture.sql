@@ -1,0 +1,14 @@
+BEGIN TRANSACTION;
+CREATE TABLE message(id TEXT PRIMARY KEY,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+INSERT INTO "message" VALUES('k-msg-parent','k-parent',1793505600000,1793505601000,'{"role":"assistant","modelID":"claude-sonnet-4","providerID":"kilo","cost":0.3,"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":30,"write":10}},"time":{"created":1793505600000,"completed":1793505601000},"agent":"build"}');
+INSERT INTO "message" VALUES('k-msg-child','k-child',1793505600200,1793505600800,'{"role":"assistant","modelID":"claude-sonnet-4","providerID":"kilo","cost":0.2,"tokens":{"input":50,"output":10,"reasoning":0,"cache":{"read":0,"write":0}},"time":{"created":1793505600200,"completed":1793505600800},"agent":"build"}');
+CREATE TABLE part(id TEXT PRIMARY KEY,message_id TEXT,session_id TEXT,time_created INTEGER,time_updated INTEGER,data TEXT);
+INSERT INTO "part" VALUES('k-step-parent','k-msg-parent','k-parent',1793505600000,1793505601000,'{"type":"step-finish","reason":"stop","time":{"start":1793505600000,"end":1793505601000},"cost":0.1,"tokens":{"input":100,"output":20,"reasoning":5,"cache":{"read":30,"write":10}},"generationID":"gen_parent"}');
+INSERT INTO "part" VALUES('k-step-child','k-msg-child','k-child',1793505600000,1793505601000,'{"type":"step-finish","reason":"stop","time":{"start":1793505600000,"end":1793505601000},"cost":0.2,"tokens":{"input":50,"output":10,"reasoning":0,"cache":{"read":0,"write":0}},"generationID":"gen_child"}');
+CREATE TABLE session(id TEXT PRIMARY KEY,parent_id TEXT);
+INSERT INTO "session" VALUES('k-parent',NULL);
+INSERT INTO "session" VALUES('k-child','k-parent');
+INSERT INTO "session" VALUES('k-modern',NULL);
+CREATE TABLE session_message(id TEXT PRIMARY KEY,session_id TEXT,type TEXT,seq INTEGER,time_created INTEGER,time_updated INTEGER,data TEXT);
+INSERT INTO "session_message" VALUES('k-msg-modern','k-modern','assistant',1,1793505602000,1793505602500,'{"agent":"build","model":{"id":"gpt-5","providerID":"openai"},"content":[],"cost":0.04,"tokens":{"input":25,"output":4,"reasoning":1,"cache":{"read":5,"write":0}},"time":{"created":1793505602000,"completed":1793505602500}}');
+COMMIT;

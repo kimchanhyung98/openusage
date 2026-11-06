@@ -31,9 +31,12 @@ Kimi Code CLI의 로컬 사용 기록으로 Today·Yesterday·30 Days의 Tokens 
 현재 Mac의 로그 범위이며 계정 전체 사용량이나 Kimi 구독 청구 내역을 뜻하지 않음.
 원격 할당량 조회 실패 시 기존 마지막 정상값 유지 및 새 토큰 집계 중단.
 할당량 조회가 회복되면 로컬 토큰도 다시 집계.
+일부 이력 파일만 실패하면 확인된 사용량으로 갱신하고 경고 표시.
+사용할 수 있는 기록 없이 이력 전체가 실패하면 같은 날짜의 마지막 정상 통계와 원래 통계 조회 시각 유지.
+정상적으로 확인한 빈 이력은 빈 통계로 반영하며 전날 Today 값을 새 날짜에 재사용하지 않음.
 Cost·Cost/MTok는 선택 기간의 모든 집계 대상 요청에서 모델과 캐시 과금 구분을 확인할 때만 제공.
 하나라도 가격을 확인할 수 없으면 해당 기간의 전체 Tokens는 유지하고 비용만 생략.
-누락 원인은 공급자 헤더의 경고로 표시하며 사용량이 0인 기록은 경고 대상에서 제외.
+모델·캐시 가격을 확인할 수 없는 원인은 진단 로그에만 기록하며 사용량이 0인 기록은 오류 진단에서 제외.
 비용은 공통 가격 엔진으로 계산한 API 요율 추정값이며 구독료·실제 청구액이 아님.
 할당량 비율·구독 quota 배수로 달러 환산하지 않음.
 Kimi API 종량제와 Kimi Code 구독은 별도 상품이며 [공식 가격 안내](https://platform.kimi.ai/docs/pricing/chat) 참조.
@@ -51,7 +54,7 @@ Kimi API 종량제와 Kimi Code 구독은 별도 상품이며 [공식 가격 안
 일반 요청(`kind: loop`)은 `usageScope: turn`, 백그라운드 압축 요청(`kind: compaction`)은 `usageScope: session`과 연결.
 두 요청이 동시에 진행돼도 모델·thinking 설정을 서로 섞지 않음.
 완료 행의 JSON·`type`을 해석할 수 없거나 요청의 agent를 확인할 수 없으면 이전 요청 연결을 초기화.
-다음 정상 요청 전까지 연결할 수 없는 사용량은 경고와 함께 제외하고, 이미 집계한 기록은 유지.
+다음 정상 요청 전까지 연결할 수 없는 사용량은 진단 로그에 기록한 뒤 제외하고, 이미 집계한 기록은 유지.
 요청 종류·사용 범위가 없거나 알 수 없는 기록은 직전 요청의 별칭·모델을 확인해 Tokens만 유지.
 다른 공급자 별칭과 GPT·Claude 등을 가리키는 요청은 제외.
 별칭은 사용자 설정으로 변경 가능하며 로그에 API 호스트·인증 출처가 없어 실제 구독 계정까지 판별할 수 없음.
@@ -83,9 +86,31 @@ OpenAI·Responses의 [캐시 읽기 필드가 없는 기록](https://github.com/
 원본을 삭제했다면 복사본에만 남은 이전 사용량은 누락 가능.
 작성 중인 마지막 불완전 행은 다음 새로 고침에서 처리.
 줄바꿈이 없는 마지막 행도 JSON이 완전하면 집계.
-잘못된 완료 행은 제외 후 경고 표시하며 파일 읽기 실패도 경고로 표시.
+잘못된 완료 행은 제외 후 진단 로그에 기록하며 파일 읽기 실패는 카드 경고로 표시.
 지원하지 않는 wire 형식은 파일 읽기 오류와 구분하여 앱 업데이트 확인 안내.
-구형 Python Kimi CLI 로그·내보낸 파일·백업 파일은 미지원.
+내보낸 파일·백업 파일은 자동 수집에서 제외.
+
+Kimi Work의 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/` 아래 `agents/*/wire.jsonl`도 수집.
+[공식 Work 안내](https://www.kimi.ai/help/kimi-work/overview)는 Kimi Code 커널 사용만 확인 가능.
+위 저장 경로·wire 형식·내장 커널 버전은 공식 공개 계약으로 확인하지 못한 최선 노력 범위.
+직접 `conv-*/wire.jsonl`에 저장하는 구형 배치와 별도 프로필·사용자 지정 홈은 검증하지 않음.
+Work 사용 기록에 `agentId`·`modelAlias`가 없어도 측정 토큰 유지.
+일반 요청과 압축 요청의 `turn`·`session` 사용 범위를 모두 포함.
+구형 Python CLI는 `$KIMI_SHARE_DIR/sessions` 또는 `~/.kimi/sessions`의 `StatusUpdate.token_usage` 수집.
+같은 메시지의 반복 상태는 더 완전한 값 한 번만 반영하며 subagent 경로도 조회.
+Python fork는 원본 wire를 복사하지만 원본 계보를 기록하지 않음.
+서로 다른 세션의 같은 메시지 ID만으로 같은 호출을 확정할 수 없어 사본 토큰이 원본 수집 결과에 남을 수 있음.
+[Python CLI는 여러 공급자를 지원](https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/docs/en/configuration/providers.md)하지만 `StatusUpdate`에는 모델·과금 공급자 정보가 없음.
+측정된 원본 토큰은 보존하되 공급자를 확인할 수 없는 Python 기록은 Kimi 통계에 합산하지 않음.
+현재 설정이나 인증 파일로 과거 기록의 공급자를 추정하지 않음.
+Python 압축 사용량은 wire의 `StatusUpdate`에 기록되지 않을 수 있어 복원하지 않음.
+Work·Python CLI의 모델 라우팅·캐시 가격은 현재 설정으로 추정하지 않음.
+Work의 캐시 읽기 토큰이 없으면 입력 전체를 확인할 수 없으므로 원본의 확인된 토큰을 보존하고 일별 합계에서는 제외.
+이 경우 불완전 이력으로 진단하며 카드 경고로 표시하지 않음.
+보충 wire도 작성 중인 마지막 불완전 행은 보류하고 정상 행을 유지.
+완료된 손상 행은 진단 로그에 남기고 해당 행만 제외.
+`KIMI_CODE_HOME`이 Work 저장 홈을 가리키면 실제 파일 경로와 사용량 식별자가 같은 기록은 한 번만 집계.
+native 파서가 실제로 집계한 행만 보충 집계에서 제외하며 같은 파일의 별칭 없는 Work 기록은 유지.
 
 ## 인증 정보 출처
 

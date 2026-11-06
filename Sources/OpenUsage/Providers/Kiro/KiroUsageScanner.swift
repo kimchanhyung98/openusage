@@ -16,8 +16,9 @@ actor KiroUsageScanner {
     struct Record: Sendable {
         var id: String
         var timestamp: Date
-        var costUSD: Double
+        var costUSD: Double?
         var tokens: Int?
+        var tokensEstimated = true
     }
 
     struct Parsed: Sendable {
@@ -30,11 +31,18 @@ actor KiroUsageScanner {
         var costUSD = 0.0
         var tokens = 0
         var missingTokens = false
+        var missingCost = false
+        var tokensEstimated = false
     }
 
     struct Result: Sendable {
         var daily: [Day]
         var invalidRows: Int
+        var readFailureCount = 0
+
+        var readWarnings: [String] {
+            readFailureCount > 0 ? ["Some local usage files could not be read. Usage history may be incomplete."] : []
+        }
 
         var warnings: [String] {
             var values: [String] = []
@@ -44,7 +52,10 @@ actor KiroUsageScanner {
             if daily.contains(where: \.missingTokens) {
                 values.append("Some Kiro CLI turns have no saved response history. Affected periods show cost only.")
             }
-            return values
+            if daily.contains(where: \.missingCost) {
+                values.append("Some Kiro usage has no recorded credit cost. Affected periods show tokens only.")
+            }
+            return values + readWarnings
         }
 
         func totalSpendLines(now: Date) -> [MetricLine] {
@@ -60,28 +71,53 @@ actor KiroUsageScanner {
                 let cost = days.reduce(0) { $0 + $1.costUSD }
                 let tokens = days.reduce(0) { $0 + $1.tokens }
                 guard cost > 0 || tokens > 0 else { return nil }
-                var values = [MetricValue(number: cost, kind: .dollars, estimated: true)]
+                var values: [MetricValue] = []
+                if !days.contains(where: \.missingCost) { values.append(MetricValue(number: cost, kind: .dollars, estimated: true)) }
                 if !days.contains(where: \.missingTokens) {
-                    values.append(MetricValue(number: Double(tokens), kind: .count, label: "tokens", estimated: true))
+                    values.append(MetricValue(number: Double(tokens), kind: .count, label: "tokens", estimated: days.contains(where: \.tokensEstimated)))
                 }
                 return .values(label: label, values: values)
             }
         }
     }
 
-    let directory: URL
+    private let environment: EnvironmentReading
+    private let homeDirectory: URL
+    private let legacyCollectors: [any UsageCollecting]
+    private var lastReadableDirectory: String?
 
-    init(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
-        directory = homeDirectory.appendingPathComponent(".kiro/sessions", isDirectory: true)
+    init(
+        environment: EnvironmentReading = ProcessEnvironmentReader(),
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) {
+        self.environment = environment
+        self.homeDirectory = homeDirectory
+        legacyCollectors = UsageSourceCollectors.kiroLegacy(home: homeDirectory)
     }
 
-    func scan(now: Date) throws -> Result? {
+    var directory: URL {
+        let fallback = homeDirectory.appendingPathComponent(".kiro/sessions", isDirectory: true)
+        guard let path = environment.value(for: "KIRO_HOME"), path.hasPrefix("/") else { return fallback }
+        let root = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        let home = homeDirectory.standardizedFileURL
+        guard root.path != "/", root.path != home.path, !home.path.hasPrefix(root.path + "/") else { return fallback }
+        return root.appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    func scan(now: Date) async throws -> Result? {
         do {
             try Task.checkCancellation()
-            guard try Self.exists(directory) else { return nil }
+            let directory = directory
+            let exists = try Self.exists(directory)
+            let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL.path
+            let missingPreviousStore = !exists && lastReadableDirectory == resolvedDirectory
+            let workspaces = exists ? try Self.entries(in: directory) : []
+            if exists { lastReadableDirectory = resolvedDirectory }
+            var found = exists
             var parsed = Parsed()
+            var readFailures = 0
             var scanned: Set<String> = []
-            for workspace in try Self.entries(in: directory) {
+            for workspace in workspaces {
                 try Task.checkCancellation()
                 do {
                     guard try workspace.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
@@ -97,16 +133,36 @@ actor KiroUsageScanner {
                         } catch is CancellationError {
                             throw CancellationError()
                         } catch {
-                            parsed.invalidRows += 1
+                            readFailures += 1
                         }
                     }
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
-                    parsed.invalidRows += 1
+                    readFailures += 1
                 }
             }
-            return Self.aggregate(parsed, now: now)
+            for collector in legacyCollectors {
+                guard let collection = await collector.collect(since: .distantPast), !Task.isCancelled else { throw CancellationError() }
+                found = found || collection.sources.contains { $0.status != .absent }
+                readFailures += collection.readFailureCount
+                for record in UsageRecordDeduplicator.records(collection.records) {
+                    guard record.issues.isEmpty, let date = record.timestamp else { parsed.invalidRows += 1; continue }
+                    parsed.records.append(Record(
+                        id: "v2:" + (record.sessionID ?? record.filePath ?? "") + ":" + (record.id ?? ""),
+                        timestamp: date, costUSD: record.recordedCostUSD,
+                        tokens: record.tokens == nil ? nil : record.totalTokens, tokensEstimated: false
+                    ))
+                }
+            }
+            var result = Self.aggregate(parsed, now: now)
+            result.readFailureCount = readFailures
+            if missingPreviousStore {
+                guard result.daily.contains(where: { $0.tokens > 0 || $0.costUSD > 0 }) else { throw KiroHistoryError.unreadable }
+                result.readFailureCount += 1
+            }
+            guard found else { return nil }
+            return result
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -234,15 +290,21 @@ actor KiroUsageScanner {
                 chars = (payload["response"] as? String)?.utf16.count ?? 0
                 needsResponse = true
             case "usage_summary":
-                guard let credits = credits(in: payload), (credits * dollarsPerCredit).isFinite else {
+                guard let entries = payload["promptTurnSummaries"] as? [[String: Any]] else {
+                    parsed.invalidRows += 1
+                    continue
+                }
+                let credits = entries.isEmpty ? nil : Self.credits(in: entries)
+                guard entries.isEmpty || credits != nil,
+                      credits.map({ ($0 * dollarsPerCredit).isFinite }) ?? true else {
                     parsed.invalidRows += 1
                     continue
                 }
                 let turn = turnID.flatMap { turns[$0] }
                 let tokens = turn.flatMap { $0.requests > 0 ? UsageLogNumbers.sum($0.input, $0.output) : nil }
-                if credits > 0 || (tokens ?? 0) > 0 {
+                if (credits ?? 0) > 0 || (tokens ?? 0) > 0 {
                     parsed.records.append(Record(id: turnID ?? message.id, timestamp: message.date,
-                                                 costUSD: credits * dollarsPerCredit, tokens: tokens))
+                                                 costUSD: credits.map { $0 * dollarsPerCredit }, tokens: tokens))
                 }
             default:
                 break
@@ -259,8 +321,9 @@ actor KiroUsageScanner {
             if let old = records[record.id] {
                 // 복사된 실행이나 부분 저장이 겹치면 가장 완전한 값 하나만 사용.
                 records[record.id] = Record(id: record.id, timestamp: max(old.timestamp, record.timestamp),
-                                           costUSD: max(old.costUSD, record.costUSD),
-                                           tokens: [old.tokens, record.tokens].compactMap { $0 }.max())
+                                           costUSD: [old.costUSD, record.costUSD].compactMap { $0 }.max(),
+                                           tokens: [old.tokens, record.tokens].compactMap { $0 }.max(),
+                                           tokensEstimated: old.tokensEstimated || record.tokensEstimated)
             } else {
                 records[record.id] = record
             }
@@ -274,16 +337,18 @@ actor KiroUsageScanner {
             let day = DailyUsageAccumulator.dayKey(from: record.timestamp, calendar: calendar)
             guard record.timestamp <= now, days.contains(day) else { continue }
             guard let nextTokens = UsageLogNumbers.sum(totalTokens, record.tokens ?? 0),
-                  record.costUSD.isFinite, record.costUSD >= 0, (totalCost + record.costUSD).isFinite else {
+                  record.costUSD.map({ $0.isFinite && $0 >= 0 }) ?? true, (totalCost + (record.costUSD ?? 0)).isFinite else {
                 invalidRows += 1
                 continue
             }
             totalTokens = nextTokens
-            totalCost += record.costUSD
+            totalCost += record.costUSD ?? 0
             var value = daily[day] ?? Day(date: day)
-            value.costUSD += record.costUSD
+            value.costUSD += record.costUSD ?? 0
+            value.missingCost = value.missingCost || record.costUSD == nil
+            value.tokensEstimated = value.tokensEstimated || record.tokensEstimated
             value.tokens += record.tokens ?? 0
-            value.missingTokens = value.missingTokens || (record.tokens == nil && record.costUSD > 0)
+            value.missingTokens = value.missingTokens || (record.tokens == nil && (record.costUSD ?? 0) > 0)
             daily[day] = value
         }
         return Result(daily: daily.values.sorted { $0.date > $1.date }, invalidRows: invalidRows)
@@ -295,8 +360,7 @@ actor KiroUsageScanner {
         chars / 4 + (chars % 4 == 0 ? 0 : 1)
     }
 
-    private static func credits(in payload: [String: Any]) -> Double? {
-        guard let entries = payload["promptTurnSummaries"] as? [[String: Any]] else { return nil }
+    private static func credits(in entries: [[String: Any]]) -> Double? {
         var total = 0.0
         for entry in entries {
             let unit = ((entry["unit"] ?? entry["unitPlural"]) as? String)?.lowercased()

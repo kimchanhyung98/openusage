@@ -59,8 +59,9 @@ final class DevinProvider: ProviderRuntime {
                 if !scan.series.daily.isEmpty || (scan.invalidRows == 0 && scan.unreadableStores == 0) {
                     snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
                 }
-                for warning in scan.warnings { appendWarning(warning, to: &snapshot) }
+                for warning in scan.readWarnings { appendWarning(warning, to: &snapshot) }
                 if !scan.warnings.isEmpty {
+                    snapshot.isDegraded = true
                     let category: ErrorCategory
                     if scan.unreadableStores > 0 {
                         category = .storage
@@ -71,7 +72,7 @@ final class DevinProvider: ProviderRuntime {
                     }
                     AppDiagnostics.record(
                         .historyScan, result: .degraded,
-                        category: category, providerID: provider.id
+                        category: category, providerID: provider.id, localContext: scan.warnings.joined(separator: " ")
                     )
                 }
             }

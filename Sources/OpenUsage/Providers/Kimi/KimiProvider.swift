@@ -17,6 +17,8 @@ final class KimiProvider: ProviderRuntime {
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
+    var retainsDedicatedSpendOnScanFailure: Bool { true }
+
     init(
         authStore: KimiAuthStore = KimiAuthStore(),
         usageClient: KimiUsageClient = KimiUsageClient(),
@@ -66,15 +68,25 @@ final class KimiProvider: ProviderRuntime {
         do {
             try Task.checkCancellation()
             if let scan = try await usageScanner.scan(now: refreshedAt, pricing: await pricing()) {
-                snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
-                for warning in scan.warnings {
+                if !scan.series.daily.isEmpty || (scan.invalidRows == 0 && scan.fileErrors.isEmpty) {
+                    snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                }
+                for warning in scan.readWarnings {
                     appendWarning(warning, to: &snapshot)
+                }
+                if !scan.warnings.isEmpty { snapshot.isDegraded = true }
+                if scan.hasUnpricedUsage {
+                    AppDiagnostics.record(.historyScan, result: .degraded, category: .other, providerID: provider.id,
+                                          localContext: "local usage contains unpriced models or cache pricing")
                 }
                 if scan.invalidRows > 0 {
                     AppDiagnostics.record(
                         .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
                         localContext: "invalid Kimi Code usage records=\(scan.invalidRows)"
                     )
+                }
+                for error in scan.fileErrors {
+                    AppDiagnostics.record(.historyScan, result: .degraded, providerID: provider.id, error: error)
                 }
             }
         } catch is CancellationError {
