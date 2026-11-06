@@ -368,6 +368,37 @@ final class CodexUsageRecordTests: XCTestCase {
         XCTAssertEqual(events.map(\.input), [1_000, 500, 200])
     }
 
+    func testLegacySnapshotsKeepDistinctSessionIDsAndDeduplicateCopies() {
+        func legacy(id: String, sessionID: String? = nil) -> [CodexLogUsageScanner.Event] {
+            var metadata: [String: Any] = ["id": id]
+            if let sessionID { metadata["session_id"] = sessionID }
+            return parse([line(type: "session_meta", payload: metadata), context(), count(input: 500, totalInput: 500)])
+        }
+        let first = legacy(id: "agent-one")
+        let second = legacy(id: "agent-two")
+        let copy = legacy(id: "agent-one")
+        XCTAssertEqual(first.first?.reconciliation?.snapshot.sessionIdentity, "agent-one")
+        let distinct = CodexLogUsageScanner.aggregate(
+            events: first + second + copy, since: .distantPast, pricing: TestPricing.bundled
+        )
+        XCTAssertEqual(distinct.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_000)
+        let sameThread = CodexLogUsageScanner.aggregate(
+            events: legacy(id: "thread", sessionID: "run-one") + legacy(id: "thread", sessionID: "run-two")
+                + legacy(id: "thread", sessionID: "run-one"),
+            since: .distantPast, pricing: TestPricing.bundled
+        )
+        XCTAssertEqual(sameThread.series.daily.reduce(0) { $0 + $1.totalTokens }, 1_000)
+    }
+
+    func testLegacySnapshotWithoutSessionIDRetainsContentDeduplication() {
+        let rows = [line(type: "session_meta", payload: [:]), context(), count(input: 500, totalInput: 500)]
+        let first = parse(rows)
+        let second = parse(rows)
+        XCTAssertNil(first.first?.reconciliation?.snapshot.sessionIdentity)
+        let scan = CodexLogUsageScanner.aggregate(events: first + second, since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.reduce(0) { $0 + $1.totalTokens }, 500)
+    }
+
     func testCopiedRecordIsDeduplicatedWithoutMergingDistinctResponses() {
         let first = parse([context(), record(response: "one", input: 500)])
         let copy = parse([context(), record(response: "one", input: 500, at: "2026-11-02T02:00:00Z")])

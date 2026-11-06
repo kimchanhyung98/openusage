@@ -4,6 +4,7 @@ enum UsageRecordDeduplicator {
     private struct Session: Hashable {
         let format: String
         let id: String
+        var namespace: String? = nil
     }
 
     private enum Identity: Hashable {
@@ -16,7 +17,9 @@ enum UsageRecordDeduplicator {
         var fileSessions: [Session: Session] = [:]
         for record in records {
             if let path = record.filePath, let id = record.sessionID {
-                fileSessions[Session(format: record.formatID, id: path)] = Session(format: record.formatID, id: id)
+                let namespace = qwenNamespace(record)
+                fileSessions[Session(format: record.formatID, id: path, namespace: namespace)] =
+                    Session(format: record.formatID, id: id, namespace: namespace)
             }
         }
         var parents: [Session: Session] = [:]
@@ -24,8 +27,9 @@ enum UsageRecordDeduplicator {
             guard let id = record.sessionID, let parent = record.parentSession else { continue }
             let normalized = parent.hasPrefix("/")
                 ? URL(fileURLWithPath: parent).resolvingSymlinksInPath().path : parent
-            let reference = Session(format: record.formatID, id: normalized)
-            parents[Session(format: record.formatID, id: id)] = fileSessions[reference] ?? reference
+            let namespace = qwenNamespace(record)
+            let reference = Session(format: record.formatID, id: normalized, namespace: namespace)
+            parents[Session(format: record.formatID, id: id, namespace: namespace)] = fileSessions[reference] ?? reference
         }
 
         var roots: [Session: Session] = [:]
@@ -55,7 +59,8 @@ enum UsageRecordDeduplicator {
             } else if let id = record.id {
                 let session = Session(
                     format: record.formatID,
-                    id: record.sessionID ?? record.filePath ?? record.sourceID
+                    id: record.sessionID ?? record.filePath ?? record.sourceID,
+                    namespace: qwenNamespace(record)
                 )
                 identity = .entry(
                     session: root(of: session), kind: record.kind, id: id,
@@ -72,6 +77,16 @@ enum UsageRecordDeduplicator {
             result.append(record)
         }
         return result
+    }
+
+    private static func qwenNamespace(_ record: UsageRecord) -> String? {
+        guard record.formatID == "qwen-chat", let path = record.filePath else { return nil }
+        let file = URL(fileURLWithPath: path).standardizedFileURL
+        let parts = file.pathComponents
+        if let chats = parts.lastIndex(of: "chats"), chats > 0 {
+            return NSString.path(withComponents: Array(parts[..<chats]))
+        }
+        return file.deletingLastPathComponent().path
     }
 
     private static func prefers(_ candidate: UsageRecord, over existing: UsageRecord) -> Bool {

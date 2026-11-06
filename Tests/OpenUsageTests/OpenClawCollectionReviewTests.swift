@@ -245,4 +245,140 @@ final class OpenClawCollectionReviewTests: XCTestCase {
         XCTAssertEqual(records.last?.kind, "incomplete-tail")
         XCTAssertThrowsError(try OpenClawSessionParser.parse(Data(bytes.dropLast()), path: "/fixture/s1.jsonl.zst"))
     }
+
+    func testRelocatedTopLevelSessionsCollectsSupportedFormatsAndFileAliases() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessions = home.appendingPathComponent(".openclaw/sessions")
+        let external = home.appendingPathComponent("foreign-history")
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: sessions.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: sessions, withDestinationURL: external)
+        let names = ["plain.jsonl", "compressed.jsonl.zst", "deleted.jsonl.deleted.now.zst", "reset.jsonl.reset.now.zst"]
+        for name in names {
+            let text = OpenClawTestStore.header + "\n" + (try OpenClawTestStore.message(id: name, cost: 0.25))
+            let bytes = Data(text.utf8)
+            try UsageRecordFixture.write(name.hasSuffix(".zst") ? OpenClawTestStore.compress(bytes) : bytes,
+                                         to: external.appendingPathComponent(name))
+        }
+        let aliasPayload = home.appendingPathComponent("payload.checkpoint.data")
+        try UsageRecordFixture.write(OpenClawTestStore.message(id: "alias", cost: 0.25), to: aliasPayload)
+        try FileManager.default.createSymbolicLink(at: external.appendingPathComponent("alias.jsonl"), withDestinationURL: aliasPayload)
+        for name in ["cold/blob.jsonl.zst", "snapshot.checkpoint.1.jsonl.zst", "notes.txt"] {
+            try UsageRecordFixture.write(OpenClawTestStore.message(id: "excluded", cost: 9), to: external.appendingPathComponent(name))
+        }
+        let collector = UsageSourceCollectors.openClawCollector(
+            roots: UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(), home: home),
+            scanner: IncrementalJSONLScanner()
+        )
+
+        let collected = await collector.collect(since: .distantPast)
+        let result = try XCTUnwrap(collected)
+
+        XCTAssertEqual(Set(result.records.compactMap(\.id)), Set(names + ["alias"]))
+        XCTAssertEqual(result.records.reduce(0) { $0 + $1.totalTokens }, 600)
+        XCTAssertEqual(result.readFailureCount, 0)
+        XCTAssertTrue(result.records.allSatisfy { $0.issues.isEmpty })
+    }
+
+    func testAgentTranscriptAndImportArchiveScopeStillExcludesColdAndCheckpoints() async throws {
+        for linked in [false, true] {
+            let home = try UsageRecordFixture.temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let agents = home.appendingPathComponent(".openclaw/agents")
+            if linked {
+                let external = home.appendingPathComponent("foreign-agent-store")
+                try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(at: agents.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.createSymbolicLink(at: agents, withDestinationURL: external)
+            }
+            try UsageRecordFixture.write(OpenClawTestStore.message(id: "active", cost: 0.25),
+                                         to: agents.appendingPathComponent("main/sessions/active.jsonl"))
+            let archived = try OpenClawTestStore.message(id: "imported", cost: 0.5, input: 200, output: 40)
+            try UsageRecordFixture.write(OpenClawTestStore.compress(Data(archived.utf8)),
+                                         to: agents.appendingPathComponent("main/session-sqlite-import-archive/run/imported.jsonl.zst"))
+            for name in ["main/sessions/cold/blob.jsonl.zst", "main/sessions/active.checkpoint.1.jsonl",
+                         "main/session-sqlite-import-archive/run/old.checkpoint.1.jsonl", "main/other.jsonl"] {
+                try UsageRecordFixture.write(OpenClawTestStore.message(id: "excluded", cost: 9), to: agents.appendingPathComponent(name))
+            }
+            let collector = UsageSourceCollectors.openClawCollector(
+                roots: UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(), home: home),
+                scanner: IncrementalJSONLScanner()
+            )
+
+            let collected = await collector.collect(since: .distantPast)
+            let result = try XCTUnwrap(collected)
+
+            XCTAssertEqual(Set(result.records.compactMap(\.id)), ["active", "imported"])
+            XCTAssertEqual(result.records.reduce(0) { $0 + $1.totalTokens }, 360)
+            XCTAssertEqual(result.readFailureCount, 0)
+        }
+    }
+
+    func testWarmCollectorFollowsReplacedTopLevelSessionsLink() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessions = home.appendingPathComponent(".openclaw/sessions")
+        let first = home.appendingPathComponent("foreign-first")
+        let second = home.appendingPathComponent("foreign-second")
+        try UsageRecordFixture.write(OpenClawTestStore.message(id: "first", cost: 0.25), to: first.appendingPathComponent("same.jsonl"))
+        try UsageRecordFixture.write(OpenClawTestStore.message(id: "second", cost: 0.75, input: 300, output: 60),
+                                     to: second.appendingPathComponent("same.jsonl"))
+        try FileManager.default.createDirectory(at: sessions.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: sessions, withDestinationURL: first)
+        let collector = UsageSourceCollectors.openClawCollector(
+            roots: UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(), home: home),
+            scanner: IncrementalJSONLScanner()
+        )
+        let initial = await collector.collect(since: .distantPast)
+        XCTAssertEqual(initial?.records.map(\.id), ["first"])
+        XCTAssertEqual(initial?.records.first?.totalTokens, 120)
+        XCTAssertEqual(initial?.readFailureCount, 0)
+
+        try FileManager.default.removeItem(at: sessions)
+        try FileManager.default.createSymbolicLink(at: sessions, withDestinationURL: second)
+        let replaced = await collector.collect(since: .distantPast)
+
+        XCTAssertEqual(replaced?.records.map(\.id), ["second"])
+        XCTAssertEqual(replaced?.records.first?.totalTokens, 360)
+        XCTAssertEqual(replaced?.readFailureCount, 0)
+    }
+
+
+    func testTemporarySidecarsAreExcludedWhileOfficialPlainAndCompressedArchivesRemainReadable() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessions = home.appendingPathComponent(".openclaw/sessions")
+        let generation = "0123456789abcdef0123456789abcdef"
+        let stamps = ["2026-11-01T09-00-00Z", "2026-11-01T09-00-00.123Z", "2026-11-01T09-00-00.123Z." + generation]
+        var names = ["active.jsonl", "compressed.jsonl.zst"]
+        for reason in ["deleted", "reset"] {
+            for stamp in stamps {
+                names += ["s1.jsonl.\(reason).\(stamp)", "s1.jsonl.\(reason).\(stamp).zst"]
+            }
+        }
+        for name in names {
+            let data = Data(try OpenClawTestStore.message(id: name, cost: 0.25).utf8)
+            try UsageRecordFixture.write(name.hasSuffix(".zst") ? OpenClawTestStore.compress(data) : data,
+                                         to: sessions.appendingPathComponent(name))
+            for suffix in [".tmp", ".01234567-89ab-4cde-8123-456789abcdef.tmp"] {
+                try UsageRecordFixture.write("{unfinished\n", to: sessions.appendingPathComponent(name + suffix))
+            }
+        }
+        try UsageRecordFixture.write("{unfinished\n", to: sessions.appendingPathComponent("s1.jsonl.deleted.2026-11-01.tmp"))
+        let collector = UsageSourceCollectors.openClawCollector(
+            roots: UsageSourceCollectors.openClawRoots(environment: FakeEnvironment(), home: home),
+            scanner: IncrementalJSONLScanner()
+        )
+
+        let collected = await collector.collect(since: .distantPast)
+        let result = try XCTUnwrap(collected)
+
+        XCTAssertEqual(result.records.count, 14)
+        XCTAssertEqual(Set(result.records.compactMap(\.id)), Set(names))
+        XCTAssertEqual(result.records.reduce(0) { $0 + $1.totalTokens }, 1680)
+        XCTAssertEqual(result.readFailureCount, 0)
+        XCTAssertTrue(result.records.allSatisfy { $0.issues.isEmpty })
+    }
+
 }

@@ -7,7 +7,7 @@
 기존 provider와 지표 유지.
 새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi, Oh My Pi(OMP), OpenClaw, Hermes Agent, DeepSeek Harness.
+공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI, OpenClaw, Hermes Agent, DeepSeek Harness.
 기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
 
@@ -60,6 +60,14 @@ OMP 기본 저장 위치는 `~/.omp/agent/sessions`.
 적용 대상인 `XDG_DATA_HOME`과 `PI_CODING_AGENT_DIR`이 상대 경로면 OMP 세션 경로를 확인할 수 없는 상태로 표시.
 매 수집 시 저장 위치를 다시 확인하여 실행 중 생성된 XDG 데이터 디렉터리도 반영.
 유효하지 않은 프로필은 다른 프로필로 대체하지 않고 수집 오류로 구분.
+
+Gemini CLI는 `GEMINI_CLI_HOME` 또는 사용자 홈의 `.gemini/tmp`와 `.cache/.gemini/tmp` 아래 `chats` JSON·JSONL 기록 조회.
+Qwen CLI는 `QWEN_RUNTIME_DIR`, `QWEN_HOME`, 기본 `~/.qwen` 순서로 루트 선택.
+선택한 루트의 `projects` 아래 `chats` JSONL과 `resources`의 관리형 원장 리소스 조회.
+세 환경 변수의 앞뒤 공백은 제거하며, 빈 값·공백만 있는 값은 미설정으로 처리.
+`~`와 `~/...`는 사용자 홈으로 확장하며, 다른 상대 경로는 OpenUsage 프로세스의 현재 작업 디렉터리 기준.
+`~user`는 사용자 홈 표기로 확장하지 않고 같은 이름의 상대 경로로 처리.
+비어 있지 않은 설정 경로를 선택한 뒤에는 해당 경로가 없어도 다음 설정이나 기본 경로로 대체하지 않음.
 
 OpenClaw는 `OPENCLAW_HOME` 또는 사용자 홈 아래의 상태 폴더를 사용하고 `OPENCLAW_STATE_DIR`이 있으면 그 경로를 우선 사용.
 선택한 프로필 또는 기본 `.openclaw`·이전 이름의 agent 아래 `sessions` 원장과 `openclaw-agent.sqlite` 조회.
@@ -143,17 +151,43 @@ SQLite는 읽기 전용 조회 사용.
 DB 본체의 수정 시각만으로 캐시하지 않으며 WAL의 최신 기록도 같은 읽기 스냅샷에서 조회.
 대화 본문·인증 정보는 공통 기록이나 진단 로그에 저장하지 않음.
 
+## Gemini CLI와 Qwen CLI 원장
+
+Gemini CLI의 각 JSON 스냅샷과 JSONL 파일에서 같은 세션·메시지 ID가 여러 번 나오면 마지막 기록 사용.
+파일 간에는 같은 세션·항목·시각 등 중복 식별 정보가 일치할 때 완전성, 기록된 비용, 토큰 수 순서로 우선순위 적용.
+손상된 JSONL 행은 별도 불완전 기록으로 남기고 정상 행의 사용량 유지.
+캐시 읽기 토큰은 입력 토큰의 부분집합으로 처리.
+
+Qwen CLI는 같은 홈·프로젝트 범위에서 응답 UUID와 fork 관계로 복사된 기록 구분.
+일반 원장의 마지막 미완성 행은 건너뛰고 앞의 완전한 기록 유지.
+사고 토큰이 없는 기록의 양수 총합이 제공된 입력·출력과 일치하지 않으면 불완전 기록으로 처리.
+입력·출력 없이 총합만 제공된 기록은 그대로 유지.
+관리형 원장은 실행 엔진 메타데이터 뒤의 헤더를 확인하고 commit·리소스 길이·해시 검증.
+헤더의 필수 리소스, 선언된 baseTranscriptProof, snapshot manifest의 resources 검증.
+리소스는 선언 길이보다 최대 1바이트 더 읽어 길이와 해시 확인.
+관리형 원장은 원장 파일이 바뀌지 않아도 외부 리소스를 매번 재검증.
+재검증 도중 취소되면 바뀌지 않은 파일의 기존 캐시는 유지하고 현재 집계 결과는 폐기.
+일반 원장은 기존 파일 캐시 재사용.
+완료되지 않은 마지막 행은 관리형 원장의 확정된 기록으로 취급하지 않음.
+commit 해시는 JavaScript의 키 순서·숫자 직렬화 규칙으로 검증.
+잘못된 commit이나 리소스는 파일 읽기 실패로 처리.
+
 ## OpenClaw·Hermes·DeepSeek 원장
 
 OpenClaw는 JSONL과 SQLite transcript를 함께 읽고 동일 이벤트를 한 번만 반영.
 선택한 상태 디렉터리의 `agents`와 이전 단일 에이전트 형식의 최상위 `sessions`에서 이력 수집.
+최상위 `sessions`가 외부 디렉터리의 심볼릭 링크여도 조회하며, 링크 대상 변경은 다음 수집부터 반영.
 `OPENCLAW_HOME`의 빈 값과 문자열 `undefined`·`null`은 설정 없음으로 처리.
 JSONL 파일의 마지막 행이 줄바꿈 없이 잘렸으면 완료된 앞부분을 유지하고 마지막 행은 불완전 기록으로 진단.
 잘린 행의 provider·모델은 이전 행에서 추정하지 않으며, 귀속을 확인할 수 없는 진단은 특정 카드에 연결하지 않음.
 줄바꿈 없는 마지막 행도 완전한 JSON 객체이면 반영하며, 줄바꿈으로 끝난 손상 행과 SQLite 보관 원장의 손상은 읽기 실패로 처리.
 `.zst` 파일은 완전한 압축 프레임을 검증한 뒤 같은 JSONL 규칙을 적용하며, 잘린 압축 프레임은 계속 읽기 실패로 처리.
 원본 payload가 cold archive로 이동했으면 보관 목록과 blob·파일·chunk의 길이·해시·순서를 확인한 뒤 복원.
+DB 파일이 심볼릭 링크이면 발견한 원본 위치를 기준으로 cold archive 조회.
 복원할 수 없는 원본은 불완전 기록으로 남김.
+누락된 payload 뒤의 provider·모델은 새 귀속 정보가 확인될 때까지 이전 값에서 이어받지 않음.
+DB 행의 세션 식별자와 payload의 세션 header ID가 다르면 읽기 실패로 처리.
+파일명 끝이 `.tmp`인 임시 보관 파일은 수집에서 제외하며, 기존 일반·압축 deleted/reset 보관 파일의 허용 범위 유지.
 `totalOrigin=provider-billed` 비용의 0과 양수를 제공자 보고액으로 보존.
 `usageReport.state=unavailable` 기록은 원본의 측정값과 비용을 공통 기록에 보존하되 합산에서 제외하고 불완전 이력으로 진단.
 OpenClaw의 Codex mirror는 전체 요청 원장이 아니므로 native Codex 원장과 중복 합산하지 않음.
@@ -162,6 +196,7 @@ Codex 조회는 에이전트 목록과 전용 Codex 저장소로 제한하며 Op
 
 Hermes Agent는 모델별 세션 누적 기록을 우선하며 세션 총계와 그대로 더하지 않음.
 기본·지정 홈의 `state.db`가 심볼릭 링크여도 대상 DB 조회.
+매 수집에서 홈과 `state.db` 링크의 현재 대상 확인.
 본 호출의 확인 가능한 잔여분과 독립 보조 호출을 구분.
 `codex_thread_id`가 확인된 본 호출은 native Codex 원장과 중복 가능하므로 기록은 보존하고 합산에서 제외.
 모델별 기록은 `first_seen`(없으면 세션 시작 시각)과 `last_seen`, 세션 합계는 `started_at`과 `ended_at`이 같은 로컬 날짜로 확인된 경우만 일별 이력에 반영.

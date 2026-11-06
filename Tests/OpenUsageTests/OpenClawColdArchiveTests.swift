@@ -195,4 +195,91 @@ final class OpenClawColdArchiveTests: XCTestCase {
             XCTAssertThrowsError(try store.records(), encoding)
         }
     }
+
+    func testMissingPayloadClearsAttributionUntilExplicitMetadataRestoresIt() throws {
+        func withoutAttribution(id: String, input: Int, output: Int) throws -> String {
+            var object = try UsageJSON.object(Data(OpenClawTestStore.message(id: id, cost: 0.5, input: input, output: output).utf8))
+            var message = try XCTUnwrap(object["message"] as? [String: Any])
+            message.removeValue(forKey: "provider")
+            message.removeValue(forKey: "model")
+            object["message"] = message
+            return try OpenClawTestStore.json(object)
+        }
+        var explicit = try UsageJSON.object(Data(OpenClawTestStore.message(id: "route", provider: "openai", cost: 0, input: 0, output: 0).utf8))
+        var explicitMessage = try XCTUnwrap(explicit["message"] as? [String: Any])
+        explicitMessage["model"] = "gpt-5.2"
+        explicit["message"] = explicitMessage
+        let routes = [
+            #"{"type":"model_change","provider":"openai","modelId":"gpt-5.2"}"#,
+            #"{"type":"custom","customType":"model-snapshot","data":{"provider":"openai","modelId":"gpt-5.2"}}"#,
+            try OpenClawTestStore.json(explicit)
+        ]
+        for route in routes {
+            let store = try OpenClawTestStore()
+            let events: [(Int, String?)] = [
+                (0, OpenClawTestStore.header), (1, try OpenClawTestStore.message(id: "before", cost: 0.25)),
+                (2, nil), (3, try withoutAttribution(id: "unknown", input: 200, output: 40)),
+                (4, route), (5, try withoutAttribution(id: "after", input: 300, output: 60))
+            ]
+            for (sequence, text) in events {
+                try store.execute("INSERT INTO transcript_events VALUES('s1',\(sequence),\(text.map(OpenClawTestStore.literal) ?? "NULL"),NULL,\(text?.utf8.count ?? 123))")
+            }
+            let independent = try OpenClawTestStore.message(id: "independent", provider: "opencode", cost: 0.1)
+            try store.execute("INSERT INTO transcript_events VALUES('s2',0,\(OpenClawTestStore.literal(independent)),NULL,\(independent.utf8.count))")
+
+            let records = try store.records()
+            let unknown = try XCTUnwrap(records.first { $0.id == "unknown" })
+            let restored = try XCTUnwrap(records.first { $0.id == "after" })
+            XCTAssertNil(unknown.providerID)
+            XCTAssertNil(unknown.model)
+            XCTAssertEqual(unknown.totalTokens, 240)
+            XCTAssertEqual(unknown.recordedCostUSD, 0.5)
+            XCTAssertTrue(unknown.issues.contains(.invalidMetadata))
+            XCTAssertEqual(restored.providerID, "openai")
+            XCTAssertEqual(restored.model, "gpt-5.2")
+            XCTAssertEqual(restored.totalTokens, 360)
+            XCTAssertTrue(restored.issues.isEmpty)
+            XCTAssertEqual(records.first { $0.id == "independent" }?.providerID, "opencode")
+            XCTAssertEqual(records.filter { $0.kind == "missing-payload" }.count, 1)
+            let scan = try XCTUnwrap(UsageHistoryBuilder.scan(
+                UsageCollection(records: records), providerID: "claude", since: .distantPast,
+                pricing: .empty, allowEstimates: false
+            ))
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
+            XCTAssertEqual(scan.series.daily.first?.costUSD, 0.25)
+        }
+    }
+
+    func testDatabaseSessionHeadersRejectMismatchedMissingAndNonStringIDsInEveryStorage() throws {
+        let headers = [#"{"type":"session","id":"other"}"#, #"{"type":"session"}"#, #"{"type":"session","id":123}"#]
+        for storage in ["json", "zstd", "cold"] {
+            for header in headers {
+                XCTAssertThrowsError(try recordsWithHeader(header, storage: storage), storage + ": " + header)
+            }
+        }
+    }
+
+    func testMatchingDatabaseSessionHeadersRetainTheRowSessionInEveryStorage() throws {
+        for storage in ["json", "zstd", "cold"] {
+            let records = try recordsWithHeader(OpenClawTestStore.header, storage: storage)
+            XCTAssertEqual(records.count, 1, storage)
+            XCTAssertEqual(records.first?.sessionID, "s1", storage)
+            XCTAssertEqual(records.first?.totalTokens, 120, storage)
+        }
+    }
+
+    private func recordsWithHeader(_ header: String, storage: String) throws -> [UsageRecord] {
+        let store = try OpenClawTestStore()
+        let message = try OpenClawTestStore.message(id: "e1", cost: 0.25)
+        if storage == "cold" {
+            try store.install([OpenClawTestStore.ColdArchive(events: [(0, header), (1, message)])])
+        } else {
+            let text = storage == "json" ? OpenClawTestStore.literal(header) : "NULL"
+            let blob = storage == "zstd" ? try OpenClawTestStore.blob(OpenClawTestStore.compress(Data(header.utf8))) : "NULL"
+            try store.execute("INSERT INTO transcript_events VALUES('s1',0,\(text),\(blob),\(header.utf8.count))")
+            try store.execute("INSERT INTO transcript_events VALUES('s1',1,\(OpenClawTestStore.literal(message)),NULL,\(message.utf8.count))")
+        }
+        return try store.records()
+    }
+
 }

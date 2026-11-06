@@ -37,6 +37,7 @@ extension CodexLogUsageScanner {
         var currentTierIsFast = false
         var currentTierIsUltrafast = false
         var sawSessionMeta = false
+        var sessionIdentity: String?
         // child session의 replay된 parent history 구간 동안 non-nil.
         var replayGate: ChildReplayGate?
 
@@ -78,6 +79,8 @@ extension CodexLogUsageScanner {
             // 파일 자신의 (첫) session_meta만 인정 — child 파일은 자기 것 직후에 parent의 session_meta도 replay.
             if type == "session_meta", !sawSessionMeta {
                 sawSessionMeta = true
+                sessionIdentity = (payload?["session_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+                    ?? (payload?["id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
                 if let payload, isChildSessionMeta(payload) {
                     previousTotals = nil
                     cumulativeBaselineUnknown = true
@@ -329,7 +332,8 @@ extension CodexLogUsageScanner {
                 remaining.total -= usage.total
             }
             let reconciliation = LegacyReconciliation(
-                snapshot: LegacySnapshot(scope: legacy.scope, boundary: legacy.boundary, usage: EventKey(event)),
+                snapshot: LegacySnapshot(sessionIdentity: sessionIdentity, scope: legacy.scope,
+                                         boundary: legacy.boundary, usage: EventKey(event)),
                 recordIDs: Set(consumedRecords.compactMap { events[$0].usageRecordID })
             )
             remaining.reconciliation = reconciliation

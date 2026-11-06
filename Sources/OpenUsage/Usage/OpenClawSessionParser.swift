@@ -130,10 +130,16 @@ enum OpenClawSessionParser {
                     id: UsageLogNumbers.count(row["seq"]).map { "seq:\($0)" }, kind: "missing-payload",
                     providerID: states[session]?.provider, issues: [.invalidMetadata]
                 ))
+                states[session]?.provider = nil
+                states[session]?.model = nil
                 return
             }
             var state = states[session] ?? State(session: session)
-            if let record = state.record(try UsageJSON.object(data), path: path) { records.append(record) }
+            let object = try UsageJSON.object(data)
+            if object["type"] as? String == "session", object["id"] as? String != session {
+                throw CocoaError(.coderReadCorrupt)
+            }
+            if let record = state.record(object, path: path) { records.append(record) }
             states[session] = state
         }
         if tables.contains("session_transcript_archives") {

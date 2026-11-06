@@ -3,36 +3,84 @@ import Foundation
 /// 추가 도구의 저장 위치와 수집기 구성. 기존 원장과 계정 API는 각 프로바이더에서 관리.
 enum UsageSourceCollectors {
     static func make(environment: EnvironmentReading, home: URL) -> [any UsageCollecting] {
+        let geminiHome = configured("GEMINI_CLI_HOME", environment: environment, home: home) ?? home
+        let qwen = configured("QWEN_RUNTIME_DIR", environment: environment, home: home)
+            ?? configured("QWEN_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".qwen")
         let dsh = configured("DSH_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".dsh")
         let clawRoots = openClawRoots(environment: environment, home: home)
         let hermes = configured("HERMES_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".hermes")
-        let hermesProfiles = hermes.appendingPathComponent("profiles")
-        let hermesPath = hermes.resolvingSymlinksInPath().path
-        let hermesPrimary = hermes.appendingPathComponent("state.db").resolvingSymlinksInPath().path
-        let hermesProfilesPath = hermesProfiles.resolvingSymlinksInPath().path
-        let hermesRoots = hermes.deletingLastPathComponent().lastPathComponent == "profiles"
-            ? [hermes.appendingPathComponent("state.db")] : [hermes.appendingPathComponent("state.db"), hermesProfiles]
         return [
             PiUsageScanner(environment: environment, homeDirectory: { home }),
             UsageFileCollector(
-                sourceID: "openclaw", roots: clawRoots, version: 2, includeFile: {
-                    let name = $0.lastPathComponent
-                    return ($0.path.contains("/sessions/") || $0.path.contains("/session-sqlite-import-archive/"))
-                        && !$0.path.contains("/sessions/cold/") && !name.contains(".checkpoint.")
-                        && (name.hasSuffix(".jsonl") || name.hasSuffix(".jsonl.zst") || name.contains(".jsonl.deleted.") || name.contains(".jsonl.reset."))
-                }, parse: OpenClawSessionParser.parse
+                sourceID: "gemini", providerID: "gemini", roots: [
+                    geminiHome.appendingPathComponent(".gemini/tmp"), geminiHome.appendingPathComponent(".cache/.gemini/tmp")
+                ], version: 3, includeFile: { $0.path.contains("/chats/") && ["json", "jsonl"].contains($0.pathExtension) },
+                parse: GeminiSessionParser.parse
             ),
-            UsageSQLiteCollector(sourceID: "openclaw", roots: clawRoots,
-                                 includeFile: { $0.lastPathComponent == "openclaw-agent.sqlite" }, parse: OpenClawSessionParser.database),
-            UsageSQLiteCollector(sourceID: "hermes", roots: hermesRoots, includeFile: { url in
-                if url.resolvingSymlinksInPath().path == hermesPrimary { return true }
-                guard url.lastPathComponent == "state.db" else { return false }
-                let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
-                return parent.path == hermesPath || parent.deletingLastPathComponent().path == hermesProfilesPath
-            }, parse: HermesUsageParser.database),
+            qwenCollector(root: qwen),
+            openClawCollector(roots: clawRoots),
+            openClawDatabaseCollector(roots: clawRoots),
+            hermesCollector(root: hermes),
             UsageFileCollector(sourceID: "dsh", roots: [dsh.appendingPathComponent("sessions")], version: 2,
                                includeFile: DeepSeekSessionParser.isCurrentGeneration, parse: DeepSeekSessionParser.parse)
         ]
+    }
+
+    static func qwenCollector(
+        root: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil
+    ) -> UsageFileCollector {
+        UsageFileCollector(
+            sourceID: "qwen", providerID: "qwen", roots: [root.appendingPathComponent("projects")], version: 3,
+            scanner: scanner, canReuseCachedFile: QwenSessionParser.canReuseCachedFile,
+            includeFile: { $0.path.contains("/chats/") && $0.pathExtension == "jsonl" },
+            parse: { data, path in try QwenSessionParser.parse(data, path: path, resources: root.appendingPathComponent("resources")) }
+        )
+    }
+
+    static func openClawCollector(
+        roots: [URL], scanner: IncrementalJSONLScanner<UsageRecord>? = nil
+    ) -> UsageFileCollector {
+        UsageFileCollector(
+            sourceID: "openclaw", roots: roots, version: 2, scanner: scanner,
+            includeFile: { isOpenClawTranscript($0, roots: roots) }, parse: OpenClawSessionParser.parse
+        )
+    }
+
+    private static func isOpenClawTranscript(_ url: URL, roots: [URL]) -> Bool {
+        let name = url.lastPathComponent
+        guard !name.contains(".checkpoint."), !name.hasSuffix(".tmp"),
+              name.hasSuffix(".jsonl") || name.hasSuffix(".jsonl.zst")
+                || name.contains(".jsonl.deleted.") || name.contains(".jsonl.reset.") else { return false }
+        let path = url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(name).path
+        return roots.contains { root in
+            // 파일 링크 이름은 유지하고 루트 링크의 현재 대상을 기준으로 소속 판정.
+            let prefix = root.resolvingSymlinksInPath().path + "/"
+            guard path.hasPrefix(prefix) else { return false }
+            let relative = "/" + root.lastPathComponent + "/" + String(path.dropFirst(prefix.count))
+            return (relative.contains("/sessions/") || relative.contains("/session-sqlite-import-archive/"))
+                && !relative.contains("/sessions/cold/")
+        }
+    }
+
+    static func hermesCollector(root hermes: URL) -> UsageSQLiteCollector {
+        let hermesProfiles = hermes.appendingPathComponent("profiles")
+        let hermesRoots = hermes.deletingLastPathComponent().lastPathComponent == "profiles"
+            ? [hermes.appendingPathComponent("state.db")] : [hermes.appendingPathComponent("state.db"), hermesProfiles]
+        return UsageSQLiteCollector(sourceID: "hermes", roots: hermesRoots, includeFile: { url in
+            let hermesPath = hermes.resolvingSymlinksInPath().path
+            let hermesPrimary = hermes.appendingPathComponent("state.db").resolvingSymlinksInPath().path
+            let hermesProfilesPath = hermesProfiles.resolvingSymlinksInPath().path
+            if url.resolvingSymlinksInPath().path == hermesPrimary { return true }
+            guard url.lastPathComponent == "state.db" else { return false }
+            let parent = url.deletingLastPathComponent().resolvingSymlinksInPath()
+            return parent.path == hermesPath || parent.deletingLastPathComponent().path == hermesProfilesPath
+        }, parse: HermesUsageParser.database)
+    }
+
+    static func openClawDatabaseCollector(roots: [URL]) -> UsageSQLiteCollector {
+        UsageSQLiteCollector(sourceID: "openclaw", roots: roots,
+                             includeFile: { $0.lastPathComponent == "openclaw-agent.sqlite" },
+                             parse: OpenClawSessionParser.database, useDiscoveredPathForParser: true)
     }
 
     static func openClawRoots(environment: EnvironmentReading, home: URL) -> [URL] {

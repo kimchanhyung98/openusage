@@ -316,6 +316,54 @@ final class HermesUsageReviewTests: XCTestCase {
         }
     }
 
+    func testSameHermesCollectorFollowsRetargetedRootDatabaseSymlink() async throws {
+        let directory = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = try HermesReviewDatabase(file: directory.appendingPathComponent("external/first"))
+        let second = try HermesReviewDatabase(file: directory.appendingPathComponent("external/second"))
+        try first.execute("UPDATE sessions SET id='first'")
+        try second.execute("UPDATE sessions SET id='second'")
+        let home = directory.appendingPathComponent(".hermes")
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        let link = home.appendingPathComponent("state.db")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: first.file)
+        let collector = UsageSourceCollectors.hermesCollector(root: directory.appendingPathComponent(".hermes"))
+        let initial = await collector.collect(since: .distantPast)
+        XCTAssertEqual(initial?.records.map(\.sessionID), ["first"])
+        XCTAssertEqual(initial?.readFailureCount, 0)
+        try FileManager.default.removeItem(at: link)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: second.file)
+        let updated = await collector.collect(since: .distantPast)
+        XCTAssertEqual(updated?.records.map(\.sessionID), ["second"])
+        XCTAssertEqual(updated?.readFailureCount, 0)
+    }
+
+    func testSameHermesCollectorFollowsRetargetedHomeAndDirectProfiles() async throws {
+        let directory = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let firstHome = directory.appendingPathComponent("first")
+        let secondHome = directory.appendingPathComponent("second")
+        let first = try HermesReviewDatabase(file: firstHome.appendingPathComponent("state.db"))
+        let second = try HermesReviewDatabase(file: secondHome.appendingPathComponent("state.db"))
+        let profile = try HermesReviewDatabase(file: secondHome.appendingPathComponent("profiles/work/state.db"))
+        let nested = try HermesReviewDatabase(file: secondHome.appendingPathComponent("profiles/work/nested/state.db"))
+        try first.execute("UPDATE sessions SET id='first'")
+        try second.execute("UPDATE sessions SET id='second'")
+        try profile.execute("UPDATE sessions SET id='profile'")
+        try nested.execute("UPDATE sessions SET id='nested'")
+        let link = directory.appendingPathComponent(".hermes")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: firstHome)
+        let collector = UsageSourceCollectors.hermesCollector(root: directory.appendingPathComponent(".hermes"))
+        let initial = await collector.collect(since: .distantPast)
+        XCTAssertEqual(initial?.records.map(\.sessionID), ["first"])
+        XCTAssertEqual(initial?.readFailureCount, 0)
+        try FileManager.default.removeItem(at: link)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: secondHome)
+        let updated = await collector.collect(since: .distantPast)
+        XCTAssertEqual(Set(updated?.records.compactMap(\.sessionID) ?? []), Set(["second", "profile"]))
+        XCTAssertEqual(updated?.readFailureCount, 0)
+    }
+
     func testWALUpdatesAreRereadAndBrokenSchemaIsReported() async throws {
         let database = try HermesReviewDatabase()
         let first = try await database.collect()

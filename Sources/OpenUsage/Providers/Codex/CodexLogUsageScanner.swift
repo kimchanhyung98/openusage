@@ -34,8 +34,8 @@ actor CodexLogUsageScanner {
         var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// 압축 링크를 일반 원장으로 오인한 이전 캐시 재파싱.
-    static let cacheSchemaVersion = 21
+    /// 세션 계보가 없는 이전 누적 원장 캐시 재파싱.
+    static let cacheSchemaVersion = 22
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -244,6 +244,7 @@ actor CodexLogUsageScanner {
     // MARK: - Aggregation
 
     struct LegacySnapshot: Codable, Sendable, Hashable {
+        var sessionIdentity: String?
         var scope: String
         var boundary: Int
         var usage: EventKey

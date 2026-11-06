@@ -21,6 +21,7 @@ enum JSONLScanning {
         var path: String
         var size: Int
         var mtime: Date
+        var discoveredPath: String? = nil
     }
 
     /// 현재 날짜에서 `daysBack`일 전 자정을 조회 시작 시각으로 사용.
