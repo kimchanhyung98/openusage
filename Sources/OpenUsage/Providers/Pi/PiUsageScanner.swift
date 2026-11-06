@@ -60,6 +60,7 @@ actor PiUsageScanner: UsageCollecting {
             result.records += collection.records
             result.sources += collection.sources
         }
+        guard !Task.isCancelled else { return nil }
         if let settingsFailure {
             result.sources.append(.init(sourceID: "pi", failedStores: 1))
             AppDiagnostics.record(.historyScan, result: .degraded, category: settingsFailure,

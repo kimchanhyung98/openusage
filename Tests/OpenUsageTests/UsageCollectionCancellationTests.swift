@@ -207,6 +207,25 @@ final class UsageCollectionCancellationTests: XCTestCase {
         XCTAssertTrue(diagnostics.events.isEmpty)
     }
 
+    func testPiCancellationDuringSettingsLookupWithNoCollectorsDoesNotPublishFailures() async throws {
+        let root = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("invalid json".utf8).write(to: root.appendingPathComponent("settings.json"))
+        let cancelledReads = CollectionCancellationCounter()
+        let scanner = PiUsageScanner(
+            environment: CollectionCancellationEnvironment(
+                values: ["PI_CODING_AGENT_DIR": root.path, "OMP_PROFILE": "../invalid"],
+                cancelledReads: cancelledReads
+            ),
+            homeDirectory: { root }, incrementalScanner: IncrementalJSONLScanner()
+        )
+        let diagnostics = DiagnosticEventRecorder()
+        let result = await Task { await scanner.collect(since: .distantPast) }.value
+        XCTAssertEqual(cancelledReads.count, 1, "settings lookup must cancel after collect's entry guard")
+        XCTAssertNil(result)
+        XCTAssertTrue(diagnostics.events.isEmpty)
+    }
+
     func testPiCancellationWithNoValidCollectorsDoesNotPublishFailures() async throws {
         let root = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -260,4 +279,17 @@ private struct CollectionCancellationFiles: TextFileAccessing {
     func readText(_ path: String) throws -> String { try read() }
     func writeText(_ path: String, _ text: String) throws {}
     func remove(_ path: String) throws {}
+}
+
+private struct CollectionCancellationEnvironment: EnvironmentReading {
+    let values: [String: String]
+    let cancelledReads: CollectionCancellationCounter
+
+    func value(for name: String) -> String? {
+        if name == "PI_CODING_AGENT_SESSION_DIR" {
+            cancelledReads.increment()
+            withUnsafeCurrentTask { $0?.cancel() }
+        }
+        return values[name]
+    }
 }
