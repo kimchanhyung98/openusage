@@ -121,7 +121,7 @@ final class AppRefreshLoopTests: XCTestCase {
         XCTAssertNil(fixture.dataStore.lastRefreshAt)
     }
 
-    func testUsageAndStatusStartInParallelAndOwnerCancellationStopsStatus() async throws {
+    func testUsageAndStatusShareQueueAndOwnerCancellationStopsStatus() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         let usageStarted = expectation(description: "Usage started")
@@ -134,13 +134,20 @@ final class AppRefreshLoopTests: XCTestCase {
             onRequest: { statusStarted.fulfill() },
             onCancel: { statusCancelled.fulfill() }
         )
-        let status = ProviderStatusStore(http: http)
+        let status = ProviderStatusStore(http: http, workQueue: fixture.workQueue)
+        let first = Task { await fixture.dataStore.refresh(providerID: "claude", force: true) }
+        await fulfillment(of: [usageStarted], timeout: 2)
         let loop = AppRefreshLoop.start(
             dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
             enabledProviderIDs: { ["claude", "claude@work"] }, reconcileAccounts: {}
         )
-        await fulfillment(of: [usageStarted, statusStarted], timeout: 2)
+        for _ in 0..<100 where fixture.workQueue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(fixture.workQueue.pendingCount, 1)
+        let before = await http.requestCount
+        XCTAssertEqual(before, 0)
         usageGate.open()
+        await first.value
+        await fulfillment(of: [statusStarted], timeout: 2)
         loop.cancel()
         await fulfillment(of: [statusCancelled], timeout: 2)
         await loop.value
@@ -243,6 +250,7 @@ final class AppRefreshLoopTests: XCTestCase {
         let suite = "OpenUsageTests.RefreshLoop.\(UUID().uuidString)"
         let defaults: UserDefaults
         let runtime = Runtime()
+        let workQueue = BackgroundWorkQueue()
         let dataStore: WidgetDataStore
         let telemetry: TelemetryRecorder
 
@@ -254,7 +262,8 @@ final class AppRefreshLoopTests: XCTestCase {
             defaults.set(telemetryEnabled, forKey: "enabled")
             dataStore = WidgetDataStore(
                 registry: WidgetRegistry(providers: [runtime.provider], descriptors: []),
-                providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults
+                providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults,
+                workQueue: workQueue
             )
             telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: defaults), snapshot: {
                 TelemetryConfigSnapshot(

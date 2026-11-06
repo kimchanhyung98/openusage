@@ -67,15 +67,13 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
         try await waitUntil { await fileStore.writeInFlight }
 
         sync.enabled = false
-        try await waitUntil {
-            await fileStore.deletedDeviceIDs.contains(sync.deviceID)
-        }
-
+        let deletedBeforeWriteFinished = await fileStore.deletedDeviceIDs
+        XCTAssertTrue(deletedBeforeWriteFinished.isEmpty)
         await fileStore.releaseWrite()
         try await waitUntil {
             let deletedCount = await fileStore.deletedDeviceIDs.filter { $0 == sync.deviceID }.count
             let writeInFlight = await fileStore.writeInFlight
-            return deletedCount >= 2 && !writeInFlight && !sync.isSyncing
+            return deletedCount >= 1 && !writeInFlight && !sync.isSyncing
         }
 
         let documents = await fileStore.documents
@@ -100,6 +98,7 @@ final class ICloudUsageSyncStoreTests: XCTestCase {
 
         sync.enabled = false
         sync.enabled = true
+        await fileStore.releaseWrite()
         try await waitUntil {
             let writeCount = await fileStore.writeCount
             let documents = await fileStore.documents

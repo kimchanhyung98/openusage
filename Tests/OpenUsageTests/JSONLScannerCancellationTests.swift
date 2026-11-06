@@ -97,6 +97,46 @@ final class JSONLScannerCancellationTests: XCTestCase {
         XCTAssertNil(cancelledResult)
     }
 
+    func testCancelledScanRetainsCompletedFilesForRetryAndRelaunch() async throws {
+        let base = try makeDirectory("CompletedFiles")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let files = try [1, 2, 3].map { try makeIntegerFile(named: "\($0).jsonl", value: $0, in: base) }
+        let persistence = JSONLScanCachePersistence(
+            namespace: "test", schemaVersion: 1, directory: base.appendingPathComponent("cache"),
+            writeDebounce: .milliseconds(1)
+        )
+        let scanner = IncrementalJSONLScanner<Int>(persistence: persistence)
+        let blockingParser = BlockingParser()
+        let completedParser = ParseCounter()
+        let task = Task {
+            await scanner.items(from: files, since: .distantPast) { data in
+                if data == Data("2".utf8) { return blockingParser.parse(data) }
+                return completedParser.parse(data)
+            }
+        }
+        guard await waitUntil({ blockingParser.hasStarted }) else {
+            blockingParser.unblock()
+            task.cancel()
+            _ = await task.value
+            return XCTFail("the second parser did not start before the timeout")
+        }
+        task.cancel()
+        blockingParser.unblock()
+        let cancelled = await task.value
+        XCTAssertNil(cancelled, "partial totals must not reach the provider")
+        XCTAssertEqual(completedParser.count, 1, "the third file must wait for the next scan")
+        await scanner.waitForPendingWritesForTesting()
+
+        let reloaded = IncrementalJSONLScanner<Int>(persistence: persistence)
+        for instance in [reloaded, scanner] {
+            let counter = ParseCounter()
+            let values = await instance.items(from: files, since: .distantPast, parse: counter.parse)
+            XCTAssertEqual(values, [1, 2, 3])
+            XCTAssertEqual(counter.count, 2, "the first completed file must survive cancellation")
+            await instance.waitForPendingWritesForTesting()
+        }
+    }
+
     func testCancellationDuringParseReturnsNilWithoutPersistingPartialCache() async throws {
         let base = try makeDirectory("ActiveParse")
         defer { try? FileManager.default.removeItem(at: base) }

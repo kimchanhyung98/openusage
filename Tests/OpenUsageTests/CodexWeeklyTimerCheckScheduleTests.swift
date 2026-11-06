@@ -16,10 +16,11 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         XCTAssertEqual(timeline.deadlines, [instant(10, 30), instant(10, 45), instant(11), instant(11, 15)])
     }
 
-    func testCheckDurationDoesNotMoveOrLoseTheNextBoundary() async {
+    func testLongCheckSkipsElapsedBoundariesWithoutImmediateCatchUp() async {
         let timeline = Timeline(instant(10, 17), steps: [
             .init(at: instant(10, 30), event: .deadline),
-            .init(at: instant(10, 50), event: .deadline)
+            .init(at: instant(10, 50), event: .deadline),
+            .init(at: instant(11), event: .deadline)
         ])
         let completionTime = instant(10, 50)
         timeline.onCheck = { timeline in
@@ -28,7 +29,38 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
 
         await timeline.run()
 
-        XCTAssertEqual(timeline.checks, [instant(10, 17), instant(10, 30), instant(10, 50)])
+        XCTAssertEqual(timeline.checks, [instant(10, 17), instant(10, 30), instant(11)])
+        XCTAssertEqual(timeline.deadlines, [instant(10, 30), instant(11), instant(11), instant(11, 15)])
+    }
+
+    func testLongLaunchCheckSchedulesTheNextFutureBoundary() async {
+        let timeline = Timeline(instant(10, 17), steps: [
+            .init(at: instant(11), event: .deadline)
+        ])
+        let completionTime = instant(10, 50)
+        timeline.onCheck = { timeline in
+            if timeline.checks.count == 1 { timeline.now = completionTime }
+        }
+
+        await timeline.run()
+
+        XCTAssertEqual(timeline.checks, [instant(10, 17), instant(11)])
+        XCTAssertEqual(timeline.deadlines, [instant(11), instant(11, 15)])
+    }
+
+    func testShortCheckKeepsTheNextQuarterHourBoundary() async {
+        let timeline = Timeline(instant(10, 17), steps: [
+            .init(at: instant(10, 30), event: .deadline),
+            .init(at: instant(10, 45), event: .deadline)
+        ])
+        let completionTime = instant(10, 37)
+        timeline.onCheck = { timeline in
+            if timeline.checks.count == 2 { timeline.now = completionTime }
+        }
+
+        await timeline.run()
+
+        XCTAssertEqual(timeline.checks, [instant(10, 17), instant(10, 30), instant(10, 45)])
         XCTAssertEqual(timeline.deadlines, [instant(10, 30), instant(10, 45), instant(11)])
     }
 
@@ -196,9 +228,9 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         return calendar.date(from: DateComponents(year: 2026, month: 10, day: 7, hour: hour, minute: minute))!
     }
 
-    func testSlowAccountDoesNotDelayOtherScheduledAccounts() async {
+    func testScheduledAccountsRunInOrder() async {
         let slowStarted = expectation(description: "Slow account started")
-        let fastFinished = expectation(description: "Fast account finished while slow account waits")
+        var completed: [String] = []
         let gate = WaitGate()
         let task = Task {
             await CodexWeeklyTimerCheckSchedule.refreshAccounts(["slow", "fast"]) { providerID in
@@ -206,19 +238,20 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
                     slowStarted.fulfill()
                     _ = await gate.wait()
                 } else {
-                    fastFinished.fulfill()
+                    completed.append(providerID)
                 }
             }
         }
 
-        await fulfillment(of: [slowStarted, fastFinished], timeout: 1)
+        await fulfillment(of: [slowStarted], timeout: 1)
+        XCTAssertTrue(completed.isEmpty)
         gate.finish(.deadline)
         await task.value
+        XCTAssertEqual(completed, ["fast"])
     }
 
-    func testCancellingScheduledAccountBatchCancelsEveryRefresh() async {
-        let started = expectation(description: "Both accounts started")
-        started.expectedFulfillmentCount = 2
+    func testCancellingScheduledBatchCancelsActiveAndDoesNotStartNextAccount() async {
+        let started = expectation(description: "First account started")
         var cancelled: Set<String> = []
         let task = Task {
             await CodexWeeklyTimerCheckSchedule.refreshAccounts(["first", "second"]) { providerID in
@@ -233,7 +266,7 @@ final class CodexWeeklyTimerCheckScheduleTests: XCTestCase {
         task.cancel()
         await task.value
 
-        XCTAssertEqual(cancelled, ["first", "second"])
+        XCTAssertEqual(cancelled, ["first"])
     }
 
     @MainActor
