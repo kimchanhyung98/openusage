@@ -30,6 +30,18 @@ final class UserFacingErrorsTests: XCTestCase {
                        "An account named '\(label)' already exists. Choose a different name.")
     }
 
+    func testGrokCredentialReadFailureUsesTheConfigurableAuthPathTranslations() {
+        let error = GrokAuthError.credentialReadFailed
+        let snapshot = ProviderSnapshot.error(provider: GrokProvider().provider, error: error)
+        for (language, expected) in [
+            (LanguageSetting.english, "Grok sign-in could not be read. Check access to the Grok auth file and refresh again."),
+            (.korean, "Grok 로그인 정보를 읽을 수 없습니다. Grok 인증 파일 접근 권한을 확인한 뒤 다시 새로고침하세요."),
+            (.japanese, "Grok のログイン情報を読み取れませんでした。Grok 認証ファイルへのアクセス権を確認して、もう一度更新してください。")
+        ] {
+            XCTAssertEqual(L10n.withLanguage(language) { snapshot.errorPresentation?.localized }, expected)
+        }
+    }
+
     func testProcessOutputReadErrorTranslatesWithoutChangingDiagnostics() {
         let error = ProcessRunnerError.outputReadFailed
         let diagnostic = "Could not read output from the process."
