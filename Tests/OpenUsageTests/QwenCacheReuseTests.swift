@@ -79,13 +79,7 @@ final class QwenCacheReuseTests: XCTestCase {
         let fixture = Bundle.module.resourceURL!.appendingPathComponent("UsageCollection/qwen-managed-v1")
         let qwen = directory.appendingPathComponent(".qwen")
         try FileManager.default.copyItem(at: fixture, to: qwen)
-        let resources = qwen.appendingPathComponent("resources")
-        let collector = UsageFileCollector(
-            sourceID: "qwen", roots: [qwen.appendingPathComponent("projects")], scanner: IncrementalJSONLScanner(),
-            canReuseCachedFile: QwenSessionParser.canReuseCachedFile,
-            includeFile: { $0.pathExtension == "jsonl" },
-            parse: { try QwenSessionParser.parse($0, path: $1, resources: resources) }
-        )
+        let collector = UsageSourceCollectors.qwenCollector(root: qwen, scanner: IncrementalJSONLScanner())
         let journal = qwen.appendingPathComponent("projects/-workspace/chats/managed-1.jsonl")
         let prefix = #"{"type":"system","subtype":"session_execution_engine","systemPayload":{"version":1,"engine":"managed"}}"# + "\n"
         let bytes = Data(prefix.utf8) + (try Data(contentsOf: journal))

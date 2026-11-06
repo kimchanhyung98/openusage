@@ -14,13 +14,19 @@ enum UsageSourceCollectors {
                 ], version: 3, includeFile: { $0.path.contains("/chats/") && ["json", "jsonl"].contains($0.pathExtension) },
                 parse: GeminiSessionParser.parse
             ),
-            UsageFileCollector(
-                sourceID: "qwen", providerID: "qwen", roots: [qwen.appendingPathComponent("projects")], version: 3,
-                canReuseCachedFile: QwenSessionParser.canReuseCachedFile,
-                includeFile: { $0.path.contains("/chats/") && $0.pathExtension == "jsonl" },
-                parse: { data, path in try QwenSessionParser.parse(data, path: path, resources: qwen.appendingPathComponent("resources")) }
-            )
+            qwenCollector(root: qwen)
         ]
+    }
+
+    static func qwenCollector(
+        root: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil
+    ) -> UsageFileCollector {
+        UsageFileCollector(
+            sourceID: "qwen", providerID: "qwen", roots: [root.appendingPathComponent("projects")], version: 3,
+            scanner: scanner, canReuseCachedFile: QwenSessionParser.canReuseCachedFile,
+            includeFile: { $0.path.contains("/chats/") && $0.pathExtension == "jsonl" },
+            parse: { data, path in try QwenSessionParser.parse(data, path: path, resources: root.appendingPathComponent("resources")) }
+        )
     }
 
     static func configured(_ key: String, environment: EnvironmentReading, home: URL) -> URL? {
