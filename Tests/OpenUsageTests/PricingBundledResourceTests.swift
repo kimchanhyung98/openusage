@@ -104,6 +104,47 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(gov.outputPerMillion, 18)
     }
 
+    func testRetiredDirectModelRatesRemainBundled() throws {
+        let cases: [(String, Double, Double, Double, Double)] = [
+            ("codex-mini-latest", 1.5, 6.0, 1.5, 0.375),
+            ("command", 1.0, 2.0, 1.0, 0.09999999999999999),
+            ("command-light", 0.3, 0.6, 0.3, 0.03),
+            ("command-r", 0.15, 0.6, 0.15, 0.015),
+            ("command-r-plus", 2.5, 10.0, 2.5, 0.25000000000000006),
+            ("gemini-2.0-flash", 0.09999999999999999, 0.39999999999999997, 0.09999999999999999, 0.024999999999999998),
+            ("google/gemini-2.0-flash", 0.1, 0.4, 0.1, 0.025),
+            ("gemini-2.0-flash-001", 0.15, 0.6, 0.15, 0.0375),
+            ("gemini-2.0-flash-exp-image-generation", 0.0, 0.0, 0.0, 0.0),
+            ("gemini-2.0-flash-lite", 0.075, 0.3, 0.075, 0.01875),
+            ("google/gemini-2.0-flash-lite", 0.075, 0.3, 0.075, 0.01875),
+            ("gemini-2.0-flash-lite-001", 0.075, 0.3, 0.075, 0.01875),
+            ("gpt-4-0125-preview", 10.0, 30.0, 10.0, 1.0000000000000002),
+            ("gpt-4-0314", 30.0, 60.0, 30.0, 3.0),
+            ("gpt-4-turbo-preview", 10.0, 30.0, 10.0, 1.0000000000000002),
+            ("gpt-4o-audio-preview", 2.5, 10.0, 2.5, 0.25000000000000006),
+            ("gpt-4o-mini-audio-preview", 0.15, 0.6, 0.15, 0.015),
+            ("gpt-4o-mini-realtime-preview", 0.6, 2.4, 0.6, 0.3),
+            ("gpt-4o-realtime-preview", 5.0, 20.0, 5.0, 2.5),
+            ("gpt-4o-realtime-preview-2024-12-17", 5.0, 20.0, 5.0, 2.5),
+            ("gpt-4o-realtime-preview-2025-06-03", 5.0, 20.0, 5.0, 2.5),
+        ]
+        for (model, input, output, write, read) in cases {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheWritePerMillion, write, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheReadPerMillion, read, accuracy: 1e-9, model)
+        }
+        for (model, input, output) in [
+            ("vertex_ai/gemini-2.0-flash", 0.15, 0.6),
+            ("azure/eu/gpt-4o-realtime-preview-2024-12-17", 5.5, 22.0)
+        ] {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+        }
+    }
+
     func testClaudeFable5PricingAndAliases() throws {
         let pricing = Self.pricing
         let fable = try XCTUnwrap(pricing.resolve(model: "claude-fable-5-thinking"))
