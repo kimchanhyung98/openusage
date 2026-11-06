@@ -11,11 +11,12 @@ enum UsageSourceCollectors {
             UsageFileCollector(
                 sourceID: "gemini", providerID: "gemini", roots: [
                     geminiHome.appendingPathComponent(".gemini/tmp"), geminiHome.appendingPathComponent(".cache/.gemini/tmp")
-                ], version: 2, includeFile: { $0.path.contains("/chats/") && ["json", "jsonl"].contains($0.pathExtension) },
+                ], version: 3, includeFile: { $0.path.contains("/chats/") && ["json", "jsonl"].contains($0.pathExtension) },
                 parse: GeminiSessionParser.parse
             ),
             UsageFileCollector(
-                sourceID: "qwen", providerID: "qwen", roots: [qwen.appendingPathComponent("projects")], version: 2,
+                sourceID: "qwen", providerID: "qwen", roots: [qwen.appendingPathComponent("projects")], version: 3,
+                canReuseCachedFile: QwenSessionParser.canReuseCachedFile,
                 includeFile: { $0.path.contains("/chats/") && $0.pathExtension == "jsonl" },
                 parse: { data, path in try QwenSessionParser.parse(data, path: path, resources: qwen.appendingPathComponent("resources")) }
             )

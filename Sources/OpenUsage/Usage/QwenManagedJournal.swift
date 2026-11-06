@@ -13,8 +13,16 @@ enum QwenManagedJournal {
         guard let header = rows.first?["managedSession"] as? [String: Any],
               header["engine"] as? String == "managed",
               let sessionKey = header["sessionKey"] as? [String: Any],
-              let sessionID = UsageJSON.string(sessionKey["sessionId"]) else { throw CocoaError(.coderReadCorrupt) }
+              let sessionID = UsageJSON.string(sessionKey["sessionId"]),
+              let definition = header["definitionRef"] as? [String: Any],
+              let rootSnapshot = header["rootSnapshotRef"] as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
         let root = try directory(resources, segments: [sessionID])
+        _ = try resource(definition, root: root)
+        _ = try resource(rootSnapshot, root: root)
+        if let value = header["baseTranscriptProof"] {
+            guard let proof = value as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
+            _ = try resource(proof, root: root)
+        }
         let reader = header["minimumReader"] as? String ?? "managed-session/1"
         let logical: [[String: Any]]
         if reader == "managed-session/2" {
@@ -24,9 +32,9 @@ enum QwenManagedJournal {
         } else { throw CocoaError(.coderReadCorrupt) }
         let committed = try committedEvents(logical, sessionKey: sessionKey, canonical: canonical)
         return try committed.events.compactMap { event in
-            guard event["kind"] as? String == "message.committed",
-                  let payload = event["payload"] as? [String: Any],
-                  let ref = payload["contentRef"] as? [String: Any] else { return nil }
+            guard event["kind"] as? String == "message.committed" else { return nil }
+            guard let payload = event["payload"] as? [String: Any],
+                  let ref = payload["contentRef"] as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
             let bytes = try message(ref, root: root)
             let record = try UsageJSON.object(bytes)
             guard UsageJSON.string(record["uuid"]) == UsageJSON.string(payload["messageId"]),
@@ -90,8 +98,13 @@ enum QwenManagedJournal {
         else { throw CocoaError(.coderReadCorrupt) }
         let manifest = try UsageJSON.object(resource(ref, root: root))
         guard let pages = manifest["pages"] as? [[String: Any]],
+              let references = manifest["resources"] as? [[String: Any]],
               let manifestKey = manifest["sessionKey"] as? [String: Any], try canonical(manifestKey) == canonical(sessionKey)
         else { throw CocoaError(.coderReadCorrupt) }
+        for reference in references {
+            try Task.checkCancellation()
+            _ = try resource(reference, root: root)
+        }
         var data = Data()
         for page in pages {
             guard page["kind"] as? String == "managed-local-journal-snapshot-page" else { throw CocoaError(.coderReadCorrupt) }
@@ -135,7 +148,9 @@ enum QwenManagedJournal {
             throw CocoaError(.coderReadCorrupt)
         }
         let url = try directory(root, segments: [kind, id])
-        let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        let data = try handle.read(upToCount: length + 1) ?? Data()
         guard data.count == length, ref["digest"] as? String == digest(data) else { throw CocoaError(.coderReadCorrupt) }
         return data
     }

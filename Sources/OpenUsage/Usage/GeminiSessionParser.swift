@@ -1,16 +1,28 @@
 import Foundation
 
 enum GeminiSessionParser {
+    private struct MessageKey: Hashable {
+        let sessionID: String?
+        let id: String
+    }
+
     static func parse(_ data: Data, path: String) throws -> [UsageRecord] {
+        try parse(data, path: path, onObject: nil)
+    }
+
+    static func parse(_ data: Data, path: String, onObject: (([String: Any]) -> Void)?) throws -> [UsageRecord] {
+        try Task.checkCancellation()
         var session: String?
         var records: [UsageRecord] = []
-        var indices: [String: Int] = [:]
-        func consume(_ object: [String: Any]) {
+        var indices: [MessageKey: Int] = [:]
+        func consume(_ object: [String: Any]) throws {
+            onObject?(object)
+            try Task.checkCancellation()
             if let id = UsageJSON.string(object["sessionId"]) { session = id }
             if let messages = object["messages"] as? [[String: Any]] {
-                for message in messages { consume(message) }
+                for message in messages { try consume(message) }
             }
-            if let set = object["$set"] as? [String: Any] { consume(set) }
+            if let set = object["$set"] as? [String: Any] { try consume(set) }
             guard object["type"] as? String == "gemini", let usage = object["tokens"] as? [String: Any] else { return }
             var record = UsageRecord(
                 sourceID: "gemini", formatID: "gemini-chat", filePath: path, sessionID: session,
@@ -35,20 +47,27 @@ enum GeminiSessionParser {
             } else {
                 record.issues.insert(.invalidNumbers)
             }
-            if let id = record.id, let index = indices[id] {
-                records[index] = record
+            if let id = record.id {
+                let key = MessageKey(sessionID: record.sessionID, id: id)
+                if let index = indices[key] {
+                    records[index] = record
+                } else {
+                    indices[key] = records.count
+                    records.append(record)
+                }
             } else {
-                if let id = record.id { indices[id] = records.count }
                 records.append(record)
             }
         }
         if URL(fileURLWithPath: path).pathExtension == "json" {
-            consume(try UsageJSON.object(data))
+            try consume(try UsageJSON.object(data))
         } else {
             for line in JSONLScanning.lines(in: data) {
                 try Task.checkCancellation()
                 do {
-                    consume(try UsageJSON.object(line))
+                    try consume(try UsageJSON.object(line))
+                } catch let error as CancellationError {
+                    throw error
                 } catch {
                     records.append(UsageRecord(
                         sourceID: "gemini", formatID: "gemini-chat", filePath: path, sessionID: session,

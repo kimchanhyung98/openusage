@@ -82,6 +82,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         from files: [JSONLScanning.DiscoveredFile],
         since: Date,
         cacheIdentity: String = "default",
+        canReuseCachedFile: (@Sendable (String) -> Bool)? = nil,
         onDiskCacheHit: (@Sendable ([Item]) -> Void)? = nil,
         parse: @Sendable @escaping (Data, String) throws -> [Item]?
     ) async -> ScanResult? {
@@ -98,7 +99,8 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         var toParse: [JSONLScanning.DiscoveredFile] = []
         for file in files {
             guard file.mtime >= since else { continue }
-            if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
+            if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime,
+               canReuseCachedFile?(file.path) ?? true {
                 nextCache[file.path] = cached
                 if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
                     onDiskCacheHit(cached.items)
