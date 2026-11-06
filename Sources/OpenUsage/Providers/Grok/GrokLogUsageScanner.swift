@@ -142,7 +142,7 @@ struct GrokLogUsageScanner: Sendable {
 
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
 
-            // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
+            // 모델 미귀속 행은 제외. 가격 없는 모델의 실측 토큰은 유지하고 기간 비용은 생략.
             guard let model = model?.model else {
                 if totalTokens > 0, session != nil || pid.map({ ambiguousPIDs.contains($0) }) == true {
                     rejectedMetadataRows += 1

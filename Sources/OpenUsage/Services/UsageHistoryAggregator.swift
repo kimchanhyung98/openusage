@@ -55,7 +55,7 @@ enum UsageHistoryAggregator {
             for day in history.series.daily where includedDays.contains(day.date) {
                 var value = days[day.date] ?? (0, UsageCostTotal())
                 value.tokens += day.totalTokens
-                value.cost.add(day.costUSD)
+                if day.totalTokens != 0 || day.costUSD != nil { value.cost.add(day.costUSD) }
                 days[day.date] = value
             }
             for day in history.modelUsage?.daily ?? [] where includedDays.contains(day.date) {
@@ -100,7 +100,7 @@ enum UsageHistoryAggregator {
         mutating func add(_ model: ModelUsageEntry) {
             if displayName.isEmpty { displayName = model.model }
             tokens += model.totalTokens
-            cost.add(model.costUSD)
+            if model.totalTokens != 0 || model.costUSD != nil { cost.add(model.costUSD) }
             for variant in model.variants ?? [] {
                 variants[variant.model.lowercased(), default: VariantAccumulator(name: variant.model)]
                     .add(variant)
@@ -126,7 +126,7 @@ enum UsageHistoryAggregator {
 
         mutating func add(_ variant: ModelUsageVariant) {
             tokens += variant.totalTokens
-            cost.add(variant.costUSD)
+            if variant.totalTokens != 0 || variant.costUSD != nil { cost.add(variant.costUSD) }
         }
 
         var entry: ModelUsageVariant {

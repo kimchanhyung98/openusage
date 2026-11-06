@@ -41,7 +41,9 @@ enum SpendTileMapper {
         }
 
         let totalTokens = usage.daily.reduce(0) { $0 + $1.totalTokens }
-        let totalCost = usage.daily.reduce(into: UsageCostTotal()) { $0.add($1.costUSD) }.value
+        let totalCost = usage.daily.reduce(into: UsageCostTotal()) { total, day in
+            if day.totalTokens != 0 || day.costUSD != nil { total.add(day.costUSD) }
+        }.value
         if totalTokens > 0 || (totalCost ?? 0) > 0 {
             let allUnknown = unknownModelsByDay.values.reduce(into: Set<String>()) { $0.formUnion($1) }
             lines.append(.values(label: "Last 30 Days",
@@ -219,7 +221,7 @@ enum SpendTileMapper {
             let key = model.lowercased()
             var existing = variants[key] ?? (0, UsageCostTotal(), SpellingVote())
             existing.tokens += tokens
-            existing.cost.add(costUSD)
+            if tokens != 0 || costUSD != nil { existing.cost.add(costUSD) }
             existing.vote.note(model, weight: tokens)
             variants[key] = existing
         }
