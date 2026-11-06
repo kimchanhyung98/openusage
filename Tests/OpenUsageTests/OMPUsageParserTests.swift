@@ -145,6 +145,28 @@ final class OMPUsageParserTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(history.series.daily.first?.costUSD), 0.002, accuracy: 1e-10)
     }
 
+    func testMixedRootDetectedOMPKeepsEstimatedCostProvenance() throws {
+        for cost in [0.0, 1.0] {
+            let usage = "{\"input\":100,\"output\":50,\"reasoningTokens\":5,\"cost\":{\"total\":\(cost),\"totalFromProvider\":true}}"
+            let parsed = try XCTUnwrap(PiSessionParser.parse(
+                data(usage: usage), path: "/fixture/session.jsonl", sourceID: "pi-omp"
+            ).first)
+            XCTAssertEqual(parsed.sourceID, "omp")
+            XCTAssertEqual(parsed.costOrigin, .estimated)
+            XCTAssertTrue(parsed.zeroCostIsUnknown)
+            let history = UsageRecordFixture.history(records: [parsed], providerID: "claude", since: .distantPast, pricing: pricing)
+            XCTAssertEqual(try XCTUnwrap(history.series.daily.first?.costUSD), cost == 0 ? 0.002 : cost, accuracy: 1e-10)
+            var hosted = parsed
+            hosted.providerID = "opencode"
+            let reportedOnly = try XCTUnwrap(UsageHistoryBuilder.scan(
+                UsageCollection(records: [hosted]), providerID: "opencode", since: .distantPast,
+                pricing: pricing, allowEstimates: false
+            ))
+            XCTAssertEqual(reportedOnly.series.daily.first?.totalTokens, 150)
+            XCTAssertNil(reportedOnly.series.daily.first?.costUSD)
+        }
+    }
+
     func testSchemaChangeReparsesPriorOMPTokenCache() async throws {
         let root = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

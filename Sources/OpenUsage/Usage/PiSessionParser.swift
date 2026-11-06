@@ -98,7 +98,7 @@ enum PiSessionParser {
         if let value = usage["cost"] {
             if let cost = value as? [String: Any] {
                 UsageJSON.cost(cost["total"], into: &record)
-                if sourceID != "omp", cost["totalFromProvider"] as? Bool == true {
+                if effectiveSource == "pi", cost["totalFromProvider"] as? Bool == true {
                     record.costOrigin = .reported
                     record.zeroCostIsUnknown = false
                 }
