@@ -77,7 +77,9 @@ final class DailyUsageAccumulatorTests: XCTestCase {
                                         modelSourceNote: "Fixture source")
         XCTAssertEqual(lines.count, 2)
         for line in lines {
-            guard case .values(_, let values, _, _, _, let breakdown) = line else { continue }
+            guard case .values(_, let values, _, _, _, let breakdown) = line else {
+                return XCTFail("Expected values line")
+            }
             XCTAssertFalse(values.contains { $0.kind == .dollars })
             XCTAssertEqual(values.first { $0.kind == .count }?.number, 150)
             XCTAssertNil(breakdown?.totalCostUSD)

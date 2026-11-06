@@ -55,6 +55,35 @@ final class UsageHistoryAggregatorTests: XCTestCase {
         XCTAssertNil(merged["cursor"], "account-wide Cursor history must never be added across Macs")
     }
 
+    func testIdleHistoryDoesNotHidePricedDayModelOrVariantAndCostOnlyStillCounts() throws {
+        func history(tokens: Int, cost: Double?) -> ProviderUsageHistory {
+            ProviderUsageHistory(
+                series: DailyUsageSeries(daily: [
+                    DailyUsageEntry(date: "2026-07-13", totalTokens: tokens, costUSD: cost)
+                ]),
+                modelUsage: ModelUsageSeries(daily: [
+                    DailyModelUsageEntry(date: "2026-07-13", models: [
+                        ModelUsageEntry(model: "Opus", totalTokens: tokens, costUSD: cost, variants: [
+                            ModelUsageVariant(model: "Opus Thinking", totalTokens: tokens, costUSD: cost)
+                        ])
+                    ])
+                ])
+            )
+        }
+
+        let merged = UsageHistoryAggregator.mergeHistories([
+            history(tokens: 100, cost: 1), history(tokens: 0, cost: nil),
+            history(tokens: 0, cost: 0), history(tokens: 0, cost: 0.25)
+        ], now: localDay(2026, 7, 13))
+
+        XCTAssertEqual(merged.series.daily, [DailyUsageEntry(date: "2026-07-13", totalTokens: 100, costUSD: 1.25)])
+        let model = try XCTUnwrap(merged.modelUsage?.daily.first?.models.first)
+        XCTAssertEqual(model.totalTokens, 100)
+        XCTAssertEqual(model.costUSD, 1.25)
+        XCTAssertEqual(model.variants?.first?.totalTokens, 100)
+        XCTAssertEqual(model.variants?.first?.costUSD, 1.25)
+    }
+
     func testAggregationExcludesRowsOutsideScannerWindow() throws {
         let peerHistory = ProviderUsageHistory(
             series: DailyUsageSeries(daily: [
