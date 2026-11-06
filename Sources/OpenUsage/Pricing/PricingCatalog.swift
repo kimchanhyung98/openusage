@@ -66,8 +66,14 @@ extension PricingCatalog {
             return true
         }
         let normalizedCandidate = normalizedKey(candidate)
-        return containsKey(normalizedModel, key: normalizedCandidate)
-            || containsKey(normalizedCandidate, key: normalizedModel)
+        if containsKey(normalizedModel, key: normalizedCandidate)
+            || containsKey(normalizedCandidate, key: normalizedModel) { return true }
+        guard normalizedCandidate.contains("-v") else { return false }
+        // 등록된 공급자 후보의 날짜 뒤 revision만 제거. 미등록 요청 이름은 그대로 유지.
+        let unversioned = normalizedCandidate.replacingOccurrences(
+            of: #"(-[0-9]{8}|-[0-9]{4}-[0-9]{2}-[0-9]{2})-v[0-9]+:[0-9]+$"#,
+            with: "$1", options: .regularExpression)
+        return unversioned != normalizedCandidate && containsKey(unversioned, key: normalizedModel)
     }
 
     /// 모델명 앞의 구분자와 뒤의 날짜만 허용 — 미등록 설명·등급을 다른 모델의 가격으로 연결하지 않음.

@@ -305,6 +305,19 @@ final class OpenAIPricingReviewTests: XCTestCase {
                     snapshot.estimatedCostDollars(model: "gpt-5-20260929-fast", tokens: .init(input: 1_000))),
                 expected, accuracy: 1e-9)
         }
+        for (entry, expected) in [(rates, 0.0036), (nativeRates, 0.006)] {
+            let snapshot = ModelPricing(
+                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5-mini": entry]),
+                secondary: PricingCatalog())
+            for prefix in ["", "openai/"] {
+                for date in ["20260929", "2026-09-29"] {
+                    XCTAssertEqual(
+                        try XCTUnwrap(snapshot.estimatedCostDollars(
+                            model: prefix + "gpt-5-mini-" + date + "-fast", tokens: .init(input: 1_000))),
+                        expected, accuracy: 1e-9)
+                }
+            }
+        }
     }
 
     func testMiniStandardAliasesMatchTheQualifiedCaseAndDateFormsOfFastAliases() {

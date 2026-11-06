@@ -109,6 +109,23 @@ final class ModelPricingTests: XCTestCase {
         }
     }
 
+    func testRegisteredProviderDateRevisionsKeepFuzzyRates() throws {
+        for date in ["20240229", "2024-02-29"] {
+            for prefix in ["bedrock/anthropic.", "anthropic/"] {
+                let dated = "claude-3-opus-" + date
+                let key = prefix + dated + "-v1:0"
+                let pricing = try makePricing(primary: [key: rates(15, 75)])
+                for model in [key, "claude-3-opus", dated, prefix + dated] {
+                    XCTAssertEqual(pricing.resolve(model: model)?.inputPerMillion, 15, model)
+                }
+                XCTAssertNil(pricing.resolve(model: dated + "-v2:0"))
+                XCTAssertNil(pricing.resolve(model: dated + "-v1:0-preview"))
+            }
+            let unversioned = try makePricing(primary: ["claude-3-opus-" + date: rates(15, 75)])
+            XCTAssertNil(unversioned.resolve(model: "claude-3-opus-" + date + "-v1:0"))
+        }
+    }
+
     // MARK: - Supplement precedence, aliases, fast multipliers
 
     func testSupplementPricingBeatsCatalogs() throws {

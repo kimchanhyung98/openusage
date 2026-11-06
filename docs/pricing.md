@@ -161,7 +161,8 @@ Cursor CSV는 보충 파일의 `cursor/` 전용 항목과 별칭을 먼저 조�
 4. models.dev에서 모델 이름과 정확히 일치하는 가격 조회.
 
 LiteLLM의 유사 매칭은 프로바이더 접두사(`anthropic/`, `xai/` 등), 날짜 접미사(`claude-sonnet-4` ↔ `claude-sonnet-4-20250514`), 구분자 차이(`grok-4-3` ↔ `grok-4.3`)를 처리.
-등록되지 않은 설명·등급 접미사를 제거해 다른 모델의 가격을 적용하지 않음.
+카탈로그에 등록된 날짜 뒤의 공급자 버전 표기(`-20250514-v1:0`)도 같은 날짜 모델로 조회.
+등록되지 않은 요청 이름의 버전·설명·등급 접미사를 제거해 다른 모델의 가격을 적용하지 않음.
 설명·등급이 붙은 이름은 정확한 가격 항목이나 등록된 별칭이 있을 때만 계산.
 models.dev에는 유사 매칭 미적용.
 
@@ -231,6 +232,7 @@ Claude Opus 4.6·4.7 Fast는 [공식 종료 안내](https://platform.claude.com/
 기본 모델의 일반 요청에는 표준 단가 적용.
 날짜·프로바이더 접두사가 있는 과거 로그도 같은 모델로 해석하며, 응답 사용량의 `speed`로 실제 Fast 실행 여부 구분.
 `openai/` 접두사의 일부 Codex·Pro·연구 모델에 섞인 재판매 요율은 OpenAI 공식 단가로 보정.
+GPT-5.5·GPT-5.1 Codex Max·GPT-5.3 Codex의 `openai/` 가격 항목에도 등록된 Fast 배율 적용.
 GPT-5.1 Codex Max·o1 Pro처럼 제공이 종료된 모델의 단가도 과거 기록용으로 유지.
 Kimi K3 Fast는 [Fireworks의 별도 상품](https://fireworks.ai/models/fireworks/kimi-k3)으로 입력 $4.50·캐시 읽기 $0.45·출력 $22.50 / 100만 토큰.
 Muse Spark 1.3 Contributor도 [별도 요율](https://openrouter.ai/meta/muse-spark-1.3-contributor)인 입력 $0.10·캐시 읽기 $0.002·출력 $0.20 / 100만 토큰으로 구분.

@@ -364,4 +364,25 @@ final class PricingBundledResourceTests: XCTestCase {
             XCTAssertEqual(cost, (input + output + cached) / 1_000, accuracy: 1e-9, model)
         }
     }
+
+    func testQualifiedOpenAIPricesPreserveRequestFastMultipliers() throws {
+        for (base, multiplier) in [("gpt-5.5", 2.5), ("gpt-5.1-codex-max", 2.0), ("gpt-5.3-codex", 2.0)] {
+            let model = "openai/" + base
+            let standardTokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000)
+            let fastTokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000, isFast: true)
+            let standard = try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: standardTokens))
+            XCTAssertEqual(
+                try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: fastTokens)),
+                standard * multiplier, accuracy: 1e-9, model)
+            XCTAssertEqual(
+                try XCTUnwrap(CodexUsagePricing.estimate(model: model, tokens: fastTokens, pricing: Self.pricing)),
+                standard * multiplier, accuracy: 1e-9, model)
+        }
+    }
+
+    func testDatedOpus3RequestsResolveRegisteredBedrockRevisionRates() throws {
+        let rates = try XCTUnwrap(Self.pricing.resolve(model: "claude-3-opus-20240229"))
+        XCTAssertEqual(rates.inputPerMillion, 15)
+        XCTAssertEqual(rates.outputPerMillion, 75)
+    }
 }

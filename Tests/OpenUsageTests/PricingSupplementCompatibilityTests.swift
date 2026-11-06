@@ -56,6 +56,7 @@ final class PricingSupplementCompatibilityTests: XCTestCase {
             "gpt-5.6-sol": 2, "gpt-5.6-terra": 2, "gpt-5.6-luna": 2,
         ]
         let expectedExact: [String: Double] = [
+            "openai/gpt-5.5": 2.5, "openai/gpt-5.1-codex-max": 2, "openai/gpt-5.3-codex": 2,
             "gpt-6.1-sol": 2, "gpt-6-sol": 2, "gpt-6-luna": 2, "gpt-5.4-mini": 2,
             "gpt-5.1": 2, "gpt-5-mini": 1.8, "gpt-4.1": 1.75, "gpt-4.1-mini": 1.75,
             "gpt-4.1-nano": 2, "gpt-4o": 1.7, "gpt-4o-2024-05-13": 1.75,

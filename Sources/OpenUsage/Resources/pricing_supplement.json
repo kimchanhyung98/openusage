@@ -1,6 +1,6 @@
 {
   "$comment": "OpenUsage 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-11-06T14:09:30Z",
+  "updated_at": "2026-11-06T16:56:19Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -737,6 +737,9 @@
     }
   },
   "fast_multipliers_exact": {
+    "openai/gpt-5.5": 2.5,
+    "openai/gpt-5.1-codex-max": 2.0,
+    "openai/gpt-5.3-codex": 2.0,
     "claude-opus-4-6": 6.0,
     "claude-opus-4-7": 6.0,
     "gpt-6.1-sol": 2.0,
