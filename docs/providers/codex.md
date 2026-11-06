@@ -19,17 +19,18 @@ Codex가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 �
 ## Pro 요금제
 
 2026-11-06 확인 기준, Pro의 월 정가(USD)는 $100·$200·$500의 3단계.
-현재 공식 표기인 Pro $100·Pro $200·Pro $500으로 표시.
+앱의 플랜명은 Pro Lite·Pro·Pro Max로 표시.
+금액은 플랜명에 포함하지 않음.
 OpenUsage는 사용량 API의 `plan_type`을 다음 이름으로 표시하며, 사용량 배수는 이름에 덧붙이지 않음.
 
 | API 요금제 | 표시 이름 | 월 정가(USD) |
 |---|---|---|
-| `prolite` | Pro $100 | $100 |
-| `pro` | Pro $200 | $200 |
-| `promax` | Pro $500 | $500 |
+| `prolite` | Pro Lite | $100 |
+| `pro` | Pro | $200 |
+| `promax` | Pro Max | $500 |
 
 위 금액은 조사 시점의 미국 달러 월 정가이며 지역별 통화·세금·할인·실제 청구액과 별개.
-Pro $500은 Ultrafast 이용 가능.
+월 $500 등급은 Ultrafast 이용 가능.
 현재 Pro에는 5시간 한도가 없지만, 앱은 계약·한도를 이름으로 추정하지 않고 실제 응답 유지.
 Free·Go·Plus·Business·Enterprise·Edu를 포함한 가격은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 근거: [공식 Codex 요금 안내](https://learn.chatgpt.com/docs/pricing).

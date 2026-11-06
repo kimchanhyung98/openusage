@@ -20,9 +20,9 @@
 | [Codex / ChatGPT](https://learn.chatgpt.com/docs/pricing) | Free | $0 | - | 제공 모델·기능의 단계적 출시 조건 적용 |
 | - | Go | $8 | - | 제공 모델·기능의 단계적 출시 조건 적용 |
 | - | Plus | $20 | - | 개인 |
-| - | Pro $100 | $100 | - | API 값 `prolite` |
-| - | Pro $200 | $200 | - | API 값 `pro` |
-| - | Pro $500 | $500 | - | API 값 `promax`, Ultrafast 이용 가능 |
+| - | Pro | $100 | - | API 값 `prolite`, 앱 표시 Pro Lite |
+| - | Pro | $200 | - | API 값 `pro`, 앱 표시 Pro |
+| - | Pro | $500 | - | API 값 `promax`, 앱 표시 Pro Max, Ultrafast 이용 가능 |
 | - | Business | $25/사용자 | $240/사용자 | 최소 2명, 연간 결제 월 환산 $20 |
 | - | Enterprise | 문의 | 문의 | 계약별 사용량·청구 조건 |
 | - | Edu | 문의 | 문의 | 기관 계약 |
