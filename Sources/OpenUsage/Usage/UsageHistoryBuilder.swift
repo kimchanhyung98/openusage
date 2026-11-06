@@ -19,7 +19,7 @@ enum UsageHistoryBuilder {
         pricing: ModelPricing,
         costEstimator: CostEstimator? = nil, allowEstimates: Bool = true
     ) -> LogUsageScan? {
-        let sharedSources: Set<String> = ["pi", "omp"]
+        let sharedSources: Set<String> = ["pi", "omp", "openclaw", "hermes", "dsh"]
         let records = collection.records.filter {
             $0.scope == .machineLocal && (UsageProviderMapping.providerID(for: $0.providerID) == providerID
                 || ($0.providerID == nil && sharedSources.contains($0.sourceID) && $0.issues.contains(.invalidMetadata)))

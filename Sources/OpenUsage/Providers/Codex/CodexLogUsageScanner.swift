@@ -67,23 +67,33 @@ actor CodexLogUsageScanner {
     }
 
     /// 최근 `daysBack`일의 Codex rollout 스캔 — Codex home 또는 session 파일이 없으면 `nil` (spend tile은 "No data").
-    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing, includeSharedHomes: Bool = false) async -> LogUsageScan? {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
+        let sharedRoots = includeSharedHomes && rootsOverride == nil
+            ? UsageSourceCollectors.openClawRoots(environment: environment, home: homeDirectory()) : []
+        var sharedCompressedPaths: Set<String> = []
+        let sharedFiles = UsageFileDiscovery.files(under: sharedRoots) { url in
+            guard Self.isSharedRolloutFile(url) else { return false }
+            if url.lastPathComponent.hasSuffix(".jsonl.zst") {
+                sharedCompressedPaths.insert(url.resolvingSymlinksInPath().path)
+            }
+            return true
+        }
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         // scoped 카드는 안정적 per-card identity, 표준 walk는 resolve된 home set을 cache key로 사용 (`ClaudeLogUsageScanner.parseCacheIdentity` 참고).
         var identity: String
         if let cacheIdentityOverride {
             identity = cacheIdentityOverride
         } else {
-            let identityPaths = Set(homes.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+            let identityPaths = Set((homes + sharedRoots).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
                 .sorted()
             identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
         }
         var seenFiles: Set<String> = []
         let nativeFiles = Self.sessionFiles(homes: homes)
-        let files = nativeFiles.result.files.filter { seenFiles.insert($0.path).inserted }
-        let discoveryFailures = nativeFiles.result.failures
-        let compressedPaths = nativeFiles.compressedPaths
+        let files = (nativeFiles.result.files + sharedFiles.files).filter { seenFiles.insert($0.path).inserted }
+        let discoveryFailures = nativeFiles.result.failures + sharedFiles.failures
+        let compressedPaths = nativeFiles.compressedPaths.union(sharedCompressedPaths)
         let compressedAliases = compressedPaths.filter { !$0.hasSuffix(".jsonl.zst") }.sorted()
         if !compressedAliases.isEmpty { identity += "\ncompressed:" + compressedAliases.joined(separator: "\n") }
         if discoveryFailures > 0 {
@@ -168,6 +178,21 @@ actor CodexLogUsageScanner {
             url.lastPathComponent.hasSuffix(".jsonl.zst")
                 && !FileManager.default.fileExists(atPath: url.deletingPathExtension().path)
         )
+    }
+
+    private static func isSharedRolloutFile(_ url: URL) -> Bool {
+        let path = url.path
+        guard isRolloutFile(url), let marker = path.range(of: "/agent/codex-home/")
+            ?? path.range(of: "/agent/cli-auth/codex/") else { return false }
+        let components = path[marker.upperBound...].split(separator: "/")
+        guard let storage = components.lastIndex(where: { $0 == "sessions" || $0 == "archived_sessions" }) else { return false }
+        if components[storage] == "sessions" { return true }
+        let home = String(path[..<marker.upperBound]) + components.prefix(storage).joined(separator: "/")
+        let active = URL(fileURLWithPath: home, isDirectory: true)
+            .appendingPathComponent("sessions/" + components.dropFirst(storage + 1).joined(separator: "/")).path
+        let plain = active.hasSuffix(".jsonl.zst") ? String(active.dropLast(4)) : active
+        return !FileManager.default.fileExists(atPath: plain)
+            && !FileManager.default.fileExists(atPath: plain + ".zst")
     }
 
     // MARK: - Aggregation

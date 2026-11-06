@@ -121,6 +121,44 @@ final class CodexCompressedUsageTests: XCTestCase {
         XCTAssertNotNil(partial?.usageHistory)
     }
 
+    func testSharedOpenClawCompressedHomesFollowConfiguredRootsAndStayOutOfAccountCards() async throws {
+        let root = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cases: [(environment: [String: String], relative: String)] = [
+            ([:], ".openclaw/agents/main/agent/codex-home"),
+            (["OPENCLAW_PROFILE": "work"], ".openclaw-work/agents/main/agent/codex-home"),
+            (["OPENCLAW_STATE_DIR": root.appendingPathComponent("state").path], "state/agents/main/agent/codex-home"),
+            (["OPENCLAW_HOME": root.appendingPathComponent("relocated").path],
+             "relocated/.openclaw/agents/main/agent/codex-home"),
+            (["OPENCLAW_PROFILE": "legacy"], ".openclaw-legacy/agents/main/agent/cli-auth/codex/old")
+        ]
+        for (index, entry) in cases.enumerated() {
+            let home = root.appendingPathComponent(entry.relative)
+            try write(compress(rows(input: 100, output: 50)), "sessions/rollout.jsonl.zst", under: home)
+            try write(rows(input: 999, output: 999), "archived_sessions/rollout.jsonl", under: home)
+            try write(rows(input: 30, output: 20), "sessions/sibling.jsonl", under: home)
+            try write(Data("invalid zstd".utf8), "sessions/sibling.jsonl.zst", under: home)
+            let scanner = CodexLogUsageScanner(
+                environment: FakeEnvironment(entry.environment), homeDirectory: { root },
+                incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>()
+            )
+
+            let shared = await scanner.scan(now: now, pricing: pricing, includeSharedHomes: true)
+            let nativeOnly = await scanner.scan(now: now, pricing: pricing)
+            let scoped = CodexLogUsageScanner(
+                environment: FakeEnvironment(entry.environment), homeDirectory: { root },
+                incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
+                cacheIdentityOverride: "compressed-account-\(index)", rootsOverride: []
+            )
+            let account = await scoped.scan(now: now, pricing: pricing, includeSharedHomes: true)
+
+            XCTAssertEqual(shared?.series.daily.first?.totalTokens, 200, entry.relative)
+            XCTAssertEqual(shared?.readFailureCount, 0, entry.relative)
+            XCTAssertNil(nativeOnly, entry.relative)
+            XCTAssertNil(account, entry.relative)
+        }
+    }
+
     func testCompressedUnknownModelKeepsNativeTokensAndOmitsPeriodCost() async throws {
         let home = try CodexLogFixture.makeHome()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -194,6 +232,29 @@ final class CodexCompressedUsageTests: XCTestCase {
         let scan = await CodexLogFixture.scanner(home: home).scan(now: now, pricing: pricing)
         XCTAssertEqual(scan?.series.daily.first?.totalTokens, 150)
         XCTAssertEqual(scan?.readFailureCount, 0)
+    }
+
+    func testSharedCompressedSymlinkChangesCacheIdentityAndRemainsOutsideAccountScan() async throws {
+        let root = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let target = root.appendingPathComponent("payload")
+        try compress(rows(input: 100, output: 50)).write(to: target)
+        let sessions = root.appendingPathComponent(".openclaw/agents/main/agent/codex-home/sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent("one.jsonl"), withDestinationURL: target)
+        let scanner = CodexLogUsageScanner(environment: FakeEnvironment(), homeDirectory: { root },
+                                            incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>())
+        let raw = await scanner.scan(now: now, pricing: pricing, includeSharedHomes: true)
+        XCTAssertTrue(raw?.series.daily.isEmpty == true)
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent("other.jsonl.zst"), withDestinationURL: target)
+        let compressed = await scanner.scan(now: now, pricing: pricing, includeSharedHomes: true)
+        XCTAssertEqual(compressed?.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(compressed?.readFailureCount, 0)
+        let scoped = CodexLogUsageScanner(environment: FakeEnvironment(), homeDirectory: { root },
+                                           incrementalScanner: IncrementalJSONLScanner<CodexLogUsageScanner.Event>(),
+                                           cacheIdentityOverride: "shared-compressed-account", rootsOverride: [])
+        let account = await scoped.scan(now: now, pricing: pricing, includeSharedHomes: true)
+        XCTAssertNil(account)
     }
 
     private func rows(input: Int, output: Int, model: String = "gpt-5.2") -> Data {

@@ -7,7 +7,7 @@
 기존 provider와 지표 유지.
 새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi와 Oh My Pi(OMP).
+공통 수집 대상은 Pi, Oh My Pi(OMP), OpenClaw, Hermes Agent, DeepSeek Harness.
 기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
 
@@ -59,6 +59,11 @@ OMP 기본 저장 위치는 `~/.omp/agent/sessions`.
 적용 대상인 `XDG_DATA_HOME`과 `PI_CODING_AGENT_DIR`이 상대 경로면 OMP 세션 경로를 확인할 수 없는 상태로 표시.
 매 수집 시 저장 위치를 다시 확인하여 실행 중 생성된 XDG 데이터 디렉터리도 반영.
 유효하지 않은 프로필은 다른 프로필로 대체하지 않고 수집 오류로 구분.
+
+OpenClaw는 `OPENCLAW_HOME` 또는 사용자 홈 아래의 상태 폴더를 사용하고 `OPENCLAW_STATE_DIR`이 있으면 그 경로를 우선 사용.
+선택한 프로필 또는 기본 `.openclaw`·이전 이름의 agent 아래 `sessions` 원장과 `openclaw-agent.sqlite` 조회.
+Hermes Agent는 `HERMES_HOME` 또는 기본 `~/.hermes`의 `state.db`와 프로필별 `state.db` 조회.
+DeepSeek Harness는 `DSH_HOME` 또는 기본 `~/.dsh` 아래 `sessions`의 최신 세대 원장 조회.
 
 ## 보존 규칙
 
@@ -136,6 +141,28 @@ Claude·Codex는 발견한 native 파일의 읽기 실패 수를 공유 이력 �
 SQLite는 읽기 전용 조회 사용.
 DB 본체의 수정 시각만으로 캐시하지 않으며 WAL의 최신 기록도 같은 읽기 스냅샷에서 조회.
 대화 본문·인증 정보는 공통 기록이나 진단 로그에 저장하지 않음.
+
+## OpenClaw·Hermes·DeepSeek 원장
+
+OpenClaw는 JSONL과 SQLite transcript를 함께 읽고 동일 이벤트를 한 번만 반영.
+원본 payload가 cold archive로 이동했으면 보관 목록과 blob·파일·chunk의 길이·해시·순서를 확인한 뒤 복원.
+복원할 수 없는 원본은 불완전 기록으로 남김.
+`totalOrigin=provider-billed` 비용의 0과 양수를 제공자 보고액으로 보존.
+`usageReport.state=unavailable` 기록은 사용량 합산에서 제외.
+OpenClaw의 Codex mirror는 전체 요청 원장이 아니므로 native Codex 원장과 중복 합산하지 않음.
+기본 Codex 카드만 OpenClaw 전용 Codex 홈을 조회하고 계정별 카드에는 해당 이력을 추가하지 않음.
+
+Hermes Agent는 모델별 세션 누적 기록을 우선하며 세션 총계와 그대로 더하지 않음.
+본 호출의 확인 가능한 잔여분과 독립 보조 호출을 구분.
+`codex_thread_id`가 확인된 본 호출은 native Codex 원장과 중복 가능하므로 기록은 보존하고 합산에서 제외.
+시작·종료 시각이 같은 로컬 날짜로 확인된 세션 합계만 일별 이력에 반영.
+여러 날짜에 걸친 합계와 종료 시각이 없는 합계는 원본 보존 및 진단 처리.
+
+DeepSeek Harness는 재시도·settlement·압축 호출을 구분하고 fork의 seed 기록을 제외.
+v2 이상 fork는 마지막 inherited `session/end-seed`를 경계로 사용.
+요약 호출에는 명시된 provider와 모델을 사용.
+파일명과 버전을 확인하고 완전한 기록 뒤 작성 중인 꼬리는 정상 접두부와 구분.
+압축 원장의 완료된 접두부도 같은 규칙으로 처리.
 
 ## 기존 provider 연결
 
