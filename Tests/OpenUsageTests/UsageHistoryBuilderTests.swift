@@ -97,6 +97,36 @@ final class UsageHistoryBuilderTests: XCTestCase {
         XCTAssertNil(UsageHistoryBuilder.scan(failure, providerID: "claude", since: .distantPast, pricing: .empty)?.usageHistory)
     }
 
+    func testFilesAgingOutOfTheQueryWindowProduceCompletedEmptyHistory() async throws {
+        let directory = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let session = directory.appendingPathComponent("old.jsonl")
+        let timestamp = date.addingTimeInterval(-60)
+        let line = """
+        {"type":"message","id":"one","timestamp":"\(OpenUsageISO8601.string(from: timestamp))","message":{"role":"assistant","provider":"anthropic","model":"fixture","usage":{"input":100,"output":20,"cost":{"total":0.5,"totalFromProvider":true}}}}
+        """
+        try UsageRecordFixture.write(line, to: session)
+        try FileManager.default.setAttributes([.modificationDate: timestamp], ofItemAtPath: session.path)
+        let collector = UsageFileCollector(
+            sourceID: "pi", roots: [directory], scanner: IncrementalJSONLScanner(),
+            includeFile: { $0.pathExtension == "jsonl" },
+            parse: { try PiSessionParser.parse($0, path: $1, sourceID: "pi") }
+        )
+        let initial = await collector.collect(since: .distantPast)
+        XCTAssertEqual(initial?.records.first?.totalTokens, 120)
+        let expired = await collector.collect(since: date)
+        let collection = try XCTUnwrap(expired)
+        XCTAssertTrue(collection.records.isEmpty)
+        XCTAssertEqual(collection.sources.first?.completedStores, 1)
+        XCTAssertEqual(collection.sources.first?.failedStores, 0)
+        let scan = try XCTUnwrap(UsageHistoryBuilder.scan(
+            collection, providerID: "claude", since: date, pricing: .empty
+        ))
+        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertNotNil(scan.usageHistory)
+        XCTAssertNil(scan.readWarning)
+    }
+
     func testUnreadableEmptyRootIsNotCompleted() async throws {
         let directory = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -51,7 +51,8 @@ struct UsageFileCollector: UsageCollecting {
         }
         return UsageCollection(records: result.items, sources: [UsageSourceState(
             sourceID: sourceID, providerID: providerID,
-            completedStores: result.completedFiles + discovery.completedEmptyRoots,
+            completedStores: result.completedFiles + discovery.completedEmptyRoots
+                + discovery.files.filter { $0.mtime < since }.count,
             failedStores: discovery.failures + result.failedPaths.count
         )])
     }
