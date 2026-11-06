@@ -56,7 +56,7 @@ final class ClaudeLogParsingTests: XCTestCase {
         XCTAssertEqual(capture.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "claude")])
     }
 
-    func testUnpricedUsagePreservesKnownTotalsAndEmitsOnlyFixedDiagnostic() throws {
+    func testUnpricedUsagePreservesAllTokensAndEmitsOnlyFixedDiagnostic() throws {
         let capture = ClaudeParsingDiagnosticCapture()
         let observer = AppDiagnostics.observe { event, _ in capture.append(event) }
         defer { AppDiagnostics.removeObserver(observer) }
@@ -66,8 +66,8 @@ final class ClaudeLogParsingTests: XCTestCase {
         ]
         let entries = ClaudeLogUsageScanner.parseFile(Data(lines.joined(separator: "\n").utf8))
         let scan = ClaudeLogUsageScanner.aggregate(entries: entries, since: .distantPast, pricing: .empty)
-        XCTAssertEqual(scan.series.daily.first?.totalTokens, 15)
-        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.25)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 135)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
         XCTAssertEqual(capture.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .other, providerID: "claude")])
         XCTAssertFalse(String(decoding: try JSONEncoder().encode(capture.events), as: UTF8.self).contains("PRIVATE_MODEL"))
     }

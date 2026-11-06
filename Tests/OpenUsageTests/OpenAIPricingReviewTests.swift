@@ -74,8 +74,8 @@ final class OpenAIPricingReviewTests: XCTestCase {
         for ordered in [events, Array(events.reversed())] {
             let result = CodexLogUsageScanner.aggregate(events: ordered, since: .distantPast, pricing: pricing)
             let day = try XCTUnwrap(result.series.daily.first)
-            XCTAssertEqual(day.totalTokens, 1_100)
-            XCTAssertEqual(try XCTUnwrap(day.costUSD), 0.003, accuracy: 1e-9)
+            XCTAssertEqual(day.totalTokens, 2_200)
+            XCTAssertNil(day.costUSD)
             XCTAssertEqual(result.unknownModelsByDay[day.date], ["gpt-6-sol (Ultrafast)"])
         }
     }

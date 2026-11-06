@@ -172,7 +172,8 @@ final class CursorSpendRangeTests: XCTestCase {
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        XCTAssertNotNil(values(lines, "Today"), "the priced row keeps the tile present")
+        XCTAssertEqual(values(lines, "Today"),
+                       [MetricValue(number: 1.00, kind: .dollars, estimated: true), MetricValue(number: 100, kind: .count, label: "tokens")])
         XCTAssertEqual(unknown(lines, "Today"), [])
         XCTAssertEqual(unknown(lines, "Last 30 Days"), [])
     }
@@ -188,15 +189,17 @@ final class CursorSpendRangeTests: XCTestCase {
         var lines: [MetricLine] = []
         CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        // unpriced 행은 타일 token·breakdown 모두에서 제외 — unknown-model warning으로만 노출
         XCTAssertEqual(values(lines, "Today"),
-                       [MetricValue(number: 3.01, kind: .dollars, estimated: true), MetricValue(number: 300, kind: .count, label: "tokens")])
+                       [MetricValue(number: 600, kind: .count, label: "tokens")])
         XCTAssertEqual(unknown(lines, "Today"), ["unpriced-cursor-model"])
         let breakdown = try XCTUnwrap(modelBreakdown(lines, "Today"))
         XCTAssertEqual(breakdown.sourceNote, "From your Cursor usage export")
-        XCTAssertEqual(breakdown.models.map(\.model), ["gpt-5.5", "composer-1"])
-        XCTAssertEqual(breakdown.models.map(\.totalTokens), [200, 100])
+        XCTAssertEqual(breakdown.totalTokens, 600)
+        XCTAssertNil(breakdown.totalCostUSD)
+        XCTAssertEqual(breakdown.models.map(\.model), ["gpt-5.5", "composer-1", "unpriced-cursor-model"])
+        XCTAssertEqual(breakdown.models.map(\.totalTokens), [200, 100, 300])
         XCTAssertEqual(breakdown.models[0].costUSD, 2.01, "model cost rounds once at the displayed aggregate")
+        XCTAssertNil(breakdown.models[2].costUSD)
     }
 
     func testModelBreakdownGroupsThinkingEffortSlugsIntoFamilies() throws {
@@ -227,19 +230,26 @@ final class CursorSpendRangeTests: XCTestCase {
                        "a -fast canonical folds into its base family")
     }
 
-    func testUnpricedOnlyDayLeavesTilesUnbacked() {
-        // 모든 행이 unpriceable한 날은 타일·trend 없음 — 제외된 usage는 `unknownModelsByDay`에만 존재
+    func testUnpricedOnlyDayPreservesTokensHistoryAndTrend() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let rows = [
             makeRow(date: now, cost: nil, tokens: 100, model: "totally-unknown-model-xyz")
         ]
 
         var lines: [MetricLine] = []
-        CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
+        let history = CursorUsageMapper.appendSpendLines(rows: rows, now: now, pricing: TestPricing.bundled, to: &lines)
 
-        XCTAssertNil(values(lines, "Today"))
-        XCTAssertNil(values(lines, "Last 30 Days"))
-        XCTAssertNil(lines.first(where: { $0.label == "Usage Trend" }))
+        let expected = [MetricValue(number: 100, kind: .count, label: "tokens")]
+        XCTAssertEqual(values(lines, "Today"), expected)
+        XCTAssertEqual(values(lines, "Last 30 Days"), expected)
+        let day = try XCTUnwrap(history.series.daily.first)
+        XCTAssertEqual(day.totalTokens, 100)
+        XCTAssertNil(day.costUSD)
+        XCTAssertEqual(try XCTUnwrap(modelBreakdown(lines, "Today")).models.map(\.model), ["totally-unknown-model-xyz"])
+        guard case .chart(_, let points, _) = lines.first(where: { $0.label == "Usage Trend" }) else {
+            return XCTFail("expected a Usage Trend chart line")
+        }
+        XCTAssertEqual(points.last?.value, 100)
     }
 
     private func modelBreakdown(_ lines: [MetricLine], _ label: String) -> ModelUsageBreakdown? {

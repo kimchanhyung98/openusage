@@ -81,6 +81,20 @@ struct ModelUsageBreakdown: Hashable, Sendable, Codable {
     var sourceNote: String
 }
 
+/// 비용이 미확정인 기여가 하나라도 있으면 부분 비용을 총비용으로 노출하지 않음.
+struct UsageCostTotal {
+    private(set) var knownTotal = 0.0
+    private var isComplete = true
+    private var hasValue = false
+
+    var value: Double? { isComplete && hasValue ? knownTotal : nil }
+
+    mutating func add(_ cost: Double?) {
+        hasValue = true
+        if let cost { knownTotal += cost } else { isComplete = false }
+    }
+}
+
 /// 일별 token/cost series + 날짜별 미가격 model 목록 — `SpendTileMapper.appendTokenUsage`의 입력.
 /// native log scanner(Claude, Codex)의 공용 결과 shape.
 struct LogUsageScan: Sendable {

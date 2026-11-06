@@ -49,6 +49,62 @@ final class SpendTileMapperTests: XCTestCase {
         XCTAssertNil(line(lines, "Yesterday"), "an idle in-range day is No data, not $0.00 · 0 tokens")
     }
 
+    func testIdleDayDoesNotHideCompleteThirtyDayCost() {
+        var lines: [MetricLine] = []
+        SpendTileMapper.appendTokenUsage(
+            DailyUsageSeries(daily: [
+                DailyUsageEntry(date: "2026-06-26", totalTokens: 100, costUSD: 1),
+                DailyUsageEntry(date: "2026-06-25", totalTokens: 0, costUSD: nil),
+                DailyUsageEntry(date: "2026-06-24", totalTokens: 0, costUSD: 0.25),
+                DailyUsageEntry(date: "2026-06-23", totalTokens: 0, costUSD: 0)
+            ]),
+            to: &lines, now: day(2026, 6, 26), estimated: false
+        )
+
+        XCTAssertEqual(values(lines, "Last 30 Days"), [
+            MetricValue(number: 1.25, kind: .dollars, estimated: false),
+            MetricValue(number: 100, kind: .count, label: "tokens")
+        ])
+        XCTAssertNil(line(lines, "Yesterday"))
+    }
+
+    func testIdleVariantDoesNotHidePricedVariantAcrossDays() throws {
+        var lines: [MetricLine] = []
+        SpendTileMapper.appendTokenUsage(
+            DailyUsageSeries(daily: [
+                DailyUsageEntry(date: "2026-06-26", totalTokens: 100, costUSD: 1),
+                DailyUsageEntry(date: "2026-06-25", totalTokens: 200, costUSD: 2),
+                DailyUsageEntry(date: "2026-06-24", totalTokens: 0, costUSD: 0.25)
+            ]),
+            to: &lines, now: day(2026, 6, 26), estimated: false,
+            modelUsage: ModelUsageSeries(daily: [
+                DailyModelUsageEntry(date: "2026-06-26", models: [
+                    ModelUsageEntry(model: "opus", totalTokens: 100, costUSD: 1, variants: [
+                        ModelUsageVariant(model: "thinking", totalTokens: 100, costUSD: 1)
+                    ])
+                ]),
+                DailyModelUsageEntry(date: "2026-06-25", models: [
+                    ModelUsageEntry(model: "opus", totalTokens: 200, costUSD: 2, variants: [
+                        ModelUsageVariant(model: "thinking", totalTokens: 0, costUSD: nil),
+                        ModelUsageVariant(model: "plain", totalTokens: 200, costUSD: 2)
+                    ])
+                ]),
+                DailyModelUsageEntry(date: "2026-06-24", models: [
+                    ModelUsageEntry(model: "opus", totalTokens: 0, costUSD: 0.25, variants: [
+                        ModelUsageVariant(model: "thinking", totalTokens: 0, costUSD: 0.25)
+                    ])
+                ])
+            ]),
+            modelSourceNote: "From test logs"
+        )
+
+        let model = try XCTUnwrap(modelBreakdown(lines, "Last 30 Days")?.models.first)
+        XCTAssertEqual(model.totalTokens, 300)
+        XCTAssertEqual(model.costUSD, 3.25)
+        XCTAssertEqual(model.variants?.first { $0.model == "thinking" }?.costUSD, 1.25)
+        XCTAssertEqual(model.variants?.first { $0.model == "plain" }?.costUSD, 2)
+    }
+
     func testEmptySeriesLeavesAllTilesUnbacked() {
         var lines: [MetricLine] = []
         SpendTileMapper.appendTokenUsage(

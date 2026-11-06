@@ -47,18 +47,15 @@ enum UsageHistoryAggregator {
         _ histories: [ProviderUsageHistory],
         includedDays: Set<String>
     ) -> ProviderUsageHistory {
-        var days: [String: (tokens: Int, cost: Double?, sawCost: Bool)] = [:]
+        var days: [String: (tokens: Int, cost: UsageCostTotal)] = [:]
         var models: [String: [String: ModelAccumulator]] = [:]
         var unknown: [String: Set<String>] = [:]
 
         for history in histories {
             for day in history.series.daily where includedDays.contains(day.date) {
-                var value = days[day.date] ?? (0, nil, false)
+                var value = days[day.date] ?? (0, UsageCostTotal())
                 value.tokens += day.totalTokens
-                if let cost = day.costUSD {
-                    value.cost = (value.cost ?? 0) + cost
-                    value.sawCost = true
-                }
+                if day.totalTokens != 0 || day.costUSD != nil { value.cost.add(day.costUSD) }
                 days[day.date] = value
             }
             for day in history.modelUsage?.daily ?? [] where includedDays.contains(day.date) {
@@ -76,7 +73,7 @@ enum UsageHistoryAggregator {
             DailyUsageEntry(
                 date: date,
                 totalTokens: value.tokens,
-                costUSD: value.sawCost ? value.cost : nil
+                costUSD: value.cost.value
             )
         }.sorted { $0.date > $1.date })
 
@@ -97,17 +94,13 @@ enum UsageHistoryAggregator {
     private struct ModelAccumulator {
         var displayName = ""
         var tokens = 0
-        var cost: Double?
-        var sawCost = false
+        var cost = UsageCostTotal()
         var variants: [String: VariantAccumulator] = [:]
 
         mutating func add(_ model: ModelUsageEntry) {
             if displayName.isEmpty { displayName = model.model }
             tokens += model.totalTokens
-            if let value = model.costUSD {
-                cost = (cost ?? 0) + value
-                sawCost = true
-            }
+            if model.totalTokens != 0 || model.costUSD != nil { cost.add(model.costUSD) }
             for variant in model.variants ?? [] {
                 variants[variant.model.lowercased(), default: VariantAccumulator(name: variant.model)]
                     .add(variant)
@@ -120,7 +113,7 @@ enum UsageHistoryAggregator {
             return ModelUsageEntry(
                 model: displayName,
                 totalTokens: tokens,
-                costUSD: sawCost ? cost : nil,
+                costUSD: cost.value,
                 variants: mergedVariants.isEmpty ? nil : mergedVariants
             )
         }
@@ -129,19 +122,15 @@ enum UsageHistoryAggregator {
     private struct VariantAccumulator {
         var name: String
         var tokens = 0
-        var cost: Double?
-        var sawCost = false
+        var cost = UsageCostTotal()
 
         mutating func add(_ variant: ModelUsageVariant) {
             tokens += variant.totalTokens
-            if let value = variant.costUSD {
-                cost = (cost ?? 0) + value
-                sawCost = true
-            }
+            if variant.totalTokens != 0 || variant.costUSD != nil { cost.add(variant.costUSD) }
         }
 
         var entry: ModelUsageVariant {
-            ModelUsageVariant(model: name, totalTokens: tokens, costUSD: sawCost ? cost : nil)
+            ModelUsageVariant(model: name, totalTokens: tokens, costUSD: cost.value)
         }
     }
 }
