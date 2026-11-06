@@ -12,7 +12,7 @@ enum NewProviderSeeder {
         enablement: ProviderEnablementStore,
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) -> Task<Void, Never>? {
-        guard enablement.enabledIDs != nil else { return nil }
+        guard enablement.enabledIDs != nil, !enablement.isInitialDetectionPending else { return nil }
 
         let currentIDs = Set(providers.map(\.provider.id))
         // known set 없는 enabled-list store는 tracking 이전 seed — "new"와 "user off" 구분 불가, probe 없이 baseline만.

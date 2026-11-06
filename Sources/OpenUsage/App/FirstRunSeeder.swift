@@ -9,7 +9,7 @@ enum FirstRunSeeder {
     static let fallbackProviderIDs: Set<String> = ["claude", "codex"]
 
     /// 탐지 task 반환 (테스트 await용), seeding 미발생 시 `nil`.
-    /// `enabledIDs == nil` guard로 멱등 — 이미 seed된 store 미덮어쓰기.
+    /// 완료된 시딩은 반복하지 않고, 취소된 첫 탐지는 저장된 활성 목록을 유지하며 재시도.
     @discardableResult
     static func seedIfNeeded(
         isFreshInstall: Bool,
@@ -18,12 +18,17 @@ enum FirstRunSeeder {
         onboarding: OnboardingStore,
         workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) -> Task<Void, Never>? {
-        guard isFreshInstall, enablement.enabledIDs == nil else { return nil }
+        let isRetry = enablement.isInitialDetectionPending
+        guard isRetry || (isFreshInstall && enablement.enabledIDs == nil) else { return nil }
 
+        enablement.setInitialDetectionPending(true)
         // known-provider set baseline — `NewProviderSeeder`가 이후 릴리스에 추가된 provider만 probe.
         enablement.registerKnownProviders(Set(providers.map(\.provider.id)))
-        onboarding.markCustomizeHintPending()
-        return seedFallbackThenDetect(providers: providers, enablement: enablement, logPrefix: "first run", workQueue: workQueue)
+        if !isRetry { onboarding.markCustomizeHintPending() }
+        return seedFallbackThenDetect(
+            providers: providers, enablement: enablement, logPrefix: "first run", workQueue: workQueue,
+            preserveEnabledProviders: isRetry && enablement.enabledIDs != nil
+        )
     }
 
     /// Customize "Reset All"용 온디맨드 재탐지. 의도적 사용자 reset이므로 현재 on/off 선택을 덮어씀 —
@@ -45,14 +50,16 @@ enum FirstRunSeeder {
         enablement: ProviderEnablementStore,
         logPrefix: String,
         probeVerb: String = "probing",
-        workQueue: BackgroundWorkQueue
+        workQueue: BackgroundWorkQueue,
+        preserveEnabledProviders: Bool = false
     ) -> Task<Void, Never> {
         let fallback = fallbackProviderIDs.intersection(Set(providers.map(\.provider.id)))
-        enablement.seedEnabledProviders(fallback)
-        AppLog.info(.config, "\(logPrefix): seeded providers \(fallback.sorted()); \(probeVerb) local credentials")
+        if !preserveEnabledProviders { enablement.seedEnabledProviders(fallback) }
+        AppLog.info(.config, "\(logPrefix): enabled providers \((enablement.enabledIDs ?? []).sorted()); \(probeVerb) local credentials")
         return Task {
             let detected = await detectLocalProviders(providers, workQueue: workQueue)
             guard !Task.isCancelled else { return }
+            enablement.setInitialDetectionPending(false)
             AppLog.info(.config, "\(logPrefix): detected credentials for \(detected.sorted())")
             guard enablement.enabledIDs == fallback, !detected.isEmpty else { return }
             enablement.seedEnabledProviders(detected)

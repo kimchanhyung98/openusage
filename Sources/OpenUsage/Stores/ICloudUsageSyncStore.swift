@@ -383,7 +383,10 @@ final class ICloudUsageSyncStore {
         await withSyncActivity {
             do {
                 guard let result = try await workQueue.run("icloud:read", operation: {
-                    try await fileStore.loadDocuments()
+                    guard isCurrent(expectedEnabled: true, generation: generation) else {
+                        throw CancellationError()
+                    }
+                    return try await fileStore.loadDocuments()
                 }) else { return }
                 guard isCurrent(expectedEnabled: true, generation: generation) else { return }
                 let excludedDeviceIDs = Set([

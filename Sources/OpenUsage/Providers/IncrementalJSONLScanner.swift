@@ -151,9 +151,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         )
         let checkedPaths = Set(parseResults.lazy.filter(\.readAttempted).map(\.file.path))
         let unreadablePaths = Set(parseResults.lazy.filter(\.readFailed).map(\.file.path))
-        if !Task.isCancelled {
-            await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
-        }
+        await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
         var parsedPaths: Set<String> = []
         for result in parseResults {
             let (file, parsed) = (result.file, result.items)

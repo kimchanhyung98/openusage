@@ -56,7 +56,7 @@ final class WidgetDataStore {
     var refreshingProviderIDs: Set<String> = []
     private var queueWaitingProviderIDs: Set<String> = []
     /// 배치별 대기 표시 보존 — 한 배치의 취소가 다른 배치의 표시를 지우지 않도록 분리.
-    private var queuedRefreshBatches: [UUID: Set<String>] = [:]
+    private var queuedRefreshBatches: [UUID: (providerIDs: Set<String>, force: Bool, trigger: RefreshTrigger)] = [:]
     /// 마지막 사용량 배치 종료 시각. 첫 배치 전에는 nil.
     var lastRefreshAt: Date?
     private(set) var scheduledRefreshDates: [String: Date] = [:]
@@ -199,7 +199,7 @@ final class WidgetDataStore {
         }
         guard !providerIDs.isEmpty else { return }
         let batchID = UUID()
-        queuedRefreshBatches[batchID] = Set(providerIDs)
+        queuedRefreshBatches[batchID] = (Set(providerIDs), force, trigger)
         defer { queuedRefreshBatches.removeValue(forKey: batchID) }
         let previousHistories = providerIDs.map { localSnapshots[$0]?.usageHistory }
         let start = monotonicNow()
@@ -208,7 +208,7 @@ final class WidgetDataStore {
         for providerID in providerIDs {
             guard !Task.isCancelled else { break }
             outcomes.append(await refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false))
-            queuedRefreshBatches[batchID]?.remove(providerID)
+            queuedRefreshBatches[batchID]?.providerIDs.remove(providerID)
         }
         guard !Task.isCancelled else {
             let historyRemoved = zip(providerIDs, previousHistories).contains { providerID, history in
@@ -235,11 +235,17 @@ final class WidgetDataStore {
     }
 
     func isRefreshQueued(for providerID: String) -> Bool {
-        guard isProviderEnabled(providerID), providersByID[providerID] != nil else { return false }
+        guard isProviderEnabled(providerID), isRefreshSuspended?(providerID) != true,
+              let provider = providersByID[providerID] else { return false }
         if refreshingProviderIDs.contains(providerID) {
             return queueWaitingProviderIDs.contains(providerID)
         }
-        return queuedRefreshBatches.values.contains { $0.contains(providerID) }
+        guard pendingProviderRefreshes[ObjectIdentifier(provider)] == nil else { return false }
+        return queuedRefreshBatches.values.contains { batch in
+            batch.providerIDs.contains(providerID)
+                && refreshCacheHit(providerID: providerID, force: batch.force, trigger: batch.trigger) == nil
+                && !isRefreshBackedOff(providerID: providerID, force: batch.force)
+        }
     }
 
     func scheduledRefreshDate(for providerID: String) -> Date? {
@@ -493,6 +499,22 @@ final class WidgetDataStore {
     /// backoff로 의도적으로 건너뛴 probe(disabled/unknown/in-flight의 `.skipped`와 구분).
     enum RefreshOutcome: Sendable { case refreshed, failed, cacheHit, skipped, backedOff }
 
+    private func refreshCacheHit(providerID: String, force: Bool, trigger: RefreshTrigger) -> ProviderSnapshot? {
+        let scheduledRefreshDue = trigger == .scheduled && providersNeedingScheduledRefresh.contains(providerID)
+        guard !force, !scheduledRefreshDue,
+              !invalidatedAuthentication.contains(providerID),
+              !unresolvedIdentityCacheRejections.contains(providerID),
+              !providersNeedingCredentialRefresh.contains(providerID),
+              !cache.hasStaleAccountStamp(
+                providerID: providerID, currentIdentityKey: providerIdentityKeys[providerID]
+              ) else { return nil }
+        return cache.snapshot(providerID: providerID)
+    }
+
+    private func isRefreshBackedOff(providerID: String, force: Bool) -> Bool {
+        !force && failureRetryAfter[providerID].map { now() < $0 } == true
+    }
+
     @discardableResult
     func refresh(
         providerID: String,
@@ -503,18 +525,10 @@ final class WidgetDataStore {
     ) async -> RefreshOutcome {
         guard !Task.isCancelled, isProviderEnabled(providerID) else { return .skipped }
         guard isRefreshSuspended?(providerID) != true else { return .skipped }
-        // TTL-fresh라도 다른 account 소유가 증명된 entry는 refresh를 short-circuit하면 안 됨 —
-        // miss로 취급해 fetch가 덮어쓰도록 처리(persisted freshness의 one-shot CLI에서 특히 위험).
         let staleAccountStamp = cache.hasStaleAccountStamp(
-            providerID: providerID,
-            currentIdentityKey: providerIdentityKeys[providerID]
+            providerID: providerID, currentIdentityKey: providerIdentityKeys[providerID]
         )
-        let scheduledRefreshDue = trigger == .scheduled && providersNeedingScheduledRefresh.contains(providerID)
-        if !force, !scheduledRefreshDue, !staleAccountStamp,
-           !invalidatedAuthentication.contains(providerID),
-           !unresolvedIdentityCacheRejections.contains(providerID),
-           !providersNeedingCredentialRefresh.contains(providerID),
-           let cached = cache.snapshot(providerID: providerID) {
+        if let cached = refreshCacheHit(providerID: providerID, force: force, trigger: trigger) {
             // no-op write 회피 — @Observable은 값 비교를 하지 않아 재할당만으로 메뉴바 label 재렌더 발생.
             AppLog.debug(.refresh, "cache hit \(providerID)")
             if localSnapshots[providerID] != cached {
@@ -530,7 +544,7 @@ final class WidgetDataStore {
         if !force { AppLog.debug(.refresh, "cache miss \(providerID)") }
 
         // 현재 실패는 이력 캐시와 무관하게 backoff 만료까지 재probe 보류; 수동 force refresh는 backoff 무시.
-        if !force, let retryAfter = failureRetryAfter[providerID], now() < retryAfter {
+        if isRefreshBackedOff(providerID: providerID, force: force) {
             AppLog.debug(.refresh, "backoff skip \(providerID) (failed <\(Int(Self.failureRetryBackoff))s ago)")
             return .backedOff
         }
