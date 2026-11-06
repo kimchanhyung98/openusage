@@ -1,6 +1,6 @@
 import Foundation
 
-/// Codex CLI의 local session rollout(`$CODEX_HOME/sessions/**/*.jsonl` + `archived_sessions/`)을 native 스캔해 일별 token/cost 추정 — 외부 `ccusage` CLI의 Codex adapter semantics 이식.
+/// Codex CLI의 일반·Zstandard 세션 원장을 읽어 일별 token/cost 추정.
 /// 세부 계약은 각 method doc 참고: home 해석(`codexHomes`/`sessionFiles`), line 파싱·child replay gate(`parseFile`), model 해석(`resolveModel`), 집계·cost 계산(`aggregate`/`cost`).
 /// Actor인 이유는 `ClaudeLogUsageScanner`와 동일 — 스캔은 main actor 밖 실행, path+size+mtime 기반 versioned Application Support cache로 변경된 파일만 재파싱.
 actor CodexLogUsageScanner {
@@ -34,8 +34,8 @@ actor CodexLogUsageScanner {
         var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// 누적 이벤트의 대조 출처 보존 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 19
+    /// 갱신된 직전 요청 사용량으로 완료 응답 대조 — 이전 오탐 경고 캐시 재파싱.
+    static let cacheSchemaVersion = 20
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -79,12 +79,19 @@ actor CodexLogUsageScanner {
                 .sorted()
             identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
         }
-        let files = Self.sessionFiles(homes: homes)
+        var seenFiles: Set<String> = []
+        let nativeFiles = Self.sessionFiles(homes: homes)
+        let files = nativeFiles.files.filter { seenFiles.insert($0.path).inserted }
+        let discoveryFailures = nativeFiles.failures
+        if discoveryFailures > 0 {
+            AppDiagnostics.record(.historyScan, result: .degraded, category: .storage, providerID: "codex",
+                                  localContext: "history_discovery_failures=\(discoveryFailures)")
+        }
         guard !files.isEmpty else {
             _ = await scanner.items(
                 from: [], since: since, cacheIdentity: identity, parse: Self.parseFile
             )
-            return nil
+            return discoveryFailures > 0 ? DailyUsageAccumulator().build(readFailureCount: discoveryFailures) : nil
         }
 
         guard let result = await scanner.scan(
@@ -92,31 +99,30 @@ actor CodexLogUsageScanner {
             since: since,
             cacheIdentity: identity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
-            parse: { data, _ in Self.parseFile(data) }
+            parse: { data, path in
+                if path.hasSuffix(".jsonl.zst") { return Self.parseFile(try UsageZstandard.decode(data)) }
+                return Self.parseFile(data)
+            }
         ), !Task.isCancelled else { return nil }
         var scan = Self.aggregate(events: result.items, since: since, pricing: pricing)
-        scan.readFailureCount = result.failedPaths.count
+        scan.readFailureCount = discoveryFailures + result.failedPaths.count
         return scan
     }
 
     // MARK: - Discovery
 
-    /// `CODEX_HOME` entry(comma 구분) 우선, 없으면 `~/.codex` — ccusage와 동일.
+    /// `CODEX_HOME` 단일 경로 우선, 없으면 `~/.codex` 사용.
     private func codexHomes() -> [URL] {
         if let raw = environment.value(for: "CODEX_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
-            return raw.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-                .map { URL(fileURLWithPath: expandHome($0)) }
+            return [URL(fileURLWithPath: expandHome(raw))]
         }
         return [homeDirectory().appendingPathComponent(".codex")]
     }
 
-    /// 각 home의 `sessions/`·`archived_sessions/` 아래 모든 rollout `*.jsonl` (둘 다 없으면 home 직접 스캔 — ccusage fallback).
-    /// 같은 relative path는 `sessions/` 사본 우선 — archived 중복의 이중 집계 금지.
-    private static func sessionFiles(homes: [URL]) -> [JSONLScanning.DiscoveredFile] {
-        var files: [JSONLScanning.DiscoveredFile] = []
+    /// 일반·압축 원장 조회. 같은 상대 경로는 활성 사본을, 같은 폴더의 두 형식은 일반 파일을 우선 사용.
+    private static func sessionFiles(homes: [URL]) -> UsageFileDiscovery.Result {
+        var result = UsageFileDiscovery.Result()
         var seenDirs: Set<String> = []
         for home in homes {
             var seenRelative: Set<String> = []
@@ -131,16 +137,26 @@ actor CodexLogUsageScanner {
             if sourceDirs.isEmpty {
                 sourceDirs = [home]
             }
-            // `jsonlFiles`가 enumerate 전에 symlink를 resolve — 여기서도 resolve해야 symlinked home에서 relative key와 cross-home dir dedup이 일치.
+            // 발견 경로와 같은 실경로에서 상대 경로 계산.
             for dir in sourceDirs.map({ $0.resolvingSymlinksInPath() }) where seenDirs.insert(dir.path).inserted {
-                for file in JSONLScanning.jsonlFiles(under: dir) {
-                    let relative = String(file.path.dropFirst(dir.path.count))
+                let discovery = UsageFileDiscovery.files(under: [dir], matching: isRolloutFile)
+                result.failures += discovery.failures
+                for file in discovery.files {
+                    let plainPath = file.path.hasSuffix(".jsonl.zst") ? String(file.path.dropLast(4)) : file.path
+                    let relative = plainPath.hasPrefix(dir.path + "/") ? String(plainPath.dropFirst(dir.path.count)) : plainPath
                     guard seenRelative.insert(relative).inserted else { continue }
-                    files.append(file)
+                    result.files.append(file)
                 }
             }
         }
-        return files
+        return result
+    }
+
+    private static func isRolloutFile(_ url: URL) -> Bool {
+        url.pathExtension == "jsonl" || (
+            url.lastPathComponent.hasSuffix(".jsonl.zst")
+                && !FileManager.default.fileExists(atPath: url.deletingPathExtension().path)
+        )
     }
 
     // MARK: - Aggregation

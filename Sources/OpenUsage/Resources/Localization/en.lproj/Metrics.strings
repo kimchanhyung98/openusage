@@ -177,3 +177,5 @@
 "From your Antigravity usage history and local tools (estimated)" = "From your Antigravity usage history and local tools (estimated)";
 "From your Copilot CLI logs and local tools" = "From your Copilot CLI logs and local tools";
 "From your OpenCode logs and local tools" = "From your OpenCode logs and local tools";
+"From your Grok usage files and logs" = "From your Grok usage files and logs";
+"From your Grok usage files, logs, and local tools" = "From your Grok usage files, logs, and local tools";

@@ -177,3 +177,5 @@
 "From your Antigravity usage history and local tools (estimated)" = "Antigravity 사용 이력과 로컬 도구에서 추정";
 "From your Copilot CLI logs and local tools" = "Copilot CLI 로그와 로컬 도구에서 수집";
 "From your OpenCode logs and local tools" = "OpenCode 로그와 로컬 도구에서 수집";
+"From your Grok usage files and logs" = "Grok 사용량 파일과 로그 기준";
+"From your Grok usage files, logs, and local tools" = "Grok 사용량 파일·로그·로컬 도구 기준";

@@ -34,13 +34,22 @@ struct GrokLogUsageScanner: Sendable {
         return homeDirectory().appendingPathComponent(".grok/logs/unified.jsonl").path
     }
 
-    /// 로그의 최근 `daysBack`일 스캔.
-    /// 로그 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
+    /// 완료 턴 원장과 로그의 최근 `daysBack`일 스캔.
+    /// 입력 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         guard !Task.isCancelled else { return nil }
         let path = logPath
-        guard files.exists(path) else { return nil }
+        let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
+        let sessions = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("sessions", isDirectory: true)
+        guard let sessionUsage = GrokSessionUsageScanner(files: files).collect(root: sessions), !Task.isCancelled else { return nil }
+        var sessionScan = UsageHistoryBuilder.scan(
+            sessionUsage.collection, providerID: "grok", since: since, until: now,
+            pricing: pricing, allowEstimates: false
+        )
+        sessionScan?.rejectedMetadataRows += sessionUsage.incompleteRows
+        guard files.exists(path) else { return sessionScan }
         let text: String
         do {
             text = try files.readText(path)
@@ -52,20 +61,23 @@ struct GrokLogUsageScanner: Sendable {
             guard !Task.isCancelled else { return nil }
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
             guard !Task.isCancelled else { return nil }
-            return DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
+            return DailyUsageAccumulator.merged([
+                sessionScan, DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
+            ])
         }
         guard !Task.isCancelled else { return nil }
-        let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
-                              pricing: pricing, reportNumericFailures: false)
+        let scan = Self.parse(text, since: since, pricing: pricing,
+                              excludingSessionIDs: sessionUsage.preferredSessionIDs, reportNumericFailures: false)
         guard !Task.isCancelled else { return nil }
         await numericFailureReporter.update(path: path, rejectedRows: scan.rejectedNumericRows)
-        return Task.isCancelled ? nil : scan
+        return Task.isCancelled ? nil : DailyUsageAccumulator.merged([sessionScan, scan])
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.
     /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
     static func parse(
-        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true,
+        _ text: String, since: Date, pricing: ModelPricing,
+        excludingSessionIDs: Set<String> = [], reportNumericFailures: Bool = true,
         onLine: (() -> Void)? = nil
     ) -> LogUsageScan {
         var modelByPID: [Int: ModelContext] = [:]
@@ -115,6 +127,7 @@ struct GrokLogUsageScanner: Sendable {
             }
 
             guard msg == "shell.turn.inference_done" else { return }
+            if let sid, excludingSessionIDs.contains(sid) { return }
             let model: ModelContext?
             if let session {
                 if let sessionModel = modelBySession[session] {
@@ -153,6 +166,11 @@ struct GrokLogUsageScanner: Sendable {
 
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
 
+            // 원장과 중복 여부를 판별할 수 없는 세션 없는 로그는 보류.
+            if !excludingSessionIDs.isEmpty, sid == nil {
+                if totalTokens > 0 { rejectedMetadataRows += 1 }
+                return
+            }
             // 모델 미귀속 행은 제외. 가격 없는 모델의 실측 토큰은 유지하고 기간 비용은 생략.
             guard let model = model?.model else {
                 if totalTokens > 0, session != nil || pid.map({ ambiguousPIDs.contains($0) }) == true {
