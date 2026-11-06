@@ -4,6 +4,22 @@ import XCTest
 @testable import OpenUsage
 
 final class UsageCollectionCancellationTests: XCTestCase {
+    func testCancelledGrokParsingDoesNotPublishMetadataDiagnostics() async {
+        let log = #"{"ts":"2026-06-12T09:00:00Z","pid":7,"sid":"unattributed","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100}}"#
+        let diagnostics = DiagnosticEventRecorder()
+        let cancelled = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return GrokLogUsageScanner.parse(log, since: .distantPast, pricing: .empty, reportNumericFailures: false)
+        }.value
+        XCTAssertEqual(cancelled.rejectedMetadataRows, 1)
+        XCTAssertTrue(diagnostics.events.isEmpty)
+        let completed = GrokLogUsageScanner.parse(log, since: .distantPast, pricing: .empty, reportNumericFailures: false)
+        XCTAssertEqual(completed.rejectedMetadataRows, 1)
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .decoding, providerID: "grok")
+        ])
+    }
+
     func testSQLiteCancellationAfterParsingDiscardsRowsAndDiagnostics() async throws {
         let root = try UsageRecordFixture.temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

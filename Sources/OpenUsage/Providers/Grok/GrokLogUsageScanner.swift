@@ -165,7 +165,7 @@ struct GrokLogUsageScanner: Sendable {
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        if rejectedMetadataRows > 0 {
+        if !Task.isCancelled, rejectedMetadataRows > 0 {
             AppDiagnostics.record(
                 .historyScan, result: .degraded, category: .decoding, providerID: "grok",
                 localContext: "source=grok; unattributed_session_rows=\(rejectedMetadataRows)"
