@@ -182,7 +182,8 @@ final class CodexUsagePricingTests: XCTestCase {
             XCTAssertEqual(pricing.resolve(model: key), fast, "Exact variant rates must remain available")
         }
         let catalog = PricingCatalog(entries: ["vendor/custom-faster": standard, "vendor/custom-fast-non-reasoning": fast])
-        XCTAssertEqual(catalog.findFuzzy("custom", excludingFastVariants: true)?.rates, standard)
+        XCTAssertNil(catalog.findFuzzy("custom", excludingFastVariants: true))
+        XCTAssertEqual(catalog.findFuzzy("custom-faster", excludingFastVariants: true)?.rates, standard)
     }
 
     func testGenuineFastNamedModelsRetainProviderFuzzyRates() throws {

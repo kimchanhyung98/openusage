@@ -288,7 +288,7 @@ final class OpenAIPricingReviewTests: XCTestCase {
         }
     }
 
-    func testExactMultiplierRestrictionsPreserveLegacyAndNativeFuzzyRates() throws {
+    func testExactMultiplierRestrictionsPreserveLegacyAndNativeDatedRates() throws {
         let rates = ModelRates(
             inputPerMillion: 2, outputPerMillion: 10, cacheWritePerMillion: 2, cacheReadPerMillion: 0.2)
         var nativeRates = rates
@@ -298,11 +298,11 @@ final class OpenAIPricingReviewTests: XCTestCase {
 
         for (entry, expected) in [(rates, 0.004), (nativeRates, 0.006)] {
             let snapshot = ModelPricing(
-                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5-mini": entry]),
+                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5": entry]),
                 secondary: PricingCatalog())
             XCTAssertEqual(
                 try XCTUnwrap(
-                    snapshot.estimatedCostDollars(model: "gpt-5-mini-custom-fast", tokens: .init(input: 1_000))),
+                    snapshot.estimatedCostDollars(model: "gpt-5-20260929-fast", tokens: .init(input: 1_000))),
                 expected, accuracy: 1e-9)
         }
     }

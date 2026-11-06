@@ -70,7 +70,7 @@ extension PricingCatalog {
             || containsKey(normalizedCandidate, key: normalizedModel)
     }
 
-    /// `value` 안 `key` 탐색 — 양끝이 비영숫자 boundary이고 suffix가 숫자 version을 잇지 않는 위치만 허용.
+    /// 모델명 앞의 구분자와 뒤의 날짜만 허용 — 미등록 설명·등급을 다른 모델의 가격으로 연결하지 않음.
     static func containsKey(_ value: String, key: String) -> Bool {
         guard !key.isEmpty else { return false }
         let valueBytes = Array(value.utf8)
@@ -81,32 +81,24 @@ extension PricingCatalog {
             let beforeOK = start == 0 || !valueBytes[start - 1].isASCIIAlphanumeric
             guard beforeOK else { continue }
             let suffix = Array(valueBytes[(start + keyBytes.count)...])
-            if suffixAllowsMatch(key: keyBytes, suffix: suffix) {
+            if suffixAllowsMatch(suffix) {
                 return true
             }
         }
         return false
     }
 
-    private static func suffixAllowsMatch(key: [UInt8], suffix: [UInt8]) -> Bool {
+    private static func suffixAllowsMatch(_ suffix: [UInt8]) -> Bool {
         guard let separator = suffix.first else { return true }
-        if separator.isASCIIAlphanumeric { return false }
-        return !suffixStartsWithNumericModelVersion(key: key, suffix: suffix)
-    }
-
-    /// 숫자 key의 version 연속 suffix 거부 (`claude-sonnet-4` + `-5-...`) — 8자리 날짜 suffix(`-20250514`)는 허용.
-    private static func suffixStartsWithNumericModelVersion(key: [UInt8], suffix: [UInt8]) -> Bool {
-        let dateSuffixDigits = 8
-        guard let last = key.last, last.isASCIIDigit else { return false }
-        guard let separator = suffix.first, separator == UInt8(ascii: "-") || separator == UInt8(ascii: ".") else {
+        guard separator == UInt8(ascii: "-") || separator == UInt8(ascii: ".") else {
             return false
         }
-        let rest = suffix.dropFirst()
-        let digitCount = rest.prefix(while: \.isASCIIDigit).count
-        guard digitCount > 0 else { return false }
-        let afterDigits = rest.dropFirst(digitCount).first
-        let isDateSuffix = digitCount == dateSuffixDigits && (afterDigits.map { !$0.isASCIIAlphanumeric } ?? true)
-        return !isDateSuffix
+        if suffix.count == 9 { return suffix.dropFirst().allSatisfy(\.isASCIIDigit) }
+        guard suffix.count == 11,
+              suffix[5] == UInt8(ascii: "-"), suffix[8] == UInt8(ascii: "-") else { return false }
+        return suffix[1..<5].allSatisfy(\.isASCIIDigit)
+            && suffix[6..<8].allSatisfy(\.isASCIIDigit)
+            && suffix[9..<11].allSatisfy(\.isASCIIDigit)
     }
 }
 

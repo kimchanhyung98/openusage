@@ -302,10 +302,66 @@ final class PricingBundledResourceTests: XCTestCase {
 
     func testUnverifiedNewAliasesRemainUnmatched() {
         for slug in ["gpt-6-astra-unrecognized", "gpt-7-astra", "grok-bot-default",
-                     "grok-bot-automation", "grok-bot-cua", "muse-spark-1.3-contributor",
-                     "kimi-k3-fast", "claude-fable-5.1-fast", "gemini-default"] {
+                     "grok-bot-automation", "grok-bot-cua", "claude-fable-5.1-fast", "gemini-default"] {
             XCTAssertNil(Self.pricing.supplement.canonicalName(for: slug), slug)
             XCTAssertNil(Self.pricing.resolve(model: slug), slug)
+        }
+    }
+
+    func testPublishedCatalogVariantsKeepTheirOwnRates() throws {
+        for (model, base, input, output, cached) in [
+            ("kimi-k3-fast", "kimi-k3", 4.5, 22.5, 0.45),
+            ("muse-spark-1.3-contributor", "muse-spark-1.3", 0.1, 0.2, 0.002)
+        ] {
+            XCTAssertNil(Self.pricing.supplement.canonicalName(for: model), model)
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: model), model)
+            XCTAssertEqual(rates.inputPerMillion, input, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.outputPerMillion, output, accuracy: 1e-9, model)
+            XCTAssertEqual(rates.cacheReadPerMillion, cached, accuracy: 1e-9, model)
+            XCTAssertNotEqual(rates, Self.pricing.resolve(model: base), model)
+        }
+    }
+
+    func testRetiredOpusFastLogsKeepHistoricalPricing() throws {
+        for (base, date) in [("claude-opus-4-6", "20260205"), ("claude-opus-4-7", "20260416")] {
+            for prefix in ["", "anthropic/"] {
+                for suffix in ["", "-" + date] {
+                    let model = prefix + base + suffix
+                    XCTAssertEqual(
+                        try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: .init(input: 1_000))),
+                        0.005, accuracy: 1e-9, model)
+                    XCTAssertEqual(
+                        try XCTUnwrap(Self.pricing.estimatedCostDollars(model: model, tokens: .init(input: 1_000, isFast: true))),
+                        0.03, accuracy: 1e-9, model)
+                }
+            }
+            XCTAssertEqual(
+                try XCTUnwrap(Self.pricing.estimatedCostDollars(model: base + "-fast", tokens: .init(input: 1_000, isFast: true))),
+                0.03, accuracy: 1e-9, base)
+        }
+    }
+
+    func testQualifiedOpenAIModelsUseOfficialRatesInsteadOfResellerRates() throws {
+        let cases: [(String, Double, Double, Double)] = [
+            ("gpt-5.1-codex-max", 1.25, 10, 0.125),
+            ("gpt-5.3-codex", 1.75, 14, 0.175),
+            ("gpt-5.4-mini", 0.75, 4.5, 0.075),
+            ("gpt-5.4-nano", 0.2, 1.25, 0.02),
+            ("gpt-5.5", 5, 30, 0.5),
+            ("gpt-5-pro", 15, 120, 15),
+            ("gpt-5.2-pro", 21, 168, 21),
+            ("gpt-5.4-pro", 30, 180, 30),
+            ("gpt-5.5-pro", 30, 180, 30),
+            ("o1-pro", 150, 600, 150),
+            ("o3-pro", 20, 80, 20),
+            ("o3-pro-2025-06-10", 20, 80, 20),
+            ("o3-deep-research", 10, 40, 2.5),
+            ("o4-mini-deep-research", 2, 8, 0.5)
+        ]
+        for (model, input, output, cached) in cases {
+            let tokens = TokenBreakdown(input: 1_000, cacheRead: 1_000, output: 1_000)
+            let cost = try XCTUnwrap(CodexUsagePricing.estimate(model: "openai/" + model, tokens: tokens, pricing: Self.pricing))
+            XCTAssertEqual(cost, (input + output + cached) / 1_000, accuracy: 1e-9, model)
         }
     }
 }

@@ -5,11 +5,11 @@ import XCTest
 final class CodexPlanTests: XCTestCase {
     func testMapsProTiersToDisplayNames() throws {
         for (planType, expected) in [
-            ("prolite", "Pro Lite"),
-            ("pro", "Pro"),
-            ("promax", "Pro Max"),
-            (" PRO \n", "Pro"),
-            ("ProMax", "Pro Max"),
+            ("prolite", "Pro $100"),
+            ("pro", "Pro $200"),
+            ("promax", "Pro $500"),
+            (" PRO \n", "Pro $200"),
+            ("ProMax", "Pro $500"),
         ] {
             let body = try JSONSerialization.data(withJSONObject: ["plan_type": planType])
             let mapped = try CodexUsageMapper.mapUsageResponse(

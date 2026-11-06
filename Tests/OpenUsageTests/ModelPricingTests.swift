@@ -90,6 +90,25 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertNil(pricing.resolve(model: "made-up-model-9000"))
     }
 
+    func testUnregisteredModelSuffixesDoNotInheritBaseRates() throws {
+        let pricing = try makePricing(primary: ["vendor/custom": rates(2, 10, fast: 3)])
+        for suffix in ["-unrecognized", "-contributor", "-preview", "-20261106-custom"] {
+            for prefix in ["", "vendor/"] {
+                XCTAssertNil(pricing.resolve(model: prefix + "custom" + suffix))
+                XCTAssertNil(pricing.resolve(model: prefix + "custom" + suffix + "-fast"))
+            }
+        }
+    }
+
+    func testBothDateSuffixSpellingsPreserveBaseRates() throws {
+        for date in ["20261106", "2026-11-06"] {
+            let dated = try makePricing(primary: ["vendor/custom-" + date: rates(2, 10)])
+            let undated = try makePricing(primary: ["custom": rates(2, 10)])
+            XCTAssertEqual(dated.resolve(model: "custom")?.inputPerMillion, 2)
+            XCTAssertEqual(undated.resolve(model: "custom-" + date)?.inputPerMillion, 2)
+        }
+    }
+
     // MARK: - Supplement precedence, aliases, fast multipliers
 
     func testSupplementPricingBeatsCatalogs() throws {

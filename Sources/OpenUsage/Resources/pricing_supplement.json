@@ -1,6 +1,6 @@
 {
   "$comment": "OpenUsage 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
-  "updated_at": "2026-11-02T01:33:12Z",
+  "updated_at": "2026-11-06T14:09:30Z",
   "pricing": {
     "gpt-6.1-sol": {
       "input_per_million": 2,
@@ -67,7 +67,7 @@
       "output_per_million": 2.2
     },
     "gpt-6-astra": {
-      "$comment": "OpenAI 공식 요율. 번들 공개 카탈로그에 없는 모델.",
+      "$comment": "OpenAI 공식 요율.",
       "input_per_million": 10.0,
       "cache_write_per_million": 12.5,
       "cache_read_per_million": 1.0,
@@ -87,7 +87,7 @@
       "output_per_million": 12.0
     },
     "claude-fable-5.1": {
-      "$comment": "Cursor 모델 표의 공개 API 요율. 번들 카탈로그에 없는 모델.",
+      "$comment": "Cursor 모델 표의 공개 API 요율.",
       "input_per_million": 10.0,
       "cache_write_per_million": 12.5,
       "cache_read_per_million": 0.25,
@@ -238,6 +238,134 @@
     }
   },
   "pricing_v2": {
+    "openai/gpt-5.5": {
+      "$comment": "OpenAI 공식 캐시 할인. 공개 카탈로그에서 캐시 단가가 누락된 접두사 항목 보정.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 10,
+        "cache_write_per_million": 10,
+        "cache_read_per_million": 1,
+        "output_per_million": 45
+      }
+    },
+    "openai/gpt-5.1-codex-max": {
+      "$comment": "OpenAI 공식 단가. models.dev의 같은 접두사에 섞인 재판매 요율 보정. 종료된 모델은 과거 기록용 유지.",
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.125,
+      "output_per_million": 10
+    },
+    "openai/gpt-5.3-codex": {
+      "input_per_million": 1.75,
+      "cache_write_per_million": 1.75,
+      "cache_read_per_million": 0.175,
+      "output_per_million": 14
+    },
+    "openai/gpt-5.4-mini": {
+      "input_per_million": 0.75,
+      "cache_write_per_million": 0.75,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 4.5
+    },
+    "openai/gpt-5.4-nano": {
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.2,
+      "cache_read_per_million": 0.02,
+      "output_per_million": 1.25
+    },
+    "openai/gpt-5-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 15,
+      "cache_write_per_million": 15,
+      "cache_read_per_million": 15,
+      "output_per_million": 120
+    },
+    "openai/gpt-5.2-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 21,
+      "cache_write_per_million": 21,
+      "cache_read_per_million": 21,
+      "output_per_million": 168
+    },
+    "openai/gpt-5.4-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 30,
+      "cache_write_per_million": 30,
+      "cache_read_per_million": 30,
+      "output_per_million": 180,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 60,
+        "cache_write_per_million": 60,
+        "cache_read_per_million": 60,
+        "output_per_million": 270.0
+      }
+    },
+    "openai/gpt-5.5-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 30,
+      "cache_write_per_million": 30,
+      "cache_read_per_million": 30,
+      "output_per_million": 180,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 60,
+        "cache_write_per_million": 60,
+        "cache_read_per_million": 60,
+        "output_per_million": 270.0
+      }
+    },
+    "openai/o1-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 150,
+      "cache_write_per_million": 150,
+      "cache_read_per_million": 150,
+      "output_per_million": 600
+    },
+    "openai/o3-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 20,
+      "cache_write_per_million": 20,
+      "cache_read_per_million": 20,
+      "output_per_million": 80
+    },
+    "openai/o3-pro-2025-06-10": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 20,
+      "cache_write_per_million": 20,
+      "cache_read_per_million": 20,
+      "output_per_million": 80
+    },
+    "openai/o3-deep-research": {
+      "input_per_million": 10,
+      "cache_write_per_million": 10,
+      "cache_read_per_million": 2.5,
+      "output_per_million": 40
+    },
+    "openai/o4-mini-deep-research": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 8
+    },
+    "claude-opus-4-6": {
+      "$comment": "Fast 제공 종료 후에도 usage.speed가 fast인 과거 기록의 6배 요율 보존. 일반 요청은 표준 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
+    "claude-opus-4-7": {
+      "$comment": "제공이 종료된 Fast 기록용 기본 단가와 6배 배율 보존. 일반 요청은 표준 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
     "gpt-6.1-terra": {
       "$comment": "OpenAI 공식 단가. 30분 캐시 쓰기 기준.",
       "input_per_million": 1,
@@ -609,6 +737,8 @@
     }
   },
   "fast_multipliers_exact": {
+    "claude-opus-4-6": 6.0,
+    "claude-opus-4-7": 6.0,
     "gpt-6.1-sol": 2.0,
     "gpt-6-sol": 2.0,
     "gpt-6-luna": 2.0,
@@ -642,6 +772,8 @@
     "gpt-5.6-luna": 2.0
   },
   "alias_rules_v2": [
+    {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]6(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-6"},
+    {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]7(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-7"},
     {"pattern": "(?i)^(?:xai/)?(?:grok-4[.-]5-latest|grok-build-latest)$", "canonical": "grok-4.5"},
     {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]7-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.7-flash"},
     {"pattern": "(?i)^(?:openai/)?gpt\\-6\\.1\\-terra(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-terra-fast"},
