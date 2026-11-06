@@ -87,15 +87,16 @@ extension PricingCatalog {
             let beforeOK = start == 0 || !valueBytes[start - 1].isASCIIAlphanumeric
             guard beforeOK else { continue }
             let suffix = Array(valueBytes[(start + keyBytes.count)...])
-            if suffixAllowsMatch(suffix) {
+            if suffixAllowsMatch(key: keyBytes, suffix: suffix) {
                 return true
             }
         }
         return false
     }
 
-    private static func suffixAllowsMatch(_ suffix: [UInt8]) -> Bool {
+    private static func suffixAllowsMatch(key: [UInt8], suffix: [UInt8]) -> Bool {
         guard let separator = suffix.first else { return true }
+        if key.starts(with: Array("ft:".utf8)), separator == UInt8(ascii: ":") { return true }
         guard separator == UInt8(ascii: "-") || separator == UInt8(ascii: ".") else {
             return false
         }
