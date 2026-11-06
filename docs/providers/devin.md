@@ -6,7 +6,7 @@ Devin CLI 또는 Devin 앱의 로그인으로 Devin 할당량 추적.
 
 | 지표 | 의미 |
 |---|---|
-| Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 보고하지 않으면 일간 수치로 대체) |
+| Weekly | 주간 할당량 사용량(Devin이 주간 할당량을 숨기면 미표시) |
 | Daily | 일간 할당량 사용량(Devin이 일간 할당량을 숨기면 미표시) |
 | Extra Balance | 초과/추가 사용 잔액(달러) |
 
@@ -53,7 +53,9 @@ SQLite와 세션 파일은 읽기 전용이며 인증 정보·대화 본문을 �
 
 다음 순서로 확인하며, 먼저 정상 동작하는 인증 정보 사용:
 
-1. Devin CLI 인증 정보: `~/.local/share/devin/credentials.toml`(`windsurf_api_key` 사용, `api_server_url`이 있으면 함께 사용)
+1. Devin CLI 인증 정보: `XDG_DATA_HOME` 설정 시 `$XDG_DATA_HOME/devin/credentials.toml` 사용.
+   미설정 시 `~/.local/share/devin/credentials.toml` 사용.
+   `windsurf_api_key` 사용, `api_server_url`이 있으면 함께 사용.
 2. Devin 앱의 로컬 상태 데이터베이스
 
 CLI 조회가 실패하면 앱의 인증 정보 확인.
@@ -62,7 +64,7 @@ CLI 조회가 실패하면 앱의 인증 정보 확인.
 ## 문제 해결
 
 - **"Not logged in"** — `devin auth login`을 실행하거나 Devin 앱에 로그인한 뒤 새로 고침.
-- **Weekly에 일간 수치 표시** — Devin이 별도 주간 할당량을 보고하지 않으면 의미 있는 값을 유지하도록 Weekly 행에 일간 할당량 표시.
+- **Weekly에 일간 수치 표시** — 주간 할당량이 표시 대상이고 주간 수치가 없으며 일간 할당량을 숨기는 경우, Weekly 행에 일간 수치 표시.
 
 ## 내부 동작
 

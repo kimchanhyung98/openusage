@@ -9,6 +9,11 @@ Kimi Code에 이미 로그인된 계정의 코딩 할당량 추적.
 | Session | 5시간 순환 기간의 사용량과 초기화 시각 |
 | Weekly | 7일 기간의 사용량과 초기화 시각 |
 
+[현재 할당량 응답](https://github.com/MoonshotAI/kimi-code/blob/df90d90ec0714db23dcc830acd2db6232f5c7426/packages/oauth/src/managed-usage.ts#L108-L136)의 `usages.limit_5h`·`usages.limit_7d`에서 `used_ratio`와 `reset_time` 사용.
+구형 응답의 `limits`·`usage`도 지원.
+월간 한도만 있는 응답은 기존 Session·Weekly 지표로 표시하지 않고 할당량 확인 오류로 처리.
+`goods_version`으로 요금제 이름이나 새 지표를 추정하지 않음.
+
 요금제 레이블은 Kimi 내부 멤버십 등급에 따라 공식 글로벌 요금제명 Adagio, Moderato, Allegretto, Allegro, Vivace 중 하나를 표시.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
 선택 사항인 booster wallet은 표시하지 않음.
