@@ -98,13 +98,12 @@ final class ClaudeLogParsingTests: XCTestCase {
         XCTAssertTrue(capture.events.isEmpty)
     }
 
-    func testNewCacheVersionReparsesAnUnchangedPreviouslySkippedFile() async throws {
-        let line = ClaudeLogFixture.usageLine(timestamp: "2026-09-17T03:00:00Z", input: 10, output: 5, costUSD: 0.25)
-            .replacingOccurrences(of: "\":", with: "\" : ")
+    func testNewCacheVersionReparsesAnUnchangedFileWithNullableToolInput() async throws {
+        let line = #"{"timestamp":"2026-09-17T03:00:00Z","costUSD":0.25,"message":{"id":"fixture","model":"fixture","content":[{"type":"tool_use","input":{"id":null}}],"usage":{"input_tokens":10,"output_tokens":5}}}"#
         let home = try ClaudeLogFixture.makeHome(files: ["project/usage.jsonl": line])
         defer { try? FileManager.default.removeItem(at: home) }
         let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("projects"))
-        var persistence = JSONLScanCachePersistence(namespace: "claude", schemaVersion: 3,
+        var persistence = JSONLScanCachePersistence(namespace: "claude", schemaVersion: 4,
             directory: home.appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
         let old = IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(persistence: persistence)
         _ = await old.items(from: files, since: .distantPast, cacheIdentity: "fixture", parse: { _ in [] })

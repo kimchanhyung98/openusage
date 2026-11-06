@@ -319,7 +319,7 @@ final class GrokProviderTests: XCTestCase {
         guard case .chart(_, let points, let note) = snapshot.lines.first(where: { $0.label == "Usage Trend" }) else {
             return XCTFail("expected a Usage Trend chart line")
         }
-        XCTAssertEqual(note, "From your Grok logs (estimated)")
+        XCTAssertEqual(note, "From your Grok usage files and logs")
         XCTAssertEqual(points.count, 31)
         XCTAssertEqual(points.last?.value, 1_000_000, "today's tokens land on the last bar")
         XCTAssertEqual(points[29].value, 1_000_000, "yesterday's tokens land on the second-to-last bar")

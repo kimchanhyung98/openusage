@@ -152,7 +152,7 @@ final class OpenCodeSharedUsageTests: XCTestCase {
     ) -> OpenCodeProvider {
         let now = self.now
         let timestamp = Int(now.addingTimeInterval(-3600).timeIntervalSince1970 * 1000)
-        let payload = "[[\(timestamp),1,100,\"glm-5.2\",\"opencode-go\"]]"
+        let payload = "[[\(timestamp),1,{\"total\":100},\"glm-5.2\",\"opencode-go\"]]"
         return OpenCodeProvider(
             authStore: OpenCodeAuthStore(
                 files: FakeFiles(hasGoKey ? ["/fixture/auth.json": #"{"opencode-go":{"type":"api","key":"fixture"}}"#] : [:]),
