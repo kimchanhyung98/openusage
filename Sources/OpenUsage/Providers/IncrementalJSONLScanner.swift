@@ -98,18 +98,21 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         var nextCache = currentCache.filter { $0.value.mtime >= since }
         var toParse: [JSONLScanning.DiscoveredFile] = []
         for file in files {
+            guard !Task.isCancelled else { return nil }
             guard file.mtime >= since else { continue }
-            if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime,
-               canReuseCachedFile?(file.path) ?? true {
-                nextCache[file.path] = cached
-                if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
-                    onDiskCacheHit(cached.items)
+            if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
+                let canReuse = canReuseCachedFile?(file.path) ?? true
+                guard !Task.isCancelled else { return nil }
+                if canReuse {
+                    nextCache[file.path] = cached
+                    if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
+                        onDiskCacheHit(cached.items)
+                    }
+                    continue
                 }
-            } else {
-                unreportedRestoredPaths[cacheIdentity]?.remove(file.path)
-                nextCache[file.path] = nil
-                toParse.append(file)
             }
+            nextCache[file.path] = nil
+            toParse.append(file)
         }
         let parseResults = await Self.parseFiles(
             toParse,
@@ -123,6 +126,13 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         var parsedPaths: Set<String> = []
         for result in parseResults {
             let (file, parsed) = (result.file, result.items)
+            if !result.readAttempted {
+                if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
+                    nextCache[file.path] = cached
+                }
+                continue
+            }
+            unreportedRestoredPaths[cacheIdentity]?.remove(file.path)
             guard let parsed else { continue }
             nextCache[file.path] = CachedFile(size: file.size, mtime: file.mtime, items: parsed)
             parsedPaths.insert(file.path)
@@ -409,7 +419,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                     } else if let data = FileManager.default.contents(atPath: file.path) {
                         do {
                             let parsed = try parse(data, file.path)
-                            result = (index, Task.isCancelled ? nil : parsed, true, false)
+                            result = Task.isCancelled ? (index, nil, false, false) : (index, parsed, true, false)
                         } catch is CancellationError {
                             result = (index, nil, false, false)
                         } catch {

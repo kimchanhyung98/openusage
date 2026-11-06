@@ -18,6 +18,10 @@ final class QwenManagedCollectionTests: XCTestCase {
         try FileManager.default.copyItem(
             at: fixtures.appendingPathComponent("qwen-managed-v2/projects/-workspace/chats/managed-1.jsonl"), to: v2
         )
+        let v1Records = try QwenSessionParser.parse(Data(contentsOf: v1), path: v1.path, resources: resources)
+        let v2Records = try QwenSessionParser.parse(Data(contentsOf: v2), path: v1.path, resources: resources)
+        XCTAssertEqual(v1Records.count, 2)
+        XCTAssertEqual(v1Records, v2Records)
         let collector = UsageFileCollector(sourceID: "qwen", roots: [v1, v2], scanner: IncrementalJSONLScanner(),
                                            includeFile: { $0.pathExtension == "jsonl" },
                                            parse: { try QwenSessionParser.parse($0, path: $1, resources: resources) })
@@ -30,6 +34,27 @@ final class QwenManagedCollectionTests: XCTestCase {
         XCTAssertEqual(Set(result.records.compactMap(\.id)), ["managed-record-1", "managed-record-2"])
         let encoded = String(decoding: try JSONEncoder().encode(result.records), as: UTF8.self)
         XCTAssertFalse(encoded.contains(String(repeating: "x", count: 100)))
+    }
+
+    func testMinimumReaderDefaultsOnlyWhenAbsent() throws {
+        let resources = fixtures.appendingPathComponent("qwen-managed-v1/resources")
+        let original = try managedRows("v1")
+        let invalid: [Any] = [NSNull(), 1, true, ["managed-session/1"], ["reader": "managed-session/1"]]
+        for value in invalid {
+            var rows = original
+            var header = try XCTUnwrap(rows[0]["managedSession"] as? [String: Any])
+            header["minimumReader"] = value
+            rows[0]["managedSession"] = header
+
+            XCTAssertThrowsError(try QwenManagedJournal.messages(rows, resources: resources)) { error in
+                XCTAssertEqual((error as? CocoaError)?.code, .coderReadCorrupt)
+            }
+        }
+        var rows = original
+        var header = try XCTUnwrap(rows[0]["managedSession"] as? [String: Any])
+        header.removeValue(forKey: "minimumReader")
+        rows[0]["managedSession"] = header
+        XCTAssertEqual(try QwenManagedJournal.messages(rows, resources: resources).count, 2)
     }
 
     func testUncommittedTailIsIgnoredButBrokenCommitIsAReadFailure() async throws {

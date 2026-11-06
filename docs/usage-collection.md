@@ -63,6 +63,10 @@ OMP 기본 저장 위치는 `~/.omp/agent/sessions`.
 Gemini CLI는 `GEMINI_CLI_HOME` 또는 사용자 홈의 `.gemini/tmp`와 `.cache/.gemini/tmp` 아래 `chats` JSON·JSONL 기록 조회.
 Qwen CLI는 `QWEN_RUNTIME_DIR`, `QWEN_HOME`, 기본 `~/.qwen` 순서로 루트 선택.
 선택한 루트의 `projects` 아래 `chats` JSONL과 `resources`의 관리형 원장 리소스 조회.
+세 환경 변수의 앞뒤 공백은 제거하며, 빈 값·공백만 있는 값은 미설정으로 처리.
+`~`와 `~/...`는 사용자 홈으로 확장하며, 다른 상대 경로는 OpenUsage 프로세스의 현재 작업 디렉터리 기준.
+`~user`는 사용자 홈 표기로 확장하지 않고 같은 이름의 상대 경로로 처리.
+비어 있지 않은 설정 경로를 선택한 뒤에는 해당 경로가 없어도 다음 설정이나 기본 경로로 대체하지 않음.
 
 ## 보존 규칙
 
@@ -156,6 +160,7 @@ Qwen CLI는 같은 홈·프로젝트 범위에서 응답 UUID와 fork 관계로 
 헤더의 필수 리소스, 선언된 baseTranscriptProof, snapshot manifest의 resources 검증.
 리소스는 선언 길이보다 최대 1바이트 더 읽어 길이와 해시 확인.
 관리형 원장은 원장 파일이 바뀌지 않아도 외부 리소스를 매번 재검증.
+재검증 도중 취소되면 바뀌지 않은 파일의 기존 캐시는 유지하고 현재 집계 결과는 폐기.
 일반 원장은 기존 파일 캐시 재사용.
 완료되지 않은 마지막 행은 관리형 원장의 확정된 기록으로 취급하지 않음.
 commit 해시는 JavaScript의 키 순서·숫자 직렬화 규칙으로 검증.

@@ -23,7 +23,13 @@ enum QwenManagedJournal {
             guard let proof = value as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
             _ = try resource(proof, root: root)
         }
-        let reader = header["minimumReader"] as? String ?? "managed-session/1"
+        let reader: String
+        if let value = header["minimumReader"] {
+            guard let version = value as? String else { throw CocoaError(.coderReadCorrupt) }
+            reader = version
+        } else {
+            reader = "managed-session/1"
+        }
         let logical: [[String: Any]]
         if reader == "managed-session/2" {
             logical = try restore(rows, root: root, sessionKey: sessionKey, canonical: canonical)

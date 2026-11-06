@@ -237,6 +237,80 @@ final class JSONLScannerCancellationTests: XCTestCase {
         XCTAssertEqual(reloadCounter.count, 2)
     }
 
+    func testCancelledCacheReuseCheckPreservesMemoryAndPersistedCache() async throws {
+        let base = try makeDirectory("ReuseCheck")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let file = try makeIntegerFile(in: base)
+        let persistence = JSONLScanCachePersistence(namespace: "test", schemaVersion: 1,
+                                                     directory: base.appendingPathComponent("cache"),
+                                                     writeDebounce: .milliseconds(1))
+        let scanner = IncrementalJSONLScanner<Int>(persistence: persistence)
+        let counter = ParseCounter()
+        let initial = await scanner.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: counter.parse)
+        XCTAssertEqual(initial, [7])
+        await scanner.flushPendingWrites()
+        let predicate = BlockingReuseCheck()
+        let task = Task {
+            await scanner.scan(from: [file], since: .distantPast, cacheIdentity: "home",
+                               canReuseCachedFile: predicate.check, parse: { data, _ in counter.parse(data) })
+        }
+        guard await waitUntil({ predicate.hasStarted }) else {
+            task.cancel(); predicate.unblock(); _ = await task.value
+            return XCTFail("the cache reuse check did not start")
+        }
+        task.cancel()
+        predicate.unblock()
+        let cancelled = await task.value
+        XCTAssertNil(cancelled)
+        await scanner.flushPendingWrites()
+        let memory = await scanner.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: counter.parse)
+        XCTAssertEqual(memory, [7])
+        let reloaded = IncrementalJSONLScanner<Int>(persistence: persistence)
+        let disk = await reloaded.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: counter.parse)
+        XCTAssertEqual(disk, [7])
+        XCTAssertEqual(counter.count, 1)
+    }
+
+    func testCancelledRevalidationPreservesOnlyUnchangedCachedFiles() async throws {
+        let scenarios: [(changed: Bool, cancelAfterParsing: Bool)] = [(false, false), (true, false), (false, true)]
+        for scenario in scenarios {
+            let changed = scenario.changed
+            let base = try makeDirectory("Revalidation")
+            defer { try? FileManager.default.removeItem(at: base) }
+            let initialFile = try makeIntegerFile(in: base)
+            let persistence = JSONLScanCachePersistence(
+                namespace: "test", schemaVersion: 1, directory: base.appendingPathComponent("cache"),
+                writeDebounce: .seconds(3_600)
+            )
+            let scanner = IncrementalJSONLScanner<Int>(persistence: persistence)
+            let counter = ParseCounter()
+            let initial = await scanner.items(from: [initialFile], since: .distantPast, parse: counter.parse)
+            XCTAssertEqual(initial, [7])
+            await scanner.flushPendingWrites()
+            let file = changed ? try makeIntegerFile(value: 18, in: base) : initialFile
+            let cancelled = await scanner.scan(
+                from: [file], since: .distantPast, canReuseCachedFile: { _ in false },
+                parse: { _, _ in
+                    if scenario.cancelAfterParsing {
+                        withUnsafeCurrentTask { $0?.cancel() }
+                        return []
+                    }
+                    throw CancellationError()
+                }
+            )
+            XCTAssertNil(cancelled)
+            await scanner.flushPendingWrites()
+            let memory = await scanner.items(from: [file], since: .distantPast, parse: counter.parse)
+            let reloaded = IncrementalJSONLScanner<Int>(persistence: persistence)
+            let disk = await reloaded.items(from: [file], since: .distantPast, parse: counter.parse)
+            XCTAssertEqual(memory, changed ? [18] : [7])
+            XCTAssertEqual(disk, changed ? [18] : [7])
+            XCTAssertEqual(counter.count, changed ? 3 : 1)
+            await scanner.flushPendingWrites()
+            await reloaded.flushPendingWrites()
+        }
+    }
+
     private func waitUntil(
         _ condition: @escaping @Sendable () async -> Bool
     ) async -> Bool {
@@ -289,4 +363,17 @@ private final class BlockingClaudeParser: @unchecked Sendable {
     func unblock() {
         release.signal()
     }
+}
+
+private final class BlockingReuseCheck: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+    private let release = DispatchSemaphore(value: 0)
+    var hasStarted: Bool { lock.withLock { started } }
+    func check(_ path: String) -> Bool {
+        lock.withLock { started = true }
+        release.wait()
+        return false
+    }
+    func unblock() { release.signal() }
 }
