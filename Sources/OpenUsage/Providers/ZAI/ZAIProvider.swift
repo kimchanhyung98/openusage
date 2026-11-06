@@ -104,10 +104,9 @@ final class ZAIProvider: ProviderRuntime {
         let todayWindow = ZAIDetailWindow(
             days: [window.days.last!], hourly: true, hourlyThrough: calendar.component(.hour, from: date)
         )
-        async let activityRequest = loadActivity(apiKey: apiKey, at: date)
-        async let previousRequest = loadDetails(apiKey: apiKey, window: previousWindow, pricing: prices)
-        async let todayRequest = loadDetails(apiKey: apiKey, window: todayWindow, pricing: prices)
-        let (activity, previous, today) = await (activityRequest, previousRequest, todayRequest)
+        let activity = await loadActivity(apiKey: apiKey, at: date)
+        let previous = await loadDetails(apiKey: apiKey, window: previousWindow, pricing: prices)
+        let today = await loadDetails(apiKey: apiKey, window: todayWindow, pricing: prices)
         let days = (previous?.days ?? [:]).merging(today?.days ?? [:]) { _, latest in latest }
         var costUnavailable = previous == nil || today == nil || days.values.contains { $0.costUSD == nil }
         var lines: [MetricLine] = []

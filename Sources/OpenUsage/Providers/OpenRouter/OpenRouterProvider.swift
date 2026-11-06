@@ -163,37 +163,29 @@ final class OpenRouterProvider: ProviderRuntime {
         apiKey: String, at date: Date, calendar: Calendar
     ) async -> [DateInterval: Result<OpenRouterAnalytics.Parsed, OpenRouterUsageError>] {
         let intervals = Set(OpenRouterAnalyticsPeriod.allCases.map { $0.interval(now: date, calendar: calendar) })
-        let client = usageClient
-        return await withTaskGroup(
-            of: (DateInterval, Result<OpenRouterAnalytics.Parsed, OpenRouterUsageError>).self
-        ) { group in
-            for interval in intervals {
-                group.addTask {
-                    let result = await Self.loadAnalytics(client: client, apiKey: apiKey, interval: interval)
-                    return (interval, result)
-                }
+            .sorted { $0.start < $1.start }
+        var results: [DateInterval: Result<OpenRouterAnalytics.Parsed, OpenRouterUsageError>] = [:]
+        for interval in intervals {
+            guard !Task.isCancelled else { break }
+            let result = await Self.loadAnalytics(client: usageClient, apiKey: apiKey, interval: interval)
+            results[interval] = result
+            guard !Task.isCancelled else { break }
+            switch result {
+            case .success(let parsed) where parsed.isPartial:
+                AppDiagnostics.record(
+                    .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
+                    localContext: "analytics totals contain incomplete cost or token values"
+                )
+            case .failure(let error):
+                AppDiagnostics.record(
+                    .historyScan, result: .degraded, providerID: provider.id, error: error,
+                    localContext: "analytics period query failed"
+                )
+            case .success:
+                break
             }
-            var results: [DateInterval: Result<OpenRouterAnalytics.Parsed, OpenRouterUsageError>] = [:]
-            for await (interval, result) in group {
-                results[interval] = result
-                guard !Task.isCancelled else { continue }
-                switch result {
-                case .success(let parsed) where parsed.isPartial:
-                    AppDiagnostics.record(
-                        .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
-                        localContext: "analytics totals contain incomplete cost or token values"
-                    )
-                case .failure(let error):
-                    AppDiagnostics.record(
-                        .historyScan, result: .degraded, providerID: provider.id, error: error,
-                        localContext: "analytics period query failed"
-                    )
-                case .success:
-                    break
-                }
-            }
-            return results
         }
+        return results
     }
 
     private nonisolated static func loadAnalytics(
