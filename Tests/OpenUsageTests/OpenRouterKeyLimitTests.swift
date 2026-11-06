@@ -104,13 +104,14 @@ final class OpenRouterKeyLimitProviderTests: XCTestCase {
         XCTAssertEqual(cache.snapshot(providerID: "openrouter"), partial)
         XCTAssertNotNil(store.providerErrors["openrouter"])
 
-        http.response = response(#"{"limit":5,"limit_remaining":5}"#)
+        http.response = response(#"{"total_credits":100,"total_usage":41,"limit":5,"limit_remaining":5}"#)
         _ = await store.refresh(providerID: "openrouter", force: true)
         let recovered = try XCTUnwrap(store.localSnapshots["openrouter"])
         XCTAssertNil(recovered.warning)
         XCTAssertNil(recovered.isDegraded)
         XCTAssertNil(store.providerErrors["openrouter"])
-        XCTAssertEqual(recovered.lines, [.progress(label: "Key Limit", used: 0, limit: 5, format: .dollars)])
+        XCTAssertEqual(recovered.lines.map(\.label), ["Credits", "Balance", "Key Limit"])
+        XCTAssertEqual(recovered.line(label: "Key Limit"), .progress(label: "Key Limit", used: 0, limit: 5, format: .dollars))
         XCTAssertEqual(outcomes, [.refreshed, .refreshed, .failed, .refreshed])
         XCTAssertEqual(degraded, [false, true, false, false])
     }

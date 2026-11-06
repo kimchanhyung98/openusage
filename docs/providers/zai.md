@@ -11,6 +11,7 @@
 | Web Searches | 월간 웹 검색 / 웹 리더 / Zread 호출 횟수(사용 / 한도) |
 
 Z.ai가 요금제 이름을 반환하면 프로바이더 이름 옆에 표시.
+구독 이름 조회가 실패하면 할당량 응답의 `data.level`로 요금제 표시.
 
 상단 Tokens에는 개인 GLM Coding Plan의 일별 토큰 합계 반영.
 Today·Yesterday와 공통 Last 30 Days 기간 지원.
@@ -96,6 +97,8 @@ Z.ai 구독 UI와 공식 ZCode가 사용하는 내부 엔드포인트 사용:
 - `GET https://api.z.ai/api/monitor/credit-usage/usage-detail` — 모델별 캐시 입력·일반 입력·출력 토큰.
 
 제공자가 응답 형식이나 접근 방법을 변경하면 조회 실패 가능.
+HTTP 200이어도 `success=false` 또는 실패 `code`가 있으면 할당량을 반영하지 않고 마지막 정상 값 유지.
+성공 코드는 `0`·`200` 지원.
 
 일별 토큰 계약은 [공식 ZCode의 Coding Plan 문서](https://github.com/zai-org/ZCode/blob/a60ba6a7e5a06742270ca605f5d2cc2766afa7e1/docs/bigmodel-coding-plan-usage-quota.md#L119)와 해당 버전의 요청·응답 구현 기준.
 `type=1`과 로컬 날짜의 `startTime`·`endTime`을 전송하고, `data.series`의 `date`·`totalTokens` 사용.

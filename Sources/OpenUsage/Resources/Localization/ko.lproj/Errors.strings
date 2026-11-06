@@ -91,7 +91,7 @@
 "Grok billing response changed." = "Grok 청구 정보 응답이 변경되었습니다.";
 "Grok not logged in. Run `grok login`." = "Grok에 로그인되어 있지 않습니다. `grok login`을 실행하세요.";
 "Grok sign-in changed while refreshing. Refresh again to use the current account." = "새로고침 중 Grok 로그인 정보가 변경되었습니다. 현재 계정을 사용하려면 다시 새로고침하세요.";
-"Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again." = "Grok 로그인 정보를 읽을 수 없습니다. ~/.grok/auth.json 접근 권한을 확인한 뒤 다시 새로고침하세요.";
+"Grok sign-in could not be read. Check access to the Grok auth file and refresh again." = "Grok 로그인 정보를 읽을 수 없습니다. Grok 인증 파일 접근 권한을 확인한 뒤 다시 새로고침하세요.";
 "Invalid Claude OAuth URL: %@. Check CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE." = "Claude OAuth URL이 올바르지 않습니다: %@. CLAUDE_CODE_CUSTOM_OAUTH_URL / CLAUDE_LOCAL_OAUTH_API_BASE를 확인하세요.";
 "Invalid HTTP response." = "HTTP 응답이 올바르지 않습니다.";
 "Invalid account name." = "계정 이름이 올바르지 않습니다.";

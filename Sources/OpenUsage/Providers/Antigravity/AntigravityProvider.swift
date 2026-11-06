@@ -168,7 +168,7 @@ final class AntigravityProvider: ProviderRuntime {
         ) {
             return result
         }
-        if let result = await probeLS(processName: "agy", markers: [], csrfFlag: "", portFlag: nil) {
+        if let result = await probeLS(processName: "agy", markers: [], csrfFlag: "--csrf_token", portFlag: nil, csrfRequired: false) {
             return result
         }
         return try await probeCloudCode()
@@ -176,13 +176,16 @@ final class AntigravityProvider: ProviderRuntime {
 
     // MARK: - Language server
 
-    private func probeLS(processName: String, markers: [String], csrfFlag: String, portFlag: String?) async -> StrategyResult? {
+    private func probeLS(
+        processName: String, markers: [String], csrfFlag: String, portFlag: String?, csrfRequired: Bool = true
+    ) async -> StrategyResult? {
         let discovery = self.discovery
         let options = LanguageServerDiscovery.Options(
             processName: processName,
             markers: markers,
             csrfFlag: csrfFlag,
-            portFlag: portFlag
+            portFlag: portFlag,
+            csrfRequired: csrfRequired
         )
         guard let discovered = await loadOffMainActor({ discovery.discover(options) }) else { return nil }
 

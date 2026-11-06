@@ -172,7 +172,7 @@ final class AppDiagnosticsTests: XCTestCase {
             GrokAuthStore.authPath: #"{"https://auth.x.ai::client":{"key":"PRIVATE_TOKEN","expires_at":"2099-01-01T00:00:00.000Z"}}"#
         ])
         let provider = GrokProvider(
-            authStore: GrokAuthStore(files: files),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment()),
             usageClient: GrokUsageClient(httpClient: http),
             logUsageScanner: GrokLogUsageScanner(
                 files: FakeFiles(), environment: FakeEnvironment(),

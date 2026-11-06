@@ -73,6 +73,7 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
 ## 내부 동작
 
 우선순위가 높은 출처부터 시도: `language_server` / `agy` 프로세스를 탐색해 로컬 언어 서버를 찾고 CSRF 토큰과 수신 포트를 읽은 뒤, 실패하면 필요할 때 Google OAuth로 갱신한 키체인 토큰을 사용해 Google Cloud Code 호출.
+`agy`에 CSRF 토큰 인자가 있으면 로컬 요청에 사용하고, 토큰 없는 CLI도 기존 방식으로 조회.
 OpenUsage는 갱신된 액세스 토큰의 단기 캐시를 현재 키체인 갱신 인증 정보의 단방향 지문에 연결.
 로그아웃, 계정 변경, 레거시 캐시, 만료되거나 손상된 항목으로는 이전 계정의 액세스 토큰 재사용 불가.
 각 출처에서 먼저 할당량 요약 엔드포인트(언어 서버의 `RetrieveUserQuotaSummary`, Cloud Code의 `v1internal:retrieveUserQuotaSummary`) 요청 — 병합된 풀과 주간 기간을 보고하는 유일한 엔드포인트.

@@ -48,7 +48,7 @@ final class GrokProvider: ProviderRuntime {
     }
 
     func hasLocalCredentials() async -> Bool {
-        // `refresh()`와 동일 소스 — key 있는 entry가 1개 이상인 ~/.grok/auth.json
+        // `refresh()`와 동일한 경로·구독 인증 필터 사용.
         await loadOffMainActor { [authStore] in
             ((try? authStore.loadAuthCandidates()) ?? []).isEmpty == false
         }
@@ -63,7 +63,7 @@ final class GrokProvider: ProviderRuntime {
     }
 
     private func loadAndProbe() async throws -> ProviderSnapshot {
-        let candidates = try authStore.loadAuthCandidates()
+        let candidates = try await loadOffMainActor { [authStore] in try authStore.loadAuthCandidates() }
         var sawExpiredCandidate = false
 
         for var state in candidates {

@@ -9,7 +9,7 @@ struct GrokCreditsConfig: Equatable, Sendable {
     var usedPercent: Double
     var periodStart: Date
     var periodEnd: Date
-    /// credit 단위 pay-as-you-go cap — 비활성 시 0 (proto-JSON은 0일 때 필드 자체를 생략).
+    /// USD 센트 단위 pay-as-you-go cap — 비활성 시 0, proto-JSON은 0일 때 필드 생략 가능.
     var onDemandCap: Double
 
     var periodDurationMs: Int {

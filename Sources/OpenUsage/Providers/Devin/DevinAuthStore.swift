@@ -23,18 +23,23 @@ struct DevinAuthStore: Sendable {
 
     var files: TextFileAccessing
     var sqlite: SQLiteAccessing
+    var environment: EnvironmentReading
 
     init(
         files: TextFileAccessing = LocalTextFileAccessor(),
-        sqlite: SQLiteAccessing = SQLiteCLIAccessor()
+        sqlite: SQLiteAccessing = SQLiteCLIAccessor(),
+        environment: EnvironmentReading = ProcessEnvironmentReader()
     ) {
         self.files = files
         self.sqlite = sqlite
+        self.environment = environment
     }
 
     func loadCredentialsFile() -> DevinAuth? {
-        guard files.exists(Self.credentialsPath),
-              let text = try? files.readText(Self.credentialsPath),
+        let xdg = environment.value(for: "XDG_DATA_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let path = xdg.map { expandHome($0).trimmingTrailingSlashes + "/devin/credentials.toml" } ?? Self.credentialsPath
+        guard files.exists(path),
+              let text = try? files.readText(path),
               let apiKey = Self.readTomlString(text, key: "windsurf_api_key")
         else {
             return nil
