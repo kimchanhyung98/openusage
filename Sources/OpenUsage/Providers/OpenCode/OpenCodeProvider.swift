@@ -40,7 +40,7 @@ final class OpenCodeProvider: ProviderRuntime {
     let sharedUsage: UsageCollectionCoordinator
     let now: @Sendable () -> Date
 
-    /// 이 머신의 원본 기록 범위와 공유 도구의 제공자 보고 비용.
+    /// 이 머신의 원본 기록 범위. OpenCode가 기록한 비용도 카탈로그 추정값일 수 있음.
     private let sourceNote = "From your OpenCode logs and local tools"
 
     /// auth 읽기 실패 로그의 edge-trigger — 지속적으로 읽기 불가한 `auth.json`은 5분 refresh마다가 아닌 실행당 1회만 경고.
@@ -73,7 +73,7 @@ final class OpenCodeProvider: ProviderRuntime {
             .usageTrend(provider: provider)
                 .exportingHistory(
                     scope: .machineLocal,
-                    estimatedCost: false,
+                    estimatedCost: true,
                     sourceNote: sourceNote
                 )
         ] + WidgetDescriptor.spendTiles(provider: provider)
@@ -154,6 +154,7 @@ final class OpenCodeProvider: ProviderRuntime {
         SpendTileMapper.appendTokenUsage(
             logScan.series, to: &lines, now: refreshedAt,
             estimated: false,
+            estimatedDays: Set(scan?.logScan.series.daily.filter { $0.costUSD != nil }.map(\.date) ?? []),
             unknownModelsByDay: logScan.unknownModelsByDay,
             modelUsage: logScan.modelUsage,
             modelSourceNote: sourceNote

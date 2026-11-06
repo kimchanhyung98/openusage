@@ -30,6 +30,8 @@ extension CodexLogUsageScanner {
         var contextSequence = 0
         var turnContexts: [String: (model: String?, fast: Bool, ultrafast: Bool)] = [:]
         var previousTotals: RawUsage?
+        var previousLast: RawUsage?
+        var updatedLastUsages: [Int: RawUsage] = [:]
         var cumulativeBaselineUnknown = false
         var currentModel: String?
         var currentTierIsFast = false
@@ -161,6 +163,11 @@ extension CodexLogUsageScanner {
 
             let info = payload["info"] as? [String: Any]
             let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
+            let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
+            let lastWasUpdated = last.map { current in
+                !current.invalid && previousLast.map { !current.equalCounts($0) } == true
+            } ?? false
+            if info != nil { previousLast = last.flatMap { $0.invalid ? nil : $0 } }
             // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
             if replayGate == nil, let totals, !totals.invalid,
                let previous = previousTotals, totals.equalCounts(previous) {
@@ -187,7 +194,7 @@ extension CodexLogUsageScanner {
             // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
             if let totals, totals.invalid {
                 usage = totals
-            } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
+            } else if let last {
                 if !last.invalid, let totals, let previousTotals, totals.isAtLeast(previousTotals) {
                     usage = totals.subtracting(previousTotals)
                     isCumulativeDelta = true
@@ -205,6 +212,7 @@ extension CodexLogUsageScanner {
             if totals == nil, !usage.invalid,
                usage.input == 0, usage.cached == 0, usage.output == 0, usage.reasoning == 0 { continue }
             let boundary = usageBoundary
+            if lastWasUpdated, let last { updatedLastUsages[boundary] = last }
             usageBoundary += 1
             // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
             if let totals, !totals.invalid {
@@ -281,9 +289,17 @@ extension CodexLogUsageScanner {
                 // 실패한 압축 원장은 설치 마커가 없어 같은 구간의 중단 응답과 대응 확정 불가.
                 if compactedAt == nil, sameScope, record.boundary == legacy.boundary,
                    failedBoundaries[legacy.scope] == legacy.boundary + 1, !hasPendingRecord {
-                    remaining.invalidMetadata = true
-                    events[index] = remaining
-                    return true
+                    // 중단 소비는 저장된 last를 갱신하지 않음. 새 last와 일치하는 원장은 정상 완료 응답.
+                    let usage = events[recordIndex]
+                    let confirmed = updatedLastUsages[legacy.boundary].map {
+                        $0.input == usage.input && $0.cached == usage.cached && $0.output == usage.output
+                            && $0.reasoning == usage.reasoning && $0.total == usage.total
+                    } ?? false
+                    if !confirmed {
+                        remaining.invalidMetadata = true
+                        events[index] = remaining
+                        return true
+                    }
                 }
                 let usage = events[recordIndex]
                 let sameUsage = usage.input == remaining.input && usage.cached == remaining.cached

@@ -6,7 +6,7 @@ struct DefaultAccountObserver: Sendable {
     /// 이번 launch에서의 한 family default-home 판독 결과.
     enum Outcome: Equatable, Sendable {
         case resolved(identityKey: String, label: String?, anchor: String)
-        /// credential 흔적은 있지만 account 특정 불가 (keyring-mode Codex, 콤마 목록 `CLAUDE_CONFIG_DIR`, account id 없는 legacy auth file).
+        /// credential 흔적은 있지만 account 특정 불가 (keyring-mode Codex, account id 없는 legacy auth file).
         case unresolved(reason: String)
         case absent
     }
@@ -72,16 +72,12 @@ struct DefaultAccountObserver: Sendable {
     }
 
     /// 기본 Claude home 관찰 — `ClaudeAuthStore`의 해석과 동일 (`CLAUDE_CONFIG_DIR` export 시 그 경로, 아니면 `~/.claude`).
-    /// 콤마 목록은 하나의 identity로 귀속 불가.
     func observeClaude() -> Outcome {
         var configDir = "~/.claude"
         var hasConfigDirOverride = false
         if !pinsClaudeSharedHome,
            let raw = environment.value(for: "CLAUDE_CONFIG_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-            guard !raw.contains(",") else {
-                return .unresolved(reason: "CLAUDE_CONFIG_DIR is a comma-separated list")
-            }
             configDir = raw
             hasConfigDirOverride = true
         }
