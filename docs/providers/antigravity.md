@@ -5,7 +5,9 @@
 
 ## 추적 항목
 
-Antigravity에는 공유 할당량 풀이 두 개 있으며, 각 풀마다 순환 5시간 기간과 주간 기간 제공.
+응답에 포함된 공유 Gemini 풀과 Gemini 외 풀의 5시간·주간 할당량 표시.
+제공 기간은 요금제와 응답에 따라 다름.
+[공식 요금제 안내](https://antigravity.google/docs/plans)에서 Free는 주간 한도, Pro·Ultra는 5시간·주간 한도로 구분.
 
 | 지표 | 의미 |
 |---|---|
@@ -15,6 +17,9 @@ Antigravity에는 공유 할당량 풀이 두 개 있으며, 각 풀마다 순�
 | Claude Weekly | 같은 Gemini 외 풀의 주간 기간 |
 
 Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+Google AI Ultra는 미국 기준 월 $99.99·$199.99의 두 등급이며, [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
+Cloud Code의 `g1-ultra-tier`·`g1-ultra-lite-tier`는 현재 공식 상품명인 Ultra로 표시.
+이름만으로 결제 금액이나 사용량 배수를 추정하지 않음.
 
 Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 같은 할당량이 줄어들어 OpenUsage에서는 Pro와 Flash 미터를 따로 두지 않고 기간별로 하나만 표시.
 다른 프로바이더 행의 명명 방식에 맞춰 Session과 Weekly로 명명.

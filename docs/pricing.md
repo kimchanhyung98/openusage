@@ -1,4 +1,113 @@
-# 모델 가격
+# 구독과 모델 가격
+
+## 구독 요금제
+
+2026-11-06 공식 판매 페이지·도움말 확인 기준.
+별도 통화 표기가 없으면 USD이며, 월 결제 정가와 연간 선결제 총액을 구분.
+세금·지역별 결제 통화·앱스토어 가격·체험·한시 할인은 실제 결제 화면에 따라 다름.
+`-`는 해당 공식 자료에서 연간 가격을 확인하지 못했거나 별도 연간 상품이 없는 경우.
+구독료·포함 크레딧·API 사용 요금은 서로 다른 값이며, 아래 구독료를 사용량 추정 비용에 더하지 않음.
+
+| 프로바이더 | 요금제 | 월 결제 | 연간 결제 총액 | 조건 |
+|---|---|---|---|---|
+| [Claude](https://claude.com/pricing) | Free | $0 | - | 개인 무료 |
+| - | Pro | $20 | $200 | 연간 결제 월 환산 약 $16.67 |
+| - | Max | $100 | - | 개인, Pro 대비 5배 사용량 |
+| - | Ultra | $200 | - | 개인, 종전 Max 20x의 새 이름 |
+| - | Team Standard | $25/좌석 | $240/좌석 | 연간 결제 월 환산 $20, 2~150명 |
+| - | Team Premium | $125/좌석 | $1,200/좌석 | 연간 결제 월 환산 $100, 2~150명 |
+| - | Enterprise | 별도 월 상품 없음 | $240/좌석 + API 사용료 | 연간 계약, 최소 20석, 맞춤 계약 별도 |
+| [Codex / ChatGPT](https://learn.chatgpt.com/docs/pricing) | Free | $0 | - | 제공 모델·기능의 단계적 출시 조건 적용 |
+| - | Go | $8 | - | 제공 모델·기능의 단계적 출시 조건 적용 |
+| - | Plus | $20 | - | 개인 |
+| - | Pro $100 | $100 | - | API 값 `prolite` |
+| - | Pro $200 | $200 | - | API 값 `pro` |
+| - | Pro $500 | $500 | - | API 값 `promax`, Ultrafast 이용 가능 |
+| - | Business | $25/사용자 | $240/사용자 | 최소 2명, 연간 결제 월 환산 $20 |
+| - | Enterprise | 문의 | 문의 | 계약별 사용량·청구 조건 |
+| - | Edu | 문의 | 문의 | 기관 계약 |
+| [Cursor·Grok: The X Subscription](https://docs.x.ai/x-subscription/pricing) | Free | $0 | $0 | 제한된 무료 사용량 |
+| - | Plus | $8 | $80 | 기본 공유 사용량, Cursor 외부 모델 미포함 |
+| - | Premium | $30 | $300 | Plus 대비 4배, 외부 모델은 별도 종량제 |
+| - | Super | $100 | $1,000 | Plus 대비 15배 |
+| - | Ultra | $200 | $2,000 | Plus 대비 50배 |
+| - | Teams Premium | $30/좌석 | - | 좌석별 등급 혼합 가능 |
+| - | Teams Super | $100/좌석 | - | 좌석별 등급 혼합 가능 |
+| - | Teams Ultra | $200/좌석 | - | 좌석별 등급 혼합 가능 |
+| - | Enterprise | 문의 | 문의 | [Cursor 기업 계약](https://cursor.com/pricing) |
+| [Antigravity](https://antigravity.google/pricing) | Individuals | $0 | - | 기본 주간 한도 |
+| - | Google AI Pro | $19.99 | - | [미국 판매 가격](https://gemini.google/us/subscriptions/?hl=en) |
+| - | Google AI Ultra, 5배 등급 | $99.99 | - | Pro 대비 5배, 미국 판매 가격 |
+| - | Google AI Ultra, 20배 등급 | $199.99 | - | Pro 대비 20배, 미국 판매 가격 |
+| - | Business: Gemini Enterprise Standard / Plus | $30/좌석부터 | 계약 확인 | 적격 Google Cloud 고객, 사용료·계약 조건 별도 |
+| - | Business: 종량제 | 좌석료 $0 + 사용료 | - | Google Cloud 소비량 기준 |
+| [Copilot](https://docs.github.com/en/copilot/get-started/plans) | Free | $0 | - | 제한된 사용량 |
+| - | Student | $0 | - | 인증된 학생 |
+| - | Pro | $10 | - | 월 1,500 AI 크레딧: 기본 1,000 + Flex 500 |
+| - | Pro+ | $39 | - | 월 7,000 AI 크레딧: 기본 3,900 + Flex 3,100 |
+| - | Max | $100 | - | 월 20,000 AI 크레딧: 기본 10,000 + Flex 10,000 |
+| - | Business | $19/좌석 | - | 좌석당 월 1,900 AI 크레딧을 공유 풀에 추가 |
+| - | Enterprise | $39/좌석 | - | 좌석당 월 3,900 AI 크레딧을 공유 풀에 추가 |
+| - | Copilot access: Enterprise Cloud | Copilot 좌석료 $0 | - | 기존 Enterprise Cloud 라이선스 필요, 사용료 별도 |
+| - | Copilot access: Standalone | $10/사용자 | - | 포함 크레딧 없음, 사용료 별도 |
+| [Devin](https://devin.ai/pricing) | Free | $0 | - | 제한된 에이전트 사용량 |
+| - | Pro | $20 | - | 개인 |
+| - | Max | $200 | - | 개인, 더 높은 사용량 한도 |
+| - | Teams | 기본 $80 + 개발 좌석당 $40 | - | 최대 200명 |
+| - | Enterprise | 문의 | 문의 | 맞춤 계약 |
+| [Kimi: 글로벌](https://www.kimi.ai/help/membership/membership-overview) | Plus | $19 | $180 | 연간 결제 월 환산 $15, Kimi Code 포함 |
+| - | Pro | $39 | $372 | 연간 결제 월 환산 $31 |
+| - | Max | $99 | $948 | 연간 결제 월 환산 $79 |
+| - | Ultra | $199 | $1,908 | 연간 결제 월 환산 $159 |
+| - | [Business](https://www.kimi.ai/help/kimi-business/kimi-business) | 별도 월 상품 없음 | $600/좌석 | 연간 결제 월 환산 $50, 2~150석 |
+| [Kimi: 중국](https://www.kimi.com/en/help/membership/membership-pricing) | Go | CNY 49 | CNY 468 | Kimi Code 미포함 |
+| - | Plus | CNY 99 | CNY 948 | Kimi Code 포함 |
+| - | Pro | CNY 199 | CNY 1,908 | 연간 결제 월 환산 CNY 159 |
+| - | Max | CNY 699 | CNY 6,708 | 연간 결제 월 환산 CNY 559 |
+| - | Ultra | CNY 1,399 | CNY 13,428 | 연간 결제 월 환산 CNY 1,119 |
+| [Kiro](https://kiro.dev/pricing/) | Free | $0 | - | 월 50크레딧 |
+| - | Pro | $20/사용자 | - | 월 1,000크레딧 |
+| - | Pro+ | $40/사용자 | - | 월 2,000크레딧 |
+| - | Pro Max | $100/사용자 | - | 월 5,000크레딧 |
+| - | Power | $200/사용자 | - | 월 10,000크레딧 |
+| - | Teams / Enterprise 크레딧 풀 | $20/좌석 | - | 최소 2석, 좌석당 월 500크레딧 |
+| [OpenCode](https://opencode.ai/docs/go/) | Go | $10 | - | 개인 워크스페이스, 모델별 사용량 한도 |
+| - | Go Plus | $40 | - | 개인 워크스페이스, 더 높은 모델별 한도 |
+| - | Go Teams | $20/멤버 | - | 멤버별 한도, 서비스 계정 제외 |
+| - | Console, 종전 Zen | 모델별 종량제 | - | [공식 모델 요금](https://opencode.ai/v2/docs/console/models/), 구독 선택 사항 |
+| [OpenRouter](https://openrouter.ai/pricing) | Free | $0 | - | 무료 모델·요청 한도 적용 |
+| - | Standard | 모델별 종량제 | - | 크레딧 구매 시 수수료 5.5% |
+| - | Business | 모델별 종량제 | - | 크레딧 구매 시 수수료 8% |
+| - | Enterprise | 문의 | 계약별 | 추론 요율·플랫폼 수수료 구분 |
+| [Z.ai GLM Coding](https://zcode.z.ai/pricing.html) | Lite | $18 | 결제 화면 확인 | 5시간 2,000·주간 10,000크레딧 |
+| - | Pro | $80 | 결제 화면 확인 | 5시간 12,000·주간 60,000크레딧 |
+| - | Max | $168 | 결제 화면 확인 | 5시간 28,000·주간 140,000크레딧 |
+
+- Claude Max 20x는 가격 변경 없이 Ultra로 자동 전환.
+  인증된 Ultra 계정은 5시간 한도 없이 주간 Pro 사용량의 10배 사용 가능.
+  앱은 예전 `max`·`20x` 응답도 Ultra로 표시하되, 사용량·리셋 시각은 서버 응답 유지.
+  [Ultra 안내](https://support.claude.com/en/articles/17728952-what-is-the-ultra-plan) 참조.
+- Cursor·Grok 신규 요금제의 포함 사용량은 주간 공유 풀.
+  기존 Cursor·SuperGrok·X Premium 구독은 유지 가능하며, 새 요금제로 자동 치환하지 않음.
+  Cursor의 [기존 요금제](https://cursor.com/docs/account/pricing/legacy-cursor-plans)는 기존 월간 풀과 추가 사용량 계약 유지.
+- Copilot의 기존 연간 Pro·Pro+ 계약은 만료까지 이전 요청 기반 청구 유지 가능.
+  새 월간 AI 크레딧 계약과 구분하며, 1 AI 크레딧은 $0.01.
+  [기존 청구 안내](https://docs.github.com/en/copilot/reference/copilot-billing/request-based-billing-legacy/what-changed-with-billing) 참조.
+- Kimi 기존 Moderato·Allegretto·Allegro·Vivace와 중국 Andante 구독은 이름·갱신·한도 유지 가능.
+  새 요금제는 Kimi Code의 5시간 한도만 유지하고 주간 한도 제거.
+  월간 공통 크레딧 풀은 별도 적용하며, API 응답에 없는 요금제·주간 한도는 추정하지 않음.
+  [Kimi Code 멤버십 안내](https://www.kimi.com/code/docs/en/kimi-code/membership.html) 참조.
+- Kiro 추가 크레딧은 $0.04/크레딧.
+  구독 포함 크레딧의 단가나 실제 청구액을 뜻하지 않음.
+- OpenCode의 Go 키만으로 Go·Go Plus·Go Teams 판별 불가.
+  앱의 이전 5시간·주간·월간 Go 미터는 현행 모델별 한도와 다르며, [OpenCode 지원 범위](/docs/providers/opencode.md) 참조.
+- OpenRouter는 모델 추론 요금에 플랫폼 수수료를 중복 가산하지 않음.
+  `is_free_tier`만으로 Standard·Business·Enterprise 판별 불가.
+- Z.ai 판매 페이지에는 Lite $12.60·Pro $56·Max $117.60의 할인 금액도 표시.
+  할인 적용 기간·결제 주기는 페이지에서 확정하지 않아 월 정가와 분리하며, 최종 조건은 결제 화면 확인.
+  사용량 기준은 [GLM Coding Plan 안내](https://docs.z.ai/devpack/overview) 참조.
+
+## 모델 사용량의 가격
 
 OpenUsage가 토큰 수를 추정 달러로 환산하는 방식(Claude, Codex, Cursor, Antigravity, Devin, Grok, Kimi, Z.ai).
 OpenRouter와 OpenCode는 예외 — OpenRouter는 API가 지출 금액을 보고하고, OpenCode는 로컬 로그에 메시지별 비용을 기록하므로 이 문서 내용이 적용되지 않음.
@@ -52,6 +161,8 @@ Cursor CSV는 보충 파일의 `cursor/` 전용 항목과 별칭을 먼저 조�
 4. models.dev에서 모델 이름과 정확히 일치하는 가격 조회.
 
 LiteLLM의 유사 매칭은 프로바이더 접두사(`anthropic/`, `xai/` 등), 날짜 접미사(`claude-sonnet-4` ↔ `claude-sonnet-4-20250514`), 구분자 차이(`grok-4-3` ↔ `grok-4.3`)를 처리.
+등록되지 않은 설명·등급 접미사를 제거해 다른 모델의 가격을 적용하지 않음.
+설명·등급이 붙은 이름은 정확한 가격 항목이나 등록된 별칭이 있을 때만 계산.
 models.dev에는 유사 매칭 미적용.
 
 Fast 변형도 보충 파일과 LiteLLM의 정확 일치 가격을 먼저 조회.
@@ -112,18 +223,18 @@ Cursor의 팀별 Token Rate 추가료·라우팅 모드·500k 창 선택만으�
 DeepSeek의 Cursor 요율은 Cursor 공식 표를 사용하며, 직영 API의 시간대별 할인은 적용하지 않음.
 과거 로그도 현재 확보한 가격으로 다시 계산하므로, 가격 갱신이 지난 날짜의 추정값을 바꿀 수 있음.
 
-## 2026-10-28 공식 가격 갱신
+## 가격 지원 범위
 
-지원 provider 12개와 관련 모델의 공식 문서 대조 결과는 [가격 조사 기록](/docs/research/pricing-2026-10-28.md)에 정리.
-커뮤니티 카탈로그 전체를 다시 내려받지 않고, 공식 문서로 확인한 누락·차이만 보충 파일에 반영.
-
-- OpenAI: GPT-6.1 Terra, Sol Ultrafast, Rosalind Research·Discovery 추가 및 o3·o4-mini Fast 배율 보완.
-- Claude: Opus·Sonnet·Haiku 5.5와 Mythos 5.1 추가, Sonnet 5 인하 단가 반영.
-- Grok: 4.7·Fast와 요청별 장문 구간 추가, 4.20 인하 단가·4.5 API 캐시 할인 반영.
-- Google: Gemini 4 Argon·3.8 Flash 등 추가, API 할인과 Cursor의 3.5·3.6 요율 분리.
-- Kimi·Z.ai·Meta: K3.1 Pro·Highspeed, GLM 5.3 Flash 계열, Muse Wonder 추가.
-
+공식 문서로 확인한 모델별 요율과 별칭은 보충 파일에 반영.
 기존 사용 기록이 참조하는 모델은 유지.
+Claude Opus 4.6·4.7 Fast는 [공식 종료 안내](https://platform.claude.com/docs/en/release-notes/overview)에 따라 현재 제공되지 않지만, 과거 Fast 기록 계산용 6배 단가 유지.
+기본 모델의 일반 요청에는 표준 단가 적용.
+날짜·프로바이더 접두사가 있는 과거 로그도 같은 모델로 해석하며, 응답 사용량의 `speed`로 실제 Fast 실행 여부 구분.
+`openai/` 접두사의 일부 Codex·Pro·연구 모델에 섞인 재판매 요율은 OpenAI 공식 단가로 보정.
+GPT-5.1 Codex Max·o1 Pro처럼 제공이 종료된 모델의 단가도 과거 기록용으로 유지.
+Kimi K3 Fast는 [Fireworks의 별도 상품](https://fireworks.ai/models/fireworks/kimi-k3)으로 입력 $4.50·캐시 읽기 $0.45·출력 $22.50 / 100만 토큰.
+Muse Spark 1.3 Contributor도 [별도 요율](https://openrouter.ai/meta/muse-spark-1.3-contributor)인 입력 $0.10·캐시 읽기 $0.002·출력 $0.20 / 100만 토큰으로 구분.
+두 모델을 기본 모델의 별칭으로 바꾸지 않음.
 현행 공식 표에서 단가를 다시 확인할 수 없는 Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 최신 확인 완료로 간주하지 않음.
 GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까지, Gemini 3.6·3.8 Flash는 2026-12-31까지로 공표.
 만료 후에는 공식 표를 다시 확인해 갱신 필요.

@@ -1,10 +1,10 @@
 # OpenCode
 
-> 2026-10-28 확인: 아래 Go 상한은 기존 방식의 추정치이며, 현재 Go·Go Plus의 모델별 allowance와 다를 수 있음.
-> 새 구독의 정확한 잔여량이나 Plus 등급 판정에는 사용 불가.
-> 최신 요금과 로컬 기록 제약은 [가격 조사 기록](/docs/research/pricing-2026-10-28.md)의 OpenCode 항목 참조.
+> 2026-11-06 확인: 아래 Go 상한은 기존 방식의 추정치이며, 현재 Go·Go Plus·Go Teams의 모델별 사용량 한도와 다를 수 있음.
+> 새 구독의 정확한 잔여량이나 Plus·Teams 등급 판정에는 사용 불가.
 
-Mac에 이미 저장된 OpenCode 자체 로그를 사용해 OpenCode 호스팅 사용량(**Go** 구독과 **Zen** 종량제 게이트웨이) 추적.
+Mac에 이미 저장된 OpenCode 자체 로그를 사용해 OpenCode 호스팅 사용량(**Go** 구독과 **Console**, 종전 Zen 종량제 게이트웨이) 추적.
+구독 가격과 현행 라인업은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 원본 로그는 이 Mac에서만 읽음.
 
 ## 추적 항목

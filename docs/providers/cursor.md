@@ -14,6 +14,8 @@ Cursor 앱의 로그인으로 Cursor 요금제 사용량 추적.
 | Extra Usage | 온디맨드 지출 — 가능하면 사용자 단위, 아니면 팀 집계이며 Cursor에서 한도를 반환하면 미터로 표시 |
 
 Cursor가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+신규 판매 요금제는 The X Subscription의 Free·Plus·Premium·Super·Ultra와 팀·기업 계약.
+기존 Cursor 요금제 이름은 그대로 처리하며, [구독 가격과 전환 조건](/docs/pricing.md#구독-요금제) 참조.
 
 ## 인증 정보 출처
 
