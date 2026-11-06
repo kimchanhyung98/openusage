@@ -28,7 +28,7 @@
 | - | Enterprise | 문의 | 문의 | 계약별 사용량·청구 조건 |
 | - | Edu | 문의 | 문의 | 기관 계약 |
 | [Cursor·Grok: The X Subscription](https://docs.x.ai/x-subscription/pricing) | Free | $0 | $0 | 제한된 무료 사용량 |
-| - | Plus | $8 | $80 | 기본 공유 사용량, Cursor 외부 모델 미포함 |
+| - | Plus | $8 | $80 | 기본 공유 사용량, Cursor 외부 모델 이용 불가 |
 | - | Premium | $30 | $300 | Plus 대비 4배, 외부 모델은 별도 종량제 |
 | - | Super | $100 | $1,000 | Plus 대비 15배 |
 | - | Ultra | $200 | $2,000 | Plus 대비 50배 |
