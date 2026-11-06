@@ -20,6 +20,7 @@ enum PiPaths {
         }
         let configDir = environment.value(for: "PI_CODING_AGENT_DIR")?
             .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        if let configDir, !isAbsoluteOrHome(configDir) { throw SettingsError.relativeSessionDirectory }
         let agent = configDir.map { resolve($0, home: homeDirectory) }
             ?? homeDirectory.appendingPathComponent(".pi/agent")
         let fallback = agent.appendingPathComponent("sessions")
@@ -60,9 +61,11 @@ enum PiPaths {
            override == base.appendingPathComponent("profiles/" + legacy + "/agent").path {
             override = nil
         }
+        if let override, !isAbsoluteOrHome(override) { return nil }
         let agent = override.map { resolve($0, home: homeDirectory) } ?? defaultAgent
         if agent.standardizedFileURL == defaultAgent.standardizedFileURL,
            let xdg = environment.value(for: "XDG_DATA_HOME")?.nilIfEmpty {
+            guard isAbsoluteOrHome(xdg) else { return nil }
             var data = resolve(xdg, home: homeDirectory).appendingPathComponent("omp")
             if !profile.isEmpty { data.appendPathComponent("profiles/" + profile) }
             if FileManager.default.fileExists(atPath: data.path) { return data.appendingPathComponent("sessions") }
@@ -78,6 +81,10 @@ enum PiPaths {
               profile.range(of: "^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(\\..*)?$", options: [.regularExpression, .caseInsensitive]) == nil
         else { return nil }
         return profile
+    }
+
+    private static func isAbsoluteOrHome(_ path: String) -> Bool {
+        path.hasPrefix("/") || path == "~" || path.hasPrefix("~/")
     }
 
     private static func resolve(_ path: String, home: URL) -> URL {

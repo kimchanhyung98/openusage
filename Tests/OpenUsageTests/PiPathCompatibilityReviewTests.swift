@@ -53,6 +53,50 @@ final class PiPathCompatibilityReviewTests: XCTestCase {
         XCTAssertFalse(piRecord.zeroCostIsUnknown)
     }
 
+    func testRelativeAgentPathsAndApplicableXDGAreUnresolved() throws {
+        let home = URL(fileURLWithPath: "/fixture-home")
+        let relativeAgent = FakeEnvironment(["PI_CODING_AGENT_DIR": "agent"])
+        XCTAssertThrowsError(try PiPaths.sessionsDirectory(environment: relativeAgent, homeDirectory: home))
+        XCTAssertNil(PiPaths.ompSessionsDirectory(environment: relativeAgent, homeDirectory: home))
+        let sessionOverride = FakeEnvironment([
+            "PI_CODING_AGENT_DIR": "agent", "PI_CODING_AGENT_SESSION_DIR": "/sessions"
+        ])
+        XCTAssertEqual(try PiPaths.sessionsDirectory(environment: sessionOverride, homeDirectory: home).path, "/sessions")
+        XCTAssertNil(PiPaths.ompSessionsDirectory(environment: sessionOverride, homeDirectory: home))
+
+        let relativeXDG = FakeEnvironment(["XDG_DATA_HOME": "data"])
+        XCTAssertNil(PiPaths.ompSessionsDirectory(environment: relativeXDG, homeDirectory: home))
+        let defaultAgent = FakeEnvironment(["PI_CODING_AGENT_DIR": "~/.omp/agent", "XDG_DATA_HOME": "data"])
+        XCTAssertNil(PiPaths.ompSessionsDirectory(environment: defaultAgent, homeDirectory: home))
+        let explicitAgent = FakeEnvironment(["PI_CODING_AGENT_DIR": "/custom", "XDG_DATA_HOME": "data"])
+        XCTAssertEqual(PiPaths.ompSessionsDirectory(environment: explicitAgent, homeDirectory: home)?.path,
+                       "/custom/sessions")
+        let namedProfile = FakeEnvironment(["OMP_PROFILE": "work", "PI_CODING_AGENT_DIR": "relative"])
+        XCTAssertEqual(PiPaths.ompSessionsDirectory(environment: namedProfile, homeDirectory: home)?.path,
+                       "/fixture-home/.omp/profiles/work/agent/sessions")
+        let invalidProfile = FakeEnvironment(["OMP_PROFILE": "../bad", "XDG_DATA_HOME": "data"])
+        XCTAssertNil(PiPaths.ompSessionsDirectory(environment: invalidProfile, homeDirectory: home))
+    }
+
+    func testRelativePathReportsFailureWhileAbsolutePiOverrideStillCollects() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessions = home.appendingPathComponent("sessions")
+        try UsageRecordFixture.write(line(id: "pi", input: 10), to: sessions.appendingPathComponent("session.jsonl"))
+        let env = FakeEnvironment(["PI_CODING_AGENT_DIR": "relative", "PI_CODING_AGENT_SESSION_DIR": sessions.path])
+        let scanner = PiUsageScanner(environment: env, homeDirectory: { home }, incrementalScanner: IncrementalJSONLScanner())
+        let collected = await scanner.collect(since: .distantPast)
+        let result = try XCTUnwrap(collected)
+        XCTAssertEqual(result.records.map(\.id), ["pi"])
+        XCTAssertEqual(result.sources.first { $0.sourceID == "omp" }?.failedStores, 1)
+        XCTAssertEqual(result.sources.first { $0.sourceID == "pi" }?.failedStores, 0)
+        let xdgScanner = PiUsageScanner(environment: FakeEnvironment(["XDG_DATA_HOME": "relative"]),
+                                        homeDirectory: { home }, incrementalScanner: IncrementalJSONLScanner())
+        let xdgCollected = await xdgScanner.collect(since: .distantPast)
+        let xdgResult = try XCTUnwrap(xdgCollected)
+        XCTAssertEqual(xdgResult.sources.first { $0.sourceID == "omp" }?.failedStores, 1)
+    }
+
     private func line(id: String, input: Int) -> String {
         """
         {"type":"message","id":"\(id)","timestamp":"2026-07-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"fixture","usage":{"input":\(input),"output":0,"cost":{"total":0}}}}

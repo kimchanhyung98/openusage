@@ -76,7 +76,7 @@ actor PiUsageScanner: UsageCollecting {
         if omp == nil {
             result.sources.append(.init(sourceID: "omp", failedStores: 1))
             AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding,
-                                  providerID: "omp", localContext: "invalid_profile")
+                                  providerID: "omp", localContext: "invalid_profile_or_path")
         }
         result.records = UsageRecordDeduplicator.records(result.records)
         return result

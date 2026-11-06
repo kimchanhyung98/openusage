@@ -48,7 +48,7 @@ Pi는 `PI_CODING_AGENT_SESSION_DIR`을 우선 사용.
 그 외에는 `PI_CODING_AGENT_DIR` 또는 기본 `~/.pi/agent` 아래의 전역 `settings.json`에서 `sessionDir` 확인.
 설정이 없으면 해당 agent 디렉터리 아래 `sessions` 사용.
 전역 `sessionDir`은 절대 경로와 `~` 경로만 지원.
-실행 작업 디렉터리가 필요한 프로젝트 설정이나 상대 `sessionDir`은 추정하지 않음.
+실행 작업 디렉터리가 필요한 프로젝트 설정이나 상대 `sessionDir`, `PI_CODING_AGENT_DIR`은 추정하지 않음.
 설정을 읽거나 해석하지 못하면 다른 기본 원장을 대신 읽지 않고 수집 오류로 구분.
 매 수집에서 전역 설정을 다시 읽어 파일 수정과 `sessionDir` 변경 반영.
 
@@ -56,6 +56,7 @@ OMP 기본 저장 위치는 `~/.omp/agent/sessions`.
 `OMP_PROFILE` 또는 이전 `PI_PROFILE`로 선택한 프로필과 `PI_CONFIG_DIR`을 반영.
 명시적 기본 프로필은 이전 프로필에서 상속한 agent 경로와 구분.
 해당 OMP 데이터 디렉터리가 있으면 `XDG_DATA_HOME`의 세션 경로를 우선 사용.
+적용 대상인 `XDG_DATA_HOME`과 `PI_CODING_AGENT_DIR`이 상대 경로면 OMP 세션 경로를 확인할 수 없는 상태로 표시.
 매 수집 시 저장 위치를 다시 확인하여 실행 중 생성된 XDG 데이터 디렉터리도 반영.
 유효하지 않은 프로필은 다른 프로필로 대체하지 않고 수집 오류로 구분.
 
