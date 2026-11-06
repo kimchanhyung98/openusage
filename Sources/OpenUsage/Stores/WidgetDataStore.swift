@@ -14,6 +14,7 @@ final class WidgetDataStore {
     private var providersByID: [String: ProviderRuntime]
     private let cache: ProviderSnapshotCache
     private let defaults: UserDefaults
+    private let workQueue: BackgroundWorkQueue
     /// Provider enablement 조회 — 주입식, 기본은 전부 enabled(테스트·프리뷰용).
     private let isProviderEnabled: @MainActor (String) -> Bool
     /// dashboard에 배치된 사용자 widget 순서 — quota 알림 입력, 기본은 registry 순서.
@@ -53,6 +54,9 @@ final class WidgetDataStore {
     /// Codex 인증·usage snapshot과 분리된 전역 공개 Reset Watch 값 — 모든 Codex 카드가 공유.
     private var codexResetWatch = CodexResetWatchResult()
     var refreshingProviderIDs: Set<String> = []
+    private var queueWaitingProviderIDs: Set<String> = []
+    /// 배치별 대기 표시 보존 — 한 배치의 취소가 다른 배치의 표시를 지우지 않도록 분리.
+    private var queuedRefreshBatches: [UUID: Set<String>] = [:]
     /// 마지막 사용량 배치 종료 시각. 첫 배치 전에는 nil.
     var lastRefreshAt: Date?
     private(set) var scheduledRefreshDates: [String: Date] = [:]
@@ -132,7 +136,8 @@ final class WidgetDataStore {
         postNotification: QuotaNotificationEvaluator.Post? = nil,
         providerIdentityKeys: [String: String] = [:],
         familyTotalHistoryCardIDs: Set<String> = [],
-        resolveDisplayName: (@MainActor (String) -> String?)? = nil
+        resolveDisplayName: (@MainActor (String) -> String?)? = nil,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         precondition(slowProviderRefreshThreshold >= 0)
         precondition(providerRefreshTimeout.isFinite && providerRefreshTimeout > 0)
@@ -140,6 +145,7 @@ final class WidgetDataStore {
         self.providersByID = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, $0) })
         self.cache = cache
         self.defaults = defaults
+        self.workQueue = workQueue
         self.isProviderEnabled = isProviderEnabled
         self.orderedDescriptors = orderedDescriptors ?? { registry.descriptors }
         self.now = now
@@ -179,35 +185,30 @@ final class WidgetDataStore {
         self.snapshots = loaded
     }
 
-    /// Enabled provider 전체를 동시 refresh — 느린 provider 하나가 나머지를 지연시키지 않는 구조.
+    /// 활성 provider를 순차 갱신. 다른 갱신 경로와도 공통 큐 공유.
     /// `force`는 snapshot cache 우회(수동 refresh 경로); 주기 loop는 cache를 존중.
     func refreshAll(
         force: Bool = false, trigger: RefreshTrigger = .scheduled,
         cadence: RefreshSetting.Cadence? = nil
     ) async {
         guard !Task.isCancelled else { return }
-        // MainActor 격리 유지를 위해 task group 대신 provider별 Task 생성 후 일괄 await.
         let providerIDs = registry.providers.map(\.id).filter { id in
             guard isProviderEnabled(id) else { return false }
             guard let cadence else { return true }
             return RefreshSetting.cadence(for: id) == cadence && (scheduledRefreshDate(for: id) ?? now()) <= now()
         }
         guard !providerIDs.isEmpty else { return }
+        let batchID = UUID()
+        queuedRefreshBatches[batchID] = Set(providerIDs)
+        defer { queuedRefreshBatches.removeValue(forKey: batchID) }
         let previousHistories = providerIDs.map { localSnapshots[$0]?.usageHistory }
         let start = monotonicNow()
         AppLog.info(.refresh, "batch start (\(providerIDs.count) providers, force=\(force))")
-        let tasks = providerIDs.map { providerID in
-            Task { await self.refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false) }
-        }
-        let outcomes = await withTaskCancellationHandler {
-            var outcomes: [RefreshOutcome] = []
-            outcomes.reserveCapacity(tasks.count)
-            for task in tasks {
-                outcomes.append(await task.value)
-            }
-            return outcomes
-        } onCancel: {
-            for task in tasks { task.cancel() }
+        var outcomes: [RefreshOutcome] = []
+        for providerID in providerIDs {
+            guard !Task.isCancelled else { break }
+            outcomes.append(await refresh(providerID: providerID, force: force, trigger: trigger, notifyHistoryChange: false))
+            queuedRefreshBatches[batchID]?.remove(providerID)
         }
         guard !Task.isCancelled else {
             let historyRemoved = zip(providerIDs, previousHistories).contains { providerID, history in
@@ -231,6 +232,14 @@ final class WidgetDataStore {
             onLocalHistoryChanged?()
         }
         AppLog.info(.refresh, "batch end (\(durationMs)ms, \(refreshed) ok / \(failed) failed / \(cached) cached / \(backedOff) backed off)")
+    }
+
+    func isRefreshQueued(for providerID: String) -> Bool {
+        guard isProviderEnabled(providerID), providersByID[providerID] != nil else { return false }
+        if refreshingProviderIDs.contains(providerID) {
+            return queueWaitingProviderIDs.contains(providerID)
+        }
+        return queuedRefreshBatches.values.contains { $0.contains(providerID) }
     }
 
     func scheduledRefreshDate(for providerID: String) -> Date? {
@@ -538,19 +547,29 @@ final class WidgetDataStore {
             return .skipped
         }
         refreshingProviderIDs.insert(providerID)
+        queueWaitingProviderIDs.insert(providerID)
         var needsScheduleWake = trigger != .scheduled && RefreshSetting.cadence(for: providerID) == .claude
         defer {
             refreshingProviderIDs.remove(providerID)
+            queueWaitingProviderIDs.remove(providerID)
             if needsScheduleWake, pendingProviderRefreshes[runtimeID] == nil {
                 NotificationCenter.default.post(name: Self.refreshScheduleDidChange, object: nil)
             }
             resumeAccountRefreshWaitersIfIdle()
         }
+        guard let ticket = await workQueue.acquire("usage:\(ProviderAccountID.family(of: providerID))") else { return .skipped }
+        queueWaitingProviderIDs.remove(providerID)
+        var workOwnsTicket = false
+        defer { if !workOwnsTicket { workQueue.finish(ticket) } }
+        guard !Task.isCancelled, isProviderEnabled(providerID), isRefreshSuspended?(providerID) != true,
+              providersByID[providerID] === provider else { return .skipped }
         let boundGeneration = catalogGeneration
         let authenticationGeneration = authenticationGenerations[providerID, default: 0]
         let boundCredentialGeneration = credentialGenerations[providerID, default: 0]
         let start = monotonicNow()
-        let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self] in
+        let result = await ProviderRefreshDeadline.run(timeout: .seconds(providerRefreshTimeout)) { [weak self, workQueue] in
+            workOwnsTicket = true
+            defer { workQueue.finish(ticket) }
             self?.pendingProviderRefreshes[runtimeID] = providerID
             defer {
                 self?.pendingProviderRefreshes.removeValue(forKey: runtimeID)

@@ -121,13 +121,15 @@ struct WidgetGroupedListView: View {
                 title: container.accountOptionTitle(for: $0.provider.id)
             )
         } : []
+        let queued = dataStore.isRefreshQueued(for: group.provider.id)
         return ProviderSectionHeader(
             provider: group.provider,
             displayName: container.accountCardTitle(for: group.provider),
             plan: dataStore.plan(for: group.provider.id),
             warning: dataStore.headerNotice(for: group.provider.id),
             serviceStatus: container.providerStatus.status(for: group.provider.id),
-            refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id),
+            refreshing: dataStore.refreshingProviderIDs.contains(group.provider.id) && !queued,
+            queued: queued,
             staleness: dataStore.stalenessHint(for: group.provider.id),
             onCopyScreenshot: { shareCard(group) },
             accountOptions: options,

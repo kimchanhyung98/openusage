@@ -80,25 +80,30 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private let parsePermitPool: JSONLParsePermitPool
     private let readFailureReporter: UsageLogReadFailureReporter
     private let persistence: JSONLScanCachePersistence?
+    private let workQueue: BackgroundWorkQueue
 
     init(
-        maxConcurrentParses: Int = 8,
+        maxConcurrentParses: Int = 1,
         logTag: String = LogTag.refresh.rawValue,
         readFailureWarning: UsageLogReadFailureReporter.Warning? = nil,
-        persistence: JSONLScanCachePersistence? = nil
+        persistence: JSONLScanCachePersistence? = nil,
+        workQueue: BackgroundWorkQueue = .shared
     ) {
         precondition(maxConcurrentParses > 0)
         self.maxConcurrentParses = maxConcurrentParses
         self.parsePermitPool = JSONLParsePermitPool(limit: maxConcurrentParses)
         self.readFailureReporter = UsageLogReadFailureReporter(logTag: logTag, warning: readFailureWarning)
         self.persistence = persistence
+        self.workQueue = workQueue
         if let persistence {
             let cutoff = Date().addingTimeInterval(-JSONLScanCachePaths.staleIdentityRetention)
             Task.detached(priority: .utility) {
-                await JSONLScanCacheWriter.shared.pruneStaleIdentities(
-                    persistence: persistence,
-                    before: cutoff
-                )
+                await workQueue.run("log-cache:prune") {
+                    await JSONLScanCacheWriter.shared.pruneStaleIdentities(
+                        persistence: persistence,
+                        before: cutoff
+                    )
+                }
             }
         }
     }
@@ -144,11 +149,11 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             permitPool: parsePermitPool,
             parse: parse
         )
-        guard !Task.isCancelled else { return nil }
         let checkedPaths = Set(parseResults.lazy.filter(\.readAttempted).map(\.file.path))
         let unreadablePaths = Set(parseResults.lazy.filter(\.readFailed).map(\.file.path))
-        await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
-        guard !Task.isCancelled else { return nil }
+        if !Task.isCancelled {
+            await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
+        }
         var parsedPaths: Set<String> = []
         for result in parseResults {
             let (file, parsed) = (result.file, result.items)
@@ -171,6 +176,11 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             || invalidPersistenceIdentities.contains(cacheIdentity)
         {
             scheduleWrite(identity: cacheIdentity)
+        }
+        // 전체 집계는 폐기하되 취소 전에 완료한 파일은 재사용 — 대용량 cold scan의 반복 시간 초과 방지.
+        guard !Task.isCancelled else {
+            AppLog.info(.cache, "cancelled \(persistence?.namespace ?? "local") scan; cached \(parsedPaths.count) completed files for retry")
+            return nil
         }
 
         var items: [Item] = []
@@ -200,7 +210,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             // 진행 중인 encoding/writer 작업을 세대 교체로 대체 — dirty 상태는 이 명시적 drain이 commit하도록 남김.
             let generation = writeGenerations[identity, default: 0] + 1
             writeGenerations[identity] = generation
-            await persistCache(identity: identity, generation: generation)
+            await queueWrite(identity: identity, generation: generation)
         }
     }
 
@@ -318,7 +328,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                 return
             }
             guard !Task.isCancelled else { return }
-            await self.persistCache(identity: identity, generation: generation)
+            await self.queueWrite(identity: identity, generation: generation)
             await self.finishWriteTask(identity: identity, generation: generation)
         }
     }
@@ -326,6 +336,12 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private func finishWriteTask(identity: String, generation: Int) {
         guard writeGenerations[identity] == generation else { return }
         writeTasks[identity] = nil
+    }
+
+    private func queueWrite(identity: String, generation: Int) async {
+        await workQueue.run("log-cache:write") {
+            await self.persistCache(identity: identity, generation: generation)
+        }
     }
 
     private func persistCache(identity: String, generation: Int) async {
@@ -423,7 +439,8 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                     if Task.isCancelled || !FileManager.default.fileExists(atPath: file.path) {
                         result = (index, nil, false, false)
                     } else if let data = FileManager.default.contents(atPath: file.path) {
-                        result = (index, parse(data), true, false)
+                        let parsed = parse(data)
+                        result = (index, Task.isCancelled ? nil : parsed, true, false)
                     } else {
                         result = (index, nil, true, true)
                     }
@@ -441,11 +458,11 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
 
             var results = files.map { (file: $0, items: Optional<[Item]>.none, readAttempted: false, readFailed: false) }
             for await (index, items, readAttempted, readFailed) in group {
+                results[index] = (files[index], items, readAttempted, readFailed)
                 if Task.isCancelled {
                     group.cancelAll()
-                    break
+                    continue
                 }
-                results[index] = (files[index], items, readAttempted, readFailed)
                 if nextIndex < files.count {
                     addTask(at: nextIndex)
                     nextIndex += 1

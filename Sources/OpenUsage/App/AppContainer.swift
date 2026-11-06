@@ -61,6 +61,7 @@ final class AppContainer {
     /// 주기 refresh와 shared-home 재인증 reconciliation task 수명.
     private let refreshTask = AccountRefreshTaskHolder()
     private let weeklyTimerCheckTask = AccountRefreshTaskHolder()
+    private let workQueue: BackgroundWorkQueue
     /// Codex 인증·usage refresh와 분리된 공개 Reset Watch 조회 주기.
     let resetWatchCoordinator: CodexResetWatchCoordinator
     private(set) var nextCodexTimerCheckAt: Date?
@@ -77,6 +78,8 @@ final class AppContainer {
     /// `isFreshInstall`은 `SettingsMigrator.migrate()` 실행 전 호출자 캡처 필수 — migrator의 schema stamp가
     /// defaults 도메인을 non-empty로 변경. `AppDelegate` 참고.
     init(isFreshInstall: Bool = false) {
+        let workQueue = BackgroundWorkQueue.shared
+        self.workQueue = workQueue
         // login-shell 환경 off-main 선캡처 — Finder/Dock 런치에서도 shell profile의 provider key 해석 가능.
         LoginShellEnvironment.shared.prewarm()
         // 캡처 완료 시 identity 관련 사실 영속화 — 다음 런치용 (`ShellEnvironmentSnapshot` 참고).
@@ -126,7 +129,8 @@ final class AppContainer {
             notificationSettings: { notificationSettings },
             softLimitSettings: { softLimitSettings },
             providerIdentityKeys: accountAssembly.identityKeysByCard,
-            familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs
+            familyTotalHistoryCardIDs: accountAssembly.familyTotalHistoryCardIDs,
+            workQueue: workQueue
         )
         // 익명 opt-in telemetry. 상태는 전용 UserDefaults suite에 격리 — 공유 선택과 install id가 앱 설정 변경과 독립.
         let telemetryStore = TelemetryStore()
@@ -156,8 +160,8 @@ final class AppContainer {
         self.telemetry = telemetry
         // iCloud identity 초기화 오류도 기존 공유 동의에 따라 수집하도록 먼저 구독.
         telemetry.startDiagnostics()
-        let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient())
-        let resetWatchStore = CodexResetWatchStore()
+        let providerStatus = ProviderStatusStore(http: ProviderStatusHTTPClient(), workQueue: workQueue)
+        let resetWatchStore = CodexResetWatchStore(workQueue: workQueue)
         let resetWatchNotifications = CodexResetWatchNotificationEvaluator(
             isEnabled: { [weak dataStore, enablement, notificationSettings] in
                 notificationSettings.codexResetWatch && (dataStore?.knownProviderIDs.contains {
@@ -178,7 +182,7 @@ final class AppContainer {
                 Task { await resetWatchCoordinator?.refreshNow() }
             }
         }
-        let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore)
+        let iCloudSync = ICloudUsageSyncStore(dataStore: dataStore, workQueue: workQueue)
         // provider 재활성화 뒤 이어지는 wake에서 즉시 fetch되도록 usage/status의 일반 failure gate 제거.
         // `weak`로 순환 참조 차단 (dataStore가 이미 enablement 캡처).
         enablement.onProviderEnabled = { [weak dataStore, weak providerStatus] id in
@@ -196,12 +200,14 @@ final class AppContainer {
             isFreshInstall: isFreshInstall,
             providers: providers,
             enablement: enablement,
-            onboarding: onboarding
+            onboarding: onboarding,
+            workQueue: workQueue
         )
         // 업데이트로 추가된 provider도 첫 런치에 동일한 credential 탐지 적용. 처음 보는 provider가 없으면 no-op.
         self.newProviderTask = NewProviderSeeder.reconcileIfNeeded(
             providers: providers,
-            enablement: enablement
+            enablement: enablement,
+            workQueue: workQueue
         )
         self.providers = providers
         self.onboarding = onboarding
@@ -213,7 +219,8 @@ final class AppContainer {
         let softLimitCoordinator = SoftLimitCoordinator(
             settings: softLimitSettings,
             adapters: [CodexSoftLimitAdapter()],
-            isProviderEnabled: { [enablement] in enablement.isEnabled($0) }
+            isProviderEnabled: { [enablement] in enablement.isEnabled($0) },
+            workQueue: workQueue
         )
         self.softLimitCoordinator = softLimitCoordinator
         let codexWeeklyTimer = CodexWeeklyTimerRouter(
@@ -223,7 +230,8 @@ final class AppContainer {
             report: { [weak dataStore] in dataStore?.setAutomationWarning($1, for: $0) },
             refresh: { [weak dataStore] providerID, isCurrent in
                 await dataStore?.refreshAfterWeeklyTimer(providerID: providerID, isCurrent: isCurrent)
-            }
+            },
+            workQueue: workQueue
         )
         self.codexWeeklyTimer = codexWeeklyTimer
         dataStore.isRefreshSuspended = { [weak codexWeeklyTimer] in codexWeeklyTimer?.isRunning(providerID: $0) == true }
@@ -245,7 +253,7 @@ final class AppContainer {
         self.dataStore = dataStore
         self.providerStatus = providerStatus
         self.iCloudSync = iCloudSync
-        self.tokscaleSync = TokscaleSyncStore()
+        self.tokscaleSync = TokscaleSyncStore(workQueue: workQueue)
         self.resetWatchCoordinator = resetWatchCoordinator
 
         // Codex 카드별 claim service — 각 카드의 credential 로딩·HTTP client 공유로 claim auth가 카드와 불일치 불가.
@@ -256,7 +264,8 @@ final class AppContainer {
             identityKeys: accountAssembly.identityKeysByCard,
             refreshAfterClaim: { [weak dataStore] providerID, binding in
                 await dataStore?.refreshAfterClaim(providerID: providerID, codexBinding: binding)
-            }
+            },
+            workQueue: workQueue
         )
 
         self.transparency = PopoverTransparencyStore()
@@ -556,6 +565,9 @@ final class AppContainer {
             authenticationReconciliationWaiters.removeAll()
             for waiter in waiters { waiter.resume() }
         }
+        guard let ticket = await workQueue.acquire("accounts:reconcile") else { return .success(false) }
+        defer { workQueue.finish(ticket) }
+        guard !Task.isCancelled, !accountSwitch.isSwitching else { return .success(false) }
         do {
             switch try await AccountCredentialImporter()
                 .reconcileSelectedClaudeSharedAuthenticationAfterStartup(in: accountProfiles) {
@@ -606,7 +618,7 @@ final class AppContainer {
     /// `FirstRunSeeder.reseed`에 위임; await 가능한 탐지 task 반환.
     @discardableResult
     func reseedEnabledProviders() -> Task<Void, Never> {
-        FirstRunSeeder.reseed(providers: providers, enablement: enablement)
+        FirstRunSeeder.reseed(providers: providers, enablement: enablement, workQueue: workQueue)
     }
 
     static func accountProfileIDsByCardID(
