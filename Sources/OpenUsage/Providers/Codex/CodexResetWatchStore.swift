@@ -63,6 +63,7 @@ actor CodexResetWatchStore {
     private let endpoint: URL
     private let votesEndpoint: URL
     private let now: @Sendable () -> Date
+    private let workQueue: BackgroundWorkQueue
 
     private var representation: Representation?
     private var etag: String?
@@ -78,12 +79,14 @@ actor CodexResetWatchStore {
         http: any HTTPClient = URLSessionHTTPClient(sendsCookies: false),
         endpoint: URL = URL(string: "https://codex-resets.com/api/v1/status")!,
         votesEndpoint: URL = URL(string: "https://codex-resets.com/api/watch/votes")!,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.http = http
         self.endpoint = endpoint
         self.votesEndpoint = votesEndpoint
         self.now = now
+        self.workQueue = workQueue
     }
 
     /// 현재 유효한 forecast — 외부 장애 시 마지막 유효 값 유지, provider refresh와 분리.
@@ -129,7 +132,11 @@ actor CodexResetWatchStore {
 
     private func refresh() async -> CodexResetWatchResult {
         defer { refreshTask = nil }
+        return await workQueue.run("reset-watch") { await self.fetch() }
+            ?? CodexResetWatchResult(refreshCancelled: true)
+    }
 
+    private func fetch() async -> CodexResetWatchResult {
         var request = HTTPRequest(method: "GET", url: endpoint, timeout: 8)
         request.headers = [
             "Accept": "application/json",

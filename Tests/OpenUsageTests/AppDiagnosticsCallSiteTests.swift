@@ -310,8 +310,9 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertEqual(http.requests.map { $0.headers["ChatGPT-Account-Id"] }, ["PRIVATE_ACCOUNT", "PRIVATE_ACCOUNT"])
         XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
         let lines = try capture.lines()
-        XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
-        XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") && $0.contains("consume failed (HTTP 500)") })
+        let errors = lines.filter { $0.contains("[ERROR]") }
+        XCTAssertEqual(errors.count, 1, lines.joined(separator: "\n"))
+        XCTAssertTrue(errors.allSatisfy { $0.contains("consume failed (HTTP 500)") })
         XCTAssertFalse(lines.joined().contains("PRIVATE_"))
         let events = capture.events
         XCTAssertEqual(events, [DiagnosticEvent(.resetClaim, result: .failure, category: .http(500), providerID: "codex")])
@@ -352,8 +353,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             XCTAssertEqual(result, .failed)
             XCTAssertEqual(http.requests.count, malformedList ? 1 : 2)
             let lines = try capture.lines()
-            XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
-            XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") })
+            XCTAssertEqual(lines.filter { $0.contains("[ERROR]") }.count, 1, lines.joined(separator: "\n"))
             XCTAssertFalse(lines.joined().contains("PRIVATE_"))
             XCTAssertEqual(capture.events, [
                 DiagnosticEvent(.resetClaim, result: .failure, category: .decoding, providerID: "codex")

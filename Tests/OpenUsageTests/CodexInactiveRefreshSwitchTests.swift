@@ -45,10 +45,11 @@ final class CodexInactiveRefreshSwitchTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots")
+        let queue = BackgroundWorkQueue()
         let store = WidgetDataStore(
             registry: .from([oldActiveB, oldInactiveA]), providers: [oldActiveB, oldInactiveA],
             cache: cache, defaults: defaults,
-            providerIdentityKeys: ["codex": "account-b", oldInactiveAID: "account-a"]
+            providerIdentityKeys: ["codex": "account-b", oldInactiveAID: "account-a"], workQueue: queue
         )
         let oldRefresh = Task {
             await store.refresh(providerID: oldInactiveAID, force: true, trigger: .scheduled)
@@ -70,14 +71,21 @@ final class CodexInactiveRefreshSwitchTests: XCTestCase {
             registry: .from([newActiveA, newInactiveB]), providers: [newActiveA, newInactiveB],
             identityKeys: ["codex": "account-a", newInactiveBID: "account-b"]
         )
-        await store.refreshAfterAccountSelection(providerID: "codex", maxAttempts: 1, retryDelay: .zero)
-        let selectedRequests = await selectedHTTP.rotationRequests
-        XCTAssertEqual(selectedRequests, 1, "The new runtime refresh is not serialized with the old snapshot runtime")
-        XCTAssertNotNil(store.refreshResults["codex"]?.failure)
+        let selectedRefresh = Task {
+            await store.refreshAfterAccountSelection(providerID: "codex", maxAttempts: 1, retryDelay: .zero)
+        }
+        for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+        let prematureRequests = await selectedHTTP.rotationRequests
+        XCTAssertEqual(prematureRequests, 0)
 
         await inactiveHTTP.finishRotation()
         let oldOutcome = await oldRefresh.value
         XCTAssertEqual(oldOutcome, .skipped, "Catalog generation correctly rejects publication of the departed runtime")
+        await selectedRefresh.value
+        let selectedRequests = await selectedHTTP.rotationRequests
+        XCTAssertEqual(selectedRequests, 0, "The selected runtime must use the completed rotation")
+        XCTAssertNil(store.refreshResults["codex"]?.failure)
         let rotated = try XCTUnwrap(vault.load(profile: profileA))
         XCTAssertEqual(CodexAuthStore.parseAuth(rotated.credential)?.tokens?.refreshToken, "rotated-refresh-a")
         let sharedBeforeLeaving = try String(contentsOf: sharedFile, encoding: .utf8)

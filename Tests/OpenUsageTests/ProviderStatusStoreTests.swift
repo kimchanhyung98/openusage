@@ -229,17 +229,21 @@ final class ProviderStatusStoreTests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
-    func testDifferentFamiliesStartInParallel() async {
+    func testDifferentFamiliesRunOneAtATime() async {
         let http = ProviderStatusGateHTTPStub()
         let store = ProviderStatusStore(http: http)
 
         let refresh = Task { await store.refresh(providerIDs: ["claude", "cursor"]) }
+        await http.waitForRequestCount(1)
+        let firstCount = await http.currentRequestCount()
+        XCTAssertEqual(firstCount, 1)
+        await http.releaseAll()
         await http.waitForRequestCount(2)
-        let maximumActive = await http.maximumActiveRequestCount()
         await http.releaseAll()
         await refresh.value
+        let maximumActive = await http.maximumActiveRequestCount()
 
-        XCTAssertEqual(maximumActive, 2)
+        XCTAssertEqual(maximumActive, 1)
         XCTAssertEqual(store.status(for: "claude"), .operational)
         XCTAssertEqual(store.status(for: "cursor"), .operational)
     }
@@ -295,6 +299,9 @@ final class ProviderStatusStoreTests: XCTestCase {
 
         store.cancelRefreshes()
         let replacement = Task { await store.refresh(providerIDs: ["claude"]) }
+        let beforeFinish = await http.currentRequestCount()
+        XCTAssertEqual(beforeFinish, 1)
+        await http.releaseAll()
         await http.waitForRequestCount(2)
         await http.releaseAll()
         await first.value

@@ -11,6 +11,7 @@ final class SoftLimitCoordinator {
     @ObservationIgnored private let isCancellationScopeVerified: (String) -> Bool
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let pollingSleep: @MainActor () async throws -> Void
+    @ObservationIgnored private let workQueue: BackgroundWorkQueue
     @ObservationIgnored private var observations: [String: SoftLimitObservation] = [:]
     @ObservationIgnored private var inFlight: Set<String> = []
     @ObservationIgnored private var finished: Set<SoftLimitTask> = []
@@ -28,7 +29,8 @@ final class SoftLimitCoordinator {
         isProviderEnabled: @escaping (String) -> Bool,
         isCancellationScopeVerified: @escaping (String) -> Bool = { _ in false },
         now: @escaping () -> Date = Date.init,
-        pollingSleep: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(2)) }
+        pollingSleep: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .seconds(2)) },
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.settings = settings
         self.adapters = Dictionary(uniqueKeysWithValues: adapters.map { ($0.providerID, $0) })
@@ -36,6 +38,7 @@ final class SoftLimitCoordinator {
         self.isCancellationScopeVerified = isCancellationScopeVerified
         self.now = now
         self.pollingSleep = pollingSleep
+        self.workQueue = workQueue
     }
 
     func start() {
@@ -158,6 +161,9 @@ final class SoftLimitCoordinator {
         inFlight.insert(providerID)
         defer { inFlight.remove(providerID) }
         let boundRevision = revision
+        guard let ticket = await workQueue.acquire("soft-limit:\(ProviderAccountID.family(of: providerID))") else { return }
+        defer { workQueue.finish(ticket) }
+        guard canCancel(providerID, revision: boundRevision) else { return }
         do {
             let tasks = try await adapter.runningTasks()
             guard canCancel(providerID, revision: boundRevision) else { return }

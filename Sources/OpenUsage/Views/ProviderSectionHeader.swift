@@ -9,6 +9,7 @@ struct ProviderSectionHeader: View {
     var warning: String?
     var serviceStatus: ProviderServiceStatus = .unknown
     var refreshing: Bool = false
+    var queued: Bool = false
     /// 신선도 창을 넘긴 스냅샷의 "Outdated" 힌트 (대시보드 전용, 프리뷰는 `nil`). 정확한 경과는 tooltip.
     var staleness: StalenessHint?
     var onCopyScreenshot: (() -> Bool)?
@@ -30,6 +31,7 @@ struct ProviderSectionHeader: View {
         warning: String? = nil,
         serviceStatus: ProviderServiceStatus = .unknown,
         refreshing: Bool = false,
+        queued: Bool = false,
         staleness: StalenessHint? = nil,
         onCopyScreenshot: (() -> Bool)? = nil,
         accountOptions: [AccountUsageOption] = [],
@@ -43,6 +45,7 @@ struct ProviderSectionHeader: View {
         self.warning = warning
         self.serviceStatus = serviceStatus
         self.refreshing = refreshing
+        self.queued = queued
         self.staleness = staleness
         self.onCopyScreenshot = onCopyScreenshot
         self.accountOptions = accountOptions
@@ -114,7 +117,13 @@ struct ProviderSectionHeader: View {
                         .hoverTooltip(staleness.tooltip)
                 }
             }
-            if refreshing {
+            if queued {
+                Image(systemName: "progress.indicator")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+                    .accessibilityLabel(L10n.dashboard("Queued"))
+            } else if refreshing {
                 ProgressView()
                     .controlSize(.mini)
                     .accessibilityLabel(L10n.dashboard("Refreshing"))

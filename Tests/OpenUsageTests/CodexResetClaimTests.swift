@@ -67,6 +67,27 @@ final class CodexResetClaimTests: XCTestCase {
 
     // MARK: - Consume request shape
 
+    func testClaimReleasesSharedQueueBeforeItsFollowUpRefresh() async {
+        let queue = BackgroundWorkQueue()
+        let http = RoutingHTTPClient { request in
+            HTTPResponse(statusCode: 200, headers: [:], body:
+                request.method == "POST" ? Self.consumeBody(code: "reset") : Self.listBody())
+        }
+        let followedUp = expectation(description: "Follow-up can acquire same queue")
+        let service = CodexResetClaimService(
+            usageClient: CodexUsageClient(http: http), credentialLoader: { _, _ in Self.state() },
+            refreshAfterClaim: { _ in
+                await queue.run("post-claim") { followedUp.fulfill() }
+            }, workQueue: queue
+        )
+        let claim = Task { await service.claim(creditExpiringAt: Self.expiry, redeemRequestID: "queued", binding: Self.binding) }
+        await fulfillment(of: [followedUp], timeout: 2)
+        claim.cancel()
+        let result = await claim.value
+        XCTAssertEqual(result, .success)
+        XCTAssertEqual(http.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
     func testConsumeRequestShape() async throws {
         let http = RoutingHTTPClient { _ in
             HTTPResponse(statusCode: 200, headers: [:], body: Self.consumeBody(code: "reset"))

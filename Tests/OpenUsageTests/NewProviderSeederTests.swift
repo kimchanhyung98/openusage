@@ -95,6 +95,38 @@ final class NewProviderSeederTests: XCTestCase {
         XCTAssertEqual(enableCallbacks, ["windsurf"], "the seeder must not fire a second enable")
     }
 
+    func testCancelledQueuedDetectionRemainsUnknownAndRetries() async throws {
+        let enablement = seededStore("cancelled", enabled: ["claude"], known: ["claude"])
+        let newcomers = [probe("grok", hasCredentials: true), probe("windsurf", hasCredentials: false)]
+        let providers = [probe("claude", hasCredentials: true)] + newcomers
+        let queue = BackgroundWorkQueue()
+        let acquired = await queue.acquire("blocker")
+        let ticket = try XCTUnwrap(acquired)
+        defer { queue.finish(ticket) }
+        let task = NewProviderSeeder.reconcileIfNeeded(
+            providers: providers, enablement: enablement, workQueue: queue
+        )
+        for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+        task?.cancel()
+        await task?.value
+
+        XCTAssertEqual(enablement.knownIDs, ["claude"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude"])
+        XCTAssertTrue(newcomers.allSatisfy { $0.probeCount == 0 })
+        XCTAssertEqual(queue.pendingCount, 0)
+
+        queue.finish(ticket)
+        let retry = NewProviderSeeder.reconcileIfNeeded(
+            providers: providers, enablement: enablement, workQueue: queue
+        )
+        XCTAssertNotNil(retry)
+        await retry?.value
+        XCTAssertEqual(enablement.knownIDs, ["claude", "grok", "windsurf"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "grok"])
+        XCTAssertTrue(newcomers.allSatisfy { $0.probeCount == 1 })
+    }
+
     // MARK: - Helpers
 
     private func seededStore(_ name: String, enabled: Set<String>, known: Set<String>) -> ProviderEnablementStore {
