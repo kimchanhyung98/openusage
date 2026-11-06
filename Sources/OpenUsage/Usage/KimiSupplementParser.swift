@@ -14,9 +14,9 @@ enum KimiSupplementParser {
         let complete = completeTail ? data : data.prefix(upTo: tailStart)
         for (index, line) in JSONLScanning.lines(in: complete).enumerated() {
             try Task.checkCancellation()
-            guard let object = try? UsageJSON.object(line) else {
+            guard let object = try? UsageJSON.object(line), !work || object["type"] is String else {
                 if work {
-                    routingInvalidated = routingInvalidated || !requests.isEmpty
+                    routingInvalidated = true
                     requests.removeAll()
                 }
                 result.append(UsageRecord(

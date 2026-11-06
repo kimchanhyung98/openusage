@@ -27,16 +27,45 @@ final class KiloMalformedUsageTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 0.5, accuracy: 1e-9)
     }
 
-    func testMalformedParentMessageDoesNotDiscardOtherRequests() async throws {
+    func testMalformedParentPreservesStepsAndEmitsOneMessageDiagnostic() async throws {
         let database = try KiloReviewDatabase()
-        try database.step("bad-parent")
-        try database.step("good")
-        try database.execute("UPDATE message SET data='{' WHERE id='bad-parent'")
+        try database.step("bad-parent", fields: [
+            "generationID": "request-1", "model": ["providerID": "anthropic", "modelID": "routed-model"]
+        ])
+        try database.step("good", cost: 0.4)
+        try database.execute("""
+        INSERT INTO part
+        SELECT 'part-second',message_id,session_id,time_created,
+               json_set(data,'$.generationID','request-2','$.tokens.input',200,'$.tokens.output',40,'$.cost',0.2)
+        FROM part WHERE message_id='bad-parent';
+        UPDATE message SET data='{' WHERE id='bad-parent';
+        """)
 
         let result = try await collect(database)
         XCTAssertEqual(result.readFailureCount, 0)
+        XCTAssertEqual(result.sources.first?.completedStores, 1)
+        XCTAssertEqual(result.records.count, 4)
+        let steps = result.records.filter { $0.sessionID == "bad-parent" && $0.kind == "step" }
+        XCTAssertEqual(steps.count, 2)
+        XCTAssertEqual(Set(steps.compactMap(\.id)), ["part-bad-parent", "part-second"])
+        XCTAssertEqual(Set(steps.compactMap(\.responseID)), ["request-1", "request-2"])
+        XCTAssertEqual(steps.map(\.totalTokens).sorted(), [120, 240])
+        XCTAssertEqual(steps.compactMap(\.recordedCostUSD).reduce(0, +), 0.3, accuracy: 1e-9)
+        XCTAssertTrue(steps.allSatisfy {
+            $0.issues == [.invalidMetadata] && $0.providerID == nil && $0.model == nil
+                && $0.timestamp == Date(timeIntervalSince1970: 1_793_494_801)
+                && $0.responseModel == "routed-model" && $0.upstreamProvider == "anthropic"
+        })
+        let diagnostics = result.records.filter { $0.kind == "invalid" }
+        XCTAssertEqual(diagnostics.count, 1)
+        XCTAssertEqual(diagnostics.first?.id, "bad-parent")
+        XCTAssertEqual(diagnostics.first?.issues, [.invalidMetadata])
+        XCTAssertEqual(diagnostics.first?.totalTokens, 0)
+        XCTAssertNil(diagnostics.first?.recordedCostUSD)
         XCTAssertEqual(result.records.filter { $0.issues.isEmpty }.map(\.id), ["part-good"])
-        XCTAssertTrue(result.records.contains { $0.id == "part-bad-parent" && $0.issues.contains(.invalidMetadata) })
+        let scan = try XCTUnwrap(UsageHistoryBuilder.scan(result, providerID: "claude", since: .distantPast, pricing: .empty))
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
+        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 0.4, accuracy: 1e-9)
     }
 
     func testDatabaseSchemaFailureStillFailsTheStore() async throws {

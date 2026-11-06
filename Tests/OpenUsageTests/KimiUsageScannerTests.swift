@@ -342,6 +342,47 @@ final class KimiUsageScannerTests: XCTestCase {
         XCTAssertTrue(result?.series.daily.isEmpty == true)
     }
 
+    func testWorkMissingOrNonStringTypeCannotRestoreInvalidatedRouting() async throws {
+        for malformed in ["{}", #"{"type":false}"#] {
+            let root = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+            let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+            let data = try wire([request()]) + Data((malformed + "\n").utf8) + wire([usage()])
+            try UsageRecordFixture.write(data, to: wirePath)
+            let native = try KimiUsageScanner.parse(data)
+            XCTAssertTrue(native.records.isEmpty)
+            XCTAssertEqual(native.invalidRows, 2)
+            let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+            let measured = try XCTUnwrap(raw.first { $0.kind == "usage" })
+            XCTAssertEqual(measured.totalTokens, 190)
+            XCTAssertNil(measured.providerID)
+            XCTAssertEqual(raw.filter { $0.issues.contains(.invalidMetadata) }.count, 1)
+            let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+            let result = try await scanner.scan(now: now)
+            XCTAssertTrue(result?.series.daily.isEmpty == true)
+        }
+    }
+
+    func testFirstCorruptWorkRowCannotAuthorizeFallbackAndLaterRequestRecovers() async throws {
+        for corrupt in ["not-json", "{}", #"{"type":false}"#] {
+            let root = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+            let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+            let data = try wire([]) + Data((corrupt + "\n").utf8) + wire([usage(), request(), usage()])
+            try UsageRecordFixture.write(data, to: wirePath)
+            let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+            let measured = raw.filter { $0.kind == "usage" }
+            XCTAssertEqual(measured.map(\.totalTokens), [190, 190])
+            XCTAssertNil(measured.first?.providerID)
+            XCTAssertEqual(measured.last?.providerID, "kimi")
+            let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+            let result = try await scanner.scan(now: now)
+            XCTAssertEqual(result?.series.daily.first?.totalTokens, 190)
+        }
+    }
+
     private var epochMilliseconds: Int { Int(now.timeIntervalSince1970 * 1_000) }
 
     private func request(model: String = "k3", alias: String = "kimi-code/k3") -> [String: Any] {

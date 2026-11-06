@@ -97,7 +97,7 @@ Kimi Work의 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/run
 Work 사용 기록에 `agentId`·`modelAlias`가 없어도 측정 토큰 유지.
 명시된 요청의 라우팅이 Kimi가 아니면 원본만 보존하고 Kimi 카드에 합산하지 않음.
 연결된 요청의 별칭·사용량 모델이 없거나 서로 다르면 원본만 보존.
-손상된 행 등으로 명시된 요청 연결을 잃으면 구형 기록의 Kimi 귀속 규칙으로 대체하지 않음.
+완료된 손상 행 이후 연결할 수 없는 기록은 원본만 보존하고, 다음 정상 요청부터 Kimi 귀속을 다시 확인.
 일반 요청과 압축 요청의 `turn`·`session` 사용 범위를 모두 포함.
 구형 Python CLI는 `$KIMI_SHARE_DIR/sessions` 또는 `~/.kimi/sessions`의 `StatusUpdate.token_usage` 수집.
 같은 메시지의 반복 상태는 더 완전한 값 한 번만 반영하며 subagent 경로도 조회.

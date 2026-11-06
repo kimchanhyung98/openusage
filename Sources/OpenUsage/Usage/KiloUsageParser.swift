@@ -16,9 +16,14 @@ enum KiloUsageParser {
                 ORDER BY p.time_created, p.id
                 """) { row in
                 guard let payload = json(row["data"], row: row, path: path, into: &result),
-                      let message = json(row["message_data"], row: row, path: path, into: &result),
                       payload["tokens"] != nil || payload["cost"] != nil else { return }
-                var record = base(row, payload: message, path: path, kind: "step")
+                let message: [String: Any]?
+                do {
+                    guard let text = row["message_data"] as? String else { throw CocoaError(.coderReadCorrupt) }
+                    message = try UsageJSON.object(Data(text.utf8))
+                } catch { message = nil }
+                var record = base(row, payload: message ?? [:], path: path, kind: "step")
+                if message == nil { record.issues.insert(.invalidMetadata) }
                 record.timestamp = UsageJSON.date((payload["time"] as? [String: Any])?["end"], milliseconds: true)
                     ?? record.timestamp
                 record.responseID = UsageJSON.string(payload["generationID"])
