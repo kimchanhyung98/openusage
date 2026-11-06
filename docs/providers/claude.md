@@ -195,7 +195,6 @@ Claude가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시�
   JSONL의 `usage` 키와 콜론·객체 사이 공백·탭 허용; 이전 캐시도 버전 변경 후 재파싱.
   형식 제외는 `history_scan/decoding`, 모델 가격 미확정은 `history_scan/other`로 기존 로그·동의 기반 익명 진단에 기록.
   형식 제외는 파일 재파싱 시에만 기록하므로 캐시 hit의 이벤트 부재를 정상 스캔 증거로 해석하지 않음.
-  제보 근거와 검증 범위는 [로컬 사용량 누락 검토](/docs/research/claude-local-usage-diagnostics.md) 참조.
   관리형 계정 전환 외의 경우 로그가 커스텀 위치에 있으면 `CLAUDE_CONFIG_DIR`을 설정해 Claude Code와 OpenUsage가 같은 위치 사용.
   관리형 터미널 전환은 공유 `~/.claude` 홈 사용.
   다른 커스텀 홈에 둔 로그인은 Settings에 등록하기 전까지 아예 표시하지 않음.
