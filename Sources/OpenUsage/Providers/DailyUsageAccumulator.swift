@@ -45,10 +45,12 @@ struct DailyUsageAccumulator {
         var rejectedNumericRows = 0
         var rejectedMetadataRows = 0
         var unsupportedPricingRows = 0
+        var readFailureCount = 0
         for scan in present {
             rejectedNumericRows += scan.rejectedNumericRows
             rejectedMetadataRows += scan.rejectedMetadataRows
             unsupportedPricingRows += scan.unsupportedPricingRows
+            readFailureCount += scan.readFailureCount
             let modelDays = scan.modelUsage?.daily ?? []
             for day in modelDays {
                 for model in day.models {
@@ -67,7 +69,7 @@ struct DailyUsageAccumulator {
         }
         return accumulator.build(
             rejectedNumericRows: rejectedNumericRows, unsupportedPricingRows: unsupportedPricingRows,
-            rejectedMetadataRows: rejectedMetadataRows
+            rejectedMetadataRows: rejectedMetadataRows, readFailureCount: readFailureCount
         )
     }
 
@@ -80,7 +82,7 @@ struct DailyUsageAccumulator {
     func build(
         rejectedNumericRows previouslyRejected: Int = 0, source: String = "local-usage",
         reportNumericFailures: Bool = true, unsupportedPricingRows: Int = 0,
-        rejectedMetadataRows: Int = 0
+        rejectedMetadataRows: Int = 0, readFailureCount: Int = 0
     ) -> LogUsageScan {
         if reportNumericFailures { UsageLogNumbers.reportRejectedRows(rejectedNumericRows, source: source) }
         let days = tokensByDay.keys.sorted(by: >).map { day in
@@ -98,7 +100,7 @@ struct DailyUsageAccumulator {
             unknownModelsByDay: unknownModelsByDay,
             rejectedNumericRows: previouslyRejected + rejectedNumericRows,
             unsupportedPricingRows: unsupportedPricingRows,
-            rejectedMetadataRows: rejectedMetadataRows
+            rejectedMetadataRows: rejectedMetadataRows, readFailureCount: readFailureCount
         )
     }
 

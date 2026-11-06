@@ -34,10 +34,10 @@ enum CodexUsagePricing {
         let rates: ModelRates
         let fastOverride: Bool?
 
-        func cost(for tokens: TokenBreakdown) -> Double {
+        func cost(for tokens: TokenBreakdown, applyLongContextRates: Bool = true) -> Double {
             var request = tokens
             if let fastOverride { request.isFast = fastOverride }
-            return rates.costDollars(for: request)
+            return rates.costDollars(for: request, applyLongContextRates: applyLongContextRates)
         }
     }
 
@@ -106,12 +106,16 @@ enum CodexUsagePricing {
         )
     }
 
-    static func estimatePi(model: String, tokens: TokenBreakdown, pricing: ModelPricing) -> PiUsageScanner.CostEstimate {
-        guard tokens.cacheWrite1h == 0 else {
-            AppLog.warn(LogTag.plugin("codex"), "Codex pricing: unsupported one-hour cache-write usage")
-            return .unsupportedUsage
-        }
-        return .init(estimate(model: model, tokens: tokens, pricing: pricing))
+    static func estimateRecord(_ record: UsageRecord, pricing: ModelPricing) -> UsageHistoryBuilder.CostEstimate {
+        guard var tokens = record.tokens else { return .unpriced }
+        guard tokens.cacheWrite1h == 0 else { return .unsupportedUsage }
+        let tier = record.serviceTier?.lowercased()
+        if let tier, !["default", "standard", "priority", "fast", "ultrafast"].contains(tier) { return .unsupportedUsage }
+        if tier == "priority" || tier == "fast" { tokens.isFast = true }
+        guard let model = record.effectiveModel else { return .unpriced }
+        return .init(resolve(model: model, pricing: pricing, isUltrafast: tier == "ultrafast")?.cost(
+            for: tokens, applyLongContextRates: record.granularity == .request
+        ))
     }
 
     static func adjusted(rates: ModelRates, model: String) -> ModelRates {

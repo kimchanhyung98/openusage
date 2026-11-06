@@ -14,6 +14,7 @@ final class GrokProvider: ProviderRuntime {
     let authStore: GrokAuthStore
     let usageClient: GrokUsageClient
     let logUsageScanner: GrokLogUsageScanner
+    let sharedUsage: UsageCollectionCoordinator
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
@@ -21,12 +22,14 @@ final class GrokProvider: ProviderRuntime {
         authStore: GrokAuthStore = GrokAuthStore(),
         usageClient: GrokUsageClient = GrokUsageClient(),
         logUsageScanner: GrokLogUsageScanner = GrokLogUsageScanner(),
+        sharedUsage: UsageCollectionCoordinator = .shared,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
+        self.sharedUsage = sharedUsage
         self.now = now
         self.pricing = pricing
     }
@@ -97,10 +100,15 @@ final class GrokProvider: ProviderRuntime {
         var usageHistory: ProviderUsageHistory?
         var warning: String?
         var warningPresentation: [LocalizedMessage] = []
-        if let scan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: await pricing()) {
+        let currentPricing = await pricing()
+        let nativeScan = await logUsageScanner.scan(daysBack: 30, now: now(), pricing: currentPricing)
+        let sharedScan = await sharedUsage.scan(providerID: provider.id, now: now(), pricing: currentPricing)
+        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, sharedScan]) {
+            let sourceNote = sharedScan == nil
+                ? "From your Grok logs (estimated)" : "From your Grok logs and local tools (estimated)"
             let attributionWarning = scan.rejectedMetadataRows > 0
                 ? "Some local usage records could not be linked to a model. Usage history may be incomplete." : nil
-            let warnings = [scan.numericWarning, attributionWarning].compactMap { $0 }
+            let warnings = [scan.numericWarning, attributionWarning, scan.pricingWarning, scan.readWarning].compactMap { $0 }
             warning = warnings.joined(separator: " ").nilIfEmpty
             warningPresentation = warnings.map { .init($0) }
             usageHistory = scan.usageHistory
@@ -111,10 +119,10 @@ final class GrokProvider: ProviderRuntime {
                     now: now(),
                     unknownModelsByDay: scan.unknownModelsByDay,
                     modelUsage: scan.modelUsage,
-                    modelSourceNote: "From your Grok logs (estimated)"
+                    modelSourceNote: sourceNote
                 )
                 SpendTileMapper.appendUsageTrend(scan.series, to: &mapped.lines, now: now(),
-                                                 note: "From your Grok logs (estimated)")
+                                                 note: sourceNote)
             }
         }
 

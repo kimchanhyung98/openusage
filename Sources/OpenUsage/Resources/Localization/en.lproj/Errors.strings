@@ -274,3 +274,6 @@
 "Kimi Code usage history uses an unsupported format. Check for an OpenUsage update." = "Kimi Code usage history uses an unsupported format. Check for an OpenUsage update.";
 "Some Kimi Code usage records are invalid. Token totals may be incomplete." = "Some Kimi Code usage records are invalid. Token totals may be incomplete.";
 "Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only." = "Some Kimi Code usage has unknown model routing or cache pricing. Affected periods show tokens only.";
+"Some local usage files could not be read. Usage history may be incomplete." = "Some local usage files could not be read. Usage history may be incomplete.";
+"Some local usage has unsupported pricing details. Cost totals may be unavailable." = "Some local usage has unsupported pricing details. Cost totals may be unavailable.";
+"Some Antigravity models have no price. Cost totals may be unavailable." = "Some Antigravity models have no price. Cost totals may be unavailable.";

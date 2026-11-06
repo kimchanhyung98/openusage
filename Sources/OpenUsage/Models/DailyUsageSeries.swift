@@ -100,16 +100,17 @@ struct UsageCostTotal {
 struct LogUsageScan: Sendable {
     var series: DailyUsageSeries
     var modelUsage: ModelUsageSeries?
-    /// `yyyy-MM-dd` day key → 가격 부재로 합계에서 제외된 그날의 model 목록.
+    /// `yyyy-MM-dd` day key → 가격을 확인할 수 없는 그날의 model 목록.
     var unknownModelsByDay: [String: Set<String>]
     var rejectedNumericRows: Int
     var rejectedMetadataRows: Int
     var unsupportedPricingRows: Int
+    var readFailureCount: Int
 
     init(
         series: DailyUsageSeries, modelUsage: ModelUsageSeries? = nil,
         unknownModelsByDay: [String: Set<String>], rejectedNumericRows: Int = 0,
-        unsupportedPricingRows: Int = 0, rejectedMetadataRows: Int = 0
+        unsupportedPricingRows: Int = 0, rejectedMetadataRows: Int = 0, readFailureCount: Int = 0
     ) {
         self.series = series
         self.modelUsage = modelUsage
@@ -117,10 +118,15 @@ struct LogUsageScan: Sendable {
         self.rejectedNumericRows = rejectedNumericRows
         self.rejectedMetadataRows = rejectedMetadataRows
         self.unsupportedPricingRows = unsupportedPricingRows
+        self.readFailureCount = readFailureCount
     }
 
     var numericWarning: String? {
         rejectedNumericRows > 0 ? "Some local usage records contain invalid numbers. Usage history may be incomplete." : nil
+    }
+
+    var readWarning: String? {
+        readFailureCount > 0 ? "Some local usage files could not be read. Usage history may be incomplete." : nil
     }
 
     var metadataWarning: String? {
@@ -131,12 +137,13 @@ struct LogUsageScan: Sendable {
 
     var pricingWarning: String? {
         unsupportedPricingRows > 0
-            ? "Some local usage has unsupported pricing details and was excluded."
+            ? "Some local usage has unsupported pricing details. Cost totals may be unavailable."
             : nil
     }
 
     /// 손상·미지원 가격 입력뿐인 결과는 마지막 정상 이력을 빈 값으로 덮지 않음.
     var usageHistory: ProviderUsageHistory? {
+        guard readFailureCount == 0 || !series.daily.isEmpty else { return nil }
         guard unsupportedPricingRows == 0 || !series.daily.isEmpty else { return nil }
         guard rejectedNumericRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }
         guard rejectedMetadataRows == 0 || !series.daily.isEmpty || !unknownModelsByDay.isEmpty else { return nil }

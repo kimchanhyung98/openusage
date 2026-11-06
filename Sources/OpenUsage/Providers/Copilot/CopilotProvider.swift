@@ -19,15 +19,17 @@ final class CopilotProvider: ProviderRuntime {
     let usageClient: CopilotUsageClient
     let orgBillingClient: CopilotOrgBillingClient
     let usageScanner: CopilotUsageScanner
+    let sharedUsage: UsageCollectionCoordinator
     let defaults: UserDefaults
     let now: @Sendable () -> Date
-    private static let historySourceNote = "From your Copilot CLI logs"
+    private static let historySourceNote = "From your Copilot CLI logs and local tools"
 
     init(
         authStore: CopilotAuthStore = CopilotAuthStore(),
         usageClient: CopilotUsageClient = CopilotUsageClient(),
         orgBillingClient: CopilotOrgBillingClient = CopilotOrgBillingClient(),
         usageScanner: CopilotUsageScanner = CopilotUsageScanner(),
+        sharedUsage: UsageCollectionCoordinator = .shared,
         defaults: UserDefaults = .standard,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
@@ -35,6 +37,7 @@ final class CopilotProvider: ProviderRuntime {
         self.usageClient = usageClient
         self.orgBillingClient = orgBillingClient
         self.usageScanner = usageScanner
+        self.sharedUsage = sharedUsage
         self.defaults = defaults
         self.now = now
     }
@@ -73,25 +76,9 @@ final class CopilotProvider: ProviderRuntime {
             snapshot.refreshedAt = refreshedAt
         }
 
+        var native: LogUsageScan?
         do {
-            if let scan = try await usageScanner.scan(now: refreshedAt) {
-                if let history = scan.usageHistory {
-                    // 로컬 이력은 현재 원격 로그인과 무관한 Mac 전체 기록. 할당량 실패도 이 기록을 가리지 않음.
-                    snapshot.usageHistory = history
-                    if snapshot.errorCategory == nil {
-                        snapshot = UsageHistorySnapshotRenderer.render(
-                            local: snapshot, history: history,
-                            descriptor: UsageHistoryDescriptor(
-                                scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote
-                            ),
-                            now: refreshedAt, combined: false
-                        )
-                    }
-                }
-                if let warning = scan.numericWarning { appendWarning(warning, to: &snapshot) }
-                if let warning = scan.metadataWarning { appendWarning(warning, to: &snapshot) }
-                if let warning = scan.pricingWarning { appendWarning(warning, to: &snapshot) }
-            }
+            native = try await usageScanner.scan(now: refreshedAt)
         } catch is CancellationError {
             return snapshot
         } catch {
@@ -99,6 +86,27 @@ final class CopilotProvider: ProviderRuntime {
                 .historyScan, result: .failure, category: ErrorCategory.classify(error), providerID: provider.id
             )
             appendWarning(error.localizedDescription, presentation: UserFacingErrors.presentation(error), to: &snapshot)
+            native = LogUsageScan(series: .init(daily: []), unknownModelsByDay: [:], readFailureCount: 1)
+        }
+        let shared = await sharedUsage.scan(providerID: provider.id, now: refreshedAt, pricing: .empty, allowEstimates: false)
+        guard !Task.isCancelled else { return snapshot }
+        if let scan = DailyUsageAccumulator.merged([native, shared]) {
+            if let history = scan.usageHistory {
+                // 로컬 이력은 현재 원격 로그인과 무관한 Mac 전체 기록. 할당량 실패도 이 기록을 가리지 않음.
+                snapshot.usageHistory = history
+                if snapshot.errorCategory == nil {
+                    snapshot = UsageHistorySnapshotRenderer.render(
+                        local: snapshot, history: history,
+                        descriptor: UsageHistoryDescriptor(
+                            scope: .machineLocal, estimatedCost: false, sourceNote: Self.historySourceNote
+                        ),
+                        now: refreshedAt, combined: false
+                    )
+                }
+            }
+            for warning in [scan.numericWarning, scan.metadataWarning, scan.pricingWarning, shared?.readWarning].compactMap({ $0 }) {
+                appendWarning(warning, to: &snapshot)
+            }
         }
         return snapshot
     }

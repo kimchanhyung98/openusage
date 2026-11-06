@@ -171,3 +171,9 @@
 "~%lld%% over limit at reset" = "リセット時に上限を約 %lld%% 超える見込み";
 "~%lld%% spare" = "約 %lld%% の余裕";
 "~%lld%% used at reset" = "リセット時に約 %lld%% 使用する見込み";
+"From your Claude usage history and local tools (estimated)" = "Claude の使用履歴とローカルツールから推定";
+"From your Codex logs and local tools (estimated)" = "Codex のログとローカルツールから推定";
+"From your Grok logs and local tools (estimated)" = "Grok のログとローカルツールから推定";
+"From your Antigravity usage history and local tools (estimated)" = "Antigravity の使用履歴とローカルツールから推定";
+"From your Copilot CLI logs and local tools" = "Copilot CLI のログとローカルツールから収集";
+"From your OpenCode logs and local tools" = "OpenCode のログとローカルツールから収集";

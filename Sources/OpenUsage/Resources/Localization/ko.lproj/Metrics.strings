@@ -171,3 +171,9 @@
 "~%lld%% over limit at reset" = "초기화 시 한도 약 %lld%% 초과";
 "~%lld%% spare" = "약 %lld%% 여유";
 "~%lld%% used at reset" = "초기화 시 약 %lld%% 사용";
+"From your Claude usage history and local tools (estimated)" = "Claude 사용 기록과 로컬 도구에서 추정";
+"From your Codex logs and local tools (estimated)" = "Codex 로그와 로컬 도구에서 추정";
+"From your Grok logs and local tools (estimated)" = "Grok 로그와 로컬 도구에서 추정";
+"From your Antigravity usage history and local tools (estimated)" = "Antigravity 사용 이력과 로컬 도구에서 추정";
+"From your Copilot CLI logs and local tools" = "Copilot CLI 로그와 로컬 도구에서 수집";
+"From your OpenCode logs and local tools" = "OpenCode 로그와 로컬 도구에서 수집";

@@ -35,7 +35,7 @@ struct GrokLogUsageScanner: Sendable {
     }
 
     /// 로그의 최근 `daysBack`일 스캔.
-    /// 로그 부재·읽기 실패 시 `nil`(spend tile은 "No data" 렌더링), 존재하나 window 내 유효 행이 없으면 빈 `daily`.
+    /// 로그 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
         let path = logPath
@@ -46,7 +46,8 @@ struct GrokLogUsageScanner: Sendable {
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [])
         } catch {
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
-            return nil
+            guard !Task.isCancelled else { return nil }
+            return DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
         }
         let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
                               pricing: pricing, reportNumericFailures: false)

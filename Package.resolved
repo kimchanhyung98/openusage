@@ -1,5 +1,5 @@
 {
-  "originHash" : "65d80b0c374fe8ee2ac9eee0bd85d61561d7c11a46b148f9b8304a6818571c53",
+  "originHash" : "524b499a9e35c2e0b2a938479607a496864e55682ef6db64249f3d03d831fa2a",
   "pins" : [
     {
       "identity" : "keyboardshortcuts",
@@ -26,6 +26,15 @@
       "state" : {
         "revision" : "ab7d71291238df6e0492143b120c9b696a35f603",
         "version" : "2.10.1"
+      }
+    },
+    {
+      "identity" : "zstd",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/facebook/zstd.git",
+      "state" : {
+        "revision" : "f8745da6ff1ad1e7bab384bd1f9d742439278e99",
+        "version" : "1.5.7"
       }
     }
   ],

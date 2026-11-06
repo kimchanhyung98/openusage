@@ -20,7 +20,7 @@ final class ClaudeProvider: ProviderRuntime {
     let authStore: ClaudeAuthStore
     let usageClient: ClaudeUsageClient
     let logUsageScanner: ClaudeLogUsageScanner
-    let includePiUsage: Bool
+    let includeSharedUsage: Bool
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
@@ -32,7 +32,7 @@ final class ClaudeProvider: ProviderRuntime {
         usageClient: ClaudeUsageClient = ClaudeUsageClient(),
         usageStateStore: ClaudeUsageStateStore = ClaudeUsageStateStore(),
         logUsageScanner: ClaudeLogUsageScanner = ClaudeLogUsageScanner(),
-        includePiUsage: Bool = true,
+        includeSharedUsage: Bool = true,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
@@ -41,7 +41,7 @@ final class ClaudeProvider: ProviderRuntime {
         self.usageClient = usageClient
         self.usageStateStore = usageStateStore
         self.logUsageScanner = logUsageScanner
-        self.includePiUsage = includePiUsage
+        self.includeSharedUsage = includeSharedUsage
         self.now = now
         self.pricing = pricing
     }
@@ -273,23 +273,24 @@ final class ClaudeProvider: ProviderRuntime {
             warningPresentation = [UserFacingErrors.presentation(fallbackWarning)]
         }
 
-        // 로컬 spend 타일 — 네이티브 로그 스캔 + pi 내 Claude usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
+        // Claude 원장과 공유 도구 사용량 병합. 두 스캔 모두 전용 액터에서 실행.
         let pricing = await pricing()
         let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
-        let piScan = includePiUsage
-            ? await PiUsageScanner.shared.scan(cardID: provider.id, now: now(), pricing: pricing)
+        let sharedScan = includeSharedUsage
+            ? await UsageCollectionCoordinator.shared.scan(providerID: provider.id, now: now(), pricing: pricing)
             : nil
         var usageHistory: ProviderUsageHistory?
-        // 취소가 native/pi 스캔 사이에 올 수 있음 — 쌍을 한 단위로 취급해 부분 결과의 last-good 교체 방지.
-        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
-            let note = piScan == nil
+        // 두 스캔 사이에 취소되면 부분 결과로 마지막 정상 이력을 교체하지 않음.
+        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, sharedScan]) {
+            let note = sharedScan == nil
                 ? "From your Claude usage history (estimated)"
-                : "From your Claude usage history and pi (estimated)"
+                : "From your Claude usage history and local tools (estimated)"
             let metadataWarning = scan.rejectedMetadataRows > 0
                 ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
-            warning = [warning, scan.numericWarning, metadataWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
-            if let numericWarning = scan.numericWarning { warningPresentation.append(.init(numericWarning)) }
-            if let metadataWarning { warningPresentation.append(.init(metadataWarning)) }
+            warning = [warning, scan.numericWarning, metadataWarning, scan.pricingWarning, scan.readWarning]
+                .compactMap { $0 }.joined(separator: " ").nilIfEmpty
+            warningPresentation += [scan.numericWarning, metadataWarning, scan.pricingWarning, scan.readWarning]
+                .compactMap { $0 }.map { .init($0) }
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(
