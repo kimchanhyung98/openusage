@@ -109,6 +109,22 @@ final class ModelPricingTests: XCTestCase {
         }
     }
 
+    func testFineTunedIDsUseRegisteredFineTunedRates() throws {
+        let pricing = try makePricing(primary: [
+            "ft:gpt-4.1-nano-2025-04-14": rates(3, 12),
+            "gpt-4.1-nano-2025-04-14": rates(1, 4),
+            "vendor/custom": rates(2, 10)
+        ])
+        for name in [
+            "ft:gpt-4.1-nano-2025-04-14:openai::BTz2REMH",
+            "openai/ft:gpt-4.1-nano-2025-04-14:my-org:custom:identifier:ckpt-step-2000"
+        ] {
+            XCTAssertEqual(pricing.resolve(model: name)?.inputPerMillion, 3, name)
+        }
+        XCTAssertNil(pricing.resolve(model: "vendor/custom:unregistered"))
+        XCTAssertNil(pricing.resolve(model: "ft:gpt-4.1-nano-2025-04-14-unregistered"))
+    }
+
     func testRegisteredProviderDateRevisionsKeepFuzzyRates() throws {
         for date in ["20240229", "2024-02-29"] {
             for prefix in ["bedrock/anthropic.", "anthropic/"] {

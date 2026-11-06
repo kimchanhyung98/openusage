@@ -37,6 +37,24 @@ final class ClaudeUsageStateStoreTests: XCTestCase {
         XCTAssertEqual(record.retryAfter, now.addingTimeInterval(900))
     }
 
+    func testPersistedLegacyPlanLabelsAreUpdatedWithoutChangingUsage() async throws {
+        let store = isolatedClaudeUsageStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let now = Date()
+        let lease = try await store.acquire(accountKey: "account", usageURL: usageURL)
+        for (savedPlan, expectedPlan) in [("Max 5x", "Max"), ("Max 20x", "Ultra"), ("Ultra", "Ultra"), ("Pro", "Pro")] {
+            let saved = ClaudeMappedUsage(plan: savedPlan, lines: [.text(label: "Note", value: "Saved")], quotaObservedAt: now)
+            var record = ClaudeUsageStateStore.Record()
+            record.succeeded(saved, at: now)
+            record.rateLimited(now: now, retryAfterSeconds: nil)
+            try lease.save(record)
+            let restored = try XCTUnwrap(lease.read().lastGood)
+            var expected = saved
+            expected.plan = expectedPlan
+            XCTAssertEqual(restored, expected)
+        }
+    }
+
     func testPersistedAccountsAreIsolatedAndFilesContainNoRawIdentity() async throws {
         let store = isolatedClaudeUsageStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }
