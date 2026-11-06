@@ -153,7 +153,8 @@ final class OpenCodeProvider: ProviderRuntime {
         }
         SpendTileMapper.appendTokenUsage(
             logScan.series, to: &lines, now: refreshedAt,
-            estimated: scan?.logScan.series.daily.contains(where: { $0.costUSD != nil }) == true,
+            estimated: false,
+            estimatedDays: Set(scan?.logScan.series.daily.filter { $0.costUSD != nil }.map(\.date) ?? []),
             unknownModelsByDay: logScan.unknownModelsByDay,
             modelUsage: logScan.modelUsage,
             modelSourceNote: sourceNote

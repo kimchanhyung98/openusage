@@ -43,7 +43,8 @@ struct GrokLogUsageScanner: Sendable {
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         let sessions = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("sessions", isDirectory: true)
-        guard let sessionUsage = GrokSessionUsageScanner(files: files).collect(root: sessions), !Task.isCancelled else { return nil }
+        guard let sessionUsage = GrokSessionUsageScanner(files: files).collect(root: sessions, since: since, until: now),
+              !Task.isCancelled else { return nil }
         var sessionScan = UsageHistoryBuilder.scan(
             sessionUsage.collection, providerID: "grok", since: since, until: now,
             pricing: pricing, allowEstimates: false

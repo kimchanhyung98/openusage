@@ -248,6 +248,7 @@ Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.co
 `CODEX_HOME`은 쉼표가 있어도 하나의 디렉터리 경로로 처리.
 일반 `.jsonl`과 [Codex의 Zstandard 압축 원장](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/rollout/src/compression.rs) `.jsonl.zst` 모두 조회.
 같은 위치에 두 형식이 있으면 일반 파일 우선, 활성·보관 폴더의 상대 경로가 같으면 활성 사본 우선.
+압축 경로가 심볼릭 링크여도 발견한 파일 형식으로 읽고 중복된 실제 파일은 한 번만 집계.
 손상되거나 잘린 압축 파일은 읽기 실패로 처리하고 카드 경고 표시.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 Codex 홈도 동일하게 읽음.
 응답별 `token_usage_record`를 집계하여 압축 요청과 중단된 응답의 소비도 반영.

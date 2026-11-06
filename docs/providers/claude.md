@@ -84,6 +84,7 @@ Claude Desktop 토큰은 OpenUsage에서 갱신하거나 기록하지 않음.
 
 Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.claude/projects/`(또는 `$CLAUDE_CONFIG_DIR`) 아래의 Claude Code 세션 로그를 직접 읽으므로 외부 도구 불필요.
 `CLAUDE_CONFIG_DIR`은 단일 경로로 해석하며 경로에 포함된 쉼표도 그대로 사용.
+기본 계정 식별에도 같은 경로 사용.
 심볼릭 링크를 따라가므로 동기화 위치(예: Dropbox 폴더)에 연결된 projects 폴더도 동일하게 읽음.
 [pi](https://github.com/earendil-works/pi) 코딩 에이전트의 Claude 사용량도 집계: OpenUsage가 `~/.pi/agent/sessions/`(또는 `$PI_CODING_AGENT_SESSION_DIR`) 아래의 pi 세션 로그를 읽어 그 안의 Claude 사용량을 같은 타일과 추세에 합산하므로 pi를 통해 Claude 구독을 사용한 내역도 여기에 표시.
 Pi·OMP의 양수 추정 비용은 그대로 사용하고, 비용이 없거나 0이면 모델 요율로 추정.

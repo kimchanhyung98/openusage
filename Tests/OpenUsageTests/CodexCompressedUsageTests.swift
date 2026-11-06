@@ -145,6 +145,57 @@ final class CodexCompressedUsageTests: XCTestCase {
         XCTAssertEqual(lines.count, 2)
     }
 
+    func testCompressedSymlinkWithoutTargetSuffixReadsAndReportsCorruption() async throws {
+        let home = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let target = home.appendingPathComponent("payload")
+        try compress(rows(input: 100, output: 50)).write(to: target)
+        let sessions = home.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent("rollout.jsonl.zst"),
+                                                   withDestinationURL: target)
+        let scanner = CodexLogFixture.scanner(home: home)
+        let initial = await scanner.scan(now: now, pricing: pricing)
+        XCTAssertEqual(initial?.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(initial?.readFailureCount, 0)
+        try Data([0x28, 0xB5]).write(to: target)
+        let broken = await scanner.scan(now: now, pricing: pricing)
+        XCTAssertEqual(broken?.readFailureCount, 1)
+        XCTAssertNotNil(broken?.readWarning)
+    }
+
+    func testAddingCompressedAliasInvalidatesRawInterpretationCache() async throws {
+        let home = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let target = home.appendingPathComponent("payload")
+        try compress(rows(input: 100, output: 50)).write(to: target)
+        let sessions = home.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent("one.jsonl"), withDestinationURL: target)
+        let scanner = CodexLogFixture.scanner(home: home)
+        let raw = await scanner.scan(now: now, pricing: pricing)
+        XCTAssertTrue(raw?.series.daily.isEmpty == true)
+        try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent("other.jsonl.zst"), withDestinationURL: target)
+        let compressed = await scanner.scan(now: now, pricing: pricing)
+        XCTAssertEqual(compressed?.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(compressed?.readFailureCount, 0)
+    }
+
+    func testCompressedAliasWinsWhenBothAliasesResolveToSameFile() async throws {
+        let home = try CodexLogFixture.makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let target = home.appendingPathComponent("payload")
+        try compress(rows(input: 100, output: 50)).write(to: target)
+        let sessions = home.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        for name in ["one.jsonl", "other.jsonl.zst"] {
+            try FileManager.default.createSymbolicLink(at: sessions.appendingPathComponent(name), withDestinationURL: target)
+        }
+        let scan = await CodexLogFixture.scanner(home: home).scan(now: now, pricing: pricing)
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 150)
+        XCTAssertEqual(scan?.readFailureCount, 0)
+    }
+
     private func rows(input: Int, output: Int, model: String = "gpt-5.2") -> Data {
         Data(CodexLogFixture.tokenCount(
             timestamp: OpenUsageISO8601.string(from: now.addingTimeInterval(-60)),

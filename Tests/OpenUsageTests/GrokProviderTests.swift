@@ -319,7 +319,7 @@ final class GrokProviderTests: XCTestCase {
         guard case .chart(_, let points, let note) = snapshot.lines.first(where: { $0.label == "Usage Trend" }) else {
             return XCTFail("expected a Usage Trend chart line")
         }
-        XCTAssertEqual(note, "From your Grok usage files and logs")
+        XCTAssertEqual(note, "From your Grok usage files and logs (estimated)")
         XCTAssertEqual(points.count, 31)
         XCTAssertEqual(points.last?.value, 1_000_000, "today's tokens land on the last bar")
         XCTAssertEqual(points[29].value, 1_000_000, "yesterday's tokens land on the second-to-last bar")
@@ -367,10 +367,10 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertTrue(snapshot.warning?.contains("could not be linked to a model") == true)
+        XCTAssertTrue(snapshot.warning?.contains("incomplete or inconsistent") == true)
         XCTAssertEqual(snapshot.warningPresentation, [
             LocalizedMessage("Some local usage records contain invalid numbers. Usage history may be incomplete."),
-            LocalizedMessage("Some local usage records could not be linked to a model. Usage history may be incomplete.")
+            LocalizedMessage("Some local usage records are incomplete or inconsistent. Usage history may be incomplete.")
         ])
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.usageHistory)
@@ -392,7 +392,7 @@ final class GrokProviderTests: XCTestCase {
         ).refresh()
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
         XCTAssertEqual(snapshot.warningPresentation, [
-            LocalizedMessage("Some local usage records could not be linked to a model. Usage history may be incomplete.")
+            LocalizedMessage("Some local usage records are incomplete or inconsistent. Usage history may be incomplete.")
         ])
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(snapshot.errorCategory)

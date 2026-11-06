@@ -40,6 +40,46 @@ final class GrokSessionUsageTests: XCTestCase {
         XCTAssertEqual(after?.series.daily.first?.costUSD, 0.5)
     }
 
+    func testIncompleteTurnWarningsUseTheSameInclusiveDateWindowAsHistory() async throws {
+        let since = JSONLScanning.sinceDate(daysBack: 2, now: instant)
+        let cases = [(since.addingTimeInterval(-1), 0), (since, 1), (instant.addingTimeInterval(-60), 1),
+                     (instant, 1), (instant.addingTimeInterval(1), 0)]
+        for modelOnly in [false, true] {
+            for (date, expected) in cases {
+                let root = try fixture()
+                try writeSession(root: root, id: "complete")
+                try writeIncomplete(root: root, id: "incomplete", date: date, modelOnly: modelOnly)
+                let scanned = await scanner(root).scan(daysBack: 2, now: instant, pricing: TestPricing.bundled)
+                let result = try XCTUnwrap(scanned)
+                XCTAssertEqual(result.rejectedMetadataRows, expected)
+                XCTAssertEqual(result.metadataWarning != nil, expected > 0)
+                XCTAssertEqual(result.series.daily.reduce(0) { $0 + $1.totalTokens }, 120 * (expected + 1))
+                XCTAssertEqual(result.readFailureCount, 0)
+            }
+        }
+    }
+
+    func testOutOfWindowIncompleteTurnsKeepEmptyHistoryButDoNotHideReadFailures() async throws {
+        let root = try fixture()
+        let since = JSONLScanning.sinceDate(daysBack: 2, now: instant)
+        try writeIncomplete(root: root, id: "old", date: since.addingTimeInterval(-1))
+        try writeIncomplete(root: root, id: "future", date: instant.addingTimeInterval(1))
+        let scanned = await scanner(root).scan(daysBack: 2, now: instant, pricing: TestPricing.bundled)
+        let empty = try XCTUnwrap(scanned)
+        XCTAssertEqual(empty.usageHistory?.series.daily, [])
+        XCTAssertEqual(empty.rejectedMetadataRows, 0)
+        XCTAssertNil(empty.metadataWarning)
+
+        let files = GrokUsageReadFailureFiles(failingPath: usageURL(root, id: "old").path)
+        let failed = await GrokLogUsageScanner(files: files, environment: FakeEnvironment(["GROK_HOME": root.path]))
+            .scan(daysBack: 2, now: instant, pricing: TestPricing.bundled)
+        let result = try XCTUnwrap(failed)
+        XCTAssertEqual(result.readFailureCount, 1)
+        XCTAssertNotNil(result.readWarning)
+        XCTAssertEqual(result.rejectedMetadataRows, 0)
+        XCTAssertNil(result.usageHistory)
+    }
+
     func testSnapshotReplacesSameSessionLogsButKeepsOtherSessions() async throws {
         let root = try fixture()
         try writeSession(root: root, id: "main")
@@ -344,6 +384,20 @@ final class GrokSessionUsageTests: XCTestCase {
         summary["parent_session_id"] = parent
         summary["session_kind"] = kind
         try writeJSON(summary, to: url.deletingLastPathComponent().appendingPathComponent("summary.json"))
+    }
+
+    private func writeIncomplete(root: URL, id: String, date: Date, modelOnly: Bool = false) throws {
+        let endedAt = OpenUsageISO8601.string(from: date)
+        try writeSession(root: root, id: id, endedAt: endedAt)
+        var object = snapshot(id: id, endedAt: endedAt)
+        var row = turn(endedAt: endedAt)
+        if modelOnly {
+            var usage = metrics()
+            usage["usageIsIncomplete"] = true
+            row["modelUsage"] = ["grok-build": usage]
+        } else { row["usageIsIncomplete"] = true }
+        object["turns"] = [row]
+        try writeJSON(object, to: usageURL(root, id: id))
     }
 
     private func snapshot(

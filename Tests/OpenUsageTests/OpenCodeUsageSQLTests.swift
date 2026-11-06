@@ -74,6 +74,19 @@ final class OpenCodeUsageSQLTests: XCTestCase {
         XCTAssertEqual(scan.goWindows?.sessionSpend, 1)
     }
 
+    func testMissingTokensKeepsCostButPresentMalformedTokensRejectCost() async throws {
+        let db = try OpenCodeSQLFixture(now: now)
+        try db.message("missing-tokens", cost: 2)
+        try db.message("null-tokens", tokens: NSNull(), cost: 3)
+        try db.message("string-tokens", tokens: "invalid", cost: 4)
+        try db.message("valid", tokens: ["total": 10], cost: 1)
+        let scan = try await db.scan()
+        XCTAssertEqual(scan.logScan.series.daily.first?.totalTokens, 10)
+        XCTAssertEqual(scan.logScan.series.daily.first?.costUSD, 3)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 3)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 2)
+    }
+
     func testInvalidStepDoesNotFallBackToMessageAggregate() async throws {
         let db = try OpenCodeSQLFixture(now: now)
         try db.message("invalid-step", tokens: ["total": 100], cost: 9)
@@ -147,14 +160,16 @@ private final class OpenCodeSQLFixture {
 
     func message(
         _ id: String, session: String = "original", secondsAgo: Double = 3600,
-        tokens: [String: Any], cost: Double = 1
+        tokens: Any? = nil, cost: Double = 1
     ) throws {
         let timestamp = milliseconds(secondsAgo: secondsAgo)
-        let data = try JSONSerialization.data(withJSONObject: [
+        var message: [String: Any] = [
             "role": "assistant", "parentID": "parent-" + id,
-            "time": ["created": timestamp], "cost": cost, "tokens": tokens,
+            "time": ["created": timestamp], "cost": cost,
             "modelID": "glm-5.2", "providerID": "opencode-go"
-        ], options: [.sortedKeys])
+        ]
+        if let tokens { message["tokens"] = tokens }
+        let data = try JSONSerialization.data(withJSONObject: message, options: [.sortedKeys])
         try sqlite.execute(path: path, sql: "INSERT INTO message VALUES (?, ?, ?, ?);", bindings: [
             id, session, String(timestamp), String(decoding: data, as: UTF8.self)
         ])

@@ -10,7 +10,7 @@ struct GrokSessionUsageScanner: Sendable {
         var incompleteRows: Int
     }
 
-    func collect(root: URL) -> Result? {
+    func collect(root: URL, since: Date = .distantPast, until: Date = .distantFuture) -> Result? {
         guard !Task.isCancelled else { return nil }
         let root = root.resolvingSymlinksInPath().standardizedFileURL
         let discovery = UsageFileDiscovery.files(under: [root]) { url in
@@ -41,7 +41,7 @@ struct GrokSessionUsageScanner: Sendable {
             let directory = URL(fileURLWithPath: file.path).deletingLastPathComponent()
             let parsed: Parsed
             do {
-                parsed = Self.parse(try files.readText(file.path), path: file.path)
+                parsed = Self.parse(try files.readText(file.path), path: file.path, since: since, until: until)
                 completed += 1
             } catch is CancellationError {
                 return nil
@@ -103,7 +103,7 @@ struct GrokSessionUsageScanner: Sendable {
         var incompleteRows: Int
     }
 
-    static func parse(_ text: String, path: String) -> Parsed {
+    static func parse(_ text: String, path: String, since: Date = .distantPast, until: Date = .distantFuture) -> Parsed {
         let fallbackID = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
         var id = fallbackID
         do {
@@ -127,6 +127,7 @@ struct GrokSessionUsageScanner: Sendable {
                 }
                 let totals = try Totals(turn)
                 var modelTotals: [Totals] = []
+                let turnRecordStart = records.count
                 for (model, row) in models.sorted(by: { $0.key < $1.key }) {
                     guard UsageJSON.string(model) != nil else { throw ParseError.metadata }
                     let values = try Totals(row)
@@ -145,11 +146,21 @@ struct GrokSessionUsageScanner: Sendable {
                     if totals.partial || totals.incomplete { record.recordedCostUSD = nil }
                     records.append(record)
                 }
-                guard try Totals.sum(modelTotals).matches(totals) else { throw ParseError.metadata }
+                let modelSum = try Totals.sum(modelTotals)
+                guard modelSum.counts == totals.counts else { throw ParseError.metadata }
+                if modelSum.ticks != totals.ticks {
+                    for index in turnRecordStart..<records.count { records[index].recordedCostUSD = nil }
+                }
                 turnTotals.append(totals)
-                if totals.incomplete || modelTotals.contains(where: \.incomplete) { incomplete += 1 }
+                if timestamp >= since, timestamp <= until,
+                   totals.incomplete || modelTotals.contains(where: \.incomplete) { incomplete += 1 }
             }
-            guard try Totals.sum(turnTotals).matches(Totals(sessionUsage)) else { throw ParseError.metadata }
+            let turnSum = try Totals.sum(turnTotals)
+            let sessionTotals = try Totals(sessionUsage)
+            guard turnSum.counts == sessionTotals.counts else { throw ParseError.metadata }
+            if turnSum.ticks != sessionTotals.ticks {
+                for index in records.indices { records[index].recordedCostUSD = nil }
+            }
             return Parsed(sessionID: id, records: records, usable: true, incompleteRows: incomplete)
         } catch {
             let issue: UsageRecord.Issue = (error as? ParseError) == .numbers ? .invalidNumbers : .invalidMetadata
@@ -220,8 +231,6 @@ struct GrokSessionUsageScanner: Sendable {
             partial = false
             incomplete = false
         }
-
-        func matches(_ other: Totals) -> Bool { counts == other.counts && ticks == other.ticks }
 
         static func sum(_ values: [Totals]) throws -> Totals {
             var counts = [Int](repeating: 0, count: 7)

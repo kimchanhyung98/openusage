@@ -39,6 +39,26 @@ final class OpenCodeSharedUsageTests: XCTestCase {
         XCTAssertFalse(values.contains(where: \.estimated))
     }
 
+    func testSpendEstimateMatchesNativeCostInEachTilePeriod() async {
+        for nativeYesterday in [true, false] {
+            var shared = record(cost: 2)
+            if !nativeYesterday { shared.timestamp = now.addingTimeInterval(-86_400) }
+            let nativeAt = now.addingTimeInterval(nativeYesterday ? -86_400 : -3600)
+            let provider = makeProvider(records: [shared], native: true, nativeAt: nativeAt)
+            let snapshot = await provider.refresh()
+            for (label, expected) in [
+                ("Today", !nativeYesterday),
+                ("Yesterday", nativeYesterday),
+                ("Last 30 Days", true)
+            ] {
+                guard case let .values(_, values, _, _, _, _)? = snapshot.line(label: label) else {
+                    return XCTFail("expected \(label) spend tile")
+                }
+                XCTAssertEqual(values.first(where: { $0.kind == .dollars })?.estimated, expected, label)
+            }
+        }
+    }
+
     func testNativeReadFailurePreservesSharedHistoryWithoutGoMeters() async {
         for hasGoKey in [true, false] {
             let provider = makeProvider(records: [record(cost: 2)], native: true,
@@ -148,10 +168,10 @@ final class OpenCodeSharedUsageTests: XCTestCase {
     private func makeProvider(
         records: [UsageRecord], native: Bool, nativeFailure: Bool = false,
         hasGoKey: Bool = false, sharedFailure: Bool = false,
-        sharedUsage: UsageCollectionCoordinator? = nil
+        sharedUsage: UsageCollectionCoordinator? = nil, nativeAt: Date? = nil
     ) -> OpenCodeProvider {
         let now = self.now
-        let timestamp = Int(now.addingTimeInterval(-3600).timeIntervalSince1970 * 1000)
+        let timestamp = Int((nativeAt ?? now.addingTimeInterval(-3600)).timeIntervalSince1970 * 1000)
         let payload = "[[\(timestamp),1,{\"total\":100},\"glm-5.2\",\"opencode-go\"]]"
         return OpenCodeProvider(
             authStore: OpenCodeAuthStore(

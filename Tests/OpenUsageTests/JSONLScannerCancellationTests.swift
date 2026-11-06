@@ -237,6 +237,39 @@ final class JSONLScannerCancellationTests: XCTestCase {
         XCTAssertEqual(reloadCounter.count, 2)
     }
 
+    func testCancelledCodexDiscoveryFailureDoesNotReturnWarningScan() async throws {
+        let home = try makeDirectory("CodexDiscovery")
+        defer { try? FileManager.default.removeItem(at: home) }
+        let sessions = home.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: sessions.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: sessions.path) }
+        try XCTSkipIf(FileManager.default.isReadableFile(atPath: sessions.path), "Requires an unreadable directory")
+        let incremental = IncrementalJSONLScanner<CodexLogUsageScanner.Event>()
+        let scanner = CodexLogUsageScanner(incrementalScanner: incremental,
+                                            cacheIdentityOverride: "shared-home", rootsOverride: [home])
+        let failed = await scanner.scan(pricing: .empty)
+        XCTAssertEqual(failed?.readFailureCount, 1)
+        let blockerFile = try makeIntegerFile(in: home)
+        let blocker = BlockingCodexParser()
+        let first = Task { await incremental.items(from: [blockerFile], since: .distantPast,
+                                                    cacheIdentity: "shared-home", parse: blocker.parse) }
+        guard await waitUntil({ blocker.hasStarted }) else {
+            blocker.unblock(); first.cancel(); _ = await first.value
+            return XCTFail("the first parser did not start")
+        }
+        let cancelled = Task { await scanner.scan(pricing: .empty) }
+        guard await waitUntil({ await incremental.queuedScanCountForTesting(identity: "shared-home") > 0 }) else {
+            cancelled.cancel(); blocker.unblock(); _ = await first.value; _ = await cancelled.value
+            return XCTFail("the Codex scan did not queue")
+        }
+        cancelled.cancel()
+        blocker.unblock()
+        _ = await first.value
+        let result = await cancelled.value
+        XCTAssertNil(result)
+    }
+
     private func waitUntil(
         _ condition: @escaping @Sendable () async -> Bool
     ) async -> Bool {
@@ -289,4 +322,17 @@ private final class BlockingClaudeParser: @unchecked Sendable {
     func unblock() {
         release.signal()
     }
+}
+
+private final class BlockingCodexParser: @unchecked Sendable {
+    private let lock = NSLock()
+    private var started = false
+    private let release = DispatchSemaphore(value: 0)
+    var hasStarted: Bool { lock.withLock { started } }
+    func parse(_ data: Data) -> [CodexLogUsageScanner.Event]? {
+        lock.withLock { started = true }
+        release.wait()
+        return []
+    }
+    func unblock() { release.signal() }
 }

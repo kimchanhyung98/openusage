@@ -34,8 +34,8 @@ actor CodexLogUsageScanner {
         var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// 갱신된 직전 요청 사용량으로 완료 응답 대조 — 이전 오탐 경고 캐시 재파싱.
-    static let cacheSchemaVersion = 20
+    /// 압축 링크를 일반 원장으로 오인한 이전 캐시 재파싱.
+    static let cacheSchemaVersion = 21
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -71,7 +71,7 @@ actor CodexLogUsageScanner {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         // scoped 카드는 안정적 per-card identity, 표준 walk는 resolve된 home set을 cache key로 사용 (`ClaudeLogUsageScanner.parseCacheIdentity` 참고).
-        let identity: String
+        var identity: String
         if let cacheIdentityOverride {
             identity = cacheIdentityOverride
         } else {
@@ -81,8 +81,11 @@ actor CodexLogUsageScanner {
         }
         var seenFiles: Set<String> = []
         let nativeFiles = Self.sessionFiles(homes: homes)
-        let files = nativeFiles.files.filter { seenFiles.insert($0.path).inserted }
-        let discoveryFailures = nativeFiles.failures
+        let files = nativeFiles.result.files.filter { seenFiles.insert($0.path).inserted }
+        let discoveryFailures = nativeFiles.result.failures
+        let compressedPaths = nativeFiles.compressedPaths
+        let compressedAliases = compressedPaths.filter { !$0.hasSuffix(".jsonl.zst") }.sorted()
+        if !compressedAliases.isEmpty { identity += "\ncompressed:" + compressedAliases.joined(separator: "\n") }
         if discoveryFailures > 0 {
             AppDiagnostics.record(.historyScan, result: .degraded, category: .storage, providerID: "codex",
                                   localContext: "history_discovery_failures=\(discoveryFailures)")
@@ -91,6 +94,7 @@ actor CodexLogUsageScanner {
             _ = await scanner.items(
                 from: [], since: since, cacheIdentity: identity, parse: Self.parseFile
             )
+            guard !Task.isCancelled else { return nil }
             return discoveryFailures > 0 ? DailyUsageAccumulator().build(readFailureCount: discoveryFailures) : nil
         }
 
@@ -100,7 +104,7 @@ actor CodexLogUsageScanner {
             cacheIdentity: identity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
             parse: { data, path in
-                if path.hasSuffix(".jsonl.zst") { return Self.parseFile(try UsageZstandard.decode(data)) }
+                if compressedPaths.contains(path) { return Self.parseFile(try UsageZstandard.decode(data)) }
                 return Self.parseFile(data)
             }
         ), !Task.isCancelled else { return nil }
@@ -121,8 +125,9 @@ actor CodexLogUsageScanner {
     }
 
     /// 일반·압축 원장 조회. 같은 상대 경로는 활성 사본을, 같은 폴더의 두 형식은 일반 파일을 우선 사용.
-    private static func sessionFiles(homes: [URL]) -> UsageFileDiscovery.Result {
+    private static func sessionFiles(homes: [URL]) -> (result: UsageFileDiscovery.Result, compressedPaths: Set<String>) {
         var result = UsageFileDiscovery.Result()
+        var compressedPaths: Set<String> = []
         var seenDirs: Set<String> = []
         for home in homes {
             var seenRelative: Set<String> = []
@@ -139,7 +144,13 @@ actor CodexLogUsageScanner {
             }
             // 발견 경로와 같은 실경로에서 상대 경로 계산.
             for dir in sourceDirs.map({ $0.resolvingSymlinksInPath() }) where seenDirs.insert(dir.path).inserted {
-                let discovery = UsageFileDiscovery.files(under: [dir], matching: isRolloutFile)
+                let discovery = UsageFileDiscovery.files(under: [dir]) { url in
+                    guard isRolloutFile(url) else { return false }
+                    if url.lastPathComponent.hasSuffix(".jsonl.zst") {
+                        compressedPaths.insert(url.resolvingSymlinksInPath().path)
+                    }
+                    return true
+                }
                 result.failures += discovery.failures
                 for file in discovery.files {
                     let plainPath = file.path.hasSuffix(".jsonl.zst") ? String(file.path.dropLast(4)) : file.path
@@ -149,7 +160,7 @@ actor CodexLogUsageScanner {
                 }
             }
         }
-        return result
+        return (result, compressedPaths)
     }
 
     private static func isRolloutFile(_ url: URL) -> Bool {

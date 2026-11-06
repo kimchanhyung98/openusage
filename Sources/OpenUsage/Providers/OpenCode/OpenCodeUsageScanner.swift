@@ -199,7 +199,7 @@ struct OpenCodeUsageScanner: Sendable {
             else { continue }
             guard let cost = ProviderParse.number(entry[1]), cost >= 0,
                   entry.count < 6 || ["integer", "real"].contains(entry[5] as? String ?? ""),
-                  let tokens = totalTokens(entry[2]) else {
+                  let tokens = entry.count >= 7 && entry[2] is NSNull && entry[6] is NSNull ? 0 : totalTokens(entry[2]) else {
                 rejectedNumericRows += 1
                 continue
             }
@@ -289,7 +289,8 @@ struct OpenCodeUsageScanner: Sendable {
                  json_extract(usage_data,'$.tokens'),
                  json_extract(message_data,'$.modelID'),
                  json_extract(message_data,'$.providerID'),
-                 json_type(usage_data,'$.cost')))
+                 json_type(usage_data,'$.cost'),
+                 json_type(usage_data,'$.tokens')))
         FROM usage;
         """
     }
