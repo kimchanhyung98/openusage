@@ -70,8 +70,6 @@ SwiftUI·AppKit 시작 전에 프로세스 전용 언어값을 적용하며 실�
 USD와 K/M/B 수치 축약은 기존 정책 유지.
 Auto 시간 형식은 표시 언어와 별개로 시스템의 12/24시간 설정 준수.
 
-요구사항·역할 분담·검증 범위는 [다국어 지원 계획](/docs/research/app-localization-plan.md) 참조.
-
 ## 프로바이더 파이프라인
 
 각 프로바이더는 `ProviderRuntime`을 채택한 작은 모듈.
