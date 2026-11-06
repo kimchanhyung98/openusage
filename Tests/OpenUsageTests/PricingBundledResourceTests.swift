@@ -70,6 +70,40 @@ final class PricingBundledResourceTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "grok-4.3")?.inputPerMillion, 1.25)
     }
 
+    func testHistoricalClaudeDirectRatesRemainInBundledCatalog() throws {
+        let cases: [(String, Double, Double, Double, Double)] = [
+            ("claude-3-7-sonnet-20250219", 3, 15, 3.75, 0.3),
+            ("claude-3-haiku-20240307", 0.25, 1.25, 0.3, 0.03),
+            ("claude-3-opus-20240229", 15, 75, 18.75, 1.5),
+            ("claude-4-opus-20250514", 15, 75, 18.75, 1.5),
+            ("claude-4-sonnet-20250514", 3, 15, 3.75, 0.3),
+            ("claude-opus-4-1", 15, 75, 18.75, 1.5),
+            ("claude-opus-4-1-20250805", 15, 75, 18.75, 1.5),
+            ("claude-opus-4-20250514", 15, 75, 18.75, 1.5),
+            ("claude-sonnet-4-20250514", 3, 15, 3.75, 0.3)
+        ]
+        for (name, input, output, write, read) in cases {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: name), name)
+            XCTAssertEqual(rates.inputPerMillion, input, name)
+            XCTAssertEqual(rates.outputPerMillion, output, name)
+            XCTAssertEqual(rates.cacheWritePerMillion, write, name)
+            XCTAssertEqual(rates.cacheReadPerMillion, read, name)
+            XCTAssertTrue(rates.cacheReadIsExplicit, name)
+        }
+        for name in ["claude-4-sonnet-20250514", "claude-sonnet-4-20250514"] {
+            let rates = try XCTUnwrap(Self.pricing.resolve(model: name), name)
+            XCTAssertEqual(rates.inputAbove200kPerMillion, 6, name)
+            XCTAssertEqual(rates.outputAbove200kPerMillion, 22.5, name)
+            XCTAssertEqual(rates.cacheWriteAbove200kPerMillion, 7.5, name)
+            XCTAssertEqual(rates.cacheReadAbove200kPerMillion, 0.6, name)
+        }
+        let gov = try XCTUnwrap(Self.pricing.resolve(
+            model: "bedrock/us-gov-east-1/anthropic.claude-3-7-sonnet-20250219-v1:0"
+        ))
+        XCTAssertEqual(gov.inputPerMillion, 3.6, accuracy: 1e-9)
+        XCTAssertEqual(gov.outputPerMillion, 18)
+    }
+
     func testClaudeFable5PricingAndAliases() throws {
         let pricing = Self.pricing
         let fable = try XCTUnwrap(pricing.resolve(model: "claude-fable-5-thinking"))
