@@ -52,7 +52,8 @@ final class CodexAutoReviewIdentityTests: XCTestCase {
         let unknown = CodexLogUsageScanner.aggregate(
             events: events, since: .distantPast, pricing: pricing(entries: [:])
         )
-        XCTAssertTrue(unknown.series.daily.isEmpty)
+        XCTAssertEqual(unknown.series.daily.first?.totalTokens, 150)
+        XCTAssertNil(unknown.series.daily.first?.costUSD)
         XCTAssertEqual(Set(unknown.unknownModelsByDay.values.flatMap { $0 }), ["codex-auto-review"])
     }
 

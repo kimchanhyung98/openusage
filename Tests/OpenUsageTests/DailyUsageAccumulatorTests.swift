@@ -35,12 +35,12 @@ final class DailyUsageAccumulatorTests: XCTestCase {
         XCTAssertEqual(models["opus"]?.totalTokens, 10)
     }
 
-    func testUnknownModelsStayOutOfTheSeries() {
+    func testUnknownModelMetadataAloneDoesNotCreateUsage() {
         var accumulator = DailyUsageAccumulator()
         accumulator.addUnknownModel(day: "2024-06-02", model: "mystery-model")
 
         let scan = accumulator.build()
-        // 가격 산정 불가 usage만 있는 날은 series·model breakdown 미포함 — warning triangle로만 노출
+        // 모델 이름만 추가해도 토큰·비용 이력을 만들지 않음.
         XCTAssertTrue(scan.series.daily.isEmpty)
         XCTAssertEqual(scan.modelUsage?.daily.isEmpty, true)
         XCTAssertEqual(scan.unknownModelsByDay, ["2024-06-02": ["mystery-model"]])
@@ -55,5 +55,69 @@ final class DailyUsageAccumulatorTests: XCTestCase {
         XCTAssertNotNil(merged.metadataWarning)
         XCTAssertNil(merged.numericWarning)
         XCTAssertNil(merged.usageHistory)
+    }
+
+    func testUnpricedTokensKeepCostIncompleteAcrossNativeAndICloudMerges() throws {
+        let now = Date()
+        let day = DailyUsageAccumulator.dayKey(from: now)
+        var native = DailyUsageAccumulator()
+        native.add(day: day, tokens: 100, cost: 1, model: "priced")
+        var shared = DailyUsageAccumulator()
+        shared.add(day: day, tokens: 50, cost: nil, model: "unpriced")
+        let merged = try XCTUnwrap(DailyUsageAccumulator.merged([native.build(), shared.build()]))
+        XCTAssertEqual(merged.series.daily.first?.totalTokens, 150)
+        XCTAssertNil(merged.series.daily.first?.costUSD)
+        XCTAssertEqual(merged.modelUsage?.daily.first?.models.first { $0.model == "priced" }?.costUSD, 1)
+        let synced = UsageHistoryAggregator.mergeHistories([
+            try XCTUnwrap(native.build().usageHistory), try XCTUnwrap(shared.build().usageHistory)
+        ], now: now)
+        XCTAssertEqual(synced.series, merged.series)
+        var lines: [MetricLine] = []
+        SpendTileMapper.appendTokenUsage(merged.series, to: &lines, now: now, modelUsage: merged.modelUsage,
+                                        modelSourceNote: "Fixture source")
+        XCTAssertEqual(lines.count, 2)
+        for line in lines {
+            guard case .values(_, let values, _, _, _, let breakdown) = line else { continue }
+            XCTAssertFalse(values.contains { $0.kind == .dollars })
+            XCTAssertEqual(values.first { $0.kind == .count }?.number, 150)
+            XCTAssertNil(breakdown?.totalCostUSD)
+            XCTAssertEqual(breakdown?.models.first { $0.model == "priced" }?.costUSD, 1)
+        }
+    }
+
+    func testZeroTokenUnknownCostDoesNotHidePricedUsageButReportedCostIsKept() {
+        var accumulator = DailyUsageAccumulator()
+        accumulator.add(day: "2026-11-01", tokens: 100, cost: 1, model: "priced")
+        accumulator.add(day: "2026-11-01", tokens: 0, cost: nil, model: "unknown")
+
+        let before = accumulator.build()
+        XCTAssertEqual(before.series.daily, [DailyUsageEntry(date: "2026-11-01", totalTokens: 100, costUSD: 1)])
+        XCTAssertFalse(before.modelUsage?.daily.first?.models.contains(where: { $0.model == "unknown" }) == true)
+
+        accumulator.add(day: "2026-11-01", tokens: 0, cost: 0.25, model: "reported-cost")
+        let after = accumulator.build()
+        XCTAssertEqual(after.series.daily, [DailyUsageEntry(date: "2026-11-01", totalTokens: 100, costUSD: 1.25)])
+        XCTAssertEqual(after.modelUsage?.daily.first?.models.first { $0.model == "reported-cost" }?.costUSD, 0.25)
+    }
+
+    func testUnpricedDayDoesNotBecomePartialThirtyDayCost() {
+        var lines: [MetricLine] = []
+        SpendTileMapper.appendTokenUsage(.init(daily: [
+            .init(date: "2026-11-01", totalTokens: 100, costUSD: 1),
+            .init(date: "2026-11-02", totalTokens: 50, costUSD: nil)
+        ]), to: &lines)
+        guard case .values(_, let values, _, _, _, _) = lines.first(where: { $0.label == "Last 30 Days" }) else {
+            return XCTFail("Expected token-only period total")
+        }
+        XCTAssertEqual(values.map(\.kind), [.count])
+        XCTAssertEqual(values.first?.number, 150)
+    }
+
+    func testMergeRetainsSeriesWhenSourceHasNoModelBreakdown() throws {
+        let scan = LogUsageScan(series: .init(daily: [.init(date: "2026-11-01", totalTokens: 100, costUSD: nil)]),
+                                unknownModelsByDay: [:])
+        let merged = try XCTUnwrap(DailyUsageAccumulator.merged([scan]))
+        XCTAssertEqual(merged.series, scan.series)
+        XCTAssertEqual(merged.modelUsage?.daily.first?.models.first?.model, ModelUsageEntry.unattributedModelName)
     }
 }

@@ -46,10 +46,11 @@ final class UsageHistoryAggregatorTests: XCTestCase {
 
         let claude = try XCTUnwrap(merged["claude"])
         XCTAssertEqual(claude.series.daily, [
-            DailyUsageEntry(date: "2026-07-13", totalTokens: 350, costUSD: 3)
+            DailyUsageEntry(date: "2026-07-13", totalTokens: 350, costUSD: nil)
         ])
         XCTAssertEqual(claude.modelUsage?.daily[0].models.map(\.model), ["Opus", "Sonnet"])
         XCTAssertEqual(claude.modelUsage?.daily[0].models.first?.totalTokens, 300)
+        XCTAssertEqual(claude.modelUsage?.daily[0].models.first?.costUSD, 3)
         XCTAssertEqual(claude.unknownModelsByDay["2026-07-13"], ["unknown-a", "unknown-b"])
         XCTAssertNil(merged["cursor"], "account-wide Cursor history must never be added across Macs")
     }
