@@ -365,25 +365,11 @@ struct WidgetRowView: View {
     }
 
     private var labelColumn: some View {
-        HStack(spacing: 4) {
-            Text(data.localizedTitle)
-                .font(.system(size: density.supportingPointSize, weight: .semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            unknownModelWarningIcon
-        }
-    }
-
-    @ViewBuilder
-    private var unknownModelWarningIcon: some View {
-        if data.hasUnknownModels {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: density.supportingPointSize - 1))
-                .foregroundStyle(severityColor(.warning))
-                .hoverTooltip(data.unknownModelTooltip)
-                .accessibilityLabel(L10n.dashboard("This period used a model with unknown pricing"))
-        }
+        Text(data.localizedTitle)
+            .font(.system(size: density.supportingPointSize, weight: .semibold))
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Full-width capsule meter — fill 색이 pace verdict를 표현(의도적으로 native Gauge/ProgressView가 아님),

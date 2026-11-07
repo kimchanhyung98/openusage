@@ -68,38 +68,34 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         XCTAssertNil(document.identities?[provider.provider.id])
     }
 
-    func testUnpricedModelsShowHeaderWarningWhileKnownUsageRemainsInRing() async throws {
+    func testUnpricedModelsKeepAllTokensAndHideIncompleteCost() async throws {
         let day = DailyUsageAccumulator.dayKey(from: fixedNow)
-        let scan = LogUsageScan(
-            series: usageScan().series,
-            unknownModelsByDay: [day: ["unpriced-synthetic-model"]]
-        )
+        var accumulator = DailyUsageAccumulator()
+        accumulator.add(day: day, tokens: 100, cost: 1.25, model: "priced-model")
+        accumulator.add(day: day, tokens: 50, cost: nil, model: "unpriced-synthetic-model")
+        accumulator.addUnknownModel(day: day, model: "unpriced-synthetic-model")
+        let scan = accumulator.build()
         let provider = makeProvider(usageScan: { _, _ in scan })
         let fixture = makeStore(provider)
 
         _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
 
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
-        let warning = "Some Antigravity models have no price. Cost totals may be unavailable."
-        XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), L10n.errors(warning))
+        XCTAssertNil(fixture.store.headerNotice(for: provider.provider.id))
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
-        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(snapshot.warning)
         XCTAssertEqual(snapshot.usageHistory, scan.usageHistory)
         XCTAssertNotNil(snapshot.line(label: "Session"))
 
         let total = TotalSpendAggregator.total(
             for: .today, providers: [provider.provider], snapshots: fixture.store.snapshots
         )
-        XCTAssertEqual(total.projection(for: .cost).centerValue, 1.25, accuracy: 0.000_001)
-        XCTAssertEqual(total.projection(for: .tokens).centerValue, 100, accuracy: 0.000_001)
+        XCTAssertTrue(total.projection(for: .cost).isEmpty)
+        XCTAssertEqual(total.projection(for: .tokens).centerValue, 150, accuracy: 0.000_001)
     }
 
-    func testOnlyUnpricedModelsShowHeaderWarningAndClearPreviousRingTotals() async throws {
-        let day = DailyUsageAccumulator.dayKey(from: fixedNow)
-        let scan = LogUsageScan(
-            series: DailyUsageSeries(daily: []),
-            unknownModelsByDay: [day: ["unpriced-synthetic-model"]]
-        )
+    func testOnlyUnpricedModelsReplacePreviousTotalsWithTokenOnlyUsage() async throws {
+        let scan = unpricedScan()
         let sequence = UsageScanSequence([usageScan(), scan])
         let provider = makeProvider(usageScan: { _, _ in await sequence.next() })
         let fixture = makeStore(provider)
@@ -109,19 +105,17 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         _ = await fixture.store.refresh(providerID: provider.provider.id, force: true)
 
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
-        let warning = "Some Antigravity models have no price. Cost totals may be unavailable."
-        XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), L10n.errors(warning))
+        XCTAssertNil(fixture.store.headerNotice(for: provider.provider.id))
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
-        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(snapshot.warning)
         XCTAssertEqual(snapshot.usageHistory, scan.usageHistory)
         XCTAssertNotNil(snapshot.line(label: "Session"))
         for period in TotalSpendPeriod.allCases {
-            XCTAssertNil(snapshot.line(label: period.lineLabel))
             let total = TotalSpendAggregator.total(
                 for: period, providers: [provider.provider], snapshots: fixture.store.snapshots
             )
             XCTAssertTrue(total.projection(for: .cost).isEmpty)
-            XCTAssertTrue(total.projection(for: .tokens).isEmpty)
+            XCTAssertEqual(total.projection(for: .tokens).centerValue, period == .yesterday ? 0 : 50)
         }
     }
 
@@ -140,12 +134,8 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         XCTAssertFalse(snapshot.lines.contains(where: \.isError))
     }
 
-    func testOnlyUnpricedHistorySurvivesQuotaFailureAndClearsPreviousTotals() async throws {
-        let day = DailyUsageAccumulator.dayKey(from: fixedNow)
-        let scan = LogUsageScan(
-            series: DailyUsageSeries(daily: []),
-            unknownModelsByDay: [day: ["unpriced-synthetic-model"]]
-        )
+    func testOnlyUnpricedHistorySurvivesQuotaFailureAndKeepsTokens() async throws {
+        let scan = unpricedScan()
         let sequence = UsageScanSequence([usageScan(), scan])
         let provider = makeProvider(usageScan: { _, _ in await sequence.next() }, quotaAvailable: false)
         let fixture = makeStore(provider)
@@ -157,19 +147,19 @@ final class AntigravityUsageIntegrationTests: XCTestCase {
         let snapshot = try XCTUnwrap(fixture.store.localSnapshots[provider.provider.id])
         let warning = try XCTUnwrap(snapshot.warning)
         XCTAssertTrue(warning.contains(AntigravityError.unavailable.localizedDescription))
-        XCTAssertTrue(warning.contains("Some Antigravity models have no price. Cost totals may be unavailable."))
+        XCTAssertEqual(warning, AntigravityError.unavailable.localizedDescription)
         XCTAssertEqual(fixture.store.headerNotice(for: provider.provider.id), snapshot.localizedWarning)
         XCTAssertNil(fixture.store.errorMessage(for: provider.provider.id))
         XCTAssertEqual(snapshot.isDegraded, true)
         XCTAssertEqual(snapshot.usageHistory, scan.usageHistory)
-        XCTAssertTrue(snapshot.lines.isEmpty)
+        XCTAssertEqual(Set(snapshot.lines.map(\.label)), ["Today", "Last 30 Days"])
         XCTAssertEqual(fixture.cache.loadSnapshots(providerIDs: [provider.provider.id])[provider.provider.id], snapshot)
         for period in TotalSpendPeriod.allCases {
             let total = TotalSpendAggregator.total(
                 for: period, providers: [provider.provider], snapshots: fixture.store.snapshots
             )
             XCTAssertTrue(total.projection(for: .cost).isEmpty)
-            XCTAssertTrue(total.projection(for: .tokens).isEmpty)
+            XCTAssertEqual(total.projection(for: .tokens).centerValue, period == .yesterday ? 0 : 50)
         }
         let document = fixture.store.localHistoryDocument(
             deviceID: "fixture-mac", deviceName: "Fixture Mac", updatedAt: fixedNow

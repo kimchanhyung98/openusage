@@ -33,22 +33,30 @@ Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 �
 
 ## 로컬 사용량과 비용
 
-앱·CLI·IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.
+앱·CLI·독립 실행형 Antigravity IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.
+공식 VS Code 확장의 기본 백엔드는 앱 데이터 경로를 사용하므로 같은 원장을 별도 수집하지 않음.
+다른 편집기·사용자 지정 데이터 경로·원격 호스트의 원장까지 지원한다는 의미는 아님.
 대화 단계에 기록된 발생 시각·모델·토큰 수를 기존 공통 가격 계산과 일별 집계에 연결.
 현재 확보한 모델 가격으로 계산한 사용 가치 추정치이며, 구독료나 실제 청구액과 다름.
 가격 산정 방식은 [모델 가격](/docs/pricing.md) 참조.
 가격을 확인할 수 없는 모델의 토큰은 유지하고 해당 날짜·기간의 총비용 생략.
-가격 미확정 모델은 프로바이더 헤더에 경고 표시.
+가격 미확정 모델은 진단 로그에 기록하며 프로바이더 헤더에 경고를 표시하지 않음.
 
 기존 네 개 할당량 지표는 유지하고, 로컬 사용량은 상단 링의 **Today**·**Yesterday**·**30 Days** 합계에 반영.
 선택 기간에 유효한 이력이 없으면 상단 통계의 기존 빈 상태 적용.
 이력은 이 Mac의 Antigravity 패밀리 합계로 취급하며, 현재 로그인 계정이나 선택 계정에 임의로 귀속하지 않음.
 [Mac 간 동기화](/docs/icloud-sync.md)를 켜면 같은 로컬 이력 합산 규칙 적용.
 할당량 조회에 실패해도 유효한 로컬 사용량은 유지하고 조회 실패 경고 표시.
+일부 원장 읽기에 실패하면 읽을 수 있는 다른 원장만 계속 반영하고 불완전 이력 경고 표시.
+전체 수집에 실패하거나 취소된 결과로 이전 정상 이력을 비우지 않음.
+
+Pi·OMP 등 공유 도구가 `google-antigravity` 또는 `antigravity`로 기록한 사용량도 로컬 합계에 반영.
+기존 앱·CLI·독립 실행형 IDE 데이터베이스와 VS Code 확장의 공유 원장은 하나의 native 수집기에서 조회하여 이중 수집 방지.
 
 ## 인증 정보 출처
 
-OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 정보를 읽음.
+OpenUsage는 토큰을 요구하지 않고 Antigravity가 Google 계정 로그인으로 이미 보관한 인증 정보를 읽어 할당량 조회.
+[Gemini API 키 직접 사용 모드](https://antigravity.google/docs/install#using-a-gemini-api-key)는 이 계정 세션을 만들지 않음.
 
 - **로컬 언어 서버 조회** — 실행 중인 Antigravity 또는 `agy`의 언어 서버에 먼저 요청.
   현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
@@ -63,7 +71,8 @@ OpenUsage는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인�
 
 ## 문제 해결
 
-- **"Start Antigravity or run `agy`…"** — Antigravity 앱에 로그인하거나 `agy`를 실행해 사용 가능한 토큰을 만든 뒤 새로 고침.
+- **"Start Antigravity or run `agy`…"** — Antigravity 앱이나 `agy`에서 Google 계정 로그인 후 새로 고침.
+  Gemini API 키 직접 사용 모드로 `agy`를 실행하는 것만으로는 할당량 조회용 계정 인증이 생성되지 않음.
 - **"Couldn't read Antigravity credentials…"** — 키체인 잠금 해제 또는 Antigravity 재로그인.
   현재 로그인을 확인하기 전까지 캐시된 액세스 토큰 사용 안 함.
 - **주간 미터에 "No data" 표시** — 주간 데이터를 받지 못한 상태.

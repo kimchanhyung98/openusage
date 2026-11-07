@@ -303,11 +303,8 @@ final class CodexProvider: ProviderRuntime {
             let note = sharedScan == nil
                 ? "From your Codex logs (estimated)"
                 : "From your Codex logs and local tools (estimated)"
-            let metadataWarning = scan.rejectedMetadataRows > 0
-                ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
-            let warnings = [scan.numericWarning, metadataWarning, scan.pricingWarning, scan.readWarning].compactMap { $0 }
-            warning = warnings.joined(separator: " ").nilIfEmpty
-            warningPresentation = warnings.map { .init($0) }
+            warning = scan.readWarning
+            warningPresentation = scan.readWarning.map { [.init($0)] } ?? []
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

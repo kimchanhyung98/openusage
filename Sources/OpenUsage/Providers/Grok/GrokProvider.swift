@@ -106,11 +106,8 @@ final class GrokProvider: ProviderRuntime {
         if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, sharedScan]) {
             let sourceNote = sharedScan == nil
                 ? "From your Grok usage files and logs (estimated)" : "From your Grok usage files, logs, and local tools (estimated)"
-            let metadataWarning = scan.rejectedMetadataRows > 0
-                ? "Some local usage records are incomplete or inconsistent. Usage history may be incomplete." : nil
-            let warnings = [scan.numericWarning, metadataWarning, scan.pricingWarning, scan.readWarning].compactMap { $0 }
-            warning = warnings.joined(separator: " ").nilIfEmpty
-            warningPresentation = warnings.map { .init($0) }
+            warning = scan.readWarning
+            warningPresentation = scan.readWarning.map { [.init($0)] } ?? []
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

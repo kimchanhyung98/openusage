@@ -34,8 +34,7 @@ struct WidgetData: Hashable {
     /// Codex rate-limit-reset-credits row 표시 descriptor opt-in.
     /// 설정 시 값 column hover로 resets popover 표시 — `expiriesAt`이 빈 "0 available"에서도 접근 유지.
     var showsResetExpiries: Bool = false
-    /// pricing source가 가격 못 매긴 이번 기간 사용 model 이름들 — 합계에서 제외되어 수치 과소 가능.
-    /// label 경고 triangle과 hover 목록의 근거. 다른 row는 빈 배열.
+    /// 기간 내 가격 미확정 모델 메타데이터 — 토큰은 유지하고 불완전한 비용만 생략.
     var unknownModels: [String] = []
     /// Today / Yesterday / Last 30 Days hover popover용 기간 단위 model spend/tokens — 비-spend row·model 데이터 없는 기간은 nil.
     var modelBreakdown: ModelUsageBreakdown?
@@ -365,18 +364,6 @@ struct WidgetData: Hashable {
         // header가 동사 담당 — "in"은 relative duration에만 적합 (absolute entry는 자체 완결).
         let header = resetDisplayMode == .relative ? L10n.metrics("Resets expire in:") : L10n.metrics("Resets expire:")
         return ([header] + entries).joined(separator: "\n")
-    }
-
-    var hasUnknownModels: Bool {
-        hasData && !unknownModels.isEmpty
-    }
-
-    /// unknown-model 경고 triangle의 hover 문구 — 단·복수 header + 미가격 model별 한 줄.
-    /// 전 model 가격 계산된 경우 nil — triangle·tooltip 비표시.
-    var unknownModelTooltip: String? {
-        guard hasUnknownModels else { return nil }
-        let header = unknownModels.count == 1 ? L10n.metrics("Unknown model found") : L10n.metrics("Unknown models found")
-        return ([header] + unknownModels.map { "- \($0)" }).joined(separator: "\n")
     }
 
     var unboundedSubtitle: String? {

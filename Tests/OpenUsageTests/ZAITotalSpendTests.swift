@@ -20,7 +20,8 @@ final class ZAITotalSpendTests: XCTestCase {
         }
 
         XCTAssertNil(snapshot.errorCategory)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertEqual(snapshot.isDegraded, true)
         XCTAssertNotNil(snapshot.line(label: "Session"))
         XCTAssertEqual(snapshot.plan, "GLM Coding Max")
         XCTAssertEqual(snapshot.lines.count, 1)
@@ -64,7 +65,8 @@ final class ZAITotalSpendTests: XCTestCase {
         )
 
         let snapshot = await runtime.refresh()
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testActivityHTTPAndBusinessFailuresPreserveQuotaWithWarning() async {

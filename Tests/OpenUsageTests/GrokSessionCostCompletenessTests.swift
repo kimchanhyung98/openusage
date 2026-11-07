@@ -87,7 +87,7 @@ final class GrokSessionCostCompletenessTests: XCTestCase {
         }
     }
 
-    func testKnownModelIncompleteUsageShowsGenericWarningAndKeepsTokens() async throws {
+    func testKnownModelIncompleteUsageKeepsTokensWithoutCardWarning() async throws {
         var row = metrics()
         row["usageIsIncomplete"] = true
         let root = try fixture(snapshot(model: row, turn: row, session: row))
@@ -111,10 +111,8 @@ final class GrokSessionCostCompletenessTests: XCTestCase {
 
         XCTAssertNil(result.errorCategory)
         XCTAssertNotNil(result.usageHistory)
-        XCTAssertEqual(result.warningPresentation, [LocalizedMessage(
-            "Some local usage records are incomplete or inconsistent. Usage history may be incomplete."
-        )])
-        XCTAssertFalse(result.warning?.contains("could not be linked to a model") == true)
+        XCTAssertNil(result.warning)
+        XCTAssertNil(result.warningPresentation)
         let scanResult = await scanner(root).scan(now: instant, pricing: TestPricing.bundled)
         let scan = try XCTUnwrap(scanResult)
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
