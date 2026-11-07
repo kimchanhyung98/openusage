@@ -2,7 +2,6 @@
 
 ## 구독 요금제
 
-2026-11-06 공식 판매 페이지·도움말 확인 기준.
 별도 통화 표기가 없으면 USD이며, 월 결제 정가와 연간 선결제 총액을 구분.
 세금·지역별 결제 통화·앱스토어 가격·체험·한시 할인은 실제 결제 화면에 따라 다름.
 프로바이더 열의 `-`는 앞에 표시된 프로바이더와 동일.
@@ -140,8 +139,8 @@ Kiro도 모델 가격 엔진 대신 로컬 턴별 크레딧에 공식 추가 크
 LiteLLM·models.dev 캐시는 유지.
 포크 피드를 읽는 앱으로 처음 전환할 때는 앱 업데이트 필요.
 그 이후 가격표 게시·배포가 완료되면 실행 중인 온라인 앱의 다음 갱신에서 받아가므로 일반 가격 수정에는 별도 앱 업데이트 불필요.
-이번 갱신은 `pricing_v2`·`alias_rules_v2` 확장에 포함되므로 앱 업데이트 필요.
-새 앱은 v2 단가를 기존 단가 위에 병합하고 v2 별칭을 먼저 적용.
+`pricing_v2`·`alias_rules_v2`를 지원하지 않는 구버전 앱은 해당 확장을 적용하려면 앱 업데이트 필요.
+확장을 지원하는 앱은 v2 단가를 기존 단가 위에 병합하고 v2 별칭을 먼저 적용.
 구버전 앱은 확장을 무시하고 기존 `pricing`·`alias_rules`를 계속 사용하므로 Cursor 요율이 API 할인으로 바뀌는 회귀 방지.
 `fast_multipliers_exact`를 지원하는 앱은 o3·o4-mini의 새 Fast 배율을 피드 갱신으로 적용.
 이 필드를 지원하지 않는 이전 버전은 배율 적용에도 앱 업데이트 필요.
@@ -250,9 +249,11 @@ GPT-5.1 Codex Max·o1 Pro처럼 제공이 종료된 모델의 단가도 과거 �
 Kimi K3 Fast는 [Fireworks의 별도 상품](https://fireworks.ai/models/fireworks/kimi-k3)으로 입력 $4.50·캐시 읽기 $0.45·출력 $22.50 / 100만 토큰.
 Muse Spark 1.3 Contributor도 [별도 요율](https://openrouter.ai/meta/muse-spark-1.3-contributor)인 입력 $0.10·캐시 읽기 $0.002·출력 $0.20 / 100만 토큰으로 구분.
 두 모델을 기본 모델의 별칭으로 바꾸지 않음.
-현행 공식 표에서 단가를 다시 확인할 수 없는 Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 최신 확인 완료로 간주하지 않음.
-GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까지, Gemini 3.6·3.8 Flash는 2026-12-31까지로 공표.
-만료 후에는 공식 표를 다시 확인해 갱신 필요.
+Auto·Composer 1/1.5/2·Bugbot의 기존 값도 보존하며, 현행 공식 단가와의 일치를 보장하지 않음.
+GPT-5.6 Sol의 할인 기간은 [OpenAI API 가격](https://developers.openai.com/api/docs/pricing)에서 2026-11-30까지, [Cursor 모델 및 가격](https://cursor.com/docs/models-and-pricing.md)에서 Cursor 요율에 대해 2026-11-21까지로 안내.
+[Google API 가격](https://ai.google.dev/gemini-api/docs/pricing)은 Gemini 4 Argon의 할인 요율을 2026-11-30까지, Gemini 3.6·3.8 Flash의 할인 요율을 2026-12-31까지로 안내.
+만료 후에는 공급 경로별 공식 표를 다시 확인해 보충 파일 갱신 필요.
+앱은 갱신된 가격표를 받은 뒤 변경 요율로 계산.
 
 ## 개인정보 보호
 
@@ -276,7 +277,7 @@ GPT-5.6 Sol 할인은 최소 2026-11-21까지, Gemini 4 Argon은 2026-11-30까�
   경계는 양의 정수, 단가는 유한한 비음수 필수이며 잘못된 장문 객체는 로딩·게시 단계에서 거부.
   Cursor 전용 단가는 `cursor/` 키와 전용 별칭으로 등록하고, 공급자의 API 단가와 별도로 검증.
   새 게시 파일의 `updated_at`은 실제로 유효한 UTC 날짜·시각 `YYYY-MM-DDTHH:MM:SSZ` 형식 필수.
-  `main` 병합 후 가격표 게시와 Pages 배포가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
+  `main` 병합 후 가격표 게시와 [Pages 배포](/docs/updates.md#유지-관리자-게시-버전-보호)가 완료되면 포크 피드를 읽는 앱의 다음 갱신에서 반영.
   번들 사본은 첫 실행을 위해 다음 릴리스에 포함.
   **pricing-update skill**(`.agents/skills/pricing-update/`)은 에이전트가 동기화 전 과정(Cursor 페이지 가져오기, diff, 편집, 검증, PR 열기)을 따라가도록 안내.
 - **번들 스냅샷**(`pricing_litellm_snapshot.json`, `pricing_models_dev_snapshot.json`): 가끔(예: 릴리스 전) `script/update_pricing_snapshots.sh`로 재생성.

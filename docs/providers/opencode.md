@@ -1,6 +1,6 @@
 # OpenCode
 
-> 2026-11-06 확인: 아래 Go 상한은 기존 방식의 추정치이며, 현재 Go·Go Plus·Go Teams의 모델별 사용량 한도와 다를 수 있음.
+> 아래 Go 상한은 기존 방식의 추정치이며, 현재 Go·Go Plus·Go Teams의 모델별 사용량 한도와 다를 수 있음.
 > 새 구독의 정확한 잔여량이나 Plus·Teams 등급 판정에는 사용 불가.
 
 Mac에 이미 저장된 OpenCode 자체 로그를 사용해 OpenCode 호스팅 사용량(**Go** 구독과 **Console**, 종전 Zen 종량제 게이트웨이) 추적.
@@ -119,8 +119,8 @@ V1 `message`·`session` 및 선택적인 `part` 테이블 지원.
 조회한 DB의 어시스턴트 메시지에서 `cost`와 토큰 필드를 읽음.
 Go 상한에는 `opencode-go` 메시지를 합산하고, 지출 타일과 추세에는 `opencode-go`(Go)와 `opencode`(Console)를 모두 합산.
 로컬 식별자 `opencode`와 과거 Zen 기록도 같은 Console 범위에 포함.
-읽기 전용, 네트워크 미사용.
-공식 사용량 API 연동은 미구현.
+OpenCode 로컬 DB와 지원 공유 도구 기록을 읽기 전용으로 조회.
+OpenCode 사용량 API는 호출하지 않음.
 
 ## 공유 도구 사용량
 

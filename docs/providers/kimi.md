@@ -9,7 +9,7 @@ Kimi Code에 이미 로그인된 계정의 코딩 할당량 추적.
 | Session | 5시간 순환 기간의 사용량과 초기화 시각 |
 | Weekly | 7일 기간의 사용량과 초기화 시각 |
 
-[현재 할당량 응답](https://github.com/MoonshotAI/kimi-code/blob/df90d90ec0714db23dcc830acd2db6232f5c7426/packages/oauth/src/managed-usage.ts#L108-L136)의 `usages.limit_5h`·`usages.limit_7d`에서 `used_ratio`와 `reset_time` 사용.
+[할당량 응답](https://github.com/MoonshotAI/kimi-code/blob/df90d90ec0714db23dcc830acd2db6232f5c7426/packages/oauth/src/managed-usage.ts#L108-L136)의 `usages.limit_5h`·`usages.limit_7d`에서 `used_ratio`와 `reset_time` 사용.
 구형 응답의 `limits`·`usage`도 지원.
 월간 한도만 있는 응답은 기존 Session·Weekly 지표로 표시하지 않고 할당량 확인 오류로 처리.
 `goods_version`으로 요금제 이름이나 새 지표를 추정하지 않음.
@@ -81,10 +81,11 @@ thinking 기록 누락·알 수 없는 값·변경 가능한 `kimi-for-coding` �
 [공식 캐시 계약](https://platform.kimi.ai/docs/guide/context-caching)은 5분·1시간 캐시 쓰기를 구분하지만 CLI 정규화 기록은 이 구분을 보존하지 않음.
 Anthropic 프로토콜은 `inputCacheCreation`이 0일 때만 가격 계산.
 OpenAI·Responses 프로토콜은 캐시 쓰기가 일반 입력에 포함될 수 있어 `inputOther`와 `inputCacheCreation`이 모두 0일 때만 가격 계산.
-OpenAI·Responses의 [캐시 읽기 필드가 없는 기록](https://github.com/MoonshotAI/kimi-code/blob/444c609e8e6629d43fb7fd571a8db48ce5a41570/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L188)은 `inputOther`에 전체 입력이 있으므로 Tokens만 집계.
+OpenAI·Responses에서 [`inputCacheRead`가 없는 기록](https://github.com/MoonshotAI/kimi-code/blob/444c609e8e6629d43fb7fd571a8db48ce5a41570/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L188)은 `inputOther`에 전체 입력이 있으므로 Tokens만 집계.
 캐시 읽기 필드 생략을 캐시 사용량 0으로 간주하여 비용을 계산하지 않음.
 일반 사용 기록은 이 조건을 충족하지 않을 수 있으며, 이 경우 기간 전체 비용을 표시하지 않음.
-로그 계약은 Kimi Code 소스 `a2afdbc7`의 [thinking 기록](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/agent/loop/requester.ts#L736-L765), [OpenAI 토큰 변환](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L187), [정규화 저장 전 처리](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/policy/settle.ts#L30-L36)와 대조.
+가격 계산에는 같은 agent·사용 범위에 연결된 `llm.request`의 모델·프로토콜·thinking 설정과 `usage.record`의 정규화된 토큰 사용.
+기록 형식은 공식 [요청 기록](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/agent/loop/requester.ts#L736-L765), [OpenAI 토큰 변환](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/builtin/protocol/openai/decode.ts#L176-L187), [토큰 정규화](https://github.com/MoonshotAI/kimi-code/blob/a2afdbc7d1fa0737d45d5780cc6c2bd38e477b55/packages/agent-core-v2/src/human/llm/policy/settle.ts#L30-L36) 구현 참조.
 
 세션 fork의 `forked` 표시 앞에 복사된 기록은 제외하여 원본과 중복 합산 방지.
 원본을 삭제했다면 복사본에만 남은 이전 사용량은 누락 가능.
@@ -97,7 +98,7 @@ OpenAI·Responses의 [캐시 읽기 필드가 없는 기록](https://github.com/
 Kimi Work의 `~/Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/` 아래 `<workspaceId>/<sessionId>/agents/*/wire.jsonl`도 수집.
 [공식 Work 안내](https://www.kimi.ai/help/kimi-work/overview)는 Kimi Code 커널 사용만 확인 가능.
 위 저장 경로·wire 형식·내장 커널 버전은 공식 공개 계약으로 확인하지 못한 최선 노력 범위.
-직접 `conv-*/wire.jsonl`에 저장하는 구형 배치와 별도 프로필·사용자 지정 홈은 검증하지 않음.
+Work의 구형 `conv-*/wire.jsonl` 배치·별도 프로필·사용자 지정 홈은 수집을 보장하지 않음.
 Work 사용 기록에 `agentId`·`modelAlias`가 없어도 측정 토큰 유지.
 명시된 요청의 라우팅이 Kimi가 아니면 원본만 보존하고 Kimi 카드에 합산하지 않음.
 연결된 요청의 별칭·사용량 모델이 없거나 서로 다르면 원본만 보존.

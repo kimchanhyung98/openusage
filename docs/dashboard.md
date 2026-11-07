@@ -298,7 +298,7 @@ Single Card와 일반 단일 계정 프로바이더에서는 헤더 드래그로
 Separate Cards의 헤더는 드래그 불가; 프로바이더 순서는 Customize에서, 계정 순서는 Settings에서 변경.
 Force Touch 트랙패드에서는 드래그한 항목이 새 위치에 맞춰질 때마다 가벼운 진동 제공.
 
-기본 초기화 레이아웃은 이 포크 소유자의 설정을 반영 — Claude는 Session, Weekly, Fable을, Codex는 Session과 Weekly를, Kimi는 Session과 Weekly를 Always Visible에 배치.
+기본 초기화 레이아웃에서 Claude는 Session·Weekly·Fable을, Codex와 Kimi는 Session·Weekly를 Always Visible에 배치.
 Claude와 Codex의 Usage Trend, 선택적 한도·리셋 상세·지출 기록 행은 필요 시 표시에 배치.
 Reset Watch도 **On Demand**에 배치하지만 기본값은 꺼짐이며 Customize에서 언제든 켤 수 있음.
 

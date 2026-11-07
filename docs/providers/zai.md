@@ -107,7 +107,7 @@ Z.ai 구독 UI와 공식 ZCode가 사용하는 내부 엔드포인트 사용:
 HTTP 200이어도 `success=false` 또는 실패 `code`가 있으면 할당량을 반영하지 않고 마지막 정상 값 유지.
 성공 코드는 `0`·`200` 지원.
 
-일별 토큰 계약은 [공식 ZCode의 Coding Plan 문서](https://github.com/zai-org/ZCode/blob/a9fe401eede6e6e5e01be9048679c206fe6f02d9/docs/bigmodel-coding-plan-usage-quota.md#L119)와 해당 버전의 요청·응답 구현 기준.
+일별 토큰은 [공식 ZCode 문서](https://github.com/zai-org/ZCode/blob/a9fe401eede6e6e5e01be9048679c206fe6f02d9/docs/bigmodel-coding-plan-usage-quota.md#L120-L127)에 설명된 Coding Plan 활동 응답에서 조회.
 `type=1`과 로컬 날짜의 `startTime`·`endTime`을 전송하고, `data.series`의 `date`·`totalTokens` 사용.
 공식 ZCode처럼 호출자 시간대로 날짜 경계를 만든 뒤 시간대 없는 날짜 문자열 전송.
 별도의 UTC+8 변환은 적용하지 않음.
