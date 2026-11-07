@@ -86,7 +86,7 @@ enum UsageFileDiscovery {
                 guard seen.insert(canonical.path).inserted else { return }
                 result.files.append(.init(
                     path: canonical.path, size: values.fileSize ?? 0,
-                    mtime: values.contentModificationDate ?? .distantPast
+                    mtime: values.contentModificationDate ?? .distantPast, discoveredPath: url.path
                 ))
             } catch {
                 result.failures += 1

@@ -291,7 +291,7 @@ final class CodexProvider: ProviderRuntime {
 
         // Codex 원장과 공유 도구 사용량 병합. 두 스캔 모두 전용 액터에서 실행.
         let pricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
+        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing, includeSharedHomes: includeSharedUsage)
         let sharedScan = includeSharedUsage
             ? await UsageCollectionCoordinator.shared.scan(providerID: provider.id, now: now(), pricing: pricing)
             : nil
