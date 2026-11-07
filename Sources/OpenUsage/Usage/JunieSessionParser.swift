@@ -7,7 +7,7 @@ struct JunieUsageCollector: UsageCollecting {
 
     init(root: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil) {
         files = UsageFileCollector(
-            sourceID: "junie", roots: [root], version: 3, scanner: scanner,
+            sourceID: "junie", roots: [root], version: 4, scanner: scanner,
             includeFile: { $0.lastPathComponent == "events.jsonl" }, parse: JunieSessionParser.parse
         )
     }
@@ -67,9 +67,16 @@ enum JunieSessionParser {
                   agent["kind"] as? String == "LlmResponseMetadataEvent",
                   !["AgentStateUpdatedEvent", "AgentCurrentStatusUpdatedEvent", "AgentPatchCreatedEvent"]
                     .contains(object["kind"] as? String ?? ""),
-                  let usages = agent["modelUsage"] as? [[String: Any]] else { continue }
+                  let usages = agent["modelUsage"] as? [Any] else { continue }
             let date = UsageJSON.date(object["timestampMs"], milliseconds: true)
-            for (index, usage) in usages.enumerated() {
+            for (index, value) in usages.enumerated() {
+                guard let usage = value as? [String: Any] else {
+                    result.append(UsageRecord(
+                        sourceID: "junie", formatID: "junie-events", filePath: path, sessionID: session,
+                        id: "invalid:\(index)", kind: "model-usage", timestamp: date, issues: [.invalidMetadata]
+                    ))
+                    continue
+                }
                 var record = UsageRecord(
                     sourceID: "junie", formatID: "junie-events", filePath: path, sessionID: session,
                     kind: "model-usage", timestamp: date, providerID: UsageJSON.string(usage["provider"]),

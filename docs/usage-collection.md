@@ -7,7 +7,7 @@
 기존 provider와 지표 유지.
 새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI, Kilo Code·CLI, Junie와 기존 제품군의 보충 기록.
+공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI, OpenClaw, Hermes Agent, DeepSeek Harness, Kilo Code·CLI, Junie와 기존 제품군의 보충 기록.
 Devin·Kimi·Kiro는 기존 native 원장과 확인된 보충 기록을 병합.
 기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
@@ -38,7 +38,8 @@ flowchart LR
 공통 모듈에 도구별 JSON 필드나 모델명 추측 규칙을 추가하지 않음.
 별도 복제 DB나 백그라운드 업로드 없음.
 파일 수집과 읽기 전용 SQLite 수집 기반 제공.
-현재 Pi·OMP 수집 입력은 JSONL 세션이며 SQLite adapter 등록과 압축 원장 연결은 별도 도구 통합 범위.
+Pi·OMP는 JSONL 세션을 읽고 OpenClaw·Hermes는 SQLite 원장도 수집.
+OpenClaw·DeepSeek·Codex는 일반 원장과 Zstandard 압축 원장을 함께 지원.
 압축 원장용 기반은 앱에 포함한 공식 `libzstd` 1.5.7 사용.
 사용자에게 별도 압축 명령 설치를 요구하지 않음.
 
@@ -68,6 +69,11 @@ Qwen CLI는 `QWEN_RUNTIME_DIR`, `QWEN_HOME`, 기본 `~/.qwen` 순서로 루트 �
 `~`와 `~/...`는 사용자 홈으로 확장하며, 다른 상대 경로는 OpenUsage 프로세스의 현재 작업 디렉터리 기준.
 `~user`는 사용자 홈 표기로 확장하지 않고 같은 이름의 상대 경로로 처리.
 비어 있지 않은 설정 경로를 선택한 뒤에는 해당 경로가 없어도 다음 설정이나 기본 경로로 대체하지 않음.
+
+OpenClaw는 `OPENCLAW_HOME` 또는 사용자 홈 아래의 상태 폴더를 사용하고 `OPENCLAW_STATE_DIR`이 있으면 그 경로를 우선 사용.
+선택한 프로필 또는 기본 `.openclaw`·이전 이름의 agent 아래 `sessions` 원장과 `openclaw-agent.sqlite` 조회.
+Hermes Agent는 `HERMES_HOME` 또는 기본 `~/.hermes`의 `state.db`와 프로필별 `state.db` 조회.
+DeepSeek Harness는 `DSH_HOME` 또는 기본 `~/.dsh` 아래 `sessions`의 최신 세대 원장 조회.
 
 ## 보존 규칙
 
@@ -167,6 +173,44 @@ Qwen CLI는 같은 홈·프로젝트 범위에서 응답 UUID와 fork 관계로 
 commit 해시는 JavaScript의 키 순서·숫자 직렬화 규칙으로 검증.
 잘못된 commit이나 리소스는 파일 읽기 실패로 처리.
 
+## OpenClaw·Hermes·DeepSeek 원장
+
+OpenClaw는 JSONL과 SQLite transcript를 함께 읽고 동일 이벤트를 한 번만 반영.
+선택한 상태 디렉터리의 `agents`와 이전 단일 에이전트 형식의 최상위 `sessions`에서 이력 수집.
+최상위 `sessions`가 외부 디렉터리의 심볼릭 링크여도 조회하며, 링크 대상 변경은 다음 수집부터 반영.
+`OPENCLAW_HOME`의 빈 값과 문자열 `undefined`·`null`은 설정 없음으로 처리.
+JSONL 파일의 마지막 행이 줄바꿈 없이 잘렸으면 완료된 앞부분을 유지하고 마지막 행은 불완전 기록으로 진단.
+잘린 행의 provider·모델은 이전 행에서 추정하지 않으며, 귀속을 확인할 수 없는 진단은 특정 카드에 연결하지 않음.
+줄바꿈 없는 마지막 행도 완전한 JSON 객체이면 반영하며, 줄바꿈으로 끝난 손상 행과 SQLite 보관 원장의 손상은 읽기 실패로 처리.
+`.zst` 파일은 완전한 압축 프레임을 검증한 뒤 같은 JSONL 규칙을 적용하며, 잘린 압축 프레임은 계속 읽기 실패로 처리.
+원본 payload가 cold archive로 이동했으면 보관 목록과 blob·파일·chunk의 길이·해시·순서를 확인한 뒤 복원.
+DB 파일이 심볼릭 링크이면 발견한 원본 위치를 기준으로 cold archive 조회.
+복원할 수 없는 원본은 불완전 기록으로 남김.
+누락된 payload 뒤의 provider·모델은 새 귀속 정보가 확인될 때까지 이전 값에서 이어받지 않음.
+DB 행의 세션 식별자와 payload의 세션 header ID가 다르면 읽기 실패로 처리.
+파일명 끝이 `.tmp`인 임시 보관 파일은 수집에서 제외하며, 기존 일반·압축 deleted/reset 보관 파일의 허용 범위 유지.
+`totalOrigin=provider-billed` 비용의 0과 양수를 제공자 보고액으로 보존.
+`usageReport.state=unavailable` 기록은 원본의 측정값과 비용을 공통 기록에 보존하되 합산에서 제외하고 불완전 이력으로 진단.
+OpenClaw의 Codex mirror는 전체 요청 원장이 아니므로 native Codex 원장과 중복 합산하지 않음.
+기본 Codex 카드만 OpenClaw 전용 Codex 홈을 조회하고 계정별 카드에는 해당 이력을 추가하지 않음.
+Codex 조회는 에이전트 목록과 전용 Codex 저장소로 제한하며 OpenClaw transcript·cold archive 트리 전체를 다시 탐색하지 않음.
+
+Hermes Agent는 모델별 세션 누적 기록을 우선하며 세션 총계와 그대로 더하지 않음.
+기본·지정 홈의 `state.db`가 심볼릭 링크여도 대상 DB 조회.
+매 수집에서 홈과 `state.db` 링크의 현재 대상 확인.
+본 호출의 확인 가능한 잔여분과 독립 보조 호출을 구분.
+`codex_thread_id`가 확인된 본 호출은 native Codex 원장과 중복 가능하므로 기록은 보존하고 합산에서 제외.
+모델별 기록은 `first_seen`(없으면 세션 시작 시각)과 `last_seen`, 세션 합계는 `started_at`과 `ended_at`이 같은 로컬 날짜로 확인된 경우만 일별 이력에 반영.
+여러 날짜에 걸친 합계와 종료 시각이 없는 합계는 원본 보존 및 진단 처리.
+
+DeepSeek Harness는 재시도·settlement·압축 호출을 구분하고 fork의 seed 기록을 제외.
+잘못된 숫자나 시각이 있는 settlement는 정상 attempt를 덮지 않고 진단 기록으로 보존.
+v2 이상 fork는 마지막 inherited `session/end-seed`를 경계로 사용.
+요약 호출에는 명시된 provider와 모델을 사용.
+파일명과 버전을 확인하고 완전한 기록 뒤 작성 중인 꼬리는 정상 접두부와 구분.
+작성 중인 꼬리의 경고는 앞선 기록에서 provider를 확인한 카드에만 반영.
+압축 원장의 완료된 접두부도 같은 규칙으로 처리.
+
 ## 추가 도구 원장
 
 Kilo Code·Kilo CLI는 `kilo.db`와 `kilo-*.db`를 읽고, 대응하는 `kilo-*.db`가 없는 `opencode-*.db`도 수집.
@@ -180,9 +224,16 @@ SQLite 행·legacy 메시지 안의 잘못된 JSON은 진단 기록으로 남기
 부모 메시지 JSON이 손상되어도 정상 `step-finish`의 토큰·비용은 원본에 보존하되 카드 집계에서 제외하며, 부모 메시지의 빈 진단 기록은 한 번만 생성.
 토큰 필드가 없는 비용 기록은 비용을 보존하며, 토큰·캐시 필드의 잘못된 자료형은 합산에서 제외.
 fork 원본 관계나 응답 식별자가 보존되지 않은 사본은 완전한 중복 제거를 보장하지 않음.
+같은 DB·세션에 V1 `step-finish` 기록이 있으면 V2 기록은 원본에 보존하고 미확정 중복으로 구분해 합산에서 제외.
+공유 호출 식별자가 없어 혼합 세션의 V2 단독 호출도 합산에서 빠질 수 있음.
+V2 기록만 있는 세션은 기존대로 합산.
+Kilo legacy 기록 수집도 취소 시 중단.
 
 Junie는 `JUNIE_HOME` 아래 events 원장과 fork 계보 메타데이터를 함께 조회.
-`JUNIE_HOME`의 앞뒤 공백 제거. 빈 값은 기본 `~/.junie`, `~` 단독 값과 `~/` 접두사는 사용자 홈으로 해석.
+한 이벤트의 사용량 배열에 잘못된 항목이 섞여도 정상 항목은 수집하며, 잘못된 항목은 원래 배열 위치와 함께 진단 기록으로 보존.
+`JUNIE_HOME`의 앞뒤 공백 제거.
+빈 값은 기본 `~/.junie`로 해석.
+`~` 단독 값과 `~/` 접두사는 사용자 홈으로 해석.
 다른 상대 경로는 OpenUsage 프로세스의 현재 작업 디렉터리 기준.
 비어 있지 않은 설정 경로를 선택한 뒤에는 해당 경로가 없어도 기본 `~/.junie`로 대체하지 않음.
 활성 로그의 끝부분에 쓰기가 완료되지 않은 행은 다음 수집까지 보류.

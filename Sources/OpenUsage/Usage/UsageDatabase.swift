@@ -91,6 +91,7 @@ struct UsageSQLiteCollector: UsageCollecting {
     let roots: [URL]
     let includeFile: @Sendable (URL) -> Bool
     let parse: @Sendable (UsageDatabase, String) throws -> [UsageRecord]
+    var useDiscoveredPathForParser = false
 
     func collect(since: Date) async -> UsageCollection? {
         guard !Task.isCancelled else { return nil }
@@ -101,7 +102,8 @@ struct UsageSQLiteCollector: UsageCollecting {
         for file in discovery.files {
             guard !Task.isCancelled else { return nil }
             do {
-                let rows = try parse(UsageDatabase(path: file.path), file.path)
+                let parserPath = useDiscoveredPathForParser ? (file.discoveredPath ?? file.path) : file.path
+                let rows = try parse(UsageDatabase(path: file.path), parserPath)
                 guard !Task.isCancelled else { return nil }
                 UsageRecordDiagnostics.report(rows)
                 records += rows.filter { $0.overlaps(since: since) }

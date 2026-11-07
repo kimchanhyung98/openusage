@@ -3,11 +3,20 @@ import Foundation
 enum KiroLegacyUsageParser {
     static func session(_ data: Data, path: String) throws -> [UsageRecord] {
         let object = try UsageJSON.object(data)
-        guard let state = object["session_state"] as? [String: Any],
-              let metadata = state["conversation_metadata"] as? [String: Any],
-              let turns = metadata["user_turn_metadatas"] as? [[String: Any]] else { return [] }
+        func invalid() -> [UsageRecord] {
+            var record = KiroLegacyUsageParser.base(path: path, session: UsageJSON.string(object["session_id"]), id: "invalid-metadata", model: nil)
+            record.issues.insert(.invalidMetadata)
+            return [record]
+        }
+        guard let rawState = object["session_state"] else { return [] }
+        guard let state = rawState as? [String: Any] else { return invalid() }
+        guard let rawMetadata = state["conversation_metadata"] else { return [] }
+        guard let metadata = rawMetadata as? [String: Any] else { return invalid() }
+        guard let rawTurns = metadata["user_turn_metadatas"] else { return [] }
+        guard let turns = rawTurns as? [[String: Any]] else { return invalid() }
         let model = ((state["rts_model_state"] as? [String: Any])?["model_info"] as? [String: Any])?["model_id"]
-        return turns.enumerated().map { index, turn in
+        return try turns.enumerated().map { index, turn in
+            try Task.checkCancellation()
             let ids = turn["message_ids"] as? [String] ?? []
             var record = base(path: path, session: UsageJSON.string(object["session_id"]),
                               id: ids.isEmpty ? "turn:\(index)" : ids.joined(separator: ":"), model: model)
@@ -35,9 +44,16 @@ enum KiroLegacyUsageParser {
                 result.append(invalid)
                 return
             }
-            guard let history = object["history"] as? [[String: Any]] else { return }
+            guard let rawHistory = object["history"] else { return }
+            guard let history = rawHistory as? [[String: Any]] else {
+                var invalid = base(path: path, session: UsageJSON.string(row["conversation_id"]), id: "invalid-history", model: nil)
+                invalid.issues.insert(.invalidMetadata)
+                result.append(invalid)
+                return
+            }
             let model = (object["model_info"] as? [String: Any])?["model_id"]
             for (index, turn) in history.enumerated() {
+                try Task.checkCancellation()
                 guard let metadata = turn["request_metadata"] as? [String: Any] else { continue }
                 let usage = metadata["token_usage"] as? [String: Any] ?? metadata["usage"] as? [String: Any] ?? metadata
                 var record = base(path: path, session: UsageJSON.string(row["conversation_id"]), id: "turn:\(index)", model: model)

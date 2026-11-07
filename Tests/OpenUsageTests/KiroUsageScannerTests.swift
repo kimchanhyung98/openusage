@@ -282,6 +282,22 @@ final class KiroUsageScannerTests: XCTestCase {
         }
     }
 
+    func testKiroHomeSymlinkToHomeUsesDefaultProfile() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        _ = try fixture.write(history())
+        _ = try fixture.write(history(credits: 100), kiroHome: fixture.home)
+        let alias = fixture.home.deletingLastPathComponent().appendingPathComponent("kiro-alias-\(UUID().uuidString)")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: fixture.home)
+        defer { try? FileManager.default.removeItem(at: alias) }
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": alias.path]), homeDirectory: fixture.home)
+
+        let usage = try await scanner.scan(now: now)
+
+        XCTAssertEqual(usage?.daily.first?.costUSD, 0.1)
+        XCTAssertEqual(usage?.daily.first?.tokens, 5)
+    }
+
     func testKiroHomeAcceptsSiblingWithSharedHomePrefix() async throws {
         let fixture = try KiroHistoryFixture()
         defer { fixture.remove() }

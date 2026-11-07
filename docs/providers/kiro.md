@@ -18,6 +18,7 @@ Kiro가 반환한 구독 이름도 표시.
 원천은 `~/.kiro/sessions/<workspace>/<session>/messages.jsonl`의 턴별 사용량과 대화 이력.
 [공식 V3 설정](https://kiro.dev/docs/reference/settings/)에 따라 유효한 절대경로 `KIRO_HOME`이 있으면 해당 경로의 `sessions`만 조회.
 상대경로·파일시스템 루트·사용자 홈·홈의 상위 경로는 기본 `~/.kiro` 사용.
+심볼릭 링크 경로는 실제 대상도 같은 제한으로 확인.
 계정의 월간 Credits 값과 로컬 기간별 통계는 서로 다른 범위.
 로그를 읽기 전용으로 조회하며 대화 본문이나 인증 정보를 별도 저장하지 않음.
 
@@ -60,6 +61,7 @@ V2는 `KIRO_HOME`과 무관하게 `~/.kiro/sessions/cli/*.json`의 턴 메타데
 SQLite의 `~/Library/Application Support/kiro-cli/data.sqlite3`와 `~/.local/share/kiro-cli/data.sqlite3`에서 `conversations_v2` 조회.
 V3 디렉터리 탐색에 실패해도 읽을 수 있는 V2 기록을 수집하고 읽기 경고 표시.
 손상된 V2 대화 행은 진단하고 같은 DB의 정상 대화는 유지.
+지원하는 V2 세션·대화의 메타데이터 목록이나 이력 자료형이 잘못되면 빈 이력으로 확정하지 않고 진단.
 명시된 입력·출력·캐시 토큰은 측정값으로 보존하고 크레딧 값은 같은 단가로 환산.
 크레딧이 없는 측정 토큰은 유지하며 해당 기간 비용 생략.
 V2의 빈 계량 목록도 비용 미보고로 처리.

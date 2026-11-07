@@ -4,7 +4,15 @@ enum DevinDesktopParser {
     static func parse(_ data: Data, path: String) throws -> [UsageRecord] {
         var result: [UsageRecord] = []
         let session = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
-        for (index, line) in JSONLScanning.lines(in: data).enumerated() {
+        try Task.checkCancellation()
+        let completeEnd = data.last == 0x0A ? data.endIndex : (data.lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex)
+        let parseData: Data
+        if completeEnd < data.endIndex, (try? UsageJSON.object(data[completeEnd..<data.endIndex])) == nil {
+            parseData = data.prefix(upTo: completeEnd)
+        } else {
+            parseData = data
+        }
+        for (index, line) in JSONLScanning.lines(in: parseData).enumerated() {
             try Task.checkCancellation()
             let object: [String: Any]
             do {

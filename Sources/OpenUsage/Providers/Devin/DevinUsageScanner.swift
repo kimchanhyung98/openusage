@@ -161,11 +161,16 @@ actor DevinUsageScanner {
                                   localContext: "file history")
         }
         guard let desktop = await desktopCollector.collect(since: .distantPast), !Task.isCancelled else { throw CancellationError() }
+        let malformedLines = desktop.records.filter { $0.kind == "invalid-line" && $0.issues.contains(.invalidMetadata) }.count
         let desktopRecords = desktop.records.filter { $0.providerID == "devin" }
-        foundStore = foundStore || !desktopRecords.isEmpty || desktop.readFailureCount > 0
+        foundStore = foundStore || malformedLines > 0 || !desktopRecords.isEmpty || desktop.readFailureCount > 0
         parsed.unreadableStores += desktop.readFailureCount
-        // 요청 단위가 미확인인 ACP 관찰값은 불완전 행으로만 집계.
-        parsed.invalidRows += desktopRecords.count
+        // 요청 단위가 미확인인 ACP 관찰값은 현재 조회 기간의 불완전 행으로만 집계.
+        let days = UsageHistoryWindow.dayKeys(through: now)
+        parsed.invalidRows += malformedLines + desktopRecords.filter { record in
+            guard let date = record.timestamp else { return true }
+            return date <= now && days.contains(DailyUsageAccumulator.dayKey(from: date))
+        }.count
         guard foundStore else { return nil }
         return Self.aggregate(parsed, now: now, pricing: pricing)
     }

@@ -34,8 +34,8 @@ actor CodexLogUsageScanner {
         var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// 압축 링크를 일반 원장으로 오인한 이전 캐시 재파싱.
-    static let cacheSchemaVersion = 21
+    /// 세션 계보가 없는 이전 누적 원장 캐시 재파싱.
+    static let cacheSchemaVersion = 22
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -67,23 +67,45 @@ actor CodexLogUsageScanner {
     }
 
     /// 최근 `daysBack`일의 Codex rollout 스캔 — Codex home 또는 session 파일이 없으면 `nil` (spend tile은 "No data").
-    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing, includeSharedHomes: Bool = false) async -> LogUsageScan? {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
+        let sharedRoots = includeSharedHomes && rootsOverride == nil
+            ? UsageSourceCollectors.openClawRoots(environment: environment, home: homeDirectory()) : []
+        let sharedSessionRoots = Self.sharedSessionRoots(under: sharedRoots)
+        var sharedCompressedPaths: Set<String> = []
+        var sharedFiles = UsageFileDiscovery.Result()
+        for root in sharedSessionRoots.roots {
+            guard !Task.isCancelled else { break }
+            let prefix = root.resolvingSymlinksInPath().path + "/"
+            let discovery = UsageFileDiscovery.files(under: [root]) { url in
+                let path = url.deletingLastPathComponent().resolvingSymlinksInPath()
+                    .appendingPathComponent(url.lastPathComponent).path
+                guard path.hasPrefix(prefix), Self.isSharedRolloutFile(
+                    url, root: root, relativePath: String(path.dropFirst(prefix.count))
+                ) else { return false }
+                if url.lastPathComponent.hasSuffix(".jsonl.zst") {
+                    sharedCompressedPaths.insert(url.resolvingSymlinksInPath().path)
+                }
+                return true
+            }
+            sharedFiles.files += discovery.files
+            sharedFiles.failures += discovery.failures
+        }
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         // scoped 카드는 안정적 per-card identity, 표준 walk는 resolve된 home set을 cache key로 사용 (`ClaudeLogUsageScanner.parseCacheIdentity` 참고).
         var identity: String
         if let cacheIdentityOverride {
             identity = cacheIdentityOverride
         } else {
-            let identityPaths = Set(homes.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+            let identityPaths = Set((homes + sharedRoots).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
                 .sorted()
             identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
         }
         var seenFiles: Set<String> = []
         let nativeFiles = Self.sessionFiles(homes: homes)
-        let files = nativeFiles.result.files.filter { seenFiles.insert($0.path).inserted }
-        let discoveryFailures = nativeFiles.result.failures
-        let compressedPaths = nativeFiles.compressedPaths
+        let files = (nativeFiles.result.files + sharedFiles.files).filter { seenFiles.insert($0.path).inserted }
+        let discoveryFailures = nativeFiles.result.failures + sharedFiles.failures + sharedSessionRoots.failures
+        let compressedPaths = nativeFiles.compressedPaths.union(sharedCompressedPaths)
         let compressedAliases = compressedPaths.filter { !$0.hasSuffix(".jsonl.zst") }.sorted()
         if !compressedAliases.isEmpty { identity += "\ncompressed:" + compressedAliases.joined(separator: "\n") }
         if discoveryFailures > 0 {
@@ -170,9 +192,59 @@ actor CodexLogUsageScanner {
         )
     }
 
+    /// 에이전트 목록만 얕게 조회하고 Codex 전용 저장소로 재귀 탐색 범위 제한.
+    static func sharedSessionRoots(under roots: [URL]) -> (roots: [URL], failures: Int) {
+        var sessionRoots: [URL] = []
+        var failures = 0
+        for root in roots where root.lastPathComponent == "agents" {
+            guard !Task.isCancelled else { break }
+            do {
+                let agents = try FileManager.default.contentsOfDirectory(
+                    at: root, includingPropertiesForKeys: [.isDirectoryKey]
+                )
+                for agent in agents {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        guard try agent.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                    } catch {
+                        failures += 1
+                        continue
+                    }
+                    sessionRoots += ["agent/codex-home/sessions", "agent/codex-home/archived_sessions", "agent/cli-auth/codex"]
+                        .map { agent.appendingPathComponent($0) }
+                }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                continue
+            } catch {
+                failures += 1
+            }
+        }
+        return (sessionRoots, failures)
+    }
+
+    private static func isSharedRolloutFile(_ url: URL, root: URL, relativePath: String) -> Bool {
+        guard isRolloutFile(url) else { return false }
+        var components = relativePath.split(separator: "/").map(String.init)
+        let homeRoot: URL
+        if root.lastPathComponent == "sessions" || root.lastPathComponent == "archived_sessions" {
+            components.insert(root.lastPathComponent, at: 0)
+            homeRoot = root.deletingLastPathComponent()
+        } else {
+            homeRoot = root
+        }
+        guard let storage = components.lastIndex(where: { $0 == "sessions" || $0 == "archived_sessions" }) else { return false }
+        if components[storage] == "sessions" { return true }
+        let home = homeRoot.appendingPathComponent(components.prefix(storage).joined(separator: "/"))
+        let active = home.appendingPathComponent("sessions/" + components.dropFirst(storage + 1).joined(separator: "/")).path
+        let plain = active.hasSuffix(".jsonl.zst") ? String(active.dropLast(4)) : active
+        return !FileManager.default.fileExists(atPath: plain)
+            && !FileManager.default.fileExists(atPath: plain + ".zst")
+    }
+
     // MARK: - Aggregation
 
     struct LegacySnapshot: Codable, Sendable, Hashable {
+        var sessionIdentity: String?
         var scope: String
         var boundary: Int
         var usage: EventKey

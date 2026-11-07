@@ -27,6 +27,12 @@ enum KimiSupplementParser {
                 ))
                 continue
             }
+            if work && object["type"] as? String == "metadata" {
+                guard let version = object["protocol_version"] as? String,
+                      ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5"].contains(version)
+                else { throw KimiHistoryError.unsupportedFormat }
+                continue
+            }
             if work && object["type"] as? String == "forked" {
                 result.removeAll()
                 indices.removeAll()
@@ -75,6 +81,13 @@ enum KimiSupplementParser {
                             record.providerID = nil
                         }
                     }
+                } else if requests.values.contains(where: { scopes in
+                    scopes.values.contains { request in
+                        guard let alias = request.alias else { return true }
+                        return !KimiUsageScanner.isKimiRoute(alias: alias, model: request.model)
+                    }
+                }) {
+                    record.providerID = nil
                 }
                 guard let value = object["usage"] as? [String: Any] else {
                     record.issues.insert(.invalidMetadata)
@@ -84,7 +97,9 @@ enum KimiSupplementParser {
                 usage = value
                 UsageJSON.tokens(into: &record, input: usage["inputOther"], output: usage["output"],
                                  cacheRead: usage["inputCacheRead"], cacheWrite: usage["inputCacheCreation"])
-                if usage["inputCacheRead"] == nil { record.issues.insert(.invalidMetadata) }
+                if usage["inputOther"] == nil || usage["output"] == nil || usage["inputCacheRead"] == nil {
+                    record.issues.insert(.invalidMetadata)
+                }
             } else {
                 guard let message = object["message"] as? [String: Any], message["type"] as? String == "StatusUpdate",
                       let payload = message["payload"] as? [String: Any],

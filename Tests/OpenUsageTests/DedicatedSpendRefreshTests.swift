@@ -49,12 +49,10 @@ final class DedicatedSpendRefreshTests: XCTestCase {
         fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: nil)
         await fixture.store.refreshAll(force: true)
         XCTAssertEqual(total(fixture).slices.first?.amountUSD, 1)
-        let warning = "Local usage history is unavailable. Showing the last successful totals."
-        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warning, warning)
-        XCTAssertEqual(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warningPresentation, [.init(warning)])
+        XCTAssertNil(fixture.store.localSnapshots[fixture.runtime.provider.id]?.warning)
         let refreshFailure = fixture.store.refreshResults[fixture.runtime.provider.id]?.failure
-        XCTAssertTrue(refreshFailure?.message.contains(warning) == true)
-        XCTAssertEqual(refreshFailure?.warningPresentations, [.init(warning)])
+        XCTAssertFalse(refreshFailure?.message.contains("Local usage history is unavailable") == true)
+        XCTAssertEqual(refreshFailure?.warningPresentations, [])
 
         fixture.runtime.snapshot = failure(fixture.runtime.provider, spend: [])
         await fixture.store.refreshAll(force: true)
@@ -191,13 +189,12 @@ final class DedicatedSpendRefreshTests: XCTestCase {
             let snapshot = fixture.store.localSnapshots[fixture.runtime.provider.id]
             let warning = "Local usage history is unavailable. Showing the last successful totals."
             XCTAssertEqual(snapshot?.totalSpendLines, [])
-            XCTAssertEqual(snapshot?.warning, warning)
-            XCTAssertEqual(snapshot?.warningPresentation, [.init(warning)])
+            XCTAssertEqual(snapshot?.warning, quotaFails ? nil : warning)
+            XCTAssertEqual(snapshot?.warningPresentation, quotaFails ? nil : [.init(warning)])
             XCTAssertTrue(snapshot?.isDegraded == true)
             XCTAssertTrue(total(fixture).slices.isEmpty)
             if quotaFails {
-                XCTAssertEqual(fixture.store.refreshResults[fixture.runtime.provider.id]?.failure?.warningPresentations,
-                               [.init(warning)])
+                XCTAssertEqual(fixture.store.refreshResults[fixture.runtime.provider.id]?.failure?.warningPresentations, [])
             }
         }
     }

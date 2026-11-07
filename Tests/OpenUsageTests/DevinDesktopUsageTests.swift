@@ -100,6 +100,51 @@ final class DevinDesktopUsageTests: XCTestCase {
         XCTAssertEqual(records.filter { $0.issues.contains(.unresolvedMirror) }.count, 2)
     }
 
+    func testUnterminatedInvalidTailIsDeferredButValidTailAndTerminatedInvalidLineRemain() throws {
+        let valid = #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","used":8000}}"#
+        let path = "/fixture/session.ndjson"
+        let complete = try DevinDesktopParser.parse(Data(valid.utf8), path: path)
+        XCTAssertEqual(complete.count, 1)
+        let pending = try DevinDesktopParser.parse(Data((valid + "\n{").utf8), path: path)
+        XCTAssertEqual(pending.count, 1)
+        let invalid = try DevinDesktopParser.parse(Data((valid + "\n{\n").utf8), path: path)
+        XCTAssertEqual(invalid.count, 2)
+        XCTAssertEqual(invalid.last?.kind, "invalid-line")
+        XCTAssertTrue(invalid.last?.issues.contains(.invalidMetadata) == true)
+    }
+
+    func testMalformedDesktopLineWithoutProviderMakesHistoryIncomplete() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try UsageRecordFixture.write("{\n", to: home.appendingPathComponent(
+            "Library/Application Support/Devin/User/acp-events/bad.ndjson"
+        ))
+        let scanner = DevinUsageScanner(environment: FakeEnvironment([:]), homeDirectory: home)
+        let scan = try await scanner.scan(now: now, pricing: .empty)
+        XCTAssertTrue(scan?.series.daily.isEmpty == true)
+        XCTAssertEqual(scan?.invalidRows, 1)
+        XCTAssertEqual(scan?.unreadableStores, 0)
+    }
+
+    func testDatedDesktopObservationsOutsideWindowDoNotMakeHistoryIncomplete() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let root = home.appendingPathComponent("Library/Application Support/Devin/User/acp-events")
+        func observation(_ date: String) -> String {
+            #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","metadata":{"created_at":""#
+                + date + #""}}}"#
+        }
+        try UsageRecordFixture.write(observation("2026-08-01T01:00:00Z") + "\n" + observation("2026-11-02T01:00:00Z"),
+                                     to: root.appendingPathComponent("outside.ndjson"))
+        let scanner = DevinUsageScanner(environment: FakeEnvironment([:]), homeDirectory: home)
+        let outside = try await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(outside?.invalidRows, 0)
+        XCTAssertTrue(outside?.series.daily.isEmpty == true)
+        try UsageRecordFixture.write(observation("2026-11-01T01:00:00Z"), to: root.appendingPathComponent("current.ndjson"))
+        let current = try await scanner.scan(now: now, pricing: .empty)
+        XCTAssertEqual(current?.invalidRows, 1)
+    }
+
     func testSameFilenameInDifferentDirectoriesKeepsBothDesktopObservations() throws {
         let row = #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","used":8000}}"#
         let first = try DevinDesktopParser.parse(Data(row.utf8), path: "/fixture/one/session.ndjson")

@@ -250,6 +250,54 @@ final class KiroUsageCompletenessTests: XCTestCase {
         XCTAssertEqual(value(result.totalSpendLines(now: now), kind: .dollars), 0.5)
     }
 
+    func testMalformedSupportedV2FieldsAreIncompleteWhileAbsentAndEmptyFieldsStayEmpty() async throws {
+        let fixture = try KiroCompletenessFixture()
+        let path = fixture.home.appendingPathComponent(".kiro/sessions/cli/fixture.json")
+        for session in [
+            #"{"session_id":"s","session_state":"broken"}"#,
+            #"{"session_id":"s","session_state":{"conversation_metadata":"broken"}}"#,
+            #"{"session_id":"s","session_state":{"conversation_metadata":{"user_turn_metadatas":"broken"}}}"#
+        ] {
+            let records = try KiroLegacyUsageParser.session(Data(session.utf8), path: path.path)
+            XCTAssertEqual(records.count, 1)
+            XCTAssertTrue(records[0].issues.contains(.invalidMetadata))
+        }
+        for session in [
+            #"{"session_id":"s"}"#,
+            #"{"session_id":"s","session_state":{"conversation_metadata":{"user_turn_metadatas":[]}}}"#
+        ] {
+            XCTAssertTrue(try KiroLegacyUsageParser.session(Data(session.utf8), path: path.path).isEmpty)
+        }
+        try UsageRecordFixture.write(#"{"session_id":"s","session_state":{"conversation_metadata":{"user_turn_metadatas":"broken"}}}"#,
+                                     to: path)
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: fixture.home)
+        let fileScan = try await scanner.scan(now: now)
+        XCTAssertEqual(fileScan?.invalidRows, 1)
+        XCTAssertTrue(fileScan?.daily.isEmpty == true)
+        try FileManager.default.removeItem(at: path)
+        try fixture.replaceConversation(["history": "broken"])
+        let databaseRecords = try KiroLegacyUsageParser.database(UsageDatabase(path: fixture.database.path), path: fixture.database.path)
+        XCTAssertEqual(databaseRecords.count, 1)
+        XCTAssertTrue(databaseRecords[0].issues.contains(.invalidMetadata))
+        let databaseScan = try await KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: fixture.home).scan(now: now)
+        XCTAssertEqual(databaseScan?.invalidRows, 1)
+        try fixture.replaceConversation(["history": [[String: Any]]()])
+        XCTAssertTrue(try KiroLegacyUsageParser.database(UsageDatabase(path: fixture.database.path), path: fixture.database.path).isEmpty)
+    }
+
+    func testCancelledLegacySessionParsingThrows() async throws {
+        let row = #"{"session_state":{"conversation_metadata":{"user_turn_metadatas":[{}]}}}"#
+        let task = Task.detached { () throws -> [UsageRecord] in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try KiroLegacyUsageParser.session(Data(row.utf8), path: "/fixture/session.json")
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancellation should propagate")
+        } catch is CancellationError {
+        }
+    }
+
     func testMalformedLegacyDatabaseRowPreservesOtherConversations() async throws {
         let fixture = try KiroCompletenessFixture()
         try fixture.replaceConversation(legacyConversation())

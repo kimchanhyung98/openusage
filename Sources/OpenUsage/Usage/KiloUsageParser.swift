@@ -6,6 +6,7 @@ enum KiloUsageParser {
         guard tables.contains("message") || tables.contains("session_message") else { throw CocoaError(.coderReadCorrupt) }
         var result: [UsageRecord] = []
         var stepMessages: Set<String> = []
+        var stepSessions: Set<String> = []
         var seenMessages: Set<String> = []
         if tables.contains("part") && tables.contains("message") {
             try database.rows("""
@@ -36,6 +37,7 @@ enum KiloUsageParser {
                 if record.timestamp == nil { record.issues.insert(.invalidMetadata) }
                 result.append(record)
                 if let id = UsageJSON.string(row["message_id"]) { stepMessages.insert(id) }
+                if let session = UsageJSON.string(row["session_id"]) { stepSessions.insert(session) }
             }
         }
         if tables.contains("message") {
@@ -57,7 +59,9 @@ enum KiloUsageParser {
         }
         if tables.contains("session_message") {
             try database.rows("SELECT id, session_id, seq, time_created, data FROM session_message WHERE type='assistant' ORDER BY seq") { row in
-                guard let id = UsageJSON.string(row["id"]), !stepMessages.contains(id), !seenMessages.contains(id) else { return }
+                guard let id = UsageJSON.string(row["id"]) else { return }
+                let hasSteps = UsageJSON.string(row["session_id"]).map { stepSessions.contains($0) } ?? false
+                guard hasSteps || (!stepMessages.contains(id) && !seenMessages.contains(id)) else { return }
                 guard let payload = json(row["data"], row: row, path: path, into: &result),
                       payload["tokens"] != nil || payload["cost"] != nil else { return }
                 var record = base(row, payload: payload, path: path, kind: "assistant")
@@ -69,7 +73,9 @@ enum KiloUsageParser {
                 // seq 없는 구형 호환 행은 요청 경계 미확정.
                 record.granularity = row["seq"] == nil ? .aggregate : .request
                 if record.timestamp == nil { record.issues.insert(.invalidMetadata) }
-                if !isImportStub(record) { result.append(record) }
+                guard !isImportStub(record) else { return }
+                if hasSteps { record.issues.insert(.unresolvedMirror) }
+                result.append(record)
             }
         }
         return result
@@ -80,7 +86,8 @@ enum KiloUsageParser {
             throw CocoaError(.coderReadCorrupt)
         }
         let session = URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent
-        return messages.enumerated().compactMap { index, message in
+        return try messages.enumerated().compactMap { index, message in
+            try Task.checkCancellation()
             guard message["type"] as? String == "say", message["say"] as? String == "api_req_started",
                   let text = message["text"] as? String else { return nil }
             var record = UsageRecord(

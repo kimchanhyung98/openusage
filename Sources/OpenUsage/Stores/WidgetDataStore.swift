@@ -659,6 +659,7 @@ final class WidgetDataStore {
             snapshot.totalSpendRefreshedAt = snapshot.refreshedAt
         }
         if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
+           Self.errorMessage(in: snapshot) == nil,
            let previous = localSnapshots[providerID],
            Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
            previous.totalSpendLines != nil {

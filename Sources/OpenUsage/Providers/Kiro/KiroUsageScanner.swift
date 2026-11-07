@@ -100,7 +100,11 @@ actor KiroUsageScanner {
         guard let path = environment.value(for: "KIRO_HOME"), path.hasPrefix("/") else { return fallback }
         let root = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
         let home = homeDirectory.standardizedFileURL
-        guard root.path != "/", root.path != home.path, !home.path.hasPrefix(root.path + "/") else { return fallback }
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedHome = home.resolvingSymlinksInPath().standardizedFileURL
+        guard root.path != "/", root.path != home.path, !home.path.hasPrefix(root.path + "/"),
+              resolvedRoot.path != "/", resolvedRoot.path != resolvedHome.path,
+              !resolvedHome.path.hasPrefix(resolvedRoot.path + "/") else { return fallback }
         return root.appendingPathComponent("sessions", isDirectory: true)
     }
 

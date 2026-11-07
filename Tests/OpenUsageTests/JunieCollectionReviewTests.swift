@@ -133,6 +133,48 @@ final class JunieCollectionReviewTests: XCTestCase {
         XCTAssertTrue(result.allSatisfy { $0.responseID == nil })
     }
 
+    func testIdenticalUsageAtDistinctTimestampsRemainsSeparate() throws {
+        let values: [String: Any] = ["inputTokens": 100, "outputTokens": 20]
+        let first = try event(values)
+        let second = try event(values, timestamp: 1_793_494_801_000)
+        let parsed = try JunieSessionParser.parse(Data((first + "\n" + second).utf8), path: "/fixture/session/events.jsonl")
+        let result = UsageRecordDeduplicator.records(parsed)
+
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.reduce(0) { $0 + $1.totalTokens }, 240)
+        XCTAssertEqual(result[0].id, result[1].id)
+        XCTAssertNotEqual(result[0].timestamp, result[1].timestamp)
+    }
+
+    func testMixedUsageArrayKeepsValidEntriesAndOriginalIndexes() async throws {
+        let root = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let usage: [String: Any] = ["inputTokens": 100, "outputTokens": 20, "cost": 0.1, "model": "fixture-model"]
+        let usages: [Any] = [usage, NSNull(), "broken", usage]
+        let object: [String: Any] = [
+            "kind": "SessionA2uxEvent", "timestampMs": 1_793_494_800_000,
+            "event": ["agentEvent": ["kind": "LlmResponseMetadataEvent", "modelUsage": usages]]
+        ]
+        let row = String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self)
+        try UsageRecordFixture.write(row, to: root.appendingPathComponent("session/events.jsonl"))
+        let diagnostics = DiagnosticEventRecorder()
+
+        let result = try await collect(JunieUsageCollector(root: root, scanner: IncrementalJSONLScanner()))
+
+        XCTAssertEqual(result.readFailureCount, 0)
+        XCTAssertEqual(result.records.count, 4)
+        let valid = result.records.filter { $0.issues.isEmpty }
+        XCTAssertEqual(valid.count, 2)
+        XCTAssertEqual(valid.reduce(0) { $0 + $1.totalTokens }, 240)
+        XCTAssertEqual(valid.compactMap(\.recordedCostUSD).reduce(0, +), 0.2, accuracy: 1e-9)
+        XCTAssertTrue(valid.contains { $0.id?.hasSuffix(":0") == true })
+        XCTAssertTrue(valid.contains { $0.id?.hasSuffix(":3") == true })
+        let invalid = result.records.filter { $0.issues.contains(.invalidMetadata) }
+        XCTAssertEqual(Set(invalid.compactMap(\.id)), ["invalid:1", "invalid:2"])
+        XCTAssertTrue(invalid.allSatisfy { $0.timestamp != nil && $0.sessionID == "session" })
+        XCTAssertEqual(diagnostics.events, [DiagnosticEvent(.historyScan, result: .degraded, category: .decoding)])
+    }
+
     func testCatalogCostsPreserveRawValuesWithoutClaimingReportedBilling() throws {
         let rows = try [
             event(["inputTokens": 100, "outputTokens": 20, "cost": 0.12]),

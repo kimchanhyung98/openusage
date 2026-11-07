@@ -129,6 +129,51 @@ final class KimiSupplementParserTests: XCTestCase {
         }
     }
 
+    func testUnlinkedUsageWithExplicitNonKimiRequestStaysUnattributed() throws {
+        let usage = #"{"type":"usage.record","time":1800000000000,"usage":{"inputOther":100,"output":10,"inputCacheRead":20}}"#
+        let nonKimi = #"{"type":"llm.request","agentId":"main","modelAlias":"external","model":"gpt-5"}"#
+        let kimi = #"{"type":"llm.request","agentId":"main","modelAlias":"kimi-code/k3","model":"k3"}"#
+        for (prefix, expected) in [(nonKimi + "\n", Optional<String>.none), ("", "kimi"), (kimi + "\n", "kimi")] {
+            let records = try KimiSupplementParser.parse(Data((prefix + usage).utf8), path: "/fixture/wire.jsonl", work: true)
+            XCTAssertEqual(records.first?.providerID, expected)
+            XCTAssertEqual(records.first?.totalTokens, 130)
+        }
+    }
+
+    func testWorkMissingRequiredTokenFieldsRemainsIncomplete() throws {
+        for missing in ["inputOther", "output", "inputCacheRead"] {
+            var usage = ["inputOther": 100, "output": 10, "inputCacheRead": 20]
+            usage.removeValue(forKey: missing)
+            let data = try JSONSerialization.data(withJSONObject: ["type": "usage.record", "time": 1_800_000_000_000, "usage": usage] as [String: Any])
+            let records = try KimiSupplementParser.parse(data, path: "/fixture/wire.jsonl", work: true)
+            XCTAssertTrue(records[0].issues.contains(.invalidMetadata))
+        }
+    }
+
+    func testUnsupportedWorkMetadataRejectsWholeFile() throws {
+        let metadata = Data(#"{"type":"metadata","protocol_version":"9.0"}"#.utf8) + Data([0x0A])
+        let data = metadata + (try row(work: true, id: "r", input: 100))
+        XCTAssertThrowsError(try KimiSupplementParser.parse(data, path: "/fixture/wire.jsonl", work: true)) { error in
+            guard let kimiError = error as? KimiHistoryError, case .unsupportedFormat = kimiError else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testWorkCollectorOnlyReadsExactAgentWirePaths() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let root = home.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions")
+        let data = try row(work: true, id: "r", input: 100)
+        for path in ["workspace/session/agents/main/wire.jsonl", "workspace/session/agents/main/backup/wire.jsonl", "workspace/session/backup/agents/main/wire.jsonl"] {
+            try UsageRecordFixture.write(data, to: root.appendingPathComponent(path))
+        }
+        let collector = UsageSourceCollectors.kimiWork(home: home, scanner: IncrementalJSONLScanner())
+        let collection = await collector.collect(since: .distantPast)
+        XCTAssertEqual(collection?.records.count, 1)
+        XCTAssertEqual(collection?.records.first?.totalTokens, 130)
+    }
+
     private func row(work: Bool, id: String, input: Int) throws -> Data {
         let object: [String: Any]
         if work {

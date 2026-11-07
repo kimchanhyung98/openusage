@@ -97,6 +97,23 @@ final class KiloMalformedUsageTests: XCTestCase {
         XCTAssertThrowsError(try KiloUsageParser.legacy(Data("[".utf8), path: "/fixture/task/ui_messages.json"))
     }
 
+    func testCancelledLegacyTraversalThrowsCancellation() async throws {
+        let message: [String: Any] = [
+            "type": "say", "say": "api_req_started", "ts": 1_793_494_800_000,
+            "text": #"{"tokensIn":100,"tokensOut":20,"cost":0.2}"#
+        ]
+        let data = try JSONSerialization.data(withJSONObject: [message])
+        let task = Task.detached { () async throws -> [UsageRecord] in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try KiloUsageParser.legacy(data, path: "/fixture/task/ui_messages.json")
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled legacy traversal must throw CancellationError")
+        } catch is CancellationError {
+        }
+    }
+
     func testCostOnlyDatabaseRequestsKeepCostWhileMessageRollupStaysUnresolved() async throws {
         let database = try KiloReviewDatabase()
         try database.step("step", cost: 0.2)

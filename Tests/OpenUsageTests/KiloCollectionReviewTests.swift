@@ -134,6 +134,47 @@ final class KiloCollectionReviewTests: XCTestCase {
         XCTAssertEqual(scan.rejectedMetadataRows, 1)
     }
 
+    func testMixedSessionKeepsV2RawRowsUnresolvedAndV2OnlySessionStillCounts() async throws {
+        let database = try KiloReviewDatabase()
+        try database.step("v1", session: "mixed", cost: 0.2)
+        try database.assistant("different-v2-id", seq: 1, cost: 0.2)
+        try database.assistant("v2-only-call-in-mixed-session", seq: 2, cost: 0.3)
+        try database.assistant("v1", seq: 3, cost: 0.2)
+        try database.assistant("independent-v2-session", seq: 4, cost: 0.4)
+        try database.execute("UPDATE session_message SET session_id='mixed' WHERE id!='independent-v2-session'")
+
+        let result = try await collect(database)
+        XCTAssertEqual(result.records.count, 5)
+        let unresolved = result.records.filter { $0.issues.contains(.unresolvedMirror) }
+        XCTAssertEqual(Set(unresolved.compactMap(\.id)), ["different-v2-id", "v2-only-call-in-mixed-session", "v1"])
+        XCTAssertTrue(unresolved.allSatisfy { $0.sessionID == "mixed" && $0.totalTokens == 120 })
+        XCTAssertEqual(unresolved.compactMap(\.recordedCostUSD).reduce(0, +), 0.7, accuracy: 1e-9)
+        XCTAssertTrue(result.records.first { $0.id == "part-v1" }?.issues.isEmpty == true)
+        XCTAssertTrue(result.records.first { $0.id == "independent-v2-session" }?.issues.isEmpty == true)
+        let scan = try XCTUnwrap(UsageHistoryBuilder.scan(result, providerID: "claude", since: .distantPast, pricing: .empty))
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 240)
+        XCTAssertEqual(try XCTUnwrap(scan.series.daily.first?.costUSD), 0.6, accuracy: 1e-9)
+        XCTAssertEqual(scan.rejectedMetadataRows, 3)
+    }
+
+    func testV1StepsInAnotherDatabaseDoNotSuppressV2Session() async throws {
+        let first = try KiloReviewDatabase()
+        let second = try KiloReviewDatabase()
+        try first.step("v1", session: "same-session", cost: 0.1)
+        try second.assistant("v2", seq: 1, cost: 0.2)
+        try second.execute("UPDATE session_message SET session_id='same-session'")
+        let collector = UsageSQLiteCollector(
+            sourceID: "kilo", roots: [first.file, second.file], includeFile: { _ in true }, parse: KiloUsageParser.database
+        )
+        let collected = await UsageCollectionCoordinator(collectors: [collector]).collect(since: .distantPast)
+        let result = try XCTUnwrap(collected)
+
+        XCTAssertEqual(result.readFailureCount, 0)
+        XCTAssertEqual(result.records.count, 2)
+        XCTAssertTrue(result.records.allSatisfy { $0.issues.isEmpty })
+        XCTAssertEqual(result.records.reduce(0) { $0 + $1.totalTokens }, 240)
+    }
+
     func testLegacyEstimatedZeroPreservesInclusiveTokenBuckets() throws {
         let usage: [String: Any] = [
             "tokensIn": 100, "tokensOut": 20, "cacheReads": 30, "cacheWrites": 10,
