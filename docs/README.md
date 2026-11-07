@@ -47,6 +47,7 @@
 앱이 어떻게 만들어졌고 어떻게 확장하는지.
 
 - [아키텍처](/docs/architecture.md) — 구성 루트, 스토어, 프로바이더 파이프라인, AppKit 브리지
+- [사용량 수집](/docs/usage-collection.md) — 지원 대상, 공통 사용 기록, 귀속·중복·가격·실패 처리 규칙
 - [프로바이더 추가](/docs/adding-a-provider.md) — 지표 계약과 등록/테스트/문서화 단계
 - [디버깅과 로그 캡처](/docs/debugging.md) — 로컬 빌드 실행과 로그 스트리밍
 - [로깅](/docs/logging.md) — 파일 로그, 로그 레벨, 서브시스템 태그, 민감 정보 마스킹 범위

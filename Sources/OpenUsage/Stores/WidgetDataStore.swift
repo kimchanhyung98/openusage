@@ -660,6 +660,7 @@ final class WidgetDataStore {
         }
         if provider.retainsDedicatedSpendOnScanFailure, snapshot.totalSpendLines == nil, snapshot.warning == nil,
            Self.errorMessage(in: snapshot) == nil,
+           snapshot.isDegraded != true,
            let previous = localSnapshots[providerID],
            Calendar.current.isDate(previous.totalSpendRefreshedAt ?? previous.refreshedAt, inSameDayAs: snapshot.refreshedAt),
            previous.totalSpendLines != nil {
@@ -1099,7 +1100,7 @@ final class WidgetDataStore {
             data.limit = nil
             // 만료 시각(Codex reset-credit) — row hover tooltip에 노출, clock tick마다 재렌더로 live 유지.
             data.expiriesAt = expiriesAt
-            // 미가격 model 목록(Cursor spend tile) — label 경고 triangle과 hover 목록 구동.
+            // 가격 미확정 모델 메타데이터 보존 — 집계 제약은 카드 경고와 분리.
             data.unknownModels = unknownModels
             data.modelBreakdown = modelBreakdown
             // selection에 값이 없는 tile은 "No data" 렌더 — 오해 소지의 $0.00 / 0 방지.

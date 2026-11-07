@@ -141,12 +141,9 @@ final class AntigravityProvider: ProviderRuntime {
             warningPresentations.append(.init(message))
         }
         if scan?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true {
-            let message = "Some Antigravity models have no price. Cost totals may be unavailable."
-            warnings.append(message)
-            warningPresentations.append(.init(message))
             AppLog.warn(LogTag.plugin("antigravity"), "local usage contains unpriced models")
         }
-        for message in [scan?.numericWarning, scan?.pricingWarning, scan?.readWarning].compactMap({ $0 }) {
+        if let message = scan?.readWarning {
             warnings.append(message)
             warningPresentations.append(.init(message))
         }

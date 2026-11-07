@@ -107,7 +107,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 XCTAssertEqual(breakdown.models.first?.costUSD, 1e308)
                 XCTAssertEqual(breakdown.totalTokens, 1)
             }
-            XCTAssertEqual(snapshot.warning != nil, costs.count > 1)
+            XCTAssertNil(snapshot.warning)
             XCTAssertNoThrow(try JSONEncoder().encode(snapshot.lines))
             let state = LocalUsageAPI.State(
                 enabledOrderedIDs: ["opencode"], knownIDs: ["opencode"],
@@ -134,7 +134,7 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
     }
 
-    func testRefreshWarnsWhenFiniteCostsOverflowTheSharedAccumulator() async throws {
+    func testRefreshKeepsValidUsageWithoutCardWarningWhenFiniteCostsOverflow() async throws {
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + [
             row("2026-07-12T10:00:00.000Z", "1e308", 100, "gpt-5.5", "opencode"),
@@ -147,8 +147,8 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(authStore: authStore(files: FakeFiles()), usageScanner: scanner,
                                         sharedUsage: .init(collectors: []), now: { now })
         let snapshot = await provider.refresh()
-        XCTAssertNotNil(snapshot.warning)
-        XCTAssertEqual(snapshot.warning, scan.logScan.numericWarning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
         XCTAssertEqual(snapshot.usageHistory, scan.logScan.usageHistory)
         XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 100)
         XCTAssertNil(snapshot.errorCategory)

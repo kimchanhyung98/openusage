@@ -165,18 +165,17 @@ final class OpenCodeProvider: ProviderRuntime {
         // `goWindows`는 현재 Go 신호(key 또는 최근 spend)일 때만 존재, stale anchor로는 생기지 않음 — plan badge의 정직한 근거
         let plan: String? = goWindows != nil ? "Go" : nil
         let warningError: Error? = nativeScanError ?? (scan == nil && logScan.series.daily.isEmpty ? authReadError : nil)
+        let warningPresentations = (warningError.map { [UserFacingErrors.presentation($0)] } ?? [])
+            + (logScan.readWarning.map { [.init($0)] } ?? [])
         return ProviderSnapshot.make(
             provider: provider,
             plan: plan,
             lines: lines,
             refreshedAt: refreshedAt,
             usageHistory: logScan.usageHistory,
-            warning: [warningError?.localizedDescription, logScan.numericWarning, logScan.metadataWarning,
-                      logScan.pricingWarning, logScan.readWarning]
+            warning: [warningError?.localizedDescription, logScan.readWarning]
                 .compactMap { $0 }.joined(separator: " ").nilIfEmpty,
-            warningPresentation: (warningError.map { [UserFacingErrors.presentation($0)] } ?? [])
-                + [logScan.numericWarning, logScan.metadataWarning, logScan.pricingWarning, logScan.readWarning]
-                    .compactMap { $0 }.map { .init($0) },
+            warningPresentation: warningPresentations.isEmpty ? nil : warningPresentations,
             isDegraded: warningError == nil ? nil : true
         )
     }

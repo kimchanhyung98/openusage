@@ -60,9 +60,8 @@ final class CopilotSharedUsageTests: XCTestCase {
         let models = history.modelUsage?.daily.first?.models ?? []
         XCTAssertEqual(models.first { $0.model == "fixture-shared" }?.costUSD, 0.02)
         XCTAssertNil(models.first { $0.model == "fixture-native" }?.costUSD)
-        let warning = "Some local usage has unsupported pricing details. Cost totals may be unavailable."
-        XCTAssertEqual(snapshot.warning, warning)
-        XCTAssertEqual(snapshot.warningPresentation, [LocalizedMessage(warning)])
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
         guard case .values(_, let values, _, _, _, _) = try XCTUnwrap(snapshot.line(label: "Today")) else {
             return XCTFail("Expected token-only usage")
         }

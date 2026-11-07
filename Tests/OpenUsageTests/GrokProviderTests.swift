@@ -325,7 +325,7 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertEqual(points[29].value, 1_000_000, "yesterday's tokens land on the second-to-last bar")
     }
 
-    func testInvalidOnlyLocalHistoryWarnsWithoutClearingHistoryOrFailingWeeklyMeter() async {
+    func testInvalidOnlyLocalHistoryPreservesHistoryAndWeeklyMeterWithoutCardWarning() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
             {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
@@ -339,7 +339,7 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.usageHistory, "A successful quota refresh must not publish an empty history for invalid logs")
         XCTAssertNil(values(snapshot.lines, "Today"))
@@ -352,7 +352,7 @@ final class GrokProviderTests: XCTestCase {
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Usage Trend" }), "no log means no trend chart")
     }
 
-    func testUnattributedAndInvalidSessionsKeepSeparateWarningsAndPreserveHistory() async {
+    func testUnattributedAndInvalidSessionsPreserveHistoryWithoutCardWarnings() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
             {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
@@ -367,17 +367,14 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertTrue(snapshot.warning?.contains("incomplete or inconsistent") == true)
-        XCTAssertEqual(snapshot.warningPresentation, [
-            LocalizedMessage("Some local usage records contain invalid numbers. Usage history may be incomplete."),
-            LocalizedMessage("Some local usage records are incomplete or inconsistent. Usage history may be incomplete.")
-        ])
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(values(snapshot.lines, "Today"))
     }
 
-    func testUnscopedAmbiguousUsageWarnsWithoutPublishingEmptyHistory() async {
+    func testUnscopedAmbiguousUsageDoesNotPublishEmptyHistoryOrCardWarning() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
             {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
@@ -391,9 +388,8 @@ final class GrokProviderTests: XCTestCase {
             httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner
         ).refresh()
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertEqual(snapshot.warningPresentation, [
-            LocalizedMessage("Some local usage records are incomplete or inconsistent. Usage history may be incomplete.")
-        ])
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
         XCTAssertNil(snapshot.usageHistory)
         XCTAssertNil(snapshot.errorCategory)
     }

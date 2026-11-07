@@ -122,7 +122,9 @@ final class ZAICostTests: XCTestCase {
         XCTAssertEqual(total(snapshot, runtime: runtime, period: .today).totalUSD, 0.5, accuracy: 1e-9)
         XCTAssertEqual(total(snapshot, runtime: runtime, period: .yesterday).totalUSD, 0.36, accuracy: 1e-9)
         assertTokenOnly(snapshot, runtime: runtime, period: .last30, expected: 6_000_000)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testFailedActivityKeepsCompleteDetailTokensWhenExactPricesAreUnavailable() async {
@@ -134,7 +136,9 @@ final class ZAICostTests: XCTestCase {
             assertTokenOnly(snapshot, runtime: runtime, period: period, expected: tokens)
         }
         XCTAssertNotNil(snapshot.line(label: "Session"))
-        XCTAssertEqual(snapshot.warning, "Some Z.ai cost estimates are unavailable. Other usage data is still available.")
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testFailedActivityCannotExposeMissingAxesOrAggregateOnlyDetailAsCompleteTokens() async {
@@ -160,7 +164,9 @@ final class ZAICostTests: XCTestCase {
             let snapshot = await runtime.refresh()
 
             assertTokenOnly(snapshot, runtime: runtime, period: .today, expected: 3_000_000)
-            XCTAssertNotNil(snapshot.warning)
+            XCTAssertNil(snapshot.warning)
+            XCTAssertNil(snapshot.warningPresentation)
+            XCTAssertEqual(snapshot.isDegraded, true)
         }
     }
 
@@ -203,7 +209,9 @@ final class ZAICostTests: XCTestCase {
 
         assertTokenOnly(snapshot, runtime: runtime, period: .today, expected: 3_000_000)
         assertTokenOnly(snapshot, runtime: runtime, period: .last30, expected: 6_000_000)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testDailyAggregateDoesNotTriggerRequestLevelLongContextTier() async {
@@ -242,7 +250,9 @@ final class ZAICostTests: XCTestCase {
         let snapshot = await runtime.refresh()
 
         assertTokenOnly(snapshot, runtime: runtime, period: .today, expected: 3_000_000)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testInvalidDetailPreservesQuotaAndActivityInsteadOfPartialDollarTotals() async {
@@ -320,7 +330,9 @@ final class ZAICostTests: XCTestCase {
         for (period, tokens): (TotalSpendPeriod, Double) in [(.today, 3_000_000), (.yesterday, 2_000_000), (.last30, 6_000_000)] {
             assertTokenOnly(snapshot, runtime: runtime, period: period, expected: tokens)
         }
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testSparsePreviousDailyAxisKeepsYesterdayCostButPreservesCombinedActivity() async {
@@ -333,7 +345,9 @@ final class ZAICostTests: XCTestCase {
         XCTAssertEqual(total(snapshot, runtime: runtime, period: .today).totalUSD, 0.5, accuracy: 1e-9)
         XCTAssertEqual(total(snapshot, runtime: runtime, period: .yesterday).totalUSD, 0.36, accuracy: 1e-9)
         assertTokenOnly(snapshot, runtime: runtime, period: .last30, expected: 6_000_000)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testMissingYesterdayAxisPreservesPositiveActivityInsteadOfClaimingZero() async {
@@ -345,7 +359,9 @@ final class ZAICostTests: XCTestCase {
 
         assertTokenOnly(snapshot, runtime: runtime, period: .yesterday, expected: 2_000_000)
         assertTokenOnly(snapshot, runtime: runtime, period: .last30, expected: 6_000_000)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertEqual(snapshot.isDegraded, true)
     }
 
     func testMissingElapsedOrCurrentHourlyAxisPreservesPositiveActivity() async {
@@ -359,7 +375,9 @@ final class ZAICostTests: XCTestCase {
             assertTokenOnly(snapshot, runtime: runtime, period: .today, expected: 3_000_000)
             assertTokenOnly(snapshot, runtime: runtime, period: .last30, expected: 6_000_000)
             XCTAssertEqual(total(snapshot, runtime: runtime, period: .yesterday).totalUSD, 0.36, accuracy: 1e-9)
-            XCTAssertNotNil(snapshot.warning)
+            XCTAssertNil(snapshot.warning)
+            XCTAssertNil(snapshot.warningPresentation)
+            XCTAssertEqual(snapshot.isDegraded, true)
         }
     }
 

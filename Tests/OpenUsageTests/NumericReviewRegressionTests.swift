@@ -75,7 +75,7 @@ final class NumericReviewRegressionTests: XCTestCase {
             first: .init(providerID: provider.id, displayName: provider.displayName, lines: [], refreshedAt: date, usageHistory: history),
             second: .init(providerID: provider.id, displayName: provider.displayName,
                           lines: [.progress(label: "Session", used: 42, limit: 100, format: .percent)],
-                          refreshedAt: date, usageHistory: rejected.usageHistory, warning: rejected.numericWarning))
+                          refreshedAt: date, usageHistory: rejected.usageHistory))
         let suite = "NumericReviewTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -86,7 +86,7 @@ final class NumericReviewRegressionTests: XCTestCase {
         XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, history)
         await store.refreshAll(force: true)
         XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, history)
-        XCTAssertEqual(store.warningMessage(for: provider.id), rejected.numericWarning)
+        XCTAssertNil(store.headerNotice(for: provider.id))
         XCTAssertNotNil(store.snapshots[provider.id]?.line(label: "Session"))
     }
 

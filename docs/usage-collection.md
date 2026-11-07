@@ -2,15 +2,37 @@
 
 ## 목적과 범위
 
-계정·구독 한도를 조회하는 provider와 사용 기록을 만드는 도구를 분리.
+계정·구독 한도를 조회하는 provider와 사용 기록을 만드는 CLI·harness·앱을 분리.
 도구 추가 시 인증·카드·가격 계산을 복제하지 않고 수집 adapter 추가로 확장.
-기존 provider와 지표 유지.
-새 카드나 인증 절차는 추가하지 않음.
 
-공통 수집 대상은 Pi, Oh My Pi(OMP), Gemini CLI, Qwen CLI, OpenClaw, Hermes Agent, DeepSeek Harness, Kilo Code·CLI, Junie와 기존 제품군의 보충 기록.
+한도·잔액 조회 대상은 기존 12개 provider 유지.
+Claude, Codex, Cursor, Antigravity, GitHub Copilot, Devin, Grok, Kimi, Kiro, OpenCode, OpenRouter, Z.ai.
+Grok Bot은 기존 Grok·Cursor의 지원 범위 보완 항목.
+별도 provider 추가 대상은 없음.
+
+사용 기록 수집의 전체 대상은 다음 23개.
+native 수집기와 공통 adapter를 함께 사용하며, 아래 세부 범위와 제한 적용.
+
+| 분류 | 대상 |
+|---|---|
+| 기존 연계 도구 10개 | Claude Code, Codex CLI, Cursor IDE, Antigravity, GitHub Copilot CLI, Devin CLI, Grok Build, Kimi CLI, Kiro, OpenCode |
+| Pi 계열 2개 | Pi, Oh My Pi(OMP) |
+| 추가 CLI 2개 | Gemini CLI, Qwen CLI |
+| 범용 harness 3개 | OpenClaw, Hermes Agent, DeepSeek Harness |
+| IDE·관련 CLI 3개 | Kilo Code, Kilo CLI, Junie |
+| 제품군 확장 3개 | Devin Desktop, Antigravity CLI, Antigravity IDE Extension |
+
+Claude Desktop Code·Cowork의 사용량 기록, Kimi Code·Work, Kiro CLI·IDE도 해당 제품군의 세부 수집 범위.
+일반 채팅처럼 사용량 기록이 없는 경로는 정확한 토큰 수집 대상으로 간주하지 않음.
+주 세션·fork·하위 에이전트의 기록은 같은 수집 규칙 적용.
+별도 합계와 원본 호출이 함께 기록된 도구 결과는 중복 합산하지 않음.
+
+Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 기존 원장은 각 native 수집기에서 계속 처리.
 Devin·Kimi·Kiro는 기존 native 원장과 확인된 보충 기록을 병합.
-기존 Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 원장은 각 native 수집기에서 계속 처리.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
+
+MiniMax·MiniMax Token Plan·Sakana Fugu는 별도 provider 수집·자동 탐색 대상에서 제외.
+지원 도구에 기록된 미등록 provider의 사용량은 공통 수집 결과에 보존하지만 provider 카드에는 반영하지 않음.
 
 ## 역할 분리
 
@@ -30,17 +52,18 @@ flowchart LR
 - 수집 모듈: 파일 탐색·증분 캐시·읽기 실패·취소·중복 제거 담당.
 - 귀속·가격 모듈: 기록된 provider를 표시 대상에 연결하고 기존 가격 엔진 호출.
 - provider: 인증·원격 한도 조회·스냅샷 생성 담당.
-- 표시 모듈: 기존 일별 이력과 지출 타일 재사용.
+- 표시 모듈: 기존 `LogUsageScan`·`ProviderUsageHistory`·`SpendTileMapper` 재사용.
 
 새 저장 형식은 동일한 공통 기록을 반환하는 adapter로 추가.
-같은 JSONL 형식을 사용하는 Pi·OMP는 파서를 공유하고 경로·지원 기록 유형을 구분.
-공통 수집 adapter는 선언 순서대로 실행하고 기본 JSONL 파일 읽기·파싱도 한 번에 하나씩 처리.
+같은 JSONL 형식을 사용하는 도구는 파서를 공유하고 경로·지원 기록 유형만 분리.
+공통 수집 adapter는 선언 순서대로 실행하고, 기본 JSONL 파일 읽기·파싱도 한 번에 하나씩 처리.
 공통 모듈에 도구별 JSON 필드나 모델명 추측 규칙을 추가하지 않음.
 별도 복제 DB나 백그라운드 업로드 없음.
 파일 수집과 읽기 전용 SQLite 수집 기반 제공.
 Pi·OMP는 JSONL 세션을 읽고 OpenClaw·Hermes는 SQLite 원장도 수집.
 OpenClaw·DeepSeek·Codex는 일반 원장과 Zstandard 압축 원장을 함께 지원.
 압축 원장용 기반은 앱에 포함한 공식 `libzstd` 1.5.7 사용.
+macOS Compression은 해당 형식을 지원하지 않음.
 사용자에게 별도 압축 명령 설치를 요구하지 않음.
 
 ## 저장 위치
@@ -84,7 +107,8 @@ DeepSeek Harness는 `DSH_HOME` 또는 기본 `~/.dsh` 아래 `sessions`의 최�
 예를 들어 `openai`와 `openai-codex`, `openrouter`와 모델 제조사는 서로 다른 귀속.
 현재 계정의 인증·설정으로 과거 호출의 계정·서비스 티어를 채우지 않음.
 Pi·OMP에서 계정 신원을 확인할 수 없는 기록은 계정별 스냅샷 카드에 합산하지 않음.
-기존 Claude 다중 로그인 시 공유 도구 기록을 제외하는 규칙 유지.
+기존 Claude 다중 로그인 시 공유 harness 기록을 제외하는 규칙 유지.
+Cursor처럼 계정 전체 내보내기를 사용하는 provider에는 같은 호출일 수 있는 로컬 기록을 자동 가산하지 않음.
 
 ### 중복과 세션
 
@@ -121,10 +145,11 @@ Pi·OMP 기록의 가격을 구하지 못해도 Tokens·Usage Trend·모델별 �
 가격이 불완전한 날짜·기간은 총 Cost와 Cost/MTok 생략.
 확인된 일부 비용을 전체 토큰으로 나누지 않음.
 가격을 계산할 수 있는 모델의 개별 비용은 모델 내역에 유지.
-토큰과 비용이 모두 없는 기록은 가격 미지원 건수에 포함하지 않음.
+가격 미지원 건수는 비용이 없고 토큰이 양수인 기록에 한정.
 제공자가 보고한 비용이 있으면 가격 미지원 표시만으로 해당 비용을 제외하지 않음.
-이 규칙은 native·공유 도구 이력 병합과 iCloud 병합에서도 유지.
+이 규칙은 native·harness·공유 도구 이력 병합과 iCloud 병합에서도 유지.
 native 파서별 원본 해석·가격 정책은 각 provider 문서 참조.
+Kiro의 크레딧 환산과 추정 토큰, 모델 없는 비용 기록도 별도 의미로 보존.
 
 ### 캐시와 실패
 
@@ -133,7 +158,9 @@ native 파서별 원본 해석·가격 정책은 각 provider 문서 참조.
 가격 갱신 후 원본 파일 재파싱 없이 재계산 가능.
 파서 버전·도구·실제 루트로 캐시 구분.
 공통 수집기의 읽기 실패는 진단 로그와 카드 경고로 전달.
-잘못된 숫자·메타데이터·지원하지 않는 가격 정보의 기존 안내도 유지.
+잘못된 숫자·메타데이터는 진단 로그에 기록하고 가격 미확정 모델은 원본 집계 정보에 보존.
+이런 집계 제약은 카드 경고로 표시하지 않고 정상 사용량은 계속 집계.
+가격이 없는 기간의 비용 생략과 마지막 정상 이력 보존 규칙은 카드 경고 여부와 무관하게 적용.
 공통 수집기는 읽기 성공한 기록과 실패한 경로를 구분하여 보존.
 취소된 공통 수집 결과는 게시하지 않음.
 파일 탐색 중에도 취소 확인.
@@ -145,9 +172,10 @@ native 파서별 원본 해석·가격 정책은 각 provider 문서 참조.
 네이티브 이력의 읽기 실패 탐지와 공유 이력의 화면 반영은 provider별 구현에 따름.
 Claude·Codex는 발견한 native 파일의 읽기 실패 수를 공유 이력 병합에도 전달.
 정상 기여가 없는 실패 결과는 이전 이력을 빈 값으로 교체하지 않고 읽기 경고로 안내.
+취소되거나 전체 수집이 실패한 결과로 마지막 정상 이력을 비우지 않음.
 취소 전에 파싱을 완료한 파일의 캐시는 유지하여 다음 조회에서 재사용.
 취소 중 처리하던 파일과 미완료 전체 집계는 게시하지 않음.
-소스별 부재·성공·부분 실패·전체 실패를 구분.
+소스별 부재·성공·부분 실패·전체 실패를 구분하여 다른 provider의 실패가 정상 이력을 지우지 않게 처리.
 SQLite는 읽기 전용 조회 사용.
 DB 본체의 수정 시각만으로 캐시하지 않으며 WAL의 최신 기록도 같은 읽기 스냅샷에서 조회.
 대화 본문·인증 정보는 공통 기록이나 진단 로그에 저장하지 않음.
@@ -202,6 +230,8 @@ Hermes Agent는 모델별 세션 누적 기록을 우선하며 세션 총계와 
 `codex_thread_id`가 확인된 본 호출은 native Codex 원장과 중복 가능하므로 기록은 보존하고 합산에서 제외.
 모델별 기록은 `first_seen`(없으면 세션 시작 시각)과 `last_seen`, 세션 합계는 `started_at`과 `ended_at`이 같은 로컬 날짜로 확인된 경우만 일별 이력에 반영.
 여러 날짜에 걸친 합계와 종료 시각이 없는 합계는 원본 보존 및 진단 처리.
+비용 상태로 실제 보고액·구독 포함 0·추정액·미확인 기본 0을 구분.
+시작 시각이 조회 범위 이전이어도 끝 시각이 범위와 겹치거나 미확정이면 원본과 불완전 진단 유지.
 
 DeepSeek Harness는 재시도·settlement·압축 호출을 구분하고 fork의 seed 기록을 제외.
 잘못된 숫자나 시각이 있는 settlement는 정상 attempt를 덮지 않고 진단 기록으로 보존.
@@ -242,6 +272,7 @@ prompt 문맥 ID를 전역 응답 ID로 사용하지 않으며 미확인 결제 
 단가표 기반 비용은 추정값으로 구분하고 추정 0을 무료 청구로 확정하지 않음.
 Junie IDE의 미확인 저장소는 수집하지 않음.
 
+외부 ACP 호출은 Devin으로 무조건 귀속하지 않음.
 Devin Desktop의 이전 ACP 캐시는 확인된 원본 값으로 보존하고 요청 사용량에는 가산하지 않음.
 최신 메시지 캐시에는 완전한 요청 원장이 저장된다는 근거가 없어 자동 수집하지 않음.
 
@@ -252,18 +283,52 @@ Python 원장에 모델·과금 provider가 없으면 현재 설정으로 추정
 Kiro V2는 CLI JSON과 SQLite의 측정 사용량을 조회.
 크레딧 미보고 기록의 토큰은 보존하고 해당 날짜·기간의 비용을 생략.
 IDE globalStorage의 별도 형식과 원격 V3 저장소는 수집하지 않음.
+지원하지 않는 새 형식은 이전 버전으로 추정하지 않음.
 
-## 기존 provider 연결
+## native 수집기와의 연결
+
+Claude Code·Codex CLI·Grok Build의 특수 원장·캐시·추론 토큰 해석은 기존 native 수집기에 유지.
+Antigravity·Copilot·Devin·Kimi·Kiro·OpenCode는 현재 검증된 원본 해석 유지.
+Cursor 계정 전체 내보내기는 로컬 기록과 별도 범위로 유지.
+native 결과와 공통 adapter의 이력은 비용 완전성을 보존하는 같은 일별 집계에서 병합.
+native 파서의 원본 기록 형식을 강제로 교체하지 않음.
+공유 구독 한도가 같아도 같은 호출의 원장을 카드 간에 중복 합산하지 않음.
+
+## 구현 연결과 제한
+
+| 수집 대상 | 연결 방식 |
+|---|---|
+| Claude Code·Desktop Code·Cowork, Codex CLI, Cursor IDE, Grok Build | 기존 native 로그·내보내기 해석 유지 |
+| Antigravity 앱·CLI·IDE Extension | 기존 세 제품군 DB 경로를 한 수집기에서 조회 |
+| GitHub Copilot CLI, OpenCode | 기존 SQLite 원장 유지, 공유 도구의 명시된 귀속만 추가 |
+| Devin CLI·Desktop | CLI 원장 수집. Desktop 이전 ACP 캐시는 관측값으로 보존, 최신 메시지 캐시의 요청 원장은 미확인 |
+| Kimi CLI·Code·Work | Code 원장 유지, Python CLI·Work 토큰 adapter 추가 |
+| Kiro CLI·IDE | 기존 messages 원장 유지, V2 JSON·SQLite 측정 사용량 추가 |
+| Pi·OMP | 공통 JSONL adapter, OMP model_usage 및 profile 경로 포함 |
+| Gemini CLI·Qwen CLI | JSON·JSONL 및 Qwen managed journal의 commit·resource 검증 |
+| OpenClaw | JSONL·SQLite·Zstandard, Codex 전용 홈은 native Codex scanner로 조회 |
+| Hermes Agent·DeepSeek Harness | Hermes 누적 SQLite, DeepSeek JSONL·Zstandard와 generation·retry·settlement 처리 |
+| Kilo Code·Kilo CLI | 공용 SQLite를 한 번 조회, legacy 확장 JSON도 수집 |
+| Junie | 확인된 CLI events.jsonl의 모델 사용량 수집 |
 
 Claude·Codex·Grok·Antigravity에는 각 provider 가격 정책으로 공유 도구 사용량 연결.
+native·공유 경로 모두 가격 미확정 토큰은 보존하고 불완전한 날짜·기간 비용은 표시하지 않음.
 Copilot·OpenCode는 추가 기록 중 제공자가 보고한 비용만 사용하며 API 단가로 구독 사용액을 추정하지 않음.
 OpenCode Go 미터는 기존 native 원장 범위 유지.
 OpenCode native 원장을 읽지 못해도 공유 도구의 정상 이력은 유지하고 Go 미터는 생략.
 Claude·Codex의 계정 전용 이력 출처는 native 범위로 유지하고 공유 도구를 포함하는 카드의 내보내기 출처에만 로컬 도구 표기.
 미등록 provider·모델의 기록은 공통 결과와 파일 파싱 캐시에 보존하되 새 카드 생성 없음.
-공유 구독 한도가 같다는 이유로 다른 카드의 사용량을 임의 합산하지 않음.
+SQLite 기록은 매 수집 때 다시 조회하며 별도 복제 DB를 만들지 않음.
+
+OpenClaw의 Codex mirror는 완전한 요청 원장이 아니므로 이중 합산에서 제외.
+기본 Codex 카드만 OpenClaw 전용 홈을 조회하고 추가 계정 카드는 기존 지정 홈 유지.
+Kilo의 직접 호출 원장 없이 메시지 합계만 남은 경우 원본 보존 및 진단 처리.
+Hermes의 여러 날짜 합계를 요청별 사용량으로 분배하는 기능은 미포함.
+Junie IDE의 미확인 저장소, Kiro IDE globalStorage의 별도 형식, 원격 V3 저장소는 미지원.
+이 제한을 다른 도구의 경로나 현재 설정으로 대체하여 추정하지 않음.
 
 ## 참고 근거
 
 - [Pi 세션 형식](https://github.com/earendil-works/pi/blob/2a32a605a9f18a5f0191f65358a2e764b2f69fc7/packages/coding-agent/src/core/session-manager.ts)
 - [OMP 사용량 형식](https://github.com/can1357/oh-my-pi/blob/b0b02d1120976535f466b282739c25775f991830/packages/catalog/src/types.ts)
+- [Grok Bot 구독과 사용량](https://docs.x.ai/x-subscription/grok-bot)

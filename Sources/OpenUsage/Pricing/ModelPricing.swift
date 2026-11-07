@@ -32,7 +32,7 @@ final class ModelPricing: Sendable {
 
     static let empty = ModelPricing(supplement: PricingSupplement(), primary: PricingCatalog(), secondary: PricingCatalog())
 
-    /// `model`의 rates — 어떤 source도 가격 못 매기면 nil (caller가 unknown-model 경고 표시, token은 $0 계산).
+    /// 모델 단가 조회. 어느 출처에도 가격이 없으면 nil을 반환하여 토큰과 미확정 비용 구분.
     func resolve(model: String, source: Source = .api) -> ModelRates? {
         let key = ResolutionKey(model: model, source: source)
         if let cached = memo.withLock({ $0[key] }) {

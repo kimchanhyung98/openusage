@@ -5,6 +5,46 @@ final class CodexCompletedUsageWarningTests: XCTestCase {
     private let timestamp = "2026-11-06T01:00:00Z"
 
     @MainActor
+    func testCollectionLimitsStayInDiagnosticsWhileReadFailuresRemainVisible() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let now = try XCTUnwrap(OpenUsageISO8601.date(from: timestamp)).addingTimeInterval(60)
+        let home = try CodexLogFixture.makeHome(files: [
+            "sessions/ambiguous.jsonl": rollout(initial: 500, last: 500).joined(separator: "\n")
+        ])
+        defer { try? FileManager.default.removeItem(at: home) }
+        let provider = CodexProvider(
+            authStore: CodexAuthStore(
+                environment: FakeEnvironment(["CODEX_HOME": home.path]),
+                files: FakeFiles([home.appendingPathComponent("auth.json").path:
+                    #"{"tokens":{"access_token":"token"}}"#]), keychain: FakeKeychain()
+            ),
+            usageClient: CodexUsageClient(http: FakeHTTPClient(response: .init(
+                statusCode: 200, headers: [:], body: Data(
+                    #"{"rate_limit":{"primary_window":{"used_percent":15,"reset_after_seconds":60}},"credits":[]}"#.utf8
+                )
+            ))),
+            logUsageScanner: CodexLogFixture.scanner(home: home), includeSharedUsage: false,
+            now: { now }, pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+        XCTAssertNil(snapshot.warning)
+        XCTAssertTrue(snapshot.warningPresentation?.isEmpty != false)
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNotNil(snapshot.line(label: "Session"))
+        XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 1_000)
+        XCTAssertNil(snapshot.usageHistory?.series.daily.first?.costUSD)
+        XCTAssertTrue(diagnostics.events.contains {
+            $0.operation == .historyScan && $0.result == .degraded && $0.category == .decoding
+        })
+
+        try Data("invalid compressed log".utf8).write(to: home.appendingPathComponent("sessions/unreadable.jsonl.zst"))
+        let failedRead = await provider.refresh()
+        XCTAssertEqual(failedRead.warning, "Some local usage files could not be read. Usage history may be incomplete.")
+        XCTAssertNotNil(failedRead.line(label: "Session"))
+        XCTAssertEqual(failedRead.usageHistory, snapshot.usageHistory)
+    }
+
     func testUpdatedLastUsageConfirmsCompletedResponseBeforeTerminalError() {
         for terminal in ["task_complete", "turn_aborted"] {
             for initial in [0, 100] {

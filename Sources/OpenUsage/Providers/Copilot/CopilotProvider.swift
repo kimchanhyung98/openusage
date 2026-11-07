@@ -106,9 +106,7 @@ final class CopilotProvider: ProviderRuntime {
                     )
                 }
             }
-            for warning in [scan.numericWarning, scan.metadataWarning, scan.pricingWarning, shared?.readWarning].compactMap({ $0 }) {
-                appendWarning(warning, to: &snapshot)
-            }
+            if let warning = shared?.readWarning { appendWarning(warning, to: &snapshot) }
         }
         return snapshot
     }

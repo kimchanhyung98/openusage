@@ -18,18 +18,22 @@ API 키의 무료 여부만으로 유료 계약 등급을 구분하지 않음.
 
 반환된 등급(예: "Pay as you go" 또는 "Free tier")을 프로바이더 이름 옆에 표시.
 
-일반 API 키의 Today·This Week·This Month는 해당 키의 사용액.
+일반 API 키의 Today·This Week·This Month는 해당 키의 OpenRouter 크레딧 사용액.
+일반 키의 기간은 UTC 기준이며, 주간은 월요일 시작.
+외부 제공자에 직접 결제하는 BYOK 추론 비용은 일반 키의 기간 사용액에서 제외.
 관리 키를 연결하면 같은 항목에 계정 전체의 기간 사용액 표시.
 관리 키 자체의 사용액 0을 계정 사용액으로 사용하지 않음.
 
 ## 상단 비용·토큰 통계
 
 관리 키를 연결하면 상단의 Cost·Tokens·Cost/MTok 통계에 OpenRouter 포함.
-[Analytics API](https://openrouter.ai/docs/api/api-reference/analytics/query-analytics-data)가 반환한 실제 비용과 총 토큰 사용.
+[Analytics API](https://openrouter.ai/docs/api/api-reference/analytics/query-analytics-data)가 보고한 비용과 총 토큰 사용.
 캐시·추론 토큰은 총 토큰에 이미 포함되므로 별도 가산하지 않음.
 비용은 반환된 달러 값이며 모델 가격으로 다시 추정하지 않음.
+Analytics의 `total_usage`는 OpenRouter 크레딧 사용액과 BYOK 추론 비용의 합계.
+따라서 크레딧 잔액 감소분이나 일반 키의 기간 사용액과 비용 범위가 다름.
 
-오늘·어제·최근 30일의 시작과 끝은 Mac의 현지 시간 기준.
+관리 키로 조회하는 오늘·어제·최근 30일의 시작과 끝은 Mac의 현지 시간 기준.
 최근 30일은 기존 상단 통계와 같이 오늘 및 이전 30일을 포함.
 이번 주·이번 달도 Mac의 달력 기준으로 조회.
 UTC 일별 합계를 현지 날짜로 바꾸어 넣지 않고 각 기간의 시각 범위를 API에 전달.

@@ -84,7 +84,7 @@ final class ZAIProvider: ProviderRuntime {
                     refreshedAt: refreshedAt,
                     warning: statistics.warnings.isEmpty ? nil : statistics.warnings.joined(separator: " "),
                     warningPresentation: statistics.warnings.isEmpty ? nil : statistics.warnings.map { LocalizedMessage($0) },
-                    isDegraded: statistics.warnings.isEmpty ? nil : true
+                    isDegraded: statistics.isDegraded ? true : nil
                 )
             } catch {
                 return ProviderSnapshot.error(provider: provider, error: error)
@@ -96,7 +96,9 @@ final class ZAIProvider: ProviderRuntime {
         }
     }
 
-    private func loadStatistics(apiKey: String, at date: Date) async -> (lines: [MetricLine]?, warnings: [String]) {
+    private func loadStatistics(
+        apiKey: String, at date: Date
+    ) async -> (lines: [MetricLine]?, warnings: [String], isDegraded: Bool) {
         let calendar = calendar ?? .current
         let window = ZAIActivityWindow(now: date, calendar: calendar)
         let prices = await pricing()
@@ -108,7 +110,8 @@ final class ZAIProvider: ProviderRuntime {
         let previous = await loadDetails(apiKey: apiKey, window: previousWindow, pricing: prices)
         let today = await loadDetails(apiKey: apiKey, window: todayWindow, pricing: prices)
         let days = (previous?.days ?? [:]).merging(today?.days ?? [:]) { _, latest in latest }
-        var costUnavailable = previous == nil || today == nil || days.values.contains { $0.costUSD == nil }
+        let detailUnavailable = previous == nil || today == nil
+        var costUnavailable = detailUnavailable || days.values.contains { $0.costUSD == nil }
         var lines: [MetricLine] = []
         for period in TotalSpendPeriod.allCases {
             let keys: [String]
@@ -133,16 +136,16 @@ final class ZAIProvider: ProviderRuntime {
         if activity == nil, lines.count < TotalSpendPeriod.allCases.count {
             warnings.append("Z.ai token statistics are unavailable. Quota data is still available.")
         }
-        if costUnavailable {
+        if detailUnavailable {
             warnings.append("Some Z.ai cost estimates are unavailable. Other usage data is still available.")
-            if !Task.isCancelled {
-                AppDiagnostics.record(
-                    .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
-                    localContext: "coding plan model breakdown or exact pricing incomplete"
-                )
-            }
         }
-        return (lines.isEmpty && activity == nil ? nil : lines, warnings)
+        if costUnavailable, !Task.isCancelled {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: provider.id,
+                localContext: "coding plan model breakdown or exact pricing incomplete"
+            )
+        }
+        return (lines.isEmpty && activity == nil ? nil : lines, warnings, costUnavailable || !warnings.isEmpty)
     }
 
     private func pricedLine(

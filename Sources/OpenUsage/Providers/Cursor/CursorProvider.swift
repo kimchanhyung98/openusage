@@ -161,7 +161,7 @@ final class CursorProvider: ProviderRuntime {
         return snapshot(mapped, usageHistory: history)
     }
 
-    /// 엄격히 additive: usage CSV를 받아 일별 spend 타일 3개 추가. 어떤 실패(세션 없음, non-2xx, decode 불가)든 아무것도 추가하지 않음 — live Cursor 매핑은 영향 없고 spend 타일은 "No data"로 fallback.
+    /// CSV 실패 시 nil 이력 반환 — 기존 한도 유지, 저장소에서 마지막 정상 지출 이력 보존.
     private func appendSpendLines(to lines: inout [MetricLine], accessToken: String) async -> ProviderUsageHistory? {
         let calendar = Calendar.current
         let end = now()
@@ -193,6 +193,7 @@ final class CursorProvider: ProviderRuntime {
             if parsed.rejectedRowCount > 0 {
                 noteDegraded(.historyScan, category: .decoding,
                              localContext: "usage CSV ignored \(parsed.rejectedRowCount) malformed row\(parsed.rejectedRowCount == 1 ? "" : "s")")
+                if parsed.rows.isEmpty { return nil }
             }
             if parsed.rejectedRowCount == 0 { AppDiagnostics.record(.historyScan, result: .success, providerID: provider.id) }
             return CursorUsageMapper.appendSpendLines(rows: parsed.rows, now: end, pricing: pricing, to: &lines)

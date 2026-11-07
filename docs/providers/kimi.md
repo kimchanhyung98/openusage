@@ -22,6 +22,9 @@ Extra Usage를 활성화하고 사용 가능한 잔액이 있으면 추가 사�
 글로벌 신규 유료 요금제는 Plus·Pro·Max·Ultra이며, 중국에는 Kimi Code를 포함하지 않는 Go도 존재.
 지역별 가격과 연간 결제액은 [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
 기존 구독은 이름·갱신·한도 유지 가능하므로, 이전 멤버십 등급의 Adagio·Moderato·Allegretto·Allegro·Vivace 매핑 유지.
+새 이름을 담은 등급은 그 이름을 표시하고, `goods_version`만으로 기존 등급을 새 요금제로 치환하지 않음.
+현재 형식의 `usages` 응답에 `limit_7d`가 없으면 Weekly 행 미생성.
+레거시 응답의 `usage`가 있으면 기존 Weekly 행 유지.
 알 수 없는 등급도 읽기 쉬운 형태로 유지.
 선택 사항인 booster wallet은 표시하지 않음.
 

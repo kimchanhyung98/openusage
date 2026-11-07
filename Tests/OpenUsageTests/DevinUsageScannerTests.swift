@@ -389,12 +389,7 @@ final class DevinUsageScannerTests: XCTestCase {
             await store.refreshAll(force: true)
             let retained = store.localSnapshots["devin"]
             XCTAssertEqual(retained?.totalSpendLines, previous)
-            if corruptDatabase {
-                XCTAssertNotNil(retained?.warning)
-            } else {
-                XCTAssertEqual(retained?.warning,
-                               "Local usage history is unavailable. Showing the last successful totals.")
-            }
+            XCTAssertEqual(retained?.warning != nil, corruptDatabase)
             XCTAssertNil(store.providerErrors["devin"])
             XCTAssertEqual(cache.loadSnapshots(providerIDs: ["devin"])["devin"]?.totalSpendLines, previous)
 
