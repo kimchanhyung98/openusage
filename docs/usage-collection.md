@@ -31,7 +31,8 @@ Claude Code·Codex CLI·Grok·Antigravity·Copilot·OpenCode의 기존 원장은
 Devin·Kimi·Kiro는 기존 native 원장과 확인된 보충 기록을 병합.
 Cursor·OpenRouter의 계정 전체 통계와 Z.ai 할당량에는 로컬 도구 기록을 자동 가산하지 않음.
 
-MiniMax·MiniMax Token Plan·Sakana Fugu는 수집·자동 탐색 대상에서 제외.
+MiniMax·MiniMax Token Plan·Sakana Fugu는 별도 provider 수집·자동 탐색 대상에서 제외.
+지원 도구에 기록된 미등록 provider의 사용량은 공통 수집 결과에 보존하지만 provider 카드에는 반영하지 않음.
 
 ## 역할 분리
 

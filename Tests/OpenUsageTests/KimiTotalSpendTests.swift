@@ -84,6 +84,10 @@ final class KimiTotalSpendTests: XCTestCase {
         try UsageRecordFixture.write("not-json\n", to: work)
         await store.refreshAll(force: true)
         XCTAssertEqual(store.localSnapshots["kimi"]?.totalSpendLines, previous.totalSpendLines)
+        XCTAssertEqual(store.localSnapshots["kimi"]?.totalSpendRefreshedAt, now)
+        XCTAssertEqual(store.localSnapshots["kimi"]?.refreshedAt, refreshedNow)
+        XCTAssertEqual(store.localSnapshots["kimi"]?.isDegraded, true)
+        XCTAssertEqual(cache.loadSnapshots(providerIDs: ["kimi"])["kimi"]?.totalSpendRefreshedAt, now)
         XCTAssertNil(store.headerNotice(for: "kimi"))
         try FileManager.default.removeItem(at: work)
 

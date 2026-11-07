@@ -92,9 +92,9 @@ Bot의 개별 요청 비용·토큰 원장은 별도 수집하지 않음.
 
 - **"Session expired" / 인증 오류** — `grok login`을 다시 실행한 뒤 새로 고침.
 - **Weekly에 "No data" 표시** — 계정이 아직 월간(주간이 아닌) 주기를 반환하며 Grok 통합 주간 결제로 전환되지 않은 상태.
-- **지출 타일에 "No data" 표시** — Grok CLI의 완료 턴 원장 또는 `logs/unified.jsonl` 기록 필요.
+- **지출 타일에 "No data" 표시** — 해당 기간에 Grok CLI의 완료 턴 원장, `logs/unified.jsonl`, 또는 `grok`으로 귀속된 공유 도구의 유효한 기록 필요.
   이전 CLI 버전은 토큰 수를 기록하지 않음.
-  Grok CLI 세션을 실행해 로그를 채운 뒤 새로 고침.
+  Grok CLI 또는 지원 공유 도구에서 Grok을 사용한 뒤 새로 고침.
 
 ## 내부 동작
 
