@@ -1,0 +1,267 @@
+import XCTest
+@testable import Egasu
+
+@MainActor
+final class TelemetryRecorderTests: XCTestCase {
+    /// PostHog 미접촉 event 기록용 sink
+    private final class FakeSink: TelemetrySink {
+        var events: [(name: String, properties: [String: Any])] = []
+        var enabledCalls: [Bool] = []
+        var flushCount = 0
+        func capture(_ event: String, _ properties: [String: Any]) { events.append((event, properties)) }
+        func setEnabled(_ enabled: Bool) { enabledCalls.append(enabled) }
+        func flush() { flushCount += 1 }
+        func events(named name: String) -> [[String: Any]] {
+            events.filter { $0.name == name }.map(\.properties)
+        }
+    }
+
+    private let snapshot = TelemetryConfigSnapshot(
+        enabledProviders: ["claude", "codex"],
+        enabledMetricIDs: ["claude.session", "codex.weekly"],
+        pinnedMetricIDs: ["claude.session"],
+        expandedMetricIDs: ["codex.weekly"],
+        menuBarStyle: "text"
+    )
+
+    func testOnlyRefreshedAndFailedCount_andRollOverEmitsCompleteDailyCounts() {
+        let sink = FakeSink()
+        let store = makeStore("rollover")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .manual)
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .failed, category: .notLoggedIn, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .failed, category: .notAvailable, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .cacheHit, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .skipped, category: nil, trigger: .scheduled)
+        recorder.record(providerID: "claude", outcome: .backedOff, category: nil, trigger: .scheduled)
+
+        XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
+
+        clock = day(26)
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
+
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        let props = rollups[0]
+        XCTAssertEqual(props["provider_id"] as? String, "claude")
+        XCTAssertEqual(props["success_count"] as? Int, 2)
+        XCTAssertEqual(props["failure_count"] as? Int, 3)
+        XCTAssertEqual(props["manual_refresh_count"] as? Int, 1)
+        XCTAssertEqual(
+            props["error_categories"] as? [String: Int],
+            ["network": 1, "not_available": 1, "not_logged_in": 1]
+        )
+        XCTAssertEqual(props["network_failure_count"] as? Int, 1)
+        XCTAssertEqual(props["not_logged_in_failure_count"] as? Int, 1)
+        XCTAssertEqual(props["not_available_failure_count"] as? Int, 1)
+        XCTAssertEqual(props["auth_expired_failure_count"] as? Int, 0)
+        XCTAssertEqual(props["expected_failure_count"] as? Int, 2)
+        XCTAssertEqual(props["unexpected_failure_count"] as? Int, 1)
+    }
+
+    func testTickEmitsDailyActiveOncePerDayWithConfigSnapshot() {
+        let sink = FakeSink()
+        let store = makeStore("daily-active")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+
+        recorder.tick()
+        recorder.tick()
+
+        let active = sink.events(named: "app_daily_active")
+        XCTAssertEqual(active.count, 1)
+        XCTAssertEqual(active[0]["install_id"] as? String, store.installID)
+        XCTAssertEqual(active[0]["enabled_providers"] as? [String], ["claude", "codex"])
+        XCTAssertEqual(active[0]["pinned_metric_ids"] as? [String], ["claude.session"])
+        XCTAssertEqual(active[0]["expanded_metric_ids"] as? [String], ["codex.weekly"])
+        XCTAssertEqual(active[0]["menu_bar_style"] as? String, "text")
+
+        clock = day(26)
+        recorder.tick()
+        XCTAssertEqual(sink.events(named: "app_daily_active").count, 2)
+    }
+
+    func testTickFlushesStalePriorDayCounterEvenWithoutNewOutcomes() {
+        let sink = FakeSink()
+        let store = makeStore("sweep")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+
+        recorder.record(providerID: "grok", outcome: .refreshed, category: nil, trigger: .scheduled)
+
+        clock = day(26)
+        recorder.tick()
+
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        XCTAssertEqual(rollups[0]["provider_id"] as? String, "grok")
+        XCTAssertEqual(rollups[0]["success_count"] as? Int, 1)
+    }
+
+    func testOptingOutStopsAllEmissionAndPersists() {
+        let sink = FakeSink()
+        let store = makeStore("opt-out")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+
+        recorder.setEnabled(false)
+        XCTAssertEqual(sink.enabledCalls, [false])
+
+        recorder.tick()
+        recorder.record(providerID: "claude", outcome: .refreshed, category: nil, trigger: .scheduled)
+        clock = day(26)
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
+        recorder.tick()
+
+        XCTAssertTrue(sink.events.isEmpty, "no events should be captured while opted out")
+        XCTAssertFalse(store.enabled, "opt-out must persist")
+    }
+
+    func testConfigSnapshotCollapsesAccountCardsToTheirFamily() {
+        let providerIDs = [
+            "claude", "claude@ab12cd34", "claude@profile-p1", "codex", "codex@profile-p2", "cursor",
+        ]
+        let providerIDForMetric: (String) -> String? = { metricID in
+            providerIDs.first { metricID.hasPrefix("\($0).") && $0.contains("@") }
+                ?? metricID.split(separator: ".").first.map(String.init)
+        }
+
+        let snapshot = TelemetryConfigSnapshot.collapsingAccountCards(
+            enabledProviders: providerIDs,
+            enabledMetricIDs: [
+                "claude.session", "claude@ab12cd34.session", "claude@profile-p1.weekly",
+                "codex@profile-p2.session", "cursor.usage",
+            ],
+            pinnedMetricIDs: ["claude@ab12cd34.weekly"],
+            expandedMetricIDs: ["codex@profile-p2.trend"],
+            menuBarStyle: "strip",
+            providerIDForMetric: providerIDForMetric
+        )
+
+        XCTAssertEqual(snapshot.enabledProviders, ["claude", "codex", "cursor"],
+                       "account card ids and their count must never reach telemetry")
+        XCTAssertEqual(snapshot.enabledMetricIDs,
+                       ["claude.session", "claude.weekly", "codex.session", "cursor.usage"])
+        XCTAssertEqual(snapshot.pinnedMetricIDs, ["claude.weekly"])
+        XCTAssertEqual(snapshot.expandedMetricIDs, ["codex.trend"])
+    }
+
+    func testInstallIDIsStableAcrossStoreInstances() {
+        let defaults = makeDefaults("install-id")
+        let first = TelemetryStore(defaults: defaults).installID
+        let second = TelemetryStore(defaults: defaults).installID
+        XCTAssertFalse(first.isEmpty)
+        XCTAssertEqual(first, second)
+    }
+
+    func testTelemetryDefaultsOffAndExplicitOptInPersists() {
+        let defaults = makeDefaults("default-off")
+        let store = TelemetryStore(defaults: defaults)
+        XCTAssertFalse(store.enabled)
+
+        store.enabled = true
+        XCTAssertTrue(TelemetryStore(defaults: defaults).enabled)
+    }
+
+    func testAccountRollupsMigrateAndMergeAcrossRestartWithoutAccountIDs() {
+        let defaults = makeDefaults("account-migration")
+        defaults.set(true, forKey: "enabled")
+        let store = TelemetryStore(defaults: defaults)
+        store.setProviderCounters([
+            "claude@profile-A": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(25)), success: 2),
+            "claude@profile-B": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(25)), success: 3),
+        ])
+        let sink = FakeSink()
+        let recorder = TelemetryRecorder(
+            sink: sink, store: TelemetryStore(defaults: defaults), snapshot: { self.snapshot }, now: { self.day(26) }
+        )
+        recorder.tick()
+
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        XCTAssertEqual(rollups.first?["provider_id"] as? String, "claude")
+        XCTAssertEqual(rollups.first?["success_count"] as? Int, 5)
+        XCTAssertEqual(rollups.first?["trigger_classification"] as? String, "legacy")
+        XCTAssertEqual(rollups.first?["app_version"] as? String, "legacy")
+        XCTAssertFalse(String(describing: rollups).contains("profile-"))
+    }
+
+    func testFreshAccountRollupsHaveOneFamilyAndTheAggregationDay() {
+        let sink = FakeSink()
+        let store = makeStore("account-day")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        for id in ["claude", "claude@profile-A", "claude@profile-B", "claude"] {
+            recorder.record(providerID: id, outcome: .refreshed, category: nil, trigger: .scheduled)
+        }
+        clock = day(26)
+        recorder.tick()
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 1)
+        XCTAssertEqual(rollups.first?["success_count"] as? Int, 4)
+        XCTAssertEqual(rollups.first?["day"] as? String, TelemetryRecorder.dayString(day(25)))
+        XCTAssertNotNil(rollups.first?["schema_version"])
+        XCTAssertNotNil(rollups.first?["app_version"])
+    }
+
+    func testOptOutDiscardsUnsentCountersBeforeReenabling() {
+        let sink = FakeSink()
+        let store = makeStore("discard-on-opt-out")
+        var clock = day(25)
+        let recorder = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock })
+        recorder.record(providerID: "claude", outcome: .failed, category: .network, trigger: .scheduled)
+        recorder.setEnabled(false)
+        clock = day(26)
+        recorder.setEnabled(true)
+        recorder.tick()
+        XCTAssertTrue(sink.events(named: "provider_refresh_daily").isEmpty)
+        XCTAssertTrue(store.providerCounters().isEmpty)
+    }
+
+    func testUpgradePreservesSeparateDaysAndCollectionVersions() {
+        let sink = FakeSink()
+        let store = makeStore("version-boundary")
+        var clock = day(25)
+        store.setProviderCounters([
+            "codex@profile-A": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(23)), success: 2),
+            "codex@profile-B": ProviderDailyCounter(day: TelemetryRecorder.dayString(day(24)), success: 3),
+        ])
+        let old = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock }, appVersion: "0.7.1", buildChannel: "stable")
+        old.record(providerID: "codex", outcome: .refreshed, category: nil, trigger: .scheduled)
+        let upgraded = TelemetryRecorder(sink: sink, store: store, snapshot: { self.snapshot }, now: { clock }, appVersion: "0.7.2", buildChannel: "stable")
+        upgraded.record(providerID: "codex", outcome: .refreshed, category: nil, trigger: .manual)
+        clock = day(26)
+        upgraded.tick()
+        let rollups = sink.events(named: "provider_refresh_daily")
+        XCTAssertEqual(rollups.count, 4)
+        XCTAssertEqual(Set(rollups.compactMap { $0["app_version"] as? String }), ["legacy", "0.7.1", "0.7.2"])
+        XCTAssertEqual(rollups.filter { $0["day"] as? String == TelemetryRecorder.dayString(day(25)) }.count, 2)
+        XCTAssertTrue(store.providerCounters().isEmpty)
+    }
+
+    // MARK: - Helpers
+
+    /// 2026-06-`d` 현지 정오 — recorder의 local-calendar 일 경계와 일치
+    private func day(_ d: Int) -> Date {
+        var c = DateComponents()
+        c.year = 2026; c.month = 6; c.day = d; c.hour = 12
+        return Calendar.current.date(from: c)!
+    }
+
+    private func makeStore(_ name: String) -> TelemetryStore {
+        let defaults = makeDefaults(name)
+        defaults.set(true, forKey: "enabled")
+        return TelemetryStore(defaults: defaults)
+    }
+
+    private func makeDefaults(_ name: String) -> UserDefaults {
+        let suiteName = "EgasuTests.Telemetry.\(name).\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
+    }
+}

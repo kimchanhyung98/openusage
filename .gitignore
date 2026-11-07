@@ -180,6 +180,9 @@ $RECYCLE.BIN/
 .codebuddy/*
 .crush/logs/
 .cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/egasu-preview-launch.mdc
 .devin/*
 .goose/*
 .kilocode/*

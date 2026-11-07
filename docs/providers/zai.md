@@ -40,7 +40,7 @@ GLM-4.5 계열은 `zai/` 전용 보충 요율을 우선 적용.
 
 ## 인증 정보 출처
 
-OpenUsage의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
+egasu의 Z.ai 조회에는 사용자가 제공한 API 키 필요.
 다음 순서에서 처음 찾은 키 사용:
 
 1. `~/.config/openusage/zai.json` — `{"apiKey":"…"}`(API Key 카드에서 저장하는 파일)
@@ -87,8 +87,8 @@ API Key 카드에 저장하는 대신 셸 프로필에서 키 제공 가능.
    export ZAI_API_KEY="YOUR_API_KEY"
    ```
 
-2. OpenUsage 종료.
-3. OpenUsage 다시 실행.
+2. egasu 종료.
+3. egasu 다시 실행.
 4. Customize의 프로바이더 목록에서 Z.ai 활성화.
 
 앱은 시작할 때 로그인 셸 환경을 읽음.

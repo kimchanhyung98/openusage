@@ -1,10 +1,10 @@
-# Contributing to OpenUsage
+# Contributing to egasu
 
-OpenUsage accepts contributions through a strict, issue-first workflow, and the quality bar is deliberately high. **By design, most external pull requests are closed** — automation closes any that don't follow the rules below. Read this entire document before opening a PR.
+egasu accepts contributions through a strict, issue-first workflow, and the quality bar is deliberately high. **By design, most external pull requests are closed** — automation closes any that don't follow the rules below. Read this entire document before opening a PR.
 
 ## Philosophy
 
-OpenUsage is highly opinionated. It focuses on clean design, fast performance, and a great user experience. The feature set is intentionally limited to core functionality: tracking AI coding subscription usage, nothing more. Contributions that try to expand that scope, add unnecessary complexity, or compromise the UX will be closed.
+egasu is highly opinionated. It focuses on clean design, fast performance, and a great user experience. The feature set is intentionally limited to core functionality: tracking AI coding subscription usage, nothing more. Contributions that try to expand that scope, add unnecessary complexity, or compromise the UX will be closed.
 
 If you're unsure whether your idea fits, open an issue first. External pull requests without a linked, maintainer-approved issue are closed automatically — without review.
 
@@ -17,7 +17,7 @@ If you're unsure whether your idea fits, open an issue first. External pull requ
 - Test your changes. If it touches UI, include before/after screenshots.
 - Keep it simple. Don't over-engineer.
 - One PR per concern. Don't bundle unrelated changes.
-- Match the existing design language. OpenUsage has a specific look and feel — [AGENTS.md](AGENTS.md) documents the display conventions.
+- Match the existing design language. egasu has a specific look and feel — [AGENTS.md](AGENTS.md) documents the display conventions.
 
 ## Pull Request Policy
 
@@ -46,17 +46,17 @@ By submitting a pull request, you agree that your contribution is licensed under
 
 ### Add a provider
 
-Each provider is a small Swift module under `Sources/OpenUsage/Providers/<Name>/` that conforms to `ProviderRuntime`: an auth store reads credentials already on the user's machine, a usage client calls the provider's API, and a mapper normalizes the response into metric lines. See [docs/adding-a-provider.md](docs/adding-a-provider.md) for the full walkthrough (and [docs/architecture.md](docs/architecture.md) for how the pieces fit together).
+Each provider is a small Swift module under `Sources/Egasu/Providers/<Name>/` that conforms to `ProviderRuntime`: an auth store reads credentials already on the user's machine, a usage client calls the provider's API, and a mapper normalizes the response into metric lines. See [docs/adding-a-provider.md](docs/adding-a-provider.md) for the full walkthrough (and [docs/architecture.md](docs/architecture.md) for how the pieces fit together).
 
 1. Open an issue and get it approved (`approved` label) — include why the provider fits and how its usage data is accessible
-2. Create `Sources/OpenUsage/Providers/<Name>/` and implement `ProviderRuntime`
+2. Create `Sources/Egasu/Providers/<Name>/` and implement `ProviderRuntime`
 3. Register the provider in `AppContainer`
-4. Add focused tests under `Tests/OpenUsageTests/`
+4. Add focused tests under `Tests/EgasuTests/`
 5. Add a provider page in `docs/providers/` (metrics, credential sources, endpoints, troubleshooting)
 6. Test it locally with `./script/build_and_run.sh`
 7. Open a PR with screenshots showing it working
 
-You can also [open an issue](https://github.com/kimchanhyung98/openusage/issues/new?template=new_provider.yml) to request a provider without building it yourself.
+You can also [open an issue](https://github.com/kimchanhyung98/egasu/issues/new?template=new_provider.yml) to request a provider without building it yourself.
 
 ### Fix a bug
 
@@ -67,7 +67,7 @@ You can also [open an issue](https://github.com/kimchanhyung98/openusage/issues/
 
 ### Request a feature
 
-Don't open a PR for a feature without an approved issue first. [Open an issue](https://github.com/kimchanhyung98/openusage/issues/new?template=feature_request.yml), make your case, and wait for the `approved` label.
+Don't open a PR for a feature without an approved issue first. [Open an issue](https://github.com/kimchanhyung98/egasu/issues/new?template=feature_request.yml), make your case, and wait for the `approved` label.
 
 ## What Gets Accepted
 
@@ -104,4 +104,4 @@ Release tags (`v*`) are owner-managed and can only be created by [@kimchanhyung9
 
 ## Questions?
 
-Open a [bug report](https://github.com/kimchanhyung98/openusage/issues/new?template=bug_report.yml) or [feature request](https://github.com/kimchanhyung98/openusage/issues/new?template=feature_request.yml) using the issue templates.
+Open a [bug report](https://github.com/kimchanhyung98/egasu/issues/new?template=bug_report.yml) or [feature request](https://github.com/kimchanhyung98/egasu/issues/new?template=feature_request.yml) using the issue templates.

@@ -7,7 +7,7 @@
 
 ## 아이콘 우클릭
 
-메뉴 막대 아이콘을 우클릭(또는 Control-클릭)하면 **Customize**(사용자 지정), **Settings**(설정), **Quit OpenUsage**(종료)가 담긴 빠른 메뉴가 열림.
+메뉴 막대 아이콘을 우클릭(또는 Control-클릭)하면 **Customize**(사용자 지정), **Settings**(설정), **Quit egasu**(종료)가 담긴 빠른 메뉴가 열림.
 **Customize** 선택 시 프로바이더와 지표를 구성하는 화면으로 바로 이동.
 좌클릭은 평소처럼 팝오버를 여는 동작.
 
@@ -41,7 +41,7 @@ Settings → Appearance → Icon Style:
 ## 화면 공유 중 사용량 숨기기
 
 Settings → Privacy → **Hide From Screen Share**(화면 공유 중 숨기기, 기본값 켬).
-화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 OpenUsage 아이콘과 이름으로 대체.
+화면 공유·녹화를 감지하면 메뉴 막대의 사용량을 egasu 아이콘과 이름으로 대체.
 직접 시작한 화면 녹화도 감지 대상에 포함.
 캡처 종료를 감지하면 별표 지표로 복귀.
 
@@ -56,7 +56,7 @@ macOS의 화면 캡처 상태와 변경 알림으로 감지.
 
 화면 공유·녹화를 감지한 상태:
 
-![OpenUsage 워드마크 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
+![egasu 워드마크 뒤에 가려진 메뉴 막대 스트립](/docs/assets/menu-bar-privacy-sharing.png)
 
 ## 스트립에 표시되는 내용
 

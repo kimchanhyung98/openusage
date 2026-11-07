@@ -14,14 +14,14 @@ Codex CLI 로그인으로 ChatGPT/Codex 구독 한도를 추적하고, Codex 로
 | Extra Usage | Flex 크레딧 — 달러 + 크레딧 형식 그대로 표시(예: `$31.84 · 796 credits`) |
 | Today / Yesterday / Last 30 Days | 로컬 지출 — 비용, 토큰 또는 둘 다(아래 참조) |
 
-Codex가 요금제 이름을 보고하면 OpenUsage의 프로바이더 이름 옆에 표시.
+Codex가 요금제 이름을 보고하면 egasu의 프로바이더 이름 옆에 표시.
 
 ## Pro 요금제
 
 Pro의 월 정가(USD)는 $100·$200·$500의 3단계.
 앱의 플랜명은 Pro Lite·Pro·Pro Max로 표시.
 금액은 플랜명에 포함하지 않음.
-OpenUsage는 사용량 API의 `plan_type`을 다음 이름으로 표시하며, 사용량 배수는 이름에 덧붙이지 않음.
+egasu는 사용량 API의 `plan_type`을 다음 이름으로 표시하며, 사용량 배수는 이름에 덧붙이지 않음.
 
 | API 요금제 | 표시 이름 | 월 정가(USD) |
 |---|---|---|
@@ -42,7 +42,7 @@ Session·Weekly 사용률과 리셋 시각은 서버 응답 그대로 사용하�
 
 ## 주간 타이머 자동 시작
 
-OpenUsage에서 활성화된 각 Codex 계정의 주간 사용량이 정확히 0%이고 서버의 미래 리셋 시각이 계속 이동하는지 재확인한 뒤, 해당 계정으로 짧은 메시지를 자동 전송.
+egasu에서 활성화된 각 Codex 계정의 주간 사용량이 정확히 0%이고 서버의 미래 리셋 시각이 계속 이동하는지 재확인한 뒤, 해당 계정으로 짧은 메시지를 자동 전송.
 현재 터미널 로그인 외의 저장된 계정도 포함하며, 같은 계정을 가리키는 여러 카드는 한 번만 처리.
 새로운 주간 타이머의 시작을 유도하는 일반 Codex 구독 요청이므로 소량의 사용량 발생 가능.
 
@@ -150,7 +150,7 @@ CLI가 반환한 인증의 access·refresh·ID 토큰 중 하나라도 없거나
 Reset Watch는 [codex-resets.com 공개 예측](https://codex-resets.com/)과 해당 [API](https://codex-resets.com/api/docs)를 기반으로 하는 선택적 예측 지표.
 전역·비공식 예측이며 OpenAI의 약속이나 보장이 아님.
 API에 리셋 예정 정보가 있으면 예측 확률 **99% chance**와 Mac의 로컬 시간대 기준 **Scheduled {날짜} at {시각}** 또는 **Scheduled in …** 카운트다운 표시.
-99%는 해당 정보에 대한 OpenUsage의 고정 예측값이며 API에서 제공한 확률이 아님.
+99%는 해당 정보에 대한 egasu의 고정 예측값이며 API에서 제공한 확률이 아님.
 이 99% 예측에는 커뮤니티 투표율이 없으므로 조회·표시하지 않음.
 API의 리셋 예정 정보에 시각이 없으면 예측 확률 99%와 **Reset time unknown** 표시.
 예정 시각 오류나 반영 지연을 고려해 예정 시각 이후 2시간 동안 99% 예측 유지.
@@ -165,10 +165,10 @@ API의 리셋 예정 정보에 시각이 없으면 예측 확률 99%와 **Reset 
 지표 순서는 Rate Limit Resets 바로 앞이며 Customize에서 켜기·이동·별표 가능.
 
 Reset Watch는 Codex 로그인·인증 및 구독 사용량 새로 고침과 독립적으로 작동.
-Codex 프로바이더가 켜져 있고 지표 표시·메뉴 막대 별표·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, OpenUsage가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량과 독립된 15분 주기로 조회.
+Codex 프로바이더가 켜져 있고 지표 표시·메뉴 막대 별표·**Codex Reset Watch** 알림 중 하나라도 켜져 있으면, egasu가 인증 없는 `GET https://codex-resets.com/api/v1/status` 엔드포인트를 일반 사용량과 독립된 15분 주기로 조회.
 유효한 리셋 예정 정보가 없고 활성 watch에 인식 가능한 출처 게시물이 있으면 `GET https://codex-resets.com/api/watch/votes`도 조회하며 해당 게시물과 일치하는 집계만 커뮤니티 투표율 계산에 사용.
 커뮤니티 투표율 조회용 엔드포인트는 웹사이트 내부용이며 문서화된 공개 API에 포함되지 않아 호환성 변경 가능.
-OpenUsage는 커뮤니티 투표율 산출용 집계만 조회하며 투표를 제출하지 않음.
+egasu는 커뮤니티 투표율 산출용 집계만 조회하며 투표를 제출하지 않음.
 지표나 알림을 활성화하거나 활성 상태에서 Codex 프로바이더를 다시 켜면 즉시 조회.
 푸터의 수동 Refresh(⌘R)도 예측·해당하는 커뮤니티 투표율을 사용량과 함께 조회 — 새 캐시도 재검증하되 재시도 대기는 유지하고 이미 진행 중인 요청은 공유.
 자동 15분 일정은 변경하지 않음.
@@ -226,7 +226,7 @@ Codex 프로바이더가 켜져 있으면 지표를 표시하거나 메뉴 막�
 
 ## 인증 정보 출처
 
-Codex CLI(`codex`)로 한 번 로그인하면 OpenUsage가 같은 인증 파일을 읽으며 `$CODEX_HOME` 반영.
+Codex CLI(`codex`)로 한 번 로그인하면 egasu가 같은 인증 파일을 읽으며 `$CODEX_HOME` 반영.
 기본 카드의 계정을 확인한 경우, 관찰한 인증 홈과 계정으로 조회를 고정하고 실패 시 다른 파일이나 키체인의 계정으로 대체하지 않음.
 인증 정보로 인식한 첫 파일의 계정을 알 수 없으면 뒤 파일의 계정으로 귀속하지 않고 미확정 상태 유지.
 계정 미확정 카드의 조회 결과는 특정 계정의 캐시로 기록하지 않음.
@@ -244,7 +244,7 @@ Codex CLI(`codex`)로 한 번 로그인하면 OpenUsage가 같은 인증 파일�
 
 ## 지출 타일
 
-Today / Yesterday / Last 30 Days는 **로컬에서** 계산: OpenUsage가 `~/.codex/sessions/`와 `archived_sessions/`(또는 `$CODEX_HOME`) 아래의 Codex CLI 세션 롤아웃을 직접 읽으므로 외부 도구 불필요.
+Today / Yesterday / Last 30 Days는 **로컬에서** 계산: egasu가 `~/.codex/sessions/`와 `archived_sessions/`(또는 `$CODEX_HOME`) 아래의 Codex CLI 세션 롤아웃을 직접 읽으므로 외부 도구 불필요.
 `CODEX_HOME`은 쉼표가 있어도 하나의 디렉터리 경로로 처리.
 일반 `.jsonl`과 [Codex의 Zstandard 압축 원장](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/rollout/src/compression.rs) `.jsonl.zst` 모두 조회.
 같은 위치에 두 형식이 있으면 일반 파일 우선, 활성·보관 폴더의 상대 경로가 같으면 활성 사본 우선.
@@ -320,7 +320,7 @@ Mac의 로컬 시간대를 기준으로 날짜를 묶어 사용자의 달력과 
 자동 리뷰는 모델별 내역에서 `codex-auto-review`로 구분하고, 비용만 날짜별 참조 모델의 API 요율로 추정.
 참조 모델은 실제 자동 리뷰 백엔드를 확인한 정보가 아니며, 참조 요율이 없으면 모델 내역에 자동 리뷰 이름으로 미산정 표시.
 업데이트 후 남아 있는 로컬 로그를 다시 읽어 모델 구분을 복원하며, 원본 로그 없이 다른 Mac에서 동기화한 과거 합계는 임의로 재분류하지 않음.
-하위 에이전트와 포크된 세션은 부모 세션의 토큰 이력을 자체 로그에 복사하지만, OpenUsage가 복사본을 인식해 하위 에이전트 수와 관계없이 각 토큰을 한 번만 집계.
+하위 에이전트와 포크된 세션은 부모 세션의 토큰 이력을 자체 로그에 복사하지만, egasu가 복사본을 인식해 하위 에이전트 수와 관계없이 각 토큰을 한 번만 집계.
 로그 데이터는 Mac 밖으로 전송하지 않음.
 
 GPT-5.4·GPT-5.5와 해당 Pro 모델, GPT-5.6 Sol·Terra·Luna, GPT-6 Astra·Sol·Luna, GPT-6.1 Sol은 캐시 읽기·쓰기를 포함한 입력 토큰이 272k를 넘는 요청 전체에 OpenAI 긴 컨텍스트 요율 적용.
@@ -399,7 +399,7 @@ Codex가 활성화돼 있으면 실행 시, 활성화 시, 5분마다, 대시보
 - **API 키만 사용하는 설정**에서는 구독 사용량 조회 불가 — 대신 ChatGPT 계정으로 로그인.
 - **지출 타일에 "No data" 표시** — 해당 기간에 표시할 수 있는 지출 내역이 없는 상태.
   기록 부재·사용량 없음·파싱 제외로 발생 가능.
-  관리형 계정 전환 외의 경우 Codex 홈이 커스텀 위치에 있으면 `CODEX_HOME`을 설정해 CLI와 OpenUsage가 같은 위치 사용.
+  관리형 계정 전환 외의 경우 Codex 홈이 커스텀 위치에 있으면 `CODEX_HOME`을 설정해 CLI와 egasu가 같은 위치 사용.
   관리형 터미널 전환은 공유 `~/.codex` 홈 사용.
 
 ## 내부 동작
@@ -411,16 +411,16 @@ Codex가 한도 하나를 일시적으로 제거하고 남은 주간 기간을 p
 기간을 인식할 수 없는 페이로드에는 호환성을 위해 primary를 Session, secondary를 Weekly로 처리하는 대체 규칙을 유지하며, 응답 헤더로 해당 기간의 누락된 백분율 보완.
 
 Spark와 Spark Weekly는 같은 응답의 `additional_rate_limits` 배열에서 가져오며, 기간 기반 Session/Weekly 분류를 재사용하는 모델별 한도.
-OpenUsage는 이름으로 GPT-5.3-Codex-Spark를 식별한 항목을 두 미터로 표시하며, 해당 한도가 없는 계정은 항목 자체가 없어 행에 "No data" 표시.
+egasu는 이름으로 GPT-5.3-Codex-Spark를 식별한 항목을 두 미터로 표시하며, 해당 한도가 없는 계정은 항목 자체가 없어 행에 "No data" 표시.
 배열의 다른 모델 한도는 표시하지 않음.
 
-OpenUsage는 Codex가 보고한 `used_percent`를 그대로 보존.
+egasu는 Codex가 보고한 `used_percent`를 그대로 보존.
 API가 사용하지 않은 기간을 1% 사용으로 보고하면 앱에는 99% 남음, 0%로 보고하면 100% 남음 표시.
 Codex 행은 별도의 "Not started" 상태를 추정하지 않고 일반 재설정 레이블 사용.
 사용 속도 예측은 실제 사용량이 있고 유의미한 계산이 가능할 만큼 기간이 지난 뒤에만 시작.
 
 "Rate Limit Resets" 행에는 온디맨드 재설정 크레딧 개수(예: `2 available`)와 가장 빠른 만료의 색상 점 표시 — 1주 초과는 파랑, 1주 이내는 노랑, 48시간 이내는 빨강.
-OpenUsage는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`도 가능한 범위에서 호출하며, 값에 마우스를 올리면 팝오버에 가장 빠른 순서대로 각 재설정의 타임라인 표시 — 번호가 붙은 색상 점, 정확한 만료 시각(`Jul 12 at 5:30 PM`), 오른쪽 끝의 카운트다운(`12d 18h`).
+egasu는 크레딧별 만료를 나열하는 전용 엔드포인트 `GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits`도 가능한 범위에서 호출하며, 값에 마우스를 올리면 팝오버에 가장 빠른 순서대로 각 재설정의 타임라인 표시 — 번호가 붙은 색상 점, 정확한 만료 시각(`Jul 12 at 5:30 PM`), 오른쪽 끝의 카운트다운(`12d 18h`).
 사용 가능한 크레딧이 없으면 `0 available`, 팝오버에는 `You have no rate limit resets` 표시.
 전용 호출 실패 시 사용량 본문의 개수(`rate_limit_reset_credits.available_count`)로 대체; 본문에는 크레딧별 만료 정보가 없으므로, 팝오버에 개수(`N available`)와 만료 시각을 알 수 없다는 안내를 표시해 크레딧이 없는 것으로 오해하지 않도록 처리.
 

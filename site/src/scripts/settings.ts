@@ -4,6 +4,7 @@ import { languageTags } from '../data/settings';
 import { closeMenu } from './menus';
 import { applyPreviewLanguage, localizePreview } from './localization';
 
+// 이름 변경 전 미리보기 설정을 같은 출처에서 계속 사용.
 const STORAGE_KEY = 'openusage.site.preview.v1';
 let state = initialPreviewState();
 let render = (): void => {};

@@ -1,6 +1,6 @@
 # site
 
-`https://openusage.chanhyung.kim/` 랜딩 페이지.
+`https://egasu.chanhyung.kim/` 랜딩 페이지.
 Astro 정적 출력이며 소개 본문은 한국어.
 앱 미리보기는 영어·한국어·일본어 지원.
 
@@ -40,7 +40,7 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 - 애니메이션 완료를 기다리지 않고 다음·이전 기능으로 이동. 반대 방향 입력은 즉시 반영.
 - 터치는 한 번의 세로 스와이프당 한 단계 이동. Page Up/Down·위아래 방향키를 누르고 있어도 순서대로 진행.
 - 동작 줄이기 설정에서는 부드러운 이동 비활성화.
-- 좁은 모바일에서는 상단 버튼 간격과 폭을 줄여 OpenUsage 로고를 한 줄로 유지. 첫 화면 제목도 한 줄 표시.
+- 좁은 모바일에서는 상단 버튼 간격과 폭을 줄여 egasu 로고를 한 줄로 유지. 첫 화면 제목도 한 줄 표시.
 - 첫 화면에 사용량·비용·초기화 예측 소개, 다운로드·기능 이동 링크, 지원 언어 표시.
 - 첫 화면 앱 미리보기는 가시 폭이 320px보다 좁으면 전체를 같은 비율로 축소. 가로 스크롤 없이 전체 폭 표시.
 - 모바일 미리보기 높이는 화면에 맞춰 300–420px로 제한하고 내용은 앱 안에서 스크롤.
@@ -76,6 +76,8 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 - `v0.14.0` 화면·동작 기준의 예시 데이터.
   기본 언어는 English이며 Language에서 한국어·일본어 선택 시 전체 미리보기에 즉시 적용.
   언어 변경에 새로고침·재시작 불필요.
+- 이름 변경 전과 같은 출처에서 저장한 미리보기 설정을 이어 쓰도록 기존 `openusage.site.*` 저장 키 유지.
+  더 이전 미리보기의 사용량·초기화 시간 표시 설정도 계속 읽음.
 - Reset Watch는 사용량과 별도 확률 막대.
   Used/Left 전환에도 예측 확률과 커뮤니티 투표 눈금 유지.
   예측 시각은 다른 초기화 타이머와 함께 Countdown/Exact Time 및 12/24시간 설정 반영.
@@ -112,13 +114,15 @@ Astro CLI가 에이전트 환경에서 백그라운드 서버를 시작하면 `n
 조립 전 `site/`에서 `npm ci` 실행 필요.
 배포물은 `gh-pages`의 feed 파일을 보존해야 하므로 조립 스크립트로 출력 검증.
 `main`에 사이트·조립 스크립트·provider 아이콘·앱의 한국어·일본어 번역 리소스·게시 workflow 변경을 푸시하면 `Publish landing page`가 `gh-pages`에 반영.
-번역 리소스 범위는 `Sources/OpenUsage/Resources/Localization/{ko,ja}.lproj/*.strings`.
+번역 리소스 범위는 `Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings`.
 자동·수동 게시 모두 재사용하는 `Site CI`의 정적 검사·단위 테스트·E2E·조립 검증을 통과해야 게시 시작.
 사이트 게시 대상만 바뀐 `main` push는 게시 내부 검증 한 번으로 처리.
 그 밖의 앱 소스·배포 workflow 변경과 PR은 독립 `Site CI`에서 검증하며, 두 변경 범위가 섞인 push는 양쪽에서 검증 가능.
 가격표 자동·수동 게시 작업은 `main`에서만 실행하며 다른 브랜치·태그의 수동 게시 작업은 건너뜀.
-게시 전후 `appcast.xml`·`pricing_supplement.json`·`CNAME`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
-필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·도메인 불일치·`gh-pages/.github` 존재 시 게시 전 실패.
+게시 전후 `appcast.xml`·`pricing_supplement.json`의 Git blob을 비교하고, 모두 같을 때 게시 커밋 기록.
+게시 전에는 기존 `openusage.chanhyung.kim` 또는 새 `egasu.chanhyung.kim` 도메인 허용.
+게시 후에는 새 도메인만 허용.
+필수 파일 누락·심볼릭 링크 등 일반 파일이 아닌 항목·허용하지 않은 도메인·`gh-pages/.github` 존재 시 게시 전 실패.
 Release·가격표·사이트 게시가 각각 기록한 커밋을 `pages-publication-<실행 시도 번호>` 산출물로 전달.
 `Deploy Pages`는 성공한 실행의 해당 산출물을 받아 그 커밋만 배포하므로, 대기 중 다른 게시가 시작돼도 배포 내용 고정.
 자동 배포에서 산출물 누락·만료·잘못된 커밋 값은 실패 처리하며 최신 `gh-pages`로 대체하지 않음.
@@ -127,10 +131,10 @@ Release·가격표 게시와 `release-appcast` 실행 그룹 공유.
 사이트는 검증을 마친 게시 작업만 이 그룹에 진입하며, 검증 작업은 호출 workflow별 별도 실행 그룹 사용.
 게시 작업은 `queue: max`로 대기 작업을 보존하고 `cancel-in-progress: false`로 진행 중 작업 유지.
 게시 실패 시 원인을 확인한 뒤 해당 workflow를 다시 실행하고, 후속 `Deploy Pages` 성공까지 확인.
-사이트 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/openusage --ref main`.
+사이트 재게시 명령은 `gh workflow run publish-site.yml --repo kimchanhyung98/egasu --ref main`.
 Pages 배포만 실패하면 해당 배포 실행을 재실행하여 같은 게시 커밋으로 재시도.
 산출물 도입 전 게시 실행이나 산출물이 만료된 실행은 새 게시 실행 필요.
-직접 복구할 때는 현재 `gh-pages`의 피드·도메인·사이트 내용을 확인한 뒤 `gh workflow run deploy-pages.yml --repo kimchanhyung98/openusage --ref main`으로 수동 배포.
+직접 복구할 때는 현재 `gh-pages`의 피드·도메인·사이트 내용을 확인한 뒤 `gh workflow run deploy-pages.yml --repo kimchanhyung98/egasu --ref main`으로 수동 배포.
 이 수동 경로는 현재 `gh-pages`를 배포하며 이전 게시 실행의 커밋에 고정되지 않음.
 두 명령 모두 운영 배포를 실행하므로 로컬 검증용으로 사용하지 않음.
 대기열 동작은 [GitHub concurrency 안내](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency) 기준.
@@ -149,10 +153,11 @@ WITH_FEED=1 ./script/site_assemble.sh /tmp/site-preview "$(git rev-parse --short
 
 - `site_assemble.sh`: 빌드 후 stamp 치환, 출력 단언, 금지 문자열 검사. 인접 임시 폴더에서 모두 통과한 뒤 결과 교체.
 - 앱 원문의 `official Claude sign-in`·`official Codex sign-in`은 provider 로그인 안내로만 허용. 사이트의 공식성 주장 차단은 유지.
-- 기본 출력은 `.build/site-preview`. 빈 폴더 또는 `.openusage-site-output` 표식이 있는 이전 결과만 교체 가능.
+- 기본 출력은 `.build/site-preview`. 빈 폴더 또는 `.egasu-site-output`·이전 `.openusage-site-output` 표식이 있는 결과만 교체 가능.
+  새 조립 결과는 `.egasu-site-output` 표식 사용.
 - 소스·상위 폴더·심볼릭 링크 출력과 무관한 기존 폴더는 거부. 빌드·검증 실패 시 이전 결과 보존.
 - `WITH_FEED=1`은 라이브 `appcast.xml`·`pricing_supplement.json`을 미리보기용으로만 복사. 배포 경로는 이 파일들을 절대 쓰지 않음.
-- `site_feed_snapshot.sh`: 게시 ref의 필수 파일이 일반 파일인지 확인하고 도메인 검사 후 blob ID 출력. publisher에서 게시 전후 결과 비교.
+- `site_feed_snapshot.sh`: 게시 ref의 필수 파일이 일반 파일인지 확인하고 도메인 검사 후 피드 두 개의 blob ID 출력. publisher에서 게시 전후 결과 비교.
 - `site_smoke.sh`: 배포 후 검증. 두 번째 인자로 해당 배포에 포함된 feed 두 개의 사본 폴더를 필수 지정. 응답이 기준 사본과 바이트 단위로 같은지, appcast에 유효한 정식 릴리스가 있는지, 링크·자산이 응답하는지 확인.
 - 링크·자산 URL은 한 항목씩 그대로 요청. 로컬 파일명에 따른 와일드카드 확장 방지.
 - 피드 불일치나 기준 누락은 실패. 캐시 전파가 끝난 뒤 같은 기준으로 다시 실행. 검사 중 새 릴리스가 생겨도 기준은 바뀌지 않으며 원격 브랜치를 조회하지 않음.
@@ -194,7 +199,7 @@ scripts/og.html      OG 이미지 원본
 ## 앱 화면 재현 그래픽
 
 앱 스크린샷을 싣지 않음.
-`Sources/OpenUsage/`의 SwiftUI 소스를 읽어 레이아웃 상수·구성·문자열을 HTML/CSS로 옮김.
+`Sources/Egasu/`의 SwiftUI 소스를 읽어 레이아웃 상수·구성·문자열을 HTML/CSS로 옮김.
 
 - 화면 구성 기준은 [디자인](/site/docs/design.md), 앱 원문과 수치의 근거는 컴포넌트·데이터 코드에서 확인.
 - 화면 기준은 v0.14.0과 현재 체크아웃의 앱 코드.
@@ -220,7 +225,7 @@ scripts/og.html      OG 이미지 원본
 - 심각도·페이스 문구·도넛 라벨은 손으로 적지 않고 `demo.ts`가 앱 규칙대로 계산.
   - 손으로 적으면 상태가 늘 때마다 서로 모순됨.
 
-provider 마크는 사본을 두지 않고 `Sources/OpenUsage/Resources/ProviderIcons/`를 직접 읽음.
+provider 마크는 사본을 두지 않고 `Sources/Egasu/Resources/ProviderIcons/`를 직접 읽음.
 앱과 마크가 어긋날 수 없음.
 
 ### 상호작용

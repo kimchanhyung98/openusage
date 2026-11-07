@@ -140,7 +140,7 @@ native 파서가 실제로 집계한 행만 보충 집계에서 제외하며 같
 
 ## 문제 해결
 
-- **"Not logged in to Kimi"** — `kimi`를 실행해 로그인을 마친 뒤 OpenUsage 새로 고침.
+- **"Not logged in to Kimi"** — `kimi`를 실행해 로그인을 마친 뒤 egasu 새로 고침.
 - **"Kimi session expired"** — `kimi`에서 다시 로그인한 뒤 새로 고침.
 - **"Custom Kimi API or OAuth hosts are not supported"** — 이 프로바이더에는 Kimi Code 기본 호스트 사용.
 

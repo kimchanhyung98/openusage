@@ -72,6 +72,8 @@ provider 마크는 빌드 시 네이티브 앱 리소스에서 조회.
 | 언어 | 선택값만 저장하고 영어 유지 | 한국어·일본어 선택 시 전체 데모·기능 시연에 즉시 적용, 재시작 불필요 |
 | 푸터 | `0.11.1`, 정적 새로고침 문구 | `0.14.0`, 새로고침 동작 안내 버튼 |
 
+현재 앱 미리보기 푸터는 egasu 이름 변경에 맞춰 `1.0.0` 표시.
+
 동작 근거: [대시보드](/docs/dashboard.md), [설정](/docs/settings.md), [Codex](/docs/providers/codex.md), `Views/WidgetRowView.swift`, `Views/RateLimitResetsDetail.swift`, `Views/WidgetGroupedListView.swift`.
 초기화권 개수에 포인터를 올리면 만료 목록 팝오버 표시.
 웹에서는 클릭·키보드로도 열 수 있으며, 카드 높이를 늘리지 않는 읽기 전용 목록으로 재현.

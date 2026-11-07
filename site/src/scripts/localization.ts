@@ -1,7 +1,7 @@
 import { createTranslator, parseStrings, type PreviewLocale, type TranslationTable } from '../data/preview-locale';
 import { previewTranslations } from '../data/preview-translations';
 
-const sources = import.meta.glob('../../../Sources/OpenUsage/Resources/Localization/{ko,ja}.lproj/*.strings', {
+const sources = import.meta.glob('../../../Sources/Egasu/Resources/Localization/{ko,ja}.lproj/*.strings', {
   query: '?raw', import: 'default', eager: true,
 });
 const tables: Record<string, TranslationTable> = {};

@@ -2,7 +2,7 @@ set timeout 1
 set fixture_home [lindex $argv 0]
 set socket_path [lindex $argv 1]
 set ready_path [lindex $argv 2]
-if {![string match "/tmp/openusage-soft-limit-e2e-*" $fixture_home]} {
+if {![string match "/tmp/egasu-soft-limit-e2e-*" $fixture_home]} {
     error "A dedicated Soft Limit fixture directory is required"
 }
 log_user 1

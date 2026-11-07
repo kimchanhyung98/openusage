@@ -1,5 +1,5 @@
 /* 앱 화면 재현 그래픽 — 팝오버·provider 카드·지표 행.
-   소스: Sources/OpenUsage/ v0.14.0. 밀도 Compact, 외관은 Settings 반영.
+   소스: Sources/Egasu/ v0.14.0. 밀도 Compact, 외관은 Settings 반영.
    1 CSS px = 1 SwiftUI pt. */
 
 /* ---------- 팝오버 골격 ---------- */

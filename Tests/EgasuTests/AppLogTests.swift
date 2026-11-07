@@ -1,0 +1,156 @@
+import XCTest
+@testable import Egasu
+
+/// 테스트별 임시 sink와 명시적 level로 전역 상태 경쟁 차단
+final class AppLogTests: XCTestCase {
+    private var tempDir: URL!
+    private var sink: LogFile!
+    private var originalSink: LogFile!
+
+    override func setUpWithError() throws {
+        tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EgasuTests.AppLog.\(UUID().uuidString)", isDirectory: true)
+        sink = LogFile(directory: tempDir, fileName: "egasu.log")
+        sink.open()
+        originalSink = AppLog.sink
+        AppLog.sink = sink
+    }
+
+    override func tearDownWithError() throws {
+        AppLog.sink = originalSink
+        AppLog.reloadLevel() // 이후 코드용으로 실제 저장된 floor 복원
+        if let tempDir, FileManager.default.fileExists(atPath: tempDir.path) {
+            try FileManager.default.removeItem(at: tempDir)
+        }
+    }
+
+    private func fileContents() throws -> String {
+        try String(contentsOf: tempDir.appendingPathComponent("egasu.log"), encoding: .utf8)
+    }
+
+    func testInfoFloorSuppressesDebugButKeepsInfoAndError() throws {
+        AppLog.reloadLevel(.info)
+        AppLog.debug(.cache, "debug-below-floor")
+        AppLog.info(.refresh, "info-at-floor")
+        AppLog.error(.http, "error-always")
+
+        let contents = try fileContents()
+        XCTAssertFalse(contents.contains("debug-below-floor"), contents)
+        XCTAssertTrue(contents.contains("info-at-floor"), contents)
+        XCTAssertTrue(contents.contains("error-always"), contents)
+    }
+
+    func testDebugFloorLetsDebugThrough() throws {
+        AppLog.reloadLevel(.debug)
+        AppLog.debug(.cache, "debug-now-visible")
+        XCTAssertTrue(try fileContents().contains("debug-now-visible"))
+    }
+
+    @MainActor
+    func testLocalAPIDoesNotLogUntrustedRequestText() throws {
+        AppLog.reloadLevel(.debug)
+        let server = LocalUsageServer(state: {
+            LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:], limitDescriptors: [:], errors: [:])
+        })
+        _ = server.route(head: "GET /v1/limits?token=OPAQUE_PRIVATE_VALUE HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "GET /v1/limits/PRIVATE_LIMITS_ACCOUNT_ID HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "GET /v1/usage/PRIVATE_USAGE_ACCOUNT_ID HTTP/1.1\r\nHost: localhost\r\n")
+        _ = server.route(head: "PRIVATE_METHOD /unknown/private@example.com HTTP/1.1\r\nHost: localhost\r\n")
+        let contents = try fileContents()
+        XCTAssertFalse(contents.contains("OPAQUE_PRIVATE_VALUE"))
+        XCTAssertFalse(contents.contains("PRIVATE_LIMITS_ACCOUNT_ID"))
+        XCTAssertFalse(contents.contains("PRIVATE_USAGE_ACCOUNT_ID"))
+        XCTAssertFalse(contents.contains("private@example.com"))
+        XCTAssertFalse(contents.contains("PRIVATE_METHOD"))
+        XCTAssertTrue(contents.contains("/v1/limits"))
+        XCTAssertTrue(contents.contains("/v1/limits/provider"))
+        XCTAssertTrue(contents.contains("/v1/usage/provider"))
+    }
+
+    @MainActor
+    func testLocalAPIQueryOnlyTargetsLogUnknownRoute() throws {
+        AppLog.reloadLevel(.debug)
+        let server = LocalUsageServer(state: {
+            LocalUsageAPI.State(enabledOrderedIDs: [], knownIDs: [], snapshots: [:])
+        })
+
+        for path in ["?", "?/v1/usage", "?/v1/limits", "?/v1/usage/PRIVATE_ACCOUNT"] {
+            XCTAssertEqual(server.route(head: "GET \(path) HTTP/1.1\r\nHost: localhost\r\n").status, 404)
+        }
+
+        let contents = try fileContents()
+        XCTAssertEqual(contents.components(separatedBy: "GET unknown").count - 1, 4, contents)
+        XCTAssertFalse(contents.contains("/v1/usage"), contents)
+        XCTAssertFalse(contents.contains("/v1/limits"), contents)
+        XCTAssertFalse(contents.contains("PRIVATE_ACCOUNT"), contents)
+    }
+
+    func testErrorFloorSuppressesEverythingButError() throws {
+        AppLog.reloadLevel(.error)
+        AppLog.warn(.http, "warn-below-error-floor")
+        AppLog.info(.refresh, "info-below-error-floor")
+        AppLog.error(.http, "error-still-written")
+
+        let contents = try fileContents()
+        XCTAssertFalse(contents.contains("warn-below-error-floor"), contents)
+        XCTAssertFalse(contents.contains("info-below-error-floor"), contents)
+        XCTAssertTrue(contents.contains("error-still-written"), contents)
+    }
+
+    func testWrittenLineCarriesLevelAndTag() throws {
+        AppLog.reloadLevel(.info)
+        AppLog.info(.refresh, "hello")
+        // grep 친화 형태: `<timestamp> [INFO] [refresh] hello`
+        let contents = try fileContents()
+        XCTAssertTrue(contents.contains("[INFO] [refresh] hello"), contents)
+    }
+
+    func testAutoclosureIsNotEvaluatedBelowFloor() {
+        AppLog.reloadLevel(.info)
+        var built = false
+        // `@autoclosure`로 감싸지므로 `emit`이 실제로 메시지를 만들 때만 side effect 발생
+        func expensiveMessage() -> String {
+            built = true
+            return "expensive"
+        }
+        AppLog.debug(.cache, expensiveMessage())
+        XCTAssertFalse(built, "a below-floor debug line must not build its message")
+    }
+
+    func testSecretInLineIsRedactedBeforeWrite() throws {
+        AppLog.reloadLevel(.info)
+        AppLog.info(.auth, "refreshing with token=sk-1234567890abcdefghij")
+        let contents = try fileContents()
+        XCTAssertFalse(contents.contains("sk-1234567890abcdefghij"), contents)
+    }
+
+    @MainActor
+    func testSlowProviderRefreshWritesWarningAtDefaultLogLevel() async throws {
+        AppLog.reloadLevel(.info)
+        let provider = Provider(id: "slow-test", displayName: "Slow Test", icon: .providerMark("codex"))
+        let runtime = TestProviderRuntime(
+            provider: provider,
+            descriptors: [],
+            snapshot: ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
+        )
+        let defaultsName = "EgasuTests.AppLog.slow.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        var ticks = [100.0, 112.5]
+        let store = WidgetDataStore(
+            registry: WidgetRegistry(providers: [provider], descriptors: []),
+            providers: [runtime],
+            cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+            defaults: defaults,
+            monotonicNow: { ticks.count > 1 ? ticks.removeFirst() : ticks[0] }
+        )
+
+        _ = await store.refresh(providerID: provider.id, force: true)
+
+        let contents = try fileContents()
+        XCTAssertTrue(
+            contents.contains("[WARN] [refresh] slow-test slow refresh (12500ms, threshold=10000ms)"),
+            contents
+        )
+    }
+}

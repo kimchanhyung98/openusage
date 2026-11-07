@@ -26,8 +26,12 @@ if root in out.parents and not (root / ".build") in out.parents:
 if out.exists():
     if not out.is_dir() or (out / ".git").exists():
         sys.exit(f"error: outdir is not a preview directory: {out}")
-    marker = out / ".openusage-site-output"
-    owned = marker.is_file() and not marker.is_symlink() and marker.read_text() == "1\n"
+    owned = False
+    for name in (".egasu-site-output", ".openusage-site-output"):
+        marker = out / name
+        if marker.is_file() and not marker.is_symlink() and marker.read_text() == "1\n":
+            owned = True
+            break
     if any(out.iterdir()) and not owned:
         sys.exit(f"error: refusing to replace a nonempty directory not created by site_assemble.sh: {out}")
 print(out)
@@ -79,8 +83,8 @@ if grep -rl '__[A-Z]*__' "$OUT" --include='*.html' --include='*.xml' >/dev/null;
   exit 1
 fi
 # 앱 아이콘 글리프는 상표 결정 전까지 페이지에 싣지 않음. 하위 경로의 페이지까지 검사.
-if grep -rq 'id="pi-openusage"' "$OUT" --include='*.html'; then
-  echo "error: openusage icon symbol must not ship before the trademark decision" >&2
+if grep -rq 'id="pi-egasu"' "$OUT" --include='*.html'; then
+  echo "error: egasu icon symbol must not ship before the trademark decision" >&2
   exit 1
 fi
 
@@ -113,7 +117,7 @@ PY
 # 6. 로컬 미리보기 전용: 라이브 feed 사본. 단언 뒤에 복사하므로 위 검사 대상이 아님.
 if [ "${WITH_FEED:-0}" = "1" ]; then
   for f in appcast.xml pricing_supplement.json; do
-    curl -sSf --max-time 20 "https://openusage.chanhyung.kim/$f" -o "$OUT/$f"
+    curl -sSf --max-time 20 "https://egasu.chanhyung.kim/$f" -o "$OUT/$f"
   done
   echo "copied live appcast.xml and pricing_supplement.json into $OUT (preview only)"
 fi
@@ -123,7 +127,7 @@ python3 - "$OUT" "$DEST" <<'PY'
 from pathlib import Path
 import shutil, sys, tempfile
 out, dest = Path(sys.argv[1]), Path(sys.argv[2])
-(out / ".openusage-site-output").write_text("1\n")
+(out / ".egasu-site-output").write_text("1\n")
 previous = None
 if dest.exists():
     previous = Path(tempfile.mkdtemp(prefix=f".{dest.name}.previous-", dir=dest.parent))

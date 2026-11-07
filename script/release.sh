@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 배포 가능한 OpenUsage.app 빌드, Developer ID 서명·공증 후 DMG 생성.
+# 배포 가능한 egasu.app 빌드, Developer ID 서명·공증 후 DMG 생성.
 # 앱은 Apple Silicon과 Intel Mac에서 모두 실행 가능한 universal binary(arm64 + x86_64), DMG만 출력.
 # appcast는 release.yml의 Sparkle generate_appcast가 별도로 생성하며 EdDSA key로 DMG 서명 후
 # appcast.xml 작성·갱신. 동일한 환경 변수로 CI(release.yml)와 로컬 Mac에서 실행 가능.
@@ -12,9 +12,9 @@ set -euo pipefail
 #   ICLOUD_PROVISIONING_PROFILE  운영 iCloud container용 Developer ID provisioning profile
 #   SPARKLE_PUBLIC_KEY           Info.plist의 SUPublicEDKey에 넣을 base64 EdDSA public key.
 #                                서명용 private key와 일치할 때만 generate_appcast가 DMG에 서명
-#   OPENUSAGE_TAG                릴리스 태그(예: v0.10.0)
+#   EGASU_TAG                    릴리스 태그(예: v1.0.0)
 # 선택 환경 변수:
-#   OPENUSAGE_BUILD              단조 증가하는 CFBundleVersion. 기본값은 git commit 수
+#   EGASU_BUILD                  단조 증가하는 CFBundleVersion. 기본값은 git commit 수
 #   FEED_URL                     앱에 넣을 appcast URL. 기본값은 GitHub Pages project URL
 #   공증 인증 정보: NOTARY_APPLE_ID / NOTARY_APP_PASSWORD / NOTARY_TEAM_ID
 #                                notarytool용 Apple ID, 앱 전용 비밀번호, team ID.
@@ -26,21 +26,22 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 source "$ROOT_DIR/script/version.sh"
 
+EGASU_TAG="${EGASU_TAG:-${OPENUSAGE_TAG:-}}"
 : "${CODESIGN_IDENTITY:?set CODESIGN_IDENTITY to your Developer ID Application identity}"
 : "${ICLOUD_PROVISIONING_PROFILE:?set ICLOUD_PROVISIONING_PROFILE to the iCloud provisioning profile path}"
 : "${SPARKLE_PUBLIC_KEY:?set SPARKLE_PUBLIC_KEY to your base64 EdDSA public key}"
-: "${OPENUSAGE_TAG:?set OPENUSAGE_TAG, e.g. v0.10.0}"
+: "${EGASU_TAG:?set EGASU_TAG, e.g. v1.0.0}"
 
-APP_NAME="OpenUsage"
+APP_NAME="egasu"
 BUNDLE_ID="com.kimchanhyung98.openusage"
 MIN_SYSTEM_VERSION="15.0"
-VERSION="$(openusage_release_version "$ROOT_DIR" "$OPENUSAGE_TAG")"
-# CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "0.10.0-beta.1") 저장.
+VERSION="$(egasu_release_version "$ROOT_DIR" "$EGASU_TAG")"
+# CFBundleShortVersionString에 pre-release 접미사를 포함한 전체 버전(예: "1.0.0-beta.1") 저장.
 # Sparkle 업데이트 안내와 앱 footer/About에 표시되는 문자열이므로 항상 동일해야 함.
 # Sparkle은 이 문자열이 아닌 아래 단조 증가 commit 수인 CFBundleVersion으로 빌드 비교.
 # Developer ID 공증은 숫자 형식을 요구하지 않음(Sparkle 문서의 beta short version 예: "2.0b1").
-BUILD="${OPENUSAGE_BUILD:-$(git rev-list --count HEAD)}"
-FEED_URL="${FEED_URL:-https://openusage.chanhyung.kim/appcast.xml}"
+BUILD="${EGASU_BUILD:-${OPENUSAGE_BUILD:-$(git rev-list --count HEAD)}}"
+FEED_URL="${FEED_URL:-https://egasu.chanhyung.kim/appcast.xml}"
 DMG_NAME="$APP_NAME-$VERSION.dmg"
 
 DIST_DIR="$ROOT_DIR/dist"
@@ -50,14 +51,14 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
-CLI_BINARY="$APP_HELPERS/openusage"
+CLI_BINARY="$APP_HELPERS/egasu"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
 # crash symbolication용 dSYM으로 release.yml에서 PostHog에 업로드.
 # posthog-cli의 `dsym upload --directory`와 Sparkle 모두 단일 경로가 아닌 bundle 디렉터리를 요구.
 DSYM_DIR="$DIST_DIR/dSYMs"
 APP_DSYM="$DSYM_DIR/$APP_NAME.app.dSYM"
-ENTITLEMENTS_TEMPLATE="$ROOT_DIR/script/OpenUsage.release.entitlements.plist"
-ENTITLEMENTS="$DIST_DIR/OpenUsage.release.resolved.entitlements.plist"
+ENTITLEMENTS_TEMPLATE="$ROOT_DIR/script/Egasu.release.entitlements.plist"
+ENTITLEMENTS="$DIST_DIR/egasu.release.resolved.entitlements.plist"
 
 # 공증 여부를 사전 결정. CI는 항상 공증 인증 정보 제공.
 # 로컬 dry run은 ALLOW_UNNOTARIZED=1로 생략 가능하며 해당 빌드는 다른 Mac의 Gatekeeper에 차단됨.
@@ -84,11 +85,11 @@ echo "==> building $APP_NAME $VERSION ($BUILD) — universal (arm64 + x86_64)"
 # `-Xswiftc -g`로 DWARF를 생성해 `dsymutil`이 crash symbolication용 line-level dSYM 생성 가능.
 # 배포 binary 크기는 증가하지 않음. Mach-O는 binary debug map이 참조하는 .o 파일에 DWARF를 보관하고
 # dsymutil이 .dSYM으로 추출하며 실행 파일에는 symbol table만 포함.
-swift build -c release --arch arm64 --arch x86_64 -Xswiftc -g --product OpenUsage
-swift build -c release --arch arm64 --arch x86_64 -Xswiftc -g --product openusage-cli
+swift build -c release --arch arm64 --arch x86_64 -Xswiftc -g --product egasu
+swift build -c release --arch arm64 --arch x86_64 -Xswiftc -g --product egasu-cli
 BUILD_DIR="$(swift build -c release --arch arm64 --arch x86_64 -Xswiftc -g --show-bin-path)"
 BUILD_BINARY="$BUILD_DIR/$APP_NAME"
-BUILD_CLI_BINARY="$BUILD_DIR/openusage-cli"
+BUILD_CLI_BINARY="$BUILD_DIR/egasu-cli"
 [ -x "$BUILD_BINARY" ] || { echo "missing built binary: $BUILD_BINARY" >&2; exit 1; }
 [ -x "$BUILD_CLI_BINARY" ] || { echo "missing built CLI: $BUILD_CLI_BINARY" >&2; exit 1; }
 
@@ -97,6 +98,7 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$BUILD_CLI_BINARY" "$CLI_BINARY"
+ln -s egasu "$APP_HELPERS/openusage"
 chmod +x "$APP_BINARY"
 chmod +x "$CLI_BINARY"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$CLI_BINARY"
@@ -144,7 +146,7 @@ done
 echo "    dSYM: $APP_DSYM"
 
 # 현재 앱·의존성의 resource bundle만 배치. 테스트·다른 제품의 잔여 산출물 제외.
-for bundle in OpenUsage_OpenUsage KeyboardShortcuts_KeyboardShortcuts PostHog_PostHog PostHog_PHPLCrashReporter; do
+for bundle in Egasu_Egasu KeyboardShortcuts_KeyboardShortcuts PostHog_PostHog PostHog_PHPLCrashReporter; do
   cp -R "$BUILD_DIR/$bundle.bundle" "$APP_RESOURCES/$bundle.bundle"
 done
 
@@ -195,7 +197,7 @@ cat >"$APP_CONTENTS/Info.plist" <<PLIST
     <key>iCloud.com.kimchanhyung98.openusage</key>
     <dict>
       <key>NSUbiquitousContainerIsDocumentScopePublic</key><false/>
-      <key>NSUbiquitousContainerName</key><string>OpenUsage</string>
+      <key>NSUbiquitousContainerName</key><string>egasu</string>
       <key>NSUbiquitousContainerSupportedFolderLevels</key><string>None</string>
     </dict>
   </dict>

@@ -1,0 +1,419 @@
+import XCTest
+@testable import Egasu
+
+final class OpenCodeUsageScannerTests: XCTestCase {
+    private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
+    private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
+    private func row(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, _ provider: String) -> String {
+        "[\(epochMs(iso)),\(cost),{\"total\":\(tokens)},\"\(model)\",\"\(provider)\"]"
+    }
+    private let now = EgasuISO8601.date(from: "2026-07-12T12:00:00.000Z")!
+
+    private var db1: String {
+        "[" + [
+            row("2026-07-12T11:00:00.000Z", "2.0", 1000, "glm-5.2", "opencode-go"),  // 오늘·go·session 내
+            row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode"),      // 오늘·zen
+            row("2026-07-11T10:00:00.000Z", "3.0", 2000, "kimi-k2.6", "opencode-go"),// 어제·go
+            row("2026-07-12T11:00:00.000Z", "null", 100, "x", "opencode-go"),        // 비용 null → 제외
+            "\"garbage\""                                                             // 배열 아님 → 제외
+        ].joined(separator: ",") + "]"
+    }
+    private var db2: String {
+        "[" + row("2026-07-12T09:00:00.000Z", "4.0", 800, "deepseek-v4-pro", "opencode-go") + "]"
+    }
+
+    private func standardScanner() -> OpenCodeUsageScanner {
+        let sqlite = FakeSQLite(data: [
+            "/oc/opencode.db": db1,
+            "/oc/opencode-next.db": db2
+        ])
+        return OpenCodeUsageScanner(sqlite: sqlite, databasePaths: { ["/oc/opencode.db", "/oc/opencode-next.db"] })
+    }
+
+    func testCombinedHostedSeriesUnionsDatabasesAndSkipsGarbage() async throws {
+        guard let scan = try await standardScanner().scan(now: now) else { return XCTFail("expected a scan") }
+        let totalCost = scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +)
+        let totalTokens = scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }
+        // opencode-go 2+3+4 + Zen 1 = 10 — null cost·"garbage" row 제외
+        XCTAssertEqual(totalCost, 10.0, accuracy: 0.0001)
+        XCTAssertEqual(totalTokens, 4300) // 계산: 1000 + 500 + 2000 + 800
+    }
+
+    func testSessionSumsOnlyGoAcrossDatabases() async throws {
+        guard let scan = try await standardScanner().scan(now: now) else { return XCTFail("expected a scan") }
+        XCTAssertNotNil(scan.goWindows)
+        // session window(최근 5h)에 go row 2건(2.0, 4.0) 포함 — 10:00 Zen row는 Go cap에서 제외
+        XCTAssertEqual(scan.goWindows?.sessionSpend ?? -1, 6.0, accuracy: 0.0001)
+    }
+
+    func testCostOverflowAcrossDaysAndGatewaysIsExcludedFromGoWindows() async throws {
+        let db = "[" + [
+            row("2026-07-10T10:00:00.000Z", "1e308", 1, "zen", "opencode"),
+            row("2026-07-12T11:00:00.000Z", "1e308", 2, "overflow", "opencode-go"),
+            row("2026-07-12T11:30:00.000Z", "1.23456", 3, "valid", "opencode-go")
+        ].joined(separator: ",") + "]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.logScan.numericWarning)
+        XCTAssertEqual(scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }, 4)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 1.2346)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 1.2346)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1.2346)
+        XCTAssertNoThrow(try JSONEncoder().encode(scan.logScan.usageHistory))
+    }
+
+    func testMonthlyOnlyCostsRejectOverflowingRecentUsageWithNilHistory() async throws {
+        // UTC 월간 기간의 첫날이 로컬 타일 범위 밖에 머물도록 로컬 정오 시각 선택.
+        let start = d("2026-08-01T00:00:00.000Z")
+        let now = try XCTUnwrap((0..<23).map { start.addingTimeInterval(Double($0) * 3600) }.first {
+            [12, 13].contains(Calendar.current.component(.hour, from: $0))
+        })
+        let monthlyMs = Int(now.addingTimeInterval(-31 * 86_400 + 3600).timeIntervalSince1970 * 1000)
+        let recentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
+        let db = """
+        [[\(monthlyMs),1e308,{"total":1},"monthly","opencode-go"],[\(recentMs),1e308,{"total":2},"overflow","opencode-go"]]
+        """
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(
+                data: ["/oc/opencode.db": db],
+                anchors: ["/oc/opencode.db": String(monthlyMs)]
+            ),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertTrue(scan.logScan.series.daily.isEmpty)
+        XCTAssertNil(scan.logScan.usageHistory, "An all-rejected tile window must yield nil history")
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 0)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 0)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1e308)
+    }
+
+    func testCostsOutsideDisplayedWindowsCannotRejectCurrentUsage() async throws {
+        let oldMs = epochMs("2026-06-10T11:00:00.000Z")
+        for provider in ["opencode", "opencode-go"] {
+            for paths in [["/old.db", "/current.db"], ["/current.db", "/old.db"]] {
+                let scanner = OpenCodeUsageScanner(
+                    sqlite: FakeSQLite(data: [
+                        "/old.db": "[" + row("2026-06-10T11:00:00.000Z", "1e308", 1, "old", provider) + "]",
+                        "/current.db": "[" + row("2026-07-12T11:00:00.000Z", "1e308", 2, "current", "opencode-go") + "]"
+                    ], anchors: ["/old.db": String(oldMs)]),
+                    databasePaths: { paths }
+                )
+                let result = try await scanner.scan(now: now, hasGoKey: false)
+                let scan = try XCTUnwrap(result)
+                XCTAssertEqual(scan.logScan.rejectedNumericRows, 0)
+                XCTAssertNil(scan.logScan.numericWarning)
+                XCTAssertEqual(scan.logScan.series.daily.count, 1)
+                XCTAssertEqual(scan.logScan.series.daily.first?.totalTokens, 2)
+                XCTAssertEqual(scan.logScan.series.daily.first?.costUSD, 1e308)
+                let windows = try XCTUnwrap(scan.goWindows)
+                XCTAssertEqual(windows.sessionSpend, 1e308)
+                XCTAssertEqual(windows.weeklySpend, 1e308)
+                XCTAssertEqual(windows.monthlySpend, 1e308)
+                XCTAssertNoThrow(try JSONEncoder().encode(scan.logScan.usageHistory))
+            }
+        }
+    }
+
+    func testZenOutsideTileWindowCannotConsumeActiveGoBudget() async throws {
+        let start = d("2026-08-01T00:00:00.000Z")
+        let now = try XCTUnwrap((0..<23).map { start.addingTimeInterval(Double($0) * 3600) }.first {
+            [12, 13].contains(Calendar.current.component(.hour, from: $0))
+        })
+        let oldMs = Int(now.addingTimeInterval(-31 * 86_400 + 3600).timeIntervalSince1970 * 1000)
+        let currentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": """
+                [[\(oldMs),1e308,{"total":1},"old-zen","opencode"],[\(currentMs),1e308,{"total":2},"current-go","opencode-go"]]
+                """], anchors: ["/oc/opencode.db": String(oldMs)]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        let result = try await scanner.scan(now: now)
+        let scan = try XCTUnwrap(result)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 0)
+        XCTAssertNil(scan.logScan.numericWarning)
+        XCTAssertEqual(scan.logScan.series.daily.first?.totalTokens, 2)
+        XCTAssertEqual(scan.logScan.series.daily.first?.costUSD, 1e308)
+        XCTAssertEqual(scan.goWindows?.sessionSpend, 1e308)
+        XCTAssertEqual(scan.goWindows?.weeklySpend, 1e308)
+        XCTAssertEqual(scan.goWindows?.monthlySpend, 1e308)
+    }
+
+    func testZenOnlyUsageHasNoGoWindows() async throws {
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
+        XCTAssertNil(scan.goWindows) // Go footprint 없음 → 빈 cap meter 미생성
+        XCTAssertEqual(scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +), 1.0, accuracy: 0.0001)
+    }
+
+    func testMissingDatabaseReturnsNil() async throws {
+        let scanner = OpenCodeUsageScanner(sqlite: FakeSQLite(), databasePaths: { [] })
+        let scan = try await scanner.scan(now: now)
+        XCTAssertNil(scan)
+    }
+
+    func testEmptyDatabaseYieldsEmptyScanNotNil() async throws {
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": "[]"]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
+        XCTAssertTrue(scan.logScan.series.daily.isEmpty)
+        XCTAssertNil(scan.goWindows)
+    }
+
+    func testDatabaseDeletedBetweenDiscoveryAndQueryIsUnreadable() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let database = directory.appendingPathComponent("opencode.db")
+        try Data().write(to: database)
+        let scanner = OpenCodeUsageScanner(databasePaths: {
+            let paths = try OpenCodePaths.databaseFiles(in: directory.path)
+            try FileManager.default.removeItem(at: database)
+            return paths
+        })
+
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable after the discovered database disappears")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: database.path))
+    }
+
+    func testDisappearedDatabaseCannotRecoverPriorReadFailure() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        let path = "/oc/opencode.db"
+        let sqlite = FakeSQLite(failing: [path])
+        let scanner = OpenCodeUsageScanner(
+            sqlite: sqlite, databasePaths: { [path] }, readFailureWarning: warnings.record
+        )
+
+        for failing in [true, false, true] {
+            sqlite.failing = failing ? [path] : []
+            do {
+                _ = try await scanner.scan(now: now)
+                XCTFail("expected databaseUnreadable until a real read succeeds")
+            } catch {
+                XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+            }
+        }
+        XCTAssertEqual(warnings.counts, [1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+
+        sqlite.failing = []
+        sqlite.data[path] = "[]"
+        let recovered = try await scanner.scan(now: now)
+        XCTAssertNotNil(recovered)
+        sqlite.failing = [path]
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable after another read failure")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
+    func testFailingDatabaseIsSkippedNotFatal() async throws {
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode-next.db": db2], failing: ["/oc/opencode.db"]),
+            databasePaths: { ["/oc/opencode.db", "/oc/opencode-next.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
+        XCTAssertEqual(scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +), 4.0, accuracy: 0.0001)
+        XCTAssertEqual(scan.logScan.readFailureCount, 1)
+        XCTAssertNotNil(scan.logScan.readWarning)
+    }
+
+    func testAllDatabasesFailingThrowsInsteadOfEmptyScan() async {
+        // 전 DB locked/corrupt — 빈 "success"는 $0 meter를 사실처럼 렌더 (silent-empty-scan 회귀 방지)
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(failing: ["/oc/opencode.db", "/oc/opencode-next.db"]),
+            databasePaths: { ["/oc/opencode.db", "/oc/opencode-next.db"] }
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+    }
+
+    func testUnreadableDataDirectoryThrowsInsteadOfNil() async {
+        // data dir enumerate 불가 → "미사용"이 아니라 접근 고장
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(),
+            databasePaths: { throw CocoaError(.fileReadNoPermission) }
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+    }
+
+    func testDirectoryFailureRecoversAfterDatabaseReadAndCanFailAgain() async throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        var scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": "[]"]),
+            databasePaths: { throw CocoaError(.fileReadNoPermission) },
+            readFailureWarning: warnings.record
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        scanner.databasePaths = { ["/oc/opencode.db"] }
+        let recovered = try await scanner.scan(now: now)
+        XCTAssertNotNil(recovered)
+        scanner.databasePaths = { throw CocoaError(.fileReadNoPermission) }
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .success, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
+    func testDirectoryRecoveryDoesNotReportSuccessWhenAllDatabasesFail() async {
+        let diagnostics = DiagnosticEventRecorder()
+        let warnings = WarningRecorder()
+        var scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(failing: ["/oc/opencode.db"]),
+            databasePaths: { throw CocoaError(.fileReadNoPermission) },
+            readFailureWarning: warnings.record
+        )
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        scanner.databasePaths = { ["/oc/opencode.db"] }
+        do {
+            _ = try await scanner.scan(now: now)
+            XCTFail("expected databaseUnreadable")
+        } catch {
+            XCTAssertEqual(error as? OpenCodeUsageError, .databaseUnreadable)
+        }
+
+        XCTAssertEqual(warnings.counts, [1, 1])
+        XCTAssertEqual(diagnostics.events, [
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode"),
+            DiagnosticEvent(.historyScan, result: .degraded, category: .storage, providerID: "opencode")
+        ])
+    }
+
+    func testHasHostedUsageProbe() {
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let withUsage = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        XCTAssertTrue(withUsage.hasHostedUsage())
+
+        let empty = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": "[]"]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        XCTAssertFalse(empty.hasHostedUsage())
+    }
+
+    func testAbsurdTokenCountIsRejectedWithoutInventingUsage() async throws {
+        let db = "[[\(epochMs("2026-07-12T10:00:00.000Z")),1.0,{\"total\":1e19},\"glm-5.2\",\"opencode-go\"]]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
+        let tokens = scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }
+        XCTAssertEqual(tokens, 0)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.logScan.numericWarning)
+        XCTAssertNil(scan.logScan.usageHistory)
+    }
+
+    func testStaleGoAnchorWithoutRecentSpendOrKeyHasNoGoWindows() async throws {
+        // 오래된 Go anchor만 있고 최근 Go spend·auth key 없음 — lapsed/Zen-only 사용자에게 cap·"Go" badge 미표시
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db], anchors: ["/oc/opencode.db": "1700000000000"]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now, hasGoKey: false) else { return XCTFail("expected a scan") }
+        XCTAssertNil(scan.goWindows)
+    }
+
+    func testGoKeyShowsWindowsEvenWithoutRecentSpend() async throws {
+        // Go 로그인 상태로 window 내 idle → anchor 기준 월로 $0 cap 표시
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let scanner = OpenCodeUsageScanner(
+            sqlite: FakeSQLite(data: ["/oc/opencode.db": db], anchors: ["/oc/opencode.db": "1700000000000"]),
+            databasePaths: { ["/oc/opencode.db"] }
+        )
+        guard let scan = try await scanner.scan(now: now, hasGoKey: true) else { return XCTFail("expected a scan") }
+        XCTAssertNotNil(scan.goWindows)
+        XCTAssertEqual(scan.goWindows?.sessionSpend ?? -1, 0, accuracy: 0.0001)
+    }
+}
+
+/// DB path별 payload 반환, SQL shape으로 query 분류하는 stub
+private final class FakeSQLite: SQLiteAccessing, @unchecked Sendable {
+    var data: [String: String]
+    var anchors: [String: String]
+    var failing: Set<String>
+
+    init(data: [String: String] = [:], anchors: [String: String] = [:], failing: Set<String> = []) {
+        self.data = data
+        self.anchors = anchors
+        self.failing = failing
+    }
+
+    func queryValue(path: String, sql: String) throws -> String? {
+        if failing.contains(path) { throw SQLiteError.queryFailed("boom") }
+        if sql.contains("json_group_array") { return data[path] }
+        if sql.contains("MIN(time_created)") { return anchors[path] }
+        if sql.contains("SELECT 1") {
+            let payload = data[path]
+            return (payload != nil && payload != "[]" && !(payload ?? "").isEmpty) ? "1" : nil
+        }
+        return nil
+    }
+
+    func execute(path: String, sql: String) throws {}
+}

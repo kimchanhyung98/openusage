@@ -46,8 +46,8 @@ const optionItems = [
   { label: 'Share Screenshot', icon: 'share' as const },
   { label: 'Check for Updates…', icon: 'refresh' as const },
   { sep: true },
-  { label: 'About OpenUsage', icon: 'info' as const },
-  { label: 'Quit OpenUsage', icon: 'power' as const },
+  { label: 'About egasu', icon: 'info' as const },
+  { label: 'Quit egasu', icon: 'power' as const },
 ];
 ---
 
@@ -69,7 +69,7 @@ const optionItems = [
         {footer && (
           <div class="am-foot">
             <span class="am-foot-id">
-              <span>OpenUsage {appVersion}</span>
+              <span>egasu {appVersion}</span>
               <button type="button" class="am-refresh" data-native-action="The Mac app refreshes usage here or with ⌘R. This preview uses sample data.">Next update in 4m</button>
             </span>
             {nav ? (
@@ -139,7 +139,7 @@ const optionItems = [
         {footer && nav && (
           <div class="am-foot">
             <span class="am-foot-id">
-              <span>OpenUsage {appVersion}</span>
+              <span>egasu {appVersion}</span>
               <button type="button" class="am-refresh" data-native-action="The Mac app refreshes usage here or with ⌘R. This preview uses sample data.">Next update in 4m</button>
             </span>
           </div>

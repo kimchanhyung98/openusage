@@ -51,10 +51,10 @@ Cost/MTok는 비용과 토큰이 모두 유효한 기간만 포함.
 
 ## 인증 정보 출처
 
-OpenUsage의 OpenRouter 조회에는 사용자가 제공한 API 키 필요.
+egasu의 OpenRouter 조회에는 사용자가 제공한 API 키 필요.
 키별 크레딧 사용액과 키 한도는 [API Keys](https://openrouter.ai/keys)의 일반 키 사용 가능.
 계정 잔액과 상단 비용·토큰 통계는 [Management Keys](https://openrouter.ai/settings/management-keys)에서 발급한 관리 키 필요.
-OpenUsage가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회.
+egasu가 응답의 키 종류를 확인해 관리 키의 통계를 자동 조회.
 앱은 관리 키로 잔액·등급·키 한도·사용 통계만 조회.
 다른 키의 생성·수정·삭제는 수행하지 않음.
 키의 만료 기간과 권한 범위는 [공식 관리 키 문서](https://openrouter.ai/docs/guides/overview/auth/management-api-keys) 참조.
@@ -76,7 +76,7 @@ OpenRouter가 꺼져 있으면 Customize의 프로바이더 목록에서 활성�
    키만 담긴 일반 텍스트 파일 또는 `~/.config/openrouter/key.json`도 사용 가능.
 
 2. **환경 변수:** 셸 프로필(예: `~/.zshrc` 또는 `~/.zprofile`)에 `OPENROUTER_API_KEY` 내보내기 설정 추가.
-   설정을 바꾼 뒤 OpenUsage 종료 후 다시 실행.
+   설정을 바꾼 뒤 egasu 종료 후 다시 실행.
    앱이 시작할 때 로그인 셸 환경을 읽으므로 Finder나 Dock에서 실행해도 해당 키 사용 가능.
    현재 터미널에서만 실행한 `export`는 이미 실행 중인 앱에 적용되지 않음.
    환경 변수에서 키를 찾으면 API Key 카드에 읽기 전용("From environment")으로 표시.

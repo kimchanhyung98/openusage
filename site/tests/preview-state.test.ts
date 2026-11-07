@@ -6,7 +6,7 @@ import { settingGroups } from '../src/data/settings.ts';
 import { softLimitWindows } from '../src/data/metrics.ts';
 import { initialPreviewState, changePreference, selectDashboardAccount, activateAccount, restorePreviewState, previewTime } from '../src/data/preview-state.ts';
 
-const source = (path: string): string => readFileSync(new URL(`../../Sources/OpenUsage/${path}`, import.meta.url), 'utf8');
+const source = (path: string): string => readFileSync(new URL(`../../Sources/Egasu/${path}`, import.meta.url), 'utf8');
 const englishSource = (path: string): string => source(path)
   .replace(/\bL10n\.\w+\(\s*("(?:\\.|[^"\\])*")\s*\)/g, '$1');
 
@@ -64,7 +64,7 @@ test('Soft Limit windows match every native provider declaration', () => {
   const constants = Object.fromEntries([...source('Providers/Antigravity/AntigravityMetric.swift')
     .matchAll(/static let (\w+) = "([^"]+)"/g)].map((match) => [`AntigravityMetric.${match[1]}`, match[2]]));
   const native: Record<string, string> = {};
-  const files = readdirSync(new URL('../../Sources/OpenUsage/Providers/', import.meta.url), { recursive: true, encoding: 'utf8' })
+  const files = readdirSync(new URL('../../Sources/Egasu/Providers/', import.meta.url), { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('Provider.swift'));
   for (const file of files) {
     const family = file.split('/')[0].toLowerCase();

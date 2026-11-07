@@ -1,16 +1,16 @@
-# OpenUsage
+# egasu
 
 Track your AI coding subscriptions from the macOS menu bar — native Swift edition.
 
-OpenUsage shows how much of your AI coding plans you've used: session and weekly limits, credits, and spend, all in one popover. Pin your most important metrics straight into the menu bar.
+egasu shows how much of your AI coding plans you've used: session and weekly limits, credits, and spend, all in one popover. Pin your most important metrics straight into the menu bar.
 
 <p align="center">
-  <img src="assets/screenshot.jpg?v=20260706" alt="OpenUsage menu bar tracker showing Claude and Codex session, weekly, and spend usage" width="900">
+  <img src="assets/screenshot.jpg?v=20260706" alt="egasu menu bar tracker showing Claude and Codex session, weekly, and spend usage" width="900">
 </p>
 
 ## Installation
 
-Download the latest universal DMG from the [GitHub releases page](https://github.com/kimchanhyung98/openusage/releases/latest), open it, and drag OpenUsage to your Applications folder.
+Download the latest universal DMG from the [GitHub releases page](https://github.com/kimchanhyung98/egasu/releases/latest), open it, and drag egasu to your Applications folder.
 
 The app updates itself in place via signed, notarized [Sparkle](docs/updates.md) updates. Requires macOS 15 (Sequoia) or later.
 
@@ -29,7 +29,7 @@ The app updates itself in place via signed, notarized [Sparkle](docs/updates.md)
 - **[OpenRouter](docs/providers/openrouter.md)** — credit balance, daily/weekly/monthly spend (API key)
 - **[Z.ai](docs/providers/zai.md)** — session, weekly, web-search quotas (GLM Coding Plan, API key)
 
-Most providers read the credentials already on your machine (keychain, auth files, app state) — no extra login. OpenRouter and Z.ai are the exceptions: they have no local credential to reuse, so you supply an API key (see [OpenRouter setup](docs/providers/openrouter.md) or [Z.ai setup](docs/providers/zai.md)). Credentials are used only for the corresponding provider requests. OpenUsage's separate anonymous summaries and public pricing downloads are documented under [Privacy & usage data](docs/privacy.md).
+Most providers read the credentials already on your machine (keychain, auth files, app state) — no extra login. OpenRouter and Z.ai are the exceptions: they have no local credential to reuse, so you supply an API key (see [OpenRouter setup](docs/providers/openrouter.md) or [Z.ai setup](docs/providers/zai.md)). Credentials are used only for the corresponding provider requests. egasu's separate anonymous summaries and public pricing downloads are documented under [Privacy & usage data](docs/privacy.md).
 
 ## Features
 
@@ -38,7 +38,7 @@ Most providers read the credentials already on your machine (keychain, auth file
 - **Global shortcut.** Toggle the popover from anywhere — record any combo in Settings.
 - **Customize.** Turn providers and metrics on or off, choose which rows stay Always Visible or On Demand, and drag-reorder both.
 - **Stale-while-revalidate.** Cached values display instantly at launch; refresh runs every 5 minutes (15 minutes for Claude).
-- **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `openusage`, or bypass freshness with `openusage --force`; the menu-bar app does not need to be running.
+- **[One-shot CLI](docs/cli.md).** Agents can read stable limit JSON through the same five-minute cache (15 minutes for Claude) with `egasu`, or bypass freshness with `egasu --force`; the menu-bar app does not need to be running.
 - **[Local HTTP API](docs/local-http-api.md).** Other local apps can read machine-friendly limits from `127.0.0.1:6736/v1/limits`; the legacy `/v1/usage` UI contract remains supported. It is loopback-only, rejects browser-origin requests, and never serves credentials.
 - **[Proxy support](docs/proxy.md).** Route provider requests through SOCKS5 or HTTP(S) via `~/.openusage/config.json`.
 - **Native settings.** Launch at login, global shortcut, icon style, theme, density, 12/24-hour time — see [Settings](docs/settings.md).
@@ -110,7 +110,7 @@ The repository must be public (Sparkle fetches the DMG and appcast anonymously),
 
 ## Contributing
 
-Issues are welcome. Pull requests are **strict and issue-first**: external PRs must link an issue a maintainer has approved with the `approved` label, and automation closes anything that doesn't follow the rules — so **most external PRs are closed by design**. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening one. Report security issues privately per [SECURITY.md](SECURITY.md). The OpenUsage name and logo are covered by the [trademark policy](TRADEMARK.md).
+Issues are welcome. Pull requests are **strict and issue-first**: external PRs must link an issue a maintainer has approved with the `approved` label, and automation closes anything that doesn't follow the rules — so **most external PRs are closed by design**. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening one. Report security issues privately per [SECURITY.md](SECURITY.md). The upstream OpenUsage brand is covered by its [trademark policy](TRADEMARK.md).
 
 ## License
 

@@ -1,0 +1,199 @@
+import AppKit
+import Foundation
+import Observation
+
+/// 번들된 one-shot CLI를 앱 밖 복사 없이 macOS 기본 PATH에 설치.
+/// symlink는 대상 경로가 안정적이라 in-place Sparkle 업데이트에도 생존.
+@MainActor
+@Observable
+final class CommandLineToolInstaller {
+    enum Status: Equatable {
+        case notInstalled
+        case installed
+        case conflict
+    }
+
+    enum Operation { case install, uninstall }
+    enum OperationResult { case success, cancelled, failure(String, code: Int? = nil) }
+
+    private(set) var status: Status
+    private(set) var errorMessage: String?
+
+    let destinationPath: String
+    private let sourcePath: String
+    private let fileManager: FileManager
+    private let performPrivileged: @MainActor (Operation, String, String) -> OperationResult
+
+    init(
+        sourcePath: String = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Helpers/egasu").path,
+        destinationPath: String = "/usr/local/bin/egasu",
+        fileManager: FileManager = .default,
+        performPrivileged: (@MainActor (Operation, String, String) -> OperationResult)? = nil
+    ) {
+        self.sourcePath = sourcePath
+        self.destinationPath = destinationPath
+        self.fileManager = fileManager
+        self.performPrivileged = performPrivileged ?? { operation, source, destination in
+            CommandLineToolInstaller.runPrivileged(
+                operation: operation,
+                sourcePath: source,
+                destinationPath: destination
+            )
+        }
+        self.status = Self.currentStatus(
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            fileManager: fileManager
+        )
+    }
+
+    func refreshStatus() {
+        status = Self.currentStatus(
+            sourcePath: sourcePath,
+            destinationPath: destinationPath,
+            fileManager: fileManager
+        )
+    }
+
+    func install() {
+        refreshStatus()
+        guard status != .installed else { return }
+        guard status != .conflict else {
+            errorMessage = L10n.errors("%@ already exists and wasn't installed by egasu.", destinationPath)
+            return
+        }
+        guard fileManager.isExecutableFile(atPath: sourcePath) else {
+            errorMessage = L10n.errors("The bundled terminal helper couldn't be found. Reinstall egasu and try again.")
+            AppDiagnostics.record(.cliInstall, result: .failure, category: .storage,
+                                  localContext: "Bundled terminal helper is missing or not executable")
+            return
+        }
+        handle(performPrivileged(.install, sourcePath, destinationPath), action: "install", operation: .cliInstall)
+    }
+
+    func uninstall() {
+        refreshStatus()
+        guard status == .installed else { return }
+        handle(performPrivileged(.uninstall, sourcePath, destinationPath), action: "remove", operation: .cliRemove)
+    }
+
+    private func handle(_ result: OperationResult, action: String, operation: DiagnosticOperation) {
+        switch result {
+        case .success:
+            AppDiagnostics.record(operation, result: .success)
+            errorMessage = nil
+        case .cancelled:
+            AppDiagnostics.record(operation, result: .cancelled)
+        case .failure(let message, let code):
+            let context = "Terminal helper \(action) failed"
+                + (code.map { "; error_code=\($0)" } ?? "")
+            let category: ErrorCategory
+            if let code, (1...255).contains(code) {
+                category = .subprocess
+            } else if code == -60005 {
+                category = .permission
+            } else {
+                category = .other
+            }
+            AppDiagnostics.record(operation, result: .failure, category: category, localContext: context)
+            errorMessage = action == "install"
+                ? L10n.errors("Couldn't install the terminal helper: %@", L10n.errors(message))
+                : L10n.errors("Couldn't remove the terminal helper: %@", L10n.errors(message))
+        }
+        refreshStatus()
+    }
+
+    private static func currentStatus(
+        sourcePath: String,
+        destinationPath: String,
+        fileManager: FileManager
+    ) -> Status {
+        guard let target = try? fileManager.destinationOfSymbolicLink(atPath: destinationPath) else {
+            return fileManager.fileExists(atPath: destinationPath) ? .conflict : .notInstalled
+        }
+        // installer는 항상 이 정확한 절대 target 기록, uninstall도 privilege 하에 같은 문자열 재검사 — 수동 생성된 상대/동등 링크는 외부 링크로 간주.
+        return target == sourcePath ? .installed : .conflict
+    }
+
+    private static func runPrivileged(
+        operation: Operation,
+        sourcePath: String,
+        destinationPath: String
+    ) -> OperationResult {
+        let directory = (destinationPath as NSString).deletingLastPathComponent
+        let command: String
+        switch operation {
+        case .install:
+            command = """
+            if [ -e \(shellQuote(destinationPath)) ] || [ -L \(shellQuote(destinationPath)) ]; then exit 73; fi
+            /bin/mkdir -p \(shellQuote(directory)) && /bin/ln -s \(shellQuote(sourcePath)) \(shellQuote(destinationPath))
+            """
+        case .uninstall:
+            command = """
+            target=$(/usr/bin/readlink \(shellQuote(destinationPath))) || exit 74
+            [ "$target" = \(shellQuote(sourcePath)) ] || exit 75
+            /bin/rm \(shellQuote(destinationPath))
+            """
+        }
+
+        return runPrivileged(command: command)
+    }
+
+    static func replacePrivilegedLink(at url: URL, expected: String, target: String) throws {
+        switch runPrivileged(command: replacementCommand(at: url, expected: expected, target: target)) {
+        case .success: return
+        case .cancelled: throw CocoaError(.userCancelled)
+        case .failure(let message, let code):
+            throw NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileWriteNoPermission.rawValue, userInfo: [
+                NSLocalizedDescriptionKey: message,
+                NSUnderlyingErrorKey: NSError(domain: NSOSStatusErrorDomain, code: code ?? -1)
+            ])
+        }
+    }
+
+    /// 승인 대기 중 다른 프로세스가 바꾼 링크는 보존. 임시 링크를 같은 파일시스템에서 교체.
+    static func replacementCommand(at url: URL, expected: String, target: String) -> String {
+        let template = url.deletingLastPathComponent().appendingPathComponent(".egasu-link.XXXXXX").path
+        return """
+        set -e
+        [ -L \(shellQuote(url.path)) ] || exit 74
+        [ "$(/usr/bin/readlink \(shellQuote(url.path)))" = \(shellQuote(expected)) ] || exit 75
+        temporary=$(/usr/bin/mktemp -d \(shellQuote(template)))
+        trap '/bin/rm -rf "$temporary"' EXIT
+        /bin/ln -s \(shellQuote(target)) "$temporary/link"
+        [ -L \(shellQuote(url.path)) ] || exit 74
+        [ "$(/usr/bin/readlink \(shellQuote(url.path)))" = \(shellQuote(expected)) ] || exit 75
+        /bin/mv -h -f "$temporary/link" \(shellQuote(url.path))
+        """
+    }
+
+    private static func runPrivileged(command: String) -> OperationResult {
+        let source = "do shell script \(appleScriptStringLiteral(command)) with administrator privileges"
+        guard let script = NSAppleScript(source: source) else {
+            return .failure("macOS couldn't prepare the authorization request.")
+        }
+        var errorInfo: NSDictionary?
+        script.executeAndReturnError(&errorInfo)
+        guard let errorInfo else { return .success }
+        if let code = errorInfo[NSAppleScript.errorNumber] as? Int, code == -128 {
+            return .cancelled
+        }
+        return .failure(
+            (errorInfo[NSAppleScript.errorMessage] as? String)
+                ?? "macOS rejected the authorization request.",
+            code: errorInfo[NSAppleScript.errorNumber] as? Int
+        )
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static func appleScriptStringLiteral(_ value: String) -> String {
+        let escaped = value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+}

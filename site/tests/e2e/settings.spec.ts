@@ -52,6 +52,43 @@ test('display settings and separate account cards survive a reload', async ({ pa
   await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
 });
 
+test('settings saved before the egasu rename are restored and remain editable', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem('openusage.site.preview.v1')) return;
+    localStorage.setItem('openusage.site.preview.v1', JSON.stringify({
+      preferences: { theme: 'Dark', showUsageAs: 'Left', usageCards: 'Single Card' },
+      activeAccounts: { claude: 'account-1' },
+      viewedAccounts: { claude: 'account-2' },
+    }));
+  });
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await expect(app).toHaveAttribute('data-theme', 'dark');
+  await expect(app).toHaveAttribute('data-mode', 'left');
+  await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
+  await expect(app.locator('[data-card="claude-account-1"]')).toBeHidden();
+  await openSettings(page);
+  await chooseSetting(page, 'Theme', 'Light');
+  await expect(app.getByRole('switch', { name: 'Claude Account 1', exact: true })).toHaveAttribute('aria-checked', 'true');
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('openusage.site.preview.v1')!).preferences))
+    .toMatchObject({ theme: 'Light', showUsageAs: 'Left', usageCards: 'Single Card' });
+  await page.reload();
+  await expect(app).toHaveAttribute('data-theme', 'light');
+  await expect(app).toHaveAttribute('data-mode', 'left');
+  await expect(app.locator('[data-card="claude-account-2"]')).toBeVisible();
+});
+
+test('legacy meter and reset settings survive the egasu rename', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('openusage.site.meterStyle', 'left');
+    localStorage.setItem('openusage.site.resetDisplayMode', 'relative');
+  });
+  await openHome(page);
+  const app = page.locator('[data-mock]');
+  await expect(app).toHaveAttribute('data-mode', 'left');
+  await expect(app).toHaveAttribute('data-reset', 'relative');
+});
+
 test('invalid saved settings recover with defaults and a visible explanation', async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem('openusage.site.preview.v1', '{broken'));
   await openHome(page);

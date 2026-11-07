@@ -1,0 +1,190 @@
+import XCTest
+@testable import Egasu
+
+final class NumericReviewRegressionTests: XCTestCase {
+    func testInvalidTotalsWithValidLastUsageDoNotDoubleCountRecovery() {
+        let data = Data("""
+        {"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.4","total_token_usage":{"input_tokens":100}}}}
+        {"timestamp":"2026-09-12T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.4","total_token_usage":{"input_tokens":-1},"last_token_usage":{"input_tokens":50}}}}
+        {"timestamp":"2026-09-12T10:02:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model":"gpt-5.4","total_token_usage":{"input_tokens":200}}}}
+        """.utf8)
+        let scan = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(data), since: .distantPast, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 200)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+    }
+
+    func testInvalidTotalsAfterZeroBaselineStillWarn() {
+        let data = Data("""
+        {"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":0}}}}
+        {"timestamp":"2026-09-12T10:01:00Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":-1}}}}
+        """.utf8)
+        let scan = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(data), since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertNil(scan.usageHistory)
+        XCTAssertNotNil(scan.numericWarning)
+    }
+
+    func testClaudeInvalidCostsCannotHideValidSidechainCopies() throws {
+        for cost in ["-5", "true", "false", "\"bad\""] {
+            let bad = try XCTUnwrap(ClaudeLogUsageScanner.parseLine(claudeLine(cost: cost, sidechain: false)))
+            let good = try XCTUnwrap(ClaudeLogUsageScanner.parseLine(claudeLine(cost: "0.5", sidechain: true)))
+            XCTAssertTrue(bad.invalidNumericValues, cost)
+            for entries in [[bad, good], [good, bad]] {
+                let scan = ClaudeLogUsageScanner.aggregate(entries: ClaudeLogUsageScanner.dedup(entries), since: .distantPast, pricing: .empty)
+                XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+                XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+                XCTAssertEqual(scan.rejectedNumericRows, 0)
+            }
+        }
+    }
+
+    func testPiInvalidFirstCopyCannotHideValidUsage() throws {
+        func entry(_ input: Int) throws -> UsageRecord {
+            try XCTUnwrap(UsageRecordFixture.piRecord(Data("""
+            {"type":"message","id":"same","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"claude-opus-4-8","usage":{"input":\(input),"totalTokens":100,"cost":{"total":0.5}}}}
+            """.utf8)))
+        }
+        let good = try entry(100), bad = try entry(-1)
+        for entries in [[bad, good], [good, bad]] {
+            let scan = UsageRecordFixture.history(records: UsageRecordDeduplicator.records(entries), providerID: "claude", since: .distantPast, pricing: .empty)
+            XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+            XCTAssertEqual(scan.rejectedNumericRows, 0)
+        }
+    }
+
+    func testNegativeCostRejectsTokensAndCostTogether() {
+        var accumulator = DailyUsageAccumulator()
+        accumulator.add(day: "2026-09-12", tokens: 100, cost: 0.5, model: "a")
+        accumulator.add(day: "2026-09-12", tokens: 999, cost: -5, model: "a")
+        let scan = accumulator.build()
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+    }
+
+    @MainActor
+    func testInvalidOnlyRefreshPreservesPreviouslyPublishedHistory() async throws {
+        let date = Date(timeIntervalSince1970: 1_789_200_000)
+        var good = DailyUsageAccumulator()
+        good.add(day: "2026-09-12", tokens: 100, cost: 0.5, model: "gpt-5.4")
+        let history = good.build().usageHistory
+        let rejected = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(Data(#"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8)), since: .distantPast, pricing: .empty)
+        let codex = CodexProvider()
+        let provider = codex.provider
+        let runtime = TogglingProviderRuntime(provider: provider, descriptors: codex.widgetDescriptors,
+            first: .init(providerID: provider.id, displayName: provider.displayName, lines: [], refreshedAt: date, usageHistory: history),
+            second: .init(providerID: provider.id, displayName: provider.displayName,
+                          lines: [.progress(label: "Session", used: 42, limit: 100, format: .percent)],
+                          refreshedAt: date, usageHistory: rejected.usageHistory))
+        let suite = "NumericReviewTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WidgetDataStore(registry: WidgetRegistry(providers: [provider], descriptors: codex.widgetDescriptors),
+                                    providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots"),
+                                    defaults: defaults, now: { date })
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, history)
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.snapshots[provider.id]?.usageHistory, history)
+        XCTAssertNil(store.headerNotice(for: provider.id))
+        XCTAssertNotNil(store.snapshots[provider.id]?.line(label: "Session"))
+    }
+
+    func testOldMalformedGrokModelEventsDoNotPreventAnAuthoritativeEmptyWindow() throws {
+        let since = try XCTUnwrap(EgasuISO8601.date(from: "2026-09-12T00:00:00Z"))
+        let old = #"{"ts":"2026-08-01T00:00:00Z","pid":1e300,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}"#
+        let empty = GrokLogUsageScanner.parse(old, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(empty.rejectedNumericRows, 0)
+        XCTAssertNotNil(empty.usageHistory)
+        XCTAssertTrue(empty.series.daily.isEmpty)
+        XCTAssertNil(empty.numericWarning)
+        let current = #"{"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100}}"#
+        let rejected = GrokLogUsageScanner.parse(old + "\n" + current, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(rejected.rejectedNumericRows, 1)
+        XCTAssertNil(rejected.usageHistory)
+        let known = #"{"ts":"2026-08-01T00:00:00Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}"#
+        let valid = current.replacingOccurrences(of: "1e300", with: "1")
+        let recovered = GrokLogUsageScanner.parse(old + "\n" + known + "\n" + valid, since: since, pricing: TestPricing.bundled)
+        XCTAssertEqual(recovered.series.daily.first?.totalTokens, 100)
+        XCTAssertEqual(recovered.rejectedNumericRows, 0)
+    }
+
+    func testCodexMergePreservesNumericRejectionsAndUnpricedTokens() throws {
+        let diagnostics = DiagnosticEventRecorder()
+        let date = Date(timeIntervalSince1970: 1_789_200_000)
+        let native = CodexLogUsageScanner.aggregate(events: CodexLogUsageScanner.parseFile(Data(
+            #"{"timestamp":"2026-09-12T10:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":-1}}}}"#.utf8
+        )), since: .distantPast, pricing: TestPricing.bundled)
+        let unsupported = UsageRecordFixture.history(records: [
+            UsageRecordFixture.record(timestamp: date, providerID: "codex", model: "gpt-5.6-sol", cost: nil,
+                  tokens: .init(cacheWrite1h: 100), total: 100)
+        ], providerID: "codex", since: .distantPast, pricing: TestPricing.bundled,
+           costEstimator: CodexUsagePricing.estimateRecord)
+        let rejected = try XCTUnwrap(DailyUsageAccumulator.merged([native, unsupported]))
+        XCTAssertEqual(rejected.rejectedNumericRows, 1)
+        XCTAssertEqual(rejected.unsupportedPricingRows, 1)
+        XCTAssertTrue(diagnostics.events.contains {
+            $0.operation == .historyScan && $0.result == .degraded && $0.category == .other && $0.provider == "codex"
+        })
+        XCTAssertNotNil(rejected.numericWarning)
+        XCTAssertNotNil(rejected.pricingWarning)
+        XCTAssertNotNil(rejected.usageHistory)
+        XCTAssertEqual(rejected.series.daily.first?.totalTokens, 100)
+        XCTAssertNil(rejected.series.daily.first?.costUSD)
+        XCTAssertFalse(rejected.unknownModelsByDay.isEmpty)
+
+        let valid = CodexLogUsageScanner.aggregate(events: [
+            .init(timestamp: date, model: "gpt-5.6-sol", input: 300_000, cached: 100_000,
+                  output: 10_000, reasoning: 0, total: 310_000)
+        ], since: .distantPast, pricing: TestPricing.bundled)
+        let partial = try XCTUnwrap(DailyUsageAccumulator.merged([valid, rejected]))
+        XCTAssertEqual(partial.series.daily.first?.totalTokens, 310_100)
+        XCTAssertNil(partial.series.daily.first?.costUSD)
+        XCTAssertEqual(partial.rejectedNumericRows, 1)
+        XCTAssertEqual(partial.unsupportedPricingRows, 1)
+        XCTAssertNotNil(partial.usageHistory)
+    }
+
+    func testPiRejectsInvalidNumbersBeforeCodexPricingAndKeepsAuthoritativeCosts() throws {
+        let rows = [
+            #""input":-1,"cacheWrite1h":100,"cost":{"total":0}"#,
+            #""input":100,"cacheWrite1h":100,"cost":{"total":0}"#,
+            #""input":100,"cacheWrite1h":100,"cost":{"total":0.5}"#
+        ]
+        let entries = try rows.enumerated().map { index, usage in
+            try XCTUnwrap(UsageRecordFixture.piRecord(Data("""
+            {"type":"message","id":"\(index)","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","usage":{\(usage),"totalTokens":200}}}
+            """.utf8)))
+        }
+        let scan = UsageRecordFixture.history(records: entries, providerID: "codex", since: .distantPast,
+            pricing: TestPricing.bundled, costEstimator: CodexUsagePricing.estimateRecord)
+        XCTAssertEqual(scan.rejectedNumericRows, 1)
+        XCTAssertEqual(scan.unsupportedPricingRows, 1)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 400)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
+        XCTAssertNotNil(scan.numericWarning)
+        XCTAssertNotNil(scan.pricingWarning)
+        XCTAssertNotNil(scan.usageHistory)
+    }
+
+    func testMergeOverflowKeepsBothExistingRejectionCounts() throws {
+        var native = DailyUsageAccumulator()
+        native.add(day: "2026-09-12", tokens: Int.max, cost: 1, model: "a")
+        var pi = DailyUsageAccumulator()
+        pi.add(day: "2026-09-12", tokens: 1, cost: 2, model: "b")
+        let result = try XCTUnwrap(DailyUsageAccumulator.merged([
+            native.build(rejectedNumericRows: 1), pi.build(unsupportedPricingRows: 1)
+        ]))
+        XCTAssertEqual(result.series.daily.first?.totalTokens, Int.max)
+        XCTAssertEqual(result.series.daily.first?.costUSD, 1)
+        XCTAssertEqual(result.rejectedNumericRows, 2)
+        XCTAssertEqual(result.unsupportedPricingRows, 1)
+        XCTAssertNotNil(result.usageHistory)
+    }
+
+    private func claudeLine(cost: String, sidechain: Bool) -> Data {
+        Data("""
+        {"timestamp":"2026-09-12T10:00:00Z","sessionId":"s","requestId":"r","version":"1.0.24","isSidechain":\(sidechain),"costUSD":\(cost),"message":{"id":"same","model":"claude-opus-4-8","usage":{"input_tokens":100,"output_tokens":0}}}
+        """.utf8)
+    }
+}

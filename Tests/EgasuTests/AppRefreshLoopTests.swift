@@ -1,0 +1,356 @@
+import XCTest
+@testable import Egasu
+
+@MainActor
+final class AppRefreshLoopTests: XCTestCase {
+    func testOwnerCancellationStopsHeartbeatWhileReconciliationRemainsSuspended() async throws {
+        let heartbeatStarted = expectation(description: "Heartbeat sleeping")
+        let heartbeatCancelled = expectation(description: "Heartbeat cancelled")
+        let fixture = try Fixture(telemetryEnabled: true, heartbeatSleep: {
+            heartbeatStarted.fulfill()
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch { heartbeatCancelled.fulfill(); throw error }
+        })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [heartbeatStarted, reconciliationStarted], timeout: 2)
+        loop.cancel()
+        await fulfillment(of: [heartbeatCancelled], timeout: 0.5)
+        gate.open()
+        await loop.value
+    }
+
+    func testDisabledTelemetryDoesNotScheduleHeartbeatSleep() async throws {
+        let unexpectedSleep = expectation(description: "Disabled heartbeat remains stopped")
+        unexpectedSleep.isInverted = true
+        let fixture = try Fixture(heartbeatSleep: {
+            unexpectedSleep.fulfill()
+            throw CancellationError()
+        })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [reconciliationStarted], timeout: 2)
+        await fulfillment(of: [unexpectedSleep], timeout: 0.1)
+        loop.cancel()
+        gate.open()
+        await loop.value
+    }
+
+    func testTelemetryConsentRestartsHeartbeatWhileReconciliationIsSuspended() async throws {
+        let firstSleep = expectation(description: "First consent heartbeat")
+        let firstCancellation = expectation(description: "Opt-out cancels heartbeat")
+        let secondSleep = expectation(description: "Renewed consent heartbeat")
+        let secondCancellation = expectation(description: "Owner cancellation stops renewed heartbeat")
+        let unexpectedSleep = expectation(description: "Stopped owner does not restart heartbeat")
+        unexpectedSleep.isInverted = true
+        let probe = HeartbeatProbe(
+            onSleep: { count in
+                switch count {
+                case 1: firstSleep.fulfill()
+                case 2: secondSleep.fulfill()
+                default: unexpectedSleep.fulfill()
+                }
+            },
+            onCancel: { count in
+                if count == 1 { firstCancellation.fulfill() }
+                if count == 2 { secondCancellation.fulfill() }
+            }
+        )
+        let fixture = try Fixture(heartbeatSleep: { try await probe.sleep() })
+        defer { fixture.cleanUp() }
+        let reconciliationStarted = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliationStarted.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [reconciliationStarted], timeout: 2)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [firstSleep], timeout: 0.5)
+        fixture.telemetry.startHeartbeat()
+        fixture.telemetry.startHeartbeat()
+        fixture.telemetry.setEnabled(true)
+        fixture.telemetry.setEnabled(false)
+        await fulfillment(of: [firstCancellation], timeout: 0.5)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [secondSleep], timeout: 0.5)
+        loop.cancel()
+        await fulfillment(of: [secondCancellation], timeout: 0.5)
+        gate.open()
+        await loop.value
+        fixture.telemetry.setEnabled(false)
+        fixture.telemetry.setEnabled(true)
+        await fulfillment(of: [unexpectedSleep], timeout: 0.1)
+        let sleeps = await probe.sleepCount
+        XCTAssertEqual(sleeps, 2)
+    }
+
+    func testCancellationDuringReconciliationDoesNotStartUsageOrStatus() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let entered = expectation(description: "Reconciliation started")
+        let gate = Gate()
+        let http = StatusHTTP()
+        let status = ProviderStatusStore(http: http)
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
+            enabledProviderIDs: { ["claude"] },
+            reconcileAccounts: { entered.fulfill(); await gate.wait() }
+        )
+        await fulfillment(of: [entered], timeout: 2)
+        loop.cancel()
+        gate.open()
+        await loop.value
+
+        XCTAssertEqual(fixture.runtime.refreshCount, 0)
+        let requests = await http.requestCount
+        XCTAssertEqual(requests, 0)
+        XCTAssertNil(fixture.dataStore.lastRefreshAt)
+    }
+
+    func testUsageAndStatusShareQueueAndOwnerCancellationStopsStatus() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let usageStarted = expectation(description: "Usage started")
+        let statusStarted = expectation(description: "Status started")
+        let statusCancelled = expectation(description: "Status cancelled")
+        let usageGate = Gate()
+        fixture.runtime.onRefresh = { usageStarted.fulfill(); await usageGate.wait() }
+        let http = StatusHTTP(
+            blocks: true,
+            onRequest: { statusStarted.fulfill() },
+            onCancel: { statusCancelled.fulfill() }
+        )
+        let status = ProviderStatusStore(http: http, workQueue: fixture.workQueue)
+        let first = Task { await fixture.dataStore.refresh(providerID: "claude", force: true) }
+        await fulfillment(of: [usageStarted], timeout: 2)
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
+            enabledProviderIDs: { ["claude", "claude@work"] }, reconcileAccounts: {}
+        )
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while fixture.workQueue.pendingCount == 0, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(fixture.workQueue.pendingCount, 1)
+        let before = await http.requestCount
+        XCTAssertEqual(before, 0)
+        usageGate.open()
+        await first.value
+        await fulfillment(of: [statusStarted], timeout: 2)
+        loop.cancel()
+        await fulfillment(of: [statusCancelled], timeout: 2)
+        await loop.value
+
+        let requests = await http.requestCount
+        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(status.status(for: "claude"), .unknown)
+        XCTAssertNil(fixture.dataStore.errorMessage(for: "claude"))
+    }
+
+    func testEnablementWakeRechecksStatusFamiliesWithoutPollingDisabledOnes() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let firstPass = expectation(description: "Initial pass")
+        let secondPass = expectation(description: "Enablement pass")
+        let requested = expectation(description: "Enabled status requested")
+        let center = NotificationCenter()
+        let wake = RefreshWakeSignal(center: center)
+        let http = StatusHTTP(onRequest: { requested.fulfill() })
+        let status = ProviderStatusStore(http: http)
+        var enabled: [String] = []
+        var passes = 0
+        fixture.dataStore.onLocalHistoryChanged = { firstPass.fulfill() }
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
+            enabledProviderIDs: { enabled },
+            reconcileAccounts: {
+                passes += 1
+                if passes == 2 { secondPass.fulfill() }
+            },
+            wakeSignal: wake
+        )
+        await fulfillment(of: [firstPass], timeout: 2)
+        let before = await http.requestCount
+        XCTAssertEqual(before, 0)
+        enabled = ["claude", "claude@work", "grok"]
+        center.post(name: ProviderEnablementStore.didChangeNotification, object: nil)
+        await fulfillment(of: [secondPass, requested], timeout: 2)
+        loop.cancel()
+        await loop.value
+
+        let after = await http.requestCount
+        XCTAssertEqual(after, 1)
+        XCTAssertEqual(passes, 2)
+    }
+
+    func testOwnerCancellationFinishesWhileUsageIgnoresCancellation() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let started = expectation(description: "Usage started")
+        let returned = expectation(description: "Loop returned before usage")
+        let gate = Gate()
+        var reconciliations = 0
+        fixture.runtime.onRefresh = { started.fulfill(); await gate.wait() }
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: ProviderStatusStore(http: StatusHTTP()),
+            telemetry: fixture.telemetry, enabledProviderIDs: { [] },
+            reconcileAccounts: { reconciliations += 1 }, interval: 0.001
+        )
+        await fulfillment(of: [started], timeout: 2)
+        loop.cancel()
+        let observer = Task { await loop.value; returned.fulfill() }
+        await fulfillment(of: [returned], timeout: 2)
+        XCTAssertTrue(fixture.dataStore.refreshingProviderIDs.isEmpty)
+        XCTAssertNil(fixture.dataStore.lastRefreshAt)
+        XCTAssertEqual(reconciliations, 1)
+        XCTAssertTrue(fixture.dataStore.providerErrors.isEmpty)
+        gate.open()
+        await observer.value
+    }
+
+    func testStatusFailureDoesNotBecomeAUsageErrorOrChangeTheUsageSnapshot() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let usageFinished = expectation(description: "Usage batch finished")
+        let statusStarted = expectation(description: "Status requested")
+        fixture.dataStore.onLocalHistoryChanged = { usageFinished.fulfill() }
+        let http = StatusHTTP(onRequest: { statusStarted.fulfill() })
+        let status = ProviderStatusStore(http: http)
+        let loop = AppRefreshLoop.start(
+            dataStore: fixture.dataStore, providerStatus: status, telemetry: fixture.telemetry,
+            enabledProviderIDs: { ["claude"] }, reconcileAccounts: {}
+        )
+        await fulfillment(of: [usageFinished, statusStarted], timeout: 2)
+        await status.refresh(providerIDs: ["claude"])
+        loop.cancel()
+        await loop.value
+
+        XCTAssertEqual(status.status(for: "claude"), .unknown)
+        XCTAssertTrue(fixture.dataStore.providerErrors.isEmpty)
+        XCTAssertNotNil(fixture.dataStore.snapshots["claude"])
+        XCTAssertNotNil(fixture.dataStore.lastRefreshAt)
+        XCTAssertEqual(fixture.runtime.refreshCount, 1)
+        let requests = await http.requestCount
+        XCTAssertEqual(requests, 1)
+    }
+
+    @MainActor
+    private final class Fixture {
+        let suite = "EgasuTests.RefreshLoop.\(UUID().uuidString)"
+        let defaults: UserDefaults
+        let runtime = Runtime()
+        let workQueue = BackgroundWorkQueue()
+        let dataStore: WidgetDataStore
+        let telemetry: TelemetryRecorder
+
+        init(
+            telemetryEnabled: Bool = false,
+            heartbeatSleep: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(60)) }
+        ) throws {
+            defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defaults.set(telemetryEnabled, forKey: "enabled")
+            dataStore = WidgetDataStore(
+                registry: WidgetRegistry(providers: [runtime.provider], descriptors: []),
+                providers: [runtime], cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults,
+                workQueue: workQueue
+            )
+            telemetry = TelemetryRecorder(sink: Sink(), store: TelemetryStore(defaults: defaults), snapshot: {
+                TelemetryConfigSnapshot(
+                    enabledProviders: [], enabledMetricIDs: [], pinnedMetricIDs: [], expandedMetricIDs: [], menuBarStyle: "text"
+                )
+            }, heartbeatSleep: heartbeatSleep)
+        }
+
+        func cleanUp() { defaults.removePersistentDomain(forName: suite) }
+    }
+
+    private actor HeartbeatProbe {
+        private(set) var sleepCount = 0
+        let onSleep: @Sendable (Int) -> Void
+        let onCancel: @Sendable (Int) -> Void
+
+        init(onSleep: @escaping @Sendable (Int) -> Void, onCancel: @escaping @Sendable (Int) -> Void) {
+            self.onSleep = onSleep
+            self.onCancel = onCancel
+        }
+
+        func sleep() async throws {
+            sleepCount += 1
+            let count = sleepCount
+            onSleep(count)
+            do { try await Task.sleep(for: .seconds(30)) }
+            catch { onCancel(count); throw error }
+        }
+    }
+
+    @MainActor
+    private final class Gate {
+        private var isOpen = false
+        private var continuation: CheckedContinuation<Void, Never>?
+        func wait() async {
+            guard !isOpen else { return }
+            await withCheckedContinuation { continuation = $0 }
+        }
+        func open() {
+            isOpen = true
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+
+    private final class Runtime: ProviderRuntime {
+        let provider = MockData.claude
+        let widgetDescriptors: [WidgetDescriptor] = []
+        var refreshCount = 0
+        var onRefresh: @MainActor () async -> Void = {}
+        func hasLocalCredentials() async -> Bool { false }
+        func refresh() async -> ProviderSnapshot {
+            refreshCount += 1
+            await onRefresh()
+            return ProviderSnapshot(providerID: provider.id, displayName: provider.displayName, lines: [])
+        }
+    }
+
+    private actor StatusHTTP: HTTPClient {
+        let blocks: Bool
+        let onRequest: @Sendable () -> Void
+        let onCancel: @Sendable () -> Void
+        private(set) var requestCount = 0
+        init(
+            blocks: Bool = false,
+            onRequest: @escaping @Sendable () -> Void = {},
+            onCancel: @escaping @Sendable () -> Void = {}
+        ) {
+            self.blocks = blocks
+            self.onRequest = onRequest
+            self.onCancel = onCancel
+        }
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            requestCount += 1
+            onRequest()
+            if blocks {
+                do { try await Task.sleep(for: .seconds(30)) }
+                catch { onCancel(); throw error }
+            }
+            return HTTPResponse(statusCode: 503, headers: [:], body: Data())
+        }
+    }
+
+    private final class Sink: TelemetrySink {
+        func capture(_ event: String, _ properties: [String: Any]) {}
+        func setEnabled(_ enabled: Bool) {}
+        func flush() {}
+    }
+}

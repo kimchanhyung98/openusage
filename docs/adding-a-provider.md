@@ -1,11 +1,11 @@
 # 프로바이더 추가
 
-OpenUsage에 새 AI 프로바이더를 추가하는 방법.
+egasu에 새 AI 프로바이더를 추가하는 방법.
 아래 구성 요소가 맞물리는 방식을 이해하려면 먼저 [아키텍처 개요](/docs/architecture.md)부터 읽기.
 
 ## 프로바이더란
 
-프로바이더는 `Sources/OpenUsage/Providers/<Name>/` 아래에 두는 작은 Swift 모듈.
+프로바이더는 `Sources/Egasu/Providers/<Name>/` 아래에 두는 작은 Swift 모듈.
 각 모듈은 `ProviderRuntime`을 구현하며, 주요 역할은 다음 세 가지:
 
 - **인증 스토어** — 사용자 Mac의 설정 파일·키체인에서 인증 정보 읽기.
@@ -13,7 +13,7 @@ OpenUsage에 새 AI 프로바이더를 추가하는 방법.
 - **매퍼** — 수집한 데이터를 공통 지표 타입으로 변환.
 
 대부분의 프로바이더는 공식 CLI나 앱에 저장된 로그인 정보 사용.
-OpenRouter처럼 API 키 관리를 지원하는 프로바이더는 OpenUsage에서 키 입력 가능.
+OpenRouter처럼 API 키 관리를 지원하는 프로바이더는 egasu에서 키 입력 가능.
 OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회용 HTTP 클라이언트 불필요.
 
 모든 프로바이더는 `refresh()`와 `hasLocalCredentials()` 구현 필요.
@@ -65,11 +65,11 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 1. **먼저 확인.**
    열린 이슈와 `docs/providers/`를 살펴 해당 프로바이더가 이미 요청됐거나 작업 중인지 확인.
 2. **모듈 생성.**
-   `Sources/OpenUsage/Providers/<Name>/`에 인증 스토어, 사용량 클라이언트 또는 스캐너, 매퍼 추가.
+   `Sources/Egasu/Providers/<Name>/`에 인증 스토어, 사용량 클라이언트 또는 스캐너, 매퍼 추가.
    `ProviderRuntime`의 `refresh()`와 `hasLocalCredentials()` 구현.
    로컬 인증 검사에는 기존 인증 스토어 로더와 유효성 필터 재사용.
    인증 정보를 읽는 별도 경로를 추가하거나 이 검사에서 네트워크를 사용하는 것은 금지.
-   JSON·숫자·퍼센트 파싱에는 `ProviderParse`, 시각 처리에는 `OpenUsageISO8601` 재사용.
+   JSON·숫자·퍼센트 파싱에는 `ProviderParse`, 시각 처리에는 `EgasuISO8601` 재사용.
 3. **위젯 선언.**
    `WidgetDescriptor+Factories.swift`의 팩토리(`percent`, `boundedDollars`, `spend`, `tokenSpend`, `combined`, `values`, `badge` 등)로 프로바이더의 지표를 `WidgetDescriptor`로 노출.
 4. **기본 배치 확인.**
@@ -81,7 +81,7 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
    `ProviderCatalog.make()`의 앱·CLI 공용 목록에 프로바이더 추가.
    Claude·Codex·Cursor를 앞에 유지하고, 새 프로바이더는 나머지 목록에 표시 이름의 알파벳순으로 배치.
 6. **테스트.**
-   샘플 API 응답을 넣고 결과 지표 행을 검사하는 매퍼 테스트를 포함해, `Tests/OpenUsageTests/` 아래에 집중적인 테스트를 추가.
+   샘플 API 응답을 넣고 결과 지표 행을 검사하는 매퍼 테스트를 포함해, `Tests/EgasuTests/` 아래에 집중적인 테스트를 추가.
    로컬 기록을 수집하는 프로바이더는 샘플 기록으로 수집·매핑 결과 검사.
 7. **문서화.**
    추적 항목, 인증 정보 출처, API 엔드포인트 또는 로컬 기록 위치, 오류 상태의 의미를 `docs/providers/` 아래에 문서화.
@@ -94,7 +94,7 @@ OpenCode처럼 로컬 기록만 수집하는 프로바이더는 사용량 조회
 - 검증은 경계(API 응답)에서만, 앱 내부 타입은 신뢰.
 - 숫자를 알아보기 쉽도록 프로바이더 자체 대시보드가 쓰는 지표 레이블과 단위에 맞추기.
 - ID·`metricLabel`·단위 식별자·오류 원문은 기존 영문 계약 유지.
-  새 표시 문구는 `Sources/OpenUsage/Resources/Localization/` 아래 영어·한국어·일본어의 해당 `.strings`에 함께 등록.
+  새 표시 문구는 `Sources/Egasu/Resources/Localization/` 아래 영어·한국어·일본어의 해당 `.strings`에 함께 등록.
   앱이 정의한 오류는 `UserPresentableError`와 `LocalizedMessage`로 원문과 표시 정보 분리.
   상세 규칙은 [표시 언어](/docs/architecture.md#표시-언어) 참조.
 - 프로바이더의 **빠른 링크**는 `Provider` 값(`links:`)에 선언.

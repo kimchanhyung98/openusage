@@ -1,0 +1,929 @@
+{
+  "$comment": "egasu 가격 보충 파일. 단위 USD/100만 토큰. pricing·alias_rules는 기존 앱과 호환되는 항목. pricing_v2·alias_rules_v2는 장문·공급 경로별 계산을 지원하는 앱 전용 확장. cursor/ 항목은 Cursor CSV 전용 요율.",
+  "updated_at": "2026-11-06T16:56:19Z",
+  "pricing": {
+    "gpt-6.1-sol": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10
+    },
+    "gpt-6-sol": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 10
+    },
+    "gpt-6-luna": {
+      "input_per_million": 0.1,
+      "cache_write_per_million": 0.125,
+      "cache_read_per_million": 0.01,
+      "output_per_million": 0.5
+    },
+    "gpt-6-astra-ultrafast": {
+      "input_per_million": 60,
+      "cache_write_per_million": 75,
+      "cache_read_per_million": 6,
+      "output_per_million": 300
+    },
+    "gpt-5.5-cyber": {
+      "input_per_million": 12.5,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1.25,
+      "output_per_million": 75
+    },
+    "chat-latest": {
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30
+    },
+    "openai/gpt-4o-2024-05-13": {
+      "$comment": "OpenAI 가격표에 캐시 할인 미공표 — 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 5,
+      "output_per_million": 15
+    },
+    "gpt-4o-2024-05-13": {
+      "$comment": "OpenAI 가격표에 캐시 할인 미공표 — 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 5,
+      "output_per_million": 15
+    },
+    "glm-5.3": {
+      "$comment": "Z.ai 공식 요율. 캐시 입력 저장은 현재 무료이며 캐시 쓰기에 일반 입력 요율 적용.",
+      "input_per_million": 1.4,
+      "cache_write_per_million": 1.4,
+      "cache_read_per_million": 0.26,
+      "output_per_million": 4.4
+    },
+    "zai/glm-4.5": {
+      "$comment": "Z.ai 직영 공식 캐시 입력 단가. 공개 카탈로그의 오래된 0.06 대신 0.11 적용.",
+      "input_per_million": 0.6,
+      "cache_write_per_million": 0.6,
+      "cache_read_per_million": 0.11,
+      "output_per_million": 2.2
+    },
+    "gpt-6-astra": {
+      "$comment": "OpenAI 공식 요율.",
+      "input_per_million": 10.0,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1.0,
+      "output_per_million": 50.0
+    },
+    "grok-4.6": {
+      "$comment": "Cursor의 공개 요율. 별도 캐시 쓰기 할증 없음.",
+      "input_per_million": 2.0,
+      "cache_write_per_million": 2.0,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6.0
+    },
+    "grok-4.6-fast": {
+      "input_per_million": 4.0,
+      "cache_write_per_million": 4.0,
+      "cache_read_per_million": 1.0,
+      "output_per_million": 12.0
+    },
+    "claude-fable-5.1": {
+      "$comment": "Cursor 모델 표의 공개 API 요율.",
+      "input_per_million": 10.0,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 0.25,
+      "output_per_million": 50.0
+    },
+    "kimi-k3": {
+      "$comment": "Cursor의 공개 API 요율. 별도 캐시 쓰기·장문 할증 없음.",
+      "input_per_million": 3.0,
+      "cache_write_per_million": 3.0,
+      "cache_read_per_million": 0.3,
+      "output_per_million": 15.0
+    },
+    "muse-spark-1.3": {
+      "$comment": "Cursor의 공개 API 요율. 별도 캐시 쓰기·장문 할증 없음.",
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.15,
+      "output_per_million": 4.25
+    },
+    "auto": {
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.25,
+      "output_per_million": 6.0
+    },
+    "composer-1": {
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.125,
+      "output_per_million": 10.0
+    },
+    "composer-1.5": {
+      "input_per_million": 3.5,
+      "cache_write_per_million": 3.5,
+      "cache_read_per_million": 0.35,
+      "output_per_million": 17.5
+    },
+    "composer-2": {
+      "input_per_million": 0.5,
+      "cache_write_per_million": 0.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5
+    },
+    "composer-2-fast": {
+      "input_per_million": 1.5,
+      "cache_write_per_million": 1.5,
+      "cache_read_per_million": 0.35,
+      "output_per_million": 7.5
+    },
+    "composer-2.5": {
+      "input_per_million": 0.5,
+      "cache_write_per_million": 0.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5
+    },
+    "composer-2.5-fast": {
+      "input_per_million": 3.0,
+      "cache_write_per_million": 3.0,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 15.0
+    },
+    "github_bugbot": {
+      "input_per_million": 5.0,
+      "cache_write_per_million": 5.0,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30.0
+    },
+    "grok-4.5": {
+      "$comment": "Cursor + SpaceXAI first-party model. Cache write not published separately; defaults to input.",
+      "input_per_million": 2.0,
+      "cache_write_per_million": 2.0,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6.0
+    },
+    "grok-4.5-fast": {
+      "input_per_million": 4.0,
+      "cache_write_per_million": 4.0,
+      "cache_read_per_million": 1.0,
+      "output_per_million": 18.0
+    },
+    "kimi-k2.7-code": {
+      "$comment": "Cursor's published Kimi K2.7 Code rates. Public catalogs disagree (some bare keys are $0), so this override wins.",
+      "input_per_million": 0.95,
+      "cache_write_per_million": 0.95,
+      "cache_read_per_million": 0.19,
+      "output_per_million": 4.0
+    },
+    "claude-opus-4-7-fast": {
+      "$comment": "Cursor bills Opus 4.7 fast mode at these rates; the models.dev entry carries higher (stale) numbers, so this override wins.",
+      "input_per_million": 30.0,
+      "cache_write_per_million": 37.5,
+      "cache_read_per_million": 3.0,
+      "output_per_million": 150.0
+    },
+    "claude-opus-4-8-fast": {
+      "$comment": "Cursor states Opus 4.8 fast mode is 3x lower per-token than Opus 4.7 fast mode (= 2x the Opus 4.8 base rate, matching LiteLLM's fast multiplier); the models.dev entry disagrees, so this override wins.",
+      "input_per_million": 10.0,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1.0,
+      "output_per_million": 50.0
+    },
+    "claude-opus-5": {
+      "$comment": "Claude Opus 5 launch pricing per anthropic.com/news/claude-opus-5: $5 input / $25 output per million, plus the standard Anthropic cache multipliers (1.25x 5m cache write, 0.1x cache read). LiteLLM, models.dev, and Cursor had not listed the model when this supplement was added, so it would otherwise show as an unpriced model.",
+      "input_per_million": 5.0,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25.0
+    },
+    "claude-opus-5-fast": {
+      "$comment": "Opus 5 fast mode: the launch announcement prices it at twice the Opus 5 base rate, matching the fast multiplier already used for Opus 4.8.",
+      "input_per_million": 10.0,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 1.0,
+      "output_per_million": 50.0
+    },
+    "claude-4-sonnet-1m": {
+      "$comment": "Cursor's long-context Sonnet 4 tier: the whole request bills at the >200k rate.",
+      "input_per_million": 6.0,
+      "cache_write_per_million": 7.5,
+      "cache_read_per_million": 0.6,
+      "output_per_million": 22.5
+    },
+    "gpt-5.6-sol": {
+      "$comment": "OpenAI GPT-5.6 Sol 할인 요율. 공식 최소 유지 기한 2026-11-21.",
+      "input_per_million": 4.0,
+      "cache_write_per_million": 5.0,
+      "cache_read_per_million": 0.4,
+      "output_per_million": 20.0
+    },
+    "gpt-5.6-terra": {
+      "input_per_million": 2.0,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 12.0
+    },
+    "gpt-5.6-luna": {
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.25,
+      "cache_read_per_million": 0.02,
+      "output_per_million": 1.2
+    },
+    "gpt-5.6-cyber": {
+      "$comment": "OpenAI's published GPT-5.6 Cyber pricing. Daybreak Red currently resolves to this restricted-access model.",
+      "input_per_million": 12.5,
+      "cache_write_per_million": 15.625,
+      "cache_read_per_million": 1.25,
+      "output_per_million": 75.0
+    }
+  },
+  "pricing_v2": {
+    "openai/gpt-5.5": {
+      "$comment": "OpenAI 공식 캐시 할인. 공개 카탈로그에서 캐시 단가가 누락된 접두사 항목 보정.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 30,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 10,
+        "cache_write_per_million": 10,
+        "cache_read_per_million": 1,
+        "output_per_million": 45
+      }
+    },
+    "openai/gpt-5.1-codex-max": {
+      "$comment": "OpenAI 공식 단가. models.dev의 같은 접두사에 섞인 재판매 요율 보정. 종료된 모델은 과거 기록용 유지.",
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.125,
+      "output_per_million": 10
+    },
+    "openai/gpt-5.3-codex": {
+      "input_per_million": 1.75,
+      "cache_write_per_million": 1.75,
+      "cache_read_per_million": 0.175,
+      "output_per_million": 14
+    },
+    "openai/gpt-5.4-mini": {
+      "input_per_million": 0.75,
+      "cache_write_per_million": 0.75,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 4.5
+    },
+    "openai/gpt-5.4-nano": {
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.2,
+      "cache_read_per_million": 0.02,
+      "output_per_million": 1.25
+    },
+    "openai/gpt-5-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 15,
+      "cache_write_per_million": 15,
+      "cache_read_per_million": 15,
+      "output_per_million": 120
+    },
+    "openai/gpt-5.2-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 21,
+      "cache_write_per_million": 21,
+      "cache_read_per_million": 21,
+      "output_per_million": 168
+    },
+    "openai/gpt-5.4-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 30,
+      "cache_write_per_million": 30,
+      "cache_read_per_million": 30,
+      "output_per_million": 180,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 60,
+        "cache_write_per_million": 60,
+        "cache_read_per_million": 60,
+        "output_per_million": 270.0
+      }
+    },
+    "openai/gpt-5.5-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 30,
+      "cache_write_per_million": 30,
+      "cache_read_per_million": 30,
+      "output_per_million": 180,
+      "long_context": {
+        "threshold_tokens": 272000,
+        "input_per_million": 60,
+        "cache_write_per_million": 60,
+        "cache_read_per_million": 60,
+        "output_per_million": 270.0
+      }
+    },
+    "openai/o1-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 150,
+      "cache_write_per_million": 150,
+      "cache_read_per_million": 150,
+      "output_per_million": 600
+    },
+    "openai/o3-pro": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 20,
+      "cache_write_per_million": 20,
+      "cache_read_per_million": 20,
+      "output_per_million": 80
+    },
+    "openai/o3-pro-2025-06-10": {
+      "$comment": "OpenAI 공식 단가. 캐시 할인 미공표로 캐시 읽기도 일반 입력 단가 적용.",
+      "input_per_million": 20,
+      "cache_write_per_million": 20,
+      "cache_read_per_million": 20,
+      "output_per_million": 80
+    },
+    "openai/o3-deep-research": {
+      "input_per_million": 10,
+      "cache_write_per_million": 10,
+      "cache_read_per_million": 2.5,
+      "output_per_million": 40
+    },
+    "openai/o4-mini-deep-research": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 8
+    },
+    "claude-opus-4-6": {
+      "$comment": "Fast 제공 종료 후에도 usage.speed가 fast인 과거 기록의 6배 요율 보존. 일반 요청은 표준 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
+    "claude-opus-4-7": {
+      "$comment": "제공이 종료된 Fast 기록용 기본 단가와 6배 배율 보존. 일반 요청은 표준 단가 적용.",
+      "input_per_million": 5,
+      "cache_write_per_million": 6.25,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
+    "gpt-6.1-terra": {
+      "$comment": "OpenAI 공식 단가. 30분 캐시 쓰기 기준.",
+      "input_per_million": 1,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.05,
+      "output_per_million": 5
+    },
+    "gpt-6.1-sol-ultrafast": {
+      "$comment": "OpenAI Ultrafast 공개 단가. Fast 배율 중복 적용 제외.",
+      "input_per_million": 12,
+      "cache_write_per_million": 15,
+      "cache_read_per_million": 0.6,
+      "output_per_million": 60
+    },
+    "gpt-rosalind-research": {
+      "$comment": "2026-10-05 과금 시작. 별도 캐시 쓰기 단가 미공표.",
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
+    "gpt-rosalind-discovery": {
+      "input_per_million": 5,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 25
+    },
+    "claude-opus-5-5": {
+      "input_per_million": 4,
+      "cache_write_per_million": 5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 20
+    },
+    "claude-opus-5-5-fast": {
+      "input_per_million": 8,
+      "cache_write_per_million": 10,
+      "cache_read_per_million": 0.4,
+      "output_per_million": 40
+    },
+    "claude-sonnet-5-5": {
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10
+    },
+    "claude-haiku-5-5": {
+      "$comment": "입력·캐시 합계 100k 초과 시 전체 요청 5배.",
+      "input_per_million": 0.1,
+      "cache_write_per_million": 0.125,
+      "cache_read_per_million": 0.01,
+      "output_per_million": 0.5,
+      "long_context": {
+        "threshold_tokens": 100000,
+        "input_per_million": 0.5,
+        "cache_write_per_million": 0.625,
+        "cache_read_per_million": 0.05,
+        "output_per_million": 2.5
+      }
+    },
+    "claude-mythos-5-1": {
+      "$comment": "접근 제한과 별개로 공개된 API 단가.",
+      "input_per_million": 10,
+      "cache_write_per_million": 12.5,
+      "cache_read_per_million": 0.25,
+      "output_per_million": 50
+    },
+    "claude-sonnet-5": {
+      "$comment": "Anthropic·Cursor 현행 인하 단가. 장문 할증 없음.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2.5,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 10
+    },
+    "grok-4.7": {
+      "$comment": "xAI 요청별 장문 경계는 200k 초과. Cursor는 별도 항목 사용.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 4,
+        "cache_write_per_million": 4,
+        "cache_read_per_million": 1,
+        "output_per_million": 12
+      }
+    },
+    "grok-4.7-fast": {
+      "$comment": "Grok Build·Cursor Fast. 장문은 Standard 기본 단가의 3배.",
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 1,
+      "output_per_million": 12,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 6,
+        "cache_write_per_million": 6,
+        "cache_read_per_million": 1.5,
+        "output_per_million": 18
+      }
+    },
+    "cursor/grok-4.7": {
+      "$comment": "Cursor의 요청별 장문 경계는 256k 초과. CSV 집계에는 장문 할증 미적용.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6,
+      "long_context": {
+        "threshold_tokens": 256000,
+        "input_per_million": 4,
+        "cache_write_per_million": 4,
+        "cache_read_per_million": 1,
+        "output_per_million": 12
+      }
+    },
+    "cursor/grok-4.7-fast": {
+      "$comment": "500k 창 선택만으로 장문 구간 확정 불가.",
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 1,
+      "output_per_million": 12,
+      "long_context": {
+        "threshold_tokens": 256000,
+        "input_per_million": 6,
+        "cache_write_per_million": 6,
+        "cache_read_per_million": 1.5,
+        "output_per_million": 18
+      }
+    },
+    "cursor/grok-4.5": {
+      "$comment": "Cursor 캐시 읽기는 0.50이며 xAI API의 0.30과 구분.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6
+    },
+    "xai/grok-4.3": {
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 2.5,
+        "cache_write_per_million": 2.5,
+        "cache_read_per_million": 0.4,
+        "output_per_million": 5
+      }
+    },
+    "xai/grok-4.20-0309-reasoning": {
+      "$comment": "xAI 공식 인하 단가.",
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 2.5,
+        "cache_write_per_million": 2.5,
+        "cache_read_per_million": 0.4,
+        "output_per_million": 5
+      }
+    },
+    "xai/grok-4.20-0309-non-reasoning": {
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 2.5,
+        "cache_write_per_million": 2.5,
+        "cache_read_per_million": 0.4,
+        "output_per_million": 5
+      }
+    },
+    "xai/grok-4.20-multi-agent-0309": {
+      "input_per_million": 1.25,
+      "cache_write_per_million": 1.25,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2.5,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 2.5,
+        "cache_write_per_million": 2.5,
+        "cache_read_per_million": 0.4,
+        "output_per_million": 5
+      }
+    },
+    "grok-build-0.1": {
+      "input_per_million": 1,
+      "cache_write_per_million": 1,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 2,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 2,
+        "cache_write_per_million": 2,
+        "cache_read_per_million": 0.4,
+        "output_per_million": 4
+      }
+    },
+    "gemini-4-argon": {
+      "$comment": "Google 공식 할인 단가. 2026-11-30까지 유지, 이후 공식 표 재확인 필요.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.1,
+      "output_per_million": 10
+    },
+    "gemini-3.8-flash": {
+      "$comment": "Google 공식 할인 단가. 2026-12-31까지 유지, 이후 공식 표 재확인 필요.",
+      "input_per_million": 0.75,
+      "cache_write_per_million": 0.75,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 3.75
+    },
+    "gemini-3.6-flash": {
+      "$comment": "Google 공식 할인 단가. 2026-12-31까지 유지. Cursor 요율과 구분.",
+      "input_per_million": 0.75,
+      "cache_write_per_million": 0.75,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 3.75
+    },
+    "gemini-3.5-flash-lite": {
+      "input_per_million": 0.3,
+      "cache_write_per_million": 0.3,
+      "cache_read_per_million": 0.03,
+      "output_per_million": 2.5
+    },
+    "cursor/gemini-3.5-flash": {
+      "$comment": "Cursor 현행 표. Google의 자동 라우팅 요율을 적용하지 않음.",
+      "input_per_million": 1.5,
+      "cache_write_per_million": 1.5,
+      "cache_read_per_million": 0.15,
+      "output_per_million": 9
+    },
+    "cursor/gemini-3.6-flash": {
+      "$comment": "Cursor 현행 표. Google API 할인과 구분.",
+      "input_per_million": 1.5,
+      "cache_write_per_million": 1.5,
+      "cache_read_per_million": 0.15,
+      "output_per_million": 7.5
+    },
+    "zai/glm-4.5-air": {
+      "input_per_million": 0.2,
+      "cache_write_per_million": 0.2,
+      "cache_read_per_million": 0.03,
+      "output_per_million": 1.1
+    },
+    "zai/glm-4.5-airx": {
+      "input_per_million": 1.1,
+      "cache_write_per_million": 1.1,
+      "cache_read_per_million": 0.22,
+      "output_per_million": 4.5
+    },
+    "zai/glm-4.5-x": {
+      "input_per_million": 2.2,
+      "cache_write_per_million": 2.2,
+      "cache_read_per_million": 0.45,
+      "output_per_million": 8.9
+    },
+    "zai/glm-4.5v": {
+      "input_per_million": 0.6,
+      "cache_write_per_million": 0.6,
+      "cache_read_per_million": 0.11,
+      "output_per_million": 1.8
+    },
+    "glm-5.2": {
+      "$comment": "Z.ai 직영 단가. 제3자 호스팅 카탈로그 값보다 우선.",
+      "input_per_million": 1.4,
+      "cache_write_per_million": 1.4,
+      "cache_read_per_million": 0.26,
+      "output_per_million": 4.4
+    },
+    "glm-5.3-flash": {
+      "input_per_million": 0.15,
+      "cache_write_per_million": 0.15,
+      "cache_read_per_million": 0.03,
+      "output_per_million": 0.5
+    },
+    "glm-5.3-flashx": {
+      "input_per_million": 0.37,
+      "cache_write_per_million": 0.37,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 1.25
+    },
+    "glm-5.3-flashx-legal": {
+      "input_per_million": 0.37,
+      "cache_write_per_million": 0.37,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 1.25
+    },
+    "cursor/glm-5.3-flash": {
+      "$comment": "Cursor 캐시 읽기 0.029. Z.ai 직영 API의 0.03과 구분.",
+      "input_per_million": 0.15,
+      "cache_write_per_million": 0.15,
+      "cache_read_per_million": 0.029,
+      "output_per_million": 0.5
+    },
+    "kimi-k3.1-pro": {
+      "$comment": "Kimi 공식 5분 캐시 쓰기는 입력과 동일, 1시간은 입력 2배.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 10
+    },
+    "kimi-k3.1-pro-highspeed": {
+      "$comment": "Highspeed 캐시 읽기는 일반 모델과 같은 0.20. 일괄 2배 계산 금지.",
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 20
+    },
+    "muse-wonder-1.0": {
+      "$comment": "Cursor 공식 모델 ID와 단가.",
+      "input_per_million": 4,
+      "cache_write_per_million": 4,
+      "cache_read_per_million": 0.2,
+      "output_per_million": 20
+    },
+    "cursor/deepseek-flash": {
+      "$comment": "Cursor의 DeepSeek V4.1 Flash 1017 단가. DeepSeek 직영 비혼잡시간 할인 미적용.",
+      "input_per_million": 0.3,
+      "cache_write_per_million": 0.3,
+      "cache_read_per_million": 0.006,
+      "output_per_million": 1.2
+    },
+    "grok-4.6": {
+      "$comment": "xAI 공식 단가와 요청별 장문 구간.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.5,
+      "output_per_million": 6,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 4,
+        "cache_write_per_million": 4,
+        "cache_read_per_million": 1,
+        "output_per_million": 12
+      }
+    },
+    "kimi-k3": {
+      "$comment": "Kimi 공식 단가. 5분 캐시 쓰기 3달러, 1시간 6달러 / 100만 토큰.",
+      "input_per_million": 3.0,
+      "cache_write_per_million": 3.0,
+      "cache_read_per_million": 0.3,
+      "output_per_million": 15.0
+    },
+    "grok-4.5": {
+      "$comment": "xAI API 캐시 할인 단가. Cursor는 cursor/grok-4.5 사용.",
+      "input_per_million": 2,
+      "cache_write_per_million": 2,
+      "cache_read_per_million": 0.3,
+      "output_per_million": 6,
+      "long_context": {
+        "threshold_tokens": 200000,
+        "input_per_million": 4,
+        "cache_write_per_million": 4,
+        "cache_read_per_million": 0.6,
+        "output_per_million": 12
+      }
+    },
+    "cursor/gemini-3.7-flash": {
+      "input_per_million": 0.75,
+      "cache_write_per_million": 0.75,
+      "cache_read_per_million": 0.075,
+      "output_per_million": 3.75,
+      "$comment": "Cursor는 3.7 이름과 요율을 별도 유지. Google의 3.8 자동 라우팅과 구분."
+    }
+  },
+  "fast_multipliers_exact": {
+    "openai/gpt-5.5": 2.5,
+    "openai/gpt-5.1-codex-max": 2.0,
+    "openai/gpt-5.3-codex": 2.0,
+    "claude-opus-4-6": 6.0,
+    "claude-opus-4-7": 6.0,
+    "gpt-6.1-sol": 2.0,
+    "gpt-6-sol": 2.0,
+    "gpt-6-luna": 2.0,
+    "gpt-5.4-mini": 2.0,
+    "gpt-5.1": 2.0,
+    "gpt-5-mini": 1.8,
+    "gpt-4.1": 1.75,
+    "gpt-4.1-mini": 1.75,
+    "gpt-4.1-nano": 2.0,
+    "gpt-4o": 1.7,
+    "gpt-4o-2024-05-13": 1.75,
+    "gpt-4o-mini": 1.6666666666666667,
+    "gpt-6.1-terra": 2.0,
+    "o3": 1.75,
+    "o4-mini": 1.8181818181818181,
+    "claude-opus-5-5": 2.0
+  },
+  "fast_multipliers": {
+    "gpt-6-astra": 2.0,
+    "claude-opus-5": 2.0,
+    "gpt-5": 2.0,
+    "gpt-5.1-codex": 2.0,
+    "gpt-5.1-codex-max": 2.0,
+    "gpt-5.2": 2.0,
+    "gpt-5.2-codex": 2.0,
+    "gpt-5.3-codex": 2.0,
+    "gpt-5.4": 2.0,
+    "gpt-5.5": 2.5,
+    "gpt-5.6-sol": 2.0,
+    "gpt-5.6-terra": 2.0,
+    "gpt-5.6-luna": 2.0
+  },
+  "alias_rules_v2": [
+    {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]6(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-6"},
+    {"pattern": "(?i)^(?:anthropic/)?claude-opus-4[-.]7(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-4-7"},
+    {"pattern": "(?i)^(?:xai/)?(?:grok-4[.-]5-latest|grok-build-latest)$", "canonical": "grok-4.5"},
+    {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]7-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.7-flash"},
+    {"pattern": "(?i)^(?:openai/)?gpt\\-6\\.1\\-terra(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-terra-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt\\-6\\.1\\-terra(?:-(?:none|low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-terra"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.1-sol(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-sol-ultrafast"},
+    {"pattern": "(?i)^(?:openai/)?gpt\\-rosalind\\-research(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-rosalind-research"},
+    {"pattern": "(?i)^(?:openai/)?gpt\\-rosalind\\-discovery(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-rosalind-discovery"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-opus-5[.-]5|claude-5[.-]5-opus)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-5-5-fast"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-opus-5[.-]5|claude-5[.-]5-opus)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-opus-5-5"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-sonnet-5[.-]5|claude-5[.-]5-sonnet)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-sonnet-5-5"},
+    {"pattern": "(?i)^(?:anthropic/)?(?:claude-haiku-5[.-]5|claude-5[.-]5-haiku)(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-haiku-5-5"},
+    {"pattern": "(?i)^(?:anthropic/)?claude-mythos-5[.-]1(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-mythos-5-1"},
+    {"pattern": "(?i)^(?:anthropic/)?claude-sonnet-5(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "claude-sonnet-5"},
+    {"pattern": "(?i)^(?:cursor/(?:cursor-|xai/)?|cursor-)grok-4[.-]7(?:-500k)?-fast(?:-(?:low|medium|high|xhigh))?$", "canonical": "cursor/grok-4.7-fast"},
+    {"pattern": "(?i)^(?:cursor/(?:cursor-|xai/)?|cursor-)grok-4[.-]7(?:-500k)?(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "cursor/grok-4.7-fast"},
+    {"pattern": "(?i)^(?:cursor/(?:cursor-|xai/)?|cursor-)grok-4[.-]7(?:-500k)?(?:-(?:low|medium|high|xhigh))?$", "canonical": "cursor/grok-4.7"},
+    {"pattern": "(?i)^(?:cursor/(?:cursor-|xai/)?|cursor-)grok-4[.-]5(?:-500k)?(?:-(?:low|medium|high|xhigh))?$", "canonical": "cursor/grok-4.5"},
+    {"pattern": "(?i)^(?:xai/)?grok-4[.-]7(?:-500k)?-fast(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.7-fast"},
+    {"pattern": "(?i)^(?:xai/)?grok-4[.-]7(?:-500k)?(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "grok-4.7-fast"},
+    {"pattern": "(?i)^(?:xai/)?grok-4[.-]7(?:-500k)?(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.7"},
+    {"pattern": "(?i)^(?:xai/)?grok-4[.-]5(?:-500k)?(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.5"},
+    {"pattern": "(?i)^(?:xai/)?grok-4[.-]6(?:-500k)?(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.6"},
+    {"pattern": "(?i)^(?:xai/)?grok\\-4\\.3(?:-thinking)?$", "canonical": "xai/grok-4.3"},
+    {"pattern": "(?i)^(?:xai/)?grok\\-4\\.20\\-0309\\-reasoning(?:-thinking)?$", "canonical": "xai/grok-4.20-0309-reasoning"},
+    {"pattern": "(?i)^(?:xai/)?grok\\-4\\.20\\-0309\\-non\\-reasoning(?:-thinking)?$", "canonical": "xai/grok-4.20-0309-non-reasoning"},
+    {"pattern": "(?i)^(?:xai/)?grok\\-4\\.20\\-multi\\-agent\\-0309(?:-thinking)?$", "canonical": "xai/grok-4.20-multi-agent-0309"},
+    {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]5-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.5-flash"},
+    {"pattern": "(?i)^cursor/(?:google/)?gemini-3[.-]6-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "cursor/gemini-3.6-flash"},
+    {"pattern": "(?i)^(?:google/)?gemini-3[.-]5-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
+    {"pattern": "(?i)^(?:google/)?gemini-3[.-]6-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.6-flash"},
+    {"pattern": "(?i)^(?:google/)?gemini-3[.-]7-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
+    {"pattern": "(?i)^(?:google/)?gemini-3[.-]8-flash(?:-preview)?(?:-(?:low|medium|high))?$", "canonical": "gemini-3.8-flash"},
+    {"pattern": "(?i)^(?:google/)?gemini-4-argon(?:-preview)?(?:-(?:minimal|low|medium|high))?$", "canonical": "gemini-4-argon"},
+    {"pattern": "(?i)^(?:google/)?gemini-3[.-]5-flash-lite(?:-preview)?$", "canonical": "gemini-3.5-flash-lite"},
+    {"pattern": "(?i)^cursor/(?:zai/|z-ai/)?glm-5[.-]3-flash(?:-(?:high|max))?$", "canonical": "cursor/glm-5.3-flash"},
+    {"pattern": "(?i)^(?:zai/|z-ai/)?glm\\-5\\.3\\-flash(?:-(?:high|max))?$", "canonical": "glm-5.3-flash"},
+    {"pattern": "(?i)^(?:zai/|z-ai/)?glm\\-5\\.3\\-flashx(?:-(?:high|max))?$", "canonical": "glm-5.3-flashx"},
+    {"pattern": "(?i)^(?:zai/|z-ai/)?glm\\-5\\.3\\-flashx\\-legal(?:-(?:high|max))?$", "canonical": "glm-5.3-flashx-legal"},
+    {"pattern": "(?i)^(?:zai/|z-ai/)?glm\\-5\\.2(?:-(?:high|max))?$", "canonical": "glm-5.2"},
+    {"pattern": "(?i)^(?:moonshot/|moonshotai/)?kimi\\-k3\\.1\\-pro\\-highspeed$", "canonical": "kimi-k3.1-pro-highspeed"},
+    {"pattern": "(?i)^(?:moonshot/|moonshotai/)?kimi\\-k3\\.1\\-pro$", "canonical": "kimi-k3.1-pro"},
+    {"pattern": "(?i)^(?:meta/)?muse-wonder-1[.-]0(?:-(?:minimal|low|medium|high|xhigh|extra-high|max))?$", "canonical": "muse-wonder-1.0"},
+    {"pattern": "(?i)^cursor/(?:deepseek/)?(?:deepseek-flash|deepseek-v4[.-]1-flash(?:-1017)?)(?:-(?:low|high|max))?$", "canonical": "cursor/deepseek-flash"}
+  ],
+  "alias_rules": [
+    {"pattern": "(?i)^(?:openai/)?gpt-4o-2024-05-13$", "canonical": "gpt-4o-2024-05-13"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.1-sol(?:-(?:low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6\\.1-sol(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6.1-sol"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-sol(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-sol-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-sol(?:-(?:none|low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-sol"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-luna(?:-(?:none|low|medium|high|xhigh|max))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-luna-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-luna(?:-(?:none|low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-luna"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?[-.@]ultrafast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-ultrafast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.5-cyber(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.5-cyber"},
+    {"pattern": "(?i)^(?:openai/)?chat-latest$", "canonical": "chat-latest"},
+    {"pattern": "(?i)^(?:openai/)?gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?[-.@]fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.4-mini-fast"},
+    {"pattern": "^(?:zai/)?glm-5\\.3$", "canonical": "glm-5.3"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?-fast(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra-fast"},
+    {"pattern": "(?i)^(?:openai/)?gpt-6-astra(?:-(?:low|medium|high|xhigh|max))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-6-astra"},
+    {"pattern": "^(?:cursor-|xai/)?grok-4[.-]6-fast(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.6-fast"},
+    {"pattern": "^(?:cursor-|xai/)?grok-4[.-]6(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "grok-4.6-fast"},
+    {"pattern": "^(?:cursor-|xai/)?grok-4[.-]6(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.6"},
+    {"pattern": "^(?:anthropic/)?claude-fable-5[.-]1(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-fable-5.1"},
+    {"pattern": "^(?:moonshot/)?kimi-k3$", "canonical": "kimi-k3"},
+    {"pattern": "^(?:meta/)?muse-spark-1\\.3(?:-(?:minimal|low|medium|high|xhigh|extra-high|max))?$", "canonical": "muse-spark-1.3"},
+    { "pattern": "^agent_review$", "canonical": "gpt-5.4" },
+    { "pattern": "^default$", "canonical": "auto" },
+    { "pattern": "^auto$", "canonical": "auto" },
+    { "pattern": "^composer-1$", "canonical": "composer-1" },
+    { "pattern": "^composer-1\\.5$", "canonical": "composer-1.5" },
+    { "pattern": "^composer-2$", "canonical": "composer-2" },
+    { "pattern": "^composer-2-fast$", "canonical": "composer-2-fast" },
+    { "pattern": "^composer-2\\.5$", "canonical": "composer-2.5" },
+    { "pattern": "^composer-2\\.5-fast$", "canonical": "composer-2.5-fast" },
+    { "pattern": "^github_bugbot$", "canonical": "github_bugbot" },
+    { "pattern": "^(?:cursor-)?grok-4\\.5-fast(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.5-fast" },
+    { "pattern": "^(?:cursor-)?grok-4\\.5(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "grok-4.5-fast" },
+    { "pattern": "^(?:cursor-)?grok-4\\.5(?:-(?:low|medium|high|xhigh))?$", "canonical": "grok-4.5" },
+    { "pattern": "^kimi-k2\\.7(?:-code)?$", "canonical": "kimi-k2.7-code" },
+    { "pattern": "^kimi-k2p7(?:-code)?$", "canonical": "kimi-k2.7-code" },
+    { "pattern": "^claude-4\\.5-haiku(?:-thinking)?$", "canonical": "claude-haiku-4-5" },
+    { "pattern": "^claude-4\\.5-opus-(?:low|medium|high)(?:-thinking)?$", "canonical": "claude-opus-4-5" },
+    { "pattern": "^claude-4-sonnet-1m(?:-thinking)?$", "canonical": "claude-4-sonnet-1m" },
+    { "pattern": "^claude-4-sonnet(?:-thinking)?$", "canonical": "claude-sonnet-4-20250514" },
+    { "pattern": "^claude-4\\.5-sonnet(?:-thinking)?$", "canonical": "claude-sonnet-4-5" },
+    { "pattern": "^claude-4\\.6-sonnet(?:-(?:low|medium|high|xhigh|max))?(?:-thinking)?$", "canonical": "claude-sonnet-4-6" },
+    { "pattern": "^claude-4\\.6-opus-(?:low|medium|high|max)(?:-thinking)?-fast$", "canonical": "claude-opus-4-6-fast" },
+    { "pattern": "^claude-4\\.6-opus-(?:low|medium|high|max)(?:-thinking)?$", "canonical": "claude-opus-4-6" },
+    { "pattern": "^claude-4\\.7-opus-(?:low|medium|high|max)(?:-thinking)?-fast$", "canonical": "claude-opus-4-7-fast" },
+    { "pattern": "^claude-4\\.7-opus-(?:low|medium|high|max)(?:-thinking)?$", "canonical": "claude-opus-4-7" },
+    { "pattern": "^claude-opus-4-7(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?-fast$", "canonical": "claude-opus-4-7-fast" },
+    { "pattern": "^claude-opus-4-7(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-opus-4-7" },
+    { "pattern": "^claude-opus-4-8(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?-fast$", "canonical": "claude-opus-4-8-fast" },
+    { "pattern": "^claude-opus-4-8(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-opus-4-8" },
+    { "pattern": "^claude-opus-5(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?-fast$", "canonical": "claude-opus-5-fast" },
+    { "pattern": "^claude-opus-5(?:\\[1m\\])?(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-opus-5" },
+    { "pattern": "^claude-fable-5(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-fable-5" },
+    { "pattern": "^claude-sonnet-5(?:-thinking)?(?:-(?:low|medium|high|xhigh|max))?$", "canonical": "claude-sonnet-5" },
+    { "pattern": "^gemini-2\\.5-flash$", "canonical": "gemini-2.5-flash" },
+    { "pattern": "^gemini-3-flash(?:-preview)?$", "canonical": "gemini-3-flash-preview" },
+    { "pattern": "^gemini-3\\.5-flash(?:-preview)?$", "canonical": "gemini-3.5-flash" },
+    { "pattern": "^gemini-3-pro-preview$", "canonical": "gemini-3-pro-preview" },
+    { "pattern": "^gemini-3\\.1-pro$", "canonical": "gemini-3.1-pro-preview" },
+    { "pattern": "^gemini-3\\.1-pro-preview$", "canonical": "gemini-3.1-pro-preview" },
+    { "pattern": "^gpt-5(?:-(?:low|high))?-fast$", "canonical": "gpt-5-fast" },
+    { "pattern": "^gpt-5(?:-(?:low|high))?$", "canonical": "gpt-5" },
+    { "pattern": "^gpt-5\\.1(?:-(?:low|high))?-fast$", "canonical": "gpt-5-fast" },
+    { "pattern": "^gpt-5\\.1(?:-(?:low|high))?$", "canonical": "gpt-5" },
+    { "pattern": "^gpt-5-mini$", "canonical": "gpt-5-mini" },
+    { "pattern": "^grok-4-20(?:-thinking)?$", "canonical": "xai/grok-4.20-0309-reasoning" },
+    { "pattern": "^grok-4\\.3(?:-thinking)?$", "canonical": "xai/grok-4.3" },
+    { "pattern": "^grok-build-0\\.1$", "canonical": "grok-build-0.1" },
+    { "pattern": "^grok-code-fast-1$", "canonical": "grok-build-0.1" },
+    { "pattern": "^grok-build$", "canonical": "grok-build-0.1" },
+    { "pattern": "^grok-composer-2\\.5-fast$", "canonical": "composer-2.5-fast" },
+    { "pattern": "^gpt-5\\.1-codex-max(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "gpt-5.1-codex-max-fast" },
+    { "pattern": "^gpt-5\\.1-codex-max(?:-(?:low|medium|high|xhigh))?$", "canonical": "gpt-5.1-codex-max" },
+    { "pattern": "^gpt-5\\.1-codex-mini(?:-(?:low|medium|high|xhigh))?$", "canonical": "gpt-5.1-codex-mini" },
+    { "pattern": "^gpt-5\\.1-codex(?:-(?:low|medium|high|xhigh))?-fast$", "canonical": "gpt-5.1-codex-fast" },
+    { "pattern": "^gpt-5\\.1-codex(?:-(?:low|medium|high|xhigh))?$", "canonical": "gpt-5.1-codex" },
+    { "pattern": "^gpt-5\\.2-codex(?:-(?:low|high|xhigh))?-fast$", "canonical": "gpt-5.2-codex-fast" },
+    { "pattern": "^gpt-5\\.2-codex(?:-(?:low|high|xhigh))?$", "canonical": "gpt-5.2-codex" },
+    { "pattern": "^gpt-5\\.2(?:-(?:low|high|xhigh))?-fast$", "canonical": "gpt-5.2-fast" },
+    { "pattern": "^gpt-5\\.2(?:-(?:low|high|xhigh))?$", "canonical": "gpt-5.2" },
+    { "pattern": "^gpt-5\\.3-codex-spark-preview(?:-(?:low|high|xhigh))?$", "canonical": "gpt-5.3-codex-spark" },
+    { "pattern": "^gpt-5\\.3-spark$", "canonical": "gpt-5.3-codex-spark" },
+    { "pattern": "^gpt-5\\.3-codex(?:-(?:low|high|xhigh))?-fast$", "canonical": "gpt-5.3-codex-fast" },
+    { "pattern": "^gpt-5\\.3-codex(?:-(?:low|high|xhigh))?$", "canonical": "gpt-5.3-codex" },
+    { "pattern": "(?i)^(?:openai/)?gpt-5\\.4-mini(?:-(?:none|low|medium|high|xhigh))?(?:-\\d{4}-?\\d{2}-?\\d{2})?$", "canonical": "gpt-5.4-mini" },
+    { "pattern": "^gpt-5\\.4-nano(?:-(?:none|low|medium|high|xhigh))?$", "canonical": "gpt-5.4-nano" },
+    { "pattern": "^gpt-5\\.4-(?:low|medium|high|xhigh)-fast$", "canonical": "gpt-5.4-fast" },
+    { "pattern": "^gpt-5\\.4-(?:low|medium|high|xhigh)$", "canonical": "gpt-5.4" },
+    { "pattern": "^gpt-5\\.5(?:-(?:low|medium|high|xhigh|extra-high))?-fast$", "canonical": "gpt-5.5-fast" },
+    { "pattern": "^gpt-5\\.5(?:-(?:low|medium|high|xhigh|extra-high))?$", "canonical": "gpt-5.5" },
+    { "pattern": "(?i)^(?:openai/)?(?:gpt-)?daybreak-blue-latest$", "canonical": "gpt-5.6-sol" },
+    { "pattern": "(?i)^(?:openai/)?(?:gpt-)?daybreak-red-latest$", "canonical": "gpt-5.6-cyber" },
+    { "pattern": "^gpt-5\\.6(?:-(?:none|low|medium|high|xhigh|max|ultra))?-fast$", "canonical": "gpt-5.6-sol-fast" },
+    { "pattern": "^gpt-5\\.6(?:-(?:none|low|medium|high|xhigh|max|ultra))?$", "canonical": "gpt-5.6-sol" },
+    { "pattern": "^gpt-5\\.6-sol(?:-(?:none|low|medium|high|xhigh|max|ultra))?-fast$", "canonical": "gpt-5.6-sol-fast" },
+    { "pattern": "^gpt-5\\.6-sol(?:-(?:none|low|medium|high|xhigh|max|ultra))?$", "canonical": "gpt-5.6-sol" },
+    { "pattern": "^gpt-5\\.6-terra(?:-(?:none|low|medium|high|xhigh|max))?-fast$", "canonical": "gpt-5.6-terra-fast" },
+    { "pattern": "^gpt-5\\.6-terra(?:-(?:none|low|medium|high|xhigh|max))?$", "canonical": "gpt-5.6-terra" },
+    { "pattern": "^gpt-5\\.6-luna(?:-(?:none|low|medium|high|xhigh|max))?-fast$", "canonical": "gpt-5.6-luna-fast" },
+    { "pattern": "^gpt-5\\.6-luna(?:-(?:none|low|medium|high|xhigh|max))?$", "canonical": "gpt-5.6-luna" },
+    { "pattern": "^kimi-k2\\.5$", "canonical": "moonshot/kimi-k2.5" },
+    { "pattern": "^kimi-k2p5$", "canonical": "moonshot/kimi-k2.5" },
+    { "pattern": "^glm-5\\.2(?:-(?:high|max))?$", "canonical": "glm-5.2" },
+    { "pattern": "^[Pp]remium \\((?:[Gg][Pp][Tt]-5\\.3-[Cc]odex|[Cc]odex 5\\.3)\\)$", "canonical": "gpt-5.3-codex" }
+  ]
+}

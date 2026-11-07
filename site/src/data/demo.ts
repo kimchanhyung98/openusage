@@ -116,7 +116,7 @@ export function boundedView(r: BoundedRow, mode: 'used' | 'left') {
   };
 }
 
-export const appVersion = '0.14.0';
+export const appVersion = '1.0.0';
 
 export type { QuickLink, Card } from './dashboard';
 export { cards } from './dashboard';

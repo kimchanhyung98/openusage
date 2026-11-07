@@ -2,14 +2,14 @@
 import PackageDescription
 
 let package = Package(
-    name: "OpenUsage",
+    name: "Egasu",
     defaultLocalization: "en",
     platforms: [
         .macOS(.v15)
     ],
     products: [
-        .executable(name: "OpenUsage", targets: ["OpenUsageApp"]),
-        .executable(name: "openusage-cli", targets: ["OpenUsageCLI"])
+        .executable(name: "egasu", targets: ["EgasuApp"]),
+        .executable(name: "egasu-cli", targets: ["EgasuCLI"])
     ],
     dependencies: [
         .package(url: "https://github.com/sindresorhus/KeyboardShortcuts", from: "3.0.1"),
@@ -20,14 +20,14 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "OpenUsage",
+            name: "Egasu",
             dependencies: [
                 .product(name: "KeyboardShortcuts", package: "KeyboardShortcuts"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "PostHog", package: "posthog-ios"),
                 .product(name: "libzstd", package: "zstd")
             ],
-            path: "Sources/OpenUsage",
+            path: "Sources/Egasu",
             resources: [
                 .process("Resources/Localization"),
                 .copy("Resources/ProviderIcons"),
@@ -40,34 +40,34 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "OpenUsageApp",
-            dependencies: ["OpenUsage"],
-            path: "Sources/OpenUsageApp",
+            name: "EgasuApp",
+            dependencies: ["Egasu"],
+            path: "Sources/EgasuApp",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
         ),
         .executableTarget(
-            name: "OpenUsageCLI",
-            dependencies: ["OpenUsage"],
-            path: "Sources/OpenUsageCLI",
+            name: "EgasuCLI",
+            dependencies: ["Egasu"],
+            path: "Sources/EgasuCLI",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
         ),
         .testTarget(
-            name: "OpenUsageTests",
-            dependencies: ["OpenUsage"],
-            path: "Tests/OpenUsageTests",
+            name: "EgasuTests",
+            dependencies: ["Egasu"],
+            path: "Tests/EgasuTests",
             resources: [.copy("Fixtures/UsageCollection")],
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]
         ),
         .testTarget(
-            name: "OpenUsageCLITests",
-            dependencies: ["OpenUsageCLI"],
-            path: "Tests/OpenUsageCLITests",
+            name: "EgasuCLITests",
+            dependencies: ["EgasuCLI"],
+            path: "Tests/EgasuCLITests",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
             ]

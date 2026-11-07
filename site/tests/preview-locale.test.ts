@@ -6,7 +6,7 @@ import { previewTranslations } from '../src/data/preview-translations.ts';
 
 function translator(locale: PreviewLocale) {
   const table = Object.assign({}, ...['Common', 'Errors', 'Accounts', 'Customize', 'Dashboard', 'Metrics', 'Settings']
-    .map((name) => parseStrings(readFileSync(new URL(`../../Sources/OpenUsage/Resources/Localization/${locale}.lproj/${name}.strings`, import.meta.url), 'utf8'))));
+    .map((name) => parseStrings(readFileSync(new URL(`../../Sources/Egasu/Resources/Localization/${locale}.lproj/${name}.strings`, import.meta.url), 'utf8'))));
   if (locale !== 'en') Object.assign(table, Object.fromEntries(Object.entries(previewTranslations).map(([key, values]) => [key, values[locale]])));
   return createTranslator(table, locale);
 }

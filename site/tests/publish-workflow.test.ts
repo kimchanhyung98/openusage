@@ -20,7 +20,7 @@ function workflowStep(name: string, file = 'publish-site.yml') {
 }
 
 function publicationFixture() {
-  const temp = mkdtempSync(join(tmpdir(), 'openusage-publication-test-'));
+  const temp = mkdtempSync(join(tmpdir(), 'egasu-publication-test-'));
   const published = join(temp, 'published');
   const checkout = join(temp, 'checkout');
   mkdirSync(published);
@@ -42,7 +42,7 @@ function publicationFixture() {
   git(checkout, 'remote', 'add', 'origin', published);
   writeFileSync(join(published, 'appcast.xml'), '<rss><channel/></rss>\n');
   writeFileSync(join(published, 'pricing_supplement.json'), '{"pricing":{}}\n');
-  writeFileSync(join(published, 'CNAME'), 'openusage.chanhyung.kim\n');
+  writeFileSync(join(published, 'CNAME'), 'egasu.chanhyung.kim\n');
   commit();
   return {
     temp, published, checkout, commit, git,
@@ -69,6 +69,37 @@ test('피드 두 개와 도메인을 보존하는 사이트 갱신 허용', () =
     assert.equal(after.status, 0, after.stderr);
     assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
       fixture.git(fixture.published, 'rev-parse', 'HEAD'));
+  } finally { fixture.cleanup(); }
+});
+
+test('기존 도메인에서 egasu 도메인으로 첫 사이트 게시 허용', () => {
+  const fixture = publicationFixture();
+  try {
+    writeFileSync(join(fixture.published, 'CNAME'), 'openusage.chanhyung.kim\n');
+    fixture.commit();
+    const before = fixture.run(snapshot);
+    assert.equal(before.status, 0, before.stderr);
+    writeFileSync(join(fixture.published, 'CNAME'), 'egasu.chanhyung.kim\n');
+    fixture.commit();
+    const after = fixture.run(verify);
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(readFileSync(join(fixture.temp, 'revision.txt'), 'utf8').trim(),
+      fixture.git(fixture.published, 'rev-parse', 'HEAD'));
+  } finally { fixture.cleanup(); }
+});
+
+test('첫 사이트 게시 후 기존 도메인이 남으면 거부', () => {
+  const fixture = publicationFixture();
+  try {
+    writeFileSync(join(fixture.published, 'CNAME'), 'openusage.chanhyung.kim\n');
+    fixture.commit();
+    assert.equal(fixture.run(snapshot).status, 0);
+    writeFileSync(join(fixture.published, 'index.html'), '<title>Landing page</title>');
+    fixture.commit();
+    const after = fixture.run(verify);
+    assert.notEqual(after.status, 0);
+    assert.match(after.stderr, /CNAME does not match/);
+    assert.equal(existsSync(join(fixture.temp, 'revision.txt')), false);
   } finally { fixture.cleanup(); }
 });
 
@@ -288,7 +319,7 @@ cp "$GH_ARTIFACT" "$RUNNER_TEMP/pages-publication/revision.txt"
         EVENT_NAME: 'workflow_run',
         PUBLISH_RUN_ID: '12345',
         PUBLISH_RUN_ATTEMPT: '2',
-        GITHUB_REPOSITORY: 'fixture/openusage',
+        GITHUB_REPOSITORY: 'fixture/egasu',
         GITHUB_ENV: githubEnv,
         GH_ARTIFACT: artifact,
         GH_ARGS: ghArgs,
@@ -317,7 +348,7 @@ test('후속 게시가 피드를 변경해도 성공한 실행의 커밋으로 �
     fixture.git(fixture.checkout, 'checkout', '--quiet', '--detach', 'FETCH_HEAD');
     assert.equal(readFileSync(join(fixture.checkout, 'appcast.xml'), 'utf8').trim(), verifiedFeed);
     assert.deepEqual(readFileSync(fixture.ghArgs, 'utf8').trim().split('\n'), [
-      'run', 'download', '12345', '--repo', 'fixture/openusage',
+      'run', 'download', '12345', '--repo', 'fixture/egasu',
       '--name', 'pages-publication-2', '--dir', join(fixture.temp, 'pages-publication'),
     ]);
   } finally { fixture.cleanup(); }
@@ -361,7 +392,7 @@ test('가격표 게시 작업은 main ref에서만 실행', () => {
   assert.match(workflow, /\n  workflow_dispatch:/);
 });
 
-const supplement = JSON.parse(readFileSync(new URL('../../Sources/OpenUsage/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
+const supplement = JSON.parse(readFileSync(new URL('../../Sources/Egasu/Resources/pricing_supplement.json', import.meta.url), 'utf8'));
 for (const [updatedAt, valid] of [
   [supplement.updated_at, true], ['2024-02-29T23:59:59Z', true],
   ['2026-09-13', false], ['2026-09-13T00:00:00+00:00', false],
@@ -372,9 +403,9 @@ for (const [updatedAt, valid] of [
   [undefined, false], [true, false], [12345, false],
 ] as const) {
   test(`가격표 발행 시 updated_at ${JSON.stringify(updatedAt)} ${valid ? '허용' : '거부'}`, () => {
-    const temp = mkdtempSync(join(tmpdir(), 'openusage-pricing-validation-test-'));
+    const temp = mkdtempSync(join(tmpdir(), 'egasu-pricing-validation-test-'));
     try {
-      const resources = join(temp, 'Sources/OpenUsage/Resources');
+      const resources = join(temp, 'Sources/Egasu/Resources');
       mkdirSync(resources, { recursive: true });
       writeFileSync(join(resources, 'pricing_supplement.json'), JSON.stringify({ ...supplement, updated_at: updatedAt }));
       const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', workflowStep('가격표 JSON 검증', 'pricing-supplement.yml')], {
@@ -402,16 +433,16 @@ test('사이트 게시 대상만 변경된 push는 게시 내부 검증으로 �
     return patterns;
   }
   const filters = [paths('publish-site.yml', 'push'), paths('site.yml', 'push'), paths('site.yml', 'pull_request')];
-  const ko = 'Sources/OpenUsage/Resources/Localization/ko.lproj/Settings.strings';
+  const ko = 'Sources/Egasu/Resources/Localization/ko.lproj/Settings.strings';
   const cases: Array<[string[], boolean[]]> = [
     [['site/src/scripts/localization.ts'], [true, false, true]],
     [['script/site_assemble.sh'], [true, false, true]],
-    [['Sources/OpenUsage/Resources/ProviderIcons/codex.svg'], [true, false, true]],
+    [['Sources/Egasu/Resources/ProviderIcons/codex.svg'], [true, false, true]],
     [[ko], [true, false, true]],
-    [['Sources/OpenUsage/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
-    [[ko, 'Sources/OpenUsage/Stores/WidgetDataStore.swift'], [true, true, true]],
-    [['Sources/OpenUsage/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
-    [['Sources/OpenUsage/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
+    [['Sources/Egasu/Resources/Localization/ja.lproj/Metrics.strings'], [true, false, true]],
+    [[ko, 'Sources/Egasu/Stores/WidgetDataStore.swift'], [true, true, true]],
+    [['Sources/Egasu/Resources/Localization/en.lproj/Settings.strings'], [false, true, true]],
+    [['Sources/Egasu/Resources/Localization/ko.lproj/README.md'], [false, true, true]],
     [['.github/workflows/publish-site.yml'], [true, false, true]],
     [['.github/workflows/site.yml'], [false, true, true]],
     [['docs/settings.md'], [false, false, false]],

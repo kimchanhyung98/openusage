@@ -1,7 +1,7 @@
 # iCloud 동기화
 
 **Sync Across Macs**(Mac 간 동기화)는 기본값이 꺼짐.
-켜면 각 Mac이 버전이 붙은 OpenUsage 히스토리 파일 하나를 앱 전용 iCloud 컨테이너에 기록하고, 같은 iCloud 계정으로 로그인된 다른 Mac이 쓴 파일을 읽음.
+켜면 각 Mac이 버전이 붙은 egasu 히스토리 파일 하나를 앱 전용 iCloud 컨테이너에 기록하고, 같은 iCloud 계정으로 로그인된 다른 Mac이 쓴 파일을 읽음.
 임의 기기 ID는 로그인 Keychain에 보관.
 앱 환경 설정을 재설정하거나 앱을 재설치해도 기존 Keychain ID를 읽을 수 있으면 같은 파일을 계속 갱신.
 Keychain 접근에 실패하면 환경 설정에 남은 ID를 사용하고, 그 ID도 없으면 새 ID 생성.
@@ -25,7 +25,7 @@ Antigravity의 앱·CLI·IDE 대화 이력도 이 Mac의 패밀리 합계로 동
 Copilot CLI 이력도 요청별 계정 식별자가 없어 프로바이더 패밀리 합계로만 동기화.
 같은 CLI 데이터베이스를 여러 Mac에 복사하면 같은 요청이 각 Mac의 이력으로 중복 집계될 수 있음.
 
-OpenUsage는 유효한 파일들을 메모리에서 합쳐 Today, Yesterday, Last 30 Days, Usage Trend, 모델별 내역을 다시 계산.
+egasu는 유효한 파일들을 메모리에서 합쳐 Today, Yesterday, Last 30 Days, Usage Trend, 모델별 내역을 다시 계산.
 가격을 확인할 수 없는 모델도 토큰은 유지하고 불완전한 날짜·기간 비용은 생략.
 가격 미확정 상태로 카드 경고를 만들지 않음.
 이렇게 합쳐진 지출 행이 대시보드, Total Spend, 메뉴 막대 고정 항목, 공유 카드, 로컬 HTTP API에 그대로 공급.
@@ -55,7 +55,8 @@ iCloud 전달은 최종적 일관성이므로, 특히 오프라인 상태라면 
 이 Mac의 **Single Card** 모드에서는 계정 선택 상태에 따라 표시 가능한 계정 카드 하나를 표시.
 **Separate Cards**에서는 해당 선택 상태와 무관하게 표시 가능한 모든 계정 카드 표시.
 
-이전 버전 OpenUsage를 쓰는 Mac은 자기 형식은 읽지만 이 Mac의 새 형식 파일은 "update OpenUsage"로 보고 — 멀티 계정 환경을 동기화하려면 양쪽 모두 업데이트.
+v1 형식만 지원하는 이전 OpenUsage는 v2 파일을 "update OpenUsage"로 보고 — 멀티 계정 환경을 동기화하려면 양쪽 모두 v2 지원 버전 사용.
+egasu는 기존 `openusage.history.v1`·`openusage.history.v2` 형식을 계속 사용하므로 이름 변경만으로 동기화 형식이 달라지지 않음.
 
 설정에는 유효한 각 기기 파일이 해당 Mac이 생성한 시각과 함께 나열.
 결합 요약에서 어떤 Mac을 빼려면 그 Mac에서 동기화를 끄기 — 그러면 해당 Mac의 파일이 iCloud에서 삭제.
@@ -69,7 +70,7 @@ iCloud 전달은 최종적 일관성이므로, 특히 오프라인 상태라면 
 ## 개발 및 릴리스 설정
 
 Apple은 앱에 임베딩된 프로비저닝 프로파일에 iCloud 컨테이너 할당이 들어 있을 것을 요구.
-OpenUsage는 개발 빌드가 프로덕션 히스토리를 쓰지 못하도록 리소스를 분리:
+egasu는 개발 빌드가 프로덕션 히스토리를 쓰지 못하도록 리소스를 분리:
 
 - `com.kimchanhyung98.openusage.dev`는 `iCloud.com.kimchanhyung98.openusage.dev` 사용.
 - `com.kimchanhyung98.openusage`는 `iCloud.com.kimchanhyung98.openusage` 사용.
@@ -99,7 +100,7 @@ history_dir="$HOME/Library/Mobile Documents/iCloud~com~kimchanhyung98~openusage/
 if [[ -d "$history_dir" ]]; then
   find "$history_dir" -type f -name '*.json' -print
 else
-  echo "No OpenUsage iCloud history directory found"
+  echo "No egasu iCloud history directory found"
 fi
 ```
 
