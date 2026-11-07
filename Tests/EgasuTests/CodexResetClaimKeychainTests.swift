@@ -158,7 +158,7 @@ final class CodexResetClaimKeychainTests: XCTestCase {
         let provider = CodexProvider(
             authStore: authStore, usageClient: client,
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: UUID().uuidString, rootsOverride: []),
-            includePiUsage: false, now: { Self.expiry }, pricing: { .empty }
+            includeSharedUsage: false, now: { Self.expiry }, pricing: { .empty }
         )
         let suite = "CodexResetClaimKeychainTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

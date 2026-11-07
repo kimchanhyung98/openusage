@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class LocalizationRenderingTests: XCTestCase {
+    func testUnpricedUsageRowsDoNotRenderAdditionalWarnings() throws {
+        let suite = "EgasuTests.UnpricedUsage.Rendering.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var row = WidgetData(title: "Today", icon: MockData.codex.icon, kind: .count, used: 123456, limit: nil,
+                             values: [MetricValue(number: 123456, kind: .count, label: "tokens")])
+        row.isUsagePeriod = true
+        for density in DensitySetting.allCases {
+            defaults.set(density.rawValue, forKey: DensitySetting.key)
+            for appearance in [ColorScheme.light, .dark] {
+                var rasters: [Raster] = []
+                for models in [[], ["unpriced-model"]] as [[String]] {
+                    row.unknownModels = models
+                    let view = WidgetRowView(data: row)
+                        .frame(width: 320)
+                        .background(appearance == .light ? Color.white : Color.black)
+                        .environment(\.colorScheme, appearance)
+                        .environment(\.hoverTooltipsDisabled, true)
+                        .defaultAppStorage(defaults)
+                    rasters.append(try rasterize(view, width: 320, name: "\(density)-\(appearance)", export: nil))
+                }
+                XCTAssertFalse(visiblyDiffers(rasters[0], rasters[1]), "\(density)-\(appearance)")
+            }
+        }
+    }
+
     func testDashboardAndShareCardsRenderAllLanguagesAcrossDensitiesAndAppearances() throws {
         let suite = "EgasuTests.Localization.Rendering.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

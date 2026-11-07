@@ -74,8 +74,8 @@ final class OpenAIPricingReviewTests: XCTestCase {
         for ordered in [events, Array(events.reversed())] {
             let result = CodexLogUsageScanner.aggregate(events: ordered, since: .distantPast, pricing: pricing)
             let day = try XCTUnwrap(result.series.daily.first)
-            XCTAssertEqual(day.totalTokens, 1_100)
-            XCTAssertEqual(try XCTUnwrap(day.costUSD), 0.003, accuracy: 1e-9)
+            XCTAssertEqual(day.totalTokens, 2_200)
+            XCTAssertNil(day.costUSD)
             XCTAssertEqual(result.unknownModelsByDay[day.date], ["gpt-6-sol (Ultrafast)"])
         }
     }
@@ -288,7 +288,7 @@ final class OpenAIPricingReviewTests: XCTestCase {
         }
     }
 
-    func testExactMultiplierRestrictionsPreserveLegacyAndNativeFuzzyRates() throws {
+    func testExactMultiplierRestrictionsPreserveLegacyAndNativeDatedRates() throws {
         let rates = ModelRates(
             inputPerMillion: 2, outputPerMillion: 10, cacheWritePerMillion: 2, cacheReadPerMillion: 0.2)
         var nativeRates = rates
@@ -298,12 +298,25 @@ final class OpenAIPricingReviewTests: XCTestCase {
 
         for (entry, expected) in [(rates, 0.004), (nativeRates, 0.006)] {
             let snapshot = ModelPricing(
-                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5-mini": entry]),
+                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5": entry]),
                 secondary: PricingCatalog())
             XCTAssertEqual(
                 try XCTUnwrap(
-                    snapshot.estimatedCostDollars(model: "gpt-5-mini-custom-fast", tokens: .init(input: 1_000))),
+                    snapshot.estimatedCostDollars(model: "gpt-5-20260929-fast", tokens: .init(input: 1_000))),
                 expected, accuracy: 1e-9)
+        }
+        for (entry, expected) in [(rates, 0.0036), (nativeRates, 0.006)] {
+            let snapshot = ModelPricing(
+                supplement: supplement, primary: PricingCatalog(entries: ["gpt-5-mini": entry]),
+                secondary: PricingCatalog())
+            for prefix in ["", "openai/"] {
+                for date in ["20260929", "2026-09-29"] {
+                    XCTAssertEqual(
+                        try XCTUnwrap(snapshot.estimatedCostDollars(
+                            model: prefix + "gpt-5-mini-" + date + "-fast", tokens: .init(input: 1_000))),
+                        expected, accuracy: 1e-9)
+                }
+            }
         }
     }
 

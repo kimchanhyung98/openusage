@@ -28,6 +28,7 @@ final class CodexResetClaimService {
     private let credentialLoader: (CodexAuthState.Source, Bool) async throws -> CodexAuthState?
     private let isCurrent: () -> Bool
     private let refreshAfterClaim: (CodexResetClaimBinding) async -> Void
+    private let workQueue: BackgroundWorkQueue
     let requestState: RequestState
 
     init(
@@ -35,13 +36,15 @@ final class CodexResetClaimService {
         credentialLoader: @escaping (CodexAuthState.Source, Bool) async throws -> CodexAuthState?,
         requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
-        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void = { _ in }
+        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void = { _ in },
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.usageClient = usageClient
         self.credentialLoader = credentialLoader
         self.requestState = requestState
         self.isCurrent = isCurrent
         self.refreshAfterClaim = refreshAfterClaim
+        self.workQueue = workQueue
     }
 
     convenience init(
@@ -49,7 +52,8 @@ final class CodexResetClaimService {
         usageClient: CodexUsageClient,
         requestState: RequestState = RequestState(),
         isCurrent: @escaping () -> Bool = { true },
-        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void
+        refreshAfterClaim: @escaping (CodexResetClaimBinding) async -> Void,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.init(
             usageClient: usageClient,
@@ -69,7 +73,8 @@ final class CodexResetClaimService {
             },
             requestState: requestState,
             isCurrent: isCurrent,
-            refreshAfterClaim: refreshAfterClaim
+            refreshAfterClaim: refreshAfterClaim,
+            workQueue: workQueue
         )
     }
 
@@ -82,6 +87,8 @@ final class CodexResetClaimService {
             return bindingFailure()
         }
         defer { requestState.activeRequestIDs.remove(redeemRequestID) }
+        guard let ticket = await workQueue.acquire("reset-credit") else { return .failed }
+        defer { workQueue.finish(ticket) }
         if let previous = requestState.matchedCredits[redeemRequestID],
            previous.binding != binding || previous.expiry != expiry {
             return bindingFailure()
@@ -109,7 +116,7 @@ final class CodexResetClaimService {
             }
             guard let matched = Self.creditID(in: body, expiringAt: expiry) else {
                 AppDiagnostics.record(.resetClaim, result: .success, category: .notAvailable, providerID: "codex")
-                await refreshIfBound(to: binding)
+                await refreshIfBound(to: binding, ticket: ticket)
                 return .noCredit
             }
             creditID = matched
@@ -133,11 +140,11 @@ final class CodexResetClaimService {
         guard outcome != .failed else { return responseFailure(response, context: "consume") }
         AppDiagnostics.record(.resetClaim, result: .success, category: outcome == .success ? nil : .notAvailable,
                               providerID: "codex")
-        await refreshIfBound(to: binding)
+        await refreshIfBound(to: binding, ticket: ticket)
         return outcome
     }
 
-    private func refreshIfBound(to binding: CodexResetClaimBinding) async {
+    private func refreshIfBound(to binding: CodexResetClaimBinding, ticket: BackgroundWorkQueue.Ticket) async {
         // 완료된 요청의 인증만 재확인. 무관한 카탈로그 변경의 후속 조회 허용 여부는 router에서 판단.
         do {
             guard !Task.isCancelled,
@@ -147,6 +154,7 @@ final class CodexResetClaimService {
                 AppDiagnostics.record(.postClaimRefresh, result: .bindingChanged, providerID: "codex")
                 return
             }
+            workQueue.finish(ticket)
             await refreshAfterClaim(binding)
         } catch {
             AppDiagnostics.failure(.postClaimRefresh, error: error, providerID: "codex",

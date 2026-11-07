@@ -2,6 +2,32 @@ import XCTest
 @testable import Egasu
 
 final class ZAIQuotaValidationMapperTests: XCTestCase {
+    func testFailedBusinessEnvelopeNeverBecomesNormalQuota() {
+        for fields in [#""success":false"#, #""code":401"#, #""code":500,"success":true"#] {
+            let body = Data("""
+            {\(fields),"data":{"limits":[{"type":"CREDIT_LIMIT","unit":3,"number":5,"percentage":10}]}}
+            """.utf8)
+            XCTAssertThrowsError(try ZAIUsageMapper.mapQuota(body), fields) { error in
+                XCTAssertEqual(error as? ZAIUsageError, .invalidResponse)
+            }
+        }
+        for fields in [#""code":0"#, #""code":200,"success":true"#] {
+            let body = Data("{\(fields),\"data\":{\"limits\":[]}}".utf8)
+            XCTAssertNoThrow(try ZAIUsageMapper.mapQuota(body), fields)
+        }
+    }
+
+    func testQuotaLevelPreservesPlanWhenSubscriptionIsUnavailable() throws {
+        let quota = Data(#"{"code":200,"success":true,"data":{"level":" MAX ","limits":[]}}"#.utf8)
+        XCTAssertEqual(try ZAIUsageMapper.map(quotaBody: quota, subscriptionBody: nil).plan, "GLM Coding Max")
+
+        let subscription = Data(#"{"data":[{"productName":"GLM Coding Pro Annual"}]}"#.utf8)
+        XCTAssertEqual(
+            try ZAIUsageMapper.map(quotaBody: quota, subscriptionBody: subscription).plan,
+            "GLM Coding Pro Annual"
+        )
+    }
+
     func testCreditAndTokenTypesKeepBothFieldAliasesWithoutDuplicatingEntries() throws {
         for kind in ["CREDIT_LIMIT", "TOKENS_LIMIT"] {
             for fields in [
@@ -121,6 +147,24 @@ final class ZAIQuotaValidationMapperTests: XCTestCase {
 
 @MainActor
 final class ZAIQuotaValidationProviderTests: XCTestCase {
+    func testHTTP200FailedQuotaEnvelopeReturnsErrorWithoutUsage() async {
+        let provider = ZAIProvider(
+            authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "test-key"])),
+            usageClient: ZAIUsageClient(http: RoutingHTTPClient { request in
+                let body = request.url == ZAIUsageClient.quotaURL
+                    ? #"{"success":false,"code":500,"data":{"limits":[]}}"# : #"{"data":[]}"#
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data(body.utf8))
+            }),
+            pricing: { .empty }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .decoding)
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(snapshot.totalSpendLines)
+    }
+
     func testCreditRefreshSurvivesSubscriptionFailureAndExportsExistingResources() async throws {
         let provider = ZAIProvider(
             authStore: ZAIAuthStore(files: FakeFiles(), environment: FakeEnvironment(["ZAI_API_KEY": "zai-test"])),
@@ -134,7 +178,8 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                   {"type":"CREDIT_LIMIT","unit":6,"number":1,"percentage":98}
                 ]}}
                 """#.utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()
@@ -177,7 +222,8 @@ final class ZAIQuotaValidationProviderTests: XCTestCase {
                     )
                 }
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data(#"{"data":[]}"#.utf8))
-            })
+            }),
+            pricing: { .empty }
         )
 
         let snapshot = await provider.refresh()

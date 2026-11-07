@@ -19,7 +19,7 @@ final class CodexProvider: ProviderRuntime {
     let authStore: CodexAuthStore
     let usageClient: CodexUsageClient
     let logUsageScanner: CodexLogUsageScanner
-    let includePiUsage: Bool
+    let includeSharedUsage: Bool
     let now: @Sendable () -> Date
     let pricing: @Sendable () async -> ModelPricing
 
@@ -28,7 +28,7 @@ final class CodexProvider: ProviderRuntime {
         authStore: CodexAuthStore = CodexAuthStore(),
         usageClient: CodexUsageClient = CodexUsageClient(),
         logUsageScanner: CodexLogUsageScanner = CodexLogUsageScanner(),
-        includePiUsage: Bool = true,
+        includeSharedUsage: Bool = true,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
@@ -36,7 +36,7 @@ final class CodexProvider: ProviderRuntime {
         self.authStore = authStore
         self.usageClient = usageClient
         self.logUsageScanner = logUsageScanner
-        self.includePiUsage = includePiUsage
+        self.includeSharedUsage = includeSharedUsage
         self.now = now
         self.pricing = pricing
     }
@@ -53,7 +53,9 @@ final class CodexProvider: ProviderRuntime {
                 .exportingHistory(
                     scope: .machineLocal,
                     estimatedCost: true,
-                    sourceNote: "From your Codex logs (estimated)"
+                    sourceNote: includeSharedUsage
+                        ? "From your Codex logs and local tools (estimated)"
+                        : "From your Codex logs (estimated)"
                 ),
             .forecast(id: "\(provider.id).resetWatch", provider: provider, title: "Reset Watch"),
             .values(id: "\(provider.id).rateLimitResets", provider: provider, title: "Rate Limit Resets", metricLabel: "Rate Limit Resets", traySuffix: "resets", showsResetExpiries: true)
@@ -287,27 +289,22 @@ final class CodexProvider: ProviderRuntime {
         )
         var mapped = try CodexUsageMapper.mapUsageResponse(response, resetCredits: resetCredits, now: now())
 
-        // Local spend tile — Codex CLI session rollout native 스캔 + pi 안에서 발생한 Codex usage 병합, 두 스캔 모두 scanner actor에서 main actor 밖 실행.
+        // Codex 원장과 공유 도구 사용량 병합. 두 스캔 모두 전용 액터에서 실행.
         let pricing = await pricing()
-        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing)
-        let piScan = includePiUsage
-            ? await PiUsageScanner.shared.scan(
-                cardID: provider.id, now: now(), pricing: pricing,
-                costEstimator: { model, tokens, pricing in
-                    CodexUsagePricing.estimatePi(model: model, tokens: tokens, pricing: pricing)
-                }
-            )
+        let nativeScan = await logUsageScanner.scan(now: now(), pricing: pricing, includeSharedHomes: includeSharedUsage)
+        let sharedScan = includeSharedUsage
+            ? await UsageCollectionCoordinator.shared.scan(providerID: provider.id, now: now(), pricing: pricing)
             : nil
         var usageHistory: ProviderUsageHistory?
         var warning: String?
         var warningPresentation: [LocalizedMessage] = []
-        // native·pi 스캔 사이 cancellation 가능 — 부분 결과가 WidgetDataStore의 last-good combined history를 대체하지 않도록 쌍을 한 단위로 처리.
-        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, piScan]) {
-            let note = piScan == nil
+        // 두 스캔 사이에 취소되면 부분 결과로 마지막 정상 이력을 교체하지 않음.
+        if !Task.isCancelled, let scan = DailyUsageAccumulator.merged([nativeScan, sharedScan]) {
+            let note = sharedScan == nil
                 ? "From your Codex logs (estimated)"
-                : "From your Codex logs and pi (estimated)"
-            warning = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.joined(separator: " ").nilIfEmpty
-            warningPresentation = [scan.numericWarning, scan.pricingWarning].compactMap { $0 }.map { .init($0) }
+                : "From your Codex logs and local tools (estimated)"
+            warning = scan.readWarning
+            warningPresentation = scan.readWarning.map { [.init($0)] } ?? []
             usageHistory = scan.usageHistory
             if usageHistory != nil {
                 SpendTileMapper.appendTokenUsage(

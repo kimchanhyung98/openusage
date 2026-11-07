@@ -40,6 +40,7 @@
 "egasu %@ is ready to download." = "egasu %@ 버전을 다운로드할 수 있습니다.";
 "Opens %@ status page in your browser." = "브라우저에서 %@ 상태 페이지를 엽니다.";
 "Options" = "옵션";
+"Queued" = "대기 중";
 "Quit egasu" = "egasu 종료";
 "Refresh %@" = "%@ 새로고침";
 "Refresh Now" = "지금 새로고침";

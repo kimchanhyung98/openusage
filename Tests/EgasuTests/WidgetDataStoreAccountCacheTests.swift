@@ -279,7 +279,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
                     files: files, keychain: FakeKeychain(), allowsDesktopFallback: false
                 ),
                 usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: isolatedClaudeUsageStore(),
-                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
                 pricing: { TestPricing.bundled }
             )
             let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", ttl: 600)
@@ -349,7 +349,7 @@ final class WidgetDataStoreAccountCacheTests: XCTestCase {
                 authStore: ClaudeAuthStore(environment: FakeEnvironment(), files: files, keychain: FakeKeychain(),
                                            allowsDesktopFallback: false, pinsSharedHome: pinned),
                 usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: usageState,
-                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
                 pricing: { TestPricing.bundled }
             )
         }

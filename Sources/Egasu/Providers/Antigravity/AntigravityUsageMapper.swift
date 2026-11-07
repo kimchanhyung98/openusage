@@ -157,8 +157,7 @@ enum AntigravityUsageMapper {
         }
         switch envelope.paidTier?.id {
         case "g1-pro-tier": return "Pro"
-        case "g1-ultra-tier": return "Ultra"
-        case "g1-ultra-lite-tier": return "Ultra Lite"
+        case "g1-ultra-tier", "g1-ultra-lite-tier": return "Ultra"
         default: break
         }
         let plan = formatPlan(envelope.paidTier?.name) ?? formatPlan(envelope.currentTier?.name)

@@ -275,7 +275,8 @@ final class OpenAIPricingTests: XCTestCase {
         unpublished.model = "gpt-5.6-sol"
         let unknown = CodexLogUsageScanner.aggregate(events: [unpublished], since: .distantPast, pricing: pricing)
         XCTAssertEqual(unknown.unknownModelsByDay.values.first, ["gpt-5.6-sol (Ultrafast)"])
-        XCTAssertTrue(unknown.series.daily.isEmpty)
+        XCTAssertEqual(unknown.series.daily.first?.totalTokens, 1_100)
+        XCTAssertNil(unknown.series.daily.first?.costUSD)
     }
 
     func testVersionTenCacheReparsesUltrafastTier() async throws {

@@ -4,12 +4,13 @@ import Foundation
 /// 모든 spend 추적 provider가 여기를 거쳐 타일 렌더 통일 — Claude/Codex/Grok은 CLI 로그, Cursor는 CSV export가 공급하고, `DailyUsageSeries`가 provider 중립 per-day carrier.
 enum SpendTileMapper {
     /// 세 spend 타일(Today / Yesterday / Last 30 Days) 추가. usage 없는 기간은 타일을 만들지 않아 "No data" — 여기서의 0은 "아직 집계 전"과 구분 불가라 자신 있는 `$0.00 · 0 tokens`는 금지. source 읽기 실패 시에도 호출자가 아무것도 추가하지 않음.
-    /// `estimated`는 달러 값의 로컬 추정 마커(ⓘ) 여부. `unknownModelsByDay`는 `yyyy-MM-dd` day key → 가격 산정 불가 모델 집합 — Today/Yesterday는 자기 날의 집합, Last 30 Days는 window 전체의 합집합.
+    /// `estimated`는 달러 값의 로컬 추정 마커(ⓘ) 여부. `estimatedDays`가 있으면 기간별 비용 출처로 판정. `unknownModelsByDay`는 `yyyy-MM-dd` day key → 가격 산정 불가 모델 집합 — Today/Yesterday는 자기 날의 집합, Last 30 Days는 window 전체의 합집합.
     static func appendTokenUsage(
         _ usage: DailyUsageSeries,
         to lines: inout [MetricLine],
         now: Date = Date(),
         estimated: Bool = true,
+        estimatedDays: Set<String>? = nil,
         unknownModelsByDay: [String: Set<String>] = [:],
         modelUsage: ModelUsageSeries? = nil,
         modelSourceNote: String? = nil
@@ -18,7 +19,7 @@ enum SpendTileMapper {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: now).map(dayKey(from:))
 
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == today }), hasUsage(entry) {
-            lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimated,
+            lines.append(dayUsageLine(label: "Today", entry: entry, estimated: estimatedDays?.contains(today) ?? estimated,
                                       unknownModels: sortedModels(unknownModelsByDay[today]),
                                       modelBreakdown: modelBreakdown(
                                         modelUsage,
@@ -29,7 +30,7 @@ enum SpendTileMapper {
                                       )))
         }
         if let entry = usage.daily.first(where: { dayKey(fromUsageDate: $0.date) == yesterday }), hasUsage(entry) {
-            lines.append(dayUsageLine(label: "Yesterday", entry: entry, estimated: estimated,
+            lines.append(dayUsageLine(label: "Yesterday", entry: entry, estimated: yesterday.map { estimatedDays?.contains($0) ?? estimated } ?? estimated,
                                       unknownModels: sortedModels(yesterday.flatMap { unknownModelsByDay[$0] }),
                                       modelBreakdown: modelBreakdown(
                                         modelUsage,
@@ -41,12 +42,14 @@ enum SpendTileMapper {
         }
 
         let totalTokens = usage.daily.reduce(0) { $0 + $1.totalTokens }
-        let costSamples = usage.daily.compactMap(\.costUSD)
-        let totalCost = costSamples.isEmpty ? nil : costSamples.reduce(0, +)
+        let totalCost = usage.daily.reduce(into: UsageCostTotal()) { total, day in
+            if day.totalTokens != 0 || day.costUSD != nil { total.add(day.costUSD) }
+        }.value
         if totalTokens > 0 || (totalCost ?? 0) > 0 {
             let allUnknown = unknownModelsByDay.values.reduce(into: Set<String>()) { $0.formUnion($1) }
             lines.append(.values(label: "Last 30 Days",
-                                 values: spendValues(tokens: totalTokens, costUSD: totalCost, estimated: estimated),
+                                 values: spendValues(tokens: totalTokens, costUSD: totalCost,
+                                                     estimated: estimatedDays.map { !$0.isEmpty } ?? estimated),
                                  unknownModels: sortedModels(allUnknown),
                                  modelBreakdown: modelBreakdown(
                                     modelUsage,
@@ -186,10 +189,11 @@ enum SpendTileMapper {
 
     private struct ModelAccumulator {
         var tokens = 0
-        var costUSD: Double?
+        private var cost = UsageCostTotal()
+        var costUSD: Double? { cost.value }
         private var nameVote = SpellingVote()
         /// case-fold된 slug가 key — 내부 vote가 표시 표기를 복원.
-        private var variants: [String: (tokens: Int, costUSD: Double?, vote: SpellingVote)] = [:]
+        private var variants: [String: (tokens: Int, cost: UsageCostTotal, vote: SpellingVote)] = [:]
 
         /// 병합된 모든 casing에서 선출된 이 모델의 표시 표기.
         var displayName: String? { nameVote.best }
@@ -205,25 +209,21 @@ enum SpendTileMapper {
         /// 다른 모델을 이 accumulator(Other 행)로 흡수 — 흡수된 모델당 variant 하나, tooltip은 raw effort slug가 아닌 모델명 나열. Other 행 이름은 고정이라 흡수된 표기는 variant line 안에서만 투표.
         mutating func fold(_ entry: ModelUsageEntry) {
             tokens += entry.totalTokens
-            if let cost = entry.costUSD {
-                costUSD = (costUSD ?? 0) + cost
-            }
+            cost.add(entry.costUSD)
             mergeVariant(entry.model, tokens: entry.totalTokens, costUSD: entry.costUSD)
         }
 
         private mutating func addTotals(of entry: ModelUsageEntry, spelledAs name: String) {
             tokens += entry.totalTokens
-            if let cost = entry.costUSD {
-                costUSD = (costUSD ?? 0) + cost
-            }
+            cost.add(entry.costUSD)
             nameVote.note(name, weight: entry.totalTokens)
         }
 
         private mutating func mergeVariant(_ model: String, tokens: Int, costUSD: Double?) {
             let key = model.lowercased()
-            var existing = variants[key] ?? (0, nil, SpellingVote())
+            var existing = variants[key] ?? (0, UsageCostTotal(), SpellingVote())
             existing.tokens += tokens
-            existing.costUSD = costUSD.map { (existing.costUSD ?? 0) + $0 } ?? existing.costUSD
+            if tokens != 0 || costUSD != nil { existing.cost.add(costUSD) }
             existing.vote.note(model, weight: tokens)
             variants[key] = existing
         }
@@ -232,7 +232,7 @@ enum SpendTileMapper {
             let list = variants
                 .map { key, value in
                     ModelUsageVariant(model: value.vote.best ?? key, totalTokens: value.tokens,
-                                      costUSD: value.costUSD.map(SpendTileMapper.roundToCents))
+                                      costUSD: value.cost.value.map(SpendTileMapper.roundToCents))
                 }
                 .sorted(by: variantSortPrecedes)
             // 행 자신의 이름만 실은 variant 하나는 breakdown이 아님 — nil로 tooltip을 수치만으로 유지.

@@ -29,11 +29,9 @@ enum CodexWeeklyTimerCheckSchedule {
         _ providerIDs: [String], using refresh: @escaping @MainActor (String) async -> Void
     ) async {
         guard !Task.isCancelled else { return }
-        let tasks = providerIDs.map { providerID in Task { await refresh(providerID) } }
-        await withTaskCancellationHandler {
-            for task in tasks { await task.value }
-        } onCancel: {
-            for task in tasks { task.cancel() }
+        for providerID in providerIDs {
+            guard !Task.isCancelled else { return }
+            await refresh(providerID)
         }
     }
 
@@ -49,7 +47,13 @@ enum CodexWeeklyTimerCheckSchedule {
         scheduleChanged(nextCheckAt)
         await check()
 
-        while !Task.isCancelled, let event = await wait(nextCheckAt) {
+        while !Task.isCancelled {
+            let completedAt = now()
+            if completedAt >= nextCheckAt {
+                nextCheckAt = nextQuarterHour(after: completedAt, calendar: calendar())
+                scheduleChanged(nextCheckAt)
+            }
+            guard let event = await wait(nextCheckAt) else { return }
             guard !Task.isCancelled else { return }
             let current = now()
             if current < nextCheckAt {

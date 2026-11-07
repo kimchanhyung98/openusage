@@ -3,7 +3,7 @@ import Foundation
 /// 앱 model pricing 데이터의 소유자 — bundled snapshot, Application Support disk cache, live feed(LiteLLM·models.dev·supplement) 시간별 refresh.
 /// `current()`는 network 비대기 — 보유한 최신 데이터 제공 후 background 재검증 (stale-while-revalidate).
 actor ModelPricingStore {
-    static let shared = ModelPricingStore()
+    static let shared = ModelPricingStore(workQueue: .shared)
 
     /// 마지막 성공 후 이 간격 경과 시 재fetch.
     private static let refreshInterval: TimeInterval = 60 * 60
@@ -34,6 +34,7 @@ actor ModelPricingStore {
     private let now: @Sendable () -> Date
     private let sourceURLs: [SourceID: URL]
     private let bundledData: @Sendable (String) -> Data?
+    private let workQueue: BackgroundWorkQueue
 
     private var loaded = false
     private var pricing: ModelPricing = .empty
@@ -45,13 +46,15 @@ actor ModelPricingStore {
         cacheDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = Date.init,
         sourceURLs: [SourceID: URL] = ModelPricingStore.defaultSourceURLs,
-        bundledData: @escaping @Sendable (String) -> Data? = ModelPricingStore.bundledResourceData
+        bundledData: @escaping @Sendable (String) -> Data? = ModelPricingStore.bundledResourceData,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.http = http
         self.cacheDirectory = cacheDirectory ?? Self.defaultCacheDirectory
         self.now = now
         self.sourceURLs = sourceURLs
         self.bundledData = bundledData
+        self.workQueue = workQueue
     }
 
     static let defaultSourceURLs: [SourceID: URL] = [
@@ -204,6 +207,10 @@ actor ModelPricingStore {
 
     private func refreshDueSources() async {
         defer { refreshTask = nil }
+        await workQueue.run("pricing") { await self.refreshSources() }
+    }
+
+    private func refreshSources() async {
         var changed = false
         for source in SourceID.allCases where isDue(source) {
             if await fetch(source) {

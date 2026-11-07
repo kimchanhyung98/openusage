@@ -7,6 +7,7 @@ import SwiftUI
 final class CodexResetClaimRouter {
     private var servicesByCard: [String: CodexResetClaimService]
     private let refreshAfterClaim: (String, CodexResetClaimBinding) async -> Void
+    private let workQueue: BackgroundWorkQueue
     private var generation = 0
     private var identityKeysByCard: [String: String] = [:]
 
@@ -14,10 +15,12 @@ final class CodexResetClaimRouter {
     init(
         providers: [CodexProvider],
         identityKeys: [String: String] = [:],
-        refreshAfterClaim: @escaping (String, CodexResetClaimBinding) async -> Void
+        refreshAfterClaim: @escaping (String, CodexResetClaimBinding) async -> Void,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.servicesByCard = [:]
         self.refreshAfterClaim = refreshAfterClaim
+        self.workQueue = workQueue
         reconfigure(providers: providers, identityKeys: identityKeys)
     }
 
@@ -69,7 +72,8 @@ final class CodexResetClaimRouter {
                         return
                     }
                     await refreshAfterClaim(cardID, binding)
-                }
+                },
+                workQueue: workQueue
             ))
         })
     }

@@ -410,7 +410,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                 usageClient: ClaudeUsageClient(httpClient: http),
                 usageStateStore: isolatedClaudeUsageStore(),
                 logUsageScanner: ClaudeLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
-                includePiUsage: false, pricing: { .empty }
+                includeSharedUsage: false, pricing: { .empty }
             )
         }
         return CodexProvider(
@@ -418,7 +418,7 @@ final class AccountSnapshotUsageTests: XCTestCase {
                                       scope: .accountSnapshot(profileID: profileID)),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "snapshot-review", rootsOverride: []),
-            includePiUsage: false, pricing: { .empty }
+            includeSharedUsage: false, pricing: { .empty }
         )
     }
 

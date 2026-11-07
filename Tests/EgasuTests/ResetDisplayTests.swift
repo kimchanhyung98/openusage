@@ -1,6 +1,7 @@
 import XCTest
 @testable import Egasu
 
+@MainActor
 final class ResetDisplayTests: XCTestCase {
     private func utcCalendar() -> Calendar {
         var calendar = Calendar(identifier: .gregorian)

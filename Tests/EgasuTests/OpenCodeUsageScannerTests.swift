@@ -5,7 +5,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
     private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
     private func row(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, _ provider: String) -> String {
-        "[\(epochMs(iso)),\(cost),\(tokens),\"\(model)\",\"\(provider)\"]"
+        "[\(epochMs(iso)),\(cost),{\"total\":\(tokens)},\"\(model)\",\"\(provider)\"]"
     }
     private let now = EgasuISO8601.date(from: "2026-07-12T12:00:00.000Z")!
 
@@ -76,7 +76,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         let monthlyMs = Int(now.addingTimeInterval(-31 * 86_400 + 3600).timeIntervalSince1970 * 1000)
         let recentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
         let db = """
-        [[\(monthlyMs),1e308,1,"monthly","opencode-go"],[\(recentMs),1e308,2,"overflow","opencode-go"]]
+        [[\(monthlyMs),1e308,{"total":1},"monthly","opencode-go"],[\(recentMs),1e308,{"total":2},"overflow","opencode-go"]]
         """
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(
@@ -131,7 +131,7 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         let currentMs = Int(now.addingTimeInterval(-1800).timeIntervalSince1970 * 1000)
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode.db": """
-                [[\(oldMs),1e308,1,"old-zen","opencode"],[\(currentMs),1e308,2,"current-go","opencode-go"]]
+                [[\(oldMs),1e308,{"total":1},"old-zen","opencode"],[\(currentMs),1e308,{"total":2},"current-go","opencode-go"]]
                 """], anchors: ["/oc/opencode.db": String(oldMs)]),
             databasePaths: { ["/oc/opencode.db"] }
         )
@@ -243,6 +243,8 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         )
         guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
         XCTAssertEqual(scan.logScan.series.daily.compactMap(\.costUSD).reduce(0, +), 4.0, accuracy: 0.0001)
+        XCTAssertEqual(scan.logScan.readFailureCount, 1)
+        XCTAssertNotNil(scan.logScan.readWarning)
     }
 
     func testAllDatabasesFailingThrowsInsteadOfEmptyScan() async {
@@ -352,16 +354,18 @@ final class OpenCodeUsageScannerTests: XCTestCase {
         XCTAssertFalse(empty.hasHostedUsage())
     }
 
-    func testAbsurdTokenCountIsClampedNotCrashing() async throws {
-        // Int.max 초과 token count는 1e15로 clamp — Int(Double) 변환 trap 방지
-        let db = "[[\(epochMs("2026-07-12T10:00:00.000Z")),1.0,1e19,\"glm-5.2\",\"opencode-go\"]]"
+    func testAbsurdTokenCountIsRejectedWithoutInventingUsage() async throws {
+        let db = "[[\(epochMs("2026-07-12T10:00:00.000Z")),1.0,{\"total\":1e19},\"glm-5.2\",\"opencode-go\"]]"
         let scanner = OpenCodeUsageScanner(
             sqlite: FakeSQLite(data: ["/oc/opencode.db": db]),
             databasePaths: { ["/oc/opencode.db"] }
         )
         guard let scan = try await scanner.scan(now: now) else { return XCTFail("expected a scan") }
         let tokens = scan.logScan.series.daily.reduce(0) { $0 + $1.totalTokens }
-        XCTAssertEqual(tokens, 1_000_000_000_000_000)
+        XCTAssertEqual(tokens, 0)
+        XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
+        XCTAssertNotNil(scan.logScan.numericWarning)
+        XCTAssertNil(scan.logScan.usageHistory)
     }
 
     func testStaleGoAnchorWithoutRecentSpendOrKeyHasNoGoWindows() async throws {

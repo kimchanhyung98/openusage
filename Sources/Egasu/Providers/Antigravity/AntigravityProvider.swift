@@ -5,7 +5,7 @@ import Foundation
 /// 각 source에서 `RetrieveUserQuotaSummary` 우선(병합 pool·weekly window를 보고하는 유일한 endpoint) — 미지원 빌드는 legacy per-model endpoint로 fallback, 5h 전용이라 weekly meter는 "No data".
 @MainActor
 final class AntigravityProvider: ProviderRuntime {
-    private static let historySourceNote = "From your Antigravity usage history (estimated)"
+    private static let historySourceNote = "From your Antigravity usage history and local tools (estimated)"
 
     let provider = Provider(id: "antigravity", displayName: "Antigravity", icon: .providerMark("antigravity"))
 
@@ -20,16 +20,32 @@ final class AntigravityProvider: ProviderRuntime {
         authStore: AntigravityAuthStore = AntigravityAuthStore(),
         usageClient: AntigravityUsageClient = AntigravityUsageClient(),
         discovery: LanguageServerDiscovery = LanguageServerDiscovery(),
-        usageScan: @escaping @Sendable (Date, ModelPricing) async throws -> LogUsageScan? = { now, pricing in
-            try await AntigravityUsageScanner.shared.scan(now: now, pricing: pricing)
-        },
+        usageScan: (@Sendable (Date, ModelPricing) async throws -> LogUsageScan?)? = nil,
+        usageScanner: AntigravityUsageScanner = .shared,
+        usageCollection: UsageCollectionCoordinator = .shared,
         now: @escaping @Sendable () -> Date = Date.init,
         pricing: @escaping @Sendable () async -> ModelPricing = { await ModelPricingStore.shared.current() }
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
         self.discovery = discovery
-        self.usageScan = usageScan
+        self.usageScan = usageScan ?? { now, pricing in
+            var native: LogUsageScan?
+            do {
+                native = try await usageScanner.scan(now: now, pricing: pricing)
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                native = DailyUsageAccumulator().build(source: "antigravity", readFailureCount: 1)
+                AppDiagnostics.record(
+                    .historyScan, result: .degraded, providerID: "antigravity", error: error,
+                    localContext: "native conversation history could not be read"
+                )
+            }
+            let shared = await usageCollection.scan(providerID: "antigravity", now: now, pricing: pricing)
+            try Task.checkCancellation()
+            return DailyUsageAccumulator.merged([native, shared])
+        }
         self.now = now
         self.pricing = pricing
     }
@@ -125,12 +141,9 @@ final class AntigravityProvider: ProviderRuntime {
             warningPresentations.append(.init(message))
         }
         if scan?.unknownModelsByDay.values.contains(where: { !$0.isEmpty }) == true {
-            let message = "Some Antigravity models have no price. Their usage is excluded from totals."
-            warnings.append(message)
-            warningPresentations.append(.init(message))
-            AppLog.warn(LogTag.plugin("antigravity"), "unpriced models excluded from local usage totals")
+            AppLog.warn(LogTag.plugin("antigravity"), "local usage contains unpriced models")
         }
-        for message in [scan?.numericWarning, scan?.pricingWarning].compactMap({ $0 }) {
+        if let message = scan?.readWarning {
             warnings.append(message)
             warningPresentations.append(.init(message))
         }
@@ -168,7 +181,7 @@ final class AntigravityProvider: ProviderRuntime {
         ) {
             return result
         }
-        if let result = await probeLS(processName: "agy", markers: [], csrfFlag: "", portFlag: nil) {
+        if let result = await probeLS(processName: "agy", markers: [], csrfFlag: "--csrf_token", portFlag: nil, csrfRequired: false) {
             return result
         }
         return try await probeCloudCode()
@@ -176,13 +189,16 @@ final class AntigravityProvider: ProviderRuntime {
 
     // MARK: - Language server
 
-    private func probeLS(processName: String, markers: [String], csrfFlag: String, portFlag: String?) async -> StrategyResult? {
+    private func probeLS(
+        processName: String, markers: [String], csrfFlag: String, portFlag: String?, csrfRequired: Bool = true
+    ) async -> StrategyResult? {
         let discovery = self.discovery
         let options = LanguageServerDiscovery.Options(
             processName: processName,
             markers: markers,
             csrfFlag: csrfFlag,
-            portFlag: portFlag
+            portFlag: portFlag,
+            csrfRequired: csrfRequired
         )
         guard let discovered = await loadOffMainActor({ discovery.discover(options) }) else { return nil }
 

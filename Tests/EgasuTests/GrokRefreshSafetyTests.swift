@@ -94,7 +94,7 @@ final class GrokRefreshSafetyTests: XCTestCase {
 
     func testSaveReportsCredentialAccessFailureSeparatelyFromChangedCredentials() throws {
         let files = GrokReadFailingFiles([GrokAuthStore.authPath: Self.original])
-        let store = GrokAuthStore(files: files)
+        let store = GrokAuthStore(files: files, environment: FakeEnvironment())
         var state = try XCTUnwrap(store.loadAuthCandidates().first)
         state.entry.key = "rotated-A"
         files.readError = CocoaError(.fileReadNoPermission)
@@ -161,10 +161,11 @@ final class GrokRefreshSafetyTests: XCTestCase {
 
     private func makeProvider(files: TextFileAccessing, http: HTTPClient) -> GrokProvider {
         GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { Self.now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { Self.now }),
             usageClient: GrokUsageClient(httpClient: http),
             logUsageScanner: GrokLogUsageScanner(files: FakeFiles(), environment: FakeEnvironment(),
                                                 homeDirectory: { URL(fileURLWithPath: "/fixture") }),
+            sharedUsage: .init(collectors: []),
             now: { Self.now }, pricing: { .empty }
         )
     }

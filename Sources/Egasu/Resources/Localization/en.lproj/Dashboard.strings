@@ -40,6 +40,7 @@
 "egasu %@ is ready to download." = "egasu %@ is ready to download.";
 "Opens %@ status page in your browser." = "Opens %@ status page in your browser.";
 "Options" = "Options";
+"Queued" = "Queued";
 "Quit egasu" = "Quit egasu";
 "Refresh %@" = "Refresh %@";
 "Refresh Now" = "Refresh Now";

@@ -263,7 +263,7 @@ final class AntigravityCloudCodeTests: XCTestCase {
     }
 
     func testPaidTierIDTakesPriorityOverMisleadingDisplayName() async {
-        for (id, expected) in [("g1-pro-tier", "Pro"), ("g1-ultra-tier", "Ultra"), ("g1-ultra-lite-tier", "Ultra Lite")] {
+        for (id, expected) in [("g1-pro-tier", "Pro"), ("g1-ultra-tier", "Ultra"), ("g1-ultra-lite-tier", "Ultra")] {
             let plan = """
             {"paidTier":{"id":"\(id)","name":"Generic Paid Plan"},"currentTier":{"name":"Free"}}
             """

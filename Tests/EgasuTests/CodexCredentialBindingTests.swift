@@ -127,7 +127,7 @@ final class CodexCredentialBindingTests: XCTestCase {
             ),
             usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: suite, rootsOverride: []),
-            includePiUsage: false, now: { Self.instant }, pricing: { .empty }
+            includeSharedUsage: false, now: { Self.instant }, pricing: { .empty }
         )
         if let previousIdentity {
             let lines = try CodexUsageMapper.mapUsageResponse(Self.quota(used: 20), now: Self.instant).lines

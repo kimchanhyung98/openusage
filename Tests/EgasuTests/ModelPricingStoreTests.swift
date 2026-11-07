@@ -129,14 +129,16 @@ final class ModelPricingStoreTests: XCTestCase {
     private func makeStore(
         handler: @escaping @Sendable (HTTPRequest) async throws -> HTTPResponse,
         now: @escaping @Sendable () -> Date = Date.init,
-        cacheDirectory: URL? = nil
+        cacheDirectory: URL? = nil,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) -> (ModelPricingStore, RoutingHTTPClient) {
         let http = RoutingHTTPClient(handler: handler)
         let store = ModelPricingStore(
             http: http,
             cacheDirectory: cacheDirectory ?? tempDir,
             now: now,
-            bundledData: Self.bundledFixtures
+            bundledData: Self.bundledFixtures,
+            workQueue: workQueue
         )
         return (store, http)
     }
@@ -161,6 +163,22 @@ final class ModelPricingStoreTests: XCTestCase {
         XCTAssertEqual(pricing.resolve(model: "bundled-model")?.inputPerMillion, 1)
         XCTAssertEqual(pricing.resolve(model: "bundled-dev-model")?.inputPerMillion, 3)
         XCTAssertEqual(pricing.resolve(model: "auto")?.inputPerMillion, 1.25)
+    }
+
+    @MainActor
+    func testCachedPricingRemainsAvailableWhileBackgroundFetchWaitsForQueue() async throws {
+        let queue = BackgroundWorkQueue()
+        let acquired = await queue.acquire("usage")
+        let ticket = try XCTUnwrap(acquired)
+        let (store, http) = makeStore(handler: { Self.respond(to: $0) }, workQueue: queue)
+        let pricing = await store.current()
+        XCTAssertEqual(pricing.resolve(model: "bundled-model")?.inputPerMillion, 1)
+        for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+        XCTAssertTrue(http.requests.isEmpty)
+        queue.finish(ticket)
+        await store.refreshNow()
+        XCTAssertEqual(http.requests.count, 3)
     }
 
     func testRefreshFetchesAllSourcesAndAppliesData() async throws {

@@ -101,7 +101,8 @@ public struct UsageReader {
                 defaults: defaults,
                 isProviderEnabled: includesProvider,
                 // CLI는 앱의 snapshot cache 공유 — 쓰기에 동일한 계정 stamp 필수, 미stamp claude/codex entry는 앱의 다음 launch에 폐기.
-                providerIdentityKeys: accountAssembly.identityKeysByCard
+                providerIdentityKeys: accountAssembly.identityKeysByCard,
+                workQueue: .shared
             )
             if let matchedIDs {
                 for providerID in orderedIDs.filter(matchedIDs.contains) {

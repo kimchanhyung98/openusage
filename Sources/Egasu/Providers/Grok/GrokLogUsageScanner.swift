@@ -1,7 +1,7 @@
 import Foundation
 
 /// Grok CLI의 로컬 로그에서 일별 token/cost 추정치 생성.
-/// token 행(`shell.turn.inference_done`)에 model id가 없어 CLI process(`pid`)별 current model 추적으로 귀속.
+/// token 행(`shell.turn.inference_done`)에 model id가 없어 process·session별 모델 추적으로 귀속.
 /// 출력은 Claude/Codex spend tile과 동일한 `DailyUsageSeries` 형태로 `SpendTileMapper`에 그대로 연결.
 struct GrokLogUsageScanner: Sendable {
     var files: TextFileAccessing
@@ -34,38 +34,65 @@ struct GrokLogUsageScanner: Sendable {
         return homeDirectory().appendingPathComponent(".grok/logs/unified.jsonl").path
     }
 
-    /// 로그의 최근 `daysBack`일 스캔.
-    /// 로그 부재·읽기 실패 시 `nil`(spend tile은 "No data" 렌더링), 존재하나 window 내 유효 행이 없으면 빈 `daily`.
+    /// 완료 턴 원장과 로그의 최근 `daysBack`일 스캔.
+    /// 입력 부재·취소는 `nil`, 읽기 실패는 실패 수로 보존. 유효 행이 없으면 빈 `daily`.
     /// nonisolated async — `@MainActor` provider가 `await`하면 파일 읽기+parse가 main actor 밖에서 수행.
     func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+        guard !Task.isCancelled else { return nil }
         let path = logPath
-        guard files.exists(path) else { return nil }
+        let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
+        let sessions = URL(fileURLWithPath: path).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("sessions", isDirectory: true)
+        guard let sessionUsage = GrokSessionUsageScanner(files: files).collect(root: sessions, since: since, until: now),
+              !Task.isCancelled else { return nil }
+        var sessionScan = UsageHistoryBuilder.scan(
+            sessionUsage.collection, providerID: "grok", since: since, until: now,
+            pricing: pricing, allowEstimates: false
+        )
+        sessionScan?.rejectedMetadataRows += sessionUsage.incompleteRows
+        guard files.exists(path) else { return sessionScan }
         let text: String
         do {
             text = try files.readText(path)
+            guard !Task.isCancelled else { return nil }
             await readFailureReporter.update(checkedPaths: [path], failingPaths: [])
-        } catch {
-            await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
+        } catch is CancellationError {
             return nil
+        } catch {
+            guard !Task.isCancelled else { return nil }
+            await readFailureReporter.update(checkedPaths: [path], failingPaths: [path])
+            guard !Task.isCancelled else { return nil }
+            return DailyUsageAccumulator.merged([
+                sessionScan, DailyUsageAccumulator().build(source: "grok", readFailureCount: 1)
+            ])
         }
-        let scan = Self.parse(text, since: JSONLScanning.sinceDate(daysBack: daysBack, now: now),
-                              pricing: pricing, reportNumericFailures: false)
+        guard !Task.isCancelled else { return nil }
+        let scan = Self.parse(text, since: since, pricing: pricing,
+                              excludingSessionIDs: sessionUsage.preferredSessionIDs, reportNumericFailures: false)
+        guard !Task.isCancelled else { return nil }
         await numericFailureReporter.update(path: path, rejectedRows: scan.rejectedNumericRows)
-        return scan
+        return Task.isCancelled ? nil : DailyUsageAccumulator.merged([sessionScan, scan])
     }
 
     /// append-only 로그에 대한 시간순 단일 pass.
-    /// model 이벤트는 날짜와 무관하게 `pid`별 current model 갱신 — `since` 경계에 걸친 session도 귀속 유지.
-    /// window 내 `inference_done` 행은 해당 `pid`의 current model로 가격 산정 후 로컬 달력일로 bucket 분류.
+    /// 날짜와 무관하게 process·session의 모델 갱신 — 기간 경계 전 기록도 모델 귀속에 사용.
     static func parse(
-        _ text: String, since: Date, pricing: ModelPricing, reportNumericFailures: Bool = true
+        _ text: String, since: Date, pricing: ModelPricing,
+        excludingSessionIDs: Set<String> = [], reportNumericFailures: Bool = true,
+        onLine: (() -> Void)? = nil
     ) -> LogUsageScan {
-        var modelByPID: [Int: String] = [:]
+        var modelByPID: [Int: ModelContext] = [:]
+        var modelBySession: [SessionKey: ModelContext] = [:]
+        var inheritedSessions: Set<SessionKey> = []
+        var ambiguousPIDs: Set<Int> = []
         var accumulator = DailyUsageAccumulator()
+        var rejectedMetadataRows = 0
 
-        text.enumerateLines { line, _ in
-            // JSON parse 전 저비용 pre-filter — token 행은 "inference_done", 모든 model 이벤트의 `msg`는 "model" 포함
-            guard line.contains("inference_done") || line.contains("model") else { return }
+        text.enumerateLines { line, stop in
+            onLine?()
+            guard !Task.isCancelled else { stop = true; return }
+            guard line.contains("inference_done") || line.contains("model")
+                    || line.contains("process resource limits") else { return }
             guard let data = line.data(using: .utf8),
                   let object = ProviderParse.jsonObject(data),
                   let msg = object["msg"] as? String
@@ -73,14 +100,52 @@ struct GrokLogUsageScanner: Sendable {
 
             let ctx = object["ctx"] as? [String: Any] ?? [:]
             let pid = UsageLogNumbers.count(object["pid"]).flatMap { $0 > 0 ? $0 : nil }
+            let sid = (object["sid"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+            let session = pid.flatMap { pid in sid.map { SessionKey(pid: pid, sid: $0) } }
 
-            if let model = modelID(msg: msg, ctx: ctx) {
-                if let pid { modelByPID[pid] = model }
+            // 시작 이벤트는 프로세스당 한 번 기록. PID 재사용 시 이전 실행의 모델 상태만 제거.
+            if msg == "process resource limits", let pid {
+                modelByPID.removeValue(forKey: pid)
+                modelBySession = modelBySession.filter { $0.key.pid != pid }
+                inheritedSessions = inheritedSessions.filter { $0.pid != pid }
+                ambiguousPIDs.remove(pid)
                 return
             }
 
-            guard msg == "shell.turn.inference_done",
-                  ctx["prompt_tokens"] != nil,
+            // 공식 child_model 이벤트에는 sid가 없음. 이후 기본 모델 갱신과 미확인 세션의 기본값 사용 중단.
+            if msg == "subagent model resolved", sid == nil {
+                if let pid { ambiguousPIDs.insert(pid) }
+                return
+            }
+
+            if let model = modelContext(msg: msg, ctx: ctx) {
+                if let session {
+                    modelBySession[session] = model
+                } else if let pid, !ambiguousPIDs.contains(pid) {
+                    modelByPID[pid] = model
+                }
+                return
+            }
+
+            guard msg == "shell.turn.inference_done" else { return }
+            if let sid, excludingSessionIDs.contains(sid) { return }
+            let model: ModelContext?
+            if let session {
+                if let sessionModel = modelBySession[session] {
+                    model = sessionModel
+                } else if inheritedSessions.contains(session) || !ambiguousPIDs.contains(session.pid) {
+                    model = modelByPID[session.pid]
+                    if model != nil { inheritedSessions.insert(session) }
+                } else {
+                    model = nil
+                }
+            } else {
+                model = pid.flatMap { ambiguousPIDs.contains($0) ? nil : modelByPID[$0] }
+            }
+            guard ctx["prompt_tokens"] != nil,
+                  !["prompt_tokens", "cached_prompt_tokens", "completion_tokens", "reasoning_tokens"].allSatisfy({
+                      ctx[$0] == nil || ctx[$0] is NSNull
+                  }),
                   let timestamp = (object["ts"] as? String).flatMap(EgasuISO8601.date(from:)),
                   timestamp >= since
             else { return }
@@ -90,7 +155,7 @@ struct GrokLogUsageScanner: Sendable {
                   let completion = UsageLogNumbers.count(ctx["completion_tokens"], missing: 0),
                   let reasoning = UsageLogNumbers.count(ctx["reasoning_tokens"], missing: 0),
                   let cached = UsageLogNumbers.count(ctx["cached_prompt_tokens"], missing: 0),
-                  let output = UsageLogNumbers.sum(completion, reasoning),
+                  let output = UsageLogNumbers.sum(completion, model?.outputIncludesReasoning == true ? 0 : reasoning),
                   let totalTokens = UsageLogNumbers.sum(promptTokens, output)
             else {
                 accumulator.rejectNumericRow()
@@ -102,20 +167,46 @@ struct GrokLogUsageScanner: Sendable {
 
             let day = DailyUsageAccumulator.dayKey(from: timestamp)
 
-            // 가격 산정 불가 행(model 미귀속 또는 가격 없는 model)은 모든 표시 합계에서 제외 — 실측 token과 혼합 시 수치 비일관
-            // 가격 없는 model 이름만 `unknownModelsByDay`(warning triangle)로 노출, 미귀속 행은 알릴 이름 자체가 없음
-            guard let model = pid.flatMap({ modelByPID[$0] }) else { return }
-            let tokenBreakdown = TokenBreakdown(input: inputNoCache, cacheRead: cacheRead, output: output)
-            guard let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown) else {
-                if totalTokens > 0 {
-                    accumulator.addUnknownModel(day: day, model: model)
+            // 원장과 중복 여부를 판별할 수 없는 세션 없는 로그는 보류.
+            if !excludingSessionIDs.isEmpty, sid == nil {
+                if totalTokens > 0 { rejectedMetadataRows += 1 }
+                return
+            }
+            // 모델 미귀속 행은 제외. 가격 없는 모델의 실측 토큰은 유지하고 기간 비용은 생략.
+            guard let model = model?.model else {
+                if totalTokens > 0, session != nil || pid.map({ ambiguousPIDs.contains($0) }) == true {
+                    rejectedMetadataRows += 1
                 }
                 return
+            }
+            let tokenBreakdown = TokenBreakdown(input: inputNoCache, cacheRead: cacheRead, output: output)
+            let cost = pricing.estimatedCostDollars(model: model, tokens: tokenBreakdown)
+            if cost == nil, totalTokens > 0 {
+                accumulator.addUnknownModel(day: day, model: model)
             }
             accumulator.add(day: day, tokens: totalTokens, cost: cost, model: model)
         }
 
-        return accumulator.build(source: "grok", reportNumericFailures: reportNumericFailures)
+        if !Task.isCancelled, rejectedMetadataRows > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "grok",
+                localContext: "source=grok; unattributed_session_rows=\(rejectedMetadataRows)"
+            )
+        }
+        return accumulator.build(
+            source: "grok", reportNumericFailures: reportNumericFailures, rejectedMetadataRows: rejectedMetadataRows
+        )
+    }
+
+    private struct SessionKey: Hashable {
+        let pid: Int
+        let sid: String
+    }
+
+    /// 모델 적용 시점의 API 계산 방식 — Responses 출력 토큰은 추론 포함.
+    private struct ModelContext {
+        let model: String
+        let outputIncludesReasoning: Bool
     }
 
     /// 같은 파일의 손상 행 수 증가만 보고; 정상 window로 돌아오면 복구 기록.
@@ -134,26 +225,24 @@ struct GrokLogUsageScanner: Sendable {
         }
     }
 
-    /// model 변경 이벤트가 실어 나르는 model id, 그 외 라인은 `nil`.
-    /// Grok CLI는 여러 이벤트 shape로 active model을 알림 — 모두 `pid` 기준.
-    private static func modelID(msg: String, ctx: [String: Any]) -> String? {
+    /// 실제 모델 적용 이벤트의 모델·API 계산 방식. 검증 전 요청인 `model changed`는 제외.
+    /// 세션 정보는 호출부에서 판별; 여기서는 모델·API 필드만 해석.
+    private static func modelContext(msg: String, ctx: [String: Any]) -> ModelContext? {
         let raw: Any?
         switch msg {
-        case "model changed":
-            raw = ctx["model"]
         case "model catalog: notifying clients":
             raw = ctx["current_model_id"]
         case "backend_search: model switch":
-            raw = ctx["model"] ?? ctx["current_model_id"] ?? ctx["model_id"]
+            raw = ctx["new_model"] ?? ctx["model"] ?? ctx["current_model_id"] ?? ctx["model_id"]
         case "subagent model resolved":
-            raw = ctx["model_id"] ?? ctx["model"]
+            raw = ctx["child_model"] ?? ctx["model_id"] ?? ctx["model"]
         default:
             return nil
         }
         guard let model = (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
               !model.isEmpty
         else { return nil }
-        return model
+        return ModelContext(model: model, outputIncludesReasoning: ctx["api_backend"] as? String == "Responses")
     }
 
 }

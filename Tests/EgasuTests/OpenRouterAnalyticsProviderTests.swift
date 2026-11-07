@@ -266,10 +266,10 @@ final class OpenRouterAnalyticsProviderTests: XCTestCase {
         let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache, defaults: defaults)
         _ = await store.refresh(providerID: "openrouter", force: true)
         let initial = try XCTUnwrap(store.localSnapshots["openrouter"])
-        let started = expectation(description: "All analytics queries started")
-        started.expectedFulfillmentCount = 5
-        let cancelled = expectation(description: "All analytics queries cancelled")
-        cancelled.expectedFulfillmentCount = 5
+        let initialRequests = await http.requests
+        let initialAnalyticsCount = initialRequests.filter { $0.url.absoluteString == OpenRouterUsageClient.analyticsURL }.count
+        let started = expectation(description: "First analytics query started")
+        let cancelled = expectation(description: "Only active analytics query cancelled")
         await http.setAnalytics { _ in
             started.fulfill()
             do {
@@ -288,6 +288,8 @@ final class OpenRouterAnalyticsProviderTests: XCTestCase {
         let outcome = await task.value
         await fulfillment(of: [cancelled], timeout: 2)
 
+        let requests = await http.requests
+        XCTAssertEqual(requests.filter { $0.url.absoluteString == OpenRouterUsageClient.analyticsURL }.count, initialAnalyticsCount + 1)
         XCTAssertEqual(outcome, .skipped)
         XCTAssertEqual(store.localSnapshots["openrouter"], initial)
         XCTAssertEqual(cache.loadSnapshots(providerIDs: ["openrouter"])["openrouter"], initial)

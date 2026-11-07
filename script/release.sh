@@ -81,8 +81,7 @@ notarize() {  # $1: 제출할 artifact(.zip 또는 .dmg)
 
 echo "==> building $APP_NAME $VERSION ($BUILD) — universal (arm64 + x86_64)"
 # 두 architecture slice를 빌드하고 SwiftPM이 하나의 universal binary로 lipo 병합.
-# 여러 --arch 사용 시 --show-bin-path는 *.bundle resource도 포함한 병합 product 디렉터리
-# (.build/apple/Products/Release)를 반환하므로 아래 배치 loop 변경 없음.
+# 여러 --arch 사용 시 --show-bin-path로 resource bundle이 포함된 병합 product 디렉터리 확인.
 # `-Xswiftc -g`로 DWARF를 생성해 `dsymutil`이 crash symbolication용 line-level dSYM 생성 가능.
 # 배포 binary 크기는 증가하지 않음. Mach-O는 binary debug map이 참조하는 .o 파일에 DWARF를 보관하고
 # dsymutil이 .dSYM으로 추출하며 실행 파일에는 symbol table만 포함.
@@ -146,12 +145,10 @@ for uuid in $(dwarfdump --uuid "$APP_BINARY" | awk '{print $2}'); do
 done
 echo "    dSYM: $APP_DSYM"
 
-shopt -s nullglob
-for bundle in "$BUILD_DIR"/*.bundle; do
-  [ "$(basename "$bundle")" = "OpenUsage_OpenUsage.bundle" ] && continue
-  cp -R "$bundle" "$APP_RESOURCES/$(basename "$bundle")"
+# 현재 앱·의존성의 resource bundle만 배치. 테스트·다른 제품의 잔여 산출물 제외.
+for bundle in Egasu_Egasu KeyboardShortcuts_KeyboardShortcuts PostHog_PostHog PostHog_PHPLCrashReporter; do
+  cp -R "$BUILD_DIR/$bundle.bundle" "$APP_RESOURCES/$bundle.bundle"
 done
-shopt -u nullglob
 
 # 앱 아이콘 설치 시 사전 컴파일한 catalog 우선 사용.
 # GitHub runner의 actool(Xcode 26.4.1·26.5)은 Icon Composer `.icon` refractivity 기능에서 crash 발생

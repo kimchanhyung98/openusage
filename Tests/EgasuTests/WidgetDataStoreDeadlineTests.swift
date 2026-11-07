@@ -89,15 +89,21 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
     func testAccountWaitScopesEachWaiterToRequestedProviderIDs() async {
         let runtimes = [Runtime(), Runtime(id: "codex@other"), Runtime(id: "claude"), Runtime(id: "cursor")]
         let store = makeStore(runtimes, timeout: 60).store
-        let started = expectation(description: "All refreshes started")
-        started.expectedFulfillmentCount = runtimes.count
+        let started = expectation(description: "First refresh started")
         let releases = runtimes.map { _ in Gate() }
-        let refreshes = runtimes.indices.map { index in
+        runtimes[0].beforeRefresh = { started.fulfill(); await releases[0].wait() }
+        let firstRefresh = Task { await store.refresh(providerID: runtimes[0].provider.id, force: true) }
+        await fulfillment(of: [started], timeout: 2)
+        let remainingRefreshes = runtimes.indices.dropFirst().map { index in
             let runtime = runtimes[index]
-            runtime.beforeRefresh = { started.fulfill(); await releases[index].wait() }
+            runtime.beforeRefresh = { await releases[index].wait() }
             return Task { await store.refresh(providerID: runtime.provider.id, force: true) }
         }
-        await fulfillment(of: [started], timeout: 2)
+        let refreshes = [firstRefresh] + remainingRefreshes
+        let expectedIDs = Set(runtimes.map(\.provider.id))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while store.refreshingProviderIDs != expectedIDs, ContinuousClock.now < deadline { await Task.yield() }
+        XCTAssertEqual(store.refreshingProviderIDs, expectedIDs)
         let waiting = Gate()
         let unrelatedWaiting = Gate()
         let selectedFinished = expectation(description: "Selected account wait ignores unrelated refreshes")
@@ -207,15 +213,26 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         XCTAssertEqual(runtime.refreshCount, 2)
     }
 
-    func testBatchCompletesAfterTimeoutAndSyncsOnlySuccessfulHistory() async {
+    func testTimedOutWorkKeepsQueueUntilItFinishesThenSyncsOnlySuccessfulHistory() async {
         let slow = Runtime()
         let fast = Runtime(id: "claude")
         let fixture = makeStore([slow, fast])
         let recorder = Recorder(fixture.store)
         let finished = expectation(description: "Late work finished")
         let gate = Gate()
+        let timedOut = expectation(description: "Timeout reported before work ends")
+        let outcomeHandler = fixture.store.onRefreshOutcome
+        fixture.store.onRefreshOutcome = { id, outcome, category, trigger, degraded in
+            outcomeHandler?(id, outcome, category, trigger, degraded)
+            if id == "codex", outcome == .failed { timedOut.fulfill() }
+        }
         slow.beforeRefresh = { await gate.wait(); finished.fulfill() }
-        await fixture.store.refreshAll(force: true)
+        let batch = Task { await fixture.store.refreshAll(force: true) }
+        await fulfillment(of: [timedOut], timeout: 2)
+        XCTAssertEqual(fast.refreshCount, 0)
+        XCTAssertNil(fixture.store.lastRefreshAt)
+        gate.open()
+        await batch.value
         XCTAssertNotNil(fixture.store.lastRefreshAt)
         XCTAssertTrue(fixture.store.refreshingProviderIDs.isEmpty)
         XCTAssertNotNil(fixture.store.localSnapshots["claude"])
@@ -236,7 +253,6 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
         let fixture = makeStore([slow, fast], timeout: 60)
         let recorder = Recorder(fixture.store)
         let started = expectation(description: "Slow refresh started")
-        let fastFinished = expectation(description: "Fast card published")
         let workCancelled = expectation(description: "Slow work cancelled")
         let lateFinished = expectation(description: "Late work finished")
         let gate = Gate()
@@ -247,23 +263,22 @@ final class WidgetDataStoreDeadlineTests: XCTestCase {
                 lateFinished.fulfill()
             } onCancel: { workCancelled.fulfill() }
         }
-        fixture.store.onFreshSnapshot = { snapshot, _, _ in
-            if snapshot.providerID == "claude" { fastFinished.fulfill() }
-            else { XCTFail("Cancelled Codex snapshot must not reach quota observation") }
+        fixture.store.onFreshSnapshot = { _, _, _ in
+            XCTFail("Cancelled batch must not publish a snapshot")
         }
         let batchFinished = expectation(description: "Cancelled batch returned")
         let task = Task {
             await fixture.store.refreshAll(force: true)
             batchFinished.fulfill()
         }
-        await fulfillment(of: [started, fastFinished], timeout: 2)
-        XCTAssertNotNil(fixture.store.localSnapshots["claude"])
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(fast.refreshCount, 0)
         task.cancel()
         await fulfillment(of: [batchFinished, workCancelled], timeout: 2)
         await task.value
         XCTAssertNil(fixture.store.lastRefreshAt)
         XCTAssertEqual(recorder.historyChanges, 0)
-        XCTAssertEqual(recorder.outcomes, [.refreshed])
+        XCTAssertTrue(recorder.outcomes.isEmpty)
         XCTAssertTrue(fixture.store.refreshingProviderIDs.isEmpty)
         XCTAssertNil(fixture.store.localSnapshots["codex"])
         XCTAssertNil(fixture.store.refreshResults["codex"])

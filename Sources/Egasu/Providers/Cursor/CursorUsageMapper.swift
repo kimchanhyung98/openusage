@@ -256,28 +256,28 @@ enum CursorUsageMapper {
         to lines: inout [MetricLine]
     ) -> ProviderUsageHistory {
         let calendar = Calendar.current
-        var costByDay: [String: Double] = [:]
+        var costByDay: [String: UsageCostTotal] = [:]
         var tokensByDay: [String: Int] = [:]
         var modelsByDay: [String: [String: ModelAccumulator]] = [:]
-        // pricing source가 가격을 모르는 행(nil imputed cost)은 모든 표시 합계(tokens·달러·trend·모델 breakdown)에서 제외 — 측정 tokens와 unpriceable tokens를 섞으면 수치가 모순됨. 모델명은 경고 삼각형으로만 노출 — 일 단위로 추적해 spend 타일이 수치 불완전을 경고. 실제 tokens를 쓴 행만 집계 — unknown 모델의 0-token 행은 아무것도 바꾸지 않아 표시할 가치 없음.
+        // 가격 미확정 토큰은 보존하고 불완전한 비용만 생략. 토큰이 0이면 미확정 모델 목록에서도 제외.
         var unknownModelsByDay: [String: Set<String>] = [:]
         for row in rows {
             let day = DailyUsageAccumulator.dayKey(from: row.date, calendar: calendar)
             let model = row.model.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let cost = row.imputedCostDollars else {
-                if row.tokens.totalTokens > 0, !model.isEmpty {
+            if row.imputedCostDollars == nil {
+                guard row.tokens.totalTokens > 0 else { continue }
+                if !model.isEmpty {
                     unknownModelsByDay[day, default: []].insert(model)
                 }
-                continue
             }
-            costByDay[day, default: 0] += cost
+            costByDay[day, default: UsageCostTotal()].add(row.imputedCostDollars)
             tokensByDay[day, default: 0] += row.tokens.totalTokens
             let modelName = model.isEmpty ? ModelUsageEntry.unattributedModelName : model
             let family = model.isEmpty ? modelName : familyName(for: model, pricing: pricing)
             modelsByDay[day, default: [:]][family, default: ModelAccumulator()].add(
                 variant: modelName,
                 tokens: row.tokens.totalTokens,
-                costUSD: cost
+                costUSD: row.imputedCostDollars
             )
         }
 
@@ -286,7 +286,7 @@ enum CursorUsageMapper {
             DailyUsageEntry(
                 date: day,
                 totalTokens: tokensByDay[day] ?? 0,
-                costUSD: ((costByDay[day] ?? 0) * 100).rounded() / 100
+                costUSD: costByDay[day]?.value.map { ($0 * 100).rounded() / 100 }
             )
         }
         let series = DailyUsageSeries(daily: daily)
@@ -325,24 +325,23 @@ enum CursorUsageMapper {
 
     private struct ModelAccumulator {
         var tokens = 0
-        var costUSD: Double?
-        var variants: [String: (tokens: Int, costUSD: Double?)] = [:]
+        var cost = UsageCostTotal()
+        var variants: [String: (tokens: Int, cost: UsageCostTotal)] = [:]
 
         mutating func add(variant: String, tokens: Int, costUSD: Double?) {
             self.tokens += tokens
-            if let costUSD {
-                self.costUSD = (self.costUSD ?? 0) + costUSD
-            }
-            let existing = variants[variant] ?? (0, nil)
-            let combinedCost: Double? = costUSD.map { (existing.costUSD ?? 0) + $0 } ?? existing.costUSD
-            variants[variant] = (existing.tokens + tokens, combinedCost)
+            cost.add(costUSD)
+            var existing = variants[variant] ?? (0, UsageCostTotal())
+            existing.tokens += tokens
+            existing.cost.add(costUSD)
+            variants[variant] = existing
         }
 
         func entry(model: String) -> ModelUsageEntry {
             // family 자신의 이름을 가진 단일 variant는 breakdown이 아님 — `variants`를 nil로 두어 hover tooltip이 수치만 표시.
-            let list = variants.map { ModelUsageVariant(model: $0.key, totalTokens: $0.value.tokens, costUSD: $0.value.costUSD) }
+            let list = variants.map { ModelUsageVariant(model: $0.key, totalTokens: $0.value.tokens, costUSD: $0.value.cost.value) }
             let isTrivial = list.count == 1 && list[0].model == model
-            return ModelUsageEntry(model: model, totalTokens: tokens, costUSD: costUSD,
+            return ModelUsageEntry(model: model, totalTokens: tokens, costUSD: cost.value,
                                    variants: isTrivial ? nil : list)
         }
     }

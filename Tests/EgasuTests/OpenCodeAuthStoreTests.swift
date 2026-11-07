@@ -52,6 +52,53 @@ final class OpenCodeAuthStoreTests: XCTestCase {
             }
         }
     }
+
+    func testCustomDatabasePathOverridesDiscoveryWithoutMovingAuthFile() throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let data = home.appendingPathComponent("data/opencode")
+        try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+        for name in ["opencode.db", "opencode-next.db", "usage.sqlite", "opencode.db-wal"] {
+            try Data().write(to: data.appendingPathComponent(name))
+        }
+        let environment = FakeEnvironment(["XDG_DATA_HOME": home.appendingPathComponent("data").path])
+        XCTAssertEqual(try OpenCodePaths.databaseFiles(environment: environment, homeDirectory: home), [
+            data.appendingPathComponent("opencode-next.db").path, data.appendingPathComponent("opencode.db").path
+        ])
+        let overridden = FakeEnvironment([
+            "XDG_DATA_HOME": home.appendingPathComponent("data").path, "OPENCODE_DB": "usage.sqlite"
+        ])
+        XCTAssertEqual(try OpenCodePaths.databaseFiles(environment: overridden, homeDirectory: home), [
+            data.appendingPathComponent("usage.sqlite").path
+        ])
+        let auth = OpenCodeAuthStore(files: FakeFiles(), environment: overridden, homeDirectory: { home })
+        XCTAssertEqual(auth.authFilePath, data.appendingPathComponent("auth.json").path)
+    }
+
+    func testAbsoluteDatabaseOverrideMemoryAndMissingStore() throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let database = home.appendingPathComponent("custom-store")
+        try Data().write(to: database)
+        XCTAssertEqual(try OpenCodePaths.databaseFiles(
+            environment: FakeEnvironment(["OPENCODE_DB": database.path]), homeDirectory: home
+        ), [database.path])
+        for path in [":memory:", "missing.sqlite"] {
+            XCTAssertTrue(try OpenCodePaths.databaseFiles(
+                environment: FakeEnvironment(["OPENCODE_DB": path]), homeDirectory: home
+            ).isEmpty)
+        }
+    }
+
+    func testTildeDataOverridesUseTheInjectedHome() {
+        let home = URL(fileURLWithPath: "/fixture-home")
+        XCTAssertEqual(OpenCodePaths.dataDirectory(
+            environment: FakeEnvironment(["XDG_DATA_HOME": "~/data"]), homeDirectory: home
+        ), "/fixture-home/data/opencode")
+        XCTAssertEqual(OpenCodePaths.dataDirectory(
+            environment: FakeEnvironment(["OPENCODE_DATA_DIR": "~/custom"]), homeDirectory: home
+        ), "/fixture-home/custom")
+    }
 }
 
 /// 존재하지만 읽기는 항상 실패하는 file store (permission-denied auth.json 모사)

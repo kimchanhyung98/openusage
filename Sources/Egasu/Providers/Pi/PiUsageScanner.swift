@@ -1,219 +1,89 @@
 import Foundation
 
-/// pi session 로그에서 egasu 카드 하나의 일별 token/cost series 구축 — pi 안에서 발생한 usage(pi로 구동한 Claude sub 등)를 해당 카드의 Usage Trend·spend 타일에 native source와 함께 합산.
-/// cost 규칙은 Claude·Codex 로그 scanner와 동일한 `carried cost, else price` — pi의 per-message `usage.cost.total`이 있으면 그대로, `$0`(미산정 구독 usage)이면 공유 엔진으로 가격 산정. usage shape이 Claude Code와 달라 자체 parser 보유.
-/// versioned incremental parse cache(path+size+mtime key)를 메모리와 Application Support에 유지하는 actor — 소비하는 모든 provider가 shared 인스턴스 하나를 써 pi 로그는 카드당이 아닌 1회만 파싱.
-actor PiUsageScanner {
-    static let shared = PiUsageScanner()
-    static let cacheSchemaVersion = 4
-
-    enum CostEstimate: Sendable {
-        case priced(Double)
-        case unpriced
-        case unsupportedUsage
-
-        init(_ cost: Double?) {
-            self = cost.map(Self.priced) ?? .unpriced
-        }
-    }
-
-    typealias CostEstimator = @Sendable (String, TokenBreakdown, ModelPricing) -> CostEstimate
+/// Pi·OMP 수집 결과를 공유하며 카드 귀속과 가격 계산을 캐시 밖에서 수행.
+actor PiUsageScanner: UsageCollecting {
+    static let cacheSchemaVersion = 13
 
     private let environment: EnvironmentReading
-    private let homeDirectory: @Sendable () -> URL
-    private let scanner: IncrementalJSONLScanner<Entry>
-
-    private static let sharedScanner = IncrementalJSONLScanner<Entry>(
-        logTag: LogTag.plugin("pi"),
-        persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: cacheSchemaVersion)
-    )
-
-    static func flushPersistentCacheWrites() async {
-        await sharedScanner.flushPendingWrites()
-    }
+    private let home: URL
+    private let piScanner: IncrementalJSONLScanner<UsageRecord>
+    private let ompScanner: IncrementalJSONLScanner<UsageRecord>
 
     init(
         environment: EnvironmentReading = ProcessEnvironmentReader(),
         homeDirectory: @escaping @Sendable () -> URL = { FileManager.default.homeDirectoryForCurrentUser },
-        incrementalScanner: IncrementalJSONLScanner<Entry>? = nil
+        incrementalScanner: IncrementalJSONLScanner<UsageRecord>? = nil
     ) {
         self.environment = environment
-        self.homeDirectory = homeDirectory
-        self.scanner = incrementalScanner ?? Self.sharedScanner
+        let home = homeDirectory()
+        self.home = home
+        piScanner = incrementalScanner ?? IncrementalJSONLScanner(
+            logTag: LogTag.plugin("pi"),
+            persistence: JSONLScanCachePersistence(namespace: "pi", schemaVersion: Self.cacheSchemaVersion)
+        )
+        ompScanner = incrementalScanner ?? IncrementalJSONLScanner(
+            logTag: LogTag.plugin("omp"),
+            persistence: JSONLScanCachePersistence(namespace: "omp", schemaVersion: Self.cacheSchemaVersion)
+        )
     }
 
-    /// 파싱된 assistant-message usage line 하나. raw timestamp 유지로 window가 이동해도 cached parse 유효, `cardID`는 parse 시 해석해 집계가 저렴한 filter.
-    struct Entry: Codable, Sendable, Equatable {
-        var id: String?
-        var timestamp: Date
-        var cardID: String
-        var model: String
-        /// pi 자신의 `usage.cost.total` — > 0이면 그대로 사용, nil/0은 엔진 가격 산정으로 fallthrough.
-        var carriedCost: Double?
-        /// fallthrough 가격 산정용 token bucket.
-        var tokens: TokenBreakdown
-        /// pi가 보고한 `usage.totalTokens` — 행의 token 수로 표시 (pi 자체 footer와 일치).
-        var reportedTotalTokens: Int
-        /// 손상된 행도 날짜·카드와 함께 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
-        var invalidNumericValues = false
-    }
-
-    /// 카드 하나에 대해 최근 `daysBack`일의 pi 로그 스캔. sessions 디렉토리에 로그 파일이 전혀 없으면 nil — pi usage 없는 provider는 아무것도 합산하지 않음.
-    func scan(
-        cardID: String, daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing,
-        costEstimator: CostEstimator? = nil
-    ) async -> LogUsageScan? {
-        let directory = PiPaths.sessionsDirectory(environment: environment, homeDirectory: homeDirectory())
-        let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
-        let cacheIdentity = directory.resolvingSymlinksInPath().path
-        let files = JSONLScanning.jsonlFiles(under: directory)
-        guard !files.isEmpty else {
-            _ = await scanner.items(
-                from: [], since: since, cacheIdentity: cacheIdentity, parse: Self.parseFile
+    func collect(since: Date) async -> UsageCollection? {
+        guard !Task.isCancelled else { return nil }
+        var result = UsageCollection(records: [])
+        var collectors: [UsageFileCollector] = []
+        var settingsFailure: ErrorCategory?
+        let omp = PiPaths.ompSessionsDirectory(environment: environment, homeDirectory: home)
+        let ompCollector = omp.map { root in
+            UsageFileCollector(
+                sourceID: "omp", roots: [root], version: Self.cacheSchemaVersion, scanner: ompScanner,
+                includeFile: { $0.pathExtension == "jsonl" },
+                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: "omp") }
             )
-            return nil
         }
-
-        guard let entries = await scanner.items(
-            from: files,
-            since: since,
-            cacheIdentity: cacheIdentity,
-            onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "pi") },
-            parse: Self.parseFile
-        ), !Task.isCancelled else { return nil }
-        return Self.aggregate(
-            entries: Self.dedup(entries), cardID: cardID, since: since, pricing: pricing,
-            costEstimator: costEstimator
-        )
+        do {
+            let pi = try PiPaths.sessionsDirectory(environment: environment, homeDirectory: home)
+            let commonRoot = ompCollector?.roots.first.map {
+                $0.resolvingSymlinksInPath().path == pi.resolvingSymlinksInPath().path
+            } ?? false
+            let explicitSession = environment.value(for: "PI_CODING_AGENT_SESSION_DIR")?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil
+            let explicitAgent = environment.value(for: "PI_CODING_AGENT_DIR")?
+                .trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty != nil
+            let mixed = commonRoot || explicitSession || explicitAgent
+            var collector = UsageFileCollector(
+                sourceID: "pi", roots: [pi], version: Self.cacheSchemaVersion, scanner: piScanner,
+                includeFile: { $0.pathExtension == "jsonl" },
+                parse: { data, path in try PiSessionParser.parse(data, path: path, sourceID: mixed ? "pi-omp" : "pi") }
+            )
+            if mixed { collector.cacheDiscriminator = "pi-omp" }
+            collectors.append(collector)
+            if !commonRoot, let ompCollector { collectors.append(ompCollector) }
+        } catch {
+            settingsFailure = error is PiPaths.SettingsError ? .decoding : ErrorCategory.classify(error)
+            if let ompCollector { collectors.append(ompCollector) }
+        }
+        for collector in collectors {
+            guard let collection = await collector.collect(since: since), !Task.isCancelled else { return nil }
+            result.records += collection.records
+            result.sources += collection.sources
+        }
+        guard !Task.isCancelled else { return nil }
+        if let settingsFailure {
+            result.sources.append(.init(sourceID: "pi", failedStores: 1))
+            AppDiagnostics.record(.historyScan, result: .degraded, category: settingsFailure,
+                                  providerID: "pi", localContext: "session_settings_unavailable")
+        }
+        if omp == nil {
+            result.sources.append(.init(sourceID: "omp", failedStores: 1))
+            AppDiagnostics.record(.historyScan, result: .degraded, category: .decoding,
+                                  providerID: "omp", localContext: "invalid_profile_or_path")
+        }
+        result.records = UsageRecordDeduplicator.records(result.records)
+        return result
     }
 
-    // MARK: - Parsing
-
-    /// session 파일 하나의 매핑된 assistant usage line 전부 파싱. egasu가 추적하지 않는 pi provider의 line은 여기서 drop — 집계에 도달하지 않음.
-    static func parseFile(_ data: Data) -> [Entry] {
-        let marker = Data(#""usage":{"#.utf8)
-        var entries: [Entry] = []
-        for line in JSONLScanning.lines(in: data) {
-            guard line.range(of: marker) != nil, let entry = parseLine(Data(line)) else { continue }
-            entries.append(entry)
-        }
-        UsageLogNumbers.reportRejectedRows(entries.filter(\.invalidNumericValues).count, source: "pi")
-        return entries
-    }
-
-    static func parseLine(_ data: Data) -> Entry? {
-        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              object["type"] as? String == "message",
-              let timestampRaw = object["timestamp"] as? String,
-              let timestamp = EgasuISO8601.date(from: timestampRaw),
-              let message = object["message"] as? [String: Any],
-              message["role"] as? String == "assistant",
-              let providerID = message["provider"] as? String,
-              let cardID = PiProviderMapping.cardID(forPiProvider: providerID),
-              let usage = message["usage"] as? [String: Any]
-        else { return nil }
-
-        var entry = Entry(
-            id: object["id"] as? String,
-            timestamp: timestamp,
-            cardID: cardID,
-            model: (message["model"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            carriedCost: nil,
-            tokens: TokenBreakdown(),
-            reportedTotalTokens: 0,
-            invalidNumericValues: true
-        )
-        guard let cacheWrite = UsageLogNumbers.count(usage["cacheWrite"], missing: 0),
-              let cacheWrite1h = UsageLogNumbers.count(usage["cacheWrite1h"], missing: 0),
-              let input = UsageLogNumbers.count(usage["input"], missing: 0),
-              let cacheRead = UsageLogNumbers.count(usage["cacheRead"], missing: 0),
-              let output = UsageLogNumbers.count(usage["output"], missing: 0),
-              let reportedTotal = UsageLogNumbers.count(usage["totalTokens"], missing: 0),
-              UsageLogNumbers.sum(input, max(cacheWrite, cacheWrite1h), cacheRead, output) != nil
-        else { return entry }
-        let tokens = TokenBreakdown(
-            input: input,
-            cacheWrite5m: max(cacheWrite - cacheWrite1h, 0),
-            cacheWrite1h: cacheWrite1h,
-            cacheRead: cacheRead,
-            output: output
-        )
-
-        var carriedCost: Double?
-        if let rawCost = usage["cost"] {
-            guard let costObject = rawCost as? [String: Any] else { return entry }
-            if let rawTotal = costObject["total"] {
-                guard let cost = ProviderParse.number(rawTotal), cost >= 0 else { return entry }
-                carriedCost = cost
-            }
-        }
-        entry.carriedCost = carriedCost
-        entry.tokens = tokens
-        entry.reportedTotalTokens = reportedTotal
-        entry.invalidNumericValues = false
-        return entry
-    }
-
-    // MARK: - Dedup and aggregation
-
-    /// fork/clone된 session이 같은 message id로 복제한 replay line 제거, 정상 숫자 사본 중 첫 등장 유지. id 없는 line은 항상 유지.
-    static func dedup(_ entries: [Entry]) -> [Entry] {
-        var indices: [String: Int] = [:]
-        var out: [Entry] = []
-        out.reserveCapacity(entries.count)
-        for entry in entries {
-            if let id = entry.id {
-                if let index = indices[id] {
-                    if out[index].invalidNumericValues && !entry.invalidNumericValues { out[index] = entry }
-                    continue
-                }
-                indices[id] = out.count
-            }
-            out.append(entry)
-        }
-        return out
-    }
-
-    /// 카드의 entry를 로컬 캘린더 일 단위로 bucket. cost는 pi carried total 우선, 없으면 `pricing`으로 산정 — 산정 불가·cost 없는 모델은 합계에서 제외하고 unknown-model 경고로 표시 (로그 scanner와 동일).
-    static func aggregate(
-        entries: [Entry], cardID: String, since: Date, pricing: ModelPricing,
-        costEstimator: CostEstimator? = nil
-    ) -> LogUsageScan {
-        let estimate = costEstimator ?? { model, tokens, pricing in
-            CostEstimate(pricing.estimatedCostDollars(model: model, tokens: tokens))
-        }
-        var accumulator = DailyUsageAccumulator()
-        var rejectedNumericRows = 0
-        var unsupportedPricingRows = 0
-        for entry in entries where entry.cardID == cardID && entry.timestamp >= since {
-            guard !entry.invalidNumericValues else {
-                rejectedNumericRows += 1
-                continue
-            }
-            let day = DailyUsageAccumulator.dayKey(from: entry.timestamp)
-            let trimmedModel = entry.model.nilIfEmpty
-            let modelName = trimmedModel ?? ModelUsageEntry.unattributedModelName
-
-            let cost: Double
-            if let carried = entry.carriedCost, carried > 0 {
-                cost = carried
-            } else {
-                let result = estimate(trimmedModel ?? "", entry.tokens, pricing)
-                switch result {
-                case .priced(let estimated):
-                    cost = estimated
-                case .unpriced, .unsupportedUsage:
-                    if case .unsupportedUsage = result { unsupportedPricingRows += 1 }
-                    if let model = trimmedModel, entry.reportedTotalTokens > 0 {
-                        accumulator.addUnknownModel(day: day, model: model)
-                    }
-                    continue
-                }
-            }
-            accumulator.add(day: day, tokens: entry.reportedTotalTokens, cost: cost, model: modelName)
-        }
-        return accumulator.build(
-            rejectedNumericRows: rejectedNumericRows, source: "pi", unsupportedPricingRows: unsupportedPricingRows
-        )
+    func flushCache() async {
+        await piScanner.flushPendingWrites()
+        await ompScanner.flushPendingWrites()
     }
 }

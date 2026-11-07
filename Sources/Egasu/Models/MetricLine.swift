@@ -82,7 +82,7 @@ enum MetricLine: Hashable, Sendable, Codable {
     /// unbounded, menu bar pin 불가.
     case chart(label: String, points: [MetricChartPoint], note: String? = nil)
     /// raw 숫자(`MetricValue`)를 담는 unbounded row — 숫자가 source of truth, format·값 선택은 표시 edge에서 수행.
-    /// `expiriesAt`은 raw `Date` 유지(popover clock tick·전역 reset mode 대응), `unknownModels`는 미가격 model 경고용,
+    /// `expiriesAt`은 raw `Date` 유지(popover clock tick·전역 reset mode 대응), `unknownModels`는 가격 미확정 모델 메타데이터,
     /// `modelBreakdown`은 internal UI 데이터 — local HTTP API wire shape에서 제외.
     case values(
         label: String,

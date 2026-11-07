@@ -217,7 +217,7 @@ final class CodexCredentialPreservationTests: XCTestCase {
         CodexProvider(
             authStore: store, usageClient: CodexUsageClient(http: http),
             logUsageScanner: CodexLogUsageScanner(environment: FakeEnvironment(),
-                cacheIdentityOverride: "credential-preservation", rootsOverride: []), includePiUsage: false,
+                cacheIdentityOverride: "credential-preservation", rootsOverride: []), includeSharedUsage: false,
             pricing: { .empty }
         )
     }

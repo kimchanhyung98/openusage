@@ -3,6 +3,64 @@ import XCTest
 @testable import Egasu
 
 final class KimiUsageMapperTests: XCTestCase {
+    func testMapsCurrentQuotaRatiosAndResetTimesWithoutGuessingPlan() throws {
+        let mapped = try KimiUsageMapper.map(Data(#"""
+        {"goods_version":2,"usages":{
+          "limit_5h":{"used_ratio":0.3,"reset_time":"2026-08-02T08:00:00Z"},
+          "limit_7d":{"used_ratio":"0.2","reset_time":"2026-08-09T00:00:00.123Z"},
+          "limit_month_total":{"used_ratio":0.9}
+        }}
+        """#.utf8))
+
+        XCTAssertNil(mapped.plan)
+        XCTAssertEqual(mapped.lines.map(\.label), ["Session", "Weekly"])
+        let session = try XCTUnwrap(kimiProgress(mapped.lines, "Session"))
+        XCTAssertEqual(session.used, 30, accuracy: 0.001)
+        XCTAssertEqual(session.limit, 100)
+        XCTAssertEqual(session.periodDurationMs, 18_000_000)
+        XCTAssertEqual(session.resetsAt, EgasuISO8601.date(from: "2026-08-02T08:00:00Z"))
+        let weekly = try XCTUnwrap(kimiProgress(mapped.lines, "Weekly"))
+        XCTAssertEqual(weekly.used, 20, accuracy: 0.001)
+        XCTAssertEqual(weekly.periodDurationMs, 604_800_000)
+        XCTAssertEqual(weekly.resetsAt, EgasuISO8601.date(from: "2026-08-09T00:00:00.123Z"))
+    }
+
+    func testCurrentZeroAndOverageRatiosRemainValidAndTakePrecedenceOverLegacyQuota() throws {
+        let mapped = try KimiUsageMapper.map([
+            "usages": ["limit_5h": ["used_ratio": 0], "limit_7d": ["used_ratio": "1.25"]],
+            "usage": ["limit": 100, "used": 99]
+        ])
+
+        XCTAssertEqual(mapped.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertEqual(kimiProgress(mapped.lines, "Session")?.used, 0)
+        XCTAssertEqual(kimiProgress(mapped.lines, "Weekly")?.used, 125)
+    }
+
+    func testCurrentQuotaRejectsInvalidRatiosAndDoesNotFallBackToLegacyQuota() {
+        for ratio: Any in [true, -0.01, "NaN", Double.infinity, Double.greatestFiniteMagnitude, NSNull()] {
+            XCTAssertThrowsError(try KimiUsageMapper.map([
+                "usages": ["limit_5h": ["used_ratio": ratio]],
+                "usage": ["limit": 100, "used": 50]
+            ])) { error in
+                XCTAssertEqual(error as? KimiUsageError, .invalidResponse)
+            }
+        }
+        for usages: Any in ["wrong", ["limit_5h": "wrong"], ["limit_5h": [:]]] {
+            XCTAssertThrowsError(try KimiUsageMapper.map(["usages": usages])) { error in
+                XCTAssertEqual(error as? KimiUsageError, .invalidResponse)
+            }
+        }
+    }
+
+    func testMonthlyOnlyQuotaDoesNotInventExistingSessionOrWeeklyMetrics() {
+        XCTAssertThrowsError(try KimiUsageMapper.map([
+            "goods_version": 2,
+            "usages": ["limit_month_total": ["used_ratio": 0.25], "limit_month_code": ["used_ratio": 0.5]]
+        ])) { error in
+            XCTAssertEqual(error as? KimiUsageError, .quotaUnavailable)
+        }
+    }
+
     func testMaps300MinuteWindowToSessionAndTopLevelUsageToWeekly() throws {
         let mapped = try KimiUsageMapper.map(Data(fullUsageJSON.utf8))
 

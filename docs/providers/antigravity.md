@@ -5,7 +5,9 @@
 
 ## 추적 항목
 
-Antigravity에는 공유 할당량 풀이 두 개 있으며, 각 풀마다 순환 5시간 기간과 주간 기간 제공.
+응답에 포함된 공유 Gemini 풀과 Gemini 외 풀의 5시간·주간 할당량 표시.
+제공 기간은 요금제와 응답에 따라 다름.
+[공식 요금제 안내](https://antigravity.google/docs/plans)에서 Free는 주간 한도, Pro·Ultra는 5시간·주간 한도로 구분.
 
 | 지표 | 의미 |
 |---|---|
@@ -15,6 +17,9 @@ Antigravity에는 공유 할당량 풀이 두 개 있으며, 각 풀마다 순�
 | Claude Weekly | 같은 Gemini 외 풀의 주간 기간 |
 
 Antigravity가 `Pro`, `Ultra` 같은 구독 등급을 보고하면 egasu의 프로바이더 이름 옆에 표시.
+Google AI Ultra는 미국 기준 월 $99.99·$199.99의 두 등급이며, [구독 요금제](/docs/pricing.md#구독-요금제) 참조.
+Cloud Code의 `g1-ultra-tier`·`g1-ultra-lite-tier`는 현재 공식 상품명인 Ultra로 표시.
+이름만으로 결제 금액이나 사용량 배수를 추정하지 않음.
 
 Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 같은 할당량이 줄어들어 egasu에서는 Pro와 Flash 미터를 따로 두지 않고 기간별로 하나만 표시.
 다른 프로바이더 행의 명명 방식에 맞춰 Session과 Weekly로 명명.
@@ -28,21 +33,30 @@ Gemini Pro와 Gemini Flash는 하나의 풀로, 어느 모델을 사용하든 �
 
 ## 로컬 사용량과 비용
 
-앱·CLI·IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.
+앱·CLI·독립 실행형 Antigravity IDE의 `~/.gemini/antigravity/conversations/*.db`, `~/.gemini/antigravity-cli/conversations/*.db`, `~/.gemini/antigravity-ide/conversations/*.db`를 읽기 전용으로 조회.
+공식 VS Code 확장의 기본 백엔드는 앱 데이터 경로를 사용하므로 같은 원장을 별도 수집하지 않음.
+다른 편집기·사용자 지정 데이터 경로·원격 호스트의 원장까지 지원한다는 의미는 아님.
 대화 단계에 기록된 발생 시각·모델·토큰 수를 기존 공통 가격 계산과 일별 집계에 연결.
 현재 확보한 모델 가격으로 계산한 사용 가치 추정치이며, 구독료나 실제 청구액과 다름.
 가격 산정 방식은 [모델 가격](/docs/pricing.md) 참조.
-가격을 확인할 수 없는 모델의 토큰과 비용은 합계에서 제외하고 프로바이더 헤더에 경고 표시.
+가격을 확인할 수 없는 모델의 토큰은 유지하고 해당 날짜·기간의 총비용 생략.
+가격 미확정 모델은 진단 로그에 기록하며 프로바이더 헤더에 경고를 표시하지 않음.
 
 기존 네 개 할당량 지표는 유지하고, 로컬 사용량은 상단 링의 **Today**·**Yesterday**·**30 Days** 합계에 반영.
 선택 기간에 유효한 이력이 없으면 상단 통계의 기존 빈 상태 적용.
 이력은 이 Mac의 Antigravity 패밀리 합계로 취급하며, 현재 로그인 계정이나 선택 계정에 임의로 귀속하지 않음.
 [Mac 간 동기화](/docs/icloud-sync.md)를 켜면 같은 로컬 이력 합산 규칙 적용.
 할당량 조회에 실패해도 유효한 로컬 사용량은 유지하고 조회 실패 경고 표시.
+일부 원장 읽기에 실패하면 읽을 수 있는 다른 원장만 계속 반영하고 불완전 이력 경고 표시.
+전체 수집에 실패하거나 취소된 결과로 이전 정상 이력을 비우지 않음.
+
+Pi·OMP 등 공유 도구가 `google-antigravity` 또는 `antigravity`로 기록한 사용량도 로컬 합계에 반영.
+기존 앱·CLI·독립 실행형 IDE 데이터베이스와 VS Code 확장의 공유 원장은 하나의 native 수집기에서 조회하여 이중 수집 방지.
 
 ## 인증 정보 출처
 
-egasu는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 정보를 읽음.
+egasu는 토큰을 요구하지 않고 Antigravity가 Google 계정 로그인으로 이미 보관한 인증 정보를 읽어 할당량 조회.
+[Gemini API 키 직접 사용 모드](https://antigravity.google/docs/install#using-a-gemini-api-key)는 이 계정 세션을 만들지 않음.
 
 - **로컬 언어 서버 조회** — 실행 중인 Antigravity 또는 `agy`의 언어 서버에 먼저 요청.
   현재 macOS 사용자 소유의 프로세스와 수신 포트만 탐색해 다른 사용자의 실행 중 계정에 연결하지 않음.
@@ -57,7 +71,8 @@ egasu는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 �
 
 ## 문제 해결
 
-- **"Start Antigravity or run `agy`…"** — Antigravity 앱에 로그인하거나 `agy`를 실행해 사용 가능한 토큰을 만든 뒤 새로 고침.
+- **"Start Antigravity or run `agy`…"** — Antigravity 앱이나 `agy`에서 Google 계정 로그인 후 새로 고침.
+  Gemini API 키 직접 사용 모드로 `agy`를 실행하는 것만으로는 할당량 조회용 계정 인증이 생성되지 않음.
 - **"Couldn't read Antigravity credentials…"** — 키체인 잠금 해제 또는 Antigravity 재로그인.
   현재 로그인을 확인하기 전까지 캐시된 액세스 토큰 사용 안 함.
 - **주간 미터에 "No data" 표시** — 주간 데이터를 받지 못한 상태.
@@ -73,6 +88,7 @@ egasu는 토큰을 요구하지 않고 Antigravity가 이미 보관한 인증 �
 ## 내부 동작
 
 우선순위가 높은 출처부터 시도: `language_server` / `agy` 프로세스를 탐색해 로컬 언어 서버를 찾고 CSRF 토큰과 수신 포트를 읽은 뒤, 실패하면 필요할 때 Google OAuth로 갱신한 키체인 토큰을 사용해 Google Cloud Code 호출.
+`agy`에 CSRF 토큰 인자가 있으면 로컬 요청에 사용하고, 토큰 없는 CLI도 기존 방식으로 조회.
 egasu는 갱신된 액세스 토큰의 단기 캐시를 현재 키체인 갱신 인증 정보의 단방향 지문에 연결.
 로그아웃, 계정 변경, 레거시 캐시, 만료되거나 손상된 항목으로는 이전 계정의 액세스 토큰 재사용 불가.
 각 출처에서 먼저 할당량 요약 엔드포인트(언어 서버의 `RetrieveUserQuotaSummary`, Cloud Code의 `v1internal:retrieveUserQuotaSummary`) 요청 — 병합된 풀과 주간 기간을 보고하는 유일한 엔드포인트.
@@ -95,3 +111,13 @@ Cloud Code 요금제 요청에는 Antigravity 클라이언트 정보 포함.
 요금제를 확인하지 못해도 정상 사용량은 유지하며, 원인은 로그에 기록.
 
 > 앱과 언어 서버 바이너리의 리버스 엔지니어링 결과로, 엔드포인트와 저장 방식은 예고 없이 변경될 수 있음.
+
+## 공유 도구 사용량
+
+공통 수집 대상은 Pi·Oh My Pi(OMP).
+도구별 경로·중복 제거·가격 규칙은 [사용량 수집](/docs/usage-collection.md) 참조.
+계정 귀속을 확인하지 못하는 기록은 계정 전용 카드에 합산하지 않음.
+공통 수집이 실행되면 읽지 못한 저장소를 경고하고 읽은 기록은 보존.
+네이티브 이력의 실패 탐지와 화면 반영은 해당 provider의 수집 경로에 따름.
+기록에 명시된 provider 귀속과 기존 가격 엔진을 사용하며 모델 제조사만으로 구독을 추측하지 않음.
+공유 도구의 가격 미확정 토큰은 유지하고 해당 기간의 총비용 생략.

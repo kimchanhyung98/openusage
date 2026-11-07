@@ -138,17 +138,91 @@ final class FirstRunSeederTests: XCTestCase {
         XCTAssertEqual(enablement.enabledIDs, ["claude"])
     }
 
-    // MARK: - Concurrent detection
+    // MARK: - Sequential detection
 
-    func testDetectLocalProvidersProbesConcurrently() async {
-        // 순차 probe 회귀 방지 — gated stub은 모든 probe가 동시에 시작해야만 credential 보고
+    func testCancelledDetectionKeepsFallbackInsteadOfPartialResult() async {
+        let enablement = ProviderEnablementStore(defaults: makeDefaults("cancelled"))
+        let onboarding = OnboardingStore(defaults: makeDefaults("cancelled-onboarding"))
+        let first = expectation(description: "First probe started")
+        let gate = ProbeGate(onFirst: { first.fulfill() })
+        let providers: [ProviderRuntime] = [
+            GatedCredentialProvider(id: "cursor", gate: gate),
+            stub("claude", hasCredentials: true),
+            stub("codex", hasCredentials: true)
+        ]
+        let task = FirstRunSeeder.seedIfNeeded(
+            isFreshInstall: true, providers: providers, enablement: enablement, onboarding: onboarding
+        )
+        await fulfillment(of: [first], timeout: 2)
+        task?.cancel()
+        gate.releaseFirst()
+        await task?.value
+
+        XCTAssertEqual(gate.arrivals, ["cursor"])
+        XCTAssertEqual(enablement.enabledIDs, ["claude", "codex"])
+        XCTAssertTrue(enablement.isInitialDetectionPending)
+    }
+
+    func testCancelledFirstDetectionRetriesAfterRelaunchWithoutRepeatingNewProviderDetection() async throws {
+        for changedSelection in [false, true] {
+            let defaults = makeDefaults("cancel-retry-\(changedSelection)")
+            let enablement = ProviderEnablementStore(defaults: defaults)
+            let onboardingDefaults = makeDefaults("cancel-retry-onboarding-\(changedSelection)")
+            let onboarding = OnboardingStore(defaults: onboardingDefaults)
+            let queue = BackgroundWorkQueue()
+            let acquired = await queue.acquire("test:block-first-detection")
+            let ticket = try XCTUnwrap(acquired)
+            let providers = [stub("claude", hasCredentials: false), stub("codex", hasCredentials: false),
+                             stub("cursor", hasCredentials: true)]
+            let first = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: true, providers: providers, enablement: enablement,
+                onboarding: onboarding, workQueue: queue
+            ))
+            XCTAssertTrue(enablement.isInitialDetectionPending)
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: enablement))
+            if changedSelection { enablement.setEnabled(false, for: "codex") }
+            onboarding.dismissCustomizeHint()
+            first.cancel()
+            await first.value
+            queue.finish(ticket)
+
+            let restarted = ProviderEnablementStore(defaults: defaults)
+            let restartedOnboarding = OnboardingStore(defaults: onboardingDefaults)
+            XCTAssertTrue(restarted.isInitialDetectionPending)
+            let retry = try XCTUnwrap(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: false, providers: providers, enablement: restarted,
+                onboarding: restartedOnboarding, workQueue: queue
+            ))
+            let previousSelection: Set<String> = changedSelection ? ["claude"] : ["claude", "codex"]
+            XCTAssertEqual(restarted.enabledIDs, previousSelection)
+            XCTAssertFalse(restartedOnboarding.isCustomizeHintPending)
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: restarted))
+            await retry.value
+
+            let completed = ProviderEnablementStore(defaults: defaults)
+            let expected: Set<String> = changedSelection ? ["claude"] : ["cursor"]
+            XCTAssertEqual(completed.enabledIDs, expected)
+            XCTAssertFalse(completed.isInitialDetectionPending)
+            XCTAssertNil(FirstRunSeeder.seedIfNeeded(
+                isFreshInstall: false, providers: providers, enablement: completed,
+                onboarding: restartedOnboarding
+            ))
+            XCTAssertNil(NewProviderSeeder.reconcileIfNeeded(providers: providers, enablement: completed))
+        }
+    }
+
+    func testDetectLocalProvidersProbesInOrder() async {
         let ids = ["claude", "codex", "cursor", "grok"]
-        let gate = ProbeGate(expected: ids.count)
+        let first = expectation(description: "First probe started")
+        let gate = ProbeGate(onFirst: { first.fulfill() })
         let providers = ids.map { GatedCredentialProvider(id: $0, gate: gate) }
-
-        let detected = await FirstRunSeeder.detectLocalProviders(providers)
-
-        XCTAssertEqual(detected, Set(ids), "all probes must be in flight at once, not one after another")
+        let task = Task { await FirstRunSeeder.detectLocalProviders(providers) }
+        await fulfillment(of: [first], timeout: 2)
+        XCTAssertEqual(gate.arrivals, ["claude"])
+        gate.releaseFirst()
+        let detected = await task.value
+        XCTAssertEqual(detected, Set(ids))
+        XCTAssertEqual(gate.arrivals, ids)
     }
 
     // MARK: - OnboardingStore persistence
@@ -198,7 +272,7 @@ private final class CredentialStubProvider: ProviderRuntime {
     func hasLocalCredentials() async -> Bool { hasCredentials }
 }
 
-/// 모든 probe 시작까지 `ProbeGate`에서 suspend — "credential 발견"이 probe 동시 실행을 의미하는 stub
+/// 첫 probe를 보류해 뒤의 탐지가 먼저 시작하지 않는지 확인.
 @MainActor
 private final class GatedCredentialProvider: ProviderRuntime {
     let provider: Provider
@@ -214,39 +288,28 @@ private final class GatedCredentialProvider: ProviderRuntime {
         ProviderSnapshot.make(provider: provider, plan: nil, lines: [], refreshedAt: Date())
     }
 
-    func hasLocalCredentials() async -> Bool { await gate.arrive() }
+    func hasLocalCredentials() async -> Bool { await gate.arrive(provider.id) }
 }
 
-/// `expected` 도착까지 suspend 후 일괄 true resume — safety valve가 수 초 뒤 false resume해 suite hang 방지
 @MainActor
 private final class ProbeGate {
-    private let expected: Int
-    private var arrived = 0
-    private var nextWaiterID = 0
-    private var waiters: [Int: CheckedContinuation<Bool, Never>] = [:]
+    private(set) var arrivals: [String] = []
+    private let onFirst: () -> Void
+    private var continuation: CheckedContinuation<Bool, Never>?
 
-    init(expected: Int) {
-        self.expected = expected
+    init(onFirst: @escaping () -> Void) { self.onFirst = onFirst }
+
+    func arrive(_ id: String) async -> Bool {
+        arrivals.append(id)
+        guard arrivals.count == 1 else { return true }
+        return await withCheckedContinuation {
+            continuation = $0
+            onFirst()
+        }
     }
 
-    func arrive() async -> Bool {
-        arrived += 1
-        if arrived == expected {
-            for waiter in waiters.values {
-                waiter.resume(returning: true)
-            }
-            waiters = [:]
-            return true
-        }
-        let id = nextWaiterID
-        nextWaiterID += 1
-        return await withCheckedContinuation { continuation in
-            waiters[id] = continuation
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(5))
-                guard let waiter = self?.waiters.removeValue(forKey: id) else { return }
-                waiter.resume(returning: false)
-            }
-        }
+    func releaseFirst() {
+        continuation?.resume(returning: true)
+        continuation = nil
     }
 }

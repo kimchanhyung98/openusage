@@ -176,6 +176,7 @@ final class ICloudUsageSyncStore {
     private let dataStore: WidgetDataStore
     private let writeDebounce: Duration
     private let observesMetadataChanges: Bool
+    private let workQueue: BackgroundWorkQueue
     private var writeTask: Task<Void, Never>?
     private var metadataQuery: NSMetadataQuery?
     private var notificationTokens: [NSObjectProtocol] = []
@@ -213,13 +214,15 @@ final class ICloudUsageSyncStore {
         fileStore: any UsageHistoryFileStoring = ICloudUsageHistoryFileStore(),
         deviceIDStore: any ICloudDeviceIDStoring = KeychainICloudDeviceIDStore(),
         writeDebounce: Duration = .seconds(3),
-        observesMetadataChanges: Bool = true
+        observesMetadataChanges: Bool = true,
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.dataStore = dataStore
         self.defaults = defaults
         self.fileStore = fileStore
         self.writeDebounce = writeDebounce
         self.observesMetadataChanges = observesMetadataChanges
+        self.workQueue = workQueue
         let identity = Self.resolveDeviceID(defaults: defaults, store: deviceIDStore)
         self.deviceID = identity.id
         self.identityError = identity.error
@@ -272,7 +275,12 @@ final class ICloudUsageSyncStore {
         }
         await withSyncActivity {
             do {
-                try await fileStore.delete(deviceID: pendingDeviceID)
+                let deleted = try await workQueue.run("icloud:delete") {
+                    guard isCurrent(expectedEnabled: expectedEnabled, generation: generation) else { return false }
+                    try await fileStore.delete(deviceID: pendingDeviceID)
+                    return true
+                }
+                guard deleted == true else { return }
                 AppDiagnostics.record(.iCloudDelete, result: .success)
                 guard isCurrent(expectedEnabled: expectedEnabled, generation: generation),
                       pendingDeletionDeviceID == persistedDeviceID else {
@@ -339,12 +347,14 @@ final class ICloudUsageSyncStore {
         guard isCurrent(expectedEnabled: true, generation: generation) else { return }
         await withSyncActivity {
             guard isCurrent(expectedEnabled: true, generation: generation) else { return }
-            let document = dataStore.localHistoryDocument(
-                deviceID: deviceID,
-                deviceName: deviceName
-            )
             do {
-                try await fileStore.write(document)
+                let written = try await workQueue.run("icloud:write") {
+                    guard isCurrent(expectedEnabled: true, generation: generation) else { return false }
+                    let document = dataStore.localHistoryDocument(deviceID: deviceID, deviceName: deviceName)
+                    try await fileStore.write(document)
+                    return true
+                }
+                guard written == true else { return }
                 AppDiagnostics.record(.iCloudWrite, result: .success)
             } catch {
                 if isCurrent(expectedEnabled: true, generation: generation) {
@@ -372,7 +382,12 @@ final class ICloudUsageSyncStore {
         let pendingAtStart = Self.normalizedDeviceID(pendingDeletionDeviceID)
         await withSyncActivity {
             do {
-                let result = try await fileStore.loadDocuments()
+                guard let result = try await workQueue.run("icloud:read", operation: {
+                    guard isCurrent(expectedEnabled: true, generation: generation) else {
+                        throw CancellationError()
+                    }
+                    return try await fileStore.loadDocuments()
+                }) else { return }
                 guard isCurrent(expectedEnabled: true, generation: generation) else { return }
                 let excludedDeviceIDs = Set([
                     pendingAtStart,

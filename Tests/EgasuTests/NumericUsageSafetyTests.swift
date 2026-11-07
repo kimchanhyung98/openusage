@@ -69,11 +69,11 @@ final class NumericUsageSafetyTests: XCTestCase {
         let largeA = "9007199254740992"
         let largeB = "9007199254740993"
         let log = """
-        {"pid":\(largeA),"msg":"model changed","ctx":{"model":"grok-build"}}
-        {"pid":"\(largeB)","msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"pid":\(largeA),"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+        {"pid":"\(largeB)","msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         \(grokUsage(["prompt_tokens": "100"], pid: largeA))
         \(grokUsage(["prompt_tokens": "200"], pid: "\"\(largeB)\""))
-        {"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model changed","ctx":{"model":"PRIVATE_MODEL"}}
+        {"ts":"2026-09-12T10:00:00Z","pid":1e300,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"PRIVATE_MODEL"}}
         \(grokUsage(["prompt_tokens": "300"], pid: "1e300"))
         \(grokUsage(["prompt_tokens": "300"], pid: "0"))
         \(grokUsage(["prompt_tokens": "300"], pid: "true"))
@@ -87,36 +87,37 @@ final class NumericUsageSafetyTests: XCTestCase {
     func testPiRejectsInvalidBucketsEvenWithCarriedCostAndPreservesReportedTotal() throws {
         for field in ["input", "output", "cacheRead", "cacheWrite", "cacheWrite1h", "totalTokens"] {
             for invalid in ["-1", "true", "1.5", "1e300", "null", "\"Infinity\""] {
-                let entry = try XCTUnwrap(PiUsageScanner.parseLine(piLine([field: invalid])))
-                XCTAssertTrue(entry.invalidNumericValues, "\(field)=\(invalid)")
-                let scan = PiUsageScanner.aggregate(entries: [entry], cardID: "claude", since: .distantPast, pricing: .empty)
+                let entry = try XCTUnwrap(UsageRecordFixture.piRecord(piLine([field: invalid])))
+                XCTAssertTrue(entry.issues.contains(.invalidNumbers), "\(field)=\(invalid)")
+                let scan = UsageRecordFixture.history(records: [entry], providerID: "claude", since: .distantPast, pricing: .empty)
                 XCTAssertTrue(scan.series.daily.isEmpty)
                 XCTAssertEqual(scan.rejectedNumericRows, 1)
                 XCTAssertNil(scan.usageHistory)
             }
         }
-        let valid = try XCTUnwrap(PiUsageScanner.parseLine(piLine([
+        let valid = try XCTUnwrap(UsageRecordFixture.piRecord(piLine([
             "input": "10", "cacheWrite": "10", "cacheWrite1h": "20", "totalTokens": "999"
         ])))
-        XCTAssertFalse(valid.invalidNumericValues)
-        XCTAssertEqual(valid.tokens.cacheWrite5m, 0)
-        XCTAssertEqual(valid.tokens.cacheWrite1h, 20)
-        XCTAssertEqual(valid.tokens.totalTokens, 30)
-        let scan = PiUsageScanner.aggregate(entries: [valid], cardID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertFalse(valid.issues.contains(.invalidNumbers))
+        XCTAssertEqual(valid.tokens?.cacheWrite5m, 0)
+        XCTAssertEqual(valid.tokens?.cacheWrite1h, 20)
+        XCTAssertEqual(valid.tokens?.totalTokens, 30)
+        let scan = UsageRecordFixture.history(records: [valid], providerID: "claude", since: .distantPast, pricing: .empty)
         XCTAssertEqual(scan.series.daily.first?.totalTokens, 999)
         XCTAssertEqual(scan.series.daily.first?.costUSD, 0.5)
     }
 
     func testPiRejectsBucketSumOverflowAndScopesQualityToCardAndWindow() throws {
-        let bad = try XCTUnwrap(PiUsageScanner.parseLine(piLine(["input": String(Int.max), "cacheRead": "1"])))
-        XCTAssertTrue(bad.invalidNumericValues)
-        let otherCard = PiUsageScanner.aggregate(entries: [bad], cardID: "codex", since: .distantPast, pricing: .empty)
-        XCTAssertNil(otherCard.numericWarning)
-        XCTAssertNotNil(otherCard.usageHistory)
-        let older = PiUsageScanner.aggregate(entries: [bad], cardID: "claude", since: date.addingTimeInterval(1), pricing: .empty)
+        let bad = try XCTUnwrap(UsageRecordFixture.piRecord(piLine(["input": String(Int.max), "cacheRead": "1"])))
+        XCTAssertTrue(bad.issues.contains(.invalidNumbers))
+        let otherCard = UsageHistoryBuilder.scan(
+            UsageCollection(records: [bad]), providerID: "codex", since: .distantPast, pricing: .empty
+        )
+        XCTAssertNil(otherCard)
+        let older = UsageRecordFixture.history(records: [bad], providerID: "claude", since: date.addingTimeInterval(1), pricing: .empty)
         XCTAssertNil(older.numericWarning)
-        let valid = try XCTUnwrap(PiUsageScanner.parseLine(piLine(["totalTokens": "150"], id: "valid")))
-        let mixed = PiUsageScanner.aggregate(entries: PiUsageScanner.dedup([bad, bad, valid]), cardID: "claude", since: .distantPast, pricing: .empty)
+        let valid = try XCTUnwrap(UsageRecordFixture.piRecord(piLine(["totalTokens": "150"], id: "valid")))
+        let mixed = UsageRecordFixture.history(records: UsageRecordDeduplicator.records([bad, bad, valid]), providerID: "claude", since: .distantPast, pricing: .empty)
         XCTAssertEqual(mixed.rejectedNumericRows, 1)
         XCTAssertEqual(mixed.series.daily.first?.totalTokens, 150)
         XCTAssertNotNil(mixed.usageHistory)
@@ -181,26 +182,28 @@ final class NumericUsageSafetyTests: XCTestCase {
         let file = JSONLScanning.DiscoveredFile(path: url.path, size: data.count, mtime: mtime)
         let cacheDirectory = base.appendingPathComponent("cache")
         let oldPersistence = JSONLScanCachePersistence(namespace: "pi", schemaVersion: oldSchema, directory: cacheDirectory, writeDebounce: .milliseconds(1))
-        let old = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: oldPersistence)
+        let old = IncrementalJSONLScanner<UsageRecord>(persistence: oldPersistence)
         _ = await old.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in [] })
         await old.waitForPendingWritesForTesting()
         let persistence = JSONLScanCachePersistence(namespace: "pi", schemaVersion: PiUsageScanner.cacheSchemaVersion, directory: cacheDirectory, writeDebounce: .milliseconds(1))
-        let fresh = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: persistence)
-        let parsed = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: PiUsageScanner.parseFile)
+        let fresh = IncrementalJSONLScanner<UsageRecord>(persistence: persistence)
+        let parsed = await fresh.scan(from: [file], since: .distantPast, cacheIdentity: "home", parse: { data, _ in
+            try UsageRecordFixture.piRecords(data)
+        })?.items
         XCTAssertEqual(parsed?.count, 1, "The old schema's empty parse must be invalidated")
-        XCTAssertTrue(parsed?.first?.invalidNumericValues == true)
+        XCTAssertTrue(parsed?.first?.issues.contains(.invalidNumbers) == true)
         let cached = await fresh.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in
             XCTFail("An unchanged file should use memory cache")
             return []
         })
         await fresh.waitForPendingWritesForTesting()
-        let relaunched = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: persistence)
+        let relaunched = IncrementalJSONLScanner<UsageRecord>(persistence: persistence)
         let restored = await relaunched.items(from: [file], since: .distantPast, cacheIdentity: "home", parse: { _ in
             XCTFail("An unchanged file should use disk cache")
             return []
         })
         for entries in [parsed, cached, restored] {
-            let scan = PiUsageScanner.aggregate(entries: try XCTUnwrap(entries), cardID: "claude", since: .distantPast, pricing: .empty)
+            let scan = UsageRecordFixture.history(records: try XCTUnwrap(entries), providerID: "claude", since: .distantPast, pricing: .empty)
             XCTAssertEqual(scan.rejectedNumericRows, 1)
             XCTAssertNil(scan.usageHistory, "Invalid-only history must not erase the last good history")
             XCTAssertNotNil(scan.numericWarning)
@@ -332,7 +335,7 @@ final class NumericUsageSafetyTests: XCTestCase {
     private func grokScan(_ usage: String, includeValid: Bool = true) -> LogUsageScan {
         let valid = includeValid ? grokUsage(["prompt_tokens": "100", "completion_tokens": "50"]) : ""
         return GrokLogUsageScanner.parse("""
-        {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         \(valid)
         \(usage)
         """, since: .distantPast, pricing: TestPricing.bundled)

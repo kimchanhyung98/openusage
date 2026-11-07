@@ -250,7 +250,7 @@ extension CodexWeeklyTimerRouterTests {
                 ),
                 usageClient: CodexUsageClient(http: http),
                 logUsageScanner: CodexLogUsageScanner(cacheIdentityOverride: "timer-router-\(id)", rootsOverride: []),
-                includePiUsage: false, now: { clock.next() }, pricing: { .empty }
+                includeSharedUsage: false, now: { clock.next() }, pricing: { .empty }
             )
             return Account(provider: provider, files: files, http: http, path: path, original: original)
         }

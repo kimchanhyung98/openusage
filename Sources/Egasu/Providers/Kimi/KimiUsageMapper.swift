@@ -24,6 +24,26 @@ enum KimiUsageMapper {
     }
 
     static func map(_ root: [String: Any]) throws -> KimiMappedUsage {
+        if let value = root["usages"] {
+            guard let usages = value as? [String: Any] else { throw KimiUsageError.invalidResponse }
+            var lines: [MetricLine] = []
+            for (key, label, duration) in [
+                ("limit_5h", "Session", sessionPeriodMs),
+                ("limit_7d", "Weekly", weeklyPeriodMs)
+            ] {
+                guard let value = usages[key] else { continue }
+                guard let quota = value as? [String: Any],
+                      let ratio = ProviderParse.number(quota["used_ratio"]), ratio >= 0,
+                      (ratio * 100).isFinite else { throw KimiUsageError.invalidResponse }
+                lines.append(.progress(
+                    label: label, used: ratio * 100, limit: 100, format: .percent,
+                    resetsAt: (quota["reset_time"] as? String).flatMap(EgasuISO8601.date(from:)),
+                    periodDurationMs: duration
+                ))
+            }
+            guard !lines.isEmpty else { throw KimiUsageError.quotaUnavailable }
+            return KimiMappedUsage(plan: plan(root), lines: lines)
+        }
         var lines: [MetricLine] = []
 
         if let limitsValue = root["limits"] {

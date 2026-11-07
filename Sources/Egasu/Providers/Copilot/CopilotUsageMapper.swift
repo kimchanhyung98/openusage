@@ -159,8 +159,7 @@ enum CopilotUsageMapper {
         return dayOnlyFormatter.date(from: raw)
     }
 
-    /// `nonisolated(unsafe)`는 안전: `DateFormatter`는 macOS 10.9+에서 thread-safe 문서화, 생성 후 불변 (`CursorUsageCSV`/`EgasuISO8601`과 동일 패턴).
-    private nonisolated(unsafe) static let dayOnlyFormatter: DateFormatter = {
+    private static let dayOnlyFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")

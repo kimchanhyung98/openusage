@@ -104,15 +104,12 @@ echo "==> stamping linked SDK 26.0 for Liquid Glass controls (minos stays $MIN_S
 vtool -set-build-version macos "$MIN_SYSTEM_VERSION" 26.0 -replace -output "$APP_BINARY.tmp" "$APP_BINARY"
 mv "$APP_BINARY.tmp" "$APP_BINARY"
 chmod +x "$APP_BINARY"
-# 빌드에서 생성된 모든 SwiftPM resource bundle을 표준 앱 경로인 Contents/Resources에 배치.
+# 현재 앱·의존성의 resource bundle만 배치. 테스트·다른 제품의 잔여 산출물 제외.
 # 앱 전용 Egasu_Egasu.bundle에 provider SVG와 model manifest 포함.
 # Bundle.egasuResources는 Support/ResourceBundle.swift에서 해당 경로를 사용해 로드.
-shopt -s nullglob
-for bundle in "$BUILD_DIR"/*.bundle; do
-  [ "$(basename "$bundle")" = "OpenUsage_OpenUsage.bundle" ] && continue
-  cp -R "$bundle" "$APP_RESOURCES/$(basename "$bundle")"
+for bundle in Egasu_Egasu KeyboardShortcuts_KeyboardShortcuts PostHog_PostHog PostHog_PHPLCrashReporter; do
+  cp -R "$BUILD_DIR/$bundle.bundle" "$APP_RESOURCES/$bundle.bundle"
 done
-shopt -u nullglob
 
 # Icon Composer 원본(assets/AppIcon.icon)을 Assets.car로 컴파일해 Tahoe에서 실제 Liquid Glass 아이콘 표시.
 # 아래 CFBundleIconName은 .icon 파일명("AppIcon")과 일치해야 함.

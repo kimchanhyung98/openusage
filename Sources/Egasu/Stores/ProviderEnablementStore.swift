@@ -10,6 +10,7 @@ final class ProviderEnablementStore {
     private static let disabledStorageKey = "openusage.disabledProviders.v1"
     private static let enabledStorageKey = "openusage.enabledProviders.v1"
     private static let knownStorageKey = "openusage.knownProviders.v1"
+    private static let initialDetectionPendingKey = "openusage.initialProviderDetectionPending.v1"
 
     /// enabled-provider set 실제 변경 시 게시 — refresh loop의 조기 wake 신호
     /// firehose `UserDefaults.didChangeNotification` 구독 금지 규칙 — 무관한 쓰기에 깨어나 refresh 폭주 유발
@@ -27,6 +28,7 @@ final class ProviderEnablementStore {
     private(set) var enabledIDs: Set<String>?
     /// 이 설치가 본 적 있는 provider ID 전체 — v2 migration·`FirstRunSeeder` 시딩 후 `registerKnownProviders`로 성장
     private(set) var knownIDs: Set<String>
+    private(set) var isInitialDetectionPending: Bool
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -39,6 +41,12 @@ final class ProviderEnablementStore {
             self.disabledIDs = Set(defaults.stringArray(forKey: Self.disabledStorageKey) ?? [])
         }
         self.knownIDs = Set(defaults.stringArray(forKey: Self.knownStorageKey) ?? [])
+        self.isInitialDetectionPending = defaults.bool(forKey: Self.initialDetectionPendingKey)
+    }
+
+    func setInitialDetectionPending(_ pending: Bool) {
+        isInitialDetectionPending = pending
+        defaults.set(pending, forKey: Self.initialDetectionPendingKey)
     }
 
     func isEnabled(_ id: String) -> Bool {

@@ -520,7 +520,7 @@ final class ClaudeDesktopAuthStoreTests: XCTestCase {
             usageClient: ClaudeUsageClient(httpClient: httpClient),
             usageStateStore: isolatedClaudeUsageStore(),
             logUsageScanner: ClaudeLogFixture.scanner(home: nil),
-            includePiUsage: false,
+            includeSharedUsage: false,
             now: { now },
             pricing: { TestPricing.bundled }
         )

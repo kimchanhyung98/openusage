@@ -3,11 +3,11 @@ import XCTest
 
 @MainActor
 final class SplitRefreshCadenceTests: XCTestCase {
-    func testGeneralLoopContinuesWhileClaudeRequestIsSuspended() async throws {
+    func testGeneralRefreshWaitsForClaudeThenKeepsItsOwnCadence() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
         let claudeStarted = expectation(description: "Claude suspended")
-        let firstGeneral = expectation(description: "First general refresh")
+        await fixture.store.refreshAll(cadence: .regular)
         let secondGeneral = expectation(description: "Second general refresh")
         var continuation: CheckedContinuation<Void, Never>?
         fixture.claude.beforeRefresh = {
@@ -15,7 +15,7 @@ final class SplitRefreshCadenceTests: XCTestCase {
         }
         fixture.store.onFreshSnapshot = { snapshot, _, _ in
             if snapshot.providerID == "codex" {
-                (fixture.codex.refreshCount == 1 ? firstGeneral : secondGeneral).fulfill()
+                secondGeneral.fulfill()
             }
         }
         let center = NotificationCenter()
@@ -29,14 +29,16 @@ final class SplitRefreshCadenceTests: XCTestCase {
             enabledProviderIDs: { [] }, reconcileAccounts: {}, wakeSignal: RefreshWakeSignal(center: center),
             claudeWakeSignal: RefreshWakeSignal(center: center), now: { fixture.time }
         )
-        await fulfillment(of: [claudeStarted, firstGeneral], timeout: 2)
+        await fulfillment(of: [claudeStarted], timeout: 2)
         XCTAssertNil(fixture.store.nextScheduledRefresh(for: .claude, at: fixture.time))
         fixture.time = fixture.start.addingTimeInterval(300)
         center.post(name: ProviderEnablementStore.didChangeNotification, object: nil)
+        for _ in 0..<1_000 where !fixture.store.refreshingProviderIDs.contains("codex") { await Task.yield() }
+        XCTAssertEqual(fixture.counts, [1, 1])
+        continuation?.resume()
         await fulfillment(of: [secondGeneral], timeout: 2)
         XCTAssertEqual(fixture.counts, [2, 1])
         loop.cancel()
-        continuation?.resume()
         await loop.value
     }
 
@@ -113,8 +115,9 @@ final class SplitRefreshCadenceTests: XCTestCase {
     func testClockChangeDuringRefreshDoesNotRepeatCompletedRequests() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
-        let started = expectation(description: "Both cadence requests started")
-        started.expectedFulfillmentCount = 2
+        let started = expectation(description: "First cadence request started")
+        let nextStarted = expectation(description: "Second cadence request started")
+        var startCount = 0
         let completed = expectation(description: "Both requests completed")
         completed.expectedFulfillmentCount = 2
         let repeated = expectation(description: "No immediate repeat after the clock change")
@@ -124,12 +127,20 @@ final class SplitRefreshCadenceTests: XCTestCase {
         var claudeContinuation: CheckedContinuation<Void, Never>?
         fixture.codex.beforeRefresh = {
             if fixture.codex.refreshCount == 1 {
-                await withCheckedContinuation { codexContinuation = $0; started.fulfill() }
+                await withCheckedContinuation {
+                    codexContinuation = $0
+                    startCount += 1
+                    (startCount == 1 ? started : nextStarted).fulfill()
+                }
             } else if !reportedRepeat { reportedRepeat = true; repeated.fulfill() }
         }
         fixture.claude.beforeRefresh = {
             if fixture.claude.refreshCount == 1 {
-                await withCheckedContinuation { claudeContinuation = $0; started.fulfill() }
+                await withCheckedContinuation {
+                    claudeContinuation = $0
+                    startCount += 1
+                    (startCount == 1 ? started : nextStarted).fulfill()
+                }
             } else if !reportedRepeat { reportedRepeat = true; repeated.fulfill() }
         }
         fixture.store.onFreshSnapshot = { _, _, _ in
@@ -151,6 +162,11 @@ final class SplitRefreshCadenceTests: XCTestCase {
         await fulfillment(of: [started], timeout: 2)
         fixture.time = fixture.start.addingTimeInterval(-3600)
         center.post(name: .NSSystemClockDidChange, object: nil)
+        codexContinuation?.resume()
+        codexContinuation = nil
+        claudeContinuation?.resume()
+        claudeContinuation = nil
+        await fulfillment(of: [nextStarted], timeout: 2)
         codexContinuation?.resume()
         claudeContinuation?.resume()
         await fulfillment(of: [completed], timeout: 2)

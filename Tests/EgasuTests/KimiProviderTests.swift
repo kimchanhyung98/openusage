@@ -417,7 +417,7 @@ final class KimiProviderTests: XCTestCase {
                 acquisitionBudget: 0.3,
                 retryDelay: 0.005
             )),
-            now: { fixedNow }
+            now: { fixedNow }, pricing: { .empty }
         )
     }
 

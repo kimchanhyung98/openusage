@@ -370,7 +370,8 @@ final class CopilotProviderTests: XCTestCase {
         let provider = CopilotProvider(
             authStore: CopilotAuthStore(files: FakeFiles(), keychain: FakeKeychain()),
             usageClient: CopilotUsageClient(http: FakeHTTPClient(response: ok(makePaidBody()))),
-            usageScanner: .init(databasePath: { nil })
+            usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: [])
         )
 
         let snapshot = await provider.refresh()
@@ -382,7 +383,8 @@ final class CopilotProviderTests: XCTestCase {
         let provider = CopilotProvider(
             authStore: editorTokenStore(),
             usageClient: CopilotUsageClient(http: FakeHTTPClient(response: HTTPResponse(statusCode: 401, headers: [:], body: Data()))),
-            usageScanner: .init(databasePath: { nil })
+            usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: [])
         )
 
         let snapshot = await provider.refresh()
@@ -396,6 +398,7 @@ final class CopilotProviderTests: XCTestCase {
             authStore: editorTokenStore(),
             usageClient: CopilotUsageClient(http: http),
             usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: []),
             now: { Date(timeIntervalSince1970: 1_800_000_000) }
         )
 
@@ -416,7 +419,8 @@ final class CopilotProviderTests: XCTestCase {
         let provider = CopilotProvider(
             authStore: editorTokenStore(),
             usageClient: CopilotUsageClient(http: FakeHTTPClient(response: ok(body))),
-            usageScanner: .init(databasePath: { nil })
+            usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: [])
         )
 
         let snapshot = await provider.refresh()
@@ -551,6 +555,7 @@ final class CopilotProviderTests: XCTestCase {
             usageClient: CopilotUsageClient(http: http),
             orgBillingClient: CopilotOrgBillingClient(http: http),
             usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: []),
             defaults: defaults
         )
     }

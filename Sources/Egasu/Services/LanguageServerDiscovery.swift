@@ -14,6 +14,7 @@ struct LanguageServerDiscovery: Sendable {
         var csrfFlag: String
         /// HTTP fallback port를 담는 선택적 flag (e.g. `--extension_server_port`).
         var portFlag: String?
+        var csrfRequired = true
     }
 
     struct Result: Sendable {
@@ -51,6 +52,8 @@ struct LanguageServerDiscovery: Sendable {
                 csrf = ""
             } else if let value = Self.extractFlag(command: candidate.command, flag: options.csrfFlag) {
                 csrf = value
+            } else if !options.csrfRequired {
+                csrf = ""
             } else {
                 continue
             }

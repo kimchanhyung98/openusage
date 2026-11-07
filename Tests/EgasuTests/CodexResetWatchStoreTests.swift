@@ -374,6 +374,32 @@ final class CodexResetWatchStoreTests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    @MainActor
+    func testQueuedAutomaticAndManualReadsShareOneRequest() async throws {
+        let queue = BackgroundWorkQueue()
+        let acquired = await queue.acquire("other-work")
+        let ticket = try XCTUnwrap(acquired)
+        let http = ResetWatchHTTPClient([
+            .init(response: Self.activeResponse(chance: 75, deadline: Self.start.addingTimeInterval(3_600)))
+        ])
+        let clock = ResetWatchClock(Self.start)
+        let store = CodexResetWatchStore(http: http, now: clock.read, workQueue: queue)
+        let automatic = Task { await store.currentResult() }
+        for _ in 0..<1_000 where queue.pendingCount == 0 { await Task.yield() }
+        XCTAssertEqual(queue.pendingCount, 1)
+        let manual = Task { await store.currentResult(force: true) }
+        for _ in 0..<100 { await Task.yield() }
+        let before = await http.requestCount()
+        XCTAssertEqual(before, 0)
+        queue.finish(ticket)
+        let first = await automatic.value
+        let second = await manual.value
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.watch?.chancePercent, 75)
+        let count = await http.requestCount()
+        XCTAssertEqual(count, 1)
+    }
+
     func testNoStoreDoesNotRetainForecastOrETag() async {
         let http = ResetWatchHTTPClient([
             .init(response: Self.activeResponse(chance: 75, deadline: Self.start.addingTimeInterval(3_600),

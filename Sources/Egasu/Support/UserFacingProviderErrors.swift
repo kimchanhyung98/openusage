@@ -120,7 +120,7 @@ extension GrokAuthError: UserPresentableError {
         case .credentialsChanged:
             .init("Grok sign-in changed while refreshing. Refresh again to use the current account.")
         case .credentialReadFailed:
-            .init("Grok sign-in could not be read. Check access to ~/.grok/auth.json and refresh again.")
+            .init("Grok sign-in could not be read. Check access to the Grok auth file and refresh again.")
         }
     }
 }

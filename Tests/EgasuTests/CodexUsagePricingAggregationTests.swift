@@ -70,15 +70,17 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
         for ordered in [events, Array(events.reversed())] {
             let scan = CodexLogUsageScanner.aggregate(events: ordered, since: .distantPast, pricing: pricing)
 
-            XCTAssertEqual(scan.series.daily.count, 1)
-            XCTAssertEqual(scan.modelUsage?.daily.count, 1)
+            XCTAssertEqual(scan.series.daily.count, 2)
+            XCTAssertEqual(scan.modelUsage?.daily.count, 2)
             try assertDay(scan, date: "2026-09-12", tokens: 6_000, cost: 0.018,
                           models: ["codex-auto-review": (6_000, 0.018)])
+            try assertDay(scan, date: "2026-09-13", tokens: 3_000, cost: nil,
+                          models: ["codex-auto-review": (3_000, nil)])
             XCTAssertEqual(scan.unknownModelsByDay, ["2026-09-13": ["codex-auto-review"]])
         }
     }
 
-    func testRepeatedSpeedPoliciesKeepUnpublishedUltrafastOutOfStandardTotals() throws {
+    func testRepeatedSpeedPoliciesKeepUnpublishedUltrafastTokensWithoutStandardPricing() throws {
         let pricing = snapshot([
             "gpt-6-astra": rates(2), "gpt-6-astra-ultrafast": rates(9),
             "custom-fast": rates(7), "gpt-6-sol": rates(3)
@@ -100,11 +102,11 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
             let scan = CodexLogUsageScanner.aggregate(events: ordered, since: .distantPast, pricing: pricing)
 
             XCTAssertEqual(scan.series.daily.count, 1)
-            try assertDay(scan, date: "2026-09-12", tokens: 9_000, cost: 0.059, models: [
+            try assertDay(scan, date: "2026-09-12", tokens: 12_000, cost: nil, models: [
                 "gpt-6-astra": (5_000, 0.033),
                 "gpt-6-astra-ultrafast": (1_000, 0.009),
                 "custom-fast": (2_000, 0.014),
-                "gpt-6-sol": (1_000, 0.003)
+                "gpt-6-sol": (4_000, nil)
             ])
             XCTAssertEqual(scan.unknownModelsByDay, ["2026-09-12": ["gpt-6-sol (Ultrafast)"]])
         }
@@ -132,8 +134,8 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
                     ])
                     XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
                 } else {
-                    try assertDay(scan, date: "2026-09-12", tokens: 3_000, cost: 0.012,
-                                  models: ["gpt-6-sol": (3_000, 0.012)])
+                    try assertDay(scan, date: "2026-09-12", tokens: 4_000, cost: nil,
+                                  models: ["gpt-6-sol": (3_000, 0.012), "newly-priced-model": (1_000, nil)])
                     XCTAssertEqual(scan.unknownModelsByDay, ["2026-09-12": ["newly-priced-model"]])
                 }
             }
@@ -222,21 +224,29 @@ final class CodexUsagePricingAggregationTests: XCTestCase {
     }
 
     private func assertDay(
-        _ scan: LogUsageScan, date: String, tokens: Int, cost: Double,
-        models: [String: (tokens: Int, cost: Double)], file: StaticString = #filePath, line: UInt = #line
+        _ scan: LogUsageScan, date: String, tokens: Int, cost: Double?,
+        models: [String: (tokens: Int, cost: Double?)], file: StaticString = #filePath, line: UInt = #line
     ) throws {
         let day = try XCTUnwrap(scan.series.daily.first { $0.date == date }, file: file, line: line)
         XCTAssertEqual(day.totalTokens, tokens, file: file, line: line)
-        XCTAssertEqual(try XCTUnwrap(day.costUSD, file: file, line: line), cost,
-                       accuracy: 1e-9, file: file, line: line)
+        if let cost {
+            XCTAssertEqual(try XCTUnwrap(day.costUSD, file: file, line: line), cost,
+                           accuracy: 1e-9, file: file, line: line)
+        } else {
+            XCTAssertNil(day.costUSD, file: file, line: line)
+        }
         let breakdown = try XCTUnwrap(scan.modelUsage?.daily.first { $0.date == date }, file: file, line: line)
         XCTAssertEqual(breakdown.models.count, models.count, file: file, line: line)
         XCTAssertEqual(Set(breakdown.models.map(\.model)), Set(models.keys), file: file, line: line)
         for (name, expected) in models {
             let actual = try XCTUnwrap(breakdown.models.first { $0.model == name }, file: file, line: line)
             XCTAssertEqual(actual.totalTokens, expected.tokens, file: file, line: line)
-            XCTAssertEqual(try XCTUnwrap(actual.costUSD, file: file, line: line), expected.cost,
-                           accuracy: 1e-9, file: file, line: line)
+            if let cost = expected.cost {
+                XCTAssertEqual(try XCTUnwrap(actual.costUSD, file: file, line: line), cost,
+                               accuracy: 1e-9, file: file, line: line)
+            } else {
+                XCTAssertNil(actual.costUSD, file: file, line: line)
+            }
         }
         XCTAssertEqual(scan.rejectedNumericRows, 0, file: file, line: line)
         XCTAssertEqual(scan.unsupportedPricingRows, 0, file: file, line: line)

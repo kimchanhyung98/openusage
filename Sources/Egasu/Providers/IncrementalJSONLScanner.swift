@@ -1,59 +1,5 @@
 import Foundation
 
-/// incremental scan 기계장치의 `Item` 비의존 절반: 파일 discovery와 scan window 하한.
-/// non-generic namespace — window 계산만 필요한 provider(Grok)가 generic actor 없이 공유.
-enum JSONLScanning {
-    /// 빈 행을 생략하고 마지막 무개행 행까지 순차 제공 — 전체 행 배열과 Swift 바이트별 순회 생략.
-    static func lines(in data: Data) -> some Sequence<Data> {
-        let newline = Data([0x0A])
-        return sequence(state: data.startIndex) { start in
-            while start < data.endIndex {
-                let end = data.range(of: newline, in: start..<data.endIndex)?.lowerBound ?? data.endIndex
-                let lower = start
-                start = end < data.endIndex ? end + 1 : data.endIndex
-                if lower < end { return data[lower..<end] }
-            }
-            return nil
-        }
-    }
-
-    /// 발견한 로그 파일 + parse cache의 key가 되는 stat 필드.
-    struct DiscoveredFile: Sendable {
-        var path: String
-        var size: Int
-        var mtime: Date
-    }
-
-    /// `now`에서 `daysBack`일 전 날의 시작 — scan window의 하한.
-    static func sinceDate(daysBack: Int, now: Date) -> Date {
-        let shifted = Calendar.current.date(byAdding: .day, value: -daysBack, to: now) ?? now
-        return Calendar.current.startOfDay(for: shifted)
-    }
-
-    /// `dir` 아래(재귀) 모든 `*.jsonl` regular file — keep-first dedup이 결정적이도록 경로 정렬. enumeration 불가 시 빈 배열.
-    static func jsonlFiles(under dir: URL) -> [DiscoveredFile] {
-        // `FileManager.enumerator`는 `dir` 자체가 symlink면 조용히 아무것도 내놓지 않음 — 먼저 resolve.
-        let dir = dir.resolvingSymlinksInPath()
-        let keys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
-        guard let enumerator = FileManager.default.enumerator(
-            at: dir, includingPropertiesForKeys: keys, options: []
-        ) else { return [] }
-        var files: [DiscoveredFile] = []
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl",
-                  let values = try? url.resourceValues(forKeys: Set(keys)),
-                  values.isRegularFile == true
-            else { continue }
-            files.append(DiscoveredFile(
-                path: url.path,
-                size: values.fileSize ?? 0,
-                mtime: values.contentModificationDate ?? .distantPast
-            ))
-        }
-        return files.sorted { $0.path < $1.path }
-    }
-}
-
 /// Claude·Codex·pi 로그 scanner가 공유하는 incremental scan actor: `*.jsonl` 중 변경된 파일만 재파싱(path+size+mtime key의 per-file cache)해 파일 순서대로 반환.
 /// provider는 discovery·per-file parser·후처리 dedup만 제공. actor라 parse cache가 refresh 주기 사이에 main actor 밖에서 유지 — parser당 하나를 scanner 인스턴스들이 공유, `Item`은 그 parser의 row.
 actor IncrementalJSONLScanner<Item: Codable & Sendable> {
@@ -80,25 +26,30 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private let parsePermitPool: JSONLParsePermitPool
     private let readFailureReporter: UsageLogReadFailureReporter
     private let persistence: JSONLScanCachePersistence?
+    private let workQueue: BackgroundWorkQueue
 
     init(
-        maxConcurrentParses: Int = 8,
+        maxConcurrentParses: Int = 1,
         logTag: String = LogTag.refresh.rawValue,
         readFailureWarning: UsageLogReadFailureReporter.Warning? = nil,
-        persistence: JSONLScanCachePersistence? = nil
+        persistence: JSONLScanCachePersistence? = nil,
+        workQueue: BackgroundWorkQueue = .shared
     ) {
         precondition(maxConcurrentParses > 0)
         self.maxConcurrentParses = maxConcurrentParses
         self.parsePermitPool = JSONLParsePermitPool(limit: maxConcurrentParses)
         self.readFailureReporter = UsageLogReadFailureReporter(logTag: logTag, warning: readFailureWarning)
         self.persistence = persistence
+        self.workQueue = workQueue
         if let persistence {
             let cutoff = Date().addingTimeInterval(-JSONLScanCachePaths.staleIdentityRetention)
             Task.detached(priority: .utility) {
-                await JSONLScanCacheWriter.shared.pruneStaleIdentities(
-                    persistence: persistence,
-                    before: cutoff
-                )
+                await workQueue.run("log-cache:prune") {
+                    await JSONLScanCacheWriter.shared.pruneStaleIdentities(
+                        persistence: persistence,
+                        before: cutoff
+                    )
+                }
             }
         }
     }
@@ -107,6 +58,12 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     /// mtime이 `since` 이전인 파일은 skip, 읽기 실패 파일은 cache에 남기지 않아 일시적 오류가 고착되지 않음.
     /// 디스크에서 복원한 파일을 실제 재사용할 때만 `onDiskCacheHit` 1회 호출 — 반복 메모리 hit·다른 카드 조회는 재보고하지 않음.
     /// `nil`은 취소를 의미 — 완료된 scan의 빈 결과는 `[]`이므로 취소와 "정말 빈 데이터"가 섞이지 않음.
+    struct ScanResult: Sendable {
+        var items: [Item]
+        var completedFiles: Int
+        var failedPaths: Set<String>
+    }
+
     func items(
         from files: [JSONLScanning.DiscoveredFile],
         since: Date,
@@ -114,6 +71,21 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         onDiskCacheHit: (@Sendable ([Item]) -> Void)? = nil,
         parse: @Sendable @escaping (Data) -> [Item]?
     ) async -> [Item]? {
+        await scan(
+            from: files, since: since, cacheIdentity: cacheIdentity, onDiskCacheHit: onDiskCacheHit,
+            parse: { data, _ in parse(data) }
+        )?.items
+    }
+
+    /// 파일 메타데이터와 읽기·파싱 실패를 필요한 수집 호출자에게 함께 반환.
+    func scan(
+        from files: [JSONLScanning.DiscoveredFile],
+        since: Date,
+        cacheIdentity: String = "default",
+        canReuseCachedFile: (@Sendable (String) -> Bool)? = nil,
+        onDiskCacheHit: (@Sendable ([Item]) -> Void)? = nil,
+        parse: @Sendable @escaping (Data, String) throws -> [Item]?
+    ) async -> ScanResult? {
         precondition(!cacheIdentity.isEmpty)
         guard await acquire(cacheIdentity) else { return nil }
         defer { release(cacheIdentity) }
@@ -126,17 +98,21 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         var nextCache = currentCache.filter { $0.value.mtime >= since }
         var toParse: [JSONLScanning.DiscoveredFile] = []
         for file in files {
+            guard !Task.isCancelled else { return nil }
             guard file.mtime >= since else { continue }
             if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
-                nextCache[file.path] = cached
-                if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
-                    onDiskCacheHit(cached.items)
+                let canReuse = canReuseCachedFile?(file.path) ?? true
+                guard !Task.isCancelled else { return nil }
+                if canReuse {
+                    nextCache[file.path] = cached
+                    if let onDiskCacheHit, unreportedRestoredPaths[cacheIdentity]?.remove(file.path) != nil {
+                        onDiskCacheHit(cached.items)
+                    }
+                    continue
                 }
-            } else {
-                unreportedRestoredPaths[cacheIdentity]?.remove(file.path)
-                nextCache[file.path] = nil
-                toParse.append(file)
             }
+            nextCache[file.path] = nil
+            toParse.append(file)
         }
         let parseResults = await Self.parseFiles(
             toParse,
@@ -144,14 +120,19 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             permitPool: parsePermitPool,
             parse: parse
         )
-        guard !Task.isCancelled else { return nil }
         let checkedPaths = Set(parseResults.lazy.filter(\.readAttempted).map(\.file.path))
         let unreadablePaths = Set(parseResults.lazy.filter(\.readFailed).map(\.file.path))
         await readFailureReporter.update(checkedPaths: checkedPaths, failingPaths: unreadablePaths)
-        guard !Task.isCancelled else { return nil }
         var parsedPaths: Set<String> = []
         for result in parseResults {
             let (file, parsed) = (result.file, result.items)
+            if !result.readAttempted {
+                if let cached = currentCache[file.path], cached.size == file.size, cached.mtime == file.mtime {
+                    nextCache[file.path] = cached
+                }
+                continue
+            }
+            unreportedRestoredPaths[cacheIdentity]?.remove(file.path)
             guard let parsed else { continue }
             nextCache[file.path] = CachedFile(size: file.size, mtime: file.mtime, items: parsed)
             parsedPaths.insert(file.path)
@@ -172,13 +153,20 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         {
             scheduleWrite(identity: cacheIdentity)
         }
+        // 전체 집계는 폐기하되 취소 전에 완료한 파일은 재사용 — 대용량 cold scan의 반복 시간 초과 방지.
+        guard !Task.isCancelled, parseResults.allSatisfy(\.readAttempted) else {
+            AppLog.info(.cache, "cancelled \(persistence?.namespace ?? "local") scan; cached \(parsedPaths.count) completed files for retry")
+            return nil
+        }
 
         var items: [Item] = []
         for file in files {
             guard let cached = nextCache[file.path] else { continue }
             items.append(contentsOf: cached.items)
         }
-        return Task.isCancelled ? nil : items
+        let failures = Set(parseResults.filter { $0.readAttempted && $0.items == nil }.map(\.file.path))
+        let completed = files.filter { $0.mtime >= since && nextCache[$0.path] != nil }.count
+        return Task.isCancelled ? nil : ScanResult(items: items, completedFiles: completed, failedPaths: failures)
     }
 
     /// debounce된 실제 task를 우회하지 않고 대기 — 테스트가 짧은 debounce로 persistence 완료를 검증하는 용도.
@@ -200,7 +188,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
             // 진행 중인 encoding/writer 작업을 세대 교체로 대체 — dirty 상태는 이 명시적 drain이 commit하도록 남김.
             let generation = writeGenerations[identity, default: 0] + 1
             writeGenerations[identity] = generation
-            await persistCache(identity: identity, generation: generation)
+            await queueWrite(identity: identity, generation: generation)
         }
     }
 
@@ -318,7 +306,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                 return
             }
             guard !Task.isCancelled else { return }
-            await self.persistCache(identity: identity, generation: generation)
+            await self.queueWrite(identity: identity, generation: generation)
             await self.finishWriteTask(identity: identity, generation: generation)
         }
     }
@@ -326,6 +314,12 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
     private func finishWriteTask(identity: String, generation: Int) {
         guard writeGenerations[identity] == generation else { return }
         writeTasks[identity] = nil
+    }
+
+    private func queueWrite(identity: String, generation: Int) async {
+        await workQueue.run("log-cache:write") {
+            await self.persistCache(identity: identity, generation: generation)
+        }
     }
 
     private func persistCache(identity: String, generation: Int) async {
@@ -409,7 +403,7 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
         _ files: [JSONLScanning.DiscoveredFile],
         maxConcurrentParses: Int,
         permitPool: JSONLParsePermitPool,
-        parse: @Sendable @escaping (Data) -> [Item]?
+        parse: @Sendable @escaping (Data, String) throws -> [Item]?
     ) async -> [(file: JSONLScanning.DiscoveredFile, items: [Item]?, readAttempted: Bool, readFailed: Bool)] {
         await withTaskGroup(
             of: (Int, [Item]?, Bool, Bool).self,
@@ -420,12 +414,19 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
                 group.addTask {
                     guard await permitPool.acquire() else { return (index, nil, false, false) }
                     let result: (Int, [Item]?, Bool, Bool)
-                    if Task.isCancelled || !FileManager.default.fileExists(atPath: file.path) {
+                    if Task.isCancelled {
                         result = (index, nil, false, false)
                     } else if let data = FileManager.default.contents(atPath: file.path) {
-                        result = (index, parse(data), true, false)
+                        do {
+                            let parsed = try parse(data, file.path)
+                            result = Task.isCancelled ? (index, nil, false, false) : (index, parsed, true, false)
+                        } catch is CancellationError {
+                            result = (index, nil, false, false)
+                        } catch {
+                            result = Task.isCancelled ? (index, nil, false, false) : (index, nil, true, true)
+                        }
                     } else {
-                        result = (index, nil, true, true)
+                        result = Task.isCancelled ? (index, nil, false, false) : (index, nil, true, true)
                     }
                     await permitPool.release()
                     return result
@@ -441,11 +442,11 @@ actor IncrementalJSONLScanner<Item: Codable & Sendable> {
 
             var results = files.map { (file: $0, items: Optional<[Item]>.none, readAttempted: false, readFailed: false) }
             for await (index, items, readAttempted, readFailed) in group {
-                if Task.isCancelled {
-                    group.cancelAll()
-                    break
-                }
                 results[index] = (files[index], items, readAttempted, readFailed)
+                if Task.isCancelled || group.isCancelled || !readAttempted {
+                    group.cancelAll()
+                    continue
+                }
                 if nextIndex < files.count {
                     addTask(at: nextIndex)
                     nextIndex += 1

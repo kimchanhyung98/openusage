@@ -109,7 +109,7 @@ final class WidgetDataStoreCatalogRefreshTests: XCTestCase {
                     files: files, keychain: FakeKeychain(), allowsDesktopFallback: false
                 ),
                 usageClient: ClaudeUsageClient(httpClient: http), usageStateStore: usageState,
-                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includePiUsage: false,
+                logUsageScanner: ClaudeLogFixture.scanner(home: nil), includeSharedUsage: false,
                 now: { clock.withLock { $0 } }, pricing: { TestPricing.bundled }
             )
         }

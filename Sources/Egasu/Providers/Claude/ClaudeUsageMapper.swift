@@ -106,13 +106,22 @@ enum ClaudeUsageMapper {
             return nil
         }
         let base = raw.titleCased(separator: { $0 == " " }, lowercasingTail: true)
+        if base == "Ultra" { return base }
 
-        guard let tier = rateLimitTier,
+        guard let tier = rateLimitTier?.lowercased(),
               let match = tier.range(of: #"\d+x"#, options: .regularExpression)
         else {
             return base
         }
-        return "\(base) \(tier[match])"
+        let multiplier = String(tier[match])
+        if base == "Max" {
+            switch multiplier {
+            case "5x": return "Max"
+            case "20x": return "Ultra"
+            default: break
+            }
+        }
+        return "\(base) \(multiplier)"
     }
 
     private static func appendUsageWindow(_ value: Any?, label: String, periodDurationMs: Int, to lines: inout [MetricLine]) {

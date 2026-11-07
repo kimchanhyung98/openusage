@@ -59,6 +59,7 @@ final class TokscaleSyncStore {
     @ObservationIgnored private let commandRunner: any TokscaleCommandRunning
     @ObservationIgnored private let now: @MainActor @Sendable () -> Date
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
+    @ObservationIgnored private let workQueue: BackgroundWorkQueue
     @ObservationIgnored private var activeTask: Task<Void, Never>?
     @ObservationIgnored private var cooldownTask: Task<Void, Never>?
     @ObservationIgnored private var operationGeneration = 0
@@ -69,13 +70,15 @@ final class TokscaleSyncStore {
         bunInstaller: any BunInstalling = BunInstaller(),
         commandRunner: any TokscaleCommandRunning = TokscaleCommandRunner(),
         now: @escaping @MainActor @Sendable () -> Date = Date.init,
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.defaults = defaults
         self.bunInstaller = bunInstaller
         self.commandRunner = commandRunner
         self.now = now
         self.sleep = sleep
+        self.workQueue = workQueue
         if let saved = defaults.string(forKey: Self.deviceNameKey) {
             do {
                 deviceName = try TokscaleDeviceName(saved).value
@@ -181,9 +184,15 @@ final class TokscaleSyncStore {
     }
 
     private func performSubmit(deviceName: TokscaleDeviceName?, generation: Int) async {
+        guard let ticket = await workQueue.acquire("tokscale:submit") else {
+            finish(error: .submit, generation: generation)
+            return
+        }
+        defer { workQueue.finish(ticket) }
         let outputRelay = makeOutputRelay(generation: generation)
         let availability: BunAvailability
         do {
+            try Task.checkCancellation()
             availability = try await bunInstaller.availability()
             try Task.checkCancellation()
         } catch {
@@ -246,9 +255,15 @@ final class TokscaleSyncStore {
     }
 
     private func performLogin(generation: Int) async {
+        guard let ticket = await workQueue.acquire("tokscale:login") else {
+            finish(error: .login, generation: generation)
+            return
+        }
+        defer { workQueue.finish(ticket) }
         let outputRelay = makeOutputRelay(generation: generation)
         let availability: BunAvailability
         do {
+            try Task.checkCancellation()
             availability = try await bunInstaller.availability()
             try Task.checkCancellation()
         } catch {

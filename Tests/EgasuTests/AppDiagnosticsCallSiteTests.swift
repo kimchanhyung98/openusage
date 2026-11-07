@@ -137,9 +137,10 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let capture = try Capture()
         defer { capture.cleanUp() }
         let bad = #"{"type":"message","id":"PRIVATE_ID","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-123456789,"totalTokens":150}}}"#
-        let entries = PiUsageScanner.parseFile(Data((bad + "\n" + bad).utf8))
+        let entries = try UsageRecordFixture.piRecords(Data((bad + "\n" + bad).utf8))
+        UsageRecordDiagnostics.report(entries)
         for _ in 0..<2 {
-            let scan = PiUsageScanner.aggregate(entries: entries, cardID: "claude", since: .distantPast, pricing: .empty)
+            let scan = UsageRecordFixture.history(records: entries, providerID: "claude", since: .distantPast, pricing: .empty)
             XCTAssertEqual(scan.rejectedNumericRows, 2)
         }
 
@@ -194,21 +195,23 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let piCache = try await seedNumericCache(
             data: Data(#"{"type":"message","timestamp":"2026-09-12T10:00:00Z","message":{"role":"assistant","provider":"anthropic","model":"PRIVATE_MODEL","usage":{"input":-1}}}"#.utf8),
             path: piHome.appendingPathComponent("session.jsonl"), namespace: "pi",
-            schema: PiUsageScanner.cacheSchemaVersion, identity: piHome.path, parse: PiUsageScanner.parseFile)
+            schema: PiUsageScanner.cacheSchemaVersion, identity: piHome.path, parse: UsageRecordFixture.piRecords)
         let capture = try Capture()
         defer { capture.cleanUp() }
         let claudeIncremental = IncrementalJSONLScanner<ClaudeLogUsageScanner.Entry>(persistence: claudeCache)
         let codexIncremental = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(persistence: codexCache)
-        let piIncremental = IncrementalJSONLScanner<PiUsageScanner.Entry>(persistence: piCache)
+        let piIncremental = IncrementalJSONLScanner<UsageRecord>(persistence: piCache)
         let claude = ClaudeLogUsageScanner(incrementalScanner: claudeIncremental,
                                            cacheIdentityOverride: "claude-home", rootsOverride: [claudeHome])
         let codex = CodexLogUsageScanner(incrementalScanner: codexIncremental,
                                          cacheIdentityOverride: "codex-home", rootsOverride: [codexHome])
         let pi = PiUsageScanner(environment: FakeEnvironment(["PI_CODING_AGENT_SESSION_DIR": piHome.path]),
+                                homeDirectory: { directory },
                                 incrementalScanner: piIncremental)
+        let shared = UsageCollectionCoordinator(collectors: [pi])
         for _ in 0..<2 {
             let scans = [await claude.scan(now: now, pricing: .empty), await codex.scan(now: now, pricing: .empty),
-                         await pi.scan(cardID: "claude", now: now, pricing: .empty)]
+                         await shared.scan(providerID: "claude", now: now, pricing: .empty)]
             for scan in scans {
                 XCTAssertEqual(scan?.rejectedNumericRows, 1)
                 XCTAssertNotNil(scan?.numericWarning)
@@ -249,7 +252,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         files.files[path] = bad
         _ = await scanner.scan(now: now, pricing: .empty)
         XCTAssertEqual(capture.events.count, 1, "The same damage must remain deduplicated after reappearance")
-        files.files[path] = bad + "\n" + #"{"msg":"model changed","pid":1,"ctx":{"model":"grok-build"}}"#
+        files.files[path] = bad + "\n" + #"{"msg":"model catalog: notifying clients","pid":1,"ctx":{"current_model_id":"grok-build"}}"#
         _ = await scanner.scan(now: now, pricing: .empty)
         XCTAssertEqual(capture.events.count, 1)
         files.files[path] = bad + "\n" + bad
@@ -267,7 +270,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
 
     private func seedNumericCache<Item: Codable & Sendable>(
         data: Data, path: URL, namespace: String, schema: Int, identity: String,
-        parse: @Sendable @escaping (Data) -> [Item]?
+        parse: @Sendable @escaping (Data) throws -> [Item]?
     ) async throws -> JSONLScanCachePersistence {
         try FileManager.default.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: path)
@@ -275,8 +278,8 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         let persistence = JSONLScanCachePersistence(namespace: namespace, schemaVersion: schema,
             directory: path.deletingLastPathComponent().appendingPathComponent("cache"), writeDebounce: .milliseconds(1))
         let scanner = IncrementalJSONLScanner<Item>(persistence: persistence)
-        _ = await scanner.items(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
-                                since: .distantPast, cacheIdentity: identity, parse: parse)
+        _ = await scanner.scan(from: [.init(path: path.resolvingSymlinksInPath().path, size: data.count, mtime: mtime)],
+                               since: .distantPast, cacheIdentity: identity, parse: { data, _ in try parse(data) })
         await scanner.waitForPendingWritesForTesting()
         return persistence
     }
@@ -310,8 +313,9 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
         XCTAssertEqual(http.requests.map { $0.headers["ChatGPT-Account-Id"] }, ["PRIVATE_ACCOUNT", "PRIVATE_ACCOUNT"])
         XCTAssertEqual(http.requests.map(\.method), ["GET", "POST"])
         let lines = try capture.lines()
-        XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
-        XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") && $0.contains("consume failed (HTTP 500)") })
+        let errors = lines.filter { $0.contains("[ERROR]") }
+        XCTAssertEqual(errors.count, 1, lines.joined(separator: "\n"))
+        XCTAssertTrue(errors.allSatisfy { $0.contains("consume failed (HTTP 500)") })
         XCTAssertFalse(lines.joined().contains("PRIVATE_"))
         let events = capture.events
         XCTAssertEqual(events, [DiagnosticEvent(.resetClaim, result: .failure, category: .http(500), providerID: "codex")])
@@ -352,8 +356,7 @@ final class AppDiagnosticsCallSiteTests: XCTestCase {
             XCTAssertEqual(result, .failed)
             XCTAssertEqual(http.requests.count, malformedList ? 1 : 2)
             let lines = try capture.lines()
-            XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
-            XCTAssertTrue(lines.allSatisfy { $0.contains("[ERROR]") })
+            XCTAssertEqual(lines.filter { $0.contains("[ERROR]") }.count, 1, lines.joined(separator: "\n"))
             XCTAssertFalse(lines.joined().contains("PRIVATE_"))
             XCTAssertEqual(capture.events, [
                 DiagnosticEvent(.resetClaim, result: .failure, category: .decoding, providerID: "codex")

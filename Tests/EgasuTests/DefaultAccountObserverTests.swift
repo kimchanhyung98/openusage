@@ -138,14 +138,17 @@ final class DefaultAccountObserverTests: XCTestCase {
         )
     }
 
-    func testClaudeCommaListConfigDirIsUnresolved() {
-        // `ClaudeAuthStore`는 env 값을 단일 credential 경로로 취급 — comma list는 단일 identity 부여 불가
+    func testClaudeCommaConfigDirIsOneLiteralPath() {
         let observer = makeObserver(
-            environment: ["CLAUDE_CONFIG_DIR": "~/a,~/b"],
-            files: ["/Users/dev/a/.claude.json": claudeStateJSON()]
+            environment: ["CLAUDE_CONFIG_DIR": "~/team,work"],
+            files: ["/Users/dev/team,work/.claude.json": claudeStateJSON(),
+                    "/Users/dev/team/.claude.json": claudeStateJSON(uuid: "OTHER")]
         )
-
-        XCTAssertEqual(observer.observeClaude(), .unresolved(reason: "CLAUDE_CONFIG_DIR is a comma-separated list"))
+        XCTAssertEqual(observer.observeClaude(), .resolved(identityKey: "acct-uuid-1", label: "dev@example.com",
+                                                           anchor: "/Users/dev/team,work"))
+        let missing = makeObserver(environment: ["CLAUDE_CONFIG_DIR": "~/team,work"],
+                                   files: ["/Users/dev/team/.claude.json": claudeStateJSON()])
+        XCTAssertEqual(missing.observeClaude(), .absent)
     }
 
     func testClaudeCredentialsWithoutStateFileAreUnresolvedNotAbsent() {

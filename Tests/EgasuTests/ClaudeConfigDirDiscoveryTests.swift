@@ -120,4 +120,21 @@ final class ClaudeConfigDirDiscoveryTests: XCTestCase {
         XCTAssertEqual(finding.identityKey, "acct-5")
         XCTAssertEqual(finding.anchorPath, "/Users/dev/accounts/claude-work")
     }
+
+    func testCommaInConfigDirExcludesOneCompleteDefaultHome() {
+        let configDir = "/Users/dev/.claude-team,inc"
+        let otherDir = "/Users/dev/.claude-team"
+        let discovery = makeDiscovery(
+            environment: ["CLAUDE_CONFIG_DIR": "~/.claude-team,inc"],
+            files: [
+                configDir + "/.claude.json": #"{"oauthAccount":{"accountUuid":"MAIN"}}"#,
+                configDir + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+                otherDir + "/.claude.json": #"{"oauthAccount":{"accountUuid":"OTHER"}}"#,
+                otherDir + "/.credentials.json": #"{"claudeAiOauth":{"accessToken":"fixture"}}"#,
+            ],
+            subdirectories: [configDir, otherDir]
+        )
+
+        XCTAssertEqual(discovery.run().findings.map(\.anchorPath), [otherDir])
+    }
 }

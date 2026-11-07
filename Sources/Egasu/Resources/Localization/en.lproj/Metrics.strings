@@ -171,3 +171,11 @@
 "~%lld%% over limit at reset" = "~%lld%% over limit at reset";
 "~%lld%% spare" = "~%lld%% spare";
 "~%lld%% used at reset" = "~%lld%% used at reset";
+"From your Claude usage history and local tools (estimated)" = "From your Claude usage history and local tools (estimated)";
+"From your Codex logs and local tools (estimated)" = "From your Codex logs and local tools (estimated)";
+"From your Grok logs and local tools (estimated)" = "From your Grok logs and local tools (estimated)";
+"From your Antigravity usage history and local tools (estimated)" = "From your Antigravity usage history and local tools (estimated)";
+"From your Copilot CLI logs and local tools" = "From your Copilot CLI logs and local tools";
+"From your OpenCode logs and local tools" = "From your OpenCode logs and local tools";
+"From your Grok usage files and logs (estimated)" = "From your Grok usage files and logs (estimated)";
+"From your Grok usage files, logs, and local tools (estimated)" = "From your Grok usage files, logs, and local tools (estimated)";

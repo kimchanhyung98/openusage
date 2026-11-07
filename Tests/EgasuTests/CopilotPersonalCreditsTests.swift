@@ -220,6 +220,7 @@ final class CopilotPersonalCreditsProviderTests: XCTestCase {
             usageClient: CopilotUsageClient(http: usageHTTP),
             orgBillingClient: CopilotOrgBillingClient(http: orgHTTP),
             usageScanner: .init(databasePath: { nil }),
+            sharedUsage: .init(collectors: []),
             defaults: defaults
         )
     }

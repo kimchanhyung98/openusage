@@ -58,9 +58,10 @@ final class GrokProviderTests: XCTestCase {
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
         let provider = GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: noLogScanner(),
+            sharedUsage: .init(collectors: []),
             now: { now },
             pricing: { TestPricing.bundled }
         )
@@ -116,9 +117,10 @@ final class GrokProviderTests: XCTestCase {
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
         let provider = GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: noLogScanner(),
+            sharedUsage: .init(collectors: []),
             now: { now },
             pricing: { TestPricing.bundled }
         )
@@ -212,9 +214,9 @@ final class GrokProviderTests: XCTestCase {
         let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 오늘 grok-build 장문 입력 1M × $2 = $2, 어제 composer-2.5-fast 출력 1M × $15 = $15.
         let log = """
-        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -236,12 +238,49 @@ final class GrokProviderTests: XCTestCase {
                        [MetricValue(number: 17.0, kind: .dollars, estimated: true), MetricValue(number: 2_000_000, kind: .count, label: "tokens")])
     }
 
+    func testUnreadableNativeLogKeepsSharedUsageWithWarningAndPreservesHistoryOnTotalFailure() async throws {
+        let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        let files = GrokNativeReadFixture()
+        let shared = GrokSharedReadFixture(tokens: 50, now: now)
+        let scanner = GrokLogUsageScanner(
+            files: files, environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/fixture/grok-read") }
+        )
+        let provider = makeProvider(
+            httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner,
+            now: now, sharedUsage: UsageCollectionCoordinator(collectors: [shared])
+        )
+        let suite = "GrokProviderTests.nativeRead." + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WidgetDataStore(
+            registry: .from([provider]), providers: [provider],
+            cache: ProviderSnapshotCache(userDefaults: defaults), defaults: defaults, now: { now }
+        )
+        _ = await store.refresh(providerID: "grok", force: true)
+        XCTAssertEqual(store.localSnapshots["grok"]?.usageHistory?.series.daily.first?.totalTokens, 170)
+
+        files.setUnreadable(true)
+        await shared.setTokens(60)
+        _ = await store.refresh(providerID: "grok", force: true)
+        let partial = try XCTUnwrap(store.localSnapshots["grok"])
+        XCTAssertEqual(partial.usageHistory?.series.daily.first?.totalTokens, 60)
+        XCTAssertEqual(partial.warning, "Some local usage files could not be read. Usage history may be incomplete.")
+        XCTAssertNil(partial.errorCategory)
+
+        await shared.setTokens(nil)
+        _ = await store.refresh(providerID: "grok", force: true)
+        let retained = try XCTUnwrap(store.localSnapshots["grok"])
+        XCTAssertEqual(retained.usageHistory, partial.usageHistory)
+        XCTAssertEqual(retained.warning, "Some local usage files could not be read. Usage history may be incomplete.")
+    }
+
     func testPeriodWithoutUsageLeavesTileUnbacked() async {
         // "Today 0" 회귀 방지 — 오늘 usage 없으면 "$0.00 · 0 tokens" 조작 대신 backing line 없는 "No data"
         let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // fixture: 06-17에만 inference row, 06-18(today)은 없음
         let log = """
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -263,9 +302,9 @@ final class GrokProviderTests: XCTestCase {
         let now = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
         // 픽스처: 06-18 입력 1M, 06-17 출력 1M
         let log = """
-        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+        {"ts":"2026-06-18T09:00:00.000Z","pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
         {"ts":"2026-06-18T10:00:00.000Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000000,"cached_prompt_tokens":0,"completion_tokens":0,"reasoning_tokens":0}}
-        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model changed","ctx":{"model":"grok-composer-2.5-fast"}}
+        {"ts":"2026-06-17T09:00:00.000Z","pid":2,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-composer-2.5-fast"}}
         {"ts":"2026-06-17T10:00:00.000Z","pid":2,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":0,"cached_prompt_tokens":0,"completion_tokens":1000000,"reasoning_tokens":0}}
         """
         let scanner = GrokLogUsageScanner(
@@ -280,16 +319,16 @@ final class GrokProviderTests: XCTestCase {
         guard case .chart(_, let points, let note) = snapshot.lines.first(where: { $0.label == "Usage Trend" }) else {
             return XCTFail("expected a Usage Trend chart line")
         }
-        XCTAssertEqual(note, "From your Grok logs (estimated)")
+        XCTAssertEqual(note, "From your Grok usage files and logs (estimated)")
         XCTAssertEqual(points.count, 31)
         XCTAssertEqual(points.last?.value, 1_000_000, "today's tokens land on the last bar")
         XCTAssertEqual(points[29].value, 1_000_000, "yesterday's tokens land on the second-to-last bar")
     }
 
-    func testInvalidOnlyLocalHistoryWarnsWithoutClearingHistoryOrFailingWeeklyMeter() async {
+    func testInvalidOnlyLocalHistoryPreservesHistoryAndWeeklyMeterWithoutCardWarning() async {
         let scanner = GrokLogUsageScanner(
             files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
-            {"pid":1,"msg":"model changed","ctx":{"model":"grok-build"}}
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
             {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1e300}}
             """]),
             environment: FakeEnvironment(),
@@ -300,7 +339,7 @@ final class GrokProviderTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
-        XCTAssertNotNil(snapshot.warning)
+        XCTAssertNil(snapshot.warning)
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertNil(snapshot.usageHistory, "A successful quota refresh must not publish an empty history for invalid logs")
         XCTAssertNil(values(snapshot.lines, "Today"))
@@ -311,6 +350,48 @@ final class GrokProviderTests: XCTestCase {
 
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.lines.first(where: { $0.label == "Usage Trend" }), "no log means no trend chart")
+    }
+
+    func testUnattributedAndInvalidSessionsPreserveHistoryWithoutCardWarnings() async {
+        let scanner = GrokLogUsageScanner(
+            files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+            {"pid":1,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+            {"ts":"2026-06-18T10:00:00Z","pid":1,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+            {"ts":"2026-06-18T11:00:00Z","pid":1,"sid":"unknown-child","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":-1}}
+            """]),
+            environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/home/test") }
+        )
+        let provider = makeProvider(httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner)
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(values(snapshot.lines, "Today"))
+    }
+
+    func testUnscopedAmbiguousUsageDoesNotPublishEmptyHistoryOrCardWarning() async {
+        let scanner = GrokLogUsageScanner(
+            files: FakeFiles(["/home/test/.grok/logs/unified.jsonl": """
+            {"pid":1,"msg":"model catalog: notifying clients","ctx":{"current_model_id":"grok-build"}}
+            {"pid":1,"msg":"subagent model resolved","ctx":{"child_model":"grok-composer-2.5-fast"}}
+            {"ts":"2026-06-18T10:00:00Z","pid":1,"msg":"shell.turn.inference_done","ctx":{"prompt_tokens":1000}}
+            """]),
+            environment: FakeEnvironment(),
+            homeDirectory: { URL(fileURLWithPath: "/home/test") }
+        )
+        let snapshot = await makeProvider(
+            httpClient: RecordingHTTPClient(handler: Self.defaultRoutes), scanner: scanner
+        ).refresh()
+        XCTAssertEqual(progress(snapshot.lines, "Weekly limit")?.used, 99)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(snapshot.errorCategory)
     }
 
     /// happy-path 기본 route — 캡처된 weekly credits config + plan 이름
@@ -327,15 +408,17 @@ final class GrokProviderTests: XCTestCase {
     private func makeProvider(
         httpClient: RecordingHTTPClient,
         scanner: GrokLogUsageScanner? = nil,
-        now: Date = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!
+        now: Date = EgasuISO8601.date(from: "2026-06-18T12:00:00.000Z")!,
+        sharedUsage: UsageCollectionCoordinator = .init(collectors: [])
     ) -> GrokProvider {
         let files = FakeFiles([
             GrokAuthStore.authPath: #"{"https://auth.x.ai::client":{"key":"token","refresh_token":"refresh","expires_at":"2026-07-01T00:00:00.000Z"}}"#
         ])
         return GrokProvider(
-            authStore: GrokAuthStore(files: files, now: { now }),
+            authStore: GrokAuthStore(files: files, environment: FakeEnvironment(), now: { now }),
             usageClient: GrokUsageClient(httpClient: httpClient),
             logUsageScanner: scanner ?? noLogScanner(),
+            sharedUsage: sharedUsage,
             now: { now },
             pricing: { TestPricing.bundled }
         )
@@ -349,6 +432,38 @@ final class GrokProviderTests: XCTestCase {
         guard case .values(_, let values, _, _, _, _) = lines.first(where: { $0.label == label }) else { return nil }
         return values
     }
+}
+
+private actor GrokSharedReadFixture: UsageCollecting {
+    private var tokens: Int?
+    private let now: Date
+
+    init(tokens: Int?, now: Date) { self.tokens = tokens; self.now = now }
+    func setTokens(_ value: Int?) { tokens = value }
+    func collect(since: Date) async -> UsageCollection? {
+        guard let tokens else { return UsageCollection(records: []) }
+        return UsageCollection(records: [UsageRecord(
+            sourceID: "pi", formatID: "pi-session", sessionID: "fixture", id: "entry", kind: "message",
+            timestamp: now, providerID: "grok", model: "grok-build", tokens: TokenBreakdown(input: tokens),
+            totalTokens: tokens, recordedCostUSD: 0.5
+        )])
+    }
+}
+
+private final class GrokNativeReadFixture: TextFileAccessing, @unchecked Sendable {
+    private let lock = NSLock()
+    private var unreadable = false
+    func setUnreadable(_ value: Bool) { lock.withLock { unreadable = value } }
+    func exists(_ path: String) -> Bool { path.hasSuffix("/logs/unified.jsonl") }
+    func readText(_ path: String) throws -> String {
+        if lock.withLock({ unreadable }) { throw CocoaError(.fileReadNoPermission) }
+        return """
+        {"ts":"2026-06-18T09:00:00Z","pid":1,"sid":"s","msg":"backend_search: model switch","ctx":{"model_id":"grok-build","api_backend":"Responses"}}
+        {"ts":"2026-06-18T09:01:00Z","pid":1,"sid":"s","msg":"shell.turn.inference_done","ctx":{"prompt_tokens":100,"completion_tokens":20}}
+        """
+    }
+    func writeText(_ path: String, _ text: String) throws { throw CocoaError(.fileWriteNoPermission) }
+    func remove(_ path: String) throws { throw CocoaError(.fileWriteNoPermission) }
 }
 
 @MainActor
@@ -367,14 +482,14 @@ final class GrokWidgetDataStoreTests: XCTestCase {
             snapshot: ProviderSnapshot(
                 providerID: provider.id,
                 displayName: provider.displayName,
-                lines: [.badge(label: "Pay as you go", text: "2500 cap", colorHex: "#22c55e")]
+                lines: [.badge(label: "Pay as you go", text: "$25.00 cap", colorHex: "#22c55e")]
             )
         )
         let store = WidgetDataStore(registry: WidgetRegistry(providers: [provider], descriptors: [descriptor]), providers: [runtime])
 
         await store.refreshAll()
 
-        XCTAssertEqual(store.data(for: descriptor).valueText, "2500 cap")
+        XCTAssertEqual(store.data(for: descriptor).valueText, "$25.00 cap")
     }
 }
 

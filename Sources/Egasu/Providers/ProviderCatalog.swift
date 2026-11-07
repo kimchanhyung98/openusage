@@ -28,7 +28,7 @@ enum ProviderCatalog {
                 additionalRoots: defaultClaudeExtraLogRoots,
                 pinsSharedHome: claudeManagedSwitchActive
             ),
-            includePiUsage: !hasUnregisteredClaudeLogins
+            includeSharedUsage: !hasUnregisteredClaudeLogins
         ))
         for card in snapshotCards where card.family == "claude" {
             runtimes.append(claudeSnapshotRuntime(card: card))
@@ -71,7 +71,7 @@ enum ProviderCatalog {
                 cacheIdentityOverride: "claude-snapshot:\(card.profileID)",
                 rootsOverride: []
             ),
-            includePiUsage: false
+            includeSharedUsage: false
         )
     }
 
@@ -85,7 +85,7 @@ enum ProviderCatalog {
                 cacheIdentityOverride: "codex-snapshot:\(card.profileID)",
                 rootsOverride: []
             ),
-            includePiUsage: false
+            includeSharedUsage: false
         )
     }
 }

@@ -101,7 +101,9 @@ final class CodexReplayNumericSafetyTests: XCTestCase {
     private func assertReplayCacheReparsed(content: String, oldVersion: Int) async throws {
         let home = try CodexLogFixture.makeHome(files: ["sessions/replay.jsonl": content])
         defer { try? FileManager.default.removeItem(at: home) }
-        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let files = UsageFileDiscovery.files(under: [home.appendingPathComponent("sessions")]) {
+            $0.pathExtension == "jsonl"
+        }.files
         let directory = home.appendingPathComponent("cache")
         let now = try XCTUnwrap(EgasuISO8601.date(from: timestamp))
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(

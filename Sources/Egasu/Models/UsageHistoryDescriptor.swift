@@ -3,7 +3,7 @@ import Foundation
 /// provider 일별 spend history의 Mac 간 합산 가능 여부.
 /// shared spend tile 보유 provider의 명시 선언 필수 — account-wide source의 이중 계산 방지.
 struct UsageHistoryDescriptor: Hashable, Sendable {
-    enum Scope: String, Hashable, Sendable {
+    enum Scope: String, Hashable, Sendable, Codable {
         case machineLocal
         case accountWide
     }

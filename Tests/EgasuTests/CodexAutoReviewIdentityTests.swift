@@ -52,7 +52,8 @@ final class CodexAutoReviewIdentityTests: XCTestCase {
         let unknown = CodexLogUsageScanner.aggregate(
             events: events, since: .distantPast, pricing: pricing(entries: [:])
         )
-        XCTAssertTrue(unknown.series.daily.isEmpty)
+        XCTAssertEqual(unknown.series.daily.first?.totalTokens, 150)
+        XCTAssertNil(unknown.series.daily.first?.costUSD)
         XCTAssertEqual(Set(unknown.unknownModelsByDay.values.flatMap { $0 }), ["codex-auto-review"])
     }
 
@@ -102,7 +103,9 @@ final class CodexAutoReviewIdentityTests: XCTestCase {
     private func assertCacheRebuild(version: Int) async throws {
         let home = try CodexLogFixture.makeHome(files: ["sessions/review.jsonl": line(model: "codex-auto-review")])
         defer { try? FileManager.default.removeItem(at: home) }
-        let files = JSONLScanning.jsonlFiles(under: home.appendingPathComponent("sessions"))
+        let files = UsageFileDiscovery.files(under: [home.appendingPathComponent("sessions")]) {
+            $0.pathExtension == "jsonl"
+        }.files
         let cache = home.appendingPathComponent("cache")
         let old = IncrementalJSONLScanner<CodexLogUsageScanner.Event>(
             persistence: JSONLScanCachePersistence(

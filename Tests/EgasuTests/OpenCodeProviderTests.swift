@@ -6,7 +6,7 @@ final class OpenCodeProviderTests: XCTestCase {
     private func d(_ iso: String) -> Date { EgasuISO8601.date(from: iso)! }
     private func epochMs(_ iso: String) -> Int { Int(d(iso).timeIntervalSince1970 * 1000) }
     private func row(_ iso: String, _ cost: String, _ tokens: Int, _ model: String, _ provider: String) -> String {
-        "[\(epochMs(iso)),\(cost),\(tokens),\"\(model)\",\"\(provider)\"]"
+        "[\(epochMs(iso)),\(cost),{\"total\":\(tokens)},\"\(model)\",\"\(provider)\"]"
     }
     private let authJSON = #"{"opencode-go":{"type":"api","key":"sk-test"}}"#
 
@@ -46,7 +46,8 @@ final class OpenCodeProviderTests: XCTestCase {
             usageScanner: OpenCodeUsageScanner(
                 sqlite: StubSQLite(data: ["/oc/opencode.db": "[]"]),
                 databasePaths: { ["/oc/opencode.db"] }
-            )
+            ),
+            sharedUsage: .init(collectors: [])
         )
         let has = await provider.hasLocalCredentials()
         XCTAssertFalse(has)
@@ -64,7 +65,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.plan, "Go")
@@ -88,7 +89,7 @@ final class OpenCodeProviderTests: XCTestCase {
                     sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                     databasePaths: { ["/oc/opencode.db"] }
                 ),
-                now: { now }
+                sharedUsage: .init(collectors: []), now: { now }
             )
             let snapshot = await provider.refresh()
             XCTAssertNil(snapshot.errorCategory)
@@ -106,7 +107,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 XCTAssertEqual(breakdown.models.first?.costUSD, 1e308)
                 XCTAssertEqual(breakdown.totalTokens, 1)
             }
-            XCTAssertEqual(snapshot.warning != nil, costs.count > 1)
+            XCTAssertNil(snapshot.warning)
             XCTAssertNoThrow(try JSONEncoder().encode(snapshot.lines))
             let state = LocalUsageAPI.State(
                 enabledOrderedIDs: ["opencode"], knownIDs: ["opencode"],
@@ -127,13 +128,13 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles()),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .notLoggedIn)
     }
 
-    func testRefreshWarnsWhenFiniteCostsOverflowTheSharedAccumulator() async throws {
+    func testRefreshKeepsValidUsageWithoutCardWarningWhenFiniteCostsOverflow() async throws {
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + [
             row("2026-07-12T10:00:00.000Z", "1e308", 100, "gpt-5.5", "opencode"),
@@ -143,10 +144,11 @@ final class OpenCodeProviderTests: XCTestCase {
         let scanned = try await scanner.scan(now: now)
         let scan = try XCTUnwrap(scanned)
         XCTAssertEqual(scan.logScan.rejectedNumericRows, 1)
-        let provider = OpenCodeProvider(authStore: authStore(files: FakeFiles()), usageScanner: scanner, now: { now })
+        let provider = OpenCodeProvider(authStore: authStore(files: FakeFiles()), usageScanner: scanner,
+                                        sharedUsage: .init(collectors: []), now: { now })
         let snapshot = await provider.refresh()
-        XCTAssertNotNil(snapshot.warning)
-        XCTAssertEqual(snapshot.warning, scan.logScan.numericWarning)
+        XCTAssertNil(snapshot.warning)
+        XCTAssertNil(snapshot.warningPresentation)
         XCTAssertEqual(snapshot.usageHistory, scan.logScan.usageHistory)
         XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 100)
         XCTAssertNil(snapshot.errorCategory)
@@ -158,7 +160,7 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: FakeFiles(["/oc/auth.json": authJSON])),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.errorCategory)
@@ -181,7 +183,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(failing: ["/oc/opencode.db"]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
@@ -194,10 +196,65 @@ final class OpenCodeProviderTests: XCTestCase {
         let provider = OpenCodeProvider(
             authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
             usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+    }
+
+    func testUnreadableAuthWarnsWhenSharedHistoryBecomesEmptyAndClearsSavedTotals() async throws {
+        let now = d("2026-07-12T12:00:00.000Z")
+        let collector = OpenCodeAuthSharedRecords(records: [UsageRecord(
+            sourceID: "pi", formatID: "fixture", kind: "message", timestamp: now.addingTimeInterval(-60),
+            providerID: "opencode", model: "fixture", totalTokens: 200, recordedCostUSD: 2
+        )])
+        let provider = OpenCodeProvider(
+            authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
+            usageScanner: OpenCodeUsageScanner(sqlite: StubSQLite(), databasePaths: { [] }),
+            sharedUsage: .init(collectors: [collector]), now: { now }
+        )
+        let suite = "OpenCodeProviderTests.auth-empty.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { now })
+        let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
+                                    defaults: defaults, now: { now })
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.localSnapshots["opencode"]?.usageHistory?.series.daily.first?.totalTokens, 200)
+        XCTAssertNil(store.localSnapshots["opencode"]?.warning)
+
+        await collector.removeRecords()
+        await store.refreshAll(force: true)
+
+        let snapshot = try XCTUnwrap(store.localSnapshots["opencode"])
+        let expected = OpenCodeUsageError.credentialsUnreadable(detail: "fixture")
+        XCTAssertEqual(snapshot.usageHistory?.series.daily, [])
+        XCTAssertEqual(cache.loadSnapshots(providerIDs: ["opencode"])["opencode"]?.usageHistory?.series.daily, [])
+        XCTAssertEqual(snapshot.warning, expected.localizedDescription)
+        XCTAssertEqual(snapshot.warningPresentation, [UserFacingErrors.presentation(expected)])
+        XCTAssertEqual(L10n.withLanguage(.english) { store.headerNotice(for: "opencode") }, expected.localizedDescription)
+        XCTAssertEqual(snapshot.isDegraded, true)
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(store.providerErrors["opencode"])
+        XCTAssertNil(snapshot.line(label: "Session"))
+    }
+
+    func testNativeReadFailureStillTakesPriorityOverUnreadableAuthAndEmptySharedHistory() async {
+        let now = d("2026-07-12T12:00:00.000Z")
+        let provider = OpenCodeProvider(
+            authStore: authStore(files: UnreadableFiles(present: ["/oc/auth.json"])),
+            usageScanner: OpenCodeUsageScanner(
+                sqlite: StubSQLite(failing: ["/oc/opencode.db"]), databasePaths: { ["/oc/opencode.db"] }
+            ),
+            sharedUsage: .init(collectors: [OpenCodeAuthSharedRecords(records: [])]), now: { now }
+        )
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(snapshot.errorCategory, .credentialAccess)
+        XCTAssertEqual(snapshot.errorPresentation, UserFacingErrors.presentation(OpenCodeUsageError.databaseUnreadable))
+        XCTAssertNil(snapshot.usageHistory)
+        XCTAssertNil(snapshot.line(label: "Session"))
     }
 
     func testHasLocalCredentialsTrueWhenAuthFileUnreadable() async {
@@ -210,8 +267,24 @@ final class OpenCodeProviderTests: XCTestCase {
         XCTAssertTrue(has)
     }
 
-    func testSpendTilesAreNotMarkedEstimated() async {
-        // OpenCode는 per-message cost를 자체 기록 — tile에 local-estimate ⓘ 미표시
+    func testPartialDatabaseFailureIsVisibleInSnapshot() async {
+        let now = d("2026-07-12T12:00:00.000Z")
+        let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
+        let provider = OpenCodeProvider(
+            authStore: authStore(files: FakeFiles()),
+            usageScanner: OpenCodeUsageScanner(
+                sqlite: StubSQLite(data: ["/oc/healthy.db": db], failing: ["/oc/locked.db"]),
+                databasePaths: { ["/oc/healthy.db", "/oc/locked.db"] }
+            ),
+            sharedUsage: .init(collectors: []), now: { now }
+        )
+        let snapshot = await provider.refresh()
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertEqual(snapshot.warning, "Some local usage files could not be read. Usage history may be incomplete.")
+        XCTAssertEqual(snapshot.usageHistory?.series.daily.first?.totalTokens, 500)
+    }
+
+    func testNativeSpendTilesAreMarkedEstimated() async {
         let now = d("2026-07-12T12:00:00.000Z")
         let db = "[" + row("2026-07-12T10:00:00.000Z", "1.0", 500, "gpt-5.5", "opencode") + "]"
         let provider = OpenCodeProvider(
@@ -220,13 +293,15 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db]),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         guard case .values(_, let values, _, _, _, _)? = snapshot.line(label: "Today") else {
             return XCTFail("expected a Today tile")
         }
-        XCTAssertFalse(values.contains(where: \.estimated))
+        XCTAssertTrue(values.contains(where: \.estimated))
+        let history = provider.widgetDescriptors.compactMap(\.historyResource).first
+        XCTAssertEqual(history?.estimatedCost, true)
     }
 
     func testStaleGoHistoryDoesNotShowGoPlanOrMeters() async {
@@ -239,7 +314,7 @@ final class OpenCodeProviderTests: XCTestCase {
                 sqlite: StubSQLite(data: ["/oc/opencode.db": db], anchor: "1700000000000"),
                 databasePaths: { ["/oc/opencode.db"] }
             ),
-            now: { now }
+            sharedUsage: .init(collectors: []), now: { now }
         )
         let snapshot = await provider.refresh()
         XCTAssertNil(snapshot.plan)
@@ -270,4 +345,16 @@ private final class StubSQLite: SQLiteAccessing, @unchecked Sendable {
     }
 
     func execute(path: String, sql: String) throws {}
+}
+
+private actor OpenCodeAuthSharedRecords: UsageCollecting {
+    private var records: [UsageRecord]
+
+    init(records: [UsageRecord]) { self.records = records }
+
+    func removeRecords() { records.removeAll() }
+
+    func collect(since: Date) async -> UsageCollection? {
+        UsageCollection(records: records, sources: [.init(sourceID: "pi", completedStores: 1)])
+    }
 }

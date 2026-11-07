@@ -288,7 +288,7 @@ struct TotalSpendRingContent: View {
 
     private var centerTooltip: String {
         let exact = formatValue(projection.centerValue, style: .full)
-        if projection.isEstimated, projection.metric.usesDollarEstimateNote {
+        if projection.isEstimated {
             return "\(exact) · \(L10n.metrics(WidgetData.localEstimateNote))"
         }
         return exact

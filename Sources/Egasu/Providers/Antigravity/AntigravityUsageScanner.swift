@@ -60,28 +60,36 @@ actor AntigravityUsageScanner {
         }).sorted()
         cache = cache.filter { paths.contains($0.key) }
         let since = JSONLScanning.sinceDate(daysBack: 30, now: now)
-        var foundDatabase = false
+        var completedDatabases = 0
+        var readFailures = 0
         var seen: Set<AntigravityUsageRecord.Identity> = []
         var accumulator = DailyUsageAccumulator()
 
         for path in paths {
             try Task.checkCancellation()
-            guard let signature = try signature(path) else {
-                cache.removeValue(forKey: path)
-                continue
-            }
-            foundDatabase = true
             let records: [AntigravityUsageRecord]
-            if let cached = cache[path], cached.signature == signature, cached.since <= since {
-                records = cached.records
-            } else {
-                records = try AntigravityUsageDatabase(path: path).records(since: since)
-                // 읽는 동안 기록 파일이 바뀌면 이번 일관된 스냅샷만 사용하고 다음 refresh에서 재조회.
-                if try self.signature(path) == signature {
-                    cache[path] = CachedDatabase(signature: signature, since: since, records: records)
-                } else {
+            do {
+                guard let signature = try signature(path) else {
                     cache.removeValue(forKey: path)
+                    continue
                 }
+                if let cached = cache[path], cached.signature == signature, cached.since <= since {
+                    records = cached.records
+                } else {
+                    records = try AntigravityUsageDatabase(path: path).records(since: since)
+                    // 읽는 동안 기록 파일이 바뀌면 이번 일관된 스냅샷만 사용하고 다음 refresh에서 재조회.
+                    if try self.signature(path) == signature {
+                        cache[path] = CachedDatabase(signature: signature, since: since, records: records)
+                    } else {
+                        cache.removeValue(forKey: path)
+                    }
+                }
+                completedDatabases += 1
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                readFailures += 1
+                continue
             }
             for record in records where record.date >= since {
                 guard seen.insert(record.identity).inserted else { continue }
@@ -89,11 +97,22 @@ actor AntigravityUsageScanner {
                 if let cost = pricing.estimatedCostDollars(model: record.model, tokens: record.tokens, source: .api) {
                     accumulator.add(day: day, tokens: record.tokens.totalTokens, cost: cost, model: record.model)
                 } else if record.tokens.totalTokens > 0 {
+                    accumulator.add(day: day, tokens: record.tokens.totalTokens, cost: nil, model: record.model)
                     accumulator.addUnknownModel(day: day, model: record.model)
                 }
             }
         }
-        return foundDatabase ? accumulator.build(source: "antigravity") : nil
+        guard completedDatabases > 0 else {
+            if readFailures > 0 { throw AntigravityUsageScanError.unreadable }
+            return nil
+        }
+        if readFailures > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .storage, providerID: "antigravity",
+                localContext: "database_failures=\(readFailures)"
+            )
+        }
+        return accumulator.build(source: "antigravity", readFailureCount: readFailures)
     }
 
     private func signature(_ path: String) throws -> Signature? {

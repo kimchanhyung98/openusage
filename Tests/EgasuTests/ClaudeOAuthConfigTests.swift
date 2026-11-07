@@ -87,7 +87,7 @@ final class ClaudeOAuthConfigTests: XCTestCase {
                 let provider = ClaudeProvider(
                     authStore: auth, usageClient: ClaudeUsageClient(httpClient: http),
                     usageStateStore: isolatedClaudeUsageStore(), logUsageScanner: ClaudeLogFixture.scanner(home: nil),
-                    includePiUsage: false, pricing: { TestPricing.bundled }
+                    includeSharedUsage: false, pricing: { TestPricing.bundled }
                 )
 
                 let result = await provider.refresh()

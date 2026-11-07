@@ -103,8 +103,21 @@ final class GrokCreditsConfigMapperTests: XCTestCase {
                 mapped.lines.first(where: { $0.label == "Pay as you go" }) else {
             return XCTFail("expected a Pay as you go badge")
         }
-        XCTAssertEqual(text, "2500 cap")
+        XCTAssertEqual(text, "$25.00 cap")
         XCTAssertEqual(colorHex, "#22c55e")
+    }
+
+    func testPayAsYouGoCapPreservesCentsAndHandlesLargeFiniteValues() throws {
+        for (cents, expected) in [(4299.0, "$42.99 cap"), (1e20, "$1,000,000,000,000,000,000.00 cap")] {
+            let response = HTTPResponse(
+                statusCode: 200, headers: [:], body: GrokCreditsFixtures.responseBody(onDemandCap: cents)
+            )
+            let mapped = try GrokUsageMapper.mapCreditsConfig(response)
+            guard case .badge(_, let text, _, _)? = mapped.lines.last else {
+                return XCTFail("Expected the pay-as-you-go cap")
+            }
+            XCTAssertEqual(text, expected)
+        }
     }
 
     func testNonWeeklyPeriodMapsToNoWeeklyLine() throws {

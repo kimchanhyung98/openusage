@@ -1,6 +1,6 @@
 import Foundation
 
-/// Codex CLI의 local session rollout(`$CODEX_HOME/sessions/**/*.jsonl` + `archived_sessions/`)을 native 스캔해 일별 token/cost 추정 — 외부 `ccusage` CLI의 Codex adapter semantics 이식.
+/// Codex CLI의 일반·Zstandard 세션 원장을 읽어 일별 token/cost 추정.
 /// 세부 계약은 각 method doc 참고: home 해석(`codexHomes`/`sessionFiles`), line 파싱·child replay gate(`parseFile`), model 해석(`resolveModel`), 집계·cost 계산(`aggregate`/`cost`).
 /// Actor인 이유는 `ClaudeLogUsageScanner`와 동일 — 스캔은 main actor 밖 실행, path+size+mtime 기반 versioned Application Support cache로 변경된 파일만 재파싱.
 actor CodexLogUsageScanner {
@@ -14,7 +14,7 @@ actor CodexLogUsageScanner {
     /// 같은 계정의 managed home — 기본 카드의 추가 history root로 병합.
     private let additionalRoots: [URL]
 
-    /// Turn 1개의 token usage — `token_count` line에서 정규화 (delta 적용 완료).
+    /// 응답 원장 또는 기존 누적 이벤트에서 정규화한 요청별 토큰.
     /// Fast·Ultrafast는 turn 실행 시점의 service tier — session 자체 log에서 추적, tier metadata 없으면 standard.
     struct Event: Codable, Sendable, Equatable {
         var timestamp: Date
@@ -28,11 +28,14 @@ actor CodexLogUsageScanner {
         var isUltrafast: Bool = false
         /// 손상된 행도 캐시에 남겨 cache hit가 정상 빈 이력으로 바뀌는 현상 방지.
         var invalidNumericValues = false
+        var invalidMetadata = false
         var pricingModel: String? = nil
+        var usageRecordID: String? = nil
+        var reconciliation: LegacyReconciliation? = nil
     }
 
-    /// Ultrafast tier 보존 — 이전 집계 캐시 재파싱.
-    static let cacheSchemaVersion = 11
+    /// 세션 계보가 없는 이전 누적 원장 캐시 재파싱.
+    static let cacheSchemaVersion = 22
 
     /// 같은 Codex home을 해석하는 multi-account 카드가 공유하는 scanner — rollout당 1회 파싱.
     private static let sharedScanner = IncrementalJSONLScanner<Event>(
@@ -64,54 +67,89 @@ actor CodexLogUsageScanner {
     }
 
     /// 최근 `daysBack`일의 Codex rollout 스캔 — Codex home 또는 session 파일이 없으면 `nil` (spend tile은 "No data").
-    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing) async -> LogUsageScan? {
+    func scan(daysBack: Int = 30, now: Date = Date(), pricing: ModelPricing, includeSharedHomes: Bool = false) async -> LogUsageScan? {
         let homes = rootsOverride ?? codexHomes() + additionalRoots
+        let sharedRoots = includeSharedHomes && rootsOverride == nil
+            ? UsageSourceCollectors.openClawRoots(environment: environment, home: homeDirectory()) : []
+        let sharedSessionRoots = Self.sharedSessionRoots(under: sharedRoots)
+        var sharedCompressedPaths: Set<String> = []
+        var sharedFiles = UsageFileDiscovery.Result()
+        for root in sharedSessionRoots.roots {
+            guard !Task.isCancelled else { break }
+            let prefix = root.resolvingSymlinksInPath().path + "/"
+            let discovery = UsageFileDiscovery.files(under: [root]) { url in
+                let path = url.deletingLastPathComponent().resolvingSymlinksInPath()
+                    .appendingPathComponent(url.lastPathComponent).path
+                guard path.hasPrefix(prefix), Self.isSharedRolloutFile(
+                    url, root: root, relativePath: String(path.dropFirst(prefix.count))
+                ) else { return false }
+                if url.lastPathComponent.hasSuffix(".jsonl.zst") {
+                    sharedCompressedPaths.insert(url.resolvingSymlinksInPath().path)
+                }
+                return true
+            }
+            sharedFiles.files += discovery.files
+            sharedFiles.failures += discovery.failures
+        }
         let since = JSONLScanning.sinceDate(daysBack: daysBack, now: now)
         // scoped 카드는 안정적 per-card identity, 표준 walk는 resolve된 home set을 cache key로 사용 (`ClaudeLogUsageScanner.parseCacheIdentity` 참고).
-        let identity: String
+        var identity: String
         if let cacheIdentityOverride {
             identity = cacheIdentityOverride
         } else {
-            let identityPaths = Set(homes.map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
+            let identityPaths = Set((homes + sharedRoots).map { $0.resolvingSymlinksInPath().standardizedFileURL.path })
                 .sorted()
             identity = identityPaths.isEmpty ? "no-codex-home" : identityPaths.joined(separator: "\n")
         }
-        let files = Self.sessionFiles(homes: homes)
+        var seenFiles: Set<String> = []
+        let nativeFiles = Self.sessionFiles(homes: homes)
+        let files = (nativeFiles.result.files + sharedFiles.files).filter { seenFiles.insert($0.path).inserted }
+        let discoveryFailures = nativeFiles.result.failures + sharedFiles.failures + sharedSessionRoots.failures
+        let compressedPaths = nativeFiles.compressedPaths.union(sharedCompressedPaths)
+        let compressedAliases = compressedPaths.filter { !$0.hasSuffix(".jsonl.zst") }.sorted()
+        if !compressedAliases.isEmpty { identity += "\ncompressed:" + compressedAliases.joined(separator: "\n") }
+        if discoveryFailures > 0 {
+            AppDiagnostics.record(.historyScan, result: .degraded, category: .storage, providerID: "codex",
+                                  localContext: "history_discovery_failures=\(discoveryFailures)")
+        }
         guard !files.isEmpty else {
             _ = await scanner.items(
                 from: [], since: since, cacheIdentity: identity, parse: Self.parseFile
             )
-            return nil
+            guard !Task.isCancelled else { return nil }
+            return discoveryFailures > 0 ? DailyUsageAccumulator().build(readFailureCount: discoveryFailures) : nil
         }
 
-        guard let events = await scanner.items(
+        guard let result = await scanner.scan(
             from: files,
             since: since,
             cacheIdentity: identity,
             onDiskCacheHit: { UsageLogNumbers.reportRejectedRows($0.filter(\.invalidNumericValues).count, source: "codex") },
-            parse: Self.parseFile
+            parse: { data, path in
+                if compressedPaths.contains(path) { return Self.parseFile(try UsageZstandard.decode(data)) }
+                return Self.parseFile(data)
+            }
         ), !Task.isCancelled else { return nil }
-        return Self.aggregate(events: events, since: since, pricing: pricing)
+        var scan = Self.aggregate(events: result.items, since: since, pricing: pricing)
+        scan.readFailureCount = discoveryFailures + result.failedPaths.count
+        return scan
     }
 
     // MARK: - Discovery
 
-    /// `CODEX_HOME` entry(comma 구분) 우선, 없으면 `~/.codex` — ccusage와 동일.
+    /// `CODEX_HOME` 단일 경로 우선, 없으면 `~/.codex` 사용.
     private func codexHomes() -> [URL] {
         if let raw = environment.value(for: "CODEX_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !raw.isEmpty {
-            return raw.split(separator: ",")
-                .map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-                .map { URL(fileURLWithPath: expandHome($0)) }
+            return [URL(fileURLWithPath: expandHome(raw))]
         }
         return [homeDirectory().appendingPathComponent(".codex")]
     }
 
-    /// 각 home의 `sessions/`·`archived_sessions/` 아래 모든 rollout `*.jsonl` (둘 다 없으면 home 직접 스캔 — ccusage fallback).
-    /// 같은 relative path는 `sessions/` 사본 우선 — archived 중복의 이중 집계 금지.
-    private static func sessionFiles(homes: [URL]) -> [JSONLScanning.DiscoveredFile] {
-        var files: [JSONLScanning.DiscoveredFile] = []
+    /// 일반·압축 원장 조회. 같은 상대 경로는 활성 사본을, 같은 폴더의 두 형식은 일반 파일을 우선 사용.
+    private static func sessionFiles(homes: [URL]) -> (result: UsageFileDiscovery.Result, compressedPaths: Set<String>) {
+        var result = UsageFileDiscovery.Result()
+        var compressedPaths: Set<String> = []
         var seenDirs: Set<String> = []
         for home in homes {
             var seenRelative: Set<String> = []
@@ -126,340 +164,99 @@ actor CodexLogUsageScanner {
             if sourceDirs.isEmpty {
                 sourceDirs = [home]
             }
-            // `jsonlFiles`가 enumerate 전에 symlink를 resolve — 여기서도 resolve해야 symlinked home에서 relative key와 cross-home dir dedup이 일치.
+            // 발견 경로와 같은 실경로에서 상대 경로 계산.
             for dir in sourceDirs.map({ $0.resolvingSymlinksInPath() }) where seenDirs.insert(dir.path).inserted {
-                for file in JSONLScanning.jsonlFiles(under: dir) {
-                    let relative = String(file.path.dropFirst(dir.path.count))
-                    guard seenRelative.insert(relative).inserted else { continue }
-                    files.append(file)
-                }
-            }
-        }
-        return files
-    }
-
-    // MARK: - File parsing
-
-    /// Rollout 파일 1개 파싱 — `turn_context`로 현재 model, `thread_settings_applied`로 service tier 추적, 각 `token_count`(`last_token_usage` 우선, 없으면 누적 `total_token_usage`와의 delta)를 event로 정규화.
-    /// Child session의 replay된 parent history는 첫 live `task_started`까지 skip. tier 기록이 없는 session은 standard.
-    /// Tier는 session 자체 log에서만 추적 — 현재 `config.toml` 참조 시 toggle이 전체 history를 소급 재산정.
-    static func parseFile(_ data: Data) -> [Event] {
-        let turnContextMarker = Data(#""type":"turn_context""#.utf8)
-        let tokenCountMarker = Data(#""type":"token_count""#.utf8)
-        let sessionMetaMarker = Data(#""type":"session_meta""#.utf8)
-        let taskStartedMarker = Data(#""type":"task_started""#.utf8)
-        let threadSettingsMarker = Data(#""type":"thread_settings_applied""#.utf8)
-
-        var events: [Event] = []
-        var previousTotals: RawUsage?
-        var replayBaselineUnknown = false
-        var currentModel: String?
-        var currentTierIsFast = false
-        var currentTierIsUltrafast = false
-        var sawSessionMeta = false
-        // child session의 replay된 parent history 구간 동안 non-nil.
-        var replayGate: ChildReplayGate?
-
-        for line in JSONLScanning.lines(in: data) {
-            let isTurnContext = line.range(of: turnContextMarker) != nil
-            let isSessionMeta = !sawSessionMeta && line.range(of: sessionMetaMarker) != nil
-            let isTaskStarted = replayGate != nil && line.range(of: taskStartedMarker) != nil
-            let isThreadSettings = line.range(of: threadSettingsMarker) != nil
-            guard isTurnContext || isSessionMeta || isTaskStarted || isThreadSettings
-                || line.range(of: tokenCountMarker) != nil
-            else { continue }
-            guard let object = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] else { continue }
-
-            let type = object["type"] as? String
-            let payload = object["payload"] as? [String: Any]
-
-            if type == "turn_context" {
-                if let model = payload.flatMap(modelName(in:)) {
-                    currentModel = model
-                }
-                continue
-            }
-            // 파일 자신의 (첫) session_meta만 인정 — child 파일은 자기 것 직후에 parent의 session_meta도 replay.
-            if type == "session_meta", !sawSessionMeta {
-                sawSessionMeta = true
-                if let payload, isChildSessionMeta(payload) {
-                    previousTotals = nil
-                    replayBaselineUnknown = true
-                    if let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                       let created = EgasuISO8601.date(from: timestampRaw) {
-                        replayGate = .untilStartedAt(created.timeIntervalSince1970.rounded(.down))
-                    } else {
-                        // 생성 timestamp가 없어도 child — replay 억제 유지.
-                        replayGate = .untilSelfTimedTaskStarted
+                let discovery = UsageFileDiscovery.files(under: [dir]) { url in
+                    guard isRolloutFile(url) else { return false }
+                    if url.lastPathComponent.hasSuffix(".jsonl.zst") {
+                        compressedPaths.insert(url.resolvingSymlinksInPath().path)
                     }
+                    return true
                 }
-                continue
-            }
-            if isThreadSettings, type == "event_msg",
-               payload?["type"] as? String == "thread_settings_applied" {
-                if let tier = serviceTier(in: payload) {
-                    currentTierIsFast = tier == "fast" || tier == "priority"
-                    currentTierIsUltrafast = tier == "ultrafast"
+                result.failures += discovery.failures
+                for file in discovery.files {
+                    let plainPath = file.path.hasSuffix(".jsonl.zst") ? String(file.path.dropLast(4)) : file.path
+                    let relative = plainPath.hasPrefix(dir.path + "/") ? String(plainPath.dropFirst(dir.path.count)) : plainPath
+                    guard seenRelative.insert(relative).inserted else { continue }
+                    result.files.append(file)
                 }
-                continue
             }
-            guard type == "event_msg", let payload else { continue }
+        }
+        return (result, compressedPaths)
+    }
 
-            // 첫 live task_started가 child 자신의 turn 시작 — replay된 task_started는 parent의 더 오래된 started_at 유지.
-            if payload["type"] as? String == "task_started" {
-                if let gate = replayGate,
-                   let startedAt = payload["started_at"] as? NSNumber,
-                   gate.isCleared(byStartedAt: startedAt.doubleValue, lineTimestamp: object["timestamp"] as? String) {
-                    replayGate = nil
+    private static func isRolloutFile(_ url: URL) -> Bool {
+        url.pathExtension == "jsonl" || (
+            url.lastPathComponent.hasSuffix(".jsonl.zst")
+                && !FileManager.default.fileExists(atPath: url.deletingPathExtension().path)
+        )
+    }
+
+    /// 에이전트 목록만 얕게 조회하고 Codex 전용 저장소로 재귀 탐색 범위 제한.
+    static func sharedSessionRoots(under roots: [URL]) -> (roots: [URL], failures: Int) {
+        var sessionRoots: [URL] = []
+        var failures = 0
+        for root in roots where root.lastPathComponent == "agents" {
+            guard !Task.isCancelled else { break }
+            do {
+                let agents = try FileManager.default.contentsOfDirectory(
+                    at: root, includingPropertiesForKeys: [.isDirectoryKey]
+                )
+                for agent in agents {
+                    guard !Task.isCancelled else { break }
+                    do {
+                        guard try agent.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { continue }
+                    } catch {
+                        failures += 1
+                        continue
+                    }
+                    sessionRoots += ["agent/codex-home/sessions", "agent/codex-home/archived_sessions", "agent/cli-auth/codex"]
+                        .map { agent.appendingPathComponent($0) }
                 }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                 continue
+            } catch {
+                failures += 1
             }
-            guard payload["type"] as? String == "token_count",
-                  let timestampRaw = (object["timestamp"] as? String)?.trimmingCharacters(in: .whitespaces),
-                  let timestamp = EgasuISO8601.date(from: timestampRaw)
-            else { continue }
-
-            let info = payload["info"] as? [String: Any]
-            let totals = (info?["total_token_usage"] as? [String: Any]).map(RawUsage.init(json:))
-            // live 누적값이 같은 재방출은 모델도 되돌리지 않음. replay 메타데이터는 아래에서 복원.
-            if replayGate == nil, let totals, !totals.invalid,
-               let previous = previousTotals, totals.equalCounts(previous) {
-                continue
-            }
-            if let parsedModel = modelName(in: payload) ?? info.flatMap(modelName(in:)) {
-                currentModel = parsedModel
-            }
-
-            // replay된 parent history — delta baseline만 seed, usage 미방출.
-            if replayGate != nil {
-                previousTotals = totals.flatMap { $0.invalid ? nil : $0 }
-                replayBaselineUnknown = previousTotals == nil
-                continue
-            }
-
-            var usage: RawUsage
-            // 잘못된 누적값과 정상 last를 섞어 내보내면 다음 totals delta에서 같은 사용량을 재집계.
-            if let totals, totals.invalid {
-                usage = totals
-            } else if let last = (info?["last_token_usage"] as? [String: Any]).map(RawUsage.init(json:)) {
-                usage = last
-            } else if let totals {
-                usage = totals.subtracting(previousTotals)
-                // 부모 재생의 기준이 끊겼으면 첫 live 누적값은 새 기준만 설정. 산정 불가한 증가분은 경고로 보존.
-                if replayBaselineUnknown { usage.invalid = true }
-            } else {
-                continue
-            }
-            // 손상된 totals는 delta baseline으로 쓰지 않음 — 이후 행의 차이까지 오염 방지.
-            if let totals, !totals.invalid {
-                previousTotals = totals
-                replayBaselineUnknown = false
-            }
-            guard !usage.invalid else {
-                events.append(Event(
-                    timestamp: timestamp, model: "", input: 0, cached: 0, output: 0, reasoning: 0,
-                    total: 0, invalidNumericValues: true
-                ))
-                continue
-            }
-            guard usage.input > 0 || usage.cached > 0 || usage.output > 0 || usage.reasoning > 0 else { continue }
-
-            let model = resolveModel(
-                parsed: nil,
-                currentModel: &currentModel
-            )
-
-            events.append(
-                Event(
-                    timestamp: timestamp,
-                    model: model,
-                    input: usage.input,
-                    cached: min(usage.cached, usage.input),
-                    output: usage.output,
-                    reasoning: usage.reasoning,
-                    total: usage.total,
-                    isFast: currentTierIsFast,
-                    isUltrafast: currentTierIsUltrafast,
-                    pricingModel: model == autoReviewModel ? autoReviewFallback(at: timestampRaw) : nil
-                ))
         }
-        UsageLogNumbers.reportRejectedRows(events.filter(\.invalidNumericValues).count, source: "codex")
-        return events
+        return (sessionRoots, failures)
     }
 
-    /// `thread_settings_applied` payload의 `service_tier` — `thread_settings` 우선, top-level 표기 허용 (예: `"default"`, `"fast"`, `"priority"`).
-    private static func serviceTier(in payload: [String: Any]?) -> String? {
-        guard let payload else { return nil }
-        let settings = payload["thread_settings"] as? [String: Any]
-        for value in [settings?["service_tier"], payload["service_tier"]] {
-            if let text = (value as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    /// `token_count` usage object의 token 필드 — ccusage가 허용하는 구식 표기(`prompt_tokens`, `completion_tokens`, `cache_read_input_tokens`, …) 수용.
-    struct RawUsage: Sendable {
-        var input: Int
-        var cached: Int
-        var output: Int
-        var reasoning: Int
-        var total: Int
-
-        /// 숫자 손상·재생 기준 불확실 — 집계에서 제외하고 경고로 노출.
-        var invalid = false
-
-        init(json: [String: Any]) {
-            // 먼저 등장한 key가 손상이면 다음 key로 넘어가지 않고 행 자체를 거부.
-            func count(_ keys: String...) -> Int? {
-                for key in keys where json[key] != nil {
-                    return UsageLogNumbers.count(json[key])
-                }
-                return 0
-            }
-            guard let input = count("input_tokens", "prompt_tokens", "input"),
-                  let cached = count("cached_input_tokens", "cache_read_input_tokens", "cached_tokens"),
-                  let output = count("output_tokens", "completion_tokens", "output"),
-                  let reasoning = count("reasoning_output_tokens", "reasoning_tokens"),
-                  let reported = count("total_tokens"),
-                  let recomputed = UsageLogNumbers.sum(input, output, reasoning)
-            else {
-                self.init(input: 0, cached: 0, output: 0, reasoning: 0, total: 0, invalid: true)
-                return
-            }
-            self.init(
-                input: input, cached: cached, output: output, reasoning: reasoning,
-                total: (reported > 0 || recomputed == 0) ? reported : recomputed
-            )
-        }
-
-        private init(input: Int, cached: Int, output: Int, reasoning: Int, total: Int, invalid: Bool = false) {
-            self.input = input
-            self.cached = cached
-            self.output = output
-            self.reasoning = reasoning
-            self.total = total
-            self.invalid = invalid
-        }
-
-        /// `other`와 token count 동일 — Codex가 재방출한 불변 누적 snapshot 판정.
-        func equalCounts(_ other: RawUsage) -> Bool {
-            input == other.input && cached == other.cached && output == other.output
-                && reasoning == other.reasoning && total == other.total
-        }
-
-        /// 누적 totals에서 turn delta 복원 (`last_token_usage` 부재 시 사용).
-        /// 양쪽 모두 검증된 비음수라 차이는 overflow 불가 — 손상 표시만 전파.
-        func subtracting(_ previous: RawUsage?) -> RawUsage {
-            RawUsage(
-                input: max(0, input - (previous?.input ?? 0)),
-                cached: max(0, cached - (previous?.cached ?? 0)),
-                output: max(0, output - (previous?.output ?? 0)),
-                reasoning: max(0, reasoning - (previous?.reasoning ?? 0)),
-                total: max(0, total - (previous?.total ?? 0)),
-                invalid: invalid || previous?.invalid == true
-            )
-        }
-    }
-
-    private static func modelName(in json: [String: Any]) -> String? {
-        for value in [json["model"], json["model_name"], (json["metadata"] as? [String: Any])?["model"]] {
-            if let text = (value as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
-                return text
-            }
-        }
-        return nil
-    }
-
-    /// Child session의 replay된 parent history를 첫 live turn까지 gate하는 방식.
-    private enum ChildReplayGate {
-        /// `task_started.started_at`이 child 생성 epoch 이상이면 해제.
-        case untilStartedAt(TimeInterval)
-        /// 생성 timestamp가 판독 불가한 child용 — `started_at`이 해당 `task_started` line 자신의 wall-clock 초 이상이면 해제 (replay turn은 parent의 더 오래된 `started_at` 유지).
-        case untilSelfTimedTaskStarted
-
-        func isCleared(byStartedAt startedAt: TimeInterval, lineTimestamp: String?) -> Bool {
-            switch self {
-            case .untilStartedAt(let gate):
-                return startedAt >= gate
-            case .untilSelfTimedTaskStarted:
-                guard let raw = lineTimestamp?.trimmingCharacters(in: .whitespaces),
-                      let lineDate = EgasuISO8601.date(from: raw)
-                else { return false }
-                return startedAt >= lineDate.timeIntervalSince1970.rounded(.down)
-            }
-        }
-    }
-
-    /// 파일을 child session(subagent spawn 또는 fork)으로 표시하는 session_meta payload — 선행 `token_count` line들은 parent history replay.
-    /// JSON `null`은 `NSNull`(Swift `nil` 아님) — null·blank 문자열은 absent 취급, `forked_from_id: null`인 root session의 child 오분류 방지.
-    static func isChildSessionMeta(_ payload: [String: Any]) -> Bool {
-        if hasNonNullValue(payload["forked_from_id"]) { return true }
-        if hasNonNullValue(payload["parent_thread_id"]) { return true }
-        if payload["thread_source"] as? String == "subagent" { return true }
-        if let source = payload["source"] as? [String: Any], hasNonNullValue(source["subagent"]) {
-            return true
-        }
-        return false
-    }
-
-    /// JSONSerialization이 실제 값을 반환했는지 여부 — missing·`null`·blank text 제외.
-    private static func hasNonNullValue(_ value: Any?) -> Bool {
-        switch value {
-        case nil, is NSNull:
-            return false
-        case let text as String:
-            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        default:
-            return true
-        }
-    }
-
-    /// ccusage의 model resolution — line의 명시적 model이 현재 model 갱신, 없으면 추적 중인 model, metadata 전무 시 `gpt-5` fallback.
-    static func resolveModel(
-        parsed: String?,
-        currentModel: inout String?
-    ) -> String {
-        if let parsed {
-            currentModel = parsed
-        }
-        let model: String
-        if let parsed {
-            model = parsed
-        } else if let current = currentModel {
-            model = current
+    private static func isSharedRolloutFile(_ url: URL, root: URL, relativePath: String) -> Bool {
+        guard isRolloutFile(url) else { return false }
+        var components = relativePath.split(separator: "/").map(String.init)
+        let homeRoot: URL
+        if root.lastPathComponent == "sessions" || root.lastPathComponent == "archived_sessions" {
+            components.insert(root.lastPathComponent, at: 0)
+            homeRoot = root.deletingLastPathComponent()
         } else {
-            currentModel = "gpt-5"
-            model = "gpt-5"
+            homeRoot = root
         }
-        return model
-    }
-
-    private static let autoReviewModel = "codex-auto-review"
-
-    /// 자동 리뷰의 날짜별 추정 단가 참조표 — 실제 백엔드 모델이나 전환일의 확정 기록 아님.
-    private static let autoReviewFallbacks: [(releasedOn: String, model: String)] = [
-        ("2026-04-23", "gpt-5.5"),
-        ("2026-03-05", "gpt-5.4"),
-        ("2026-02-05", "gpt-5.3-codex"),
-        ("2025-12-11", "gpt-5.2-codex"),
-        ("2025-11-13", "gpt-5.1-codex"),
-        ("2025-09-15", "gpt-5-codex"),
-        ("2025-08-07", "gpt-5")
-    ]
-
-    static func autoReviewFallback(at timestamp: String) -> String {
-        let date = String(timestamp.prefix(10))
-        guard date.count == 10, date.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else {
-            return "gpt-5"
-        }
-        return autoReviewFallbacks.first(where: { date >= $0.releasedOn })?.model ?? "gpt-5"
+        guard let storage = components.lastIndex(where: { $0 == "sessions" || $0 == "archived_sessions" }) else { return false }
+        if components[storage] == "sessions" { return true }
+        let home = homeRoot.appendingPathComponent(components.prefix(storage).joined(separator: "/"))
+        let active = home.appendingPathComponent("sessions/" + components.dropFirst(storage + 1).joined(separator: "/")).path
+        let plain = active.hasSuffix(".jsonl.zst") ? String(active.dropLast(4)) : active
+        return !FileManager.default.fileExists(atPath: plain)
+            && !FileManager.default.fileExists(atPath: plain + ".zst")
     }
 
     // MARK: - Aggregation
 
-    private struct EventKey: Hashable {
+    struct LegacySnapshot: Codable, Sendable, Hashable {
+        var sessionIdentity: String?
+        var scope: String
+        var boundary: Int
+        var usage: EventKey
+    }
+
+    /// 완전 대조되어 잔여량이 없어져도 대응 원장에 원본 구간과 최종 차감 내역 보존.
+    struct LegacyReconciliation: Codable, Sendable, Equatable {
+        var snapshot: LegacySnapshot
+        var recordIDs: Set<String>
+    }
+
+    struct EventKey: Codable, Sendable, Hashable {
         var timestamp: Date
         var model: String
         var pricingModel: String?
@@ -470,30 +267,60 @@ actor CodexLogUsageScanner {
         var output: Int
         var reasoning: Int
         var total: Int
+
+        init(_ event: Event) {
+            timestamp = event.timestamp
+            model = event.model
+            pricingModel = event.pricingModel
+            isFast = event.isFast
+            isUltrafast = event.isUltrafast
+            input = event.input
+            cached = event.cached
+            output = event.output
+            reasoning = event.reasoning
+            total = event.total
+        }
     }
 
     /// Event를 local calendar day로 bucket — 파일 간 동일 event(복사된 session log)는 1회 집계, cost는 per-event codex 계산 (`cost` 참고).
-    /// Pricing 불가 event(unknown model, blank slug)는 모든 표시 합계(token·dollar·trend·model breakdown)에서 제외 — 측정값과 pricing 불가 값의 혼합 방지.
-    /// unknown model 이름은 `unknownModelsByDay`(tile의 경고 triangle)로만 노출; blank slug는 unattributed — 경고할 이름 자체가 없음.
+    /// 모델 가격이 없으면 측정 토큰을 유지하고 해당 날짜·기간의 비용을 미확정으로 처리.
     static func aggregate(
         events: [Event], since: Date, pricing: ModelPricing
     ) -> LogUsageScan {
         var seen: Set<EventKey> = []
+        var seenSnapshots: Set<LegacySnapshot> = []
+        var seenRecords: Set<String> = []
+        var coverage: [LegacySnapshot: Set<Set<String>>] = [:]
+        // 원장 사본의 중복 제거·기간 필터 전에 더 완전한 대조 증거 수집.
+        for event in events where !event.invalidNumericValues && !event.invalidMetadata {
+            if let reconciliation = event.reconciliation {
+                coverage[reconciliation.snapshot, default: []].insert(reconciliation.recordIDs)
+            }
+        }
         var accumulator = DailyUsageAccumulator()
         var rejectedNumericRows = 0
+        var rejectedMetadataRows = 0
         var costEstimator = CodexUsagePricing.Resolver(pricing: pricing)
 
         for event in events where event.timestamp >= since {
+            guard !event.invalidMetadata else {
+                rejectedMetadataRows += 1
+                continue
+            }
             guard !event.invalidNumericValues else {
                 rejectedNumericRows += 1
                 continue
             }
-            let key = EventKey(
-                timestamp: event.timestamp, model: event.model, pricingModel: event.pricingModel,
-                isFast: event.isFast, isUltrafast: event.isUltrafast, input: event.input,
-                cached: event.cached, output: event.output, reasoning: event.reasoning, total: event.total
-            )
-            guard seen.insert(key).inserted else { continue }
+            if let recordID = event.usageRecordID {
+                guard seenRecords.insert(recordID).inserted else { continue }
+            } else if let reconciliation = event.reconciliation {
+                let replaced = coverage[reconciliation.snapshot, default: []].contains {
+                    $0.isStrictSuperset(of: reconciliation.recordIDs)
+                }
+                guard !replaced, seenSnapshots.insert(reconciliation.snapshot).inserted else { continue }
+            } else {
+                guard seen.insert(EventKey(event)).inserted else { continue }
+            }
 
             let day = DailyUsageAccumulator.dayKey(from: event.timestamp)
             // 경고·내역은 원래 모델명 유지, 자동 리뷰의 날짜별 참조 모델은 가격 계산에만 사용.
@@ -507,20 +334,24 @@ actor CodexLogUsageScanner {
                 output: event.output, isFast: event.isFast
             )
             let pricingModel = event.pricingModel ?? model
-            guard
-                let eventCost = costEstimator.estimate(
-                    model: pricingModel, tokens: tokens, isUltrafast: event.isUltrafast
-                )
-            else {
-                if event.total > 0 {
-                    accumulator.addUnknownModel(day: day, model: event.isUltrafast ? model + " (Ultrafast)" : model)
-                }
-                continue
+            let eventCost = costEstimator.estimate(
+                model: pricingModel, tokens: tokens, isUltrafast: event.isUltrafast
+            )
+            if eventCost == nil, event.total > 0 {
+                accumulator.addUnknownModel(day: day, model: event.isUltrafast ? model + " (Ultrafast)" : model)
             }
             accumulator.add(day: day, tokens: event.total, cost: eventCost, model: model)
         }
 
-        return accumulator.build(rejectedNumericRows: rejectedNumericRows, source: "codex")
+        if rejectedMetadataRows > 0 {
+            AppDiagnostics.record(
+                .historyScan, result: .degraded, category: .decoding, providerID: "codex",
+                localContext: "source=codex; invalid_metadata_rows=\(rejectedMetadataRows)"
+            )
+        }
+        return accumulator.build(
+            rejectedNumericRows: rejectedNumericRows, source: "codex", rejectedMetadataRows: rejectedMetadataRows
+        )
     }
 
     /// Codex cost 계산 (ccusage 방식) — non-cached input은 input rate, cached input은 명시적 cache-read rate(할인 미공표 시 full input rate), output(reasoning 포함)은 output rate.

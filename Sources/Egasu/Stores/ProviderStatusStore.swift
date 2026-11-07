@@ -28,6 +28,7 @@ final class ProviderStatusStore {
     @ObservationIgnored private let sourceFor: @MainActor (String) -> ProviderStatusSource?
     @ObservationIgnored private let now: @MainActor () -> Date
     @ObservationIgnored private let onFlightJoined: @MainActor (String) -> Void
+    @ObservationIgnored private let workQueue: BackgroundWorkQueue
     @ObservationIgnored private var entries: [String: Entry] = [:]
     @ObservationIgnored private var inFlight: [String: Flight] = [:]
 
@@ -35,19 +36,21 @@ final class ProviderStatusStore {
         http: any HTTPClient,
         sourceFor: @escaping @MainActor (String) -> ProviderStatusSource? = ProviderStatusSourceCatalog.source(for:),
         now: @escaping @MainActor () -> Date = Date.init,
-        onFlightJoined: @escaping @MainActor (String) -> Void = { _ in }
+        onFlightJoined: @escaping @MainActor (String) -> Void = { _ in },
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.http = http
         self.sourceFor = sourceFor
         self.now = now
         self.onFlightJoined = onFlightJoined
+        self.workQueue = workQueue
     }
 
     func status(for providerID: String) -> ProviderServiceStatus {
         statusesByFamily[ProviderAccountID.family(of: providerID)] ?? .unknown
     }
 
-    /// 같은 family의 card를 한 요청으로 합치고 서로 다른 family는 병렬 조회.
+    /// 같은 family의 card를 한 요청으로 합치고 실제 조회는 공통 큐에서 순차 실행.
     func refresh(providerIDs: [String], force: Bool = false) async {
         guard !Task.isCancelled else { return }
         var seenFamilies: Set<String> = []
@@ -71,7 +74,9 @@ final class ProviderStatusStore {
             let flightID = UUID()
             let task = Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.fetch(source: source)
+                await self.workQueue.run("status:\(family)") {
+                    await self.fetch(source: source)
+                }
                 self.finishFlight(family: family, id: flightID)
             }
             inFlight[family] = Flight(id: flightID, task: task)

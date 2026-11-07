@@ -2,24 +2,29 @@ import Foundation
 
 @MainActor
 final class KiroProvider: ProviderRuntime {
+    let retainsDedicatedSpendOnScanFailure = true
     let provider = Provider(
         id: "kiro",
         displayName: "Kiro",
         icon: .providerMark("kiro"),
-        links: []
+        links: [],
+        usesDedicatedSpendLines: true
     )
 
     let authStore: KiroAuthStore
     let usageClient: KiroUsageClient
+    let usageScanner: KiroUsageScanner
     let now: @Sendable () -> Date
 
     init(
         authStore: KiroAuthStore = KiroAuthStore(),
         usageClient: KiroUsageClient = KiroUsageClient(),
+        usageScanner: KiroUsageScanner = KiroUsageScanner(),
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.authStore = authStore
         self.usageClient = usageClient
+        self.usageScanner = usageScanner
         self.now = now
     }
 
@@ -49,6 +54,40 @@ final class KiroProvider: ProviderRuntime {
     }
 
     func refresh() async -> ProviderSnapshot {
+        var snapshot = await quotaSnapshot()
+        let refreshedAt = now()
+        snapshot.refreshedAt = refreshedAt
+        do {
+            if let scan = try await usageScanner.scan(now: refreshedAt) {
+                if !scan.daily.isEmpty || (scan.invalidRows == 0 && scan.readFailureCount == 0) {
+                    snapshot.totalSpendLines = scan.totalSpendLines(now: refreshedAt)
+                }
+                for warning in scan.readWarnings { appendWarning(warning, to: &snapshot) }
+                if !scan.warnings.isEmpty {
+                    snapshot.isDegraded = true
+                    AppDiagnostics.record(
+                        .historyScan, result: .degraded,
+                        category: scan.readFailureCount > 0 ? .storage : (scan.invalidRows > 0 ? .decoding : .other),
+                        providerID: provider.id, localContext: scan.warnings.joined(separator: " ")
+                    )
+                }
+            }
+        } catch is CancellationError {
+            return snapshot
+        } catch {
+            AppDiagnostics.record(.historyScan, result: .failure, providerID: provider.id, error: error)
+            appendWarning(error.localizedDescription, to: &snapshot)
+        }
+        return snapshot
+    }
+
+    private func appendWarning(_ message: String, to snapshot: inout ProviderSnapshot) {
+        snapshot.warning = [snapshot.warning, message].compactMap { $0 }.joined(separator: " ")
+        snapshot.warningPresentation = (snapshot.warningPresentation ?? []) + [.init(message)]
+        snapshot.isDegraded = true
+    }
+
+    private func quotaSnapshot() async -> ProviderSnapshot {
         do {
             guard var auth = try await loadOffMainActor({ [authStore] in try authStore.loadAuth() }) else {
                 throw KiroAuthError.notLoggedIn

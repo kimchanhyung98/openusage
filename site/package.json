@@ -15,12 +15,12 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "astro": "7.4.2"
+    "astro": "7.4.4"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.12",
     "@playwright/test": "1.64.1",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "typescript": "6.0.3"
   }
 }

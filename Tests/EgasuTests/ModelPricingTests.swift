@@ -90,6 +90,58 @@ final class ModelPricingTests: XCTestCase {
         XCTAssertNil(pricing.resolve(model: "made-up-model-9000"))
     }
 
+    func testUnregisteredModelSuffixesDoNotInheritBaseRates() throws {
+        let pricing = try makePricing(primary: ["vendor/custom": rates(2, 10, fast: 3)])
+        for suffix in ["-unrecognized", "-contributor", "-preview", "-20261106-custom"] {
+            for prefix in ["", "vendor/"] {
+                XCTAssertNil(pricing.resolve(model: prefix + "custom" + suffix))
+                XCTAssertNil(pricing.resolve(model: prefix + "custom" + suffix + "-fast"))
+            }
+        }
+    }
+
+    func testBothDateSuffixSpellingsPreserveBaseRates() throws {
+        for date in ["20261106", "2026-11-06"] {
+            let dated = try makePricing(primary: ["vendor/custom-" + date: rates(2, 10)])
+            let undated = try makePricing(primary: ["custom": rates(2, 10)])
+            XCTAssertEqual(dated.resolve(model: "custom")?.inputPerMillion, 2)
+            XCTAssertEqual(undated.resolve(model: "custom-" + date)?.inputPerMillion, 2)
+        }
+    }
+
+    func testFineTunedIDsUseRegisteredFineTunedRates() throws {
+        let pricing = try makePricing(primary: [
+            "ft:gpt-4.1-nano-2025-04-14": rates(3, 12),
+            "gpt-4.1-nano-2025-04-14": rates(1, 4),
+            "vendor/custom": rates(2, 10)
+        ])
+        for name in [
+            "ft:gpt-4.1-nano-2025-04-14:openai::BTz2REMH",
+            "openai/ft:gpt-4.1-nano-2025-04-14:my-org:custom:identifier:ckpt-step-2000"
+        ] {
+            XCTAssertEqual(pricing.resolve(model: name)?.inputPerMillion, 3, name)
+        }
+        XCTAssertNil(pricing.resolve(model: "vendor/custom:unregistered"))
+        XCTAssertNil(pricing.resolve(model: "ft:gpt-4.1-nano-2025-04-14-unregistered"))
+    }
+
+    func testRegisteredProviderDateRevisionsKeepFuzzyRates() throws {
+        for date in ["20240229", "2024-02-29"] {
+            for prefix in ["bedrock/anthropic.", "anthropic/"] {
+                let dated = "claude-3-opus-" + date
+                let key = prefix + dated + "-v1:0"
+                let pricing = try makePricing(primary: [key: rates(15, 75)])
+                for model in [key, "claude-3-opus", dated, prefix + dated] {
+                    XCTAssertEqual(pricing.resolve(model: model)?.inputPerMillion, 15, model)
+                }
+                XCTAssertNil(pricing.resolve(model: dated + "-v2:0"))
+                XCTAssertNil(pricing.resolve(model: dated + "-v1:0-preview"))
+            }
+            let unversioned = try makePricing(primary: ["claude-3-opus-" + date: rates(15, 75)])
+            XCTAssertNil(unversioned.resolve(model: "claude-3-opus-" + date + "-v1:0"))
+        }
+    }
+
     // MARK: - Supplement precedence, aliases, fast multipliers
 
     func testSupplementPricingBeatsCatalogs() throws {

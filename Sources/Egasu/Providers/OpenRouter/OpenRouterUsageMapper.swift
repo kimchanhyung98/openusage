@@ -10,21 +10,20 @@ enum OpenRouterUsageMapper {
 
     /// `/credits`에서 Credits meter + Balance 생성 — 유효한 total이 없으면 빈 배열.
     static func creditsLines(from data: [String: Any]) -> [MetricLine] {
-        guard let totalUsage = ProviderParse.number(data["total_usage"]) else { return [] }
-
-        let used = max(0, totalUsage)
-        // `total_credits`는 계정에 누적 충전된 금액, balance는 그 잔여분
-        let totalCredits = max(0, ProviderParse.number(data["total_credits"]) ?? 0)
+        guard let totalUsage = ProviderParse.number(data["total_usage"]),
+              let totalCredits = ProviderParse.number(data["total_credits"]) else { return [] }
+        let balance = totalCredits - totalUsage
+        guard balance.isFinite else { return [] }
 
         var lines: [MetricLine] = []
         // Credits meter는 양수 상한일 때만 의미 있음(무충전 계정은 0 보고) — 해당 계정도 Balance는 표시
         if totalCredits > 0 {
-            lines.append(.progress(label: "Credits", used: used, limit: totalCredits, format: .dollars))
+            lines.append(.progress(label: "Credits", used: totalUsage, limit: totalCredits, format: .dollars))
         }
-        // Balance는 남은 선불 credit — 실측 0은 "No data"가 아닌 "$0.00 left"로 표시
+        // 실측 0과 초과 사용에 따른 음수 잔액 모두 유지.
         lines.append(.values(
             label: "Balance",
-            values: [MetricValue(number: max(0, totalCredits - used), kind: .dollars)]
+            values: [MetricValue(number: balance, kind: .dollars)]
         ))
         return lines
     }

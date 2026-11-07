@@ -304,7 +304,7 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
         XCTAssertEqual(scan.series.daily[0].costUSD ?? 0, 0.04, accuracy: 1e-9)
     }
 
-    func testAggregateUnknownModelIsExcludedFromTotalsButWarns() {
+    func testAggregateUnknownModelKeepsTokensAndMakesTotalCostUnavailable() {
         let day = localDay("2026-02-20T12:00:00.000Z")
         var unknown = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         unknown.model = "mystery-model"
@@ -314,15 +314,17 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [unknown, priced], since: .distantPast, pricing: pricing)
 
-        // 가격 산정 불가 token은 표시 totals에서 제외 — warning triangle로만 노출
-        XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 1500, costUSD: 0.02)])
+        XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 1515, costUSD: nil)])
         XCTAssertEqual(scan.unknownModelsByDay[day], ["mystery-model"])
-        XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
-            ModelUsageEntry(model: "claude-test-model", totalTokens: 1500, costUSD: 0.02)
-        ])
+        let models = scan.modelUsage?.daily.first?.models ?? []
+        XCTAssertEqual(models.first { $0.model == "claude-test-model" },
+                       ModelUsageEntry(model: "claude-test-model", totalTokens: 1500, costUSD: 0.02))
+        XCTAssertEqual(models.first { $0.model == "mystery-model" },
+                       ModelUsageEntry(model: "mystery-model", totalTokens: 15, costUSD: nil))
+        XCTAssertNotNil(scan.pricingWarning)
     }
 
-    func testAggregateUnknownModelOnlyLeavesDayUnbacked() {
+    func testAggregateUnknownModelOnlyKeepsTokenHistory() {
         let day = localDay("2026-02-20T12:00:00.000Z")
         var unknown = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         unknown.model = "mystery-model"
@@ -330,27 +332,49 @@ final class ClaudeLogUsageScannerTests: XCTestCase {
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [unknown], since: .distantPast, pricing: pricing)
 
-        // 가격 산정 가능한 것이 없는 날은 series 항목 자체가 없음(→ "No data"), unknown-model warning은 유지
-        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertEqual(scan.series.daily, [DailyUsageEntry(date: day, totalTokens: 15, costUSD: nil)])
         XCTAssertEqual(scan.unknownModelsByDay[day], ["mystery-model"])
-        XCTAssertEqual(scan.modelUsage?.daily ?? [], [])
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
+            ModelUsageEntry(model: "mystery-model", totalTokens: 15, costUSD: nil)
+        ])
+        XCTAssertNotNil(scan.usageHistory)
     }
 
-    func testAggregateSyntheticModelIsExcludedWithoutWarning() {
+    func testParsedZeroTokenUnknownModelDoesNotHideReportedCost() {
+        let lines = """
+        {"timestamp":"2026-02-20T12:00:00Z","requestId":"r1","message":{"id":"m1","model":"mystery-model","usage":{"input_tokens":0,"output_tokens":0}}}
+        {"timestamp":"2026-02-20T12:01:00Z","requestId":"r2","costUSD":0.25,"message":{"id":"m2","model":"claude-test-model","usage":{"input_tokens":100,"output_tokens":0}}}
+
+        """
+        let entries = ClaudeLogUsageScanner.parseFile(Data(lines.utf8))
+        XCTAssertEqual(entries.count, 2)
+
+        let scan = ClaudeLogUsageScanner.aggregate(entries: entries, since: .distantPast, pricing: pricing)
+
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 100)
+        XCTAssertEqual(scan.series.daily.first?.costUSD, 0.25)
+        XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models.map(\.model), ["claude-test-model"])
+    }
+
+    func testAggregateSyntheticModelKeepsUnattributedTokensWithPricingWarning() {
         var synthetic = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         synthetic.model = nil
         synthetic.tokens = TokenBreakdown(input: 10, output: 5)
 
         let scan = ClaudeLogUsageScanner.aggregate(entries: [synthetic], since: .distantPast, pricing: pricing)
 
-        // model 없음 + carried cost 없음: unpriceable로 totals 제외 — warning할 이름도 없어 unknown-model 항목도 없음
-        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 15)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
         XCTAssertTrue(scan.unknownModelsByDay.isEmpty)
-        XCTAssertEqual(scan.modelUsage?.daily ?? [], [])
+        XCTAssertEqual(scan.modelUsage?.daily.first?.models, [
+            ModelUsageEntry(model: ModelUsageEntry.unattributedModelName, totalTokens: 15, costUSD: nil)
+        ])
+        XCTAssertNotNil(scan.pricingWarning)
     }
 
     func testAggregateSyntheticModelWithCarriedCostStillCounts() {
-        // 로그 자체가 carried한 cost는 model 이름 없어도 집계 — unpriceable usage만 제외
+        // 로그 자체가 carried한 cost는 model 이름 없어도 집계.
         var synthetic = entry(messageID: "m1", requestID: "r1", isSidechain: false, cacheRead: 0, output: 0)
         synthetic.model = nil
         synthetic.costUSD = 0.10

@@ -466,7 +466,7 @@ final class IncrementalJSONLScannerTests: XCTestCase {
         XCTAssertEqual(files.map { ($0.path as NSString).lastPathComponent }, ["a.jsonl"])
     }
 
-    func testMissingFileDoesNotWarn() async {
+    func testDiscoveredFileThatDisappearsReportsReadFailure() async {
         let warnings = WarningRecorder()
         let scanner = IncrementalJSONLScanner<Int>(readFailureWarning: warnings.record)
         let file = JSONLScanning.DiscoveredFile(
@@ -475,9 +475,11 @@ final class IncrementalJSONLScannerTests: XCTestCase {
             mtime: Date()
         )
 
-        _ = await scanner.items(from: [file], since: .distantPast) { _ in [] }
+        let result = await scanner.scan(from: [file], since: .distantPast) { _, _ in [] }
 
-        XCTAssertEqual(warnings.counts, [])
+        XCTAssertEqual(warnings.counts, [1])
+        XCTAssertEqual(result?.completedFiles, 0)
+        XCTAssertEqual(result?.failedPaths, [file.path])
     }
 
     private func makeDirectory(_ suffix: String) throws -> URL {

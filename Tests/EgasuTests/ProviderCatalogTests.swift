@@ -3,6 +3,23 @@ import XCTest
 
 @MainActor
 final class ProviderCatalogTests: XCTestCase {
+    func testExportedHistoryNamesSharedSourcesOnlyWhenEnabled() throws {
+        for includeShared in [true, false] {
+            let claude = ClaudeProvider(includeSharedUsage: includeShared)
+            let codex = CodexProvider(includeSharedUsage: includeShared)
+            let claudeHistory = try XCTUnwrap(claude.widgetDescriptors.compactMap(\.historyResource).first)
+            let codexHistory = try XCTUnwrap(codex.widgetDescriptors.compactMap(\.historyResource).first)
+            XCTAssertEqual(claudeHistory.sourceNote, includeShared
+                ? "From your Claude usage history and local tools (estimated)"
+                : "From your Claude usage history (estimated)")
+            XCTAssertEqual(codexHistory.sourceNote, includeShared
+                ? "From your Codex logs and local tools (estimated)"
+                : "From your Codex logs (estimated)")
+        }
+        let grok = try XCTUnwrap(GrokProvider().widgetDescriptors.compactMap(\.historyResource).first)
+        XCTAssertEqual(grok.sourceNote, "From your Grok usage files, logs, and local tools (estimated)")
+    }
+
     func testEstablishedProvidersLeadAlphabeticalTail() {
         let names = ProviderCatalog.make().map(\.provider.displayName)
 
@@ -27,7 +44,7 @@ final class ProviderCatalogTests: XCTestCase {
         XCTAssertEqual(Array(ids.prefix(4)), ["claude", "codex", "codex@profile-p1", "cursor"])
         let accountRuntime = runtimes.compactMap { $0 as? CodexProvider }.first { $0.provider.id == card.id }
         XCTAssertEqual(accountRuntime?.provider.displayName, "Codex")
-        XCTAssertEqual(accountRuntime?.includePiUsage, false)
+        XCTAssertEqual(accountRuntime?.includeSharedUsage, false)
         XCTAssertEqual(
             accountRuntime?.authStore.managedSharedAuthHome,
             FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".codex").path
@@ -131,7 +148,7 @@ final class ProviderCatalogTests: XCTestCase {
         let claudeRuntimes = ProviderCatalog.make(hasUnregisteredClaudeLogins: true)
             .compactMap { $0 as? ClaudeProvider }
 
-        XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.includePiUsage })
+        XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.includeSharedUsage })
         XCTAssertTrue(claudeRuntimes.allSatisfy { !$0.authStore.allowsDesktopFallback })
     }
 

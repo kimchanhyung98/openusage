@@ -223,6 +223,7 @@ final class KiroProviderTests: XCTestCase {
         KiroProvider(
             authStore: KiroAuthStore(sqlite: sqlite),
             usageClient: KiroUsageClient(http: http),
+            usageScanner: KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
             now: { [now] in now }
         )
     }

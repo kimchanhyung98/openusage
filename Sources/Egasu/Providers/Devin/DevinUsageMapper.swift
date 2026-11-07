@@ -23,6 +23,7 @@ enum DevinUsageMapper {
         let planInfo = planStatus["planInfo"] as? [String: Any] ?? [:]
         let plan = readTrimmedString(planInfo["planName"]) ?? "Unknown"
         let hideDailyQuota = ProviderParse.bool(planInfo["hideDailyQuota"]) == true
+        let hideWeeklyQuota = ProviderParse.bool(planInfo["hideWeeklyQuota"]) == true
 
         let dailyRemaining = ProviderParse.number(planStatus["dailyQuotaRemainingPercent"])
         let weeklyRemaining = ProviderParse.number(planStatus["weeklyQuotaRemainingPercent"])
@@ -41,14 +42,15 @@ enum DevinUsageMapper {
             ))
         }
 
-        if let weeklyRemaining {
+        if !hideWeeklyQuota,
+           let weeklyRemaining {
             lines.append(quotaLine(
                 label: "Weekly quota",
                 remaining: weeklyRemaining,
                 resetsAt: weeklyReset,
                 periodDurationMs: weekPeriodMs
             ))
-        } else if hideDailyQuota,
+        } else if !hideWeeklyQuota, hideDailyQuota,
                   let dailyRemaining {
             // 응답에 weekly quota 부재 시 숨겨진 daily quota를 Weekly 행으로 표시 (remaining→used 반전은 동일)
             lines.append(quotaLine(

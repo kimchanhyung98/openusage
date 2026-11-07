@@ -24,16 +24,24 @@ final class CodexWeeklyTimerRouter {
     private let refresh: @MainActor (String, @escaping @MainActor () -> Bool) async -> Void
     private let now: @MainActor () -> Date
     private let wait: @MainActor (Duration) async throws -> Void
+    private let workQueue: BackgroundWorkQueue
     private nonisolated(unsafe) var clockObserver: NSObjectProtocol?
     private lazy var coordinator = CodexWeeklyTimerCoordinator(
         store: store,
         isCurrent: { [weak self] in self?.isCurrent($0, bindingID: $1, accountKey: $2) == true },
         prepare: { [weak self] providerID, accountKey in
-            guard let provider = self?.bindings[providerID]?.provider else { return nil }
+            guard let self, let ticket = await self.workQueue.acquire("weekly-timer:prepare") else { return nil }
+            defer { self.workQueue.finish(ticket) }
+            try Task.checkCancellation()
+            guard let provider = self.bindings[providerID]?.provider else { return nil }
             return try await provider.prepareWeeklyTimerSession(expectedAccountKey: accountKey)
         },
         execute: { [weak self] providerID, bindingID, session, observationIsCurrent in
-            guard let self, let binding = self.bindings[providerID], binding.id == bindingID else {
+            guard let self, let ticket = await self.workQueue.acquire("weekly-timer:execute") else {
+                return CodexWeeklyTimerExecutionResult(launched: false, completed: false, updatedAuth: nil)
+            }
+            defer { self.workQueue.finish(ticket) }
+            guard !Task.isCancelled, let binding = self.bindings[providerID], binding.id == bindingID else {
                 return CodexWeeklyTimerExecutionResult(
                     launched: false, completed: false, updatedAuth: nil,
                     failureDescription: "Weekly timer account changed before the message was sent."
@@ -77,7 +85,10 @@ final class CodexWeeklyTimerRouter {
             return result
         },
         verify: { [weak self] providerID, session in
-            guard let provider = self?.bindings[providerID]?.provider else { return nil }
+            guard let self, let ticket = await self.workQueue.acquire("weekly-timer:verify") else { return nil }
+            defer { self.workQueue.finish(ticket) }
+            try Task.checkCancellation()
+            guard let provider = self.bindings[providerID]?.provider else { return nil }
             return try await provider.verifyWeeklyTimer(expectedAccountKey: session.observation.accountKey)
         },
         report: { [weak self] providerID, bindingID, message in
@@ -116,7 +127,8 @@ final class CodexWeeklyTimerRouter {
         report: @escaping (String, String?) -> Void,
         refresh: @escaping @MainActor (String, @escaping @MainActor () -> Bool) async -> Void,
         now: @escaping @MainActor () -> Date = Date.init,
-        wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        wait: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        workQueue: BackgroundWorkQueue = BackgroundWorkQueue()
     ) {
         self.bindings = Dictionary(uniqueKeysWithValues: providers.map { ($0.provider.id, Binding(provider: $0)) })
         self.identityKeys = identityKeys
@@ -129,6 +141,7 @@ final class CodexWeeklyTimerRouter {
         self.refresh = refresh
         self.now = now
         self.wait = wait
+        self.workQueue = workQueue
         clockObserver = NotificationCenter.default.addObserver(
             forName: .NSSystemClockDidChange, object: nil, queue: .main
         ) { [weak self] _ in
