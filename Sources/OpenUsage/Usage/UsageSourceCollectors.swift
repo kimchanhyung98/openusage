@@ -9,7 +9,17 @@ enum UsageSourceCollectors {
         let dsh = configured("DSH_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".dsh")
         let clawRoots = openClawRoots(environment: environment, home: home)
         let hermes = configured("HERMES_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".hermes")
-        return [
+        let data = configured("XDG_DATA_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".local/share")
+        let kiloData = data.appendingPathComponent("kilo")
+        let kiloOverride = environment.value(for: "KILO_DB")?.nilIfEmpty
+        let kiloFile = kiloOverride.map { raw in
+            (raw.hasPrefix("/") ? URL(fileURLWithPath: raw) : kiloData.appendingPathComponent(raw)).resolvingSymlinksInPath()
+        }
+        let kiloRoots = kiloOverride == ":memory:" ? [] : [kiloFile ?? kiloData]
+        let legacyKilo = ["Code", "Code - Insiders", "Cursor", "VSCodium"].map {
+            home.appendingPathComponent("Library/Application Support/\($0)/User/globalStorage/kilocode.kilo-code/tasks")
+        } + [home.appendingPathComponent(".vscode-server/data/User/globalStorage/kilocode.kilo-code/tasks")]
+        var sources: [any UsageCollecting] = [
             PiUsageScanner(environment: environment, homeDirectory: { home }),
             UsageFileCollector(
                 sourceID: "gemini", providerID: "gemini", roots: [
@@ -22,8 +32,25 @@ enum UsageSourceCollectors {
             openClawDatabaseCollector(roots: clawRoots),
             hermesCollector(root: hermes),
             UsageFileCollector(sourceID: "dsh", roots: [dsh.appendingPathComponent("sessions")], version: 2,
-                               includeFile: DeepSeekSessionParser.isCurrentGeneration, parse: DeepSeekSessionParser.parse)
+                               includeFile: DeepSeekSessionParser.isCurrentGeneration, parse: DeepSeekSessionParser.parse),
+            UsageSQLiteCollector(sourceID: "kilo", roots: kiloRoots, includeFile: { url in
+                if let kiloFile { return url.resolvingSymlinksInPath() == kiloFile }
+                let name = url.lastPathComponent
+                guard url.pathExtension == "db" else { return false }
+                if name == "kilo.db" || name.hasPrefix("kilo-") { return true }
+                guard name.hasPrefix("opencode-") else { return false }
+                let replacement = "kilo-" + name.dropFirst("opencode-".count)
+                return !FileManager.default.fileExists(atPath: url.deletingLastPathComponent().appendingPathComponent(replacement).path)
+            }, parse: KiloUsageParser.database),
+            UsageFileCollector(sourceID: "kilocode", roots: legacyKilo, version: 2,
+                               includeFile: { $0.lastPathComponent == "ui_messages.json" }, parse: KiloUsageParser.legacy),
+            junieCollector(environment: environment, home: home),
+            devinDesktop(home: home),
+            kimiWork(home: home),
+            kimiLegacy(environment: environment, home: home)
         ]
+        sources += kiroLegacy(home: home)
+        return sources
     }
 
     static func qwenCollector(
@@ -95,6 +122,52 @@ enum UsageSourceCollectors {
         return [".openclaw", ".clawdbot", ".moltbot", ".moldbot"].flatMap { state in
             ["agents", "sessions"].map { base.appendingPathComponent(state + "/" + $0) }
         }
+    }
+
+    static func junieCollector(
+        environment: EnvironmentReading, home: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil
+    ) -> JunieUsageCollector {
+        let root = configured("JUNIE_HOME", environment: environment, home: home) ?? home.appendingPathComponent(".junie")
+        return JunieUsageCollector(root: root.appendingPathComponent("sessions"), scanner: scanner)
+    }
+
+    static func devinDesktop(home: URL) -> UsageFileCollector {
+        UsageFileCollector(sourceID: "devin-desktop", providerID: "devin",
+                           roots: [home.appendingPathComponent("Library/Application Support/Devin/User/acp-events")], version: 4,
+                           includeFile: { $0.pathExtension == "ndjson" }, parse: DevinDesktopParser.parse)
+    }
+
+    static func kimiWork(home: URL, scanner: IncrementalJSONLScanner<UsageRecord>? = nil) -> UsageFileCollector {
+        let root = home.appendingPathComponent(
+            "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions"
+        )
+        return UsageFileCollector(sourceID: "kimi-work", providerID: "kimi", roots: [root], version: 4, scanner: scanner,
+                                  includeFile: { url in
+            let prefix = root.resolvingSymlinksInPath().path + "/"
+            let path = url.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent(url.lastPathComponent).path
+            guard path.hasPrefix(prefix) else { return false }
+            let parts = path.dropFirst(prefix.count).split(separator: "/")
+            return parts.count == 5 && parts[2] == "agents" && parts[4] == "wire.jsonl"
+        }, parse: { data, path in try KimiSupplementParser.parse(data, path: path, work: true) })
+    }
+
+    static func kimiLegacy(environment: EnvironmentReading, home: URL) -> UsageFileCollector {
+        let root = configured("KIMI_SHARE_DIR", environment: environment, home: home) ?? home.appendingPathComponent(".kimi")
+        return UsageFileCollector(sourceID: "kimi-cli", providerID: "kimi-cli", roots: [root.appendingPathComponent("sessions")], version: 3,
+                                  includeFile: { $0.lastPathComponent == "wire.jsonl" },
+                                  parse: { data, path in try KimiSupplementParser.parse(data, path: path, work: false) })
+    }
+
+    static func kiroLegacy(home: URL) -> [any UsageCollecting] {
+        [
+            UsageFileCollector(sourceID: "kiro-cli", providerID: "kiro", roots: [home.appendingPathComponent(".kiro/sessions/cli")], version: 3,
+                               includeFile: { $0.pathExtension == "json" }, parse: KiroLegacyUsageParser.session),
+            UsageSQLiteCollector(sourceID: "kiro-cli", providerID: "kiro", roots: [
+                home.appendingPathComponent("Library/Application Support/kiro-cli/data.sqlite3"),
+                home.appendingPathComponent(".local/share/kiro-cli/data.sqlite3")
+            ], includeFile: { $0.lastPathComponent == "data.sqlite3" }, parse: KiroLegacyUsageParser.database)
+        ]
     }
 
     static func configured(_ key: String, environment: EnvironmentReading, home: URL) -> URL? {

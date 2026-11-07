@@ -124,7 +124,7 @@ final class DevinUsageScannerTests: XCTestCase {
 
     func testMissingAndEmptyStoresDoNotInventZeroUsage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let scanner = DevinUsageScanner(environment: FakeEnvironment(["DEVIN_SESSIONS_DIR": root.path]))
+        let scanner = DevinUsageScanner(environment: FakeEnvironment(["DEVIN_SESSIONS_DIR": root.path]), homeDirectory: root)
         let missing = try await scanner.scan(now: now, pricing: pricing)
         XCTAssertNil(missing)
         let fixture = try DevinHistoryFixture()
@@ -389,7 +389,12 @@ final class DevinUsageScannerTests: XCTestCase {
             await store.refreshAll(force: true)
             let retained = store.localSnapshots["devin"]
             XCTAssertEqual(retained?.totalSpendLines, previous)
-            XCTAssertNotNil(retained?.warning)
+            if corruptDatabase {
+                XCTAssertNotNil(retained?.warning)
+            } else {
+                XCTAssertEqual(retained?.warning,
+                               "Local usage history is unavailable. Showing the last successful totals.")
+            }
             XCTAssertNil(store.providerErrors["devin"])
             XCTAssertEqual(cache.loadSnapshots(providerIDs: ["devin"])["devin"]?.totalSpendLines, previous)
 
@@ -441,7 +446,7 @@ private struct DevinHistoryFixture {
     }
 
     func scanner() -> DevinUsageScanner {
-        DevinUsageScanner(environment: FakeEnvironment(["DEVIN_SESSIONS_DIR": root.path]))
+        DevinUsageScanner(environment: FakeEnvironment(["DEVIN_SESSIONS_DIR": root.path]), homeDirectory: root)
     }
 
     func insert(_ message: [String: Any], at date: Date) throws {

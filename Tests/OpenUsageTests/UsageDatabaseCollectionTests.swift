@@ -155,6 +155,39 @@ final class UsageDatabaseCollectionTests: XCTestCase {
         output.count = count
         return output
     }
+    func testKiloUsesDirectStepsAndReadsCommittedWALChanges() async throws {
+        let database = try UsageTestDatabase()
+        let sql = try String(contentsOf: Bundle.module.resourceURL!.appendingPathComponent("UsageCollection/kilo/fixture.sql"), encoding: .utf8)
+        try database.execute(sql)
+        let file = database.file
+        let collector = UsageSQLiteCollector(sourceID: "kilo", roots: [file], includeFile: { _ in true }, parse: KiloUsageParser.database)
+        let first = await collector.collect(since: .distantPast)
+        let records = try XCTUnwrap(first?.records)
+        XCTAssertEqual(records.count, 3)
+        XCTAssertEqual(records.reduce(0) { $0 + $1.totalTokens }, 260)
+        XCTAssertEqual(records.reduce(0) { $0 + ($1.recordedCostUSD ?? 0) }, 0.34, accuracy: 1e-9)
+        XCTAssertTrue(records.allSatisfy { $0.issues.isEmpty })
+        let before = try Data(contentsOf: file)
+        try database.execute("UPDATE part SET data=json_set(data,'$.cost',0.4) WHERE id='k-step-parent'")
+        let second = await collector.collect(since: .distantPast)
+        XCTAssertEqual(try XCTUnwrap(second?.records.reduce(0) { $0 + ($1.recordedCostUSD ?? 0) }), 0.64, accuracy: 1e-9)
+        XCTAssertEqual(try Data(contentsOf: file), before, "The new committed usage is in the WAL, not a rewritten DB file")
+    }
+
+    func testKiroSQLiteKeepsRequestTokensWithoutAssigningUnmatchedCredits() async throws {
+        let database = try UsageTestDatabase()
+        try database.execute("""
+        CREATE TABLE conversations_v2(conversation_id TEXT,value TEXT);
+        INSERT INTO conversations_v2 VALUES('s','{"history":[{"request_metadata":{"input_tokens":100,"output_tokens":10,"request_start_timestamp_ms":1793494800000}}],"user_turn_metadata":{"usage_info":[{"unit":"credit","value":0.5}]}}');
+        """)
+        let result = try KiroLegacyUsageParser.database(UsageDatabase(path: database.file.path), path: database.file.path)
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.first?.totalTokens, 110)
+        XCTAssertNil(result.first?.recordedCostUSD)
+        XCTAssertEqual(result.last?.recordedCostUSD, 0.02)
+        XCTAssertTrue(result.last?.issues.contains(.invalidMetadata) == true)
+    }
+
 }
 
 @MainActor

@@ -16,7 +16,7 @@ final class KimiTotalSpendTests: XCTestCase {
         let snapshot = await provider.refresh()
 
         XCTAssertNil(snapshot.errorCategory)
-        XCTAssertTrue(snapshot.warning?.contains("Affected periods show tokens only") == true)
+        XCTAssertNil(snapshot.warning)
         XCTAssertEqual(provider.widgetDescriptors.map(\.id), ["kimi.session", "kimi.weekly"])
         XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
         XCTAssertEqual(snapshot.plan, "Allegro")
@@ -30,6 +30,86 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertTrue(total.projection(for: .costPerMtok).isEmpty)
         XCTAssertEqual(total.projection(for: .tokens).centerValue, 190)
         XCTAssertFalse(total.isEstimated)
+    }
+
+    func testCurrentQuotaResponseStillCollectsLocalTokens() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeHistory(root: root)
+        let provider = makeProvider(root: root, usageJSON: #"""
+        {"goods_version":2,"usages":{"limit_5h":{"used_ratio":0.3},"limit_7d":{"used_ratio":"0.2"}}}
+        """#)
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertNil(snapshot.errorCategory)
+        XCTAssertNil(snapshot.plan)
+        XCTAssertEqual(snapshot.lines.map(\.label), ["Session", "Weekly"])
+        XCTAssertEqual(tokens(snapshot), 190)
+    }
+
+    func testStoreRetainsSameDayTotalsOnFullHistoryFailureThenRecoversAndAcceptsEmptyHistory() async throws {
+        let root = try fixture()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeHistory(root: root)
+        let clock = OSAllocatedUnfairLock(initialState: now)
+        let provider = makeProvider(root: root, clock: clock)
+        let suite = "KimiTotalSpendTests.retention.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let cache = ProviderSnapshotCache(userDefaults: defaults, storageKey: "snapshots", now: { clock.withLock { $0 } })
+        let store = WidgetDataStore(registry: .from([provider]), providers: [provider], cache: cache,
+                                    defaults: defaults, now: { clock.withLock { $0 } })
+        await store.refreshAll(force: true)
+        let previous = try XCTUnwrap(store.localSnapshots["kimi"])
+        XCTAssertEqual(tokens(previous), 190)
+        XCTAssertEqual(previous.totalSpendRefreshedAt, now)
+
+        let refreshedNow = now.addingTimeInterval(60)
+        clock.withLock { $0 = refreshedNow }
+        try writeHistory(root: root, version: "unsupported-version")
+        await store.refreshAll(force: true)
+        let retained = try XCTUnwrap(store.localSnapshots["kimi"])
+        XCTAssertEqual(retained.totalSpendLines, previous.totalSpendLines)
+        XCTAssertEqual(retained.totalSpendRefreshedAt, now)
+        XCTAssertTrue(retained.warning?.contains("unsupported format") == true)
+        XCTAssertNil(store.providerErrors["kimi"])
+        XCTAssertEqual(cache.loadSnapshots(providerIDs: ["kimi"])["kimi"]?.totalSpendLines, previous.totalSpendLines)
+
+        let wire = root.appendingPathComponent("sessions/workspace/session/agents/main/wire.jsonl")
+        try Data().write(to: wire)
+        let work = root.appendingPathComponent(
+            "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/work/conv-1/agents/main/wire.jsonl"
+        )
+        try UsageRecordFixture.write("not-json\n", to: work)
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.localSnapshots["kimi"]?.totalSpendLines, previous.totalSpendLines)
+        XCTAssertEqual(store.headerNotice(for: "kimi"),
+                       L10n.errors("Local usage history is unavailable. Showing the last successful totals."))
+        try FileManager.default.removeItem(at: work)
+
+        try writeHistory(root: root, cacheWrites: 0)
+        await store.refreshAll(force: true)
+        let recovered = try XCTUnwrap(store.localSnapshots["kimi"])
+        XCTAssertEqual(tokens(recovered), 150)
+        XCTAssertEqual(recovered.totalSpendRefreshedAt, now.addingTimeInterval(60))
+        XCTAssertFalse(recovered.warning?.contains("unsupported format") == true)
+
+        try Data().write(to: wire)
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.localSnapshots["kimi"]?.totalSpendLines, [])
+        XCTAssertNil(store.localSnapshots["kimi"]?.warning)
+
+        try writeHistory(root: root)
+        await store.refreshAll(force: true)
+        XCTAssertEqual(store.localSnapshots["kimi"].map(tokens), 190)
+        let nextDay = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+        clock.withLock { $0 = nextDay }
+        try writeHistory(root: root, version: "unsupported-version")
+        await store.refreshAll(force: true)
+        XCTAssertNil(store.localSnapshots["kimi"]?.totalSpendLines)
+        XCTAssertNil(store.localSnapshots["kimi"]?.totalSpendRefreshedAt)
+        XCTAssertTrue(store.localSnapshots["kimi"]?.warning?.contains("unsupported format") == true)
     }
 
     func testQuotaFailurePreservesFailureSoTheStoreKeepsLastGoodQuota() async throws {
@@ -157,14 +237,14 @@ final class KimiTotalSpendTests: XCTestCase {
         XCTAssertEqual(snapshot.isDegraded, true)
     }
 
-    func testMalformedHistoryWarnsAndKeepsValidTokens() async throws {
+    func testMalformedHistoryKeepsValidTokensWithoutCardWarning() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
         try writeHistory(root: root, suffix: "invalid-json\n")
         let snapshot = await makeProvider(root: root).refresh()
 
         XCTAssertEqual(tokens(snapshot), 190)
-        XCTAssertTrue(snapshot.warning?.contains("records are invalid") == true)
+        XCTAssertNil(snapshot.warning)
         XCTAssertEqual(snapshot.isDegraded, true)
     }
 
@@ -249,21 +329,26 @@ final class KimiTotalSpendTests: XCTestCase {
         ).totalTokens
     }
 
-    private func makeProvider(root: URL, status: Int = 200, pricing: ModelPricing = .empty) -> KimiProvider {
+    private func makeProvider(
+        root: URL, status: Int = 200, pricing: ModelPricing = .empty, usageJSON: String? = nil,
+        clock: OSAllocatedUnfairLock<Date>? = nil
+    ) -> KimiProvider {
         let fixedNow = now
+        let currentNow: @Sendable () -> Date = { clock?.withLock { $0 } ?? fixedNow }
         let files = FakeFiles([
             root.appendingPathComponent("credentials/kimi-code.json").path: #"{"access_token":"fake-access"}"#
         ])
-        let http = FakeHTTPClient(response: HTTPResponse(statusCode: status, headers: [:], body: Data(#"""
+        let body = usageJSON ?? #"""
         {"user":{"membership":{"level":"LEVEL_ADVANCED"}},
         "limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":100,"used":25}}],
         "usage":{"limit":100,"used":60}}
-        """#.utf8)))
+        """#
+        let http = FakeHTTPClient(response: HTTPResponse(statusCode: status, headers: [:], body: Data(body.utf8)))
         return KimiProvider(
             authStore: KimiAuthStore(
                 files: files, environment: FakeEnvironment(["KIMI_CODE_HOME": root.path]), homeDirectory: { root }
             ),
-            usageClient: KimiUsageClient(http: http, now: { fixedNow }), now: { fixedNow }, pricing: { pricing }
+            usageClient: KimiUsageClient(http: http, now: currentNow), now: currentNow, pricing: { pricing }
         )
     }
 

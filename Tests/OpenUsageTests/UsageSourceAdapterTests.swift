@@ -143,4 +143,102 @@ final class UsageSourceAdapterTests: XCTestCase {
         XCTAssertEqual(settled.providerID, "anthropic")
     }
 
+    func testUnattributedJunieAndKiloMetadataDoNotAffectProviderCards() {
+        for source in ["junie", "kilo"] {
+            let record = UsageRecord(sourceID: source, formatID: source, kind: "message",
+                                     timestamp: Date(timeIntervalSince1970: 1793494800),
+                                     totalTokens: 100, issues: [.invalidMetadata])
+            let collection = UsageCollection(records: [record])
+            XCTAssertEqual(collection.records.count, 1)
+            XCTAssertTrue(collection.records[0].issues.contains(.invalidMetadata))
+            let modelOnly = UsageRecord(
+                sourceID: source, formatID: source, kind: "message", timestamp: record.timestamp,
+                model: "claude-sonnet-4-6", tokens: TokenBreakdown(input: 100), totalTokens: 100,
+                recordedCostUSD: 0.2
+            )
+            XCTAssertTrue(modelOnly.issues.isEmpty)
+            for provider in ["claude", "codex"] {
+                XCTAssertNil(UsageHistoryBuilder.scan(collection, providerID: provider,
+                                                       since: .distantPast, pricing: .empty))
+                XCTAssertNil(UsageHistoryBuilder.scan(.init(records: [modelOnly]), providerID: provider,
+                                                       since: .distantPast, pricing: .empty))
+            }
+            var attributed = modelOnly
+            attributed.providerID = "anthropic"
+            let attributedScan = UsageHistoryBuilder.scan(.init(records: [attributed]), providerID: "claude",
+                                                           since: .distantPast, pricing: .empty)
+            XCTAssertEqual(attributedScan?.series.daily.first?.totalTokens, 100)
+        }
+    }
+
+    func testJunieUnpricedZeroDoesNotGuessProviderOrBecomeReportedFreeUsage() async throws {
+        let row = #"{"timestampMs":1793494800000,"event":{"agentEvent":{"kind":"LlmResponseMetadataEvent","modelUsage":[{"model":"claude-sonnet-4-6","inputTokens":100,"outputTokens":20,"reasoningTokens":5,"cost":0}]}}}"#
+        let result = try await UsageRecordFixture.collect(["session/events.jsonl": row], sourceID: "junie", parse: JunieSessionParser.parse)
+        let record = try XCTUnwrap(result.records.first)
+        XCTAssertEqual(record.totalTokens, 120)
+        XCTAssertEqual(record.recordedCostUSD, 0)
+        XCTAssertTrue(record.zeroCostIsUnknown)
+        XCTAssertEqual(record.costOrigin, .estimated)
+        XCTAssertNil(record.providerID)
+        XCTAssertEqual(record.reasoningTokens, 5)
+        var attributed = record
+        attributed.providerID = "anthropic"
+        let scan = UsageRecordFixture.history(records: [attributed], providerID: "claude", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 120)
+        XCTAssertNil(scan.series.daily.first?.costUSD)
+    }
+
+    func testKimiWorkIncludesCompactionAndPreservesIncompleteCacheRecord() async throws {
+        let rows = """
+        {"type":"usage.record","model":"k2d6-agent","usageScope":"turn","time":1793494800000,"usage":{"inputOther":100,"output":10,"inputCacheRead":20}}
+        {"type":"usage.record","model":"k2d6-agent","usageScope":"session","time":1793494801000,"usage":{"inputOther":50,"output":5,"inputCacheRead":0}}
+        {"type":"usage.record","model":"k2d6-agent","usageScope":"session","time":1793494802000,"usage":{"inputOther":40,"output":5}}
+        """
+        let result = try await UsageRecordFixture.collect(["wire.jsonl": rows], sourceID: "kimi-work",
+            parse: { try KimiSupplementParser.parse($0, path: $1, work: true) })
+        XCTAssertEqual(result.records.count, 3)
+        XCTAssertEqual(result.records.reduce(0) { $0 + $1.totalTokens }, 230)
+        XCTAssertTrue(result.records.last?.issues.contains(.invalidMetadata) == true)
+        let scan = UsageRecordFixture.history(records: result.records, providerID: "kimi", since: .distantPast, pricing: .empty)
+        XCTAssertEqual(scan.series.daily.first?.totalTokens, 185)
+        XCTAssertNotNil(scan.metadataWarning)
+    }
+
+    func testLegacyKimiStatusUpdatesUseOneCompleteStep() async throws {
+        let first = #"{"timestamp":1793494800,"message":{"type":"StatusUpdate","payload":{"message_id":"step-1","token_usage":{"input_other":100,"output":10,"input_cache_read":20}}}}"#
+        let next = first.replacingOccurrences(of: #""output":10"#, with: #""output":30"#)
+        let result = try await UsageRecordFixture.collect(["wire.jsonl": first + "\n" + next], sourceID: "kimi-cli",
+            parse: { try KimiSupplementParser.parse($0, path: $1, work: false) })
+        XCTAssertEqual(result.records.count, 1)
+        XCTAssertEqual(result.records.first?.totalTokens, 150)
+        XCTAssertNil(result.records.first?.model)
+    }
+
+    func testDevinDesktopCumulativeUsageCannotMasqueradeAsIndependentRequests() async throws {
+        let rows = """
+        {"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","_meta":{"cognition.ai/timestamp":"2026-11-01T00:00:01Z","cognition.ai/inputTokens":100,"cognition.ai/cachedReadTokens":20,"cognition.ai/outputTokens":10}}}
+        {"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","_meta":{"cognition.ai/timestamp":"2026-11-01T00:00:02Z","cognition.ai/inputTokens":150,"cognition.ai/cachedReadTokens":30,"cognition.ai/outputTokens":5}}}
+        {"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","metadata":{"request_id":"r1","created_at":"2026-11-01T00:00:01Z","generation_model":"claude-sonnet-4-6","metrics":{"input_tokens":100,"output_tokens":10,"cache_read_tokens":20}}}}
+        """
+        let result = try await UsageRecordFixture.collect(["session.ndjson": rows], sourceID: "devin-desktop", parse: DevinDesktopParser.parse)
+        XCTAssertEqual(result.records.count, 3)
+        XCTAssertEqual(result.records.compactMap { $0.tokens?.input }, [100, 150, 100])
+        XCTAssertEqual(result.records.compactMap { $0.tokens?.output }, [10, 5, 10])
+        XCTAssertTrue(result.records.allSatisfy { $0.totalTokens == 0 && $0.responseID == nil })
+        XCTAssertTrue(result.records.allSatisfy { $0.issues.contains(.unresolvedMirror) })
+        let scan = UsageRecordFixture.history(records: result.records, providerID: "devin", since: .distantPast, pricing: .empty)
+        XCTAssertTrue(scan.series.daily.isEmpty)
+        XCTAssertNotNil(scan.metadataWarning)
+    }
+
+    func testKiroV2KeepsMeasuredTokensAndCreditEquivalent() async throws {
+        let row = #"{"session_id":"s","session_state":{"rts_model_state":{"model_info":{"model_id":"claude-sonnet-4-6"}},"conversation_metadata":{"user_turn_metadatas":[{"input_token_count":100,"output_token_count":20,"cache_read_input_token_count":30,"end_timestamp":1793494800,"message_ids":["m1"],"metering_usage":[{"unit":"credit","value":0.5}]}]}}}"#
+        let result = try await UsageRecordFixture.collect(["s.json": row], sourceID: "kiro-cli", parse: KiroLegacyUsageParser.session)
+        let record = try XCTUnwrap(result.records.first)
+        XCTAssertEqual(record.totalTokens, 150)
+        XCTAssertEqual(record.recordedCostUSD, 0.02)
+        XCTAssertEqual(record.costOrigin, .creditEquivalent)
+        XCTAssertFalse(record.tokensEstimated)
+    }
+
 }

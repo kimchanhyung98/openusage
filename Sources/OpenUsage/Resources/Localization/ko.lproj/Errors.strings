@@ -277,3 +277,4 @@
 "Some local usage files could not be read. Usage history may be incomplete." = "일부 로컬 사용량 파일을 읽을 수 없습니다. 사용 이력에 누락이 있을 수 있습니다.";
 "Some local usage has unsupported pricing details. Cost totals may be unavailable." = "일부 로컬 사용 기록의 가격 정보를 지원하지 않습니다. 전체 비용을 표시하지 못할 수 있습니다.";
 "Some Antigravity models have no price. Cost totals may be unavailable." = "일부 Antigravity 모델의 가격을 확인할 수 없습니다. 전체 비용을 표시하지 못할 수 있습니다.";
+"Some Kiro usage has no recorded credit cost. Affected periods show tokens only." = "일부 Kiro 사용 기록에 크레딧 비용이 없습니다. 해당 기간은 토큰만 표시합니다.";

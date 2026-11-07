@@ -237,6 +237,80 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertEqual(empty?.totalSpendLines(now: now), [])
     }
 
+    func testKiroHomeSelectsV3ProfileWithoutMergingDefaultHistory() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        _ = try fixture.write(history(credits: 100))
+        let profile = fixture.home.appendingPathComponent("separate-profile")
+        _ = try fixture.write(history(credits: 2), kiroHome: profile)
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": profile.path]), homeDirectory: fixture.home)
+
+        let usage = try await scanner.scan(now: now)
+
+        XCTAssertEqual(usage?.daily.first?.costUSD, 0.08)
+        XCTAssertEqual(usage?.daily.first?.tokens, 5)
+    }
+
+    func testMissingKiroHomeProfileDoesNotFallBackToDefaultHistory() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        _ = try fixture.write(history())
+        let scanner = KiroUsageScanner(environment: FakeEnvironment([
+            "KIRO_HOME": fixture.home.appendingPathComponent("missing-profile").path
+        ]), homeDirectory: fixture.home)
+
+        let usage = try await scanner.scan(now: now)
+
+        XCTAssertNil(usage)
+    }
+
+    func testInvalidKiroHomePathsUseDefaultProfile() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        _ = try fixture.write(history())
+        let invalidPaths = [
+            "", "relative-profile", "~/profile", "/", fixture.home.path, fixture.home.path + "/",
+            fixture.home.deletingLastPathComponent().path, fixture.home.path + "/.."
+        ]
+        for path in invalidPaths {
+            let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": path]), homeDirectory: fixture.home)
+
+            let usage = try await scanner.scan(now: now)
+
+            XCTAssertEqual(usage?.daily.first?.costUSD, 0.1, path)
+            XCTAssertEqual(usage?.daily.first?.tokens, 5, path)
+        }
+    }
+
+    func testKiroHomeSymlinkToHomeUsesDefaultProfile() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        _ = try fixture.write(history())
+        _ = try fixture.write(history(credits: 100), kiroHome: fixture.home)
+        let alias = fixture.home.deletingLastPathComponent().appendingPathComponent("kiro-alias-\(UUID().uuidString)")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: fixture.home)
+        defer { try? FileManager.default.removeItem(at: alias) }
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": alias.path]), homeDirectory: fixture.home)
+
+        let usage = try await scanner.scan(now: now)
+
+        XCTAssertEqual(usage?.daily.first?.costUSD, 0.1)
+        XCTAssertEqual(usage?.daily.first?.tokens, 5)
+    }
+
+    func testKiroHomeAcceptsSiblingWithSharedHomePrefix() async throws {
+        let fixture = try KiroHistoryFixture()
+        defer { fixture.remove() }
+        let userHome = fixture.home.appendingPathComponent("user")
+        let profile = fixture.home.appendingPathComponent("user-profile")
+        _ = try fixture.write(history(), kiroHome: profile)
+        let scanner = KiroUsageScanner(environment: FakeEnvironment(["KIRO_HOME": profile.path]), homeDirectory: userHome)
+
+        let usage = try await scanner.scan(now: now)
+
+        XCTAssertEqual(usage?.daily.first?.costUSD, 0.1)
+    }
+
     func testUnreadableSessionDoesNotDiscardOtherHistory() async throws {
         let fixture = try KiroHistoryFixture()
         defer { fixture.remove() }
@@ -249,7 +323,8 @@ final class KiroUsageScannerTests: XCTestCase {
 
         XCTAssertEqual(usage?.daily.first?.tokens, 5)
         XCTAssertEqual(usage?.daily.first?.costUSD, 0.1)
-        XCTAssertEqual(usage?.invalidRows, 1)
+        XCTAssertEqual(usage?.invalidRows, 0)
+        XCTAssertEqual(usage?.readFailureCount, 1)
     }
 
     func testProviderFeedsDashboardAndKeepsCreditsSeparate() async throws {
@@ -294,6 +369,7 @@ final class KiroUsageScannerTests: XCTestCase {
         XCTAssertNil(snapshot.errorCategory)
         XCTAssertTrue(snapshot.isDegraded == true)
         XCTAssertEqual(snapshot.warningPresentation?.count, 1)
+        XCTAssertEqual(snapshot.warning, "Some local usage files could not be read. Usage history may be incomplete.")
     }
 
     private func result(_ data: Data) throws -> KiroUsageScanner.Result {
@@ -340,14 +416,15 @@ final class KiroUsageScannerTests: XCTestCase {
 
 private struct KiroHistoryFixture {
     let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    var scanner: KiroUsageScanner { KiroUsageScanner(homeDirectory: home) }
+    var scanner: KiroUsageScanner { KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: home) }
 
     init() throws {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
     }
 
-    func write(_ data: Data, session: String = "session") throws -> URL {
-        let log = home.appendingPathComponent(".kiro/sessions/workspace/\(session)/messages.jsonl")
+    func write(_ data: Data, session: String = "session", kiroHome: URL? = nil) throws -> URL {
+        let root = kiroHome ?? home.appendingPathComponent(".kiro")
+        let log = root.appendingPathComponent("sessions/workspace/\(session)/messages.jsonl")
         try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
         try data.write(to: log)
         return log

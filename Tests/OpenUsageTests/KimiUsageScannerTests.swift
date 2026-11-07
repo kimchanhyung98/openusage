@@ -190,6 +190,199 @@ final class KimiUsageScannerTests: XCTestCase {
         XCTAssertEqual(result?.series.daily.first?.totalTokens, 190)
     }
 
+    func testValidNativeHistorySurvivesASeparateUnsupportedFile() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let valid = root.appendingPathComponent("sessions/workspace/session/agents/main/wire.jsonl")
+        let broken = root.appendingPathComponent("sessions/workspace/session/agents/child/wire.jsonl")
+        try UsageRecordFixture.write(wire([request(), usage()]), to: valid)
+        try UsageRecordFixture.write(wire([request(), usage()], version: "unsupported"), to: broken)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": root.path]), homeDirectory: root)
+
+        let scan = try await scanner.scan(now: now)
+        let result = try XCTUnwrap(scan)
+
+        XCTAssertEqual(result.series.daily.first?.totalTokens, 190)
+        XCTAssertEqual(result.fileErrors.count, 1)
+        XCTAssertTrue(result.warnings.contains { $0.contains("unsupported format") })
+    }
+
+    func testWorkReadFailuresUseStorageErrorsAndPreserveValidNativeHistory() async throws {
+        for hasNativeHistory in [false, true] {
+            let root = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let work = root.appendingPathComponent(
+                "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/workspace/session/agents/main/wire.jsonl"
+            )
+            try UsageRecordFixture.write(wire([request(), usage()]), to: work)
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: work.path)
+            defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: work.path) }
+            XCTAssertFalse(FileManager.default.isReadableFile(atPath: work.path))
+            if hasNativeHistory {
+                let native = root.appendingPathComponent(".kimi-code/sessions/workspace/session/agents/main/wire.jsonl")
+                try UsageRecordFixture.write(wire([request(), usage()]), to: native)
+            }
+            let scanner = KimiUsageScanner(environment: FakeEnvironment(), homeDirectory: root)
+
+            if hasNativeHistory {
+                let scan = try await scanner.scan(now: now)
+                let result = try XCTUnwrap(scan)
+                XCTAssertEqual(result.series.daily.first?.totalTokens, 190)
+                XCTAssertEqual(result.invalidRows, 0)
+                XCTAssertEqual(result.fileErrors.count, 1)
+                XCTAssertEqual(result.fileErrors.first?.errorCategory, .storage)
+                XCTAssertEqual(result.readWarnings, [KimiHistoryError.unreadable.localizedDescription])
+            } else {
+                do {
+                    _ = try await scanner.scan(now: now)
+                    XCTFail("unreadable Work history must fail when no valid history remains")
+                } catch {
+                    XCTAssertEqual((error as? KimiHistoryError)?.errorCategory, .storage)
+                }
+            }
+        }
+    }
+
+    func testWorkOverlapCountsNativeRowsOnceAndKeepsAliaslessRowsFromTheSameCanonicalFile() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workHome = root.appendingPathComponent(
+            "Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home"
+        )
+        let path = workHome.appendingPathComponent("sessions/workspace/conv-1/agents/main/wire.jsonl")
+        let workOnly: [String: Any] = [
+            "type": "usage.record", "time": epochMilliseconds, "usageScope": "session",
+            "usage": ["inputOther": 100, "output": 10, "inputCacheRead": 20, "inputCacheCreation": 0]
+        ]
+        try UsageRecordFixture.write(wire([request(), usage(), workOnly]), to: path)
+        let alias = root.appendingPathComponent("native-home")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: workHome)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": alias.path]), homeDirectory: root)
+
+        let first = try await scanner.scan(now: now)
+        let cached = try await scanner.scan(now: now)
+
+        XCTAssertEqual(first?.series.daily.first?.totalTokens, 320)
+        XCTAssertEqual(cached?.series.daily.first?.totalTokens, 320)
+    }
+
+    func testPythonTokensWithoutProviderEvidenceNeverEnterKimiTotals() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let path = root.appendingPathComponent(".kimi/sessions/work/session/wire.jsonl")
+        let row = """
+        {"timestamp":\(now.timeIntervalSince1970),"message":{"type":"StatusUpdate","payload":{"message_id":"external-response","token_usage":{"input_other":100,"output":10,"input_cache_read":20,"input_cache_creation":0}}}}
+
+        """
+        try UsageRecordFixture.write(row, to: path)
+        let raw = try KimiSupplementParser.parse(Data(row.utf8), path: path.path, work: false)
+        XCTAssertEqual(raw.first?.totalTokens, 130)
+        XCTAssertNil(raw.first?.providerID)
+        let collector = UsageFileCollector(
+            sourceID: "kimi-cli", providerID: "kimi-cli", roots: [root.appendingPathComponent(".kimi/sessions")],
+            scanner: IncrementalJSONLScanner(), includeFile: { $0.lastPathComponent == "wire.jsonl" },
+            parse: { try KimiSupplementParser.parse($0, path: $1, work: false) }
+        )
+        let collected = await UsageCollectionCoordinator(collectors: [collector]).collect(since: .distantPast)
+        XCTAssertEqual(collected?.records.first?.totalTokens, 130)
+        XCTAssertNil(collected?.records.first?.providerID)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment([:]), homeDirectory: root)
+
+        let result = try await scanner.scan(now: now)
+
+        XCTAssertNil(result)
+    }
+
+    func testWorkNonKimiRouteDoesNotReenterNativeExcludedUsage() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+        let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+        let data = try wire([request(model: "gpt-5", alias: "kimi-code/custom"), usage(alias: "kimi-code/custom")])
+        try UsageRecordFixture.write(data, to: wirePath)
+        let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+        XCTAssertEqual(raw.first?.totalTokens, 190)
+        XCTAssertNil(raw.first?.providerID)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+        let result = try await scanner.scan(now: now)
+        XCTAssertTrue(result?.series.daily.isEmpty == true)
+    }
+
+    func testIncompleteWorkRequestDoesNotReenterNativeExcludedUsage() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+        let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+        let incomplete: [String: Any] = ["type": "llm.request", "agentId": "main", "kind": "loop", "modelAlias": "kimi-code/k3"]
+        let data = try wire([incomplete, usage()])
+        try UsageRecordFixture.write(data, to: wirePath)
+        let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+        XCTAssertEqual(raw.first?.totalTokens, 190)
+        XCTAssertNil(raw.first?.providerID)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+        let result = try await scanner.scan(now: now)
+        XCTAssertTrue(result?.series.daily.isEmpty == true)
+    }
+
+    func testLostWorkRoutingDoesNotRestoreTheLegacyKimiFallback() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+        let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+        let data = try wire([request(model: "gpt-5", alias: "kimi-code/custom")])
+            + Data("not-json\n".utf8) + wire([usage(alias: "kimi-code/custom")])
+        try UsageRecordFixture.write(data, to: wirePath)
+        XCTAssertTrue(try KimiUsageScanner.parse(data).records.isEmpty)
+        let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+        let measured = try XCTUnwrap(raw.first { $0.kind == "usage" })
+        XCTAssertEqual(measured.totalTokens, 190)
+        XCTAssertNil(measured.providerID)
+        let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+        let result = try await scanner.scan(now: now)
+        XCTAssertTrue(result?.series.daily.isEmpty == true)
+    }
+
+    func testWorkMissingOrNonStringTypeCannotRestoreInvalidatedRouting() async throws {
+        for malformed in ["{}", #"{"type":false}"#] {
+            let root = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+            let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+            let data = try wire([request()]) + Data((malformed + "\n").utf8) + wire([usage()])
+            try UsageRecordFixture.write(data, to: wirePath)
+            let native = try KimiUsageScanner.parse(data)
+            XCTAssertTrue(native.records.isEmpty)
+            XCTAssertEqual(native.invalidRows, 2)
+            let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+            let measured = try XCTUnwrap(raw.first { $0.kind == "usage" })
+            XCTAssertEqual(measured.totalTokens, 190)
+            XCTAssertNil(measured.providerID)
+            XCTAssertEqual(raw.filter { $0.issues.contains(.invalidMetadata) }.count, 1)
+            let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+            let result = try await scanner.scan(now: now)
+            XCTAssertTrue(result?.series.daily.isEmpty == true)
+        }
+    }
+
+    func testFirstCorruptWorkRowCannotAuthorizeFallbackAndLaterRequestRecovers() async throws {
+        for corrupt in ["not-json", "{}", #"{"type":false}"#] {
+            let root = try temporaryDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workHome = root.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home")
+            let wirePath = workHome.appendingPathComponent("sessions/work/session/agents/main/wire.jsonl")
+            let data = try wire([]) + Data((corrupt + "\n").utf8) + wire([usage(), request(), usage()])
+            try UsageRecordFixture.write(data, to: wirePath)
+            let raw = try KimiSupplementParser.parse(data, path: wirePath.path, work: true)
+            let measured = raw.filter { $0.kind == "usage" }
+            XCTAssertEqual(measured.map(\.totalTokens), [190, 190])
+            XCTAssertNil(measured.first?.providerID)
+            XCTAssertEqual(measured.last?.providerID, "kimi")
+            let scanner = KimiUsageScanner(environment: FakeEnvironment(["KIMI_CODE_HOME": workHome.path]), homeDirectory: root)
+            let result = try await scanner.scan(now: now)
+            XCTAssertEqual(result?.series.daily.first?.totalTokens, 190)
+        }
+    }
+
     private var epochMilliseconds: Int { Int(now.timeIntervalSince1970 * 1_000) }
 
     private func request(model: String = "k3", alias: String = "kimi-code/k3") -> [String: Any] {

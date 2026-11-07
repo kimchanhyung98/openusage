@@ -58,4 +58,51 @@ final class UsageCollectionIntegrationTests: XCTestCase {
         XCTAssertNil(isolated)
     }
 
+    func testKimiWorkAndKiroV2ReachExistingStatistics() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try UsageRecordFixture.write(
+            #"{"type":"usage.record","model":"k2d6-agent","usageScope":"session","time":1793494800000,"usage":{"inputOther":100,"output":10,"inputCacheRead":20}}"#,
+            to: home.appendingPathComponent("Library/Application Support/kimi-desktop/daimon-share/daimon/runtime/kimi-code/home/sessions/work/ctitle-1/agents/main/wire.jsonl")
+        )
+        let kimi = KimiUsageScanner(environment: FakeEnvironment([:]), homeDirectory: home)
+        let kimiScan = try await kimi.scan(now: now)
+        XCTAssertEqual(kimiScan?.series.daily.first?.totalTokens, 130)
+        XCTAssertNil(kimiScan?.series.daily.first?.costUSD)
+        XCTAssertEqual(kimiScan?.invalidRows, 0)
+        try UsageRecordFixture.write(
+            #"{"session_id":"s","session_state":{"conversation_metadata":{"user_turn_metadatas":[{"input_token_count":100,"output_token_count":20,"cache_read_input_token_count":30,"end_timestamp":1793494800,"message_ids":["m1"],"metering_usage":[{"unit":"credit","value":0.5}]}]}}}"#,
+            to: home.appendingPathComponent(".kiro/sessions/cli/session.json")
+        )
+        let kiro = KiroUsageScanner(environment: FakeEnvironment(), homeDirectory: home)
+        let kiroScan = try await kiro.scan(now: now)
+        XCTAssertEqual(kiroScan?.daily.first?.tokens, 150)
+        XCTAssertEqual(kiroScan?.daily.first?.costUSD, 0.02)
+        XCTAssertEqual(kiroScan?.daily.first?.tokensEstimated, false)
+    }
+
+    func testUnverifiedDevinDesktopRecordCannotReplaceNativeCLIRequest() async throws {
+        let home = try UsageRecordFixture.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let metadata = #"{"request_id":"r1","created_at":"2026-11-01T01:00:00Z","generation_model":"claude-sonnet-4-6","metrics":{"input_tokens":100,"output_tokens":10,"cache_read_tokens":20}}"#
+        let session = home.appendingPathComponent(".local/share/devin/cli/sessions/s")
+        try UsageRecordFixture.write(#"{"v":1,"id":"s"}"#, to: session.appendingPathComponent("meta.json"))
+        try UsageRecordFixture.write(
+            #"{"kind":"node","at":1793494800,"node":{"id":1,"message":{"role":"assistant","metadata":"# + metadata + "}}}\n",
+            to: session.appendingPathComponent("log.jsonl")
+        )
+        let scanner = DevinUsageScanner(environment: FakeEnvironment([:]), homeDirectory: home)
+        let nativeScan = try await scanner.scan(now: now, pricing: TestPricing.bundled)
+        XCTAssertEqual(nativeScan?.series.daily.first?.totalTokens, 130)
+        let unverifiedMetadata = metadata.replacingOccurrences(of: "\"input_tokens\":100", with: "\"input_tokens\":1000")
+        try UsageRecordFixture.write(
+            #"{"providerId":"devin-cli","notification":{"sessionUpdate":"usage_update","metadata":"# + unverifiedMetadata + "}}\n",
+            to: home.appendingPathComponent("Library/Application Support/Devin/User/acp-events/session.ndjson")
+        )
+        let scan = try await scanner.scan(now: now, pricing: TestPricing.bundled)
+        XCTAssertEqual(scan?.series.daily.first?.totalTokens, 130)
+        XCTAssertEqual(scan?.invalidRows, 1)
+        XCTAssertFalse(scan?.warnings.isEmpty == true)
+    }
+
 }

@@ -31,11 +31,12 @@ actor DevinUsageScanner {
         var invalidRows: Int
         var unreadableStores = 0
 
+        var readWarnings: [String] {
+            unreadableStores > 0 ? ["Some Devin CLI usage history could not be read. Totals may be incomplete."] : []
+        }
+
         var warnings: [String] {
-            var values: [String] = []
-            if unreadableStores > 0 {
-                values.append("Some Devin CLI usage history could not be read. Totals may be incomplete.")
-            }
+            var values = readWarnings
             if invalidRows > 0 {
                 values.append("Some Devin CLI usage records are invalid. Totals may be incomplete.")
             }
@@ -48,12 +49,6 @@ actor DevinUsageScanner {
         func totalSpendLines(now: Date) -> [MetricLine] {
             var lines: [MetricLine] = []
             SpendTileMapper.appendTokenUsage(series, to: &lines, now: now, estimated: true)
-            // 미가격 요청이 섞인 기간의 일부 비용을 전체 비용으로 표시하지 않음.
-            if series.daily.contains(where: { $0.costUSD == nil }),
-               let index = lines.firstIndex(where: { $0.label == TotalSpendPeriod.last30.lineLabel }),
-               case .values(let label, let values, _, _, _, _) = lines[index] {
-                lines[index] = .values(label: label, values: values.filter { $0.kind != .dollars })
-            }
             return lines
         }
     }
@@ -61,6 +56,7 @@ actor DevinUsageScanner {
     private let sqlite: any SQLiteAccessing
     private let environment: any EnvironmentReading
     private let homeDirectory: URL
+    private let desktopCollector: UsageFileCollector
 
     init(
         sqlite: any SQLiteAccessing = SQLiteCLIAccessor(),
@@ -70,6 +66,7 @@ actor DevinUsageScanner {
         self.sqlite = sqlite
         self.environment = environment
         self.homeDirectory = homeDirectory
+        self.desktopCollector = UsageSourceCollectors.devinDesktop(home: homeDirectory)
     }
 
     var directory: URL {
@@ -86,7 +83,7 @@ actor DevinUsageScanner {
         return root.appendingPathComponent("cli", isDirectory: true)
     }
 
-    func scan(now: Date, pricing: ModelPricing) throws -> Result? {
+    func scan(now: Date, pricing: ModelPricing) async throws -> Result? {
         try Task.checkCancellation()
         var parsed = Parsed()
         var foundStore = false
@@ -163,6 +160,17 @@ actor DevinUsageScanner {
             AppDiagnostics.record(.historyScan, result: .degraded, providerID: "devin", error: error,
                                   localContext: "file history")
         }
+        guard let desktop = await desktopCollector.collect(since: .distantPast), !Task.isCancelled else { throw CancellationError() }
+        let malformedLines = desktop.records.filter { $0.kind == "invalid-line" && $0.issues.contains(.invalidMetadata) }.count
+        let desktopRecords = desktop.records.filter { $0.providerID == "devin" }
+        foundStore = foundStore || malformedLines > 0 || !desktopRecords.isEmpty || desktop.readFailureCount > 0
+        parsed.unreadableStores += desktop.readFailureCount
+        // 요청 단위가 미확인인 ACP 관찰값은 현재 조회 기간의 불완전 행으로만 집계.
+        let days = UsageHistoryWindow.dayKeys(through: now)
+        parsed.invalidRows += malformedLines + desktopRecords.filter { record in
+            guard let date = record.timestamp else { return true }
+            return date <= now && days.contains(DailyUsageAccumulator.dayKey(from: date))
+        }.count
         guard foundStore else { return nil }
         return Self.aggregate(parsed, now: now, pricing: pricing)
     }

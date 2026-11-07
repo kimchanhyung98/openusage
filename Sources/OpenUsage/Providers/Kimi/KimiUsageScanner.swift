@@ -36,6 +36,7 @@ actor KimiUsageScanner {
         var timestamp: Date
         var tokens: Int
         var pricingInput: PricingInput? = nil
+        var wireEntryID: String? = nil
     }
 
     struct ParsedFile: Sendable {
@@ -46,9 +47,14 @@ actor KimiUsageScanner {
     struct Result: Sendable {
         var series: DailyUsageSeries
         var invalidRows: Int
+        var fileErrors: [KimiHistoryError] = []
+
+        var readWarnings: [String] {
+            Array(Set(fileErrors.map(\.localizedDescription))).sorted()
+        }
 
         var warnings: [String] {
-            var messages: [String] = []
+            var messages = readWarnings
             if invalidRows > 0 {
                 messages.append("Some Kimi Code usage records are invalid. Token totals may be incomplete.")
             }
@@ -58,19 +64,13 @@ actor KimiUsageScanner {
             return messages
         }
 
-        private var hasUnpricedUsage: Bool {
+        var hasUnpricedUsage: Bool {
             series.daily.contains { $0.totalTokens > 0 && $0.costUSD == nil }
         }
 
         func totalSpendLines(now: Date) -> [MetricLine] {
             var lines: [MetricLine] = []
             SpendTileMapper.appendTokenUsage(series, to: &lines, now: now, estimated: true)
-            // 공통 mapper는 가격이 있는 날만 합산. Kimi는 미가격 토큰이 있는 기간 전체의 달러를 생략.
-            if hasUnpricedUsage,
-               let index = lines.firstIndex(where: { $0.label == TotalSpendPeriod.last30.lineLabel }),
-               case .values(let label, let values, _, _, _, _) = lines[index] {
-                lines[index] = .values(label: label, values: values.filter { $0.kind != .dollars })
-            }
             return lines
         }
     }
@@ -80,8 +80,15 @@ actor KimiUsageScanner {
         var modified: Date
     }
 
+    private struct WireIdentity: Hashable {
+        var id: String
+        var timestamp: Date
+        var tokens: Int
+    }
+
     private let environment: EnvironmentReading
     private let homeDirectory: URL
+    private var supplementalCollectors: [UsageFileCollector]?
     private var cache: [String: (stamp: Stamp, parsed: ParsedFile)] = [:]
 
     init(
@@ -92,31 +99,71 @@ actor KimiUsageScanner {
         self.homeDirectory = homeDirectory
     }
 
-    func scan(now: Date, pricing: ModelPricing = .empty) throws -> Result? {
+    func scan(now: Date, pricing: ModelPricing = .empty) async throws -> Result? {
         do {
-            let paths = try wireFiles()
-            guard !paths.isEmpty else {
+            if supplementalCollectors == nil {
+                supplementalCollectors = [UsageSourceCollectors.kimiWork(home: homeDirectory)]
+            }
+            var fileErrors: [KimiHistoryError] = []
+            let paths = wireFiles(failures: &fileErrors)
+            var work = UsageCollection(records: [])
+            for collector in supplementalCollectors ?? [] {
+                guard let collected = await collector.collect(since: .distantPast), !Task.isCancelled else { throw CancellationError() }
+                work.records += collected.records
+                work.sources += collected.sources
+            }
+            guard !paths.isEmpty || !fileErrors.isEmpty || work.sources.contains(where: { $0.status != .absent }) else {
                 cache.removeAll()
                 return nil
             }
             cache = cache.filter { paths.contains($0.key) }
             var files: [ParsedFile] = []
+            var nativeEntries: [String: Set<WireIdentity>] = [:]
             for path in paths {
                 try Task.checkCancellation()
-                let attributes = try FileManager.default.attributesOfItem(atPath: path)
-                let stamp = Stamp(
-                    size: (attributes[.size] as? NSNumber)?.intValue ?? 0,
-                    modified: attributes[.modificationDate] as? Date ?? .distantPast
-                )
-                if let cached = cache[path], cached.stamp == stamp {
-                    files.append(cached.parsed)
-                } else {
-                    let parsed = try Self.parse(Data(contentsOf: URL(fileURLWithPath: path)))
-                    cache[path] = (stamp, parsed)
+                do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: path)
+                    let stamp = Stamp(
+                        size: (attributes[.size] as? NSNumber)?.intValue ?? 0,
+                        modified: attributes[.modificationDate] as? Date ?? .distantPast
+                    )
+                    let parsed: ParsedFile
+                    if let cached = cache[path], cached.stamp == stamp {
+                        parsed = cached.parsed
+                    } else {
+                        parsed = try Self.parse(Data(contentsOf: URL(fileURLWithPath: path)))
+                        cache[path] = (stamp, parsed)
+                    }
                     files.append(parsed)
+                    nativeEntries[path] = Set(parsed.records.compactMap { record in
+                        record.wireEntryID.map { WireIdentity(id: $0, timestamp: record.timestamp, tokens: record.tokens) }
+                    })
+                } catch is CancellationError {
+                    throw CancellationError()
+                } catch {
+                    cache.removeValue(forKey: path)
+                    fileErrors.append(error as? KimiHistoryError ?? .unreadable)
                 }
             }
-            return Self.aggregate(files, now: now, pricing: pricing)
+            if work.readFailureCount > 0 { fileErrors.append(.unreadable) }
+            var supplemental = ParsedFile()
+            for record in UsageRecordDeduplicator.records(work.records) {
+                guard record.providerID == "kimi" else { continue }
+                if let path = record.filePath, let id = record.id, let date = record.timestamp,
+                   nativeEntries[path]?.contains(WireIdentity(id: id, timestamp: date, tokens: record.totalTokens)) == true {
+                    continue
+                }
+                guard record.issues.isEmpty, let date = record.timestamp, record.tokens != nil else {
+                    supplemental.invalidRows += 1
+                    continue
+                }
+                supplemental.records.append(Record(timestamp: date, tokens: record.totalTokens))
+            }
+            files.append(supplemental)
+            if files.allSatisfy({ $0.records.isEmpty }), let error = fileErrors.first { throw error }
+            var result = Self.aggregate(files, now: now, pricing: pricing)
+            result.fileErrors = fileErrors
+            return result
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as KimiHistoryError {
@@ -127,7 +174,7 @@ actor KimiUsageScanner {
     }
 
     /// 알려진 session/agent 경로만 탐색. 백업·내보내기·구형 Python 로그는 집계하지 않음.
-    private func wireFiles() throws -> [String] {
+    private func wireFiles(failures: inout [KimiHistoryError]) -> [String] {
         let raw = environment.value(for: "KIMI_CODE_HOME")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let root = raw.flatMap { $0.isEmpty ? nil : $0 }.map { path in
             if path == "~" { return homeDirectory }
@@ -136,25 +183,21 @@ actor KimiUsageScanner {
         } ?? homeDirectory.appendingPathComponent(".kimi-code", isDirectory: true)
         let directory = root.appendingPathComponent("sessions", isDirectory: true)
         let manager = FileManager.default
-        func directories(_ root: URL) throws -> [URL] {
-            try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
-                .filter { try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
-        }
-        let workspaces: [URL]
-        do {
-            workspaces = try directories(directory)
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
-            return []
+        func directories(_ root: URL) -> [URL] {
+            do {
+                return try manager.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])
+                    .filter { try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+                return []
+            } catch {
+                failures.append(.unreadable)
+                return []
+            }
         }
         var paths: Set<String> = []
-        for workspace in workspaces {
-            for session in try directories(workspace) {
-                let agents: [URL]
-                do {
-                    agents = try directories(session.appendingPathComponent("agents", isDirectory: true))
-                } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
-                    continue
-                }
+        for workspace in directories(directory) {
+            for session in directories(workspace) {
+                let agents = directories(session.appendingPathComponent("agents", isDirectory: true))
                 for agent in agents {
                     let wire = agent.appendingPathComponent("wire.jsonl")
                     do {
@@ -162,6 +205,8 @@ actor KimiUsageScanner {
                         paths.insert(wire.resolvingSymlinksInPath().path)
                     } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                         continue
+                    } catch {
+                        failures.append(.unreadable)
                     }
                 }
             }
@@ -178,7 +223,7 @@ actor KimiUsageScanner {
         let tail = data.suffix(from: tailStart)
         let completeTail = tail.isEmpty || (try? JSONSerialization.jsonObject(with: tail, options: .fragmentsAllowed)) != nil
         let complete = completeTail ? data : data.prefix(upTo: tailStart)
-        for line in JSONLScanning.lines(in: complete) {
+        for (index, line) in JSONLScanning.lines(in: complete).enumerated() {
             try Task.checkCancellation()
             guard let object = ProviderParse.jsonObject(line), let type = object["type"] as? String else {
                 requests.removeAll()
@@ -258,14 +303,15 @@ actor KimiUsageScanner {
             }
             // namespace는 사용자가 재설정 가능하므로 요청 API 모델명도 함께 제한.
             let model = request.model.lowercased()
-            guard canonicalModel(model) != nil || model.hasPrefix("kimi-") else { continue }
+            guard isKimiRoute(alias: alias, model: model) else { continue }
             result.records.append(Record(
                 timestamp: Date(timeIntervalSince1970: Double(milliseconds) / 1_000),
                 tokens: tokens,
                 pricingInput: cacheReadUnknown ? nil : scopedRequest.map { PricingInput(
                     model: $0.model, protocolName: $0.protocolName, thinkingEffort: $0.thinkingEffort,
                     tokens: TokenBreakdown(input: input, cacheWrite5m: cacheWrite, cacheRead: cacheRead, output: output)
-                ) }
+                ) },
+                wireEntryID: UsageJSON.string(object["id"]) ?? "row:\(index)"
             ))
         }
         return result
@@ -274,6 +320,11 @@ actor KimiUsageScanner {
     private static func count(_ value: Any?) -> Int? {
         guard value is NSNumber else { return nil }
         return UsageLogNumbers.count(value)
+    }
+
+    static func isKimiRoute(alias: String, model: String) -> Bool {
+        let normalized = model.lowercased()
+        return alias.hasPrefix("kimi-code/") && (canonicalModel(normalized) != nil || normalized.hasPrefix("kimi-"))
     }
 
     private static func canonicalModel(_ model: String) -> String? {
