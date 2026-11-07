@@ -87,7 +87,9 @@ Auto 시간 형식은 표시 언어와 별개로 시스템의 12/24시간 설정
 
 provider와 사용 기록을 만드는 도구는 별개 역할.
 CLI·harness는 원본 사용 기록을 생성.
-OpenUsage의 수집 adapter가 원본을 공통 사용 기록으로 변환한 뒤 카드 귀속·가격 계산 수행.
+공유 도구용 수집 adapter가 원본을 공통 사용 기록으로 변환한 뒤 카드 귀속·가격 계산 수행.
+기존 native 수집기는 각 provider의 원장을 계속 처리.
+귀속이 확인된 공유 도구 결과를 해당 provider의 native 집계와 병합.
 전체 지원 대상과 수집 규칙은 [사용량 수집](/docs/usage-collection.md) 참조.
 
 Claude, Codex, pi는 로컬 JSONL 기록에 `IncrementalJSONLScanner`를 공유.
